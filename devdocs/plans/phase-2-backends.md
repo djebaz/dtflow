@@ -25,7 +25,7 @@ Durable job orchestration belongs to Phase 6. Phase 2 must expose enough outcome
 
 ### Completion and artifacts
 
-Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. Phase 3 introduces durable output and metadata saving; those writes must finish before reporting application success. Phase 6 adds durable job lifecycle state.
+Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. Phase 3 introduces a durable pre-submission request/attempt record plus output/metadata saving; those writes must finish before reporting application success. Phase 6 extends it with durable queue/job lifecycle state.
 
 Preserve incomplete outputs as partial evidence. A preview saved after failed generation must remain labeled as a preview or diagnostic artifact in metadata and the UI; never promote it to a completed result or use it to imply success.
 
@@ -75,6 +75,7 @@ Phase 2 covers the contract and adapters. Extend fake-backed UI, durable job, qu
 
 ## Source-level gaps to validate
 
+- Verify supported sampler/enum values, requested-to-wire dimensions, defaults and effective parameters. Reject unsupported options clearly before submission; never silently ignore them.
 - Preserve a requested seed of zero; the inspected client routes it through its seed-provider path.
 - Keep chunked output disabled initially or implement validated chunk assembly before enabling it.
 - Preserve terminal gRPC errors, including statuses not explicitly raised by the client's error helper.
@@ -95,6 +96,8 @@ Phase 2 covers the contract and adapters. Extend fake-backed UI, durable job, qu
 
 Use `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .` for implementation validation. Any live generation is separately gated and requires task authorization; do not use it merely to validate plumbing.
 
+The [TanqueStudio parity matrix](tanquestudio-parity.md) tracks later feature milestones without making full parity a prerequisite for Qt.
+
 ## Deferred work
 
-[Phase 3](phase-3-cli.md) adds the headless CLI, shared application services and durable output/metadata saving; Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds durable jobs/reconciliation; Phase 7 establishes scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
+[Phase 3](phase-3-cli.md) adds the headless CLI, shared application services, durable pre-submission attempt records and output/metadata saving; Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds durable jobs/reconciliation; Phase 7 establishes scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.

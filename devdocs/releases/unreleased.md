@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Tracked TanqueStudio parity matrix with upstream evidence, service ownership, CLI/Qt exposure, backend support, phase assignments and acceptance criteria.
+
 - Phase 3 headless CLI plan covering shared services, backend selection, connectivity, model inventory, text-to-image generation, durable outputs/metadata and interruption handling.
 
 - Explicit offline testing boundaries: deterministic fake first, local gRPC server tests through actual adapters, DT+ HTTP authentication mocks, cloud gRPC authorization assertions and rejection of unexpected external connections.
@@ -26,6 +28,9 @@ Pending changes for the next DTFlow release.
 - Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in. User-reported live runs validate the path end to end from Python through cloud authentication, direct TLS gRPC generation, result decoding, and concurrent submissions without a MediaGenerationKit runtime dependency.
 
 ## Changed
+
+- Require a minimal atomic request/attempt record before Phase 3 remote submission and prevent automatic retries of unfinished potentially submitted attempts.
+- Separate initial cloud safety/authentication foundations from Phase 11 expansion; clarify inventory refresh/provenance/classification, Phase 5 basic LoRA selection and request-fidelity validation.
 
 - Deliver a working CLI in Phase 3 before the Phase 4 Qt shell; GUI generation reuses CLI-exercised services. Durable jobs and advanced operations retain separate later phases.
 

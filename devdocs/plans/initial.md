@@ -186,6 +186,8 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 
 ## 7. Implementation phases
 
+Track the intended full TanqueStudio port in the [parity matrix](tanquestudio-parity.md). It assigns feature evidence, shared services, CLI/Qt exposure, backend support, milestones and acceptance. Complete the upstream feature inventory during Phase 2; unknown or deferred items remain explicitly tracked. Full parity is not a prerequisite for starting Qt.
+
 ### Phase 1 — gRPC connectivity proof
 
 Prove the smallest useful Draw Things connection outside the GUI.
@@ -216,9 +218,9 @@ Investigate Windows packaging and dependency distribution early. Source executio
 
 Deliver a usable command-line application before introducing Qt. Follow [the Phase 3 CLI plan](phase-3-cli.md).
 
-Expose the `dtflow` entry point for backend selection, non-generative connectivity checks, model inventory and complete text-to-image generation through fake, Draw Things gRPC and direct DT+ adapters.
+Expose the `dtflow` entry point for backend selection, non-generative connectivity checks, model inventory with explicit refresh and backend provenance, and complete text-to-image generation through fake, Draw Things gRPC and direct DT+ adapters.
 
-Implement application services for request resolution, submission, progress/error handling and durable output/reproducibility metadata saving. The CLI owns argument parsing and presentation only. Neither services nor the headless command path may require Qt.
+Implement application services for request resolution, submission, progress/error handling, a durable atomic request/attempt record before submission, and output/reproducibility metadata saving. Persist potential remote execution before crossing the submission boundary; incomplete attempts cannot be automatically resubmitted. The CLI owns argument parsing and presentation only. Neither services nor the headless command path may require Qt.
 
 Handle interruption and uncertain outcomes honestly; do not automatically resubmit ambiguous requests. Preserve previews as diagnostic artifacts. Keep subscription-only cloud behavior and the `-nc` / `--no-cache` contract.
 
@@ -234,13 +236,13 @@ Keep business logic and backend protocol code outside UI classes. Network and ge
 
 ### Phase 5 — Single generation
 
-Connect the desktop UI to the generation services already exercised by the headless CLI for a complete single-generation flow. Reuse request resolution, progress/error handling and output persistence rather than creating a second execution path.
+Connect the desktop UI to the generation services already exercised by the headless CLI for a complete single-generation flow. Reuse request resolution, progress/error handling and output persistence rather than creating a second execution path. Add basic LoRA selection with explicit weights through shared services and CLI/Qt exposure, gated by verified backend/model compatibility.
 
 Persist enough metadata to reproduce the request. Mark a job completed only after successful terminal RPC status, validated final artifacts and durable output/metadata persistence. Saved previews must remain labeled as previews or diagnostics when final generation fails.
 
 ### Phase 6 — Durable jobs and queue
 
-Introduce persistent jobs and explicit lifecycle states.
+Extend Phase 3's durable request/attempt records with persistent jobs, queues and explicit lifecycle states.
 
 Design for recovery after application restart before adding advanced workflow behavior. The inspected remote protocol exposes no generation job lookup or stream reattachment; recover local queued/completed state and reconcile interrupted in-flight jobs to an unknown outcome without automatic resubmission.
 
@@ -274,10 +276,18 @@ Phase 1 diagnostic work has already established that a direct Python DT+ impleme
 
 Phase 2 introduces the narrow direct Python backend. Phase 11 broadens its verified operations and production behavior rather than re-evaluating Python feasibility or delaying basic cloud integration.
 
+### Foundations required by the first adapter
+
+Phase 2 already requires expiry-aware token acquisition/refresh, secret handling, authenticated TLS transport, subscription-only billing policy, sanitized error mapping and safe ambiguous-outcome behavior. Phase 3 requires durable pre-submission attempt records. These protections are prerequisites for initial cloud use, not deferred Phase 11 work.
+
+### Expansion of established foundations
+
+Phase 11 extends and revalidates those foundations for additional verified operations, credentials/account flows, entitlement cases and scheduling behavior. It does not postpone their initial implementation.
+
 For broader cloud support:
 
-- move cloud authentication and transport behind the backend abstraction rather than importing tooling code into the application layer;
-- define short-term-token caching, expiry, refresh, and credential-storage behavior;
+- preserve the established backend boundary while adding cloud capabilities; never import diagnostic tooling into application orchestration;
+- extend the established token lifecycle and credential handling for any additional account/credential flows;
 - preserve the rule that credentials, bearer tokens, authorization headers, and sensitive payloads are never logged or persisted accidentally;
 - define entitlement, subscription quota, PAYG opt-in, and billing-failure behavior so DTFlow never silently enables paid usage;
 - verify model/checkpoint, LoRA, input-image, and other request compatibility needed by the product;

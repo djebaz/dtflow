@@ -16,7 +16,7 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 | --- | --- |
 | Backend selection | Explicit fake, Draw Things gRPC or direct DT+ selection; no silent fallback |
 | Connectivity | Bounded non-generative transport/authentication check with useful sanitized errors |
-| Model inventory | Retrieve and display backend-advertised models/files; distinguish failed discovery, empty inventory and compatibility uncertainty |
+| Model inventory | Explicit refresh; retain backend/server provenance and observation time; classify models, LoRAs and controls only from reliable server metadata, leaving unknown files unclassified; distinguish failure, empty inventory and compatibility uncertainty |
 | Request resolution | Resolve configuration/preset plus explicit overrides into a reproducible request; validate before submitting |
 | Generation | Submit supported text-to-image requests, expose actual progress and collect validated final outputs |
 | Output saving | Save all required final images plus reproducibility metadata without silently overwriting useful results |
@@ -39,11 +39,23 @@ The development entry point runs through `uv run dtflow` once implemented. It mu
 
 Services own request resolution/preflight, backend selection, submission, events, result validation and artifact saving. Keep services callable from Python as well as the CLI and future Qt UI.
 
-Persist resolved prompts/seeds, model/checkpoint and relevant adapter identifiers, effective generation parameters, backend identity, dependency/version information available at runtime, output references and completion evidence. Use atomic metadata writes where practical and preserve partial evidence after failures.
+Persist resolved prompts/seeds, model/checkpoint and relevant adapter identifiers, effective generation parameters, backend identity, dependency/version information available at runtime, output references and completion evidence. Require atomic execution-record updates and preserve partial evidence after failures.
 
 A successful terminal RPC and valid outputs establish backend success; successful durable output/metadata saving establishes application success. Saved previews after failed generation remain labeled preview/diagnostic artifacts and never count as completed results.
 
-This phase saves artifacts and reproducibility metadata, not a durable queue or full restartable job scheduler. Phase 6 introduces transactional job state and reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
+### Minimal durable execution record
+
+Before any generation submission, atomically persist an immutable resolved request plus a unique attempt ID, backend identity and credential-free configuration/version metadata. Before crossing the submission boundary, durably mark the attempt as potentially executing remotely. If either write fails, do not submit.
+
+Use same-directory temporary-file replacement with the appropriate flush/fsync behavior, or a transactional store. Define and test the actual durability guarantee on the target filesystem; do not equate a buffered write with a durable commit.
+
+Update outcomes and artifact references atomically as evidence arrives. Distinguish definitely not submitted, potentially executing/outcome unknown, confirmed failure and successful output persistence. Never persist credentials or bearer tokens.
+
+On startup/record inspection, unfinished attempts that crossed the boundary remain unknown and cannot be automatically resubmitted. A crash between recording potential execution and sending the RPC may conservatively leave an unknown outcome; this is intentional. No remote job ID exists in the inspected contract to resolve it.
+
+Test crashes/failures before recording, after marking potential execution, during generation and between artifact saving and outcome commit. Previously saved artifacts remain evidence, not automatic proof of full completion.
+
+This phase adds a minimal durable execution record and artifact metadata, not a durable queue or full restartable scheduler. Phase 6 extends these records with transactional job/queue state and reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
 
 ## Testing and acceptance
 
@@ -51,7 +63,10 @@ This phase saves artifacts and reproducibility metadata, not a durable queue or 
 - Help and every documented option match the implementation.
 - Fake-backed CLI commands cover success, failure, interruption and uncertain outcomes.
 - Real adapters execute against local gRPC/HTTP fixtures through the CLI/service path, including connectivity, inventory, authentication and generation.
-- Tests assert saved output metadata, seed-zero fidelity, multiple final outputs where supported, empty-output rejection and preview labeling.
+- Tests assert saved output metadata, seed-zero fidelity, supported sampler/enum and pixel-to-wire dimension mappings, defaults and the effective encoded parameters; unsupported options fail validation before submission.
+- Tests assert multiple final outputs where supported, empty-output rejection and preview labeling.
+- Crash-boundary tests prove the request/attempt record precedes submission, failed persistence prevents submission and unfinished potentially submitted attempts cannot be automatically retried.
+- Discovery tests cover explicit refresh, backend provenance, reliable model/LoRA/control classification and unclassified files.
 - An unexpected external connection fails ordinary tests; no subscription credits are consumed by fixture coverage.
 - Cloud subscription-only policy, token refresh and sanitized failures remain covered.
 - Validate syntax/imports, parsing/help, `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .`.
@@ -63,6 +78,8 @@ Explicitly authorized live checks can verify deployed behavior after offline cov
 
 “Complete CLI” means an end-to-end application for supported operations, not all TanqueStudio features in one phase. Queue matrix expansion, durable jobs, workflows, advanced image/control combinations, video and cloud asset/LoRA upload remain separate work until their contracts and compatibility are verified.
 
-Model discovery is included now. Cloud LoRA upload is distinct from generation and must not be assumed to use the same endpoint, format or authorization contract.
+Track the intended port in the [TanqueStudio parity matrix](tanquestudio-parity.md); later work requires an explicit milestone rather than indefinite deferral. This matrix is not a requirement to expose every feature before Qt.
+
+Model discovery is included now. Basic compatible LoRA selection and explicit weights are assigned to Phase 5 through shared services, with CLI and Qt exposure. Cloud LoRA upload is distinct from generation and must not be assumed to use the same endpoint, format or authorization contract.
 
 Phase 4 adds the minimal Qt shell and connection management. Phase 5 adds GUI generation by calling these existing services. Later features should expose the same underlying services through the CLI wherever practical so Qt remains presentation rather than a second execution engine.
