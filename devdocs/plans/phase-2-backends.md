@@ -19,13 +19,13 @@ Durable job orchestration belongs to Phase 6. Phase 2 must expose enough outcome
 3. Implement the fake backend through the same contract.
 4. Wrap the recorded Draw Things gRPC path and exercise the actual adapter against a local gRPC test server, reusing existing serialization/codecs where appropriate.
 5. Implement direct DT+ authentication and transport behind its own adapter, with HTTP authentication mocks and cloud authorization checks on the shared local gRPC fixture.
-6. Add shared contract and mocked transport coverage; document limitations before the desktop shell consumes the adapters.
+6. Add shared contract and mocked transport coverage; document limitations before the headless CLI consumes the adapters.
 
 ## Required semantics
 
 ### Completion and artifacts
 
-Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. When persistence is introduced, durable output and metadata writes must finish before a job becomes completed.
+Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. Phase 3 introduces durable output and metadata saving; those writes must finish before reporting application success. Phase 6 adds durable job lifecycle state.
 
 Preserve incomplete outputs as partial evidence. A preview saved after failed generation must remain labeled as a preview or diagnostic artifact in metadata and the UI; never promote it to a completed result or use it to imply success.
 
@@ -97,4 +97,4 @@ Use `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .` fo
 
 ## Deferred work
 
-Phase 3 adds the Qt shell; Phase 5 adds the user-facing generation flow and artifact persistence; Phase 6 adds durable jobs/reconciliation; Phase 7 establishes scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
+[Phase 3](phase-3-cli.md) adds the headless CLI, shared application services and durable output/metadata saving; Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds durable jobs/reconciliation; Phase 7 establishes scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.

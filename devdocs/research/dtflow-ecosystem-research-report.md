@@ -279,12 +279,15 @@ The checked repository roadmap places backend abstraction in Phase 2, the deskto
 | 3 | Implement a deterministic fake backend | Offline success/failure/cancellation scenarios through the same contract |
 | 4 | Wrap the existing Draw Things app gRPC path | Preserve the validated Python dependency path; compare dts-utils only for gaps |
 | 5 | Implement narrow native Python direct DT+ support | Environment-supplied API key, expiry-aware authentication, TLS, subscription-only policy and truthful errors |
-| 6 | Build the minimal PySide6 desktop shell | Canonical Designer sources, service wiring, entry point and responsive execution |
-| 7 | Deliver single generation with durable outputs and metadata | Successful stream termination and validated outputs precede completed job state |
-| 8 | Persist jobs, request snapshots and restart reconciliation | Recover local state; do not imply remote reattachment |
-| 9 | Add bounded queue planning and backend-specific scheduling | TanqueStudio pair/cross expansion; separate app/Bridge and cloud policies |
-| 10 | Add presets, image inputs and compiled workflows | Capability preflight, verified combinations and provenance |
-| 11 | Broaden DT+ hardening and optional MCP automation | Additional inputs, billing opt-in if requested, verified cancellation and service-backed automation |
+| 6 | Deliver the headless CLI and shared services before Qt | Backend selection, connectivity, inventory, text-to-image, durable outputs/metadata and honest interruption |
+| 7 | Build the minimal PySide6 desktop shell | Reuse CLI-exercised services; canonical Designer sources and responsive execution |
+| 8 | Wire GUI generation through shared services | Successful stream termination and validated outputs precede completed job state |
+| 9 | Persist jobs, request snapshots and restart reconciliation | Recover local state; do not imply remote reattachment |
+| 10 | Add bounded queue planning and backend-specific scheduling | TanqueStudio pair/cross expansion; separate app/Bridge and cloud policies |
+| 11 | Add presets, image inputs and compiled workflows | Capability preflight, verified combinations and provenance |
+| 12 | Broaden DT+ hardening and optional MCP automation | Additional inputs, billing opt-in if requested, verified cancellation and service-backed automation |
+
+Phase 3 should deliver a working headless CLI through shared application services before Phase 4 adds Qt. Include explicit backend selection, non-generative connectivity, advertised model inventory, supported txt2img generation, output/reproducibility metadata saving and honest interruption. Qt must call the same services; it must not introduce a parallel orchestration path. Full backend feature parity, cloud uploads, workflows and durable queues remain separately scoped work.
 
 MediaGenerationKit should remain a protocol/reference source. No Swift runtime is required by the recorded successful Python diagnostic path. A Swift bridge is a fallback only for a concrete capability that cannot be implemented reliably in Python.
 

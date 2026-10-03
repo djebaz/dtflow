@@ -1,6 +1,6 @@
 # DTFlow Initial Development Plan
 
-**Status:** Initial planning  
+**Status:** Planning — backend and CLI-first sequence  
 **Product:** DTFlow (DTF)  
 **Repository:** `djebaz/dtflow`
 
@@ -212,33 +212,29 @@ Define completion and uncertain-outcome semantics before wiring the UI. Preserve
 
 Investigate Windows packaging and dependency distribution early. Source execution is recorded as working; a single-executable build is not yet verified. Durable orchestration remains Phase 6.
 
-### Phase 3 — Minimal desktop shell
+### Phase 3 — Headless CLI and shared application services
 
-Create the PySide6 application shell and initial Qt Designer sources.
+Deliver a usable command-line application before introducing Qt. Follow [the Phase 3 CLI plan](phase-3-cli.md).
 
-Expose a package/console entry point so an editable development install can be launched with `dtflow` without typing a source-file path. Keep startup logic outside the main-window implementation.
+Expose the `dtflow` entry point for backend selection, non-generative connectivity checks, model inventory and complete text-to-image generation through fake, Draw Things gRPC and direct DT+ adapters.
 
-Establish a small CLI contract using descriptive long options plus stable, unique short aliases for commonly used development options. The initial cache bypass should support `-nc` / `--no-cache` and disable both cache reads and cache writes for that run.
+Implement application services for request resolution, submission, progress/error handling and durable output/reproducibility metadata saving. The CLI owns argument parsing and presentation only. Neither services nor the headless command path may require Qt.
 
-Establish:
+Handle interruption and uncertain outcomes honestly; do not automatically resubmit ambiguous requests. Preserve previews as diagnostic artifacts. Keep subscription-only cloud behavior and the `-nc` / `--no-cache` contract.
 
-- application startup
-- main window
-- UI/resource loading
-- service wiring
-- clean shutdown
+Validate command parsing, help, exit behavior, saved metadata and end-to-end fixture-backed commands offline. Real generation remains explicit and separately authorized. A complete CLI means a usable path for the supported scope, not every advanced backend operation.
 
-No generation protocol logic should live in UI classes.
+### Phase 4 — Minimal Qt shell and connection management
 
-### Phase 4 — Connection management
+Create the PySide6 application shell and canonical Qt Designer sources after the Phase 3 CLI and services are usable.
 
-Add Draw Things server configuration and connection status.
+Wire startup, main window, UI/resources, background execution and clean shutdown. Add Draw Things/cloud connection selection and useful status/failure presentation through the same services exercised by the CLI.
 
-The UI should expose useful connection failures without leaking low-level implementation details unnecessarily.
+Keep business logic and backend protocol code outside UI classes. Network and generation work must not block the Qt event loop. CLI execution must continue working without importing Qt.
 
 ### Phase 5 — Single generation
 
-Connect the desktop UI to the backend abstraction for a complete single-generation flow.
+Connect the desktop UI to the generation services already exercised by the headless CLI for a complete single-generation flow. Reuse request resolution, progress/error handling and output persistence rather than creating a second execution path.
 
 Persist enough metadata to reproduce the request. Mark a job completed only after successful terminal RPC status, validated final artifacts and durable output/metadata persistence. Saved previews must remain labeled as previews or diagnostics when final generation fails.
 
