@@ -246,6 +246,10 @@ Design for recovery after application restart before adding advanced workflow be
 
 Add controlled concurrent generation after actual Draw Things concurrency behavior has been measured.
 
+Current Phase 1 evidence supports treating one tested Draw Things gRPC server as one effective generation lane: concurrent client RPCs can be in flight together, but the tested iPhone/Bridge path completes work in an effectively serialized staircase and is slower than the matching serial baseline.
+
+The direct DT+ diagnostic path is a separate result. It has completed six controlled cloud requests concurrently within one broad generation-time window, but that does not establish a fixed cloud concurrency limit or production scheduling policy. Do not transfer direct-cloud concurrency assumptions to the Draw Things backend.
+
 Do not infer safe concurrency from client-side capability alone.
 
 ### Phase 8 — Gallery and presets
@@ -286,11 +290,11 @@ Real generation should only be run when it validates behavior that cannot be est
 
 - Exact `drawthings-py` version/API and how much of the gRPC client it should own.
 - Whether DTFlow should generate protobuf bindings itself or consume them through a dependency.
-- Exact Draw Things progress, cancellation, and concurrent request semantics.
+- Exact Draw Things progress and cancellation semantics, plus whether any server/app configuration can expose parallel backend execution beyond the effective single lane observed in the tested iPhone/Bridge path.
 - Persistence technology and schema.
 - Packaging strategy for Windows.
 - Update/distribution strategy.
-- DT+ authentication and protocol details.
+- Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, and a safe concurrency policy. The diagnostic API-key token/auth/gRPC path is now proven separately.
 - Whether any MediaGenerationKit components can or should be reused directly on Windows.
 
 ## 10. Initial repository setup

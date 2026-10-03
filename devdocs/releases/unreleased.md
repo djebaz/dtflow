@@ -26,6 +26,7 @@ Pending changes for the next DTFlow release.
 - Make the Draw Things probe default to a lightweight `z_image_turbo` workload requested at 300 x 300, 4 steps, batch size/count 1, with high-resolution fix disabled.
 - Store Draw Things probe images and timing reports under repository-local ignored `tmp/drawthings_concurrency/` by default.
 - Use compact lowercase probe CLI pairs (`-a/--host`, `-p/--port`, `-d/--cloud`, `-r/--preset`, `-j/--jobs`, `-f/--full`, `-s/--serial`, `-o/--out`, `-c/--conn`, `-k/--skip-conn`) while silently retaining the previous probe spellings as compatibility aliases.
+- Record live concurrency evidence: the tested iPhone Draw Things Bridge path behaves effectively as a single generation lane, while direct DT+ Cloud Compute completed six concurrent controlled jobs in 13.84 s versus 54.42 s of summed serial `generate()` time, about a 3.93x generation-path throughput improvement.
 
 ## Fixed
 
