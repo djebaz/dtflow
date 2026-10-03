@@ -61,8 +61,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("drawthings_concurrency_output"),
-        help="Directory for generated PNGs and the timing report.",
+        default=Path("tmp") / "drawthings_concurrency",
+        help=(
+            "Directory for generated PNGs and the timing report "
+            "(default: tmp/drawthings_concurrency)."
+        ),
     )
     parser.add_argument(
         "--connection-only",
