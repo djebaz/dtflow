@@ -80,6 +80,26 @@ Use `-j N` / `--jobs N` to select 1-8 controlled jobs (default: 2); each job use
 
 The direct-cloud probe deliberately leaves `consumableType` and `amount` unset, so it does not opt into PAYG billing. A successful live generation can still consume DT+ subscription quota/credits. This mode is diagnostic tooling only; it is not the planned production DT+ backend.
 
+## Architectural outcome
+
+The live direct-cloud tests establish an important feasibility result for DTFlow: the DT+ generation path can be exercised end to end from Python without running MediaGenerationKit or a Swift bridge.
+
+The user-reported successful runs exercised:
+
+- API-key authentication through `/sdk/token`;
+- the DT+ short-term token;
+- per-generation `/authenticate`;
+- direct TLS gRPC connectivity to `compute.drawthings.ai:443`;
+- authenticated `GenerateImage` requests;
+- returned image decoding and file output through the existing Python client stack;
+- multiple independent direct-cloud clients submitting concurrently.
+
+MediaGenerationKit remains valuable as the public reference implementation used to understand and verify the protocol contract, but it is not a runtime dependency of the proven Python diagnostic path.
+
+This changes the remaining DT+ question from "is a Python implementation practical?" to "how should the proven path be hardened into a production backend?" The current probe is not production-complete. Token refresh/expiry, credential storage, entitlement and PAYG edge cases, cancellation, retries, throttling, progress/error mapping, persistence/recovery, broader model/input compatibility, and a safe production concurrency policy remain to be designed and verified.
+
+A Swift/MediaGenerationKit bridge should therefore be treated as a fallback for future protocol capabilities that cannot be implemented reliably in Python, not as the default DT+ integration plan.
+
 ## Concurrency findings
 
 The measurements below are user-reported live runs from 2026-10-04 using the controlled lightweight `z_image_turbo` workload: requested 300 x 300, 4 steps, one image per job, fixed per-job prompts, and deterministic seeds.
