@@ -10,6 +10,8 @@ Pending changes for the next DTFlow release.
 - Initial architectural directory skeleton.
 - Repository contract in `AGENTS.md`.
 - Release-note workflow based on this unreleased file.
+- Initial `pyproject.toml` with the uv-native project metadata, pytest development dependencies, and Ruff lint/format configuration.
+- Repository rules requiring dependency changes to keep `pyproject.toml` and `uv.lock` synchronized through uv.
 
 ## Changed
 
