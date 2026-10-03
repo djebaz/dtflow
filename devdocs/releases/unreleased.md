@@ -16,7 +16,9 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
-- Limit the declared Python compatibility to Python 3.11-3.13 after Windows environment validation: Python 3.12 and 3.13 sync successfully, while Python 3.14 currently fails while building the transitive `fpzip==1.2.5` dependency used by `drawthings-py==0.4.0`.
+- Use Python 3.13 as the current DTFlow development/runtime baseline.
+- Temporarily pin NumPy to 2.3.5 for the verified Windows/Python 3.13 environment. NumPy 2.5.3 fails to load `_multiarray_umath` there, while 2.3.5 imports successfully. Keep this pin narrow and revisit it when the upstream Windows binary issue is resolved.
+- Python 3.14 is currently excluded because the `drawthings-py==0.4.0` dependency chain fails while building `fpzip==1.2.5` in the tested Windows environment.
 
 ## Fixed
 
