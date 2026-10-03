@@ -90,6 +90,9 @@ These instructions apply throughout `dtflow`.
 ## Workflow
 
 - Keep `main` stable. Use feature branches and pull requests for substantial changes.
+- For non-trivial work, create the feature branch and pull request early, after an initial coherent commit, so implementation progress and review context are visible from the start.
+- Commit regularly at meaningful checkpoints and group related file changes into coherent commits. Do not create one commit per file or per trivial edit unless the change is genuinely independent.
+- Keep the working PR history reasonably reviewable even when the final merge will be squashed; squash merge is not a substitute for excessively fragmented development history.
 - Placeholder directories are intentional in this repository; use `.gitkeep` only while a directory has no real tracked files.
 - For runnable Python changes, validate syntax, imports, configuration parsing, and `--help` where applicable.
 - At the end of implementation work, state what changed, what was verified, what was not verified, whether training/inference ran, and whether any potentially billable action was performed.
