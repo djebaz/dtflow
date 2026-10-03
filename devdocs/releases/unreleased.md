@@ -15,7 +15,7 @@ Pending changes for the next DTFlow release.
 - Python 3.13 development baseline via `.python-version`.
 - Project-level uv prerelease policy so normal `uv lock`, `uv sync`, and `uv run` commands use the same resolver mode required by the current dependency graph.
 - Project-level uv NumPy compatibility override for the bounded `drawthings-py>=0.4.0,<0.5.0` dependency line.
-- Draw Things gRPC probe support for sequential two-job baselines and a full-preset workload mode.
+- Draw Things gRPC probe support for configurable 1-8 job runs, sequential baselines, and a full-preset workload mode.
 
 ## Changed
 

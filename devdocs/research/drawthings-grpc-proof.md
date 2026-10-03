@@ -69,7 +69,7 @@ The probe defaults to a deliberately lightweight local workload suitable for iPh
 
 With `drawthings-py==0.4.0`, the `z_image_turbo` preset targets `z_image_turbo_1.0_q6p.ckpt`. Draw Things may round requested image dimensions to a supported multiple.
 
-Use `--full-workload` to keep the selected preset's native generation settings. Use `--sequential` to run the same two prompts and seeds one after another for a baseline against the default concurrent run.
+Use `-j N` / `--jobs N` to select 1-8 controlled jobs (default: 2); each job uses a fixed mug-color prompt and deterministic seed. Use `--full-workload` to keep the selected preset's native generation settings. Use `-s` / `--sequential` to run the same selected jobs one after another for a baseline against the default concurrent run.
 
 Generated probe images and reports are written under `tmp/drawthings_concurrency/` by default, which is repository-local and ignored by Git.
 
