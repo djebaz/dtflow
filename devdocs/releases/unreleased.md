@@ -4,6 +4,9 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Source-backed ecosystem research covering Python transport, queue/workflow references, backend completion/cancellation/recovery semantics, input compatibility, and Windows dependency constraints.
+- Phase 2 implementation plan for a shared backend contract, deterministic fake backend, Draw Things gRPC adapter and narrow native Python direct DT+ adapter.
+
 - Initial repository conventions and development plan.
 - LF-first line-ending policy.
 - DTFlow local-state, cache, generated-output, model-artifact, IDE, and coding-agent ignore rules.
@@ -19,6 +22,9 @@ Pending changes for the next DTFlow release.
 - Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in. User-reported live runs validate the path end to end from Python through cloud authentication, direct TLS gRPC generation, result decoding, and concurrent submissions without a MediaGenerationKit runtime dependency.
 
 ## Changed
+
+- Bring basic direct DT+ text-to-image support forward into Phase 2; retain broader cloud capabilities and hardening in Phase 11. This is a roadmap change, not a shipped runtime feature.
+- Make preview/diagnostic artifact labeling, uncertain remote outcomes, subscription-only defaults and offline test boundaries explicit in the implementation plan.
 
 - Use Python 3.13 as the current DTFlow development/runtime baseline.
 - Python 3.14 is currently excluded because the `drawthings-py==0.4.0` dependency chain fails while building `fpzip==1.2.5` in the tested Windows environment.

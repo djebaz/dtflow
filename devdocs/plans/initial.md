@@ -10,7 +10,7 @@ DTFlow is a Windows desktop application for workflows, generation, and automatio
 
 The first implementation targets Draw Things through its gRPC interface. The application should provide a durable desktop layer for connections, generation jobs, queues, presets, galleries, and eventually multi-step workflows without coupling the user interface to Draw Things protocol details.
 
-DT+ Cloud Compute is a future backend, not part of the initial implementation.
+Phase 2 will introduce Draw Things gRPC, a narrow direct DT+ Cloud Compute backend, and an explicitly selected fake backend behind one application contract. Broader cloud features remain later work.
 
 ## 2. Engineering principles
 
@@ -36,28 +36,28 @@ DT+ Cloud Compute is a future backend, not part of the initial implementation.
 - Business logic and backend access must not be embedded in generated Designer Python code.
 - Complex components such as the gallery and workflow editor can be custom PySide6 widgets inserted into Designer-managed layouts.
 
-### Initial generation backend
+### Initial generation backends
 
-The initial real backend is Draw Things over gRPC.
+The initial real backends are Draw Things over gRPC and direct DT+ Cloud Compute. A deterministic fake backend supports offline development and tests.
 
 The Python implementation may use `drawthings-py` where it is useful, while the public Draw Things gRPC/protobuf contract remains the backend boundary.
 
 Before implementation, verify the exact current APIs and compatibility against the canonical Draw Things interfaces and the selected Python dependency.
 
-### Future backends
+### Direct cloud direction and future backends
 
 The architecture must allow additional generation backends without changing UI-facing generation models.
 
 Phase 1 diagnostic work has now proven that DT+ Cloud Compute is reachable directly from Python without a MediaGenerationKit runtime dependency. The validated path uses the official API-key flow to obtain a short-term token, performs per-generation authentication, connects directly to the DT+ gRPC endpoint over TLS, and receives normal generation results.
 
-Future-backend direction is therefore:
+Backend direction is therefore:
 
 - DT+ Cloud Compute through a native Python backend built from the validated direct-cloud path
 - MediaGenerationKit as an architectural and protocol reference rather than a required runtime dependency
 - a lightweight Swift/MediaGenerationKit bridge only as a fallback if a future DT+ capability cannot be reproduced reliably in Python
 - a separate experimental native Windows Draw Things gRPC server
 
-The production DT+ backend is still future work and is not required for the initial DTFlow client. The current direct-cloud implementation remains diagnostic tooling until authentication lifecycle, cancellation, retries, throttling, entitlement/PAYG behavior, persistence, progress/error mapping, model compatibility, and production concurrency policy are hardened.
+Phase 2 brings a narrow text-to-image direct DT+ adapter forward from Phase 11. The existing probe remains diagnostic tooling; the adapter must explicitly handle token expiry, authenticated transport, subscription-only policy, sanitized failures and uncertain outcomes. Unsupported cancellation, remote recovery and input combinations must remain unavailable or unknown. Phase 11 broadens cloud capabilities and hardening.
 
 ## 4. Architectural boundaries
 
@@ -102,7 +102,7 @@ A `GenerationBackend`-style contract will isolate generation providers.
 
 The first implementation is a Draw Things gRPC backend. Protocol conversion, generated protobuf types, connection details, and Draw Things-specific mappings remain inside that backend package.
 
-A future DT+ backend may use the validated Python direct-cloud path, but the diagnostic probe must not simply become production code by relocation. Authentication/token lifecycle, credential storage, entitlement/PAYG rules, retries, cancellation, throttling, error mapping, persistence, model/file compatibility, and safe concurrency must be made explicit behind the backend boundary first. MediaGenerationKit remains a reference for protocol behavior, not a required DTFlow runtime dependency for the path already proven.
+The Phase 2 DT+ backend will use the validated Python direct-cloud path, but the diagnostic probe must not simply become production code by relocation. Authentication/token lifecycle, credential storage, entitlement/PAYG rules, retries, cancellation, throttling, error mapping, persistence, model/file compatibility, and safe concurrency must be made explicit behind the backend boundary first. MediaGenerationKit remains a reference for protocol behavior, not a required DTFlow runtime dependency for the path already proven.
 
 ### Services
 
@@ -202,11 +202,15 @@ Validate:
 
 Keep prompts, seeds, dimensions, and parameters controlled when comparing behavior.
 
-### Phase 2 — Backend abstraction
+### Phase 2 — Backend contract and initial adapters
 
-Introduce backend-neutral request/result/progress types and the generation backend contract.
+Follow [the Phase 2 implementation plan](phase-2-backends.md) and [the source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
 
-Wrap the validated gRPC path behind the Draw Things backend implementation.
+Introduce backend-neutral request, result, progress, error and capability types. Implement a deterministic fake backend, wrap the validated Draw Things gRPC path, and add narrow direct DT+ text-to-image support through native Python.
+
+Define completion and uncertain-outcome semantics before wiring the UI. Preserve previews and incomplete outputs as explicitly labeled diagnostic/partial artifacts, never completed results. Ordinary tests must stay offline.
+
+Investigate Windows packaging and dependency distribution early. Source execution is recorded as working; a single-executable build is not yet verified. Durable orchestration remains Phase 6.
 
 ### Phase 3 — Minimal desktop shell
 
@@ -236,13 +240,13 @@ The UI should expose useful connection failures without leaking low-level implem
 
 Connect the desktop UI to the backend abstraction for a complete single-generation flow.
 
-Persist enough metadata to reproduce the request.
+Persist enough metadata to reproduce the request. Mark a job completed only after successful terminal RPC status, validated final artifacts and durable output/metadata persistence. Saved previews must remain labeled as previews or diagnostics when final generation fails.
 
 ### Phase 6 — Durable jobs and queue
 
 Introduce persistent jobs and explicit lifecycle states.
 
-Design for recovery after application restart before adding advanced workflow behavior.
+Design for recovery after application restart before adding advanced workflow behavior. The inspected remote protocol exposes no generation job lookup or stream reattachment; recover local queued/completed state and reconcile interrupted in-flight jobs to an unknown outcome without automatic resubmission.
 
 ### Phase 7 — Concurrency
 
@@ -268,13 +272,13 @@ Build multi-step workflow composition/execution on top of the durable job and ba
 
 Workflow execution should remain resumable and inspectable.
 
-### Phase 11 — DT+ backend hardening and integration
+### Phase 11 — Broader DT+ capabilities and hardening
 
 Phase 1 diagnostic work has already established that a direct Python DT+ implementation is viable. The live-tested probe has exercised the API-key short-term-token flow, per-generation authentication, direct TLS gRPC generation against DT+ Cloud Compute, image-result decoding, and concurrent submissions without requiring MediaGenerationKit as a runtime component.
 
-Phase 11 should therefore promote the proven protocol path into a production backend rather than re-evaluate Python feasibility.
+Phase 2 introduces the narrow direct Python backend. Phase 11 broadens its verified operations and production behavior rather than re-evaluating Python feasibility or delaying basic cloud integration.
 
-Before product integration:
+For broader cloud support:
 
 - move cloud authentication and transport behind the backend abstraction rather than importing tooling code into the application layer;
 - define short-term-token caching, expiry, refresh, and credential-storage behavior;
@@ -304,11 +308,14 @@ Real generation should only be run when it validates behavior that cannot be est
 
 ## 9. Open questions
 
+Source-inspected answers and remaining evidence requirements are recorded in [research Section 10](../research/dtflow-ecosystem-research-report.md#10-follow-up-findings-on-the-eight-backend-questions). See the [Phase 2 plan](phase-2-backends.md) for implementation gates.
+
+
 - Exact `drawthings-py` version/API and how much of the gRPC client it should own.
 - Whether DTFlow should generate protobuf bindings itself or consume them through a dependency.
 - Exact Draw Things progress and cancellation semantics, plus whether any server/app configuration can expose parallel backend execution beyond the effective single lane observed in the tested iPhone/Bridge path.
 - Persistence technology and schema.
-- Packaging strategy for Windows.
+- Packaging strategy for Windows, native-module and certificate resources, and the distribution implications of the GPL-3.0-only drawthings-py dependency in the currently MIT-declared project.
 - Update/distribution strategy.
 - Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, model/file compatibility, cancellation/retry semantics, and a safe concurrency policy. The diagnostic API-key token/auth/gRPC path is now proven separately.
 - Whether any future DT+ capability actually requires MediaGenerationKit or a Swift bridge. No runtime dependency on MediaGenerationKit has been demonstrated for the currently proven direct generation path.
