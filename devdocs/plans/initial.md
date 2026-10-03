@@ -303,6 +303,6 @@ The first setup PR is intentionally small:
 - add `AGENTS.md` with the repository contract
 - add `devdocs/releases/unreleased.md`
 - create the initial architectural directory skeleton with tracked placeholders
-- establish `uv` as the canonical Python project/environment/dependency workflow; the first executable Python skeleton will add `pyproject.toml` and `uv.lock`
+- establish `uv` as the canonical Python project/environment/dependency workflow and add the initial `pyproject.toml`; generate and commit `uv.lock` when the environment is first resolved with `uv`
 
 The skeleton establishes ownership boundaries only; it does not add speculative runtime implementation.
