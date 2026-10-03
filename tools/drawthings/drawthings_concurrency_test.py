@@ -1,10 +1,11 @@
-"""Probe Draw Things gRPC connectivity and two-request concurrency.
+"""Probe Draw Things gRPC connectivity and two-job execution behavior.
 
-The script deliberately uses two independent gRPC client connections so that
-client-side stream serialization does not hide server-side concurrency.
+By default the script uses a deliberately lightweight Z-Image Turbo workload
+for iPhone testing. Use --full-workload to keep the selected preset's native
+generation settings, or --sequential to run the same two jobs one after another.
 
-Run the non-generative connectivity check first. The generation phase can
-consume DT+ Cloud Compute quota or credits when the target server uses DT+.
+The generation phase can consume DT+ Cloud Compute quota or credits when the
+target server uses DT+.
 """
 
 from __future__ import annotations
@@ -17,6 +18,26 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from drawthings_py import Configs, DrawThings, RequestBuilder
+
+
+LIGHT_WIDTH = 300
+LIGHT_HEIGHT = 300
+LIGHT_STEPS = 4
+
+JOB_SPECS = (
+    (
+        "job_a",
+        "Photorealistic studio photograph of a red ceramic mug "
+        "on a plain grey table, soft natural light.",
+        123456789,
+    ),
+    (
+        "job_b",
+        "Photorealistic studio photograph of a blue ceramic mug "
+        "on a plain grey table, soft natural light.",
+        987654321,
+    ),
+)
 
 
 @dataclass
@@ -35,8 +56,8 @@ class JobResult:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Verify a Draw Things gRPC endpoint and test two simultaneous "
-            "generation requests."
+            "Verify a Draw Things gRPC endpoint and compare concurrent or "
+            "sequential two-job generation behavior."
         )
     )
     parser.add_argument(
@@ -52,10 +73,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--preset",
-        default="ernie_image_turbo",
+        default="z_image_turbo",
         help=(
             "drawthings-py community config preset "
-            "(default: ernie_image_turbo)."
+            "(default: z_image_turbo, which targets Z-Image Turbo Q6P "
+            "with drawthings-py 0.4.0)."
+        ),
+    )
+    parser.add_argument(
+        "--full-workload",
+        action="store_true",
+        help=(
+            "Keep the selected preset's native generation settings instead of "
+            f"the lightweight {LIGHT_WIDTH}x{LIGHT_HEIGHT}, {LIGHT_STEPS}-step "
+            "test overrides."
+        ),
+    )
+    parser.add_argument(
+        "--sequential",
+        action="store_true",
+        help=(
+            "Run job A and job B one after another instead of submitting both "
+            "generation calls concurrently."
         ),
     )
     parser.add_argument(
@@ -63,7 +102,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("tmp") / "drawthings_concurrency",
         help=(
-            "Directory for generated PNGs and the timing report "
+            "Directory for generated PNGs and timing reports "
             "(default: tmp/drawthings_concurrency)."
         ),
     )
@@ -78,6 +117,55 @@ def parse_args() -> argparse.Namespace:
         help="Skip the initial non-generation model-browser request.",
     )
     return parser.parse_args()
+
+
+def build_request(
+    *,
+    preset: str,
+    prompt: str,
+    seed: int,
+    full_workload: bool,
+) -> RequestBuilder:
+    config = Configs.from_preset(preset)
+
+    if not full_workload:
+        config.set(
+            width=LIGHT_WIDTH,
+            height=LIGHT_HEIGHT,
+            steps=LIGHT_STEPS,
+            batch_count=1,
+            batch_size=1,
+            hires_fix=False,
+        )
+
+    request = RequestBuilder(config, prompt)
+    request.config["seed"] = seed
+    return request
+
+
+def describe_workload(args: argparse.Namespace) -> list[str]:
+    config = Configs.from_preset(args.preset)
+    if not args.full_workload:
+        config.set(
+            width=LIGHT_WIDTH,
+            height=LIGHT_HEIGHT,
+            steps=LIGHT_STEPS,
+            batch_count=1,
+            batch_size=1,
+            hires_fix=False,
+        )
+
+    mode = "sequential" if args.sequential else "concurrent"
+    workload = "full preset" if args.full_workload else "lightweight"
+    return [
+        f"Mode: {mode}",
+        f"Workload: {workload}",
+        f"Preset: {args.preset}",
+        f"Model: {config['model']}",
+        f"Requested size: {config['width']}x{config['height']}",
+        f"Steps: {config['steps']}",
+        "Note: Draw Things may round requested dimensions to a supported multiple.",
+    ]
 
 
 async def test_connection(host: str, port: int) -> None:
@@ -102,22 +190,29 @@ async def run_job(
     preset: str,
     prompt: str,
     seed: int,
+    full_workload: bool,
     output_dir: Path,
-    barrier: asyncio.Event,
+    output_prefix: str,
+    barrier: asyncio.Event | None,
 ) -> JobResult:
-    config = Configs.from_preset(preset)
-    request = RequestBuilder(config, prompt)
-    request.config["seed"] = seed
+    request = build_request(
+        preset=preset,
+        prompt=prompt,
+        seed=seed,
+        full_workload=full_workload,
+    )
 
-    # Each job owns a separate client/channel. Both wait on the same barrier,
-    # then enter service.generate() during the same event-loop turn.
+    # Each job owns a separate client/channel. Concurrent mode waits on the
+    # shared barrier so both calls enter service.generate() together.
     async with DrawThings.grpc(
         host=host,
         port=port,
         progressbar=False,
         disable_messages=True,
     ) as service:
-        await barrier.wait()
+        if barrier is not None:
+            await barrier.wait()
+
         started = time.perf_counter()
         print(f"[{name}] generate() entered at +{started:.6f}")
 
@@ -128,7 +223,7 @@ async def run_job(
             if not results:
                 raise RuntimeError("Draw Things returned no images.")
 
-            output = output_dir / f"{name}.png"
+            output = output_dir / f"{output_prefix}_{name}.png"
             results[0].to_file(output)
 
             print(
@@ -147,11 +242,80 @@ async def run_job(
             return JobResult(name, started, finished, None, error)
 
 
-def analyse(results: list[JobResult], wall_time: float) -> str:
-    successful = [r for r in results if r.error is None]
+async def run_concurrent(args: argparse.Namespace) -> tuple[list[JobResult], float]:
+    barrier = asyncio.Event()
+
+    jobs = [
+        asyncio.create_task(
+            run_job(
+                name=name,
+                host=args.host,
+                port=args.port,
+                preset=args.preset,
+                prompt=prompt,
+                seed=seed,
+                full_workload=args.full_workload,
+                output_dir=args.output_dir,
+                output_prefix="concurrent",
+                barrier=barrier,
+            )
+        )
+        for name, prompt, seed in JOB_SPECS
+    ]
+
+    # Give both tasks a chance to establish their independent gRPC connections
+    # and reach the shared start barrier.
+    await asyncio.sleep(0.25)
+
+    print(
+        "[test] Releasing both jobs together. "
+        "This may consume DT+ Cloud Compute quota/credits."
+    )
+    wall_started = time.perf_counter()
+    barrier.set()
+
+    results = await asyncio.gather(*jobs)
+    wall_finished = time.perf_counter()
+    return results, wall_finished - wall_started
+
+
+async def run_sequential(args: argparse.Namespace) -> tuple[list[JobResult], float]:
+    print(
+        "[test] Running both jobs sequentially. "
+        "This may consume DT+ Cloud Compute quota/credits."
+    )
+    wall_started = time.perf_counter()
+
+    results = []
+    for name, prompt, seed in JOB_SPECS:
+        result = await run_job(
+            name=name,
+            host=args.host,
+            port=args.port,
+            preset=args.preset,
+            prompt=prompt,
+            seed=seed,
+            full_workload=args.full_workload,
+            output_dir=args.output_dir,
+            output_prefix="sequential",
+            barrier=None,
+        )
+        results.append(result)
+
+    wall_finished = time.perf_counter()
+    return results, wall_finished - wall_started
+
+
+def analyse_concurrent(
+    results: list[JobResult],
+    wall_time: float,
+    workload_lines: list[str],
+) -> str:
+    successful = [result for result in results if result.error is None]
     lines = [
         "",
         "=== Concurrency report ===",
+        *workload_lines,
         f"Total wall time: {wall_time:.2f}s",
     ]
 
@@ -190,9 +354,46 @@ def analyse(results: list[JobResult], wall_time: float) -> str:
 
     lines.append(
         "For stronger evidence of backend parallel execution, compare this "
-        "wall time with a sequential two-job baseline using the same preset, "
-        "prompts, seeds, dimensions, and server/cloud mode."
+        "run with --sequential using the same preset and workload."
     )
+    return "\n".join(lines)
+
+
+def analyse_sequential(
+    results: list[JobResult],
+    wall_time: float,
+    workload_lines: list[str],
+) -> str:
+    lines = [
+        "",
+        "=== Sequential report ===",
+        *workload_lines,
+        f"Total wall time: {wall_time:.2f}s",
+    ]
+
+    for result in results:
+        state = "OK" if result.error is None else "FAILED"
+        lines.append(
+            f"{result.name}: {state}, duration={result.duration:.2f}s"
+        )
+
+    successful = [result for result in results if result.error is None]
+    if len(successful) == 2:
+        measured_generation_time = sum(result.duration for result in successful)
+        lines.append(
+            "Summed generate() durations: "
+            f"{measured_generation_time:.2f}s"
+        )
+        lines.append(
+            "Use this as the sequential baseline for the concurrent run with "
+            "the same preset and workload."
+        )
+    else:
+        lines.append(
+            "Sequential baseline is incomplete because both jobs did not "
+            "complete successfully."
+        )
+
     return "\n".join(lines)
 
 
@@ -213,63 +414,24 @@ async def async_main(args: argparse.Namespace) -> int:
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    barrier = asyncio.Event()
+    workload_lines = describe_workload(args)
+    print("[config] " + " | ".join(workload_lines[:-1]))
+    print(f"[config] {workload_lines[-1]}")
 
-    jobs = [
-        asyncio.create_task(
-            run_job(
-                name="job_a",
-                host=args.host,
-                port=args.port,
-                preset=args.preset,
-                prompt=(
-                    "Photorealistic studio photograph of a red ceramic mug "
-                    "on a plain grey table, soft natural light."
-                ),
-                seed=123456789,
-                output_dir=args.output_dir,
-                barrier=barrier,
-            )
-        ),
-        asyncio.create_task(
-            run_job(
-                name="job_b",
-                host=args.host,
-                port=args.port,
-                preset=args.preset,
-                prompt=(
-                    "Photorealistic studio photograph of a blue ceramic mug "
-                    "on a plain grey table, soft natural light."
-                ),
-                seed=987654321,
-                output_dir=args.output_dir,
-                barrier=barrier,
-            )
-        ),
-    ]
+    if args.sequential:
+        results, wall_time = await run_sequential(args)
+        report = analyse_sequential(results, wall_time, workload_lines)
+        report_path = args.output_dir / "sequential_report.txt"
+    else:
+        results, wall_time = await run_concurrent(args)
+        report = analyse_concurrent(results, wall_time, workload_lines)
+        report_path = args.output_dir / "concurrency_report.txt"
 
-    # Give both tasks a chance to establish their independent gRPC connections
-    # and reach the shared start barrier.
-    await asyncio.sleep(0.25)
-
-    print(
-        "[test] Releasing both jobs together. "
-        "This may consume DT+ Cloud Compute quota/credits."
-    )
-    wall_started = time.perf_counter()
-    barrier.set()
-
-    results = await asyncio.gather(*jobs)
-    wall_finished = time.perf_counter()
-
-    report = analyse(results, wall_finished - wall_started)
     print(report)
-
-    report_path = args.output_dir / "concurrency_report.txt"
     report_path.write_text(report + "\n", encoding="utf-8")
     print(f"\nReport saved to {report_path}")
 
-    return 0 if all(r.error is None for r in results) else 1
+    return 0 if all(result.error is None for result in results) else 1
 
 
 def main() -> int:
