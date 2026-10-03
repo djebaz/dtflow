@@ -23,7 +23,7 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 | Interruption | Stop local waiting/transport as supported, preserve evidence and report remote uncertainty without automatic resubmission |
 | Cache policy | Support `-nc` / `--no-cache`; disable both cache reads and writes when selected |
 
-Use environment-supplied cloud credentials initially. Never accept an API key in routine logged request metadata or display credentials/tokens. Keep PAYG opt-in disabled.
+Use environment-supplied cloud credentials for the initial CLI path. Keep credential resolution Qt-independent so desktop-secured Windows Credential Manager credentials can also be consumed headlessly when that storage path is introduced. Never accept an API key in routine logged request metadata or display credentials/tokens. Keep PAYG opt-in disabled.
 
 ## CLI contract
 
@@ -34,6 +34,12 @@ Provide accurate help, parameter validation, useful nonzero exit codes and separ
 Expose prompt, negative prompt, model, seed, dimensions, steps and guidance where actually supported, plus backend connection selection, output destination and configuration/preset input. Preserve canonical defaults and record the effective request rather than only the entered arguments.
 
 The development entry point runs through `uv run dtflow` once implemented. It must not import or initialize Qt, and must remain usable after the desktop interface is added.
+
+## Version and build identity
+
+Use one build-time identity across CLI version output, a discreet Qt About/status area and artifact filenames: application version plus a short Git commit ID. Bundle the full source commit and dirty-worktree status so the executable needs no Git installation at runtime. Release builds must come from a clean checkout; development builds disclose local modifications and missing revision metadata instead of inventing an ID. Persist version/full commit in generation metadata where available.
+
+Manual release downloads are the initial update strategy. Include version and short commit in distributed executable names; any later installer uses the same convention. The version-output option must follow repository CLI conventions and appear accurately in help once implemented. Verify matching identity across packaged filename, CLI and Qt when each delivery path exists.
 
 ## Cloud priority and concurrency configuration
 

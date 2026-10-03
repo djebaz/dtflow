@@ -234,6 +234,8 @@ Create the PySide6 application shell and canonical Qt Designer sources after the
 
 Wire startup, main window, UI/resources, background execution and clean shutdown. Add Draw Things/cloud connection selection and useful status/failure presentation through the same services exercised by the CLI.
 
+Add secure API-key entry and Windows Credential Manager storage through shared credential services, retaining environment input for headless use. Show version and short commit discreetly in About/status using the same bundled identity as the CLI and packaged filename.
+
 Keep business logic and backend protocol code outside UI classes. Network and generation work must not block the Qt event loop. CLI execution must continue working without importing Qt.
 
 ### Phase 5 — Single generation
@@ -334,11 +336,14 @@ Real generation should only be run when it validates behavior that cannot be est
 
 Apply the Windows packaging requirement during Phase 2/3 investigation and the restart policy in Phase 6. Define the cloud concurrency setting in Phase 3 and expose it in Qt; Phase 7 implements bounded concurrent queue scheduling. Before scheduling exists, accepting the setting must not imply parallel execution.
 
-### Remaining product choices
+### Additional confirmed product decisions
 
-- Whether cloud credentials should be supplied externally or entered and securely stored through the desktop application.
-- Whether PAYG should remain unavailable initially or later be offered through explicit opt-in. Preserve the existing subscription-only default until this is decided.
-- Manual download versus an eventual built-in update mechanism. Portable packaging is preferred, but no update mechanism was selected.
+- Cloud credentials: enter the API key in Qt and save it securely through Windows Credential Manager. Keep environment-supplied credentials available for CLI use. Credential resolution belongs in shared services and must not require Qt; keys/tokens never enter ordinary settings, output metadata or logs. Secure storage failure must not silently fall back to plaintext.
+- PAYG: unavailable in the first release; defer opt-in support to a later version. Initial requests remain explicitly subscription-only regardless of account PAYG settings.
+- Updates: manual downloads initially, with no integrated updater or Microsoft Store requirement. A future release-page check is optional later work.
+- Build identity: show the application version plus a short Git commit ID in CLI version output and a discreet Qt About/status area, and include both in distributed build filenames. Use one build-time identity across CLI version output, a discreet Qt About/status area and artifact filenames: application version plus a short Git commit ID. Bundle the full source commit and dirty-worktree status so the executable needs no Git installation at runtime. Release builds must come from a clean checkout; development builds disclose local modifications and missing revision metadata instead of inventing an ID. Persist version/full commit in generation metadata where available.
+
+Illustrative naming only (not an existing release): `dtflow-0.1.0-gabcdef1-windows-x64.exe`. Use the actual target architecture and source revision; an eventual installer follows the same identity convention.
 
 ### Remaining engineering investigations
 

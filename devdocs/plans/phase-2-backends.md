@@ -45,7 +45,7 @@ Represent verified, unsupported and unknown capabilities distinctly. Keep model 
 
 ### Direct-cloud authentication and billing
 
-Read the initial API key from the environment and keep credentials/tokens out of logs and ordinary persisted metadata. Implement expiry-aware short-term-token caching and concurrency-safe refresh using the inspected official token contract, plus per-generation authentication and normal TLS hostname validation.
+Define injectable credential resolution behind a Qt-independent service. The initial headless path accepts an environment API key; the desktop milestone adds entry and secure Windows Credential Manager storage through that same service. Never silently save plaintext if secure storage fails. Keep credentials/tokens out of logs and ordinary persisted metadata. Implement expiry-aware short-term-token caching and concurrency-safe refresh using the inspected official token contract, plus per-generation authentication and normal TLS hostname validation.
 
 Keep subscription-only behavior explicit and PAYG opt-in disabled. Do not inherit account-enabled PAYG automatically. Classify quota/billing refusals only from verified response semantics; preserve sanitized generic rejection when the reason is unknown.
 

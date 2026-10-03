@@ -29,6 +29,9 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Resolve the remaining product choices: secure Qt API-key entry via Windows Credential Manager with headless/environment support; PAYG deferred beyond the first release; manual updates initially.
+- Plan consistent version plus short source-commit identity in CLI output, discreet Qt presentation and build filenames, with bundled full revision and honest development-build status. These remain documentation requirements, not shipped features.
+
 - Record confirmed initial personal use, Windows 10 / Pentium E6500 support target, portable-first packaging and possible later public distribution.
 - Prioritize direct DT+ production use while retaining local gRPC development/smoke coverage; cloud readiness requires separate evidence.
 - Plan paused queue restoration with explicit Resume/Cancel and no replay of ambiguous attempts.
