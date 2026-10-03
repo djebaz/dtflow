@@ -48,7 +48,12 @@ These instructions apply throughout `dtflow`.
 ## CLI
 
 - Provide a `dtflow` entry point for normal development/application launch rather than requiring long source paths.
-- Common launch options should have stable, unique short aliases and descriptive long forms.
+- For normal user-facing options, expose a canonical pair: a stable, unique lowercase short alias and a concise long form.
+- Reserve `-h` / `--help` for the standard help action. Do not use uppercase short aliases such as `-H` or `-P` as collision workarounds, and avoid repurposing widely expected flags when a clearer mnemonic is available.
+- Prefer a single lowercase letter for short aliases. If the obvious letter is already taken or would be confusing, choose another clear lowercase mnemonic. Use lowercase multi-letter aliases only when needed to preserve an established contract or when a single-letter choice would be materially worse; `-nc` / `--no-cache` is an intentional existing example.
+- Keep long option names short and recognizable, usually one word where that remains clear, for example `--host`, `--port`, `--cloud`, `--preset`, `--jobs`, `--full`, `--serial`, `--out`, and `--conn`. Use a multi-word long form only when the shorter form would be ambiguous; avoid verbose names such as `--full-workload` when `--full` is sufficient.
+- Short and long forms of the same option must have identical semantics, defaults, validation, and side effects. `--help` should advertise only the current canonical spellings.
+- When renaming an established option, preserve the old spelling as a hidden compatibility alias where practical and safe. Documentation and examples should use only the canonical spelling.
 - Keep every documented flag synchronized with the implemented CLI and `--help`.
 
 ## UI and Qt
