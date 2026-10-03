@@ -19,4 +19,4 @@ Pending changes for the next DTFlow release.
 
 ## Fixed
 
-- Nothing yet.
+- Configure Hatchling to package the `src/dtflow` application package so editable `uv sync` installs can build DTFlow.
