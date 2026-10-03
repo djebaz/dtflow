@@ -14,12 +14,13 @@ Pending changes for the next DTFlow release.
 - Repository rules requiring dependency changes to keep `pyproject.toml` and `uv.lock` synchronized through uv.
 - Python 3.13 development baseline via `.python-version`.
 - Project-level uv prerelease policy so normal `uv lock`, `uv sync`, and `uv run` commands use the same resolver mode required by the current dependency graph.
+- Project-level uv NumPy compatibility override for the bounded `drawthings-py>=0.4.0,<0.5.0` dependency line.
 
 ## Changed
 
 - Use Python 3.13 as the current DTFlow development/runtime baseline.
 - Python 3.14 is currently excluded because the `drawthings-py==0.4.0` dependency chain fails while building `fpzip==1.2.5` in the tested Windows environment.
-- NumPy compatibility is still under investigation on Windows/Python 3.13. NumPy 2.5.3 fails to load `_multiarray_umath` in the tested environment. NumPy 2.3.5 imports successfully in isolation, but it cannot be declared for DTFlow because `drawthings-py==0.4.0` requires NumPy >=2.4.4.
+- Use NumPy 2.3.5 for the current Draw Things Python client path on the tested legacy Windows Pentium E6500 machine. NumPy 2.4.4 and 2.5.3 fail while loading `_multiarray_umath` there; NumPy 2.3.5 imports successfully, `drawthings-py==0.4.0` imports successfully, and the real gRPC/model-browser connectivity probe succeeds. Generation/result decoding with this NumPy override is not yet verified.
 
 ## Fixed
 
