@@ -85,6 +85,17 @@ These instructions apply throughout `dtflow`.
 - Do not commit model/checkpoint artifacts or duplicate large model files.
 - Keep build inputs and version metadata reproducible.
 
+## Version and build identity
+
+- Keep one authoritative application version and one shared build-identity source; CLI, Qt, packaging and output metadata must consume them rather than maintain independent copies.
+- Display the application version plus a short Git commit ID in CLI version output and a discreet Qt About/status area.
+- Name distributed builds `dtflow-<version>-g<short-sha>-<platform>-<arch>.<ext>`, using the actual source revision, target architecture and artifact type. An eventual installer follows the same identity convention.
+- Capture the full source commit and dirty-worktree status at build time and bundle them with the application. Packaged execution must not require Git or a repository checkout.
+- Build public releases from a clean checkout. Development builds must disclose local modifications; when revision metadata is unavailable, report it as unknown rather than inventing a commit ID.
+- Persist application version and full source commit in generation metadata where available, and include build identity in smoke-test reports so results identify the executable actually exercised.
+- Check that packaged filenames, CLI output and Qt display agree when those delivery paths exist. Do not claim runtime or packaging verification from documentation checks alone.
+- Use manual release downloads initially; an integrated updater is outside the initial scope.
+
 ## Documentation and releases
 
 - Keep `README.md` focused on current usage, setup, repository layout, and validation rather than per-version history.

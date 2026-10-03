@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Repository-wide version/build identity rules in `AGENTS.md`: shared version/revision metadata, consistent CLI/Qt/build naming, bundled revision without runtime Git, honest development status and identifiable smoke-test reports.
+
 - Tracked TanqueStudio parity matrix with upstream evidence, service ownership, CLI/Qt exposure, backend support, phase assignments and acceptance criteria.
 
 - Phase 3 headless CLI plan covering shared services, backend selection, connectivity, model inventory, text-to-image generation, durable outputs/metadata and interruption handling.
