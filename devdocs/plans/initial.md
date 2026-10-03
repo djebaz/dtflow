@@ -130,9 +130,9 @@ The exact storage format/database is intentionally undecided until the first per
 
 ## 5. Repository direction
 
-The repository should grow incrementally rather than creating a large empty skeleton.
+The repository starts with the main architectural directories present up front so the intended ownership boundaries are visible from the beginning. Empty placeholder directories are tracked with `.gitkeep` until their first real files are added.
 
-Expected areas, created only when needed:
+Initial repository areas:
 
 ```text
 devdocs/
@@ -140,6 +140,7 @@ devdocs/
   architecture/
   research/
   decisions/
+  releases/
 
 src/dtflow/
   core/
@@ -162,6 +163,8 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 ## 6. Repository conventions
 
 - `devdocs/plans/initial.md` is the canonical initial roadmap.
+- `devdocs/releases/unreleased.md` tracks pending changes for the next release; a release moves those entries to `devdocs/releases/v<version>.md` and resets `unreleased.md`.
+- The initial architectural directories are created up front and may use `.gitkeep` only while otherwise empty.
 - LF is the default repository line ending.
 - Native Windows scripts may use CRLF.
 - `tmp/` is an intentionally ignored local scratch workspace.
@@ -171,6 +174,10 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 - Model/checkpoint artifacts are not committed.
 - Git LFS is not required initially.
 - If `uv` is selected, `uv.lock` should be tracked for reproducible application builds.
+- Development runtime state lives under repository-root `.dtflow/`, which is ignored by Git.
+- Packaged Windows builds use the platform-local application data location by default rather than writing beside the executable; an explicit DTFlow home override may be added for development/portable use.
+- Cache is disposable and must remain separate from durable application state. Cache storage should be split into type-specific subdirectories so categories can be measured and purged independently.
+- Cache size visibility and manual/automatic cleanup should be implemented early because generated images and derived assets can become large.
 
 ## 7. Implementation phases
 
@@ -199,6 +206,10 @@ Wrap the validated gRPC path behind the Draw Things backend implementation.
 ### Phase 3 — Minimal desktop shell
 
 Create the PySide6 application shell and initial Qt Designer sources.
+
+Expose a package/console entry point so an editable development install can be launched with `dtflow` without typing a source-file path. Keep startup logic outside the main-window implementation.
+
+Establish a small CLI contract using descriptive long options plus stable, unique short aliases for commonly used development options. The initial cache bypass should support `-nc` / `--no-cache` and disable both cache reads and cache writes for that run.
 
 Establish:
 
@@ -261,11 +272,12 @@ Early validation should favor cheap, focused checks:
 - syntax/import checks
 - configuration parsing
 - CLI/help checks where applicable
-- unit tests for backend-neutral logic
+- unit tests for backend-neutral logic using `pytest`
+- Qt-focused tests with `pytest-qt` when they provide useful coverage
 - mocked protocol tests where appropriate
 - focused integration tests against Draw Things when required
 
-Real generation should only be run when it validates behavior that cannot be established without inference.
+Real generation should only be run when it validates behavior that cannot be established without inference. Ordinary unit/test-suite execution must never submit a real generation accidentally; live Draw Things integration tests must be explicit and separately gated.
 
 ## 9. Open questions
 
@@ -285,5 +297,8 @@ The first setup PR is intentionally small:
 - update `.gitignore`
 - add `.gitattributes`
 - add this initial plan
+- add `AGENTS.md` with the repository contract
+- add `devdocs/releases/unreleased.md`
+- create the initial architectural directory skeleton with tracked placeholders
 
-No application package skeleton is created by this PR. The implementation tree should be introduced as the corresponding phases begin.
+The skeleton establishes ownership boundaries only; it does not add speculative runtime implementation.
