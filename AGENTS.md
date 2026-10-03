@@ -21,6 +21,16 @@ These instructions apply throughout `dtflow`.
 - Preserve reproducibility: record prompts, seeds, model/checkpoint identifiers, LoRA settings, relevant generation parameters, outputs, and durable job state where applicable.
 - Keep long-running workflows resumable and inspectable.
 
+## Python environment and dependencies
+
+- DTFlow uses Astral `uv` as the canonical Python project, environment, and dependency workflow.
+- Keep project metadata and declared dependencies in `pyproject.toml` and commit `uv.lock` for reproducible development and builds.
+- Use `uv sync` to create or synchronize the project environment.
+- Run project tools and Python commands through `uv run` where practical, for example `uv run pytest`, `uv run ruff check .`, and `uv run dtflow`.
+- Add, remove, and update dependencies through the uv-managed project configuration rather than ad-hoc `pip install` commands.
+- Do not maintain a parallel hand-edited `requirements.txt`. Add a compatibility export only if a concrete external tool or deployment requirement needs one.
+- Do not mutate a supposedly reproducible environment with arbitrary package upgrades during normal validation.
+
 ## Runtime state and cache
 
 - During repository development, local runtime state lives under repository-root `.dtflow/`; it is ignored by Git.
