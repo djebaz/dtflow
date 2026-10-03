@@ -46,11 +46,32 @@ Observed locally on that machine:
 - NumPy 2.4.4 fails with the same import error.
 - NumPy 2.3.5 imports successfully.
 - `drawthings-py==0.4.0` imports successfully when NumPy 2.3.5 is installed despite its declared `numpy>=2.4.4` requirement.
+- A normal `uv sync` with the DTFlow NumPy override reproduces the working environment.
 - The non-generative Draw Things gRPC/model-browser probe succeeds with Python 3.13, NumPy 2.3.5, and `drawthings-py==0.4.0`.
+- Live generation succeeds through the same stack: both returned images were decoded and written successfully.
+- The concurrent probe has observed both client `generate()` calls outstanding at the same time.
+- User-reported timing from multiple runs shows the second request completing substantially later than the first, which is consistent with possible server-side queuing or serialization but does not prove the backend execution model.
 
 DTFlow therefore keeps `drawthings-py` bounded to the 0.4.x release line and uses a uv override for NumPy 2.3.5 in this compatibility path. A future `drawthings-py` 0.5.x release must be evaluated before changing that bound or carrying the override forward.
 
-This evidence does not yet establish that generation, result decoding, image saving, cancellation, or concurrent generation work with NumPy 2.3.5. Those remain explicit follow-up tests.
+Generation, result decoding, image saving, and concurrent in-flight client requests are now exercised. Cancellation behavior and actual backend parallel-execution semantics remain unverified.
+
+## Probe workload modes
+
+The probe defaults to a deliberately lightweight local workload suitable for iPhone testing:
+
+- `z_image_turbo` preset
+- requested 300 x 300 image size
+- 4 steps
+- batch count 1
+- batch size 1
+- high-resolution fix disabled
+
+With `drawthings-py==0.4.0`, the `z_image_turbo` preset targets `z_image_turbo_1.0_q6p.ckpt`. Draw Things may round requested image dimensions to a supported multiple.
+
+Use `--full-workload` to keep the selected preset's native generation settings. Use `--sequential` to run the same two prompts and seeds one after another for a baseline against the default concurrent run.
+
+Generated probe images and reports are written under `tmp/drawthings_concurrency/` by default, which is repository-local and ignored by Git.
 
 ## Evidence to capture
 
