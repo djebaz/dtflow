@@ -69,7 +69,15 @@ The probe defaults to a deliberately lightweight local workload suitable for iPh
 
 With `drawthings-py==0.4.0`, the `z_image_turbo` preset targets `z_image_turbo_1.0_q6p.ckpt`. Draw Things may round requested image dimensions to a supported multiple.
 
-Use `-j N` / `--jobs N` to select 1-8 controlled jobs (default: 2); each job uses a fixed mug-color prompt and deterministic seed. Use `--full-workload` to keep the selected preset's native generation settings. Use `-s` / `--sequential` to run the same selected jobs one after another for a baseline against the default concurrent run.
+The current compact CLI is `-a/--host`, `-p/--port`, `-r/--preset`, `-j/--jobs`, `-f/--full`, `-s/--serial`, `-o/--out`, `-c/--conn`, `-k/--skip-conn`, and `-d/--cloud`. The previous `-H`, `-P`, `--full-workload`, `--sequential`, `--output-dir`, `--connection-only`, and `--skip-connection-test` spellings remain accepted as hidden compatibility aliases.
+
+Use `-j N` / `--jobs N` to select 1-8 controlled jobs (default: 2); each job uses a fixed mug-color prompt and deterministic seed. Use `-f` / `--full` to keep the selected preset's native generation settings. Use `-s` / `--serial` to run the same selected jobs one after another for a baseline against the default concurrent run.
+
+### Direct DT+ cloud diagnostic mode
+
+`-d` / `--cloud` bypasses the Draw Things/iPhone server and targets DT+ Cloud Compute directly for controlled diagnostics. It reads `DRAWTHINGS_API_KEY` from the environment and does not accept credentials on the command line. The probe uses the current public MediaGenerationKit contract as its reference: obtain a short-term token from `/sdk/token`, obtain a per-generation gRPC token from `/authenticate`, then call `compute.drawthings.ai:443` over TLS with the bearer token. Credentials and derived tokens must never be logged or persisted.
+
+The direct-cloud probe deliberately leaves `consumableType` and `amount` unset, so it does not opt into PAYG billing. A successful live generation can still consume DT+ subscription quota/credits. This mode is diagnostic tooling only; it is not the planned production DT+ backend.
 
 Generated probe images and reports are written under `tmp/drawthings_concurrency/` by default, which is repository-local and ignored by Git.
 
@@ -82,5 +90,5 @@ Record the exact dependency versions, Draw Things version/environment used for l
 - PySide6 UI integration
 - durable jobs or queues
 - workflow execution
-- DT+ Cloud Compute
+- production DT+ backend integration
 - speculative backend behavior

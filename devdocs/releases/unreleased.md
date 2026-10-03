@@ -15,7 +15,8 @@ Pending changes for the next DTFlow release.
 - Python 3.13 development baseline via `.python-version`.
 - Project-level uv prerelease policy so normal `uv lock`, `uv sync`, and `uv run` commands use the same resolver mode required by the current dependency graph.
 - Project-level uv NumPy compatibility override for the bounded `drawthings-py>=0.4.0,<0.5.0` dependency line.
-- Draw Things gRPC probe support for configurable 1-8 job runs, sequential baselines, and a full-preset workload mode.
+- Draw Things gRPC probe support for configurable 1-8 job runs, serial baselines, and a full-preset workload mode.
+- Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in.
 
 ## Changed
 
@@ -24,7 +25,7 @@ Pending changes for the next DTFlow release.
 - Use NumPy 2.3.5 for the current Draw Things Python client path on the tested legacy Windows Pentium E6500 machine. NumPy 2.4.4 and 2.5.3 fail while loading `_multiarray_umath` there; NumPy 2.3.5 imports successfully, `drawthings-py==0.4.0` imports successfully, and the real gRPC/model-browser connectivity and generation paths succeed.
 - Make the Draw Things probe default to a lightweight `z_image_turbo` workload requested at 300 x 300, 4 steps, batch size/count 1, with high-resolution fix disabled.
 - Store Draw Things probe images and timing reports under repository-local ignored `tmp/drawthings_concurrency/` by default.
-- Give common Draw Things probe CLI options stable, unique short aliases while retaining their descriptive long forms.
+- Use compact lowercase probe CLI pairs (`-a/--host`, `-p/--port`, `-d/--cloud`, `-r/--preset`, `-j/--jobs`, `-f/--full`, `-s/--serial`, `-o/--out`, `-c/--conn`, `-k/--skip-conn`) while silently retaining the previous probe spellings as compatibility aliases.
 
 ## Fixed
 
