@@ -10,12 +10,14 @@ Establish one backend-neutral generation contract, exercised by a deterministic 
 
 Start real adapters with controlled text-to-image requests. Image-to-image, inpainting, control/LoRA combinations, video, account login, PAYG opt-in and advanced scheduling are not Phase 2 promises. Request expressibility is not verified compatibility.
 
+Direct DT+ is the primary expected production backend; local gRPC is a supported runtime and the frequent development/smoke-test path. Local smoke success does not prove cloud readiness.
+
 Durable job orchestration belongs to Phase 6. Phase 2 must expose enough outcome information to support it safely later.
 
 ## Implementation order
 
 1. Define immutable resolved requests, results/artifact descriptions, progress events, errors and capability information in core. Record explicit seeds, identifiers and effective parameters.
-2. Investigate packaging and distribution on the target Windows machine: Python 3.13, pinned dependency stack, native codecs and TLS/certificate resources. Decide how the GPL-3.0-only dependency affects distribution; do not silently change licenses or replace dependencies.
+2. Investigate portable packaging and distribution on the owner's Windows 10 / Intel Pentium E6500 machine, retaining an installer option if required: Python 3.13, pinned dependency stack, native codecs and TLS/certificate resources. Decide how the GPL-3.0-only dependency affects distribution; do not silently change licenses or replace dependencies.
 3. Implement the fake backend through the same contract.
 4. Wrap the recorded Draw Things gRPC path and exercise the actual adapter against a local gRPC test server, reusing existing serialization/codecs where appropriate.
 5. Implement direct DT+ authentication and transport behind its own adapter, with HTTP authentication mocks and cloud authorization checks on the shared local gRPC fixture.

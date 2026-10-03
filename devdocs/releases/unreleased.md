@@ -29,6 +29,11 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Record confirmed initial personal use, Windows 10 / Pentium E6500 support target, portable-first packaging and possible later public distribution.
+- Prioritize direct DT+ production use while retaining local gRPC development/smoke coverage; cloud readiness requires separate evidence.
+- Plan paused queue restoration with explicit Resume/Cancel and no replay of ambiguous attempts.
+- Plan cloud concurrency configuration from Phase 3, default four, shared with Qt; use a subtle color above two and introduce bounded concurrent queue execution in Phase 7. These are planned policies, not implemented runtime features.
+
 - Require a minimal atomic request/attempt record before Phase 3 remote submission and prevent automatic retries of unfinished potentially submitted attempts.
 - Separate initial cloud safety/authentication foundations from Phase 11 expansion; clarify inventory refresh/provenance/classification, Phase 5 basic LoRA selection and request-fidelity validation.
 

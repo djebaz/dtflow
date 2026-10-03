@@ -35,6 +35,14 @@ Expose prompt, negative prompt, model, seed, dimensions, steps and guidance wher
 
 The development entry point runs through `uv run dtflow` once implemented. It must not import or initialize Qt, and must remain usable after the desktop interface is added.
 
+## Cloud priority and concurrency configuration
+
+Treat direct DT+ as the primary production acceptance path alongside the supported local gRPC path. Offline cloud authentication/transport coverage and separately authorized deployed-cloud checks remain distinct from frequent local gRPC smoke tests.
+
+Expose a validated positive-integer cloud concurrency maximum in the CLI from this phase, default **4**, and persist it in shared configuration for Qt. Select the actual option spelling during implementation and keep help accurate. This is a user-selected maximum, not verified cloud entitlement. Phase 7 adds concurrent queue scheduling; until then, report the effective execution mode honestly rather than implying the setting enables parallel generation. Keep local gRPC scheduling policy separate.
+
+Qt exposes the same setting and uses a subtle color change above **2**, without a prominent warning or confirmation dialog.
+
 ## Shared services and persistence boundary
 
 Services own request resolution/preflight, backend selection, submission, events, result validation and artifact saving. Keep services callable from Python as well as the CLI and future Qt UI.

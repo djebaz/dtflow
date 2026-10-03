@@ -8,7 +8,7 @@
 
 DTFlow is a Windows desktop application for workflows, generation, and automation around Draw Things.
 
-The first implementation targets Draw Things through its gRPC interface. The application should provide a durable desktop layer for connections, generation jobs, queues, presets, galleries, and eventually multi-step workflows without coupling the user interface to Draw Things protocol details.
+Direct DT+ Cloud Compute is the primary expected production backend. Local Draw Things gRPC remains a supported runtime backend and the frequent development and smoke-test path. The application should provide a durable desktop layer for connections, generation jobs, queues, presets, galleries, and eventually multi-step workflows without coupling the user interface to Draw Things protocol details.
 
 Phase 2 will introduce Draw Things gRPC, a narrow direct DT+ Cloud Compute backend, and an explicitly selected fake backend behind one application contract. Broader cloud features remain later work.
 
@@ -212,7 +212,7 @@ Introduce backend-neutral request, result, progress, error and capability types.
 
 Define completion and uncertain-outcome semantics before wiring the UI. Preserve previews and incomplete outputs as explicitly labeled diagnostic/partial artifacts, never completed results. Ordinary tests must stay offline.
 
-Investigate Windows packaging and dependency distribution early. Source execution is recorded as working; a single-executable build is not yet verified. Durable orchestration remains Phase 6.
+Investigate portable Windows packaging and dependency distribution early on the owner's Windows 10 / Intel Pentium E6500 machine; keep an installer option if required. Source execution is recorded as working; a single-executable build is not yet verified. Durable orchestration remains Phase 6.
 
 ### Phase 3 — Headless CLI and shared application services
 
@@ -225,6 +225,8 @@ Implement application services for request resolution, submission, progress/erro
 Handle interruption and uncertain outcomes honestly; do not automatically resubmit ambiguous requests. Preserve previews as diagnostic artifacts. Keep subscription-only cloud behavior and the `-nc` / `--no-cache` contract.
 
 Validate command parsing, help, exit behavior, saved metadata and end-to-end fixture-backed commands offline. Real generation remains explicit and separately authorized. A complete CLI means a usable path for the supported scope, not every advanced backend operation.
+
+Define the configurable cloud concurrency maximum in the CLI with a default of four; it is a user-selected cap, not a verified entitlement. Persist it for shared-service use; Phase 7 adds concurrent queue scheduling. Do not imply parallel execution before that scheduler exists.
 
 ### Phase 4 — Minimal Qt shell and connection management
 
@@ -246,6 +248,8 @@ Extend Phase 3's durable request/attempt records with persistent jobs, queues an
 
 Design for recovery after application restart before adding advanced workflow behavior. The inspected remote protocol exposes no generation job lookup or stream reattachment; recover local queued/completed state and reconcile interrupted in-flight jobs to an unknown outcome without automatic resubmission.
 
+Restore the queue paused after restart. Require explicit Resume or Cancel; Resume selects only eligible work known never to have crossed the submission boundary. Interrupted ambiguous attempts remain unknown and are excluded from queue replay.
+
 ### Phase 7 — Concurrency
 
 Add controlled concurrent generation after actual Draw Things concurrency behavior has been measured.
@@ -253,6 +257,8 @@ Add controlled concurrent generation after actual Draw Things concurrency behavi
 Current Phase 1 evidence supports treating one tested Draw Things gRPC server as one effective generation lane: concurrent client RPCs can be in flight together, but the tested iPhone/Bridge path completes work in an effectively serialized staircase and is slower than the matching serial baseline.
 
 The direct DT+ diagnostic path is a separate result. It has completed six controlled cloud requests concurrently within one broad generation-time window, but that does not establish a fixed cloud concurrency limit or production scheduling policy. Do not transfer direct-cloud concurrency assumptions to the Draw Things backend.
+
+Use the shared configurable cloud maximum, default four, in both CLI and Qt scheduling. Values above two change the Qt number's color subtly, without a prominent warning or confirmation dialog. Preserve a separate app/Bridge policy. Test bounded dispatch and throttling without automatically retrying ambiguous submissions.
 
 Do not infer safe concurrency from client-side capability alone.
 
@@ -314,18 +320,36 @@ Early validation should favor cheap, focused checks:
 
 Real generation should only be run when it validates behavior that cannot be established without inference. Ordinary unit/test-suite execution must never submit a real generation accidentally; live Draw Things integration tests must be explicit and separately gated.
 
-## 9. Open questions
+## 9. Product decisions and remaining open questions
+
+### Confirmed product decisions
+
+- Initial audience: personal use by the owner only. Additional testers and public releases may follow later.
+- Target machine: the packaged application must run on the owner's legacy Windows 10 machine with an Intel Pentium E6500. Packaged compatibility remains to be verified on that machine.
+- Distribution: private initially; the repository may be opened and public releases offered much later if the application works well. Resolve dependency licensing implications before public distribution.
+- Packaging preference: portable executable first; retain an installer option if required. Portable packaging does not imply writing durable state beside the executable.
+- Restart behavior: restore the queue in a paused state. Nothing resumes automatically; the user can resume eligible queued jobs or cancel them. Interrupted attempts that may already have been submitted remain outcome unknown and cannot be resubmitted by resuming the queue.
+- Cloud concurrency: expose a configurable maximum in the CLI and Qt, with a default of **4**. In Qt, values above **2** receive a subtle color change rather than a prominent warning or confirmation dialog. This is a user-selected scheduling policy, not a verified service entitlement or guaranteed capacity.
+- Backend priority: direct DT+ cloud is the primary expected production backend. Local Draw Things gRPC remains a supported runtime backend and the frequent development/smoke-test path. Local smoke tests do not establish cloud readiness.
+
+Apply the Windows packaging requirement during Phase 2/3 investigation and the restart policy in Phase 6. Define the cloud concurrency setting in Phase 3 and expose it in Qt; Phase 7 implements bounded concurrent queue scheduling. Before scheduling exists, accepting the setting must not imply parallel execution.
+
+### Remaining product choices
+
+- Whether cloud credentials should be supplied externally or entered and securely stored through the desktop application.
+- Whether PAYG should remain unavailable initially or later be offered through explicit opt-in. Preserve the existing subscription-only default until this is decided.
+- Manual download versus an eventual built-in update mechanism. Portable packaging is preferred, but no update mechanism was selected.
+
+### Remaining engineering investigations
 
 Source-inspected answers and remaining evidence requirements are recorded in [research Section 10](../research/dtflow-ecosystem-research-report.md#10-follow-up-findings-on-the-eight-backend-questions). See the [Phase 2 plan](phase-2-backends.md) for implementation gates.
-
 
 - Exact `drawthings-py` version/API and how much of the gRPC client it should own.
 - Whether DTFlow should generate protobuf bindings itself or consume them through a dependency.
 - Exact Draw Things progress and cancellation semantics, plus whether any server/app configuration can expose parallel backend execution beyond the effective single lane observed in the tested iPhone/Bridge path.
 - Persistence technology and schema.
-- Packaging strategy for Windows, native-module and certificate resources, and the distribution implications of the GPL-3.0-only drawthings-py dependency in the currently MIT-declared project.
-- Update/distribution strategy.
-- Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, model/file compatibility, cancellation/retry semantics, and a safe concurrency policy. The diagnostic API-key token/auth/gRPC path is now proven separately.
+- Windows packaging feasibility on the target machine, native-module and certificate resources, and the distribution implications of the GPL-3.0-only drawthings-py dependency in the currently MIT-declared project.
+- Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, model/file compatibility, cancellation/retry semantics, throttling and behavior at the selected concurrency. The diagnostic API-key token/auth/gRPC path is proven separately; the default of four is a product choice.
 - Whether any future DT+ capability actually requires MediaGenerationKit or a Swift bridge. No runtime dependency on MediaGenerationKit has been demonstrated for the currently proven direct generation path.
 
 ## 10. Initial repository setup
