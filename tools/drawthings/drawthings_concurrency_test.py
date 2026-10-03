@@ -61,17 +61,20 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument(
+        "-H",
         "--host",
         required=True,
         help="Draw Things server hostname or LAN IP, for example 192.168.1.42.",
     )
     parser.add_argument(
+        "-p",
         "--port",
         type=int,
         default=7859,
         help="Draw Things gRPC port (default: 7859).",
     )
     parser.add_argument(
+        "-P",
         "--preset",
         default="z_image_turbo",
         help=(
@@ -81,6 +84,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-f",
         "--full-workload",
         action="store_true",
         help=(
@@ -90,6 +94,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-s",
         "--sequential",
         action="store_true",
         help=(
@@ -98,6 +103,7 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-o",
         "--output-dir",
         type=Path,
         default=Path("tmp") / "drawthings_concurrency",
@@ -107,11 +113,13 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-c",
         "--connection-only",
         action="store_true",
         help="Only test gRPC/model-browser connectivity; do not generate images.",
     )
     parser.add_argument(
+        "-k",
         "--skip-connection-test",
         action="store_true",
         help="Skip the initial non-generation model-browser request.",
