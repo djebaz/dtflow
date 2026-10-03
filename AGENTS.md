@@ -28,8 +28,14 @@ These instructions apply throughout `dtflow`.
 - Use `uv sync` to create or synchronize the project environment.
 - Run project tools and Python commands through `uv run` where practical, for example `uv run pytest`, `uv run ruff check .`, and `uv run dtflow`.
 - Add, remove, and update dependencies through the uv-managed project configuration rather than ad-hoc `pip install` commands.
-- Do not maintain a parallel hand-edited `requirements.txt`. Add a compatibility export only if a concrete external tool or deployment requirement needs one.
+- When a change adds, removes, or changes a third-party dependency, use the appropriate uv workflow and keep `pyproject.toml` and `uv.lock` synchronized in the same change.
+- Put development-only tools in the dev dependency group rather than runtime dependencies.
+- Commit dependency metadata and lockfile changes together with the code that requires them.
+- Do not manually edit `uv.lock`; regenerate it through uv.
+- Do not maintain a parallel hand-edited `requirements.txt`. Add a compatibility export only if a concrete external tool or deployment requirement needs one, and treat it as generated output rather than a source of truth.
+- Prefer `uv run` for validation so checks execute in the locked project environment.
 - Do not mutate a supposedly reproducible environment with arbitrary package upgrades during normal validation.
+- When changing `pyproject.toml` tool configuration, keep documented commands and CI behavior aligned with the canonical configuration.
 
 ## Runtime state and cache
 
