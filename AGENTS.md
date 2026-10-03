@@ -89,7 +89,7 @@ These instructions apply throughout `dtflow`.
 
 ## Workflow
 
-- Keep `main` stable. Use feature branches and pull requests for substantial changes.
+- Avoid committing directly to `main`. Normal repository changes should go through a feature branch and pull request. Direct commits to `main` are reserved for exceptional, low-risk cases where a pull request would add no meaningful review or safety value.
 - For non-trivial work, create the feature branch and pull request early, after an initial coherent commit, so implementation progress and review context are visible from the start.
 - Commit regularly at meaningful checkpoints and group related file changes into coherent commits. Do not create one commit per file or per trivial edit unless the change is genuinely independent.
 - Keep the working PR history reasonably reviewable even when the final merge will be squashed; squash merge is not a substitute for excessively fragmented development history.
