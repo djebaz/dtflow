@@ -21,7 +21,7 @@ DT+ Cloud Compute is a future backend, not part of the initial implementation.
 - Prefer resumable and inspectable long-running workflows.
 - Do not assume model, LoRA, quantization, scheduler, or runtime compatibility without evidence.
 - Do not run expensive or billable generation merely to validate application plumbing.
-- Keep the project Python-first. Node.js is not currently required.
+- Keep the project Python-first. Node.js is not currently required.\n- Use Astral `uv` as the canonical project/environment/dependency workflow from the beginning; do not maintain a parallel `requirements.txt` unless a concrete compatibility requirement appears.
 
 ## 3. Technology decisions
 
@@ -173,7 +173,7 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 - Generated Qt Python and generated protobuf Python are ignored initially.
 - Model/checkpoint artifacts are not committed.
 - Git LFS is not required initially.
-- If `uv` is selected, `uv.lock` should be tracked for reproducible application builds.
+- `pyproject.toml` is the canonical Python project/dependency configuration and `uv.lock` is tracked for reproducible development and builds.\n- Use `uv sync` for environment setup/synchronization and `uv run` for project commands and tools.\n- Do not maintain a parallel hand-edited `requirements.txt`; add an exported compatibility file only if a concrete external integration requires it.
 - Development runtime state lives under repository-root `.dtflow/`, which is ignored by Git.
 - Packaged Windows builds use the platform-local application data location by default rather than writing beside the executable; an explicit DTFlow home override may be added for development/portable use.
 - Cache is disposable and must remain separate from durable application state. Cache storage should be split into type-specific subdirectories so categories can be measured and purged independently.
@@ -299,6 +299,6 @@ The first setup PR is intentionally small:
 - add this initial plan
 - add `AGENTS.md` with the repository contract
 - add `devdocs/releases/unreleased.md`
-- create the initial architectural directory skeleton with tracked placeholders
+- create the initial architectural directory skeleton with tracked placeholders\n- establish `uv` as the canonical Python project/environment/dependency workflow; the first executable Python skeleton will add `pyproject.toml` and `uv.lock`
 
 The skeleton establishes ownership boundaries only; it does not add speculative runtime implementation.
