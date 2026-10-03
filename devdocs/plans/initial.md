@@ -301,7 +301,9 @@ Early validation should favor cheap, focused checks:
 - CLI/help checks where applicable
 - unit tests for backend-neutral logic using `pytest`
 - Qt-focused tests with `pytest-qt` when they provide useful coverage
-- mocked protocol tests where appropriate
+- local gRPC transport tests through the actual adapters, including terminal status, deadlines and cancellation/disconnects
+- DT+ HTTP authentication mocks plus cloud authorization metadata assertions on the local gRPC server
+- an offline network guard that fails on unexpected external connections
 - focused integration tests against Draw Things when required
 
 Real generation should only be run when it validates behavior that cannot be established without inference. Ordinary unit/test-suite execution must never submit a real generation accidentally; live Draw Things integration tests must be explicit and separately gated.

@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Explicit offline testing boundaries: deterministic fake first, local gRPC server tests through actual adapters, DT+ HTTP authentication mocks, cloud gRPC authorization assertions and rejection of unexpected external connections.
+
 - Source-backed ecosystem research covering Python transport, queue/workflow references, backend completion/cancellation/recovery semantics, input compatibility, and Windows dependency constraints.
 - Phase 2 implementation plan for a shared backend contract, deterministic fake backend, Draw Things gRPC adapter and narrow native Python direct DT+ adapter.
 

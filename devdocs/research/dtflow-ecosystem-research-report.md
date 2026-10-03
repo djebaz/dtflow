@@ -308,12 +308,14 @@ Return a bundled fixture image with metadata explicitly identifying the result a
 Separate three kinds of validation:
 
 1. Fake-backend contract tests for application orchestration, later persistence and UI behavior.
-2. Mocked HTTP/gRPC tests for real adapters: request conversion, token expiry/refresh, authentication metadata, stream errors, chunk assembly, empty results and billing policy.
+2. Local gRPC server tests through the actual adapters/client transport: previews, chunks, empty outputs, terminal gRPC status, deadlines and cancellation/disconnects. DT+ HTTP mocks cover token acquisition, expiry/refresh, per-generation authentication and subscription-only policy. Reuse the local generation server where the wire contract is shared and assert cloud authorization metadata on its gRPC side.
 3. Separately gated live checks for deployed behavior that cannot be established offline.
 
 Cheap checks should cover enum/unit conversion, seed fidelity, queue ordering, paired-axis mismatches, incomplete chunks, missing final output, cache bypass and restart reconciliation. Qt tests should focus on responsiveness and lifecycle wiring. Ordinary tests must not submit real generation.
 
-A fake can reproduce a known scenario; it cannot prove actual server cancellation, model compatibility, quota semantics or Windows packaging.
+Make test endpoints and TLS trust injectable without weakening production certificate/hostname verification. Ordinary tests must fail on unexpected external connections so missing mocks cannot reach production. Keep simulators small and scenario-driven, without models or a reimplementation of Draw Things internals. Extend fake-backed UI, jobs, queues and restart tests as those later features arrive.
+
+A fake or local protocol simulator can reproduce a defined scenario; it cannot prove production compute stops, actual billing semantics, model compatibility or Windows packaging. Fabricated quota errors test application behavior only; production classifications require documented responses or sanitized captured fixtures.
 
 ## 10. Follow-up findings on the eight backend questions
 

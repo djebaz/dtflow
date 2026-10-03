@@ -17,8 +17,8 @@ Durable job orchestration belongs to Phase 6. Phase 2 must expose enough outcome
 1. Define immutable resolved requests, results/artifact descriptions, progress events, errors and capability information in core. Record explicit seeds, identifiers and effective parameters.
 2. Investigate packaging and distribution on the target Windows machine: Python 3.13, pinned dependency stack, native codecs and TLS/certificate resources. Decide how the GPL-3.0-only dependency affects distribution; do not silently change licenses or replace dependencies.
 3. Implement the fake backend through the same contract.
-4. Wrap the recorded Draw Things gRPC path, reusing existing serialization/codecs where appropriate.
-5. Implement direct DT+ authentication and transport behind its own adapter.
+4. Wrap the recorded Draw Things gRPC path and exercise the actual adapter against a local gRPC test server, reusing existing serialization/codecs where appropriate.
+5. Implement direct DT+ authentication and transport behind its own adapter, with HTTP authentication mocks and cloud authorization checks on the shared local gRPC fixture.
 6. Add shared contract and mocked transport coverage; document limitations before the desktop shell consumes the adapters.
 
 ## Required semantics
@@ -55,6 +55,24 @@ Use bundled fixture output and explicitly fake metadata. Selection must be delib
 
 Provide deterministic success, controllable delay, pre-submission rejection, post-submission uncertain failure, cancellation and configurable concurrency scenarios. Keep automated timing controllable and fast. Remote cancellation simulated by the fake does not establish real backend support.
 
+## Offline testing boundaries
+
+Implement the fake first, then add transport fixtures alongside each real adapter.
+
+| Component | Boundary validated | Timing |
+| --- | --- | --- |
+| Deterministic fake backend | Core contract, progress and uncertain outcomes; later UI, jobs, queues and persistence | First |
+| Local gRPC test server | Actual adapters/client transport, streamed previews and final output, chunks, empty output, terminal status, deadlines and cancellation/disconnects | Alongside the Draw Things adapter |
+| DT+ HTTP mocks | Token acquisition, expiry, concurrent refresh, per-generation authentication and subscription-only request policy | Alongside the cloud adapter |
+
+Reuse the local gRPC server for cloud generation where the inspected wire contract is shared. Assert cloud-specific authorization metadata on the gRPC side, in addition to checking HTTP token/authentication requests. Exercise the actual adapters, not only isolated payload decoders.
+
+Make HTTP/gRPC endpoints and test TLS trust injectable so fixtures stay local without weakening production TLS hostname/certificate validation. Ordinary tests must fail on unexpected external connections; a missing mock must never reach a real app/cloud endpoint.
+
+Keep simulators small and scenario-driven, returning defined protocol fixtures without loading models or recreating Draw Things internals. Simulated cancellation verifies DTFlow's handling, not that production compute stops. Fabricated quota errors verify presentation/application behavior, not actual billing semantics; production classifications require documented responses or sanitized captured fixtures.
+
+Phase 2 covers the contract and adapters. Extend fake-backed UI, durable job, queue and restart-reconciliation tests as those features are introduced in later phases.
+
 ## Source-level gaps to validate
 
 - Preserve a requested seed of zero; the inspected client routes it through its seed-provider path.
@@ -67,7 +85,8 @@ Provide deterministic success, controllable delay, pre-submission rejection, pos
 ## Validation and exit criteria
 
 - All three adapters implement the same core contract; importing core does not require Qt or provider protocol types.
-- Fake and mocked protocol tests make no real generation requests.
+- Fake and protocol-fixture tests make no real generation requests and fail on unexpected external connections.
+- Real adapters are exercised through local gRPC transport, including terminal status, deadlines, cancellation/disconnects and cloud authorization metadata.
 - Request conversion tests cover seed fidelity, explicit parameters and output metadata.
 - Stream tests cover terminal failures, no final output, partial outputs and preview labeling.
 - Cloud tests cover token expiry, concurrent refresh, per-generation authentication, sanitized errors and disabled PAYG opt-in.
