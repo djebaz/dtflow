@@ -180,6 +180,7 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 - Use `uv sync` for environment setup/synchronization and `uv run` for project commands and tools.
 - Do not maintain a parallel hand-edited `requirements.txt`; add an exported compatibility file only if a concrete external integration requires it.
 - Development runtime state lives under repository-root `.dtflow/`, which is ignored by Git.
+- Development diagnostic logs live under repository-root `logs/`, already ignored; `tmp/` remains disposable scratch. Packaged Windows logs default to `%LOCALAPPDATA%\\DTFlow\\logs\\`, with an explicit location override when implemented.
 - Packaged Windows builds use the platform-local application data location by default rather than writing beside the executable; an explicit DTFlow home override may be added for development/portable use.
 - Cache is disposable and must remain separate from durable application state. Cache storage should be split into type-specific subdirectories so categories can be measured and purged independently.
 - Cache size visibility and manual/automatic cleanup should be implemented early because generated images and derived assets can become large.
@@ -217,6 +218,8 @@ Investigate portable Windows packaging and dependency distribution early on the 
 ### Phase 3 — Headless CLI and shared application services
 
 Deliver a usable command-line application before introducing Qt. Follow [the Phase 3 CLI plan](phase-3-cli.md).
+
+Introduce shared logging with rotating UTF-8 files, normal and explicit development detail levels, build/session/job correlation and secret sanitization. Development logs use repository-root `logs/`; packaged Windows builds use per-user application data. Logging is independent of cache bypass and durable execution records.
 
 Expose the `dtflow` entry point for backend selection, non-generative connectivity checks, model inventory with explicit refresh and backend provenance, and complete text-to-image generation through fake, Draw Things gRPC and direct DT+ adapters.
 

@@ -45,6 +45,18 @@ These instructions apply throughout `dtflow`.
 - Provide cache cleanup early enough to prevent generated images and derived assets from growing without bounds.
 - Support a cache-bypass launch option `-nc` / `--no-cache`; it must disable cache reads and writes for that run.
 
+## Logging and development diagnostics
+
+- Use one shared Python logging setup for CLI, Qt, services and backend adapters. Prefer the standard-library logging module; presentation layers must not maintain separate logging engines.
+- In repository development, write diagnostic files under repository-root `logs/`, which remains ignored by Git. Keep application state under `.dtflow/` and disposable scratch work under `tmp/`; logs do not change those conventions.
+- Packaged Windows builds default to `%LOCALAPPDATA%\\DTFlow\\logs\\`, never the repository, executable directory or current working directory. Allow an explicit log-location override when implemented.
+- Write readable UTF-8 text logs with timestamps, severity, component and session identity. Include version/source commit and backend identity; attach local job/attempt IDs when available to correlate concurrent work.
+- Normal mode records important lifecycle events and errors. Explicit development mode adds sanitized connection/auth-refresh events, request validation, state transitions, stream events, timings and exception tracebacks. It changes diagnostic detail only, never generation, retry or billing behavior.
+- Bound file size and retention through rotation. Avoid rotation collisions between simultaneous processes and keep log I/O from blocking Qt interaction.
+- Never log API keys, tokens, authorization headers, credentials or raw image/Base64 payloads. Exclude full prompts and other sensitive request data by default; sanitize exception details as well as ordinary messages.
+- Logs are diagnostic evidence, not the durable job/attempt store or proof of successful generation. Log cleanup must not delete durable state or outputs.
+- Report log-location/write failures clearly without exposing secrets or triggering generation retries. Logging setup must not consume subscription credits or enable external network access.
+
 ## CLI
 
 - Provide a `dtflow` entry point for normal development/application launch rather than requiring long source paths.

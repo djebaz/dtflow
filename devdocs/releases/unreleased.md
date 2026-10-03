@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Planned shared logging contract in `AGENTS.md` and Phase 3: repository-root ignored `logs/` in development, per-user packaged Windows logs, rotating UTF-8 diagnostics, explicit dev detail, build/job correlation and secret sanitization. Clarify the existing ignore rule without changing ignore behavior.
+
 - Repository-wide version/build identity rules in `AGENTS.md`: shared version/revision metadata, consistent CLI/Qt/build naming, bundled revision without runtime Git, honest development status and identifiable smoke-test reports.
 
 - Tracked TanqueStudio parity matrix with upstream evidence, service ownership, CLI/Qt exposure, backend support, phase assignments and acceptance criteria.

@@ -49,6 +49,16 @@ Expose a validated positive-integer cloud concurrency maximum in the CLI from th
 
 Qt exposes the same setting and uses a subtle color change above **2**, without a prominent warning or confirmation dialog.
 
+## Shared logging and development mode
+
+Implement the repository logging contract through one shared standard-library Python logging configuration. Use repository-root `logs/` for development and `%LOCALAPPDATA%\\DTFlow\\logs\\` for packaged Windows builds; support an explicit destination override. Neither packaged path resolution nor logging setup may require Git or Qt.
+
+Normal mode logs important events/errors; explicit development mode adds sanitized diagnostic detail and tracebacks. Determine canonical CLI spellings during implementation and keep help accurate. Development mode changes logging only; no generation, retry, network or billing semantics change.
+
+Use rotating UTF-8 text files with bounded retention, timestamps, severity/component, version/commit/session and job/attempt correlation where available. Handle simultaneous-process file naming/rotation safely, keep Qt responsive and report write failures without leaking secrets. Exclude credentials, tokens, headers, raw image payloads and full prompts by default; sanitize exception paths/messages too.
+
+Logs remain separate from durable execution records and disposable cache; `--no-cache` does not disable logging. Extend offline acceptance with destination selection, rotation bounds, level selection, correlation and secret-redaction checks, including simulated write failure. Do not submit generation merely to test logging.
+
 ## Shared services and persistence boundary
 
 Services own request resolution/preflight, backend selection, submission, events, result validation and artifact saving. Keep services callable from Python as well as the CLI and future Qt UI.
