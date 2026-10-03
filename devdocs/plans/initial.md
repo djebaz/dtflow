@@ -48,14 +48,16 @@ Before implementation, verify the exact current APIs and compatibility against t
 
 The architecture must allow additional generation backends without changing UI-facing generation models.
 
-Planned research includes:
+Phase 1 diagnostic work has now proven that DT+ Cloud Compute is reachable directly from Python without a MediaGenerationKit runtime dependency. The validated path uses the official API-key flow to obtain a short-term token, performs per-generation authentication, connects directly to the DT+ gRPC endpoint over TLS, and receives normal generation results.
 
-- DT+ Cloud Compute
-- MediaGenerationKit as an architectural/reference implementation
-- a possible lightweight Swift bridge if a Python DT+ implementation is not practical
+Future-backend direction is therefore:
+
+- DT+ Cloud Compute through a native Python backend built from the validated direct-cloud path
+- MediaGenerationKit as an architectural and protocol reference rather than a required runtime dependency
+- a lightweight Swift/MediaGenerationKit bridge only as a fallback if a future DT+ capability cannot be reproduced reliably in Python
 - a separate experimental native Windows Draw Things gRPC server
 
-None of these future paths is required for the initial DTFlow client.
+The production DT+ backend is still future work and is not required for the initial DTFlow client. The current direct-cloud implementation remains diagnostic tooling until authentication lifecycle, cancellation, retries, throttling, entitlement/PAYG behavior, persistence, progress/error mapping, model compatibility, and production concurrency policy are hardened.
 
 ## 4. Architectural boundaries
 
@@ -73,11 +75,11 @@ PySide6 / Qt Designer
         +----------------------+
         |                      |
         v                      v
-Draw Things gRPC          Future DT+
+Draw Things gRPC          DT+ direct
     backend                 backend
-        |
-        v
-   Draw Things
+        |                      |
+        v                      v
+   Draw Things        DT+ Cloud Compute
 ```
 
 ### Core
@@ -100,7 +102,7 @@ A `GenerationBackend`-style contract will isolate generation providers.
 
 The first implementation is a Draw Things gRPC backend. Protocol conversion, generated protobuf types, connection details, and Draw Things-specific mappings remain inside that backend package.
 
-A DT+ package should not contain simulated behavior before the real protocol and requirements are understood.
+A future DT+ backend may use the validated Python direct-cloud path, but the diagnostic probe must not simply become production code by relocation. Authentication/token lifecycle, credential storage, entitlement/PAYG rules, retries, cancellation, throttling, error mapping, persistence, model/file compatibility, and safe concurrency must be made explicit behind the backend boundary first. MediaGenerationKit remains a reference for protocol behavior, not a required DTFlow runtime dependency for the path already proven.
 
 ### Services
 
@@ -246,6 +248,10 @@ Design for recovery after application restart before adding advanced workflow be
 
 Add controlled concurrent generation after actual Draw Things concurrency behavior has been measured.
 
+Current Phase 1 evidence supports treating one tested Draw Things gRPC server as one effective generation lane: concurrent client RPCs can be in flight together, but the tested iPhone/Bridge path completes work in an effectively serialized staircase and is slower than the matching serial baseline.
+
+The direct DT+ diagnostic path is a separate result. It has completed six controlled cloud requests concurrently within one broad generation-time window, but that does not establish a fixed cloud concurrency limit or production scheduling policy. Do not transfer direct-cloud concurrency assumptions to the Draw Things backend.
+
 Do not infer safe concurrency from client-side capability alone.
 
 ### Phase 8 — Gallery and presets
@@ -262,11 +268,25 @@ Build multi-step workflow composition/execution on top of the durable job and ba
 
 Workflow execution should remain resumable and inspectable.
 
-### Phase 11 — DT+ research and backend
+### Phase 11 — DT+ backend hardening and integration
 
-Map the current DT+ Cloud Compute contract and evaluate implementation options.
+Phase 1 diagnostic work has already established that a direct Python DT+ implementation is viable. The live-tested probe has exercised the API-key short-term-token flow, per-generation authentication, direct TLS gRPC generation against DT+ Cloud Compute, image-result decoding, and concurrent submissions without requiring MediaGenerationKit as a runtime component.
 
-Only implement a DT+ backend once authentication, request semantics, compatibility, persistence requirements, and failure behavior are understood.
+Phase 11 should therefore promote the proven protocol path into a production backend rather than re-evaluate Python feasibility.
+
+Before product integration:
+
+- move cloud authentication and transport behind the backend abstraction rather than importing tooling code into the application layer;
+- define short-term-token caching, expiry, refresh, and credential-storage behavior;
+- preserve the rule that credentials, bearer tokens, authorization headers, and sensitive payloads are never logged or persisted accidentally;
+- define entitlement, subscription quota, PAYG opt-in, and billing-failure behavior so DTFlow never silently enables paid usage;
+- verify model/checkpoint, LoRA, input-image, and other request compatibility needed by the product;
+- map progress, cancellation, retry, timeout, throttle, and remote error semantics into backend-neutral DTFlow states;
+- make jobs durable and recovery-safe across process restart where the remote protocol permits it;
+- establish a production concurrency policy from measured behavior and explicit server responses rather than assuming the diagnostic six-job result is a fixed entitlement or safe ceiling;
+- add mocked protocol coverage and separately gated live integration checks that cannot submit billable generation accidentally.
+
+Keep MediaGenerationKit as a protocol/reference implementation. Introduce a Swift/MediaGenerationKit bridge only if a required future capability cannot be implemented reliably through the validated Python path.
 
 ## 8. Validation strategy
 
@@ -286,12 +306,12 @@ Real generation should only be run when it validates behavior that cannot be est
 
 - Exact `drawthings-py` version/API and how much of the gRPC client it should own.
 - Whether DTFlow should generate protobuf bindings itself or consume them through a dependency.
-- Exact Draw Things progress, cancellation, and concurrent request semantics.
+- Exact Draw Things progress and cancellation semantics, plus whether any server/app configuration can expose parallel backend execution beyond the effective single lane observed in the tested iPhone/Bridge path.
 - Persistence technology and schema.
 - Packaging strategy for Windows.
 - Update/distribution strategy.
-- DT+ authentication and protocol details.
-- Whether any MediaGenerationKit components can or should be reused directly on Windows.
+- Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, model/file compatibility, cancellation/retry semantics, and a safe concurrency policy. The diagnostic API-key token/auth/gRPC path is now proven separately.
+- Whether any future DT+ capability actually requires MediaGenerationKit or a Swift bridge. No runtime dependency on MediaGenerationKit has been demonstrated for the currently proven direct generation path.
 
 ## 10. Initial repository setup
 
