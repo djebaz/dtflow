@@ -24,6 +24,7 @@ Pending changes for the next DTFlow release.
 - Use NumPy 2.3.5 for the current Draw Things Python client path on the tested legacy Windows Pentium E6500 machine. NumPy 2.4.4 and 2.5.3 fail while loading `_multiarray_umath` there; NumPy 2.3.5 imports successfully, `drawthings-py==0.4.0` imports successfully, and the real gRPC/model-browser connectivity and generation paths succeed.
 - Make the Draw Things probe default to a lightweight `z_image_turbo` workload requested at 300 x 300, 4 steps, batch size/count 1, with high-resolution fix disabled.
 - Store Draw Things probe images and timing reports under repository-local ignored `tmp/drawthings_concurrency/` by default.
+- Give common Draw Things probe CLI options stable, unique short aliases while retaining their descriptive long forms.
 
 ## Fixed
 
