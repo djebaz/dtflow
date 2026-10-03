@@ -1,8 +1,9 @@
-"""Probe Draw Things gRPC connectivity and two-job execution behavior.
+"""Probe Draw Things gRPC connectivity and multi-job execution behavior.
 
 By default the script uses a deliberately lightweight Z-Image Turbo workload
 for iPhone testing. Use --full-workload to keep the selected preset's native
-generation settings, or --sequential to run the same two jobs one after another.
+generation settings, --sequential for a serial baseline, and --jobs to vary the
+number of controlled generation requests.
 
 The generation phase can consume DT+ Cloud Compute quota or credits when the
 target server uses DT+.
@@ -23,20 +24,27 @@ from drawthings_py import Configs, DrawThings, RequestBuilder
 LIGHT_WIDTH = 300
 LIGHT_HEIGHT = 300
 LIGHT_STEPS = 4
+MAX_JOBS = 8
 
-JOB_SPECS = (
-    (
-        "job_a",
-        "Photorealistic studio photograph of a red ceramic mug "
-        "on a plain grey table, soft natural light.",
-        123456789,
-    ),
-    (
-        "job_b",
-        "Photorealistic studio photograph of a blue ceramic mug "
-        "on a plain grey table, soft natural light.",
-        987654321,
-    ),
+JOB_COLORS = (
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "purple",
+    "orange",
+    "white",
+    "black",
+)
+JOB_SEEDS = (
+    123456789,
+    987654321,
+    314159265,
+    271828182,
+    161803398,
+    141421356,
+    173205080,
+    223606797,
 )
 
 
@@ -53,11 +61,39 @@ class JobResult:
         return self.finished - self.started
 
 
+def parse_job_count(value: str) -> int:
+    try:
+        count = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("jobs must be an integer") from exc
+
+    if not 1 <= count <= MAX_JOBS:
+        raise argparse.ArgumentTypeError(
+            f"jobs must be between 1 and {MAX_JOBS}"
+        )
+    return count
+
+
+def build_job_specs(count: int) -> list[tuple[str, str, int]]:
+    return [
+        (
+            f"job_{chr(ord('a') + index)}",
+            (
+                "Photorealistic studio photograph of a "
+                f"{JOB_COLORS[index]} ceramic mug on a plain grey table, "
+                "soft natural light."
+            ),
+            JOB_SEEDS[index],
+        )
+        for index in range(count)
+    ]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Verify a Draw Things gRPC endpoint and compare concurrent or "
-            "sequential two-job generation behavior."
+            "sequential multi-job generation behavior."
         )
     )
     parser.add_argument(
@@ -84,6 +120,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-j",
+        "--jobs",
+        type=parse_job_count,
+        default=2,
+        metavar="N",
+        help=(
+            f"Number of controlled generation jobs, 1-{MAX_JOBS} "
+            "(default: 2)."
+        ),
+    )
+    parser.add_argument(
         "-f",
         "--full-workload",
         action="store_true",
@@ -98,8 +145,8 @@ def parse_args() -> argparse.Namespace:
         "--sequential",
         action="store_true",
         help=(
-            "Run job A and job B one after another instead of submitting both "
-            "generation calls concurrently."
+            "Run the configured jobs one after another instead of submitting "
+            "all generation calls concurrently."
         ),
     )
     parser.add_argument(
@@ -167,6 +214,7 @@ def describe_workload(args: argparse.Namespace) -> list[str]:
     workload = "full preset" if args.full_workload else "lightweight"
     return [
         f"Mode: {mode}",
+        f"Jobs: {args.jobs}",
         f"Workload: {workload}",
         f"Preset: {args.preset}",
         f"Model: {config['model']}",
@@ -211,7 +259,7 @@ async def run_job(
     )
 
     # Each job owns a separate client/channel. Concurrent mode waits on the
-    # shared barrier so both calls enter service.generate() together.
+    # shared barrier so all calls enter service.generate() together.
     async with DrawThings.grpc(
         host=host,
         port=port,
@@ -240,7 +288,7 @@ async def run_job(
             )
             return JobResult(name, started, finished, output, None)
 
-        except Exception as exc:  # Report both jobs even if one fails.
+        except Exception as exc:  # Report every job even if one fails.
             finished = time.perf_counter()
             error = f"{type(exc).__name__}: {exc}"
             print(
@@ -252,6 +300,7 @@ async def run_job(
 
 async def run_concurrent(args: argparse.Namespace) -> tuple[list[JobResult], float]:
     barrier = asyncio.Event()
+    job_specs = build_job_specs(args.jobs)
 
     jobs = [
         asyncio.create_task(
@@ -268,15 +317,15 @@ async def run_concurrent(args: argparse.Namespace) -> tuple[list[JobResult], flo
                 barrier=barrier,
             )
         )
-        for name, prompt, seed in JOB_SPECS
+        for name, prompt, seed in job_specs
     ]
 
-    # Give both tasks a chance to establish their independent gRPC connections
+    # Give all tasks a chance to establish their independent gRPC connections
     # and reach the shared start barrier.
     await asyncio.sleep(0.25)
 
     print(
-        "[test] Releasing both jobs together. "
+        f"[test] Releasing {args.jobs} jobs together. "
         "This may consume DT+ Cloud Compute quota/credits."
     )
     wall_started = time.perf_counter()
@@ -288,14 +337,15 @@ async def run_concurrent(args: argparse.Namespace) -> tuple[list[JobResult], flo
 
 
 async def run_sequential(args: argparse.Namespace) -> tuple[list[JobResult], float]:
+    job_specs = build_job_specs(args.jobs)
     print(
-        "[test] Running both jobs sequentially. "
+        f"[test] Running {args.jobs} jobs sequentially. "
         "This may consume DT+ Cloud Compute quota/credits."
     )
     wall_started = time.perf_counter()
 
     results = []
-    for name, prompt, seed in JOB_SPECS:
+    for name, prompt, seed in job_specs:
         result = await run_job(
             name=name,
             host=args.host,
@@ -333,36 +383,48 @@ def analyse_concurrent(
             f"{result.name}: {state}, duration={result.duration:.2f}s"
         )
 
-    if len(successful) != 2:
+    if len(results) < 2:
         lines.append(
-            "Conclusion: concurrency cannot be determined because both "
-            "generation requests did not complete successfully."
+            "Conclusion: one job was requested, so concurrency cannot be determined."
         )
         return "\n".join(lines)
 
-    a, b = successful
-    overlap_start = max(a.started, b.started)
-    overlap_end = min(a.finished, b.finished)
-    overlap = max(0.0, overlap_end - overlap_start)
-
-    lines.append(f"Observed request-window overlap: {overlap:.2f}s")
-
-    if overlap > 0:
+    if len(successful) != len(results):
         lines.append(
-            "Conclusion: both client generation calls were outstanding at the "
-            "same time. This proves concurrent in-flight gRPC requests from "
-            "the client, but timing alone does not prove that the backend GPU "
-            "performed diffusion work in parallel."
+            "Conclusion: concurrency cannot be determined because not all "
+            "generation requests completed successfully."
+        )
+        return "\n".join(lines)
+
+    overlap_start = max(result.started for result in successful)
+    overlap_end = min(result.finished for result in successful)
+    all_overlap = max(0.0, overlap_end - overlap_start)
+
+    first_started = min(result.started for result in successful)
+    completion_offsets = ", ".join(
+        f"{result.name}={result.finished - first_started:.2f}s"
+        for result in successful
+    )
+
+    lines.append(f"Observed all-request-window overlap: {all_overlap:.2f}s")
+    lines.append(f"Completion offsets: {completion_offsets}")
+
+    if all_overlap > 0:
+        lines.append(
+            f"Conclusion: all {len(successful)} client generation calls were "
+            "outstanding at the same time. This proves concurrent in-flight "
+            "gRPC requests from the client, but timing alone does not prove "
+            "how many backend generations executed in parallel."
         )
     else:
         lines.append(
-            "Conclusion: no overlap was observed between the two completed "
-            "generation-call windows."
+            "Conclusion: no interval was observed where every completed "
+            "generation call was outstanding at the same time."
         )
 
     lines.append(
-        "For stronger evidence of backend parallel execution, compare this "
-        "run with --sequential using the same preset and workload."
+        "Compare this run with --sequential using the same --jobs count, "
+        "preset, prompts, seeds, and workload to evaluate backend scheduling."
     )
     return "\n".join(lines)
 
@@ -386,20 +448,20 @@ def analyse_sequential(
         )
 
     successful = [result for result in results if result.error is None]
-    if len(successful) == 2:
+    if len(successful) == len(results):
         measured_generation_time = sum(result.duration for result in successful)
         lines.append(
             "Summed generate() durations: "
             f"{measured_generation_time:.2f}s"
         )
         lines.append(
-            "Use this as the sequential baseline for the concurrent run with "
-            "the same preset and workload."
+            "Use this as the sequential baseline for a concurrent run with "
+            "the same --jobs count, preset, and workload."
         )
     else:
         lines.append(
-            "Sequential baseline is incomplete because both jobs did not "
-            "complete successfully."
+            "Sequential baseline is incomplete because not all jobs completed "
+            "successfully."
         )
 
     return "\n".join(lines)
