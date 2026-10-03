@@ -2,14 +2,19 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/dtflow"]
+
 [project]
 name = "dtflow"
 version = "0.0.0"
 description = "Desktop workflows, generation and automation for Draw Things."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13,<3.14"
 license = "MIT"
-dependencies = []
+dependencies = [
+    "drawthings-py>=0.4.0,<0.5.0",
+]
 
 [dependency-groups]
 dev = [
@@ -18,9 +23,19 @@ dev = [
     "ruff",
 ]
 
+[tool.uv]
+prerelease = "allow"
+# drawthings-py 0.4.x declares NumPy >=2.4.4, but the tested legacy Windows
+# Pentium E6500 machine cannot load the NumPy 2.4+ x86-64 wheel baseline.
+# NumPy 2.3.5 imports successfully and has been verified through the real
+# Draw Things gRPC/model-browser connection path. Keep the drawthings-py
+# project dependency bounded to <0.5.0 so this override is reconsidered
+# before adopting a future release line with different runtime requirements.
+override-dependencies = ["numpy==2.3.5"]
+
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
