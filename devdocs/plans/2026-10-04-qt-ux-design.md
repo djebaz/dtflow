@@ -1,6 +1,6 @@
 # Plan: Qt UX design foundation
 
-**Status:** In progress  
+**Status:** Design foundation implemented; interactive review pending  
 **Owner:** DTFlow Phase 4/5 presentation work  
 **Reference style:** the compact Windows dark theme and three-area workflow used by the local `splitvids` project
 
@@ -28,7 +28,7 @@
 - [x] Define promoted-widget/model seams for custom previews, queue views and future rich editors.
 - [x] Integrate the theme and relocated main form with the Phase 4 shell after PR #15 landed.
 - [x] Synchronize the repository contract, README, initial plan and pending release notes without claiming runtime Phase 5 behavior.
-- [ ] Commit, push and maintain a draft pull request for review.
+- [x] Commit, push and maintain draft PR #16 for review.
 
 ## UX architecture
 
@@ -88,4 +88,5 @@ None blocking. Detailed control ordering and text can change during visual revie
 
 - [ ] Review the forms interactively in Qt Designer.
 - [x] Mechanically convert all three tracked forms with `pyside6-uic` after integration with PR #15.
+- [x] Run focused Ruff lint and format checks for `src/dtflow/ui/`.
 - [ ] Final tests and smoke tests deferred to the user under the fast implementation workflow.
