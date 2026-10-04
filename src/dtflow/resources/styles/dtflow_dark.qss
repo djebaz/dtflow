@@ -176,6 +176,27 @@ QPushButton:hover {
   border-color: #5a5a5a;
 }
 
+QPushButton[role="navigation"] {
+  background-color: transparent;
+  border-color: transparent;
+  color: #a0a0a0;
+  min-width: 68px;
+  padding: 6px 8px;
+}
+
+QPushButton[role="navigation"]:hover {
+  background-color: #2d2d2d;
+  border-color: #3a3a3a;
+  color: #eeeeee;
+}
+
+QPushButton[role="navigation"]:checked {
+  background-color: #173852;
+  border-color: #285d84;
+  color: #d5ecff;
+  font-weight: 600;
+}
+
 QPushButton:pressed {
   background-color: #292929;
   border-color: #4a4a4a;
