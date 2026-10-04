@@ -8,6 +8,7 @@ REFUSED = "ConnectionRefusedError"
 UNREACHABLE_FIX = (
     "Start Draw Things and enable its API server, or check DTFLOW_LIVE_HOST/DTFLOW_LIVE_PORT and the firewall."
 )
+CONNECT_FIX = "Check DTFLOW_LIVE_HOST/DTFLOW_LIVE_PORT and that TLS is enabled in the Draw Things app."
 BROWSING_FIX = "In the Draw Things app turn on 'Enable Model Browsing', then rerun the live checks."
 
 
@@ -63,7 +64,11 @@ def connect_hint(kind: str | None) -> str:
     return ""
 
 
+def local_connect_problem(target: str, code: str | None, kind: str | None) -> str:
+    detail = f"{code or 'unknown'}" + (f" ({kind})" if kind else "")
+    return f"Local Draw Things check failed at {target}: {detail}.{connect_hint(kind)}"
+
+
 def fail_local(target: str, code: str | None, kind: str | None) -> None:
     """Fail a live local check with a short, actionable message instead of a deep traceback."""
-    detail = f"{code or 'unknown'}" + (f" ({kind})" if kind else "")
-    pytest.fail(f"Local Draw Things check failed at {target}: {detail}.{connect_hint(kind)}", pytrace=False)
+    pytest.fail(local_connect_problem(target, code, kind), pytrace=False)
