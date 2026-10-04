@@ -142,6 +142,13 @@ Phase 2A ships pytest-asyncio, the exact-endpoint guard and live gates. gRPC/TLS
 
 Phase 2A implementation validation uses the canonical pytest/Ruff commands. Fake service, fresh-process recovery and guard tests are exercised offline; no real adapter, live generation or billable action is part of this acceptance. Run-specific environments and results belong to the PR description.
 
+## Closeout status
+
+Phase 2A-2D are merged (PRs #5-#9) and the offline acceptance for each slice is in the suite. What remains is owner-side
+evidence, not missing implementation: final-head Windows validation, broad model/LoRA compatibility, production
+cancellation latency and charging/refunds (a frozen CLI trial has since run on the target machine; see the packaging findings). The real-backend CLI exposure
+that this plan deferred is Phase 3A, now implemented offline.
+
 ## Source-level gaps to validate
 
 - Verify supported sampler/enum values, requested-to-wire dimensions, defaults and effective parameters. Reject unsupported options clearly before submission; never silently ignore them.

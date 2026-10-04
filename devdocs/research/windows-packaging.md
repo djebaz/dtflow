@@ -97,10 +97,10 @@ Record the version line, exit codes, the saved PNG and metadata file names and s
 
 ### P7 — Frozen `dtflow` CLI trial
 
-`tools/packaging/launch_dtflow.py` is a two-line launcher that exists only for this trial. `--copy-metadata dtflow` lets the version lookup find package metadata inside the executable; without it the version is reported as unknown. Source commit and dirty status are `unknown` until a later build step stamps them, so that is expected here.
+`tools/packaging/launch_dtflow.py` is a two-line launcher that exists only for this trial. `--copy-metadata dtflow` lets the version lookup find package metadata inside the executable; without it the version is reported as unknown. `--collect-data drawthings_py` bundles the library's resource files; since Phase 3A the CLI imports the real adapters at startup, and without it every command fails with `No module named 'drawthings_py.resources'` (observed on the target machine, 2026-10-04). Source commit and dirty status are `unknown` until a later build step stamps them, so that is expected here.
 
 ```powershell
-uv run --with pyinstaller pyinstaller --onefile --name dtflow-cli --paths src --copy-metadata dtflow tools/packaging/launch_dtflow.py
+uv run --with pyinstaller pyinstaller --onefile --name dtflow-cli --paths src --copy-metadata dtflow --collect-data drawthings_py tools/packaging/launch_dtflow.py
 .\dist\dtflow-cli.exe --version
 $state2 = Join-Path $env:TEMP "dtflow-pkg-state-frozen"
 .\dist\dtflow-cli.exe generate --state $state2 --backend fake --prompt "Offline fixture" --seed 0
@@ -136,6 +136,7 @@ Statuses: **Not run** / **Pass** / **Partial** / **Fail** / **Blocked**. Partial
 | W17 | Source-run fake `check`, `models`, `generate` (seed 0) and `attempts` complete; PNG and metadata saved and readable (P6) | Pass | 2026-10-04 | as W9 | All four commands exited 0 with the expected JSON. The attempt record shows `state: succeeded`, `submission_stage: terminal_observed`, seed 0, 128 x 128, 4 steps, `euler_a`. State directory: `attempts.sqlite3` (16,384 bytes), `owner.lock`, `final-1.png` (404 bytes), `metadata.json` (1,506 bytes). The owner confirmed the saved PNG opens. SQLite 3.53.1 satisfies the 3.51.3 requirement |
 | W18 | PyInstaller `dtflow` launcher builds and `--version` runs (P7) | Pass | 2026-10-04 | as W9 | Build exit 0; frozen `--version` printed the same line as the source run, so `--copy-metadata dtflow` supplied the version. Commit and status are `unknown` until a build step stamps them, as expected |
 | W19 | Frozen fake `generate` and `attempts` match source-run behavior (P7) | Pass | 2026-10-04 | as W9 | Frozen `generate` and `attempts` exited 0; the attempt record has the same state, stages and request fields as the source run; same file set and sizes (404 and 1,506 bytes; `attempts.sqlite3` 16,384). Differences are only IDs, timestamps and paths. The clean-path `generate` also succeeded. File contents were compared by size, not byte for byte |
+| W20 | Frozen Phase 3A CLI (`--collect-data drawthings_py`): fake `generate`, `attempts`, `settings -j`, invalid input and per-user logs (P7) | Pass | 2026-10-04 | PR #10 head; PyInstaller 6.22.3; Python 3.13.13; Windows 10 Pro 10.0.19045 | Without `--collect-data drawthings_py` every command failed with `No module named 'drawthings_py.resources'`; with it `--version` printed `DTFlow 0.0.0 (revision unknown; source status unknown)`, fake `generate` exited 0 with the attempt `succeeded`, `settings -j 2` persisted 2, `-w 300` printed `Invalid request: width_px must be a multiple of 64.` and four `dtflow-<session>.log` files appeared under `%LOCALAPPDATA%\DTFlow\logs`. Owner-reported output. Follow-up the same day: invalid input exited 2 and `attempts` returned `[]`; frozen `generate -b cloud` and a local LoRA generation succeeded, and `check -b local` returned 56 inventory entries; the owner reports the frozen local generation and a clean-`PATH` rerun passed (output not pasted). Not done: a second machine, a stamped commit ID, byte-level comparison with the source run |
 
 ### Recorded results
 

@@ -1,6 +1,7 @@
 """Wire conversion fidelity: what is serialized equals the resolved request, including seed zero."""
 
 import pytest
+from drawthings_py.configs.gen_config import GenConfig
 
 from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE, build_generation_message, float32
 from dtflow.core.models import BackendError, ErrorCategory, LoRASelection, ResolvedGenerationRequest, Sampler
@@ -35,6 +36,18 @@ def test_serialized_configuration_equals_the_resolved_request(seed, sampler, wir
     assert message.shared_secret is None and not message.image and not message.hints
 
 
+def test_selected_loras_are_serialized_with_explicit_weights_and_verified():
+    selections = (LoRASelection("a_lora_f16.ckpt", 0.7), LoRASelection("b_lora_f16.ckpt", 0))
+    wire = build_generation_message(request(loras=selections), None)
+    decoded = GenConfig.from_fbs(wire.message.configuration)
+    assert [(x["file"], x["weight"], x["mode"]) for x in decoded["loras"]] == [
+        ("a_lora_f16.ckpt", float32(0.7), "All"),
+        ("b_lora_f16.ckpt", 0.0, "All"),
+    ]
+    assert dict(wire.effective_configuration)["loras"] == "a_lora_f16.ckpt@0.7,b_lora_f16.ckpt@0"
+    assert dict(build_generation_message(request(), None).effective_configuration)["loras"] == ""
+
+
 def test_shared_secret_is_sent_only_when_configured():
     assert build_generation_message(request(), "secret").message.shared_secret == "secret"
 
@@ -42,7 +55,6 @@ def test_shared_secret_is_sent_only_when_configured():
 @pytest.mark.parametrize(
     "overrides,code",
     [
-        ({"loras": (LoRASelection("lora.ckpt", 1.0),)}, "unsupported_lora"),
         ({"batch_size": 2}, "unsupported_batch"),
         ({"batch_count": 2}, "unsupported_batch"),
     ],

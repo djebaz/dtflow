@@ -1,6 +1,6 @@
 # Phase 3 — Headless CLI and shared application services
 
-**Status:** Planned; no CLI implementation is introduced by this documentation change.  
+**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B is planned.  
 **Prerequisite:** [Phase 2 backends and offline tests](phase-2-backends.md).  
 **Roadmap:** [initial plan](initial.md).
 
@@ -13,6 +13,50 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 ## Delivery sequence
 
 Phase 2A supplies the minimal fake/service/SQLite/artifact slice. Phase 3A expands it into usable real-backend single-generation CLI/services, bounded LoRA selection/preflight, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling, restart reconciliation and custom cloud LoRA upload/reuse. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
+
+## Phase 3A implemented scope and limits
+
+Implemented: explicit `fake`/`local`/`cloud` selection through a composition root (no fallback; cloud credentials from
+`DRAWTHINGS_API_KEY`, local shared secret from `DRAWTHINGS_SHARED_SECRET`); bounded `check`, `models` (kind filter, provenance
+and unknown entries preserved) and `generate`; versioned credential-free configuration/metadata import and export with
+default < file < override precedence and per-field resolution evidence; exact LoRA selection with explicit weights,
+serialized by the Draw Things adapter as whole-model (`All`) LoRAs and verified against the decoded wire configuration;
+shared LoRA preflight (match/mismatch/unknown architecture, availability, fixed `application_unconfirmed` evidence)
+that blocks confirmed mismatches and absent LoRAs before any attempt exists; explicit `--prefix` trigger-prefix
+application; persisted cloud concurrency setting (`settings -j`, 1-4, default 4, not entitlement); the shared logging
+setup; documented exit codes. Defaults chosen where the plan left room: one seed default (`0`, matching the 2A
+slice), `-e HOST:PORT` for the local endpoint, `settings` as the concurrency command, mismatch blocks while unknown
+architecture proceeds with a diagnostic, and `-nc` accepted although no inventory disk cache exists yet.
+
+Offline gate (3A-O1 to 3A-O8): covered by `tests/unit/test_cli.py` (O1, O2 composition, O4 filtering, O3 selection),
+`tests/unit/test_config_preflight.py` (O2, O5, O6), `tests/unit/test_logging_setup.py` (O7, O8),
+`tests/integration/test_cli_local_composition.py` (O3/O6 smoke) and the wire test for LoRA serialization. Owner-reported
+Windows result on the PR head: `uv run dtflow test` 237 passed, 3 deselected.
+
+Owner-run live evidence (2026-10-04, Windows 10, Pentium E6500, reported by the owner, source-run unless noted):
+- 3-LG1 local Draw Things: `generate -b local -e 192.168.1.142:7859 -m z_image_turbo_1.0_q6p.ckpt -s 42 -w 256 -y 256 -i 4 -g 1`
+  reached terminal OK and saved a PNG plus `metadata.json` (attempt `1badda28…`).
+- 3-LG2 direct DT+: the same workload with `-b cloud` reached terminal OK and saved the result (attempt `01b676f8…`);
+  one small subscription generation.
+- `uv run dtflow test -gen -live` passed (3 tests: DT+ token/inventory, DT+ generation smoke, local connectivity).
+- Frozen PyInstaller CLI: fake workflow, settings, invalid input and per-user logs passed (needs
+  `--collect-data drawthings_py`); `check -b local` against the real server returned transport ok and 56 inventory
+  entries ([windows-packaging W20](../research/windows-packaging.md)).
+- Frozen exe: invalid input exited 2 with no attempt recorded; a real DT+ generation passed (attempt `e9c09baa…`). The
+  owner also reports a frozen local generation and a clean-`PATH` rerun passed (output not pasted).
+- Local LoRA through the frozen exe (3A LoRA path): an unknown identifier was rejected by preflight with nothing
+  dispatched; `zimage_turbo_lora_rank64_512_000006000_lora_f16.ckpt:0.8` with `-r` (preflight `match`) generated
+  successfully on the second try (attempt `b61bfe9a…`). The first try lost its stream after one sampling step
+  (`connection_lost`, recorded as an unknown outcome, never retried automatically; the owner reports the cause was a freeze of the Draw Things iOS app). The owner
+  reports the LoRA result validated; whether the LoRA visibly changed the image was judged by the owner, not the agent.
+The agent did not inspect any output image.
+
+Not done or unverified: the official base/refiner and Kandinsky/SD-v1 exception rules are not pinned, so no exception
+logic exists; LoRA application is still not confirmed by backend evidence; some server-reported LoRA architecture
+labels look wrong, and preflight blocks on a reported mismatch with no override yet; no queue, cancellation or cloud
+LoRA behavior was run live; raw inventory disk-cache read/write integration is still planned; the saved Windows
+credential provider is Phase 4, so cloud credentials are environment-only; the frozen exe was not tried on a second
+machine or stamped with a commit. Billing behavior remains unverified.
 
 ## Release gates and schema compatibility
 
