@@ -150,3 +150,9 @@ Record the exact dependency versions, Draw Things version/environment used for l
 - workflow execution
 - production DT+ backend integration
 - speculative backend behavior
+
+## Follow-up implementation direction
+
+The [updated roadmap](../plans/initial.md) brings a narrow native Python direct DT+ adapter into Phase 2 alongside the Draw Things adapter and an offline fake. The [Phase 2 plan](../plans/phase-2-backends.md) defines completion, preview labeling, cancellation uncertainty, token lifecycle and subscription-only behavior. Broader cloud operations remain Phase 11 work.
+
+The [ecosystem research](dtflow-ecosystem-research-report.md) records source-level findings and unresolved evidence needs. This follow-up changes planning only; it does not add runtime capabilities or repeat the recorded live tests above.

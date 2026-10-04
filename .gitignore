@@ -221,6 +221,8 @@ dtflow-data/
 outputs/
 generated/
 thumbnails/
+
+# Repository-root development diagnostic logs (see AGENTS.md)
 logs/
 
 # Local databases and runtime state
