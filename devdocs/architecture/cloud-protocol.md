@@ -30,6 +30,8 @@ The initial implementation covers API-key authentication and controlled txt2img.
 
 HTTP requests use Content-Type: application/json. Hostnames/certificates are verified. API origin and gRPC endpoint are independently injected for fixtures; changing one does not silently redirect the other. No signed-storage endpoint is contacted in Phase 2.
 
+Cloud TLS follows the working probe baseline: DirectCloudService creates ssl.create_default_context() and enables h2, so the cloud adapter explicitly selects system trust with its normal certificate/hostname checks. HTTP likewise uses normal verified HTTPS. Do not add certificate pinning, extra TLS identity checks or a separate security policy beyond that baseline without an evidenced requirement. The local Draw Things bundled-CA/hostname exception is not used for DT+.
+
 DTFlow choice: connection checks may acquire a short-term token and perform Echo, but never call /authenticate or GenerateImage merely to report health. Return separate API-key authentication, gRPC reachability and inventory status. Token acquisition proves that request was accepted; it does not establish generation entitlement or remaining quota.
 
 ## Short-term token exchange
@@ -50,8 +52,8 @@ DTFlow choices:
 - Require a nonempty token and positive integer expiresIn; reject booleans, missing/wrong fields, non-object JSON, malformed JSON and non-200 responses. Do not cache a partially valid response.
 - Use monotonic expiry measured conservatively from HTTP request start plus expiresIn, not wall-clock expiry. A response already expired by that measure fails clearly.
 - Default refresh margin is 300 s, capped at half the advertised lifetime so short-lived tokens are not immediately refreshed forever. Cache reuse requires remaining lifetime strictly greater than that effective margin.
-- Coalesce refresh within one owning loop and credential/API-origin/App-Check scope using one lock and an in-flight task. Shield that shared task from cancellation of one waiter; another waiter may still need it. Adapter shutdown cancels and awaits it.
-- Credential/App-Check/origin changes invalidate the cache; late responses from old scope cannot populate the new cache. Never persist tokens. A refresh failure produces a typed sanitized failure, no generation submission.
+- Authentication scope (selected credential, API origin and App Check configuration) is immutable for the lifetime of one client. Resolve the credential once; changing scope requires closing that client and creating a new one with an independent cache. Runtime scope switching and old-scope response reconciliation are not implemented.
+- Coalesce refresh within that client and its owning loop using one lock and an in-flight task. Shield that shared task from cancellation of one waiter; another waiter may still need it. Adapter shutdown cancels and awaits it. Never persist tokens. A refresh failure produces a typed sanitized failure, no generation submission.
 - Use explicit expiry refresh and no automatic HTTP retries initially. No generation resubmission follows a token failure.
 
 The probe caches only the token string and does not consume expiresIn. It is not the production cache implementation or an expiry test.
@@ -77,7 +79,7 @@ P1 sends the optional fields as JSON null. The official Codable path omits nil o
 
 Authorization header contains the short-term token directly. Official success requires HTTP 200 with gRPCToken string; DTFlow additionally requires nonempty content and valid JSON/object structure. Use that token for this GenerateImage call only. Its expiry, reuse across generations and refresh behavior are not established; do not invent a persistent generation-token cache.
 
-Immediately before GenerateImage can send, services must have committed their potential-execution record (Phase 3) and the adapter marks POSSIBLY_SUBMITTED. Token acquisition and authorization alone are NOT_SUBMITTED for the generation RPC, not proof of zero server-side authentication/billing effects. Cancellation after possible RPC send retains remote uncertainty.
+Immediately before GenerateImage can send, services must have committed their potential-execution record (the durable attempt foundation already exists in Phase 2A; Phase 3 extends its use) and the adapter marks POSSIBLY_SUBMITTED. Token acquisition and authorization alone are NOT_SUBMITTED for the generation RPC, not proof of zero server-side authentication/billing effects. Cancellation after possible RPC send retains remote uncertainty. Once terminal OK and required valid outputs are established, later local notification/cleanup failure preserves that stronger completion evidence; application success still requires durable saving.
 
 ## Billing, errors and unknowns
 
@@ -95,20 +97,26 @@ DTFlow choice: use a scoped httpx.AsyncClient with injectable transport and orig
 
 Explicit HTTP limits: connect 10 s, read/write 30 s, pool wait 10 s, and outer total 30 s per token/auth operation. HTTPX inactivity limits do not implement a total deadline; use the remaining monotonic outer budget as well. Bound decoded auth response to 1 MiB via streaming/size checks; oversized responses are protocol/resource failures without body logging. Pool/client shutdown follows the backend cleanup deadline.
 
-Cancel and close owned HTTP streams/tasks asynchronously; preserve asyncio cancellation. A cancelled request may already have reached the HTTP server. Do not start GenerateImage after cancellation, accept late credentials into another scope or retry a cancelled authorization. Cancelling one token waiter leaves the shared refresh alive for other waiters; shutdown owns its final cleanup.
+Cancel and close owned HTTP streams/tasks asynchronously; preserve asyncio cancellation. A cancelled request may already have reached the HTTP server. Do not start GenerateImage after cancellation, including when a mocked authorization response arrives late, or retry a cancelled authorization. Cancelling one token waiter leaves the shared refresh alive for other waiters; shutdown owns its final cleanup. A completed response does not revive a closed client or transfer credentials to its replacement.
 
 Do not use urllib in a worker thread for production HTTP: cancelling the awaiting task would not stop the blocking call. P1's to_thread pattern is diagnostic evidence only. No automatic redirects, transport retries or credential-source switches are introduced.
 
-## Required fixtures before Phase 2C acceptance
+## Phase 2C acceptance and test-layer mapping
 
-Exercise actual adapter/service calls against HTTP mocks/local gRPC, with external sockets denied:
+Exercise actual cloud adapter/service composition against HTTP mocks and the existing scripted TLS/gRPC fixture, with external sockets denied. Five scenario groups define acceptance, not a mandatory number of test functions; one scenario may satisfy several requirements.
 
-- exact token/auth paths, JSON keys/types, headers and omission of PAYG fields;
-- Base64 decoding to the same effective protobuf configuration/prompts with empty contents, seed zero and supported sampler;
-- valid/malformed/empty/wrong-type/non-200 responses and bounded body handling;
-- expiry boundaries, short lifetime, concurrent coalescing, cancelled waiter, scope change and failed refresh using controllable monotonic time;
-- per-generation bearer metadata captured by the fixture server, with no cross-request token assumption;
-- connect/HTTP-total/generation deadlines, cancelled auth preventing RPC send, stream cleanup and uncertain post-send loss;
-- no automatic HTTP/generation retries, leaked bodies/tokens or silent credential fallback.
+| Scenario group | Required evidence | Authoritative test layer |
+| --- | --- | --- |
+| Successful cloud generation | Selected API key → short-term token → per-generation authorization → authenticated RPC → valid final. Assert token/auth paths and headers, omitted PAYG fields, blob matching the actual submitted provider message with contents excluded, and correct gRPC bearer metadata. | Cloud adapter composition using HTTP mocks and the existing gRPC server; shared/2B tests own full wire mapping and codecs when the same code executes. |
+| Token lifecycle and concurrency | Valid-token reuse, refresh under controllable time and one shared refresh. Cancelling one waiter does not disrupt another. Each generation obtains its own authorization token. | Focused cloud auth-client tests using mocked clocks/events; generation composition verifies per-request authorization. |
+| Authentication failure | Representative failure prevents GenerateImage, with no silent credential fallback or automatic retry. Conspicuous fake secrets are absent from public errors and captured logs. | One or two representative adapter failures; parametrized parser/HTTP tests cover malformed, missing, wrong-type, empty and non-200 responses. Existing credential-provider tests own unchanged source precedence. |
+| Submission uncertainty and cancellation | Pre-submission failure remains not submitted. Cancellation during authorization prevents RPC dispatch even after a late mocked response. Post-send loss without authoritative completion remains unknown and is not retried; validated completion retains its stronger evidence. | Cloud composition for the auth/send boundary; shared/2B tests own generic stream failure/cancellation and completion handling only when the same implementation executes. |
+| Non-generative health/inventory | Required short-term token acquisition and Echo/discovery occur without /authenticate or GenerateImage. | Cloud adapter composition; shared/2B tests own unchanged Echo parsing/inventory mapping. |
 
-Fixture schemas are derived from S1–S5/P1. Mocks validate DTFlow's specified behavior, not production quota, remote cancellation or actual model compatibility. No live request was submitted while writing this specification.
+Keep small focused tests for new HTTP response parsing, bounded bodies, failed refresh, HTTP deadlines/cancellation and owned-client/shared-task shutdown. These requirements remain mandatory; equivalent response-shape cases are parametrized at the parser/HTTP boundary instead of becoming independent end-to-end scenarios. Immutable client scope removes runtime scope-switch and late-old-scope cache tests.
+
+Test common behavior once at its owning layer. Reuse seed/sampler/dimension serialization, codecs, certificate/hostname matrices, preview/final validation, generic gRPC statuses, stream cleanup and deadlines from 2B only where 2C actually executes the same code. Reuse of a dependency or intended architecture alone is insufficient. Phase 2B now provides provider serialization/codecs and scripted TLS/gRPC fixtures; shared channel/stream execution must be demonstrated during 2C implementation. Record the acceptance-to-test mapping and any genuinely cloud-specific transport differences in that PR.
+
+Reuse tests/support/dt_server.py and tests/fixtures/tls/; do not build a separate cloud simulator. Use events, mocked monotonic clocks and tiny payloads, with no sleeps for expiry/concurrency tests or repeated TLS setup when unnecessary. Measure the runtime added to the default suite and record it in the implementation PR; impose no test-count or line-count target.
+
+Fixture schemas are derived from S1–S5/P1. Mocks validate DTFlow's specified behavior, not production quota, remote cancellation or actual model compatibility. This amendment changes specifications only; it adds no cloud implementation, dependency or executed cloud test, and no live request was submitted while writing it.

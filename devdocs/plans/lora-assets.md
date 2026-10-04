@@ -65,17 +65,20 @@ Receipts survive restart and cache cleanup. They record past server acknowledgem
 
 The inspected LoRAStore.list explicitly throws because no public list endpoint is exposed. Upload returns no usable delete key; deletion requires keys not obtainable from that receipt. Expose local known-upload inspection clearly, never complete account listing. Remote listing, deletion and authoritative remaining storage stay unavailable until independently verified.
 
-## Acceptance
+## Acceptance ownership
 
-Offline CLI/service tests must cover:
+Use the [Phase 3 scenario plan](phase-3-cli.md#testing-and-acceptance) as the authoritative acceptance mapping; do not create a second CLI/integration matrix from the behavioral requirements above.
 
-- structured inventory, explicit refresh/provenance, missing/unknown architecture and match/mismatch rules;
-- precise identifiers/weights, supported exception/refiner behavior, config round trips and pre-dispatch diagnostics;
-- signed-upload and already-existing branches, with zero PUTs in the latter;
-- content changes, concurrent preparation, backend/account isolation and receipt persistence/restart;
-- verified storage/auth refusals, malformed responses, checksum inconsistency and secret/signed-URL redaction;
-- interrupted transfer, receipt-write failure and explicit reconciliation without blind retries;
-- repeated generation/queue references without repeated weight uploads, stale receipts and absent remote list/delete support;
-- bounded-memory transfer and no unexpected external connections.
+| Phase 3 owner | LoRA/asset evidence |
+| --- | --- |
+| 3A-O5 | Structured compatibility/preflight: match/mismatch/unknown, bounded official exception/refiner rules, availability distinction and rejection before dispatch. Reuse existing inventory parsing/refresh evidence when unchanged. |
+| 3A-O6 | Exact identifiers/weights, explicit prefix behavior, configuration round trips and resolved-request/pre-dispatch fidelity. |
+| 3B-O6 | Signed upload and already-existing/no-PUT branches, bounded-memory transfer, checksum/size/identifier fidelity, durable receipt and validated restart/reuse. |
+| 3B-O7 | Concurrent preparation coalescing, changed content and backend/account isolation. |
+| 3B-O8 | Both transfer uncertainty and post-transfer receipt-write failure, representative storage/auth refusals, response/identity validation, secret/signed-URL redaction and explicit reconciliation without blind retry. |
+| 3B-O9 | Immutable queue/CLI references without hidden repeated transfers; stale/inaccessible receipt handling and honest known-upload inspection without remote list/delete claims. |
+| 3-LG4 | Separately authorized actual cloud preparation/reuse plus supported LoRA generation, individually selectable when implemented. |
 
-After offline acceptance, separately authorize and record a small deployed direct-cloud upload/reuse plus supported-generation check using the actual adapter. Record model/LoRA versions, effective request, source/build identity and the exact evidence for application. A plain text-to-image smoke result, an upload receipt or mocks alone cannot prove custom LoRA generation compatibility. No generation, upload, model download or billing-affecting call is needed merely to edit or validate this plan.
+Small parametrized parser/service tests own genuinely new validation logic; higher-level asset/CLI scenarios do not repeat cloud-token, TLS or shared wire matrices. Unexpected-network refusal remains shared infrastructure. All behavioral requirements above remain mandatory, but several requirements may share one scenario. These groups are planned, not implemented tests or deployed evidence.
+
+For the advertised subset, record actual model/LoRA versions, effective request, source/build identity and trustworthy application evidence through the release implementation. A plain txt2img smoke, receipt or mocks alone cannot establish LoRA application. No generation, upload, model download or billing-affecting call is needed merely to edit or validate this plan.

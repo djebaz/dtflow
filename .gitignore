@@ -239,6 +239,9 @@ settings.local.*
 # Local secrets / credentials
 *.pem
 *.key
+# Test-only TLS fixtures for offline strict-verification tests (see tests/fixtures/tls/README.md).
+!tests/fixtures/tls/*.pem
+!tests/fixtures/tls/*.key
 
 # Generated Qt / PySide Python sources.
 # Canonical Qt Designer .ui and Qt resource .qrc files remain tracked.

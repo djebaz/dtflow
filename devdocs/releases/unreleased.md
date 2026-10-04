@@ -4,6 +4,10 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Source-run dtflow test wrapper over pytest: -all/--all for offline tests, -live/--live for live connectivity, and -gen/--generate for generation smoke selection. No flags runs offline; explicit live groups can run alone or alongside offline tests. Wrapper selection needs no separate marker/env opt-in; configured endpoints and exact network allowlists remain required. Generation tests are not implemented yet, so requesting them fails clearly. Existing direct pytest gates remain supported.
+
+- Phase 2B narrow local Draw Things gRPC adapter (`dtflow.backends.drawthings`): bundled local-CA compatibility with optional strict system/custom trust, txt2img with seed-zero and wire-configuration fidelity, inventory with provenance, one-lane generation with shared deadline, received-tensor checks, honest failure evidence, and a scripted TLS/gRPC fixture server with test-only certificates. Adds the direct `grpclib` dependency. Verified offline only; real-server TLS, compatibility and cancellation remain unverified, and the CLI does not expose it yet.
+
 - Phase 2A async backend-neutral contracts and deterministic fake backend with lifecycle, connectivity, inventory,
   typed failures and explicit fixture provenance; environment/fake-saved credential providers preserve precedence.
 - Minimal `dtflow` CLI for explicit fake generation, connectivity, inventory and attempt inspection through shared
@@ -59,6 +63,10 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Replace overlapping Phase 3 acceptance checklists with authoritative-layer ownership, flexible single-generation/queue/asset scenario groups and separately selected live workflows. Align LoRA and release acceptance to consume the same evidence; retain behavioral requirements and deterministic failure/recovery coverage. Plan individual live-workload selection without claiming it exists. No runtime, dependency or test implementation changes are introduced by this amendment.
+
+- Specify lean Phase 2C acceptance through five cloud-specific scenario groups and focused parser/HTTP tests. Reuse shared/2B coverage only for the same implementation path; use the existing TLS/gRPC fixtures and measure added suite runtime. Authentication scope is immutable per client, with replacement rather than runtime scope switching. These are specification changes; no cloud adapter implementation, cloud test execution or dependency change is claimed.
+
 - Adopt GPL-3.0-only for DTFlow before its first public release, replacing the unreleased MIT declaration in `LICENSE` and `pyproject.toml`. No DTFlow version was previously published under MIT; update the decision, roadmap and packaging documentation to match. Runtime behavior and dependency versions are unchanged.
 
 - Expand README with current development status, setup/validation, diagnostic help, repository layout, design requirements and dependency-distribution references. Distinguish planned application features from existing probe tooling.
@@ -112,6 +120,10 @@ Pending changes for the next DTFlow release.
 - Reframe the DT+ roadmap around hardening the already-proven native Python direct-cloud path into a production backend. MediaGenerationKit remains a protocol/reference implementation, with a Swift bridge reserved as a fallback for future capabilities that cannot be reproduced reliably in Python.
 
 ## Fixed
+
+- Use an explicit local Draw Things bundled-CA TLS policy by default, matching the working probe's hostname behavior while retaining certificate-chain verification. Clear Python 3.13's strict X.509 flag only for this CA compatibility path; owner-reported live diagnostics found a missing key-usage extension and IP mismatch. The non-generative live check uses this policy without manual CA setup. System/custom-CA policies remain verified; planned direct DT+ TLS follows the probe baseline without added certificate requirements. Successful live acceptance after this change remains pending.
+
+- Preserve validated local gRPC backend completion and final artifacts when terminal-event delivery fails; return a sanitized warning so the service can proceed with durable saving rather than recording the remote outcome as unknown.
 
 - Initialize the test asyncio runner before installing the socket/DNS guard, allowing Windows' private event-loop wakeup socket without allowing test scenarios to dial loopback. Keep run-specific failure/rerun evidence in the closeout PR description.
 

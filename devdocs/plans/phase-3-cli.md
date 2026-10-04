@@ -73,7 +73,7 @@ Normal mode logs important events/errors; explicit development mode adds sanitiz
 
 Use rotating UTF-8 text files with bounded retention, timestamps, severity/component, version/commit/session and job/attempt correlation where available. Handle simultaneous-process file naming/rotation safely, keep Qt responsive and report write failures without leaking secrets. Exclude credentials, tokens, headers, raw image payloads and full prompts by default; sanitize exception paths/messages too.
 
-Logs remain separate from durable execution records and disposable cache; `--no-cache` does not disable logging. Extend offline acceptance with destination selection, rotation bounds, level selection, correlation and secret-redaction checks, including simulated write failure. Do not submit generation merely to test logging.
+Logs remain separate from durable execution records and disposable cache; `--no-cache` does not disable logging. The 3A-O7/3A-O8 logging groups below own destination/rotation/level/correlation, sanitization and simulated write-failure evidence; do not add a parallel CLI matrix. Do not submit generation merely to test logging.
 
 ## Shared services and persistence boundary
 
@@ -93,7 +93,7 @@ Update outcomes and artifact references atomically as evidence arrives. Distingu
 
 On startup/record inspection, unfinished attempts that crossed the boundary remain unknown and cannot be automatically resubmitted. A crash between recording potential execution and sending the RPC may conservatively leave an unknown outcome; this is intentional. No remote job ID exists in the inspected contract to resolve it.
 
-Test crashes/failures before recording, after marking potential execution, during generation and between artifact saving and outcome commit. Previously saved artifacts remain evidence, not automatic proof of full completion.
+Reuse Phase 2A crash/write-boundary tests when the same service/store executes; test new Phase 3 queue state and composition boundaries in the mapped groups below. Previously saved artifacts remain evidence, not automatic proof of full completion.
 
 Phase 3A completes the initial Phase 2A durable attempt/artifact foundation for the supported real backends. Phase 3B extends them with transactional queue/job state, rolling scheduling and local restart reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
 
@@ -121,28 +121,68 @@ Expose receipt/known-upload inspection without pretending it lists the complete 
 
 ## Testing and acceptance
 
-- Headless imports and command startup work without Qt.
-- Help and every documented option match the implementation.
-- Fake-backed CLI commands cover success, failure, interruption and uncertain outcomes.
-- Real adapters execute against local gRPC/HTTP fixtures through the CLI/service path, including connectivity, inventory, authentication and generation.
-- Tests assert saved output metadata, seed-zero fidelity, supported sampler/enum and pixel-to-wire dimension mappings, defaults and the effective encoded parameters; unsupported options fail validation before submission.
-- Tests assert multiple final outputs where supported, empty-output rejection and preview labeling.
-- Crash-boundary tests prove the request/attempt record precedes submission, failed persistence prevents submission and unfinished potentially submitted attempts cannot be automatically retried.
-- Phase 3B CLI acceptance covers durable queue creation/inspection and ten independent items with a four-slot cap: controllable out-of-order completion proves item 5 starts before all initial four finish, continuous refill stays bounded and results retain item identity.
-- Cover Pause/Resume, pending cancellation, running interruption, pre-submission rejection, uncertain post-submission loss, blocked replacement dispatch and explicit override through shared services/CLI.
-- Restart tests restore paused queues, completed outputs and unresolved reservations, never replay ambiguous attempts, and require explicit action before eligible work resumes.
-- Cover one local lane, changing concurrency downward and exclusive dispatch ownership. Use deterministic fake timing and focused real-adapter protocol fixtures, with no external generation.
-- Discovery tests cover explicit refresh, backend provenance, reliable model/LoRA/control classification and unclassified files.
-- Phase 3A LoRA fixtures cover metadata, exact identifiers/weights, match/mismatch/unknown diagnostics, official exception/refiner rules in supported scope, config round trips and rejection before generation of confirmed incompatible selections.
-- Phase 3B upload fixtures exercise actual shared services/CLI: metadata POST, signed PUT, already-existing response without PUT, checksum/size/identifier fidelity, storage/auth failures, secret/signed-URL redaction, ambiguous transfer and failed durable receipt writes.
-- Cover repeated use and restart without repeated weight transfers, changed file content, backend/account separation, stale receipts, queue references and absent remote listing/delete support. A receipt is not proof of perpetual remote availability or LoRA application.
-- Record separately authorized deployed-cloud upload plus generation evidence for the advertised subset; mocks and successful plain text-to-image runs do not establish custom LoRA use.
-- An unexpected external connection fails ordinary tests; no subscription credits are consumed by fixture coverage.
-- Cloud subscription-only policy, token refresh and sanitized failures remain covered.
-- Validate syntax/imports, parsing/help, `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .`.
-- Record any actual Windows smoke-test result without inferring packaging success from source execution.
+### Ownership and existing execution tiers
 
-Explicitly authorized live checks can verify deployed behavior after offline coverage; they are not required merely to test CLI plumbing.
+Each behavior has one authoritative automated test layer. Higher layers test only behavior they uniquely add or necessary composition between tested layers. Reuse counts only when the same implementation executes; a new override or execution path needs focused coverage. Acceptance requirements do not imply one test function each. Prefer extending an existing scenario or parametrized test, while allowing a focused regression for a genuinely distinct boundary.
+
+The source-run `dtflow test` wrapper already exists in PR #8; do not build another runner. `-all/--all` selects offline tests, `-live/--live` selects non-generative live checks, and `-gen/--generate` selects generation smoke tests. Groups combine additively; no flags means offline. Ordinary `uv run pytest` keeps live tests gated. Requested unconfigured live checks fail clearly; the generation group currently has no tests and reports that absence. Owner-reported Windows evidence covers offline, live-only and offline-plus-live runs, not generation workflows.
+
+Phase 2A owns unchanged credential selection, core output validation, base attempt-before-submission persistence and unfinished-attempt recovery. Phase 2B owns provider wire mapping (including seed zero, samplers and dimensions), codecs, TLS policies, generic stream/terminal behavior, preview/final validation and inventory parsing/classification. Phase 2C must own cloud token lifecycle, authorization, response parsing, subscription-only fields and cloud-specific sanitization; that coverage remains planned until implemented. Shared infrastructure owns unexpected-network refusal and test selection. Do not duplicate these matrices in Phase 3. A CLI configuration scenario may assert a saved resolved seed of zero without decoding the provider wire again.
+
+Occasional live workflows can replace duplicated high-level fixture happy paths, but cannot replace controlled tests for queue/persistence correctness, uncertainty, failed writes or cancellation boundaries. A small fixture composition smoke remains useful where it proves new wiring cheaply; do not require both fixture and live scenarios to repeat the same assertion matrix.
+
+### Phase 3A scenario groups
+
+| ID | Scenario group and authoritative layer | New evidence |
+| --- | --- | --- |
+| 3A-O1 | CLI surface/presentation; compact CLI tests | Headless startup/help/version, implemented options, stdout/stderr and parametrized mapping for success, validation, rejection, interruption and unknown outcomes. Invalid CLI input prevents dispatch. |
+| 3A-O2 | Configuration resolution and persistence; service plus one CLI composition | Import/defaults/overrides → immutable effective request → output metadata; distinctive parameter values, round trips and no-cache bypass. Reuse base attempt/output durability tests. |
+| 3A-O3 | Real-backend application composition; narrow local/cloud fixture smoke where needed | Backend selection reaches the intended adapter through CLI/services and saves the application result. No repeated protocol assertions; live evidence can replace duplicated high-level happy paths. |
+| 3A-O4 | Application inventory presentation/filtering | Only new application behavior: selection/display of supplied provenance and unknown entries, without inventing compatibility. Existing adapter tests own refresh/parsing/classification when unchanged. |
+| 3A-O5 | LoRA compatibility/preflight; parametrized pure/service tests | Match/mismatch/unknown and supported official exception/refiner rules; confirmed incompatibility prevents dispatch. Keep availability distinct from compatibility. |
+| 3A-O6 | LoRA/config fidelity; service and one CLI smoke | Exact identifier/weight, explicit trigger-prefix handling, config round trip and immutable resolved request; preflight before dispatch without silently replacing selections. |
+| 3A-O7 | Logging lifecycle; focused logging tests | Destination, levels, rotation and session/job/attempt correlation together; bounded retention and process-safe naming. |
+| 3A-O8 | Logging failure/sanitization | Conspicuous fake secrets absent from output/logs; write failure leaves generation/retry/billing semantics unchanged. |
+
+### Phase 3B scenario groups
+
+| ID | Scenario group and authoritative layer | New evidence |
+| --- | --- | --- |
+| 3B-O1 | Canonical 10-item / 4-slot rolling queue; fake backend + events + SQLite | Items 1–4 start, out-of-order completion admits item 5 before the initial group completes, reservation count stays bounded, refill continues and stable item/result identity survives completion order. These assertions belong in this central scenario, not separate integration tests. |
+| 3B-O2 | Queue controls; small controlled service/CLI scenario | Pause allows active completion but prevents refill; Resume admits eligible work; pending Cancel prevents dispatch; running interruption preserves honest evidence and completed outputs. |
+| 3B-O3 | Uncertainty/restart/override; durable service scenario | Uncertain reservation blocks replacement, survives paused restart, never replays, and ordinary Resume cannot clear it; explicit override is recorded without resolving or replaying the uncertain attempt. Cover new queue write/crash boundaries beyond base 2A attempts. |
+| 3B-O4 | Scheduler policy; cheap arithmetic plus controlled dispatcher scenario | Local one-lane execution, cap reduction while work is active and eligible ordering. Prove the dispatcher obeys its policy, not arithmetic alone. |
+| 3B-O5 | Dispatch ownership; focused real process-boundary evidence where needed | Second dispatcher excluded, recovery after owner exit, and old owner cannot continue dispatch. Reuse 2A ownership where applicable; do not introduce leases solely to satisfy a test plan. |
+| 3B-O6 | Asset prepare/upload/reuse; asset-service HTTP fixtures | POST → signed PUT → durable receipt → restart → validated reuse without another transfer; already-existing branch performs no PUT. Check checksum, size, identifier and bounded transfer behavior together. |
+| 3B-O7 | Asset dedup/content/scope identity | Concurrent identical preparation coalesces; changed content and backend/account scope stay distinct. Use cheap parametrized identity/parser checks where sufficient. |
+| 3B-O8 | Asset uncertainty/persistence/sanitization | Both uncertain transfer and completed transfer followed by failed receipt write preserve evidence and prevent blind re-upload. Cover explicit reconciliation, representative storage/auth refusals, malformed/inconsistent responses and token/signed-URL redaction at their lowest new authoritative layer. |
+| 3B-O9 | Queue/CLI asset references | Immutable prepared identifier/checksum reaches queued resolved requests without hidden upload; stale/inaccessible receipt fails clearly. Local known-upload inspection does not claim remote listing/deletion. |
+| 3B-O10 | Saved-state compatibility; canonical historical fixtures | Unsupported-newer refusal and supported migration failure preserve original state. Add real released upgrade fixtures only when schemas exist and require migration, including completed outputs, stable IDs, uncertainty and paused restoration. Do not invent migrations to meet a test count. |
+
+These eighteen groups are an outline, not a function-count quota or ceiling. A group may use several small tests or parametrized cases; combining unrelated failures into a giant test is not required. Every additional test should identify a distinct uncovered boundary, irrespective of the existing count. The feature requirements elsewhere in this plan remain intact.
+
+### Separately selected live workflows
+
+Reuse the existing local non-generative check and the future 2C cloud check; do not add another connection test merely because Phase 3 exposes a CLI. Add composition assertions only if the application path differs materially.
+
+| ID | Planned live-generation workflow | Evidence |
+| --- | --- | --- |
+| 3-LG1 | Local Draw Things generation | Actual application/CLI → local adapter → generation → durable final image and metadata. |
+| 3-LG2 | Direct DT+ single generation | Actual release credential/auth/application path → cloud generation → durable result. |
+| 3-LG3 | Small cloud rolling queue | For example four items/two slots through actual application/backend composition; deterministic 10/4 remains the scheduler authority. |
+| 3-LG4 | Supported custom cloud LoRA preparation/reuse/use | Upload or server acknowledgement → supported generation → durable receipt → reuse without another transfer. Record exact model/LoRA and trustworthy application evidence; a receipt or plain txt2img success alone is insufficient. |
+
+These workflows are planned, not executed or implemented. Make each individually selectable when introduced so checking one backend does not require both endpoints or a custom LoRA, or implicitly run every paid workload. Determine a canonical short/long selector pair then; the current wrapper has no individual-workflow selector. Do not advertise an unimplemented command. The `-gen` group remains an explicit generation opt-in; non-generative `-live` never submits generation. Agent-executed generation/upload still requires task authorization for the named bounded workload. Use small explicit workloads, no ambiguous retry/fallback, and record actual model/backend/build identity and checks. No real generation, upload or download is needed to edit this plan.
+
+Live workflows establish deployed compatibility, not deterministic no-replay, slot accounting, Pause/Cancel, ownership, migration/write failure, redaction or controlled cancellation evidence. Keep those offline. Release gates consume this evidence rather than defining another suite.
+
+### Fixtures, runtime and handoff
+
+Use pure functions for parsing/policy and fake backends with controlled `asyncio.Event`s/futures, injected clocks and tiny payloads for orchestration. Use real SQLite for transactional queue/restart behavior. Reuse HTTP/gRPC/TLS fixtures only where testing new adapter composition or asset protocol behavior needs them. No sleeps for expiry, queue polling or artificial generation delay. Subprocesses are for actual CLI/process ownership/crash boundaries, not every logical state.
+
+Measure default offline wall-clock time and slowest tests before Phase 3, after 3A and after 3B using `uv run pytest --durations=10`. The wrapper does not currently forward `--durations`. Record the environment and added runtime in implementation PRs; review dominating tests for a cheaper authoritative layer. Test counts and test/source LOC ratios are not release gates. Avoid rigid runtime limits before comparable measurements exist.
+
+Run canonical syntax/import/help, pytest and Ruff checks for implementation changes. Preserve exact endpoint guards and offline defaults. Record owner-run Windows and separately authorized deployed evidence distinctly; source success does not prove Windows packaging. Retire superseded assertions when an authoritative scenario replaces them rather than accumulating the old checklist underneath this plan.
 
 ## Scope and later expansion
 
