@@ -46,7 +46,11 @@ Assert wire configuration, explicit seed zero, sampler/dimension mapping, final-
 
 Implement the [cloud protocol](../architecture/cloud-protocol.md), sharing provider serialization/codecs privately with 2B. Use the selected async HTTP client, expiry-aware concurrent token refresh, per-generation authorization, TLS and subscription-only fields. Implement non-generative token/transport/Echo health and inventory independently from generation entitlement.
 
-Exercise actual cloud adapter calls against HTTP mocks and the local gRPC fixture, capturing exact authorization metadata. Cover cancellation during auth, token expiry/scope changes, malformed responses and generation uncertainty. Gate 2C on the pinned source contract and fixtures; no deployed compatibility or billing claim follows from mocks.
+Exercise actual cloud adapter calls against HTTP mocks and the existing scripted TLS/gRPC fixture. Follow the [five cloud acceptance scenario groups and test-layer mapping](../architecture/cloud-protocol.md#phase-2c-acceptance-and-test-layer-mapping): successful generation, token lifecycle/concurrency, authentication failure, submission uncertainty/cancellation, and non-generative health/inventory. Authentication scope is immutable per client; scope changes require a new client rather than runtime cache switching.
+
+Keep acceptance focused on cloud-specific behavior: exact authorization metadata and blob/request consistency, subscription-only fields, token reuse/coalescing and cancelled-waiter handling, sanitized failures, HTTP limits/cancellation, no retries/fallback, and no generation during health checks. Response-shape variants belong in focused parametrized parser/HTTP tests. Reuse 2B tests only for actual shared implementation paths; 2B serialization/codecs and fixtures exist, but shared cloud channel/stream execution must be confirmed during 2C implementation. Do not duplicate generic TLS, wire, codec or stream suites when that same code executes.
+
+Use events, mocked clocks and tiny payloads, avoiding sleeps and redundant TLS setup. Measure the runtime added to ordinary tests and record it in the 2C implementation PR; impose no test-count or line-count target. Gate 2C on the pinned source contract and mapped evidence; no deployed compatibility or billing claim follows from mocks.
 
 The model/LoRA preflight and separate storage audit are contract/investigation deliverables in this phase. Implement bounded LoRA selection in 3A and custom cloud upload/reuse in 3B under [the LoRA plan](lora-assets.md), not in 2C.
 
@@ -155,7 +159,7 @@ Phase 2A implementation validation uses the canonical pytest/Ruff commands. Fake
 - Real adapters are exercised through local gRPC transport, including terminal status, deadlines, cancellation/disconnects and cloud authorization metadata.
 - Request conversion tests cover seed fidelity, explicit parameters and output metadata.
 - Stream tests cover terminal failures, no final output, partial outputs and preview labeling.
-- Cloud tests cover credential precedence (including both sources, empty environment values and failed selected credentials), absence of silent fallback, token expiry, concurrent refresh, per-generation authentication, sanitized errors and disabled PAYG opt-in.
+- Phase 2C meets the five mapped cloud scenario groups, including token reuse/refresh, shared refresh surviving cancellation of one waiter, per-generation authentication, cancelled auth preventing dispatch, sanitized failures and omitted PAYG fields. Unchanged credential precedence and common transport/wire behavior remain owned by existing tests when the same implementation executes; representative cloud composition proves no fallback/retry or unintended generation. HTTP-specific parsing, limits and cancellation have focused coverage. Authentication scope is immutable per client, and added default-suite runtime is recorded in the implementation PR.
 - Phase 2D: record actual target-Windows packaging findings or explicit pending evidence/blocker status; unresolved distribution decisions stay explicit. CI/Linux results are not target-machine acceptance.
 - Complete the version-pinned upstream feature inventory in the parity matrix, with gaps/exclusions and acceptance milestones; no full-parity claim without that deliverable.
 - Test endpoint registration/external-network refusal, planned live opt-in gates and async/TLS fixture cleanup. Newly added implementation dependencies follow uv; documentation changes alone do not alter the lock.
@@ -176,4 +180,3 @@ Use separate PRs for 2A, 2B and 2C: 2A establishes the tested foundation; 2B add
 ## Deferred work
 
 [Phase 3](phase-3-cli.md) delivers the headless CLI: 3A expands the 2A foundation into real-backend single-generation CLI/services, durable attempts and output saving; 3B adds durable queues, rolling dispatch, restart reconciliation and custom cloud LoRA upload/reuse before Qt. Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds batch planning; Phase 7 extends advanced scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
-

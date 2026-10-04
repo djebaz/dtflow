@@ -61,6 +61,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Specify lean Phase 2C acceptance through five cloud-specific scenario groups and focused parser/HTTP tests. Reuse shared/2B coverage only for the same implementation path; use the existing TLS/gRPC fixtures and measure added suite runtime. Authentication scope is immutable per client, with replacement rather than runtime scope switching. These are specification changes; no cloud adapter implementation, cloud test execution or dependency change is claimed.
+
 - Adopt GPL-3.0-only for DTFlow before its first public release, replacing the unreleased MIT declaration in `LICENSE` and `pyproject.toml`. No DTFlow version was previously published under MIT; update the decision, roadmap and packaging documentation to match. Runtime behavior and dependency versions are unchanged.
 
 - Expand README with current development status, setup/validation, diagnostic help, repository layout, design requirements and dependency-distribution references. Distinguish planned application features from existing probe tooling.
@@ -114,6 +116,8 @@ Pending changes for the next DTFlow release.
 - Reframe the DT+ roadmap around hardening the already-proven native Python direct-cloud path into a production backend. MediaGenerationKit remains a protocol/reference implementation, with a Swift bridge reserved as a fallback for future capabilities that cannot be reproduced reliably in Python.
 
 ## Fixed
+
+- Preserve validated local gRPC backend completion and final artifacts when terminal-event delivery fails; return a sanitized warning so the service can proceed with durable saving rather than recording the remote outcome as unknown.
 
 - Initialize the test asyncio runner before installing the socket/DNS guard, allowing Windows' private event-loop wakeup socket without allowing test scenarios to dial loopback. Keep run-specific failure/rerun evidence in the closeout PR description.
 
