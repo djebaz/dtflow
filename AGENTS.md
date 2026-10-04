@@ -74,8 +74,10 @@ These instructions apply throughout `dtflow`.
 ## UI and Qt
 
 - Use PySide6 and Qt Widgets initially.
-- Keep Qt Designer `.ui` files canonical and tracked.
+- Keep Qt Designer `.ui` files canonical and tracked under `src/dtflow/ui/forms/`.
+- Keep the shared application QSS under `src/dtflow/resources/styles/`; apply it once at startup and prefer stable object names or dynamic properties over scattered inline styles.
 - Do not put business logic or backend access into generated Designer Python.
+- Treat `previewHost`, `queueItemsView` and similar Designer objects as presentation seams for handwritten widgets/models; promoted/custom widgets must not own backend protocols or service rules.
 - Do not block the Qt event loop with network, generation, or other long-running work.
 
 ## Generation safety

@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1180</width><height>760</height></rect>
+  </property>
+  <property name="minimumSize">
+   <size><width>800</width><height>680</height></size>
+  </property>
+  <property name="windowTitle"><string>DTFlow</string></property>
+  <widget class="QWidget" name="central">
+   <layout class="QVBoxLayout" name="rootLayout">
+    <property name="leftMargin"><number>18</number></property>
+    <property name="topMargin"><number>14</number></property>
+    <property name="rightMargin"><number>18</number></property>
+    <property name="bottomMargin"><number>14</number></property>
+    <property name="spacing"><number>12</number></property>
+    <item>
+     <widget class="QFrame" name="headerFrame">
+      <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+      <property name="minimumSize"><size><width>0</width><height>78</height></size></property>
+      <property name="maximumSize"><size><width>16777215</width><height>78</height></size></property>
+      <layout class="QHBoxLayout" name="headerLayout">
+       <property name="leftMargin"><number>14</number></property>
+       <property name="topMargin"><number>10</number></property>
+       <property name="rightMargin"><number>14</number></property>
+       <property name="bottomMargin"><number>10</number></property>
+       <property name="spacing"><number>12</number></property>
+       <item>
+        <widget class="QFrame" name="productMark">
+         <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
+         <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
+         <layout class="QVBoxLayout" name="productMarkLayout">
+          <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+          <item><widget class="QLabel" name="productMarkLabel"><property name="text"><string>DTF</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QVBoxLayout" name="titleLayout">
+         <property name="spacing"><number>1</number></property>
+         <item><widget class="QLabel" name="productTitleLabel"><property name="text"><string>DTFlow</string></property></widget></item>
+         <item><widget class="QLabel" name="productSubtitleLabel"><property name="text"><string>Reproducible Draw Things generation and automation</string></property></widget></item>
+        </layout>
+       </item>
+       <item><spacer name="headerSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QLabel" name="phaseBadgeLabel"><property name="minimumSize"><size><width>184</width><height>30</height></size></property><property name="maximumSize"><size><width>184</width><height>30</height></size></property><property name="text"><string>PHASE 4 · CONNECTION SHELL</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QSplitter" name="bodySplitter">
+      <property name="orientation"><enum>Qt::Horizontal</enum></property>
+      <property name="childrenCollapsible"><bool>false</bool></property>
+      <widget class="QFrame" name="contextRail">
+       <property name="minimumSize"><size><width>290</width><height>0</height></size></property>
+       <property name="maximumSize"><size><width>360</width><height>16777215</height></size></property>
+       <layout class="QVBoxLayout" name="contextLayout">
+        <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
+        <item><widget class="QLabel" name="eyebrowLabel"><property name="text"><string>CONNECTION CONTEXT</string></property></widget></item>
+        <item>
+         <widget class="QGroupBox" name="connectionBox">
+          <property name="title"><string>Backend</string></property>
+          <layout class="QFormLayout" name="connectionForm">
+           <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
+           <property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>8</number></property>
+           <item row="0" column="0"><widget class="QLabel" name="backendLabel"><property name="text"><string>Provider</string></property></widget></item>
+           <item row="0" column="1"><widget class="QComboBox" name="backendCombo"><property name="accessibleName"><string>Generation backend</string></property></widget></item>
+           <item row="1" column="0"><widget class="QLabel" name="endpointLabel"><property name="text"><string>Endpoint</string></property></widget></item>
+           <item row="1" column="1"><widget class="QLineEdit" name="endpointEdit"><property name="placeholderText"><string>HOST:PORT</string></property><property name="clearButtonEnabled"><bool>true</bool></property><property name="accessibleName"><string>Local Draw Things endpoint</string></property></widget></item>
+           <item row="2" column="0" colspan="2"><widget class="QPushButton" name="checkButton"><property name="text"><string>Check connection</string></property><property name="accessibleName"><string>Check selected backend connection</string></property></widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="credentialBox">
+          <property name="title"><string>DT+ credentials</string></property>
+          <layout class="QVBoxLayout" name="credentialLayout">
+           <property name="spacing"><number>8</number></property>
+           <item><widget class="QLabel" name="credentialHelpLabel"><property name="text"><string>Saved securely in Windows Credential Manager. An environment key keeps precedence.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+           <item><widget class="QLineEdit" name="keyEdit"><property name="placeholderText"><string>DT+ API key</string></property><property name="echoMode"><enum>QLineEdit::Password</enum></property><property name="clearButtonEnabled"><bool>true</bool></property><property name="accessibleName"><string>DT plus API key</string></property></widget></item>
+           <item>
+            <layout class="QHBoxLayout" name="keyButtons">
+             <property name="spacing"><number>6</number></property>
+             <item><widget class="QPushButton" name="saveKeyButton"><property name="text"><string>Save key</string></property></widget></item>
+             <item><widget class="QPushButton" name="removeKeyButton"><property name="text"><string>Remove</string></property></widget></item>
+            </layout>
+           </item>
+           <item><widget class="QLabel" name="credentialStatusLabel"><property name="text"><string>No API key available.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item><spacer name="contextSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QFrame" name="workspaceFrame">
+       <layout class="QVBoxLayout" name="workspaceLayout">
+        <property name="leftMargin"><number>18</number></property><property name="topMargin"><number>18</number></property><property name="rightMargin"><number>18</number></property><property name="bottomMargin"><number>18</number></property><property name="spacing"><number>10</number></property>
+        <item><widget class="QLabel" name="workspaceEyebrowLabel"><property name="text"><string>DESKTOP FOUNDATION</string></property></widget></item>
+        <item><widget class="QLabel" name="workspaceTitleLabel"><property name="text"><string>Connection readiness</string></property></widget></item>
+        <item><widget class="QLabel" name="workspaceSubtitleLabel"><property name="text"><string>Verify the selected backend without submitting generation. DTFlow never falls back to another provider.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+        <item>
+         <widget class="QFrame" name="statusCard">
+          <property name="minimumSize"><size><width>0</width><height>124</height></size></property>
+          <property name="state" stdset="0"><string>neutral</string></property>
+          <layout class="QHBoxLayout" name="statusCardLayout">
+           <property name="leftMargin"><number>18</number></property><property name="topMargin"><number>16</number></property><property name="rightMargin"><number>18</number></property><property name="bottomMargin"><number>16</number></property><property name="spacing"><number>14</number></property>
+           <item><widget class="QLabel" name="statusGlyphLabel"><property name="text"><string>●</string></property><property name="alignment"><set>Qt::AlignTop|Qt::AlignHCenter</set></property><property name="state" stdset="0"><string>neutral</string></property></widget></item>
+           <item>
+            <layout class="QVBoxLayout" name="statusTextLayout">
+             <property name="spacing"><number>5</number></property>
+             <item><widget class="QLabel" name="statusLabel"><property name="text"><string>Not checked.</string></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>neutral</string></property><property name="accessibleName"><string>Connection status</string></property></widget></item>
+             <item><widget class="QLabel" name="statusHintLabel"><property name="text"><string>A connection check is bounded, non-generative, and does not consume generation credits.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+             <item><spacer name="statusSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
+            </layout>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="desktopPathBox">
+          <property name="title"><string>Desktop path</string></property>
+          <layout class="QVBoxLayout" name="desktopPathLayout">
+           <item><widget class="QLabel" name="generationPreviewLabel"><property name="text"><string>Generation workspace  ·  Planned for Phase 5A</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+           <item><widget class="QLabel" name="queuePreviewLabel"><property name="text"><string>Durable queues  ·  Planned for Phase 5B</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item><spacer name="workspaceSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+      <widget class="QFrame" name="inspectorPanel">
+       <property name="minimumSize"><size><width>230</width><height>0</height></size></property>
+       <property name="maximumSize"><size><width>300</width><height>16777215</height></size></property>
+       <layout class="QVBoxLayout" name="inspectorLayout">
+        <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
+        <item><widget class="QLabel" name="inspectorEyebrowLabel"><property name="text"><string>SAFETY &amp; EVIDENCE</string></property></widget></item>
+        <item>
+         <widget class="QGroupBox" name="safetyBox">
+          <property name="title"><string>Connection check</string></property>
+          <layout class="QVBoxLayout" name="safetyLayout">
+           <item><widget class="QLabel" name="safetyLabel"><property name="text"><string>• No generation request
+• No automatic backend fallback
+• Credentials are never shown or logged
+• Failures retain explicit provider evidence</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QGroupBox" name="scopeBox">
+          <property name="title"><string>Current scope</string></property>
+          <layout class="QVBoxLayout" name="scopeLayout">
+           <item><widget class="QLabel" name="scopeLabel"><property name="text"><string>This shell owns presentation and user intent only. Generation, persistence, queues, credentials, and provider protocols remain in shared services.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item><spacer name="inspectorSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint"><size><width>20</width><height>40</height></size></property></spacer></item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <widget class="QMenu" name="helpMenu"><property name="title"><string>Help</string></property><addaction name="aboutAction"/></widget>
+   <addaction name="helpMenu"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="aboutAction"><property name="text"><string>About DTFlow</string></property></action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
