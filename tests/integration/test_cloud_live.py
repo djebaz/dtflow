@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 from support.live_evidence import save_inventory, save_lora_inventory
-from support.live_local import UNREACHABLE_FIX, unreachable_reason, warn_if_model_browsing_off, warn_live
+from support.live_local import UNREACHABLE_FIX, fail_local, unreachable_reason, warn_if_model_browsing_off, warn_live
 from support.network_guard import endpoint, live_endpoints
 from test_local_grpc_live import configured_local_adapter
 
@@ -55,6 +55,8 @@ async def test_cloud_token_model_and_lora_inventory(live_run, request):
                     failure = exc.failure
                     reason = unreachable_reason(failure.code, dict(failure.diagnostics).get("kind"), f"{host}:{port}")
                     if reason is None:
+                        if failure.code == "connect_failed":
+                            fail_local(f"{host}:{port}", failure.code, dict(failure.diagnostics).get("kind"))
                         raise
                     # The cloud checks above already passed and stay retained; only local LoRA enrichment is omitted.
                     warn_live(request, reason, UNREACHABLE_FIX)

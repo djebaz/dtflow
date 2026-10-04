@@ -61,3 +61,9 @@ def connect_hint(kind: str | None) -> str:
     if kind == "ConnectionResetError":
         return " The server reset the connection during connect: check that TLS is enabled in the Draw Things app."
     return ""
+
+
+def fail_local(target: str, code: str | None, kind: str | None) -> None:
+    """Fail a live local check with a short, actionable message instead of a deep traceback."""
+    detail = f"{code or 'unknown'}" + (f" ({kind})" if kind else "")
+    pytest.fail(f"Local Draw Things check failed at {target}: {detail}.{connect_hint(kind)}", pytrace=False)
