@@ -241,7 +241,8 @@ async def scripted_server(
             yield RunningServer(HOST, port, service)
     finally:
         server.close()
-        await server.wait_closed()
+        server._server.close_clients()  # Python >= 3.13 waits for open client connections in wait_closed()
+        await asyncio.wait_for(server.wait_closed(), 10)
 
 
 @asynccontextmanager
@@ -260,7 +261,7 @@ async def black_hole() -> AsyncIterator[tuple[str, int]]:
 
     async def silent(reader, writer):
         try:
-            await asyncio.sleep(3600)
+            await reader.read()  # never answers; ends when the client gives up and closes
         finally:
             writer.close()
 
@@ -271,4 +272,5 @@ async def black_hole() -> AsyncIterator[tuple[str, int]]:
             yield HOST, port
     finally:
         server.close()
+        server.close_clients()
         await server.wait_closed()
