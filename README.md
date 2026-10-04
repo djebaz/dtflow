@@ -8,7 +8,9 @@ It targets direct DT+ Cloud Compute and a local Draw Things gRPC server through 
 **Current status:** Phase 2A provides an offline fake backend, shared async services, SQLite attempt records,
 and a minimal headless command that saves a fixture PNG and reproducibility metadata. Phase 2B adds the local
 Draw Things gRPC adapter, scripted TLS/gRPC fixtures and an optional non-generative live connectivity/inventory check.
-The direct DT+ adapter, durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures and optional live token/inventory and
+complete generation smoke checks. Deployed-cloud validation remains unverified. Real-backend CLI generation selection,
+durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles

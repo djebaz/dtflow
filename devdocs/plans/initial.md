@@ -216,7 +216,7 @@ Keep prompts, seeds, dimensions, and parameters controlled when comparing behavi
 
 ### Phase 2 — Backend contract and initial adapters
 
-Phase 2A implements the offline contract/fake/service/SQLite foundation and minimal `dtflow` command. Phase 2B now implements the local Draw Things gRPC adapter, its scripted TLS/gRPC fixtures and an optional non-generative live connection/inventory check. Phase 2C direct cloud remains pending; Phase 2D documents packaging/licensing/upstream investigations while target-Windows packaging evidence remains a release gate. Full CLI and queues remain Phase 3 work.
+Phase 2A implements the offline contract/fake/service/SQLite foundation and minimal `dtflow` command. Phase 2B now implements the local Draw Things gRPC adapter, its scripted TLS/gRPC fixtures and an optional non-generative live connection/inventory check. Phase 2C implements the direct-cloud adapter with focused offline authentication/composition coverage and optional live token/inventory and complete generation smoke checks; deployed-cloud validation remains unverified. Phase 2D documents packaging/licensing/upstream investigations while target-Windows packaging evidence remains a release gate. Full CLI and queues remain Phase 3 work.
 
 Follow [the Phase 2 implementation plan](phase-2-backends.md), [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md) and [source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
 
@@ -477,7 +477,7 @@ uv run dtflow test -live    explicitly selected non-generative deployed checks
 uv run dtflow test -gen     explicitly selected generation workflows
 ```
 
-The generation group currently has no implemented workloads. When live generation workflows are introduced, make them individually selectable so one backend/capability does not implicitly require all endpoints, assets or paid workloads. Define and document the selector only when it is implemented; do not advertise a speculative command spelling.
+The generation group currently implements one bounded DT+ smoke: token acquisition, model inventory, per-generation authorization, generation and durable saving. It requires DRAWTHINGS_API_KEY and an exact DTFLOW_LIVE_MODEL; its implementation is not deployed-cloud validation. The live group runs local Draw Things and DT+ non-generative checks. As more live generation workflows are introduced, make them individually selectable so one backend/capability does not implicitly require all endpoints, assets or paid workloads. Define and document the selector only when it is implemented; do not advertise a speculative command spelling.
 
 Early and routine validation should favor the cheapest authoritative layer:
 
