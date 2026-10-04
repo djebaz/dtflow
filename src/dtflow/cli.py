@@ -27,11 +27,20 @@ from dtflow.persistence.queues import MAX_ITEMS, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.artifacts import atomic_write
-from dtflow.services.assets import AssetService
 from dtflow.services.config import export_config, load_config, resolve_request
 from dtflow.services.generation import GenerationService
 from dtflow.services.queue import QueueDispatcher
-from dtflow.services.session import asset_validator, bind_prepared, open_session, run_generation, selection_for
+from dtflow.services.session import (
+    ASSET_NOTE,
+    asset_validator,
+    asset_view,
+    bind_prepared,
+    open_session,
+    prepare_asset,
+    reconcile_asset,
+    run_generation,
+    selection_for,
+)
 
 EXIT_OK = 0
 EXIT_INVALID = 2  # invalid input or missing credentials: nothing was dispatched
@@ -412,31 +421,6 @@ async def run_queue(args: argparse.Namespace) -> int:
             await store.aclose()
 
 
-ASSET_NOTE = (
-    "Local registry view of what this machine measured and a server once acknowledged; not remote account "
-    "inventory. Reuse is re-validated by a fresh metadata check."
-)
-
-
-def asset_view(record: dict) -> dict:
-    keys = (
-        "asset_id", "kind", "identifier", "state", "evidence", "source", "sha256", "size", "backend_id", "origin",
-        "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc",
-    )  # fmt: skip
-    view = {key: record.get(key) for key in keys}
-    if "operations" in record:
-        view["operations"] = record["operations"]
-    return view
-
-
-def asset_backend():
-    """The explicit cloud backend for asset commands; the key comes from the environment only."""
-    backend = create_backend(BackendSelection("cloud"), timeouts=TimeoutPolicy())
-    if not hasattr(backend, "negotiate_asset"):
-        raise ValidationError("The selected backend cannot prepare cloud assets.")
-    return backend
-
-
 async def run_assets(args: argparse.Namespace) -> int:
     command = args.asset_command
     if command in ("list", "show"):
@@ -455,35 +439,18 @@ async def run_assets(args: argparse.Namespace) -> int:
             return EXIT_OK
         finally:
             await registry.aclose()
-    backend = asset_backend()
-    registry = AssetRegistry(args.state, writer=True)
-    try:
-        await registry.open()
-        service = AssetService(backend, registry)
-        if command == "prepare":
-            prepared = await service.prepare(args.file, args.name, provenance="cli")
-            record = await registry.get(prepared.receipt_id)
-            print(json.dumps({"note": ASSET_NOTE, **asset_view(record)}, indent=2))
-            return EXIT_OK
-        record, result = await service.reconcile(args.asset)
-        print(
-            json.dumps(
-                {
-                    "note": ASSET_NOTE,
-                    "reconciliation": result.status,
-                    "evidence": result.evidence,
-                    **asset_view(record),
-                },
-                indent=2,
-            )
+    if command == "prepare":
+        record = await prepare_asset(args.state, args.file, args.name, provenance="cli")
+        print(json.dumps({"note": ASSET_NOTE, **asset_view(record)}, indent=2))
+        return EXIT_OK
+    record, result = await reconcile_asset(args.state, args.asset)
+    print(
+        json.dumps(
+            {"note": ASSET_NOTE, "reconciliation": result.status, "evidence": result.evidence, **asset_view(record)},
+            indent=2,
         )
-        return {"confirmed": EXIT_OK, "upload_required": EXIT_FAILED}.get(result.status, EXIT_UNKNOWN)
-    finally:
-        try:
-            async with asyncio.timeout(TimeoutPolicy().cleanup):
-                await backend.aclose()
-        finally:
-            await registry.aclose()
+    )
+    return {"confirmed": EXIT_OK, "upload_required": EXIT_FAILED}.get(result.status, EXIT_UNKNOWN)
 
 
 async def run(args: argparse.Namespace) -> int:

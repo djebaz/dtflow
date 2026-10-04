@@ -12,7 +12,6 @@
      <property name="spacing"><number>2</number></property>
      <item><widget class="QLabel" name="pageTitleLabel"><property name="text"><string>Generate</string></property></widget></item>
      <item><widget class="QLabel" name="pageSubtitleLabel"><property name="text"><string>Resolve one reproducible request, inspect effective values, and submit through the explicitly selected backend.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-     <item><widget class="QLabel" name="previewNoticeLabel"><property name="text"><string>LORA AND CLOUD ASSET CONTROLS ARE PREVIEW ONLY</string></property><property name="role" stdset="0"><string>badge</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="accessibleName"><string>LoRA and cloud asset controls are preview only</string></property></widget></item>
     </layout>
    </item>
    <item>
@@ -97,8 +96,20 @@ Promote or replace this frame with the bounded image preview widget.</string></p
        <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
        <item><widget class="QLabel" name="generationInspectorEyebrow"><property name="text"><string>LORA &amp; EVIDENCE</string></property><property name="role" stdset="0"><string>eyebrow</string></property></widget></item>
        <item><widget class="QListWidget" name="loraList"><property name="accessibleName"><string>Selected LoRAs and weights</string></property></widget></item>
-       <item><layout class="QHBoxLayout" name="loraButtons"><item><widget class="QPushButton" name="addLoraButton"><property name="text"><string>Add LoRA</string></property></widget></item><item><widget class="QPushButton" name="removeLoraButton"><property name="text"><string>Remove</string></property></widget></item></layout></item>
+       <item><layout class="QHBoxLayout" name="loraButtons"><item><widget class="QPushButton" name="addLoraButton"><property name="text"><string>Add LoRA</string></property></widget></item><item><widget class="QPushButton" name="removeLoraButton"><property name="text"><string>Remove</string></property></widget></item><item><widget class="QPushButton" name="checkLorasButton"><property name="text"><string>Check</string></property><property name="toolTip"><string>Refresh inventory and check the selected LoRAs. Nothing is generated.</string></property></widget></item></layout></item>
+       <item><widget class="QCheckBox" name="triggerPrefixCheck"><property name="text"><string>Prepend trigger prefixes to the prompt</string></property><property name="toolTip"><string>Explicit option: adds each selected LoRA's server trigger prefix to the prompt for this generation.</string></property></widget></item>
        <item><widget class="QLabel" name="compatibilityStatusLabel"><property name="text"><string>Compatibility not checked.</string></property><property name="state" stdset="0"><string>unknown</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+       <item>
+        <widget class="QGroupBox" name="assetBox">
+         <property name="title"><string>Cloud assets (this machine's registry)</string></property>
+         <layout class="QVBoxLayout" name="assetLayout">
+          <item><widget class="QListWidget" name="assetList"><property name="maximumSize"><size><width>16777215</width><height>96</height></size></property><property name="accessibleName"><string>Known local asset receipts</string></property></widget></item>
+          <item><layout class="QHBoxLayout" name="assetButtons"><item><widget class="QPushButton" name="prepareAssetButton"><property name="text"><string>Prepare file…</string></property><property name="toolTip"><string>The only action that can upload file bytes to DT+.</string></property></widget></item><item><widget class="QPushButton" name="reconcileAssetButton"><property name="text"><string>Reconcile</string></property></widget></item><item><widget class="QPushButton" name="useReceiptButton"><property name="text"><string>Use for LoRA</string></property></widget></item></layout></item>
+          <item><widget class="QLabel" name="assetStatusLabel"><property name="text"><string>Asset actions need the cloud backend.</string></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>unknown</string></property></widget></item>
+          <item><widget class="QLabel" name="assetNoteLabel"><property name="text"><string>Local registry of receipts, not DT+ account inventory. Only Prepare uploads.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+         </layout>
+        </widget>
+       </item>
        <item><widget class="QTextBrowser" name="effectiveRequestBrowser"><property name="placeholderText"><string>Effective request and resolution evidence</string></property><property name="accessibleName"><string>Effective generation request evidence</string></property></widget></item>
        <item><widget class="QLabel" name="attemptIdentityLabel"><property name="text"><string>No durable attempt yet.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
       </layout>

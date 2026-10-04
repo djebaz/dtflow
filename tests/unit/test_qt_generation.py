@@ -161,7 +161,7 @@ def test_configuration_save_and_load_round_trip_and_loras_are_not_bound(window, 
     qtbot.waitUntil(lambda: page.seedEdit.text() == "9", timeout=3000)
     assert page.generationStatusLabel.text().startswith("Configuration loaded")
     assert "no cloud receipt is bound" in page.generationStatusLabel.text()
-    assert page.loraList.count() == 1 and not page.loraList.isEnabled()
+    assert page.loraList.count() == 1
     assert "config_file: saved.json" in page.effectiveRequestBrowser.toPlainText()
 
 
@@ -186,10 +186,3 @@ def test_relay_coalesces_transient_events_and_keeps_critical_ones(qtbot):
     qtbot.wait(50)
     assert [e.kind for e in seen] == ["progress", "submission_possible", "terminal"]
     assert seen[0].completed == 500  # only the latest progress survives coalescing
-
-
-def test_unwired_controls_stay_disabled_with_preview_wording(window):
-    page = window.generation_page
-    assert not page.loraList.isEnabled() and not page.addLoraButton.isEnabled()
-    assert not page.generationBackendCombo.isEnabled()
-    assert "PREVIEW ONLY" in page.previewNoticeLabel.text()

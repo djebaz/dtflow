@@ -13,7 +13,9 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.persistence.assets import AssetsBusyError
 from dtflow.persistence.store import PersistenceError, StateBusyError
+from dtflow.services.preflight import blocked
 
 
 async def check_connection(
@@ -36,7 +38,7 @@ async def check_connection(
 
 @dataclass(frozen=True, slots=True)
 class Presentation:
-    level: str  # ok | warning | error
+    level: str  # ok | warning | error | unknown
     headline: str
     detail: str = ""
 
@@ -89,7 +91,12 @@ def present_generation_failure(exc: Exception) -> Presentation:
                 "It is not replayed automatically; inspect the attempt before acting.",
             )
         if failure.category == ErrorCategory.VALIDATION:
-            return Presentation("error", "Request rejected", f"{failure.code}. Nothing was dispatched.")
+            codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics)
+            return Presentation(
+                "error",
+                "Request rejected",
+                f"{failure.code}{' (' + codes + ')' if codes else ''}. Nothing was dispatched.",
+            )
         if failure.category in (ErrorCategory.CREDENTIALS, ErrorCategory.AUTHENTICATION):
             return Presentation("error", "Credentials problem", failure.code)
         return Presentation("error", "Generation failed", failure.code)
@@ -123,3 +130,44 @@ def present_interruption(evidence) -> Presentation:
             "Remote cancellation is not confirmed.",
         )
     return Presentation("warning", "Local stop requested", f"{note} Stopped before submission; nothing was sent.")
+
+
+def present_preflight(diagnostics) -> Presentation:
+    """Render shared preflight diagnostics as given; architecture, availability and application evidence stay separate."""
+    if not diagnostics:
+        return Presentation("unknown", "No LoRAs selected", "Compatibility is not checked.")
+    lines = [
+        f"{item.identifier}: architecture {item.architecture_match}, {item.availability} ({item.code}); "
+        f"application {item.generation_evidence.removeprefix('application_')}"
+        for item in diagnostics
+    ]
+    if blocked(diagnostics):
+        level, headline = "error", "Blocked before dispatch"
+    elif all(item.architecture_match == "match" for item in diagnostics):
+        level, headline = "ok", "Architecture matches"
+    else:
+        level, headline = "unknown", "Compatibility not confirmed"
+    return Presentation(level, headline, "\n".join(lines))
+
+
+def present_asset_failure(exc: Exception) -> Presentation:
+    """An asset action that raised; an interrupted or unconfirmed transfer is never shown as a plain failure."""
+    if isinstance(exc, AssetsBusyError):
+        return Presentation(
+            "warning", "Assets busy", "Another DTFlow process is preparing assets. Nothing was uploaded or changed."
+        )
+    if isinstance(exc, BackendError) and exc.failure.remote_outcome == RemoteOutcome.UNKNOWN:
+        return Presentation(
+            "warning",
+            "Outcome unknown",
+            f"{exc.failure.code}: the file may have been stored. It is not retried; reconcile the record to check.",
+        )
+    if isinstance(exc, BackendError):
+        return Presentation("error", "Asset action failed", f"{exc.failure.code}. {exc.failure.message}")
+    return present_generation_failure(exc)
+
+
+def present_reconciliation(result) -> Presentation:
+    """A fresh metadata-only server check (``AssetReconciliation``); it never uploads."""
+    level = {"confirmed": "ok", "upload_required": "warning"}.get(result.status, "warning")
+    return Presentation(level, "Reconciled: " + result.status.replace("_", " "), f"Evidence: {result.evidence}.")

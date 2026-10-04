@@ -7,6 +7,7 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -32,6 +33,7 @@ from dtflow.ui.generation_presenter import (
     save_configuration,
     values_from_request,
 )
+from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
 PREVIEW_BOX = 360  # bounded display size; the saved file is never resized
@@ -51,6 +53,9 @@ WIRED_CONTROLS = (
     "configurationCombo",
     "loadConfigurationButton",
     "saveConfigurationButton",
+    "loraList",
+    "triggerPrefixCheck",
+    "assetList",
 )
 FIELD_WIDGETS = (
     "promptEdit",
@@ -96,10 +101,20 @@ class GenerationPage:
         self._configs = self._state / "configs"
         self._relay = EventRelay(self._event, page)
         self._future = None
+        self._generating = False
         self._request = None
         self._busy = False
-        self._loras = ()
         self._config_name: str | None = None
+        self.lora = LoraAssetPanel(
+            page,
+            runner=runner,
+            backend_source=backend_source,
+            saved_source=saved_source,
+            state_dir=self._state,
+            build_request=self._request_for_check,
+            is_busy=lambda: self._busy,
+            set_busy=self._set_busy,
+        )
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.samplerCombo.addItems(SAMPLERS)
@@ -120,6 +135,7 @@ class GenerationPage:
         """Mirror the Connection page's backend; it is read-only here so there is one selector."""
         name, _ = self._backend()
         self.page.generationBackendCombo.setCurrentText(name)
+        self.lora.sync_backend()
 
     def _values(self) -> FormValues:
         page = self.page
@@ -133,7 +149,7 @@ class GenerationPage:
             page.stepsSpinBox.value(),
             page.guidanceSpinBox.value(),
             page.samplerCombo.currentText(),
-            self._loras,
+            self.lora.loras,
         )
 
     def _apply(self, values: FormValues) -> None:
@@ -147,20 +163,18 @@ class GenerationPage:
         page.stepsSpinBox.setValue(values.steps)
         page.guidanceSpinBox.setValue(values.guidance)
         page.samplerCombo.setCurrentText(values.sampler)
-        self._set_loras(values.loras)
 
-    def _set_loras(self, loras) -> None:
-        self._loras = tuple(loras)
-        self.page.loraList.clear()
-        for item in self._loras:
-            self.page.loraList.addItem(f"{item.identifier} @ {item.weight}")
-        if self._loras:
-            self.page.compatibilityStatusLabel.setText(
-                "LoRA selection came from a loaded configuration. No cloud receipt is bound and compatibility is "
-                "not checked here; LoRA controls are not wired yet."
-            )
-        else:
-            self.page.compatibilityStatusLabel.setText("Compatibility not checked.")
+    def _request_for_check(self):
+        """A request for LoRA preflight only: a blank prompt gets a placeholder because nothing is dispatched."""
+        self._mark(None)
+        name, _ = self._backend()
+        values = self._values()
+        try:
+            return build_request(replace(values, prompt=values.prompt or "preflight check"), backend=name)
+        except FormError as exc:
+            self._mark(exc.widget)
+            self.lora._show(self.page.compatibilityStatusLabel, Presentation("error", "Cannot check", str(exc)))
+            return None
 
     # -- presentation ----------------------------------------------------------------------------------------------
     def _status(self, presentation: Presentation) -> None:
@@ -181,7 +195,8 @@ class GenerationPage:
         self._busy = busy
         self.page.generateButton.setEnabled(not busy)
         self.page.refreshInventoryButton.setEnabled(not busy)
-        self.page.cancelButton.setEnabled(busy)
+        self.page.cancelButton.setEnabled(busy and self._generating)
+        self.lora.set_enabled(not busy)
 
     def _progress(self, text: str, completed: int | None = None, total: int | None = None) -> None:
         bar = self.page.generationProgressBar
@@ -224,12 +239,25 @@ class GenerationPage:
         self.page.resultPreviewLabel.setProperty("designation", "")
         self._progress("Preparing")
         self._status(Presentation("warning", "Generating", "Waiting on the selected backend."))
+        self._generating = True
         self._set_busy(True)
-        self._future = self._runner.submit(self._generate(name, endpoint, request, self._saved()), self._generated)
+        self._future = self._runner.submit(
+            self._generate(
+                name,
+                endpoint,
+                request,
+                self._saved(),
+                self.lora.receipt_ids(),
+                self.page.triggerPrefixCheck.isChecked(),
+            ),
+            self._generated,
+        )
 
-    async def _generate(self, name, endpoint, request, saved):
+    async def _generate(self, name, endpoint, request, saved, asset_ids, prefix):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
-        return await generate_once(selection, self._state, request, saved=saved, on_event=self._relay)
+        return await generate_once(
+            selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
+        )
 
     def _event(self, event: BackendEvent) -> None:
         if not self._busy:
@@ -248,6 +276,7 @@ class GenerationPage:
             request_id = self._request.request_id
             self._runner.submit(read_attempt(self._state, request_id), self._interrupted)
             return
+        self._generating = False
         self._set_busy(False)
         if failure is not None:
             self._progress("Failed")
@@ -258,6 +287,7 @@ class GenerationPage:
         bar.setValue(1)
         bar.setFormat("Saved")
         self._status(present_outcome(outcome))
+        self.lora.show_diagnostics(outcome.diagnostics)
         self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id} on {outcome.backend_id}.")
         self.page.effectiveRequestBrowser.setPlainText(
             describe_request(outcome.request, outcome.backend_id, self._backend()[1])
@@ -270,11 +300,12 @@ class GenerationPage:
 
     def cancel(self) -> None:
         """Stop waiting locally through the shared interruption path; the server is never claimed cancelled."""
-        if self._future is not None and self._busy:
+        if self._future is not None and self._generating:
             self.page.cancelButton.setEnabled(False)
             self._future.cancel()
 
     def _interrupted(self, evidence, failure) -> None:
+        self._generating = False
         self._set_busy(False)
         self._progress("Stopped locally")
         if failure is not None:
@@ -290,7 +321,6 @@ class GenerationPage:
             return
         name, endpoint = self._backend()
         self._set_busy(True)
-        self.page.cancelButton.setEnabled(False)
         self.page.inventoryEvidenceLabel.setText("Refreshing inventory…")
         self._runner.submit(self._refresh(name, endpoint, self._saved()), self._refreshed)
 
@@ -305,6 +335,7 @@ class GenerationPage:
             shown = present_generation_failure(failure)
             label.setText(f"Inventory refresh failed. {shown.headline}: {shown.detail}")
             return
+        self.lora.set_inventory(snapshot)
         combo = self.page.modelCombo
         current = combo.currentText()
         combo.clear()
@@ -369,6 +400,7 @@ class GenerationPage:
             return
         self._config_name = path.name
         self._apply(values_from_request(request))
+        self.lora.set_loras(request.loras, loaded=True)
         name, endpoint = self._backend()
         self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
         detail = f"{path.name} applied; values come from the file, with defaults only where it is silent."

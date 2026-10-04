@@ -16,6 +16,7 @@ from pathlib import Path
 
 from dtflow.composition import BackendSelection, create_backend
 from dtflow.core.models import (
+    AssetReconciliation,
     CredentialProvider,
     Designation,
     EventSink,
@@ -33,6 +34,11 @@ from dtflow.services.generation import GenerationService
 from dtflow.services.preflight import apply_trigger_prefixes
 
 log = logging.getLogger(__name__)
+
+ASSET_NOTE = (
+    "Local registry view of what this machine measured and a server once acknowledged; not remote account "
+    "inventory. Reuse is re-validated by a fresh metadata check."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,8 +175,13 @@ async def generate_once(
     timeouts: TimeoutPolicy | None = None,
     saved: CredentialProvider | None = None,
     on_event: EventSink | None = None,
+    asset_ids: tuple[str, ...] = (),
 ) -> GenerationOutcome:
-    """One self-contained generation: the desktop's entry point (the CLI composes the same two functions)."""
+    """One self-contained generation: the desktop's entry point (the CLI composes the same two functions).
+
+    ``asset_ids`` binds confirmed local receipts (cloud only, never uploads) before any backend or state is opened.
+    """
+    request = await bind_prepared(state, selection.name, request, asset_ids)
     async with open_session(selection, state, output=output, timeouts=timeouts, saved=saved) as service:
         return await run_generation(service, request, prefix=prefix, on_event=on_event)
 
@@ -206,3 +217,83 @@ async def read_attempt(state: Path, request_id: str) -> AttemptEvidence | None:
         return None
     finally:
         await store.aclose()
+
+
+async def check_loras(
+    selection: BackendSelection,
+    state: Path,
+    request: ResolvedGenerationRequest,
+    *,
+    asset_ids: tuple[str, ...] = (),
+    timeouts: TimeoutPolicy | None = None,
+    saved: CredentialProvider | None = None,
+) -> tuple[PreflightDiagnostic, ...]:
+    """Explicit LoRA preflight against a freshly refreshed inventory; dispatches nothing and takes no state lock."""
+    request = await bind_prepared(state, selection.name, request, asset_ids)
+    async with open_session(selection, state, timeouts=timeouts, saved=saved, durable=False) as service:
+        await service.get_inventory(refresh=True)
+        return await service.preflight(request)
+
+
+def asset_view(record: dict) -> dict:
+    keys = (
+        "asset_id", "kind", "identifier", "state", "evidence", "source", "sha256", "size", "backend_id", "origin",
+        "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc",
+    )  # fmt: skip
+    view = {key: record.get(key) for key in keys}
+    if "operations" in record:
+        view["operations"] = record["operations"]
+    return view
+
+
+@asynccontextmanager
+async def open_assets(
+    state: Path, *, saved: CredentialProvider | None = None, timeouts: TimeoutPolicy | None = None
+) -> AsyncIterator[AssetService]:
+    """The explicit cloud backend plus the exclusive asset writer registry; the backend is built before any state."""
+    policy = timeouts or TimeoutPolicy()
+    backend = create_backend(BackendSelection("cloud"), timeouts=policy, saved=saved)
+    registry = AssetRegistry(state, writer=True)
+    try:
+        if not hasattr(backend, "negotiate_asset"):
+            raise ValidationError("The selected backend cannot prepare cloud assets.")
+        await registry.open()
+        yield AssetService(backend, registry)
+    finally:
+        try:
+            async with asyncio.timeout(policy.cleanup):
+                await backend.aclose()
+        finally:
+            await registry.aclose()
+
+
+async def prepare_asset(
+    state: Path,
+    file: Path,
+    name: str | None = None,
+    *,
+    provenance: str,
+    saved: CredentialProvider | None = None,
+) -> dict:
+    """The only operation that may upload: prepare one converted LoRA and return its local record."""
+    async with open_assets(state, saved=saved) as service:
+        prepared = await service.prepare(file, name, provenance=provenance)
+        return await service.registry.get(prepared.receipt_id)
+
+
+async def reconcile_asset(
+    state: Path, asset_id: str, *, saved: CredentialProvider | None = None
+) -> tuple[dict, AssetReconciliation]:
+    """Metadata-only server check of one local record; never uploads."""
+    async with open_assets(state, saved=saved) as service:
+        return await service.reconcile(asset_id)
+
+
+async def list_assets(state: Path) -> list[dict]:
+    """Local registry receipts and unresolved operations (no network, no writer lock)."""
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return [asset_view(record) for record in await registry.list()]
+    finally:
+        await registry.aclose()

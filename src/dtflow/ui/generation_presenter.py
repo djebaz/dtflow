@@ -116,7 +116,12 @@ def describe_request(request: ResolvedGenerationRequest, backend: str, endpoint:
     lines = [f"backend: {backend}" + (f" ({endpoint})" if endpoint else ""), f"model: {request.model_id}"]
     lines += [f"seed: {request.seed}", f"size: {request.width_px}x{request.height_px}", f"steps: {request.steps}"]
     lines += [f"guidance: {request.guidance}", f"sampler: {request.sampler_id.value}"]
-    lines += [f"lora: {item.identifier} @ {item.weight}" for item in request.loras]
+    receipts = {item.identifier: item.receipt_id[:8] for item in request.prepared_assets}
+    lines += [
+        f"lora: {item.identifier} @ {item.weight}"
+        + (f" (receipt {receipts[item.identifier]})" if item.identifier in receipts else "")
+        for item in request.loras
+    ]
     lines += ["", "resolution evidence:"] + [f"  {name}: {origin}" for name, origin in request.resolution_evidence]
     return "\n".join(lines)
 
