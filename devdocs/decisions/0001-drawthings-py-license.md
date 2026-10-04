@@ -23,7 +23,7 @@ Source labels: **observed** = read from installed package metadata or files in t
 
 ### Locked runtime dependency licenses
 
-Read from installed metadata after `uv sync --no-dev` on Linux CPython 3.13 against `uv.lock` at repository commit `fb1615ee70bdb5c9767320db7f04973364df314c`. The list is the `uv export --no-dev --no-emit-project` closure. Re-read it whenever the lock changes. These values are metadata declarations, not legal conclusions; a package's own bundled third-party code may carry additional licenses.
+Read from installed metadata after `uv sync --no-dev` on Linux CPython 3.13 against `uv.lock` at repository commit `fb1615ee70bdb5c9767320db7f04973364df314c`. The runtime closure (`uv export --no-dev --no-emit-project`) was compared again at `a357f1f` after Phase 2A merged and is identical; only development dependencies changed. The list is the `uv export --no-dev --no-emit-project` closure. Re-read it whenever the lock changes. These values are metadata declarations, not legal conclusions; a package's own bundled third-party code may carry additional licenses.
 
 | Package | Version | Declared license (metadata) | Notes |
 | --- | --- | --- | --- |

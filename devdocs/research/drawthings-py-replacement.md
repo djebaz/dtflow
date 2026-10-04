@@ -8,7 +8,7 @@
 
 | Source | Pin | License | Used for |
 | --- | --- | --- | --- |
-| `drawthings-py` 0.4.0 (installed) | `uv.lock` at DTFlow `fb1615e` | GPL-3.0-only | Structure, sizes, imports |
+| `drawthings-py` 0.4.0 (installed) | `uv.lock` at DTFlow `fb1615e`; runtime closure unchanged at `a357f1f` | GPL-3.0-only | Structure, sizes, imports |
 | `drawthingsai/draw-things-community` | `e51089d5229b3147e13a21cfe0c379deff851715` (2026-10-04) | GPL-3.0 (`LICENSE.md`, CLA for contributions) | Wire schema `imageService.proto` (190 lines), configuration schema `config.fbs` (191 lines) |
 | `skeptict/TanqueStudio` | `6474f1ea575afa50dea92ab56ef01b5bf50d1bd7` | README states MIT; no LICENSE file found in the checkout | Independent Swift implementation of the same protocol and tensor decoding (design reference only until its license is clarified) |
 
