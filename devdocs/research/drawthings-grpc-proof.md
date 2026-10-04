@@ -38,9 +38,9 @@ Validate the current Draw Things gRPC interface and the Python-side integration 
 
 ## Phase 1 closeout decision
 
-**Proposed acceptance:** Close Phase 1 as a bounded connectivity and generation feasibility proof when this closeout PR is merged. It establishes that the selected Python stack can reach the tested Draw Things path and receive/save generation outputs, with separately attributed direct-cloud evidence. It does not certify production adapters, every original checklist item, remote cancellation, packaging or cloud entitlement.
+**Closeout decision:** Phase 1 is closed as a bounded connectivity and generation feasibility proof. It establishes that the selected Python stack can reach the tested Draw Things path and receive/save generation outputs, with separately attributed direct-cloud evidence. It does not certify production adapters, every original checklist item, remote cancellation, packaging or cloud entitlement.
 
-**Evidence baseline:** [main after PR #3](https://github.com/djebaz/dtflow/commit/e4e6538c7f32c80d1e6c0c4a01dc505bfaa8b6b7). Historical live observations and timings below are retained; this closeout does not repeat them. “Recorded” means existing repository evidence, “user-reported” means prior operator runs, “source-inspected” means code behavior without execution, and “offline verified” means this PR's stubbed checks.
+**Evidence basis:** Historical live observations and timings below are retained; the closeout does not repeat them. Run-specific commits, test counts and exact runtime versions belong in the closeout PR description. “Recorded” means existing repository evidence, “user-reported” means prior operator runs, “source-inspected” means code behavior without execution, and “offline verified” means this PR's stubbed checks.
 
 | Phase 1 criterion | Evidence and status | Remaining gap / owner |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ Validate the current Draw Things gRPC interface and the Python-side integration 
 | Progress behavior | Source-inspected callback support in the dependency; the current probe disables its progress bar and has no captured per-signpost/preview trace. Detailed production progress is unverified. | Signpost/preview ordering and bounded event handling: 2A fake and 2B/2C protocol fixtures. Capture real progress separately only with an authorized workload. |
 | Result behavior | Recorded image decoding/saving; offline checks verify empty output becomes a failed job. The probe saves only the first returned image, consistent with its one-image lightweight scope. | All required artifacts, previews, partial/chunked output and successful terminal completion: 2B/2C fixtures and 3A saving. Full-preset/multiple-output completeness is not accepted here. |
 | Error behavior | Source-inspected reporting paths; offline checks verify malformed JSON/non-object responses, sanitized HTTP status reporting, invalid arguments, empty output and connection failure before group release. Real transport/status/billing taxonomy remains unverified. | Actual terminal gRPC errors, TLS failures, partial-output-plus-error and auth expiry/refusals: 2B/2C fixtures. Documented or authorized sanitized live evidence is required for production billing classifications. |
-| Cancellation capabilities, if exposed | Offline verified: cancelling the probe group propagates cancellation, cancels outstanding client tasks and exits connected service contexts before or after release. Confirmed remote cancellation is unverified. A separate cancel-generation RPC is unsupported by the inspected protocol. | Real stream closure/cleanup and uncertain outcome evidence: 2B/2C. Controlled authorized observations are needed per production backend to claim remote effect; otherwise keep outcome unknown. |
+| Cancellation capabilities, if exposed | Offline verified: local task cancellation and context exit against stubs, before or after group release. This verifies local probe control flow only. Confirmed remote cancellation is unverified. A separate cancel-generation RPC is unsupported by the inspected protocol. | Real stream closure/cleanup and uncertain outcome evidence: 2B/2C. Controlled authorized observations are needed per production backend to claim remote effect; otherwise keep outcome unknown. |
 | Concurrency behavior | Historical user-reported timings below establish overlapping client windows and support different local/cloud scheduling policies. Offline checks verify the corrected readiness barrier and no submission if a connection fails. | Exact remote workers/slots/entitlement remain unknown. Phase 3B tests rolling dispatch/reservations separately; production concurrency requires separately authorized evidence. |
 
 ### Probe hardening and verification in this closeout
@@ -59,20 +59,20 @@ The earlier concurrent harness waited 0.25 seconds before release, which did not
 
 Headless pytest startup previously failed because the declared pytest-qt plugin loaded without any declared Qt runtime. Disable its automatic loading in pytest configuration until Qt implementation adds the runtime and re-enables the plugin. No dependencies or lock entries change.
 
-Verification on Linux CPython 3.13.15 in a reconstructed checkout using the repository's locked project inputs:
+Closeout verification used a reconstructed Linux checkout with the repository's locked project inputs; the owner supplied a successful Windows rerun. Detailed run results belong in the PR description:
 
-- Initial uv run pytest: 10 offline checks passed on Linux; after the Windows test-guard correction, 11 passed on Linux.
+- uv run pytest: offline checks passed.
 - uv run ruff check . and uv run ruff format --check .: passed.
 - Probe --help: executed successfully without network or generation.
 - Markdown relative targets, LF/final newlines and paired fences: checked before publishing.
 
-The supplied Windows run (Python 3.13.13) reported six failures and four passes: the guard blocked asyncio's internal loopback wakeup socket during event-loop construction. The subsequent _ssock/unawaited-coroutine warnings followed failed initialization. Tests now create an asyncio.Runner/event loop before installing the guard and execute scenarios through that runner under the guard. An additional check proves test code still cannot dial loopback or resolve DNS; no blanket loopback exception or production event-loop-policy change is introduced. A fresh Windows rerun of this correction is still required before claiming Windows acceptance.
+The initial Windows test guard blocked asyncio's private wakeup socket during event-loop construction. Tests create an asyncio.Runner/event loop before installing the guard and execute scenarios through that runner under the guard. A guard check proves test code still cannot dial loopback or resolve DNS. No blanket loopback exception or production event-loop-policy change is introduced.
 
 Checks replace services/HTTP responses and refuse socket connections/DNS in test execution. They do not run an actual gRPC fixture server or validate production cancellation, detailed progress, Windows packaging or quotas. Phase 2's full external-network guard remains a separate deliverable. No training, inference, checkpoint download or potentially billable request was performed; GitHub requests read/publish this PR.
 
 ### Handoff and closure limits
 
-After accepting this closeout, open the separate Phase 2A implementation PR. Its fake/service/SQLite/artifact slice is already specified in [Phase 2](../plans/phase-2-backends.md). Phase 2B and 2C own the real-adapter fixture gaps above. Missing evidence stays unverified; no gap may be silently changed into a supported feature. Use explicit authorization for any later real generation, including Bridge mode.
+Phase 2A follows this bounded feasibility closeout in a separate implementation PR. Its fake/service/SQLite/artifact slice is already specified in [Phase 2](../plans/phase-2-backends.md). Phase 2B and 2C own the real-adapter fixture gaps above. Missing evidence stays unverified; no gap may be silently changed into a supported feature. Use explicit authorization for any later real generation, including Bridge mode.
 
 ## Observed compatibility evidence
 
