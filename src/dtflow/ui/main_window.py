@@ -13,9 +13,9 @@ from dtflow.paths import application_state_dir
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.theme import apply_native_dark_titlebar
 
-UI_FILE = Path(__file__).with_name("main_window.ui")
-STYLE = {"ok": "color: #1a7f37;", "warning": "color: #9a6700;", "error": "color: #cf222e;"}
+UI_FILE = Path(__file__).with_name("forms") / "main_window.ui"
 
 
 def load_form() -> QMainWindow:
@@ -53,7 +53,9 @@ class MainWindow:
         self.refresh_credentials()
 
     def show(self) -> None:
+        apply_native_dark_titlebar(self.form)
         self.form.show()
+        apply_native_dark_titlebar(self.form)
 
     def _backend_changed(self, name: str) -> None:
         self.form.endpointEdit.setEnabled(name == "local")
@@ -61,7 +63,10 @@ class MainWindow:
 
     def _present(self, presentation: Presentation) -> None:
         label = self.form.statusLabel
-        label.setStyleSheet(STYLE[presentation.level])
+        for widget in (label, self.form.statusGlyphLabel, self.form.statusCard):
+            widget.setProperty("state", presentation.level)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
         label.setText(f"{presentation.headline}. {presentation.detail}".strip())
 
     def refresh_credentials(self) -> None:

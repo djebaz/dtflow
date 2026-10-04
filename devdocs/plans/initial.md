@@ -282,6 +282,8 @@ After restart, restore the queue paused with unresolved reservations intact. Ord
 
 **Implementation status:** the shell, background execution boundary, connection presentation, credential entry wiring, identity display and headless separation (4-O1 to 4-O6) are implemented and offline-validated on Linux (`dtflow gui`). Not yet verified: the real Windows Credential Manager boundary, a Windows launch, and PyInstaller packaging of the Qt shell. Defaults chosen: `keyring` with a Windows-vault-only backend check; the GUI never stores the local shared secret (environment only); no generation, queue or LoRA controls (Phase 5).
 
+The desktop presentation contract is tracked separately in [the Qt UX design plan](2026-10-04-qt-ux-design.md). Canonical forms live under `src/dtflow/ui/forms/` and share one application stylesheet under `src/dtflow/resources/styles/`. The generation and queue forms define Phase 5 layout, object names and custom-widget/model seams only; their presence does not claim that Phase 5 workflows are wired or usable.
+
 Create the PySide6 application shell and canonical Qt Designer sources after both Phase 3A and Phase 3B CLI/service acceptance gates pass.
 
 Wire startup, main window, UI/resources, background execution and clean shutdown. Add Draw Things/cloud connection selection and useful status/failure presentation through the same services exercised by the CLI.

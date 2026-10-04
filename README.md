@@ -187,7 +187,9 @@ uv run dtflow gui    # backend selection, connection check/status, DT+ API-key s
 The shell uses the same services as the CLI; connection checks run on a background thread and never generate. On
 Windows the API key is saved in Credential Manager (`DRAWTHINGS_API_KEY` in the environment still takes precedence); on
 other platforms secure storage is unavailable and the environment is the only source. Generation and queue controls
-arrive in Phase 5.
+arrive in Phase 5. The source shell uses the centralized Splitvids-inspired dark theme in
+`src/dtflow/resources/styles/dtflow_dark.qss`; canonical Designer sources live under `src/dtflow/ui/forms/`.
+`generation_page.ui` and `queue_page.ui` are reviewable Phase 5 presentation designs only and are not wired or usable yet.
 
 ## Repository layout
 
