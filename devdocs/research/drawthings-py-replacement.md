@@ -1,7 +1,7 @@
 # drawthings-py replacement estimate
 
-**Status:** Estimate for planning; nothing here authorizes replacing or copying code. See [decision 0001](../decisions/0001-drawthings-py-license.md).  
-**Purpose:** Size the work to stop depending on `drawthings-py` 0.4.0 (GPL-3.0-only), so the distribution decision can be made with real numbers.  
+**Status:** Estimate retained for dependency-risk planning after the GPL-3.0-only project-license decision; nothing here authorizes copying code without provenance/notice review. See [decision 0001](../decisions/0001-drawthings-py-license.md).  
+**Purpose:** Size the work to stop depending on `drawthings-py` 0.4.0 if DTFlow later wants to own the protocol/configuration/codec stack directly. It is no longer required to resolve DTFlow's top-level license.  
 **Method:** Line counts and imports were read from the installed 0.4.0 package (observed). Upstream sources were read from pinned checkouts (source-read). Effort sizes are DTFlow's rough estimates relative to each other (S = days, M = about a week or two, L = several weeks), not measurements.
 
 ## Evidence base
@@ -20,7 +20,7 @@ Counts are Python lines in the installed package.
 
 | Component | What it does in drawthings-py | Size (observed) | Third-party deps | Replacement work | Fixtures needed | Effort |
 | --- | --- | --- | --- | --- | --- | --- |
-| Protocol bindings | betterproto output for `ImageGenerationService` (`generated/dt_grpc/image_service/__init__.py`) | 502 lines | betterproto, grpclib | Regenerate from `imageService.proto`, or hand-write the used messages (`ImageGenerationRequest/Response`, `EchoRequest/Reply`, signposts). The schema file is GPL-3.0 in the official repository, so regeneration needs the license review in the decision record | Local gRPC fixture server (Phase 2B) exercising echo and generate round trips | M, license-gated |
+| Protocol bindings | betterproto output for `ImageGenerationService` (`generated/dt_grpc/image_service/__init__.py`) | 502 lines | betterproto, grpclib | Regenerate from `imageService.proto`, or hand-write the used messages (`ImageGenerationRequest/Response`, `EchoRequest/Reply`, signposts). The schema file is GPL-3.0 in the official repository; the accepted DTFlow GPL-3.0-only license removes the prior top-level mismatch, while provenance and redistribution notices still need review | Local gRPC fixture server (Phase 2B) exercising echo and generate round trips | M |
 | FlatBuffer configuration | flatc output (`generated/dt_grpc/config_generated.py`) plus the configuration model and presets (`configs/`: `gen_config`, `config_prop`, `enums`, `presets`, `types`, ~2,350 lines) | about 4,100 lines combined | flatbuffers | Implement only the txt2img subset first (model, size, steps, guidance, sampler, seed, batch, LoRA list). The full parameter set is much larger: TanqueStudio models about 39 fields and its notes cite 58 in an imported image's metadata. `config.fbs` is GPL-3.0 upstream | Wire-level assertions on the encoded configuration, including seed zero and size units (Phase 2B/2C) | S for the subset, L for broad parity |
 | Tensor and image codec | Decode returned tensors (`image/image_buffer.py` 481 lines, `_preview_decoders.py` 657, `_png_writer.py` 262, `_metadata.py` 338, `grpc/audio.py` 145) | about 1,900 lines | numpy, Pillow, fpzip (BSD-3) | Reimplement header parsing and the codecs the server uses (fpzip, zip, ezm7 per TanqueStudio's `DTTensorDecoder.mm`), previews and PNG metadata writing. Protocol knowledge is available from several independent implementations; code reuse is license-limited | Captured real tensors (one image, one preview) as small fixtures, plus corrupt and truncated variants | M |
 | Client and stream layer | `grpc/grpc_service.py` (393), `_dt_service.py` (111), `request_builder.py` (425), `image_generation_result.py` (165), `util/` helpers | about 1,400 lines | grpclib | DTFlow's own adapter will sit here anyway; the backend contract already requires explicit lifecycle, deadlines and cancellation, which the library only partly provides | The same Phase 2B fixture server | S to M |
@@ -38,12 +38,12 @@ The [backend contract](../architecture/backend-contract.md) confines `drawthings
 
 ## Overall sizing
 
-- **Txt2img-only replacement:** protocol bindings, configuration subset, tensor decode, and an adapter: roughly M + S + M + S ≈ one to two months of focused work, dominated by fixtures and the license review. This is a planning estimate.
+- **Txt2img-only replacement:** protocol bindings, configuration subset, tensor decode, and an adapter: roughly M + S + M + S ≈ one to two months of focused work, dominated by fixtures and source/provenance review. This is a planning estimate.
 - **Replacement with broader parity** (img2img, control, LoRA, video): the configuration and codec components grow; treat it as a separate project after the txt2img slice.
 
 ## Open questions before committing to replacement
 
-1. Does regenerating bindings from the GPL-3.0 `.proto`/`.fbs` files avoid the problem the replacement is meant to solve? Needs legal review; do not assume.
+1. If bindings are regenerated from the GPL-3.0 `.proto`/`.fbs` files, what exact provenance, attribution and corresponding-source material should ship with DTFlow? The project-license mismatch is resolved, but packaging obligations still need review.
 2. Does the official project publish the wire schema under a more permissive license or a documented client-use grant? Not found in the inspected checkout; unverified.
 3. Is the independently implemented TanqueStudio protocol code reusable? Its license is unresolved (README claims MIT, no LICENSE file at the pinned commit).
 4. Do other maintained Python clients exist with acceptable licenses? Not surveyed here.

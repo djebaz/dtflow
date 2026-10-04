@@ -220,7 +220,7 @@ Phase 2A now implements the offline contract/fake/service/SQLite foundation and 
 
 Follow [the Phase 2 implementation plan](phase-2-backends.md), [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md) and [source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
 
-Deliver coherent slices: 2A contract/async decisions, fake, foundational fixtures and a thin headless service/SQLite-attempt/saved-image path; 2B local gRPC adapter with connectivity/inventory and transport fixtures; 2C direct-cloud adapter against the pinned auth contract; 2D packaging/licensing and version-pinned upstream feature inventory alongside implementation. Phase 2D does not block starting 2A; licensing informs dependency investment and target-Windows verification remains a packaged-release gate.
+Deliver coherent slices: 2A contract/async decisions, fake, foundational fixtures and a thin headless service/SQLite-attempt/saved-image path; 2B local gRPC adapter with connectivity/inventory and transport fixtures; 2C direct-cloud adapter against the pinned auth contract; 2D packaging/licensing and version-pinned upstream feature inventory alongside implementation. Phase 2D does not block starting 2A; DTFlow's GPL-3.0-only project license is now decided, while third-party distribution compliance and target-Windows verification remain packaged-release gates.
 
 Introduce backend-neutral request, result, progress, error and capability types. Implement a deterministic fake backend, wrap the validated Draw Things gRPC path, and add narrow direct DT+ text-to-image support through native Python. Define structured model/LoRA metadata, shared compatibility preflight and a separate cloud asset contract for Phase 3; audit converted-format and generation-reference requirements.
 
@@ -374,7 +374,7 @@ Real generation should only be run when it validates behavior that cannot be est
 
 - Initial audience: personal use by the owner only. Additional testers and public releases may follow later.
 - Target machine: the packaged application must run on the owner's legacy Windows 10 machine with an Intel Pentium E6500. Packaged compatibility remains to be verified on that machine.
-- Distribution: private initially; the repository may be opened and public releases offered much later if the application works well. Resolve dependency licensing implications before public distribution.
+- Distribution: private initially; the repository may be opened and public releases offered later if the application works well. DTFlow is GPL-3.0-only before its first release; public binaries still require the applicable corresponding-source and third-party notice/compliance work.
 - Packaging preference: portable executable first; retain an installer option if required. Portable packaging does not imply writing durable state beside the executable.
 - Restart behavior: restore the queue in a paused state. Nothing resumes automatically; the user can resume eligible queued jobs or cancel them. Interrupted attempts that may already have been submitted remain outcome unknown and cannot be resubmitted by resuming the queue.
 - Cloud concurrency: expose a configurable maximum in the CLI and Qt, with a default of **4**. In Qt, values above **2** receive a subtle color change rather than a prominent warning or confirmation dialog. This is a user-selected scheduling policy, not a verified service entitlement or guaranteed capacity.
@@ -401,7 +401,7 @@ Source-inspected answers and remaining evidence requirements are recorded in [re
 - Exact Draw Things progress and cancellation semantics, plus whether any server/app configuration can expose parallel backend execution beyond the effective single lane observed in the tested iPhone/Bridge path.
 - SQLite schema, migrations, busy/ownership policy and crash reconciliation, including durable upload receipts, uncertain upload reconciliation and backend/account-scoped asset references; the storage technology is selected.
 - Custom cloud LoRA converted-format/metadata requirements, deduplication identity, generation references, retention/availability evidence and deployed upload/use behavior; remote listing/delete-key discovery is absent in the inspected SDK.
-- Windows packaging feasibility on the target machine, native-module and certificate resources, and the distribution implications of the GPL-3.0-only drawthings-py dependency in the currently MIT-declared project.
+- Windows packaging feasibility on the target machine, native-module and certificate resources, and GPL-3.0-only packaged-distribution compliance for DTFlow and its third-party runtime closure.
 - Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, model/file compatibility, cancellation/retry semantics, throttling and behavior at the selected concurrency. The diagnostic API-key token/auth/gRPC path is proven separately; the default of four is a product choice.
 - Whether any future DT+ capability actually requires MediaGenerationKit or a Swift bridge. No runtime dependency on MediaGenerationKit has been demonstrated for the currently proven direct generation path.
 

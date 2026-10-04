@@ -95,6 +95,7 @@ Dependency changes go through uv and keep `pyproject.toml` and `uv.lock` synchro
 
 ## License
 
-See [LICENSE](LICENSE). Third-party dependencies carry their own licenses.
-The distribution implications of the GPL-3.0-only drawthings-py dependency remain unresolved in the
-[development plan](devdocs/plans/phase-2-backends.md#phase-2d--packaging-licensing-and-feature-inventory).
+DTFlow is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE).
+The project adopted GPL-3.0-only before its first public release, aligning DTFlow with the
+GPL-3.0-only `drawthings-py` runtime dependency. Third-party dependencies retain their own licenses
+and notices; packaged releases must include the corresponding compliance material.

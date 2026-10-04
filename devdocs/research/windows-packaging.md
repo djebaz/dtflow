@@ -189,5 +189,5 @@ Evidence is not collected yet; these are criteria, not conclusions.
 
 - A decision on the final packaging tool or installer technology.
 - Qt packaging, which belongs with the Qt milestone.
-- Whether bundling `drawthings-py` is permissible; see [decision 0001](../decisions/0001-drawthings-py-license.md).
+- GPL-3.0-only corresponding-source, license-text and third-party notice handling for a build that bundles `drawthings-py`; see [decision 0001](../decisions/0001-drawthings-py-license.md).
 - Any claim about application behavior beyond the smoke script, which is not DTFlow application code.
