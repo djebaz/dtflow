@@ -44,7 +44,7 @@ def make_request(**changes) -> ResolvedGenerationRequest:
     return replace(base, **changes)
 
 
-async def run(steps, *, request=None, timeouts=None, limits=None, echo=ECHO, check=None):
+async def run(steps, *, request=None, timeouts=None, limits=None, echo=ECHO, check=None, on_event=None):
     """Run one generation against a scripted server; return (outcome, events, server observations)."""
     events = []
     async with scripted_server(steps, echo) as server:
@@ -54,7 +54,7 @@ async def run(steps, *, request=None, timeouts=None, limits=None, echo=ECHO, che
         try:
             await adapter.get_inventory(refresh=True)
             try:
-                outcome = await adapter.generate(request or make_request(), on_event=events.append)
+                outcome = await adapter.generate(request or make_request(), on_event=on_event or events.append)
             except BackendError as exc:
                 outcome = exc.failure
             if check:
@@ -82,6 +82,19 @@ async def test_success_stream_sends_the_resolved_request_and_returns_a_png(seed,
     )
     assert seen.generate_requests[0].prompt == "a prompt" and seen.generate_requests[0].negative_prompt == "no"
     assert dict(result.effective_configuration)["seed"] == str(seed)
+
+
+@pytest.mark.asyncio
+async def test_terminal_notification_failure_preserves_validated_completion():
+    def reject_terminal(event):
+        if event.kind == "terminal":
+            raise RuntimeError("FAKE_SECRET_MUST_NOT_ESCAPE")
+
+    result, _, seen = await run((Image(GOOD),), on_event=reject_terminal)
+    assert result.completion.terminal_status == "OK" and result.completion.required_outputs_valid
+    assert len(result.artifacts) == 1 and len(seen.generate_requests) == 1
+    validate_png(result.artifacts[0].encoded, SIZE, SIZE, decoded_limit=64 << 20)
+    assert result.warnings == ("Terminal event delivery failed after validated backend completion.",)
 
 
 @pytest.mark.asyncio

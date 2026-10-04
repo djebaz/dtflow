@@ -44,6 +44,10 @@ policy (chain still verified, clearly named) is added only if the optional live 
 
 A terminal error status alone does not prove the work failed or stopped.
 
+Once terminal OK and the expected valid finals are established, a failing terminal-event callback retains the
+completed result with a sanitized warning. The service still owns validation and durable saving before application
+success; notification failure does not make known remote completion unknown.
+
 ## Limits: enforced and not enforced
 
 Enforced after receipt and before decode: compressed size against `transport_bytes` (per payload and cumulative),

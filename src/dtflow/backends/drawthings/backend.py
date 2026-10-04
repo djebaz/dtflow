@@ -193,6 +193,7 @@ class DrawThingsBackend:
         stage = SubmissionStage.NOT_SUBMITTED
         sequence = 0
         finals: list[ImageArtifact] = []
+        warnings: tuple[str, ...] = ()
         stream = None
 
         def remaining() -> float:
@@ -270,7 +271,11 @@ class DrawThingsBackend:
                     if len(finals) != expected:
                         code = "no_final_output" if not finals else "incomplete_final_output"
                         raise self._reject(request, code, stage, finals, terminal="OK")
-                    emit("terminal", stage="OK")
+                    try:
+                        emit("terminal", stage="OK")
+                    except BackendError:
+                        # Notification failure cannot erase terminal OK and validated final artifacts.
+                        warnings = ("Terminal event delivery failed after validated backend completion.",)
         except BackendError:
             raise
         except Exception as exc:
@@ -289,6 +294,7 @@ class DrawThingsBackend:
             tuple(finals),
             wire.effective_configuration,
             CompletionEvidence("OK", True),
+            warnings,
         )
 
     @staticmethod
