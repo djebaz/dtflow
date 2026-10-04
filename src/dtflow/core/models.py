@@ -180,6 +180,11 @@ class BackendFailure:
     partial_artifacts: tuple[ImageArtifact, ...] = ()
     cancellation: CancellationEvidence = field(default_factory=CancellationEvidence)
 
+    def __post_init__(self) -> None:
+        validate_metadata(self.diagnostics)
+        if not isinstance(self.partial_artifacts, tuple):
+            raise ValidationError("Partial artifacts must be immutable.")
+
 
 class BackendError(Exception):
     """Transport-independent failure with independent submission evidence."""
@@ -198,6 +203,9 @@ class ConnectionStatus:
     authentication: str
     inventory: str
     diagnostics: Metadata = ()
+
+    def __post_init__(self) -> None:
+        validate_metadata(self.diagnostics)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +227,11 @@ class InventorySnapshot:
     refreshed: bool
     entries: tuple[InventoryEntry, ...]
     diagnostics: Metadata = ()
+
+    def __post_init__(self) -> None:
+        validate_metadata(self.diagnostics)
+        if not isinstance(self.entries, tuple) or any(not isinstance(x, InventoryEntry) for x in self.entries):
+            raise ValidationError("Inventory entries must be immutable typed values.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +267,13 @@ class ImageArtifact:
     height_px: int
     metadata: Metadata = ()
 
+    def __post_init__(self) -> None:
+        validate_metadata(self.metadata)
+        if not isinstance(self.encoded, bytes):
+            raise ValidationError("Encoded artifacts must be immutable bytes.")
+        if not isinstance(self.designation, Designation):
+            raise ValidationError("Artifact designation must be explicit.")
+
 
 @dataclass(frozen=True, slots=True)
 class CompletionEvidence:
@@ -270,6 +290,13 @@ class GenerationResult:
     effective_configuration: Metadata
     completion: CompletionEvidence
     warnings: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        validate_metadata(self.effective_configuration)
+        if not isinstance(self.artifacts, tuple) or any(not isinstance(x, ImageArtifact) for x in self.artifacts):
+            raise ValidationError("Result artifacts must be immutable typed values.")
+        if not isinstance(self.warnings, tuple) or any(not isinstance(x, str) for x in self.warnings):
+            raise ValidationError("Warnings must be immutable strings.")
 
 
 @dataclass(frozen=True, slots=True)

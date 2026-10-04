@@ -31,6 +31,9 @@ def test_guard_blocks_unregistered_loopback_dns_udp_and_children():
                 method(("127.0.0.1", 7859))
     with pytest.raises(AssertionError, match="Unregistered"):
         socket.getaddrinfo("fixture.invalid", 443)
+    for resolve in (socket.gethostbyname, socket.gethostbyname_ex, socket.gethostbyaddr):
+        with pytest.raises(AssertionError, match="Unregistered"):
+            resolve("fixture.invalid")
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         with pytest.raises(AssertionError, match="Unregistered"):
             client.sendto(b"fixture", ("127.0.0.1", 7859))
@@ -89,3 +92,16 @@ async def test_async_connections_require_an_exact_fixture_registration(fixture_e
 )
 def test_live_gating_requires_selection_opt_ins_and_named_authorization(selection, environ, generation, expected):
     assert live_allowed(selection, environ, generation) is expected
+
+
+@pytest.mark.asyncio
+async def test_async_datagram_transport_cannot_bypass_endpoint_guard():
+    transport, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+        asyncio.DatagramProtocol, local_addr=("127.0.0.1", 0)
+    )
+    try:
+        with pytest.raises(AssertionError, match="Unregistered"):
+            transport.sendto(b"fixture", ("127.0.0.1", 7859))
+    finally:
+        transport.close()
+        await asyncio.sleep(0)

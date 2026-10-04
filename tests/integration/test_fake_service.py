@@ -239,3 +239,90 @@ async def test_fake_concurrency_is_configurable_and_bounded():
                 task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await backend.aclose()
+
+
+@pytest.mark.asyncio
+async def test_memory_refusal_and_cancelled_admission_never_dispatch(state):
+    from dtflow.services.budget import BufferBudget
+
+    store, backend = SQLiteAttempts(state), FakeBackend()
+    try:
+        await store.open()
+        await backend.open()
+        tiny = GenerationService(backend, store, state / "outputs", budget=BufferBudget(1))
+        with pytest.raises(BackendError) as exc:
+            await tiny.generate(request("too-large"))
+        assert exc.value.failure.category == ErrorCategory.RESOURCE_LIMIT
+        assert await store.inspect() == ()
+        budget = BufferBudget(256 * 1024 * 1024)
+        await budget.acquire(budget.limit)
+        service = GenerationService(backend, store, state / "outputs", budget=budget)
+        task = asyncio.create_task(service.generate(request("waiting")))
+        for _ in range(100):
+            if await store.inspect():
+                break
+            await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        row = (await store.inspect())[0]
+        assert (row["state"], row["remote_outcome"]) == ("cancelled", "not_started")
+        assert backend.peak_active == 0
+        await budget.release(budget.limit)
+        assert budget.used == 0
+    finally:
+        await backend.aclose()
+        await store.aclose()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_during_save_waits_for_worker_and_preserves_remote_success(state):
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+
+    def saver(*args):
+        entered.set()
+        assert release.wait(2)
+        return ("fixture.png",), "fixture.json"
+
+    store, backend = SQLiteAttempts(state), FakeBackend()
+    try:
+        await store.open()
+        await backend.open()
+        service = GenerationService(backend, store, state / "outputs", saver=saver)
+        task = asyncio.create_task(service.generate(request()))
+        assert await asyncio.to_thread(entered.wait, 2)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        row = (await store.inspect())[0]
+        assert (row["state"], row["remote_outcome"]) == ("save_failed", "succeeded")
+        assert service.budget.used == 0
+        assert not row["failure"]["cancellation"]["remote_confirmed"]
+    finally:
+        release.set()
+        await backend.aclose()
+        await store.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["check_connection", "get_inventory"])
+async def test_connectivity_and_inventory_deadlines_are_typed(state, operation):
+    class SlowBackend(FakeBackend):
+        async def check_connection(self):
+            await asyncio.Future()
+
+        async def get_inventory(self, refresh=False):
+            await asyncio.Future()
+
+    service = GenerationService(
+        SlowBackend(), SQLiteAttempts(state), state / "outputs", timeouts=TimeoutPolicy(connect=0.01, inventory=0.01)
+    )
+    with pytest.raises(BackendError) as exc:
+        await getattr(service, operation)()
+    assert exc.value.failure.category == ErrorCategory.TIMEOUT
+    assert exc.value.failure.remote_outcome == RemoteOutcome.NOT_STARTED

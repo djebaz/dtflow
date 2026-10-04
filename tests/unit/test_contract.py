@@ -87,3 +87,11 @@ def test_boundary_check_covers_relative_and_local_imports():
     assert forbidden_imports("from ..backends.fake import FakeBackend", "dtflow.services")
     assert forbidden_imports("from .. import backends", "dtflow.services")
     assert not forbidden_imports("from ..core.models import Backend", "dtflow.services")
+
+
+@pytest.mark.parametrize("payload", [bytearray(b"image"), memoryview(b"image")])
+def test_artifacts_refuse_mutable_buffer_payloads(payload):
+    from dtflow.core.models import Designation, ImageArtifact
+
+    with pytest.raises(ValidationError, match="immutable bytes"):
+        ImageArtifact("a", Designation.FINAL, "image/png", payload, 128, 128)

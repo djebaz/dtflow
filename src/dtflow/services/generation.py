@@ -47,13 +47,27 @@ class GenerationService:
         # Serialize validation/saving while admitted backend requests may overlap.
         self._buffers = asyncio.Semaphore(1)
 
+    async def _bounded(self, operation, deadline: float, phase: str):
+        try:
+            async with asyncio.timeout(deadline):
+                return await operation
+        except TimeoutError as exc:
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory.TIMEOUT,
+                    phase + "_deadline",
+                    "Backend operation deadline exceeded.",
+                    timeout_phase=phase,
+                )
+            ) from exc
+
     async def check_connection(self):
-        async with asyncio.timeout(self.timeouts.connect + self.timeouts.inventory):
-            return await self.backend.check_connection()
+        return await self._bounded(
+            self.backend.check_connection(), self.timeouts.connect + self.timeouts.inventory, "connectivity"
+        )
 
     async def get_inventory(self, refresh: bool = False):
-        async with asyncio.timeout(self.timeouts.inventory):
-            return await self.backend.get_inventory(refresh=refresh)
+        return await self._bounded(self.backend.get_inventory(refresh=refresh), self.timeouts.inventory, "inventory")
 
     async def generate(
         self, request: ResolvedGenerationRequest, *, on_event: EventSink | None = None
@@ -162,7 +176,9 @@ class GenerationService:
                 await self.store.transition(
                     attempt_id,
                     (current["state"],),
-                    "unknown" if recorded_outcome == RemoteOutcome.UNKNOWN else "cancelled",
+                    "unknown"
+                    if recorded_outcome == RemoteOutcome.UNKNOWN
+                    else ("save_failed" if recorded_outcome == RemoteOutcome.SUCCEEDED else "cancelled"),
                     recorded_stage,
                     recorded_outcome,
                     failure=failure,

@@ -65,6 +65,13 @@ def install() -> None:
         return
     for name in ("connect", "connect_ex", "sendto"):
         _ORIGINALS[name] = getattr(socket.socket, name)
+    for name in ("gethostbyname", "gethostbyname_ex", "gethostbyaddr"):
+        _ORIGINALS[name] = getattr(socket, name)
+
+        def denied_resolution(*args, **kwargs):
+            raise AssertionError("Unregistered DNS resolution is prohibited.")
+
+        setattr(socket, name, denied_resolution)
     _ORIGINALS["getaddrinfo"] = socket.getaddrinfo
     _ORIGINALS["socketpair"] = socket.socketpair
     _ORIGINALS["popen"] = subprocess.Popen
@@ -144,6 +151,18 @@ def install() -> None:
         return await original_datagram(self, factory, local_addr=local_addr, remote_addr=remote_addr, **kwargs)
 
     asyncio.BaseEventLoop.create_datagram_endpoint = create_datagram_endpoint
+    # Guard transport-level sends too: Windows IOCP can bypass socket.sendto.
+    from asyncio import proactor_events, selector_events
+
+    for cls in (selector_events._SelectorDatagramTransport, proactor_events._ProactorDatagramTransport):
+        method = cls.sendto
+        _ORIGINALS[(cls, "sendto")] = method
+
+        def transport_sendto(self, data, addr=None, _method=method):
+            check(addr or self._address)
+            return _method(self, data, addr)
+
+        cls.sendto = transport_sendto
 
 
 def reset_registry() -> None:
