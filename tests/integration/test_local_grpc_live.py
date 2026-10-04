@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from support.live_evidence import save_inventory
-from support.live_local import skip_if_local_unreachable, warn_if_model_browsing_off
+from support.live_local import connect_hint, skip_if_local_unreachable, warn_if_model_browsing_off
 from support.network_guard import endpoint
 
 from dtflow.backends.drawthings import DrawThingsBackend, DrawThingsEndpoint, TlsPolicy
@@ -59,7 +59,9 @@ async def test_local_connection_and_inventory(live_run, request):
                 skip_if_local_unreachable(
                     request, detail.get("transport_code"), detail.get("transport_kind"), f"{host}:{port}"
                 )
-            assert status.transport == "ok", f"sanitized diagnostics: {status.diagnostics}"
+            assert status.transport == "ok", f"sanitized diagnostics: {status.diagnostics}" + connect_hint(
+                detail.get("transport_kind")
+            )
             assert status.inventory == "ok", f"sanitized diagnostics: {status.diagnostics}"
             inventory = await adapter.get_inventory(refresh=True)
             save_inventory(live_run, "local", adapter.endpoint.label, inventory)

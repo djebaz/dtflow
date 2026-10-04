@@ -5,7 +5,6 @@ import warnings
 import pytest
 
 REFUSED = "ConnectionRefusedError"
-RESET = "ConnectionResetError"
 
 
 def warn_live(request, message: str) -> None:
@@ -17,8 +16,7 @@ def warn_live(request, message: str) -> None:
 def unreachable_reason(code: str | None, kind: str | None, target: str) -> str | None:
     """Return a warning for "no local server answered", or None for any other failure.
 
-    A refused connection means nothing is listening (app closed or its API server disabled); a reset during connect
-    means something accepted the TCP connection but did not complete TLS (app up, API server off, or another service). A connect deadline is
+    A refused connection means nothing is listening (app closed or its API server disabled) A connect deadline is
     the same condition on some platforms, or a wrong IP/firewall. Other network errors (routing, DNS, reset) are not
     treated as "app not launched" and stay failures.
     """
@@ -26,11 +24,6 @@ def unreachable_reason(code: str | None, kind: str | None, target: str) -> str |
         return (
             f"Nothing is listening at {target} (connection refused): Draw Things is not running or its API server "
             "is off. Launch the app and enable its API server."
-        )
-    if code == "connect_failed" and kind == RESET:
-        return (
-            f"{target} accepted the connection but reset it before the TLS handshake finished: Draw Things is running "
-            "but its API server is probably off, or another service uses that port."
         )
     if code == "connect_deadline":
         return (
@@ -55,3 +48,10 @@ def warn_if_model_browsing_off(request, snapshot) -> None:
             "Echo returned no model files: 'Enable Model Browsing' is probably off in Draw Things, so local file "
             "visibility and LoRA SHA-256 checks may be incomplete.",
         )
+
+
+def connect_hint(kind: str | None) -> str:
+    """Extra guidance for failures that must stay failures but have a likely local cause."""
+    if kind == "ConnectionResetError":
+        return " The server reset the connection during connect: check that TLS is enabled in the Draw Things app."
+    return ""
