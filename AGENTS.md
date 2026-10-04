@@ -9,7 +9,7 @@ These instructions apply throughout `dtflow`.
 
 ## Before changing behavior
 
-- Read this file, `README.md`, `devdocs/plans/initial.md`, `devdocs/releases/unreleased.md`, relevant architecture/research documents, and the current canonical files before editing.
+- Read this file, `README.md`, `devdocs/plans/initial.md`, `devdocs/plans/releases.md`, `devdocs/releases/unreleased.md`, relevant architecture/research documents, and the current canonical files before editing.
 - Treat repository files and verified upstream interfaces as the source of truth. Do not invent runtime behavior, compatibility, benchmarks, test results, or verification.
 - Preserve unrelated working behavior.
 
@@ -45,8 +45,21 @@ These instructions apply throughout `dtflow`.
 - Provide cache cleanup early enough to prevent generated images and derived assets from growing without bounds.
 - Support a cache-bypass launch option `-nc` / `--no-cache`; it must disable cache reads and writes for that run.
 
+## Logging and development diagnostics
+
+- Use one shared Python logging setup for CLI, Qt, services and backend adapters. Prefer the standard-library logging module; presentation layers must not maintain separate logging engines.
+- In repository development, write diagnostic files under repository-root `logs/`, which remains ignored by Git. Keep application state under `.dtflow/` and disposable scratch work under `tmp/`; logs do not change those conventions.
+- Packaged Windows builds default to `%LOCALAPPDATA%\DTFlow\logs\`, never the repository, executable directory or current working directory. Allow an explicit log-location override when implemented.
+- Write readable UTF-8 text logs with timestamps, severity, component and session identity. Include version/source commit and backend identity; attach local job/attempt IDs when available to correlate concurrent work.
+- Normal mode records important lifecycle events and errors. Explicit development mode adds sanitized connection/auth-refresh events, request validation, state transitions, stream events, timings and exception tracebacks. It changes diagnostic detail only, never generation, retry or billing behavior.
+- Bound file size and retention through rotation. Avoid rotation collisions between simultaneous processes and keep log I/O from blocking Qt interaction.
+- Never log API keys, tokens, authorization headers, credentials or raw image/Base64 payloads. Exclude full prompts and other sensitive request data by default; sanitize exception details as well as ordinary messages.
+- Logs are diagnostic evidence, not the durable job/attempt store or proof of successful generation. Log cleanup must not delete durable state or outputs.
+- Report log-location/write failures clearly without exposing secrets or triggering generation retries. Logging setup must not consume subscription credits or enable external network access.
+
 ## CLI
 
+- The initial CLI runs from source for development and automation; packaging initially targets the Qt application, without a separate packaged CLI.
 - Provide a `dtflow` entry point for normal development/application launch rather than requiring long source paths.
 - For normal user-facing options, expose a canonical pair: a stable, unique lowercase short alias and a concise long form.
 - Reserve `-h` / `--help` for the standard help action. Do not use uppercase short aliases such as `-H` or `-P` as collision workarounds, and avoid repurposing widely expected flags when a clearer mnemonic is available.
@@ -69,6 +82,7 @@ These instructions apply throughout `dtflow`.
 - Keep prompts, seeds, dimensions, and other relevant parameters controlled in comparisons unless intentionally varied.
 - Do not run expensive or potentially billable training/inference merely to validate syntax, configuration, or application plumbing.
 - Never expose credentials, tokens, authorization headers, or sensitive payloads in logs.
+- Shared cloud credential resolution selects `DRAWTHINGS_API_KEY` when present, otherwise the saved Windows credential. Empty/invalid selected credentials fail clearly; never silently switch sources after validation or authentication failure.
 
 ## Tests
 
@@ -85,9 +99,22 @@ These instructions apply throughout `dtflow`.
 - Do not commit model/checkpoint artifacts or duplicate large model files.
 - Keep build inputs and version metadata reproducible.
 
+## Version and build identity
+
+- Keep one authoritative application version and one shared build-identity source; CLI, Qt, packaging and output metadata must consume them rather than maintain independent copies.
+- Display the application version plus a short Git commit ID in CLI version output and a discreet Qt About/status area.
+- Name distributed builds `dtflow-<version>-g<short-sha>-<platform>-<arch>.<ext>`, using the actual source revision, target architecture and artifact type. An eventual installer follows the same identity convention.
+- Capture the full source commit and dirty-worktree status at build time and bundle them with the application. Packaged execution must not require Git or a repository checkout.
+- Build public releases from a clean checkout. Development builds must disclose local modifications; when revision metadata is unavailable, report it as unknown rather than inventing a commit ID.
+- Persist application version and full source commit in generation metadata where available, and include build identity in smoke-test reports so results identify the executable actually exercised.
+- Check that packaged filenames, CLI output and Qt display agree when those delivery paths exist. Do not claim runtime or packaging verification from documentation checks alone.
+- Use manual release downloads initially; an integrated updater is outside the initial scope.
+
 ## Documentation and releases
 
 - Keep `README.md` focused on current usage, setup, repository layout, and validation rather than per-version history.
+- Follow [the release roadmap](devdocs/plans/releases.md) for usable version milestones and acceptance gates; planned numbers are not shipped releases.
+- Version durable state schemas separately from application versions. Preserve state and outputs on supported migrations; reject unsupported schemas clearly and never replay ambiguous attempts during an upgrade.
 - Track pending changes in `devdocs/releases/unreleased.md`.
 - When releasing a version, move the relevant entries into `devdocs/releases/v<version>.md` and reset `unreleased.md`.
 - Update the relevant plan, architecture, research, and release documentation when behavior changes.
