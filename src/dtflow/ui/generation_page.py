@@ -23,6 +23,7 @@ from dtflow.services.connection import (
     present_outcome,
 )
 from dtflow.services.session import generate_once, read_attempt, refresh_inventory, selection_for
+from dtflow.ui.activity import Activity
 from dtflow.ui.generation_presenter import (
     SAMPLERS,
     FormError,
@@ -89,6 +90,7 @@ class GenerationPage:
         backend_source: Callable[[], tuple[str, str | None]],
         saved_source: Callable[[], CredentialProvider | None],
         state_dir: Path,
+        activity: Activity | None = None,
         choose_save: Callable[[QWidget, Path], str] = _choose_save,
         choose_open: Callable[[QWidget, Path], str] = _choose_open,
     ):
@@ -97,6 +99,8 @@ class GenerationPage:
         self._backend = backend_source
         self._saved = saved_source
         self._state = Path(state_dir)
+        self._activity = activity or Activity()
+        self._activity.listen(self._sync_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
         self._relay = EventRelay(self._event, page)
@@ -193,10 +197,29 @@ class GenerationPage:
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
-        self.page.generateButton.setEnabled(not busy)
+        self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
         self.page.cancelButton.setEnabled(busy and self._generating)
         self.lora.set_enabled(not busy)
+
+    def _sync_activity(self) -> None:
+        """A queue dispatch holds the state lock, so single generation waits for it (and vice versa)."""
+        self.page.generateButton.setEnabled(not self._busy and not self._activity.dispatching)
+        if self._activity.dispatching:
+            self._status(
+                Presentation("warning", "Queue dispatch is running", "Single generation is unavailable until it stops.")
+            )
+
+    def request_for_queue(self):
+        """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking."""
+        self._mark(None)
+        name, endpoint = self._backend()
+        try:
+            request = build_request(self._values(), backend=name, config_name=self._config_name)
+        except FormError as exc:
+            self._mark(exc.widget)
+            raise
+        return request, name, endpoint, self.lora.receipt_ids()
 
     def _progress(self, text: str, completed: int | None = None, total: int | None = None) -> None:
         bar = self.page.generationProgressBar
@@ -240,6 +263,7 @@ class GenerationPage:
         self._progress("Preparing")
         self._status(Presentation("warning", "Generating", "Waiting on the selected backend."))
         self._generating = True
+        self._activity.set(generating=True)
         self._set_busy(True)
         self._future = self._runner.submit(
             self._generate(
@@ -277,6 +301,7 @@ class GenerationPage:
             self._runner.submit(read_attempt(self._state, request_id), self._interrupted)
             return
         self._generating = False
+        self._activity.set(generating=False)
         self._set_busy(False)
         if failure is not None:
             self._progress("Failed")
@@ -306,6 +331,7 @@ class GenerationPage:
 
     def _interrupted(self, evidence, failure) -> None:
         self._generating = False
+        self._activity.set(generating=False)
         self._set_busy(False)
         self._progress("Stopped locally")
         if failure is not None:

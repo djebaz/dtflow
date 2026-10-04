@@ -15,7 +15,7 @@ from uuid import uuid4
 from dtflow.composition import BackendSelection
 from dtflow.core.models import CredentialProvider, ResolvedGenerationRequest, TimeoutPolicy, ValidationError
 from dtflow.persistence.queues import MAX_ITEMS, post_control, read_queues
-from dtflow.persistence.settings import load_cloud_concurrency, validate_concurrency
+from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
@@ -121,3 +121,17 @@ async def read_queue_views(state: Path, queue_id: str | None = None) -> tuple[di
 async def post_queue_control(state: Path, queue_id: str, action: str, payload: dict[str, Any] | None = None) -> None:
     """Append one control for the dispatch owner to apply (at its next poll, or at the next start)."""
     await asyncio.to_thread(post_control, Path(state), queue_id, action, payload)
+
+
+async def set_concurrency(state: Path, value: int, *, queue_id: str | None = None, save_shared: bool = False) -> int:
+    """Validate a concurrency maximum (1..4) before anything is written or posted.
+
+    ``save_shared`` persists the shared cloud maximum used for new cloud queues; ``queue_id`` posts a ``cap`` control
+    for that queue (active work is never cancelled by it). The value is a client policy, not verified entitlement.
+    """
+    value = validate_concurrency(value)
+    if save_shared:
+        await asyncio.to_thread(save_cloud_concurrency, Path(state), value)
+    if queue_id is not None:
+        await post_queue_control(state, queue_id, "cap", {"cap": value})
+    return value
