@@ -55,9 +55,11 @@ Pending changes for the next DTFlow release.
 - Project-level uv NumPy compatibility override for the bounded `drawthings-py>=0.4.0,<0.5.0` dependency line.
 - Draw Things gRPC probe support for configurable 1-8 job runs, serial baselines, and a full-preset workload mode.
 - Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in. User-reported live runs validate the path end to end from Python through cloud authentication, direct TLS gRPC generation, result decoding, and concurrent submissions without a MediaGenerationKit runtime dependency.
-- Phase 2D investigation documents: a proposed `drawthings-py` GPL-3.0 licensing decision record with the locked runtime license table, a replacement-cost estimate, a Windows packaging checklist with an all-"Not run" findings table, a non-generative `tools/packaging/smoke.py` environment check, and a TanqueStudio feature inventory pinned to commit `6474f1e`. No application behavior, dependency or generation change; Windows results are recorded only from owner-run checks.
+- Phase 2D investigation documents: an accepted GPL-3.0-only DTFlow licensing decision with the locked runtime license table, a replacement-cost estimate, a Windows packaging checklist with an all-"Not run" findings table, a non-generative `tools/packaging/smoke.py` environment check, and a TanqueStudio feature inventory pinned to commit `6474f1e`. Windows results are recorded only from owner-run checks.
 
 ## Changed
+
+- Adopt GPL-3.0-only for DTFlow before its first public release, replacing the unreleased MIT declaration in `LICENSE` and `pyproject.toml`. No DTFlow version was previously published under MIT; update the decision, roadmap and packaging documentation to match. Runtime behavior and dependency versions are unchanged.
 
 - Expand README with current development status, setup/validation, diagnostic help, repository layout, design requirements and dependency-distribution references. Distinguish planned application features from existing probe tooling.
 

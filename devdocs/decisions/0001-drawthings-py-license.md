@@ -1,13 +1,19 @@
 # Decision 0001 — drawthings-py (GPL-3.0-only) and DTFlow distribution
 
-**Status:** Proposed — decision deferred until a public build is planned.  
-**Trigger:** Decide before any public distribution of a DTFlow build that bundles or links `drawthings-py`.  
-**Scope:** Facts, options and a recommendation. This is not a legal determination; obtain legal review before relying on any option below.  
+**Status:** Accepted — DTFlow is GPL-3.0-only before its first public release.  
+**Decision date:** 2026-10-04.  
+**Scope:** Project licensing and distribution posture. This records the project decision; it is not legal advice.  
 **Related:** [Phase 2D](../plans/phase-2-backends.md#phase-2d--packaging-licensing-and-feature-inventory), [replacement estimate](../research/drawthings-py-replacement.md), [backend contract](../architecture/backend-contract.md), [Windows packaging](../research/windows-packaging.md).
 
 ## Context
 
-DTFlow currently targets personal use, with possible public distribution later. DTFlow's own license is MIT (`LICENSE`, `pyproject.toml`). The Draw Things Python client DTFlow depends on, `drawthings-py` (pinned `>=0.4.0,<0.5.0`), declares **GPL-3.0-only** and ships the full GPL-3.0 text. The two are not obviously compatible for a bundled public distribution.
+DTFlow had not been publicly released under MIT. Before the first release, the owner chose **GPL-3.0-only** for DTFlow.
+The Draw Things Python client DTFlow depends on, `drawthings-py` (pinned `>=0.4.0,<0.5.0`), also declares
+**GPL-3.0-only** and ships the full GPL-3.0 text.
+
+MIT code is generally GPL-compatible; the earlier concern was not that MIT and GPL could never coexist. The practical
+distribution question was whether a combined build containing GPL-covered code could remain presented as an MIT-only
+application. Adopting GPL-3.0-only for DTFlow removes that top-level mismatch before any public DTFlow release.
 
 ## Facts and evidence
 
@@ -15,11 +21,12 @@ Source labels: **observed** = read from installed package metadata or files in t
 
 | Item | Fact | Evidence |
 | --- | --- | --- |
-| DTFlow license | MIT | observed: `LICENSE`, `pyproject.toml` |
+| DTFlow license | GPL-3.0-only | observed after this decision: `LICENSE`, `pyproject.toml` |
+| Prior public DTFlow MIT release | None | owner-confirmed before this decision |
 | drawthings-py 0.4.0 | `License-Expression: GPL-3.0-only`; `licenses/LICENSE` is the GPL-3.0 text (34,892 bytes) | observed: installed `drawthings_py-0.4.0.dist-info` |
 | Official Draw Things source (`drawthingsai/draw-things-community`) | GPL-3.0 (`LICENSE.md`); contributions require a CLA; it contains `imageService.proto` (190 lines) and `config.fbs` (191 lines) among its sources | source-read at commit `e51089d5229b3147e13a21cfe0c379deff851715` (2026-10-04) |
 | Where DTFlow uses drawthings-py | Only the diagnostic probe today; production use is planned behind one replaceable integration module (see backend contract) | observed: repository sources and architecture docs |
-| Legal effect of the above on distributing a combined work | Not determined here | unverified |
+| Full legal/compliance effect of a future packaged distribution | Not determined here | unverified; release packaging still needs notice/source review |
 
 ### Locked runtime dependency licenses
 
@@ -47,31 +54,25 @@ Read from installed metadata after `uv sync --no-dev` on Linux CPython 3.13 agai
 
 Qt/PySide6 is planned but is not a declared runtime dependency yet; its licensing (LGPL/GPL/commercial options) is a separate future entry.
 
-## Trigger analysis
+## Decision
 
-- **Private, personal use:** the obligations that attach to distribution are not triggered by running DTFlow privately. This is a statement of the planning assumption, not legal advice.
-- **Any public or third-party distribution** of a build that includes `drawthings-py` (or a work derived from it) triggers the decision. The same applies to publishing an executable, installer or container that bundles it.
-- Source-only publication is a separate case that also needs review; it is not settled here.
+1. License DTFlow under **GPL-3.0-only** before its first public release.
+2. Replace the repository MIT license text with the GPL version 3 text and declare `GPL-3.0-only` in project metadata.
+3. Do not maintain a legacy MIT release line because no DTFlow release was published under MIT.
+4. Keep `drawthings-py` isolated behind the backend integration boundary for maintainability, testing and future replacement flexibility; isolation is no longer being treated as a way to avoid the accepted project license.
+5. Continue tracking third-party licenses independently. A GPL project license does not erase dependency-specific notice, source or redistribution obligations.
 
-## Options
+## Distribution implications
 
-| Option | Effect | Cost / risk |
-| --- | --- | --- |
-| A. Stay private | No distribution, no decision needed now | Blocks the planned public path; keeps the dependency |
-| B. Relicense DTFlow to a GPL-compatible license when distributing with the dependency | Dependency stays; obligations satisfied by licensing choice | Changes DTFlow's stated MIT licensing; affects any contributors; needs a deliberate owner decision and legal check |
-| C. Replace `drawthings-py` in the distributed artifact | Removes the GPL dependency from the bundle | Replacement scope in the [estimate](../research/drawthings-py-replacement.md); note the protocol and configuration schema sources are themselves GPL-3.0 in the official repository, so reimplementation needs clean-room and legal review, not just new code |
-| D. Process boundary (separate helper process or tool) | Might keep DTFlow itself out of a combined work | Not assumed to resolve the question; needs legal review; adds packaging and IPC complexity |
+- **Private use:** running and modifying DTFlow privately does not by itself create a public-distribution workflow.
+- **Source distribution:** publish DTFlow source under GPL-3.0-only with the license text and required notices.
+- **Executable/installer distribution:** provide the GPL-required corresponding source and preserve applicable third-party notices and license material for what is actually shipped.
+- **Commercial distribution:** GPL-3.0-only does not prohibit charging for DTFlow or services around it, but distributed covered source remains subject to GPL terms.
+- **Future proprietary relicensing:** contributor ownership and permissions would matter if the project later wanted a different licensing model.
 
-## Recommendation
+## Follow-up
 
-1. **Defer the license decision** to the point a public build is planned; nothing in Phase 2 or 3 needs it resolved.
-2. **Keep the dependency isolated** behind the single integration module already required by the [backend contract](../architecture/backend-contract.md), with its workaround ledger, so options B–D stay open and cheap.
-3. **Do not copy `drawthings-py` or official Draw Things source into DTFlow** without a recorded decision. Reading them as protocol/design references is already the project's practice.
-4. **Re-run the license table** whenever `uv.lock` changes the runtime closure, and record the lock revision used.
-5. **Obtain legal advice** before choosing B, C or D, and before any public release.
-
-## Revisit when
-
-- A public or third-party build is scheduled.
-- `drawthings-py` changes license, or the project moves to another client or implementation.
-- The runtime dependency closure changes (new native codecs, Qt, an installer toolchain).
+- Re-read the runtime license table whenever `uv.lock` changes the runtime closure.
+- Review PySide6/Qt and installer/runtime licenses when those dependencies are introduced.
+- Keep packaged-release checklists explicit about corresponding source, notices and bundled dependency licenses.
+- Obtain legal review before relying on a specific packaging/compliance interpretation for a public commercial distribution.
