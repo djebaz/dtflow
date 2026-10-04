@@ -97,10 +97,10 @@ Record the version line, exit codes, the saved PNG and metadata file names and s
 
 ### P7 — Frozen `dtflow` CLI trial
 
-`tools/packaging/launch_dtflow.py` is a two-line launcher that exists only for this trial. `--copy-metadata dtflow` lets the version lookup find package metadata inside the executable; without it the version is reported as unknown. Source commit and dirty status are `unknown` until a later build step stamps them, so that is expected here.
+`tools/packaging/launch_dtflow.py` is a two-line launcher that exists only for this trial. `--copy-metadata dtflow` lets the version lookup find package metadata inside the executable; without it the version is reported as unknown. `--collect-data drawthings_py` bundles the library's resource files; since Phase 3A the CLI imports the real adapters at startup, and without it every command fails with `No module named 'drawthings_py.resources'` (observed on the target machine, 2026-10-04). Source commit and dirty status are `unknown` until a later build step stamps them, so that is expected here.
 
 ```powershell
-uv run --with pyinstaller pyinstaller --onefile --name dtflow-cli --paths src --copy-metadata dtflow tools/packaging/launch_dtflow.py
+uv run --with pyinstaller pyinstaller --onefile --name dtflow-cli --paths src --copy-metadata dtflow --collect-data drawthings_py tools/packaging/launch_dtflow.py
 .\dist\dtflow-cli.exe --version
 $state2 = Join-Path $env:TEMP "dtflow-pkg-state-frozen"
 .\dist\dtflow-cli.exe generate --state $state2 --backend fake --prompt "Offline fixture" --seed 0
