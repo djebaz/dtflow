@@ -34,3 +34,4 @@
 - 2026-10-04: make the next PR a presentation-only composition slice. This allows visual review of all canonical forms without crossing the Phase 5 service boundary or bypassing the remaining Phase 3B cloud-asset prerequisite.
 - 2026-10-04: keep Connection as the initial page and preserve its existing runtime behavior.
 - 2026-10-04: visible preview pages are permitted only when their action controls are disabled and the shell labels them as not yet wired.
+- 2026-10-04: PR #17 records the next implementation phase in [the detailed Phase 3B cloud asset completion plan](2026-10-04-phase-3b-cloud-assets.md); the remaining pre-Qt asset gate is completed before Phase 5A service wiring.
