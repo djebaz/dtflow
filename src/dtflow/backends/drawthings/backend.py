@@ -111,6 +111,7 @@ class DrawThingsBackend:
             max_concurrency=self.max_concurrency,
             batch_size=1,
             batch_count=1,
+            lora_support="selection",
             limits=self.limits,
         )
 

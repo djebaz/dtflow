@@ -1,6 +1,6 @@
 # LoRA compatibility and custom cloud assets
 
-**Status:** Planned; no runtime capability or deployed API validation is introduced.  
+**Status:** Phase 3A local selection/preflight is implemented and offline-validated (exception/refiner rules not yet pinned; no deployed LoRA application evidence); cloud upload/reuse remains planned.  
 **References:** [Phase 2](phase-2-backends.md), [Phase 3](phase-3-cli.md), [roadmap](initial.md), [parity matrix](tanquestudio-parity.md), [release gates](releases.md), [source findings](../research/dtflow-ecosystem-research-report.md#appendix-e--lora-compatibility-and-cloud-storage-follow-up).
 
 ## Delivery sequence

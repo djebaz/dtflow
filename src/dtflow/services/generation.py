@@ -1,6 +1,7 @@
 """One async application path from immutable request to durable output."""
 
 import asyncio
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
@@ -22,9 +23,13 @@ from dtflow.core.models import (
 )
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
+from dtflow.logging_setup import ATTEMPT
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.budget import BufferBudget
 from dtflow.services.events import EventBuffer
+from dtflow.services.preflight import preflight_loras, raise_if_blocked
+
+log = logging.getLogger(__name__)
 
 
 class GenerationService:
@@ -69,6 +74,10 @@ class GenerationService:
     async def get_inventory(self, refresh: bool = False):
         return await self._bounded(self.backend.get_inventory(refresh=refresh), self.timeouts.inventory, "inventory")
 
+    async def preflight(self, request: ResolvedGenerationRequest):
+        """Structured LoRA diagnostics from the backend's current inventory; never dispatches anything."""
+        return preflight_loras(request, await self.get_inventory())
+
     async def generate(
         self, request: ResolvedGenerationRequest, *, on_event: EventSink | None = None
     ) -> SavedGeneration:
@@ -77,7 +86,7 @@ class GenerationService:
             request.operation not in caps.operations
             or request.sampler_id not in caps.samplers
             or request.model_id not in caps.model_ids
-            or request.loras
+            or (request.loras and caps.lora_support == "unsupported")
             or request.batch_size != caps.batch_size
             or request.batch_count != caps.batch_count
         ):
@@ -89,6 +98,9 @@ class GenerationService:
                     request.request_id,
                 )
             )
+        if request.loras:
+            # Confirmed incompatibility or absence must stop the request before any durable attempt exists.
+            raise_if_blocked(request, await self.preflight(request))
         raw_bytes = request.height_px * (1 + request.width_px * 4)
         reservation = raw_bytes + 3 * caps.limits.artifact_bytes + caps.limits.preview_bytes
         if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
@@ -102,7 +114,11 @@ class GenerationService:
             )
         reserved = False
         attempt_id = uuid4().hex
+        ATTEMPT.set(attempt_id)
         await self.store.create(attempt_id, caps.backend_id, request)
+        log.info(
+            "attempt prepared backend=%s request=%s model=%s", caps.backend_id, request.request_id, request.model_id
+        )
         stage = SubmissionStage.NOT_SUBMITTED
         outcome = RemoteOutcome.NOT_STARTED
         state = "prepared"
@@ -148,8 +164,10 @@ class GenerationService:
             await self.store.transition(
                 attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
             )
+            log.info("attempt succeeded outputs=%d", len(paths))
             return SavedGeneration(attempt_id, paths, metadata, result)
         except asyncio.CancelledError:
+            log.warning("attempt interrupted locally stage=%s outcome=%s", stage, outcome)
             failure = BackendFailure(
                 ErrorCategory.CANCELLATION,
                 "local_cancelled",
@@ -186,6 +204,9 @@ class GenerationService:
             raise
         except BackendError as exc:
             failure = exc.failure
+            log.error(
+                "attempt failed code=%s category=%s outcome=%s", failure.code, failure.category, failure.remote_outcome
+            )
             await self.store.transition(
                 attempt_id,
                 (state,),

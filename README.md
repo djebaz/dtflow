@@ -11,8 +11,8 @@ Draw Things gRPC adapter, scripted TLS/gRPC fixtures and an optional non-generat
 Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures and optional live token/inventory and
 complete generation smoke checks. The owner reports deployed token/inventory and one bounded generation passed at an
 earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`. This covers that workload only; final-head Windows validation,
-broad model/LoRA compatibility, production cancellation latency, charging/refunds and packaged execution remain unverified. Real-backend CLI generation selection,
-durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+broad model/LoRA compatibility, production cancellation latency, charging/refunds and packaged execution remain unverified. Phase 3A exposes those adapters through the source-run CLI (offline-validated; owner-run live generation through the
+CLI is pending). Durable rolling queues, cloud LoRA upload/reuse and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles
@@ -109,26 +109,59 @@ generation, including through Bridge mode. Read `--help` and select the intended
 The direct-cloud probe reads `DRAWTHINGS_API_KEY` from the environment; it does not accept the key on the command line.
 Keep credentials and tokens out of logs and saved request metadata.
 
-The minimal Phase 2A entry point is offline and requires explicit fake selection:
+## Command line (Phase 3A, source-run)
+
+`uv run dtflow` selects a backend explicitly (`-b/--backend fake|local|cloud`); there is never a fallback from one
+backend to another. Results are JSON on stdout; progress and diagnostics go to stderr.
 
 ```sh
 uv run dtflow --help
-uv run dtflow check --backend fake
-uv run dtflow models --backend fake --refresh
-uv run dtflow generate --backend fake --prompt "Offline fixture" --seed 0
-uv run dtflow attempts
+uv run dtflow check    -b fake                                   # offline fixture, no model inference
+uv run dtflow check    -b local -e 192.168.1.20:7859             # Draw Things gRPC; secret from DRAWTHINGS_SHARED_SECRET
+uv run dtflow check    -b cloud                                  # DT+; key from DRAWTHINGS_API_KEY
+uv run dtflow models   -b local -e HOST:PORT -k lora            # inventory with provenance; -k filters by kind
+uv run dtflow generate -b fake -p "Offline fixture" -s 0
+uv run dtflow generate -b cloud -m EXACT_MODEL -p "a cat" -l EXACT_LORA:0.8 -r -u cat.json
+uv run dtflow generate -b cloud -c cat.json -s 7                  # reuse a config; explicit flags override it
+uv run dtflow attempts                                            # inspect durable attempts; never resubmits
+uv run dtflow settings -j 2                                       # persist the cloud concurrency maximum (1-4, default 4)
 ```
 
-The fixture is a deterministic color swatch; no model inference occurs. State is stored in `.dtflow/attempts.sqlite3`
-and outputs under `.dtflow/outputs/<attempt-id>/`. Use `--state` to choose another local state directory and `--out`
-to choose the output root. `--scenario lost` exercises an uncertain outcome; inspection never resubmits it.
-The full real-backend CLI is Phase 3 work. Run state on a local filesystem, with a patched SQLite runtime as described
-in the [backend contract](devdocs/architecture/backend-contract.md#durable-state-and-layer-enforcement).
+`generate`, `check` and `models` are the only commands that contact a backend; `generate -b local|cloud` submits a
+real, potentially billable generation, so run it deliberately. `check` and `models` are non-generative.
+Local/cloud generation requires an exact `-m/--model` listed by the server's inventory (refreshed before each run).
+
+- **Options.** Generation: `-p/--prompt`, `-n/--negative`, `-m/--model`, `-s/--seed`, `-w/--width`, `-y/--height`,
+  `-i/--steps`, `-g/--guidance`, `-a/--sampler`, `-l/--lora ID:WEIGHT` (repeatable, explicit weight required),
+  `-r/--prefix`, `-o/--out`, `-t/--timeout`. Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local),
+  `-d/--state`, `-nc/--no-cache` (the CLI keeps no inventory cache yet, so the flag currently only guarantees none is
+  read or written). Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`. Fake-only: `-f/--scenario`.
+- **Configuration.** `-c/--config` reads a versioned, credential-free generation config (`dtflow.generation-config`,
+  version 1) or a previous run's `metadata.json`; `-u/--export` writes the effective config of the current request
+  before dispatch. Precedence is default < file < explicit flag, and the metadata records where each field came from.
+  Seed `0` is preserved. Files containing credential-like keys or a newer version are rejected.
+- **LoRAs.** Each selection needs an exact inventory identifier and weight. Preflight compares the LoRA's reported
+  architecture with the model's: a confirmed mismatch or a LoRA missing from the inventory stops the request before
+  any attempt is recorded; unknown architecture is reported and allowed, never silently dropped. `-r/--prefix`
+  explicitly prepends the server-supplied trigger prefixes; the prompt is never changed otherwise. Preflight is
+  metadata evidence only: successful generation does not prove a LoRA was applied. The official base/refiner and
+  Kandinsky/SD-v1 exception rules are not pinned yet, so only whole-model LoRAs on a base model are supported.
+- **Exit codes.** `0` success; `2` invalid input, config, preflight or missing credentials (nothing was dispatched);
+  `3` backend rejection or failure with a known outcome; `4` unknown remote outcome (never replayed); `5` local
+  state, output or deadline failure; `130` local interruption. Nonzero results print one JSON error line on stderr.
+- **Logging.** One shared logging setup writes rotating UTF-8 `dtflow-<session>.log` files under repository `logs/`
+  (or `%LOCALAPPDATA%\DTFlow\logs\` outside a checkout), with session/attempt correlation and bounded retention.
+  Prompts, credentials, headers and payloads are not logged; a log failure is reported once and never changes the command.
+
+The fixture backend is a deterministic color swatch; no model inference occurs. State is stored in
+`.dtflow/attempts.sqlite3` and outputs under `.dtflow/outputs/<attempt-id>/`. Run state on a local filesystem, with a
+patched SQLite runtime as described in the
+[backend contract](devdocs/architecture/backend-contract.md#durable-state-and-layer-enforcement).
 
 ## Repository layout
 
 ```text
-src/dtflow/   application contracts, services, persistence and fake backend
+src/dtflow/   application contracts, services, composition root, persistence, backends and CLI
 tests/        automated checks
 tools/        diagnostic and development tooling
 devdocs/      plans, research, architecture, decisions and release notes

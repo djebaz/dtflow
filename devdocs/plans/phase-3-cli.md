@@ -1,6 +1,6 @@
 # Phase 3 — Headless CLI and shared application services
 
-**Status:** Planned; no CLI implementation is introduced by this documentation change.  
+**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B is planned.  
 **Prerequisite:** [Phase 2 backends and offline tests](phase-2-backends.md).  
 **Roadmap:** [initial plan](initial.md).
 
@@ -13,6 +13,26 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 ## Delivery sequence
 
 Phase 2A supplies the minimal fake/service/SQLite/artifact slice. Phase 3A expands it into usable real-backend single-generation CLI/services, bounded LoRA selection/preflight, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling, restart reconciliation and custom cloud LoRA upload/reuse. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
+
+## Phase 3A implemented scope and limits
+
+Implemented: explicit `fake`/`local`/`cloud` selection through a composition root (no fallback; cloud credentials from
+`DRAWTHINGS_API_KEY`, local shared secret from `DRAWTHINGS_SHARED_SECRET`); bounded `check`, `models` (kind filter, provenance
+and unknown entries preserved) and `generate`; versioned credential-free configuration/metadata import and export with
+default < file < override precedence and per-field resolution evidence; exact LoRA selection with explicit weights,
+serialized by the Draw Things adapter as whole-model (`All`) LoRAs and verified against the decoded wire configuration;
+shared LoRA preflight (match/mismatch/unknown architecture, availability, fixed `application_unconfirmed` evidence)
+that blocks confirmed mismatches and absent LoRAs before any attempt exists; explicit `--prefix` trigger-prefix
+application; persisted cloud concurrency setting (`settings -j`, 1-4, default 4, not entitlement); the shared logging
+setup; documented exit codes. Defaults chosen where the plan left room: one seed default (`0`, matching the 2A
+slice), `-e HOST:PORT` for the local endpoint, `settings` as the concurrency command, mismatch blocks while unknown
+architecture proceeds with a diagnostic, and `-nc` accepted although no inventory disk cache exists yet.
+
+Not done or unverified: the official base/refiner and Kandinsky/SD-v1 exception rules are not pinned, so no exception
+logic exists; raw inventory disk-cache read/write integration is still planned; the saved Windows credential provider
+is Phase 4, so cloud credentials are environment-only; no live workflow (3-LG1/3-LG2) was run, so the local and cloud
+CLI paths and LoRA application on real servers are verified only against the scripted fixture server. The Windows
+Pentium target, packaged execution and billing behavior remain unverified.
 
 ## Release gates and schema compatibility
 

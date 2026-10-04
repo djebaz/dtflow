@@ -4,6 +4,12 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Phase 3A source-run CLI: explicit `-b fake|local|cloud` backend selection through a composition root (no fallback), `check`/`models`/`generate` against real adapters, `-e HOST:PORT` for local Draw Things, `models -k` kind filter, documented exit codes (0/2/3/4/5/130) and JSON-only stdout. Offline-validated against fixtures; no live request, generation or billable action was run.
+- Versioned credential-free generation configuration (`dtflow.generation-config` v1): `-c/--config` import (also from a prior `metadata.json`), `-u/--export`, default < file < override precedence with per-field resolution evidence, and rejection of newer versions and credential-like keys.
+- LoRA selection (`-l ID:WEIGHT`), Draw Things whole-model LoRA wire serialization verified against the decoded configuration, shared preflight diagnostics that stop confirmed architecture mismatches and absent LoRAs before any attempt is recorded, and explicit `-r/--prefix` trigger-prefix application. Official exception/refiner rules are not pinned and application on real servers is unverified.
+- Shared standard-library logging (`-x/--dev`, `-q/--logs`): queue-backed rotating `dtflow-<session>.log` files with session/attempt correlation, bounded retention, sanitized messages and exceptions, and non-fatal write-failure reporting.
+- Persisted cloud concurrency setting (`dtflow settings -j`, 1-4, default 4; `settings.json` with its own schema version). It is a client policy, not verified entitlement.
+
 - `dtflow test -local/--local` and `-cloud/--cloud` limit live connectivity checks to the local Draw Things server or DT+ (each implies `-live` when given alone); each scope needs only its own environment settings, a cloud-only run omits the local LoRA comparison, and `-local` with `-gen` is rejected. No live request was run for this change.
 
 - Resolve `platform.uname()` before the test network guard blocks subprocesses, so an intermittent Windows WMI fallback during collection no longer fails with "Subprocesses need explicit guarded-test registration".
