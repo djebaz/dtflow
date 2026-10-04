@@ -58,6 +58,8 @@ Deliver a version-pinned upstream feature inventory from TanqueStudio source/UI/
 
 Record packaging and distribution findings or explicit pending/blocker status with the evidence required. Actual target-machine acceptance remains a packaged-release gate; no inferred Windows success is required to merge the core/fake slice. Keep a short replacement estimate for the generated protocol bindings, FlatBuffer configuration and tensor codecs, with sources/licenses and required fixtures. Validate the bundled SQLite version as well as native codecs on the target machine. Do not silently change licenses or replace dependencies.
 
+2D deliverables and status: [license decision record](../decisions/0001-drawthings-py-license.md) (proposed; decision deferred to the first public build), [replacement estimate](../research/drawthings-py-replacement.md), [Windows packaging checklist and findings](../research/windows-packaging.md) (results recorded only from owner-run checks on the target machine) and the [pinned TanqueStudio inventory](../research/tanquestudio-inventory.md).
+
 ## Required semantics
 
 ### Completion and artifacts
