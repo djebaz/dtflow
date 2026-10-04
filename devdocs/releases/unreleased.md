@@ -48,6 +48,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Start Phase 2A maintenance: rename the diagnostic tool to tools/drawthings/drawthings_probe.py and relocate its existing checks to tests/unit/tools/ with explicit retirement scope. Preserve historical pinned URLs. Add pytest-asyncio through uv, remove pytest-qt from the default dev group until Qt arrives, and remove the now-unneeded plugin-disable configuration. No new probe tests or application backend implementation is included in this opening commit.
+
 - Stabilize Phase 1 closeout wording and keep run-specific counts/patch versions/commit identity in the PR description. Plan probe retirement, pytest-asyncio/Qt dependency cleanup and explicit loop-before-guard ownership in the first 2A PR; specify per-instance TLS channels rather than mutation of the dependency's global context.
 
 - Clarify the Phase 1 handoff: recorded connectivity/generation evidence permits starting Phase 2A; remaining cancellation/progress/error evidence stays explicit and is not claimed complete or newly tested.

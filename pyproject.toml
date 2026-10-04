@@ -19,7 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest",
-    "pytest-qt",
+    "pytest-asyncio>=1.4.0",
     "ruff",
 ]
 
@@ -48,7 +48,7 @@ line-ending = "lf"
 skip-magic-trailing-comma = false
 
 [tool.pytest.ini_options]
-# No Qt runtime is declared yet; re-enable pytest-qt with the Qt implementation.
-addopts = "-p no:pytest-qt"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 norecursedirs = [".dtflow", "tmp", ".venv", "build", "dist"]
