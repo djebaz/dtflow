@@ -6,7 +6,7 @@
 
 ## Prerequisite: Phase 1 handoff
 
-The [Phase 1 probe](../research/drawthings-grpc-proof.md) already records local connectivity/inventory, successful generation/decoding/saving and user-reported direct-cloud/concurrency evidence. This establishes feasibility for starting 2A. Confirmed remote cancellation and detailed progress/error coverage remain unverified and are Phase 2 validation work; do not describe the entire Phase 1 checklist as tested. Do not rerun live generation merely to close a planning checkbox.
+The [Phase 1 probe](../research/drawthings-grpc-proof.md) already records local connectivity/inventory, successful generation/decoding/saving and user-reported direct-cloud/concurrency evidence. The [Phase 1 closeout matrix](../research/drawthings-grpc-proof.md#phase-1-closeout-decision) records Phase 1's bounded feasibility closure and assigns every remaining gap. Phase 2A follows in a separate implementation PR. Confirmed remote cancellation and detailed progress/error coverage remain unverified and are Phase 2 validation work; do not describe the entire Phase 1 checklist as tested. Do not rerun live generation merely to close a planning checkbox.
 
 ## Goal and boundaries
 
@@ -26,7 +26,11 @@ Implement the [backend contract](../architecture/backend-contract.md): immutable
 
 Define timeout/resource policies and cancellation propagation now. Establish pytest-asyncio support, fixture endpoint registration, offline network guard and live-test gates before adapter tests. Follow the repository uv workflow for any implementation dependencies; this plan changes none.
 
-Phase 2A can start now. Build a thin working slice first: a source-run fake-generation command calls one shared async service, persists a resolved request/attempt in the selected SQLite store before dispatch, saves a fixture PNG plus reproducibility metadata and reports the actual outcome. Keep command parsing/presentation separate from services. Start with one attempt and explicit fake selection; do not build the queue scheduler or all Phase 3 CLI features here.
+As the first 2A maintenance step, rename tools/drawthings/drawthings_concurrency_test.py to tools/drawthings/drawthings_probe.py so pytest cannot collect it as a *_test.py module. Update current paths/help references and move the existing probe checks to tests/unit/tools/, fixing their path resolution and adding a one-line "Retires with the diagnostic probe" note. Preserve historical pinned source URLs. Add no new probe scenarios: retain readiness/guard coverage and carry empty-output, malformed-JSON and sanitized-error scenarios into actual-adapter fixtures in 2B/2C.
+
+When adding pytest-asyncio through uv, remove pytest-qt from the default dev group until Qt is implemented, or isolate it in a separately selected Qt test group. Drop -p no:pytest-qt once default plugin loading no longer needs it. Update pyproject.toml and uv.lock together. Shared async network-guard fixtures must depend explicitly on the owning event-loop fixture so the loop initializes before the guard; test bodies still run under the guard. Preserve refusal of loopback/DNS and exact fixture-endpoint registration.
+
+Phase 2A can start from the closed feasibility proof. Build a thin working slice first: a source-run fake-generation command calls one shared async service, persists a resolved request/attempt in the selected SQLite store before dispatch, saves a fixture PNG plus reproducibility metadata and reports the actual outcome. Keep command parsing/presentation separate from services. Start with one attempt and explicit fake selection; do not build the queue scheduler or all Phase 3 CLI features here.
 
 Prove success, failure before submission, uncertain interruption, failed persistence preventing dispatch and restart inspection without replay. Add the import-boundary check. Refine the existing architecture notes from this slice; do not require another speculative specification before coding. This brings forward only the minimal Phase 3A service/entry-point/persistence foundation. It does not complete Phase 3A, create a release or change the 3A/3B gates.
 

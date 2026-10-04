@@ -31,7 +31,6 @@ from drawthings_py.generated.dt_grpc import image_service
 from drawthings_py.grpc.grpc_service import GrpcService
 from grpclib.client import Channel
 
-
 LIGHT_WIDTH = 300
 LIGHT_HEIGHT = 300
 LIGHT_STEPS = 4
@@ -126,8 +125,7 @@ def normalize_legacy_args(argv: list[str]) -> list[str]:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare controlled multi-job generation through a Draw Things "
-            "gRPC server or direct DT+ Cloud Compute."
+            "Compare controlled multi-job generation through a Draw Things gRPC server or direct DT+ Cloud Compute."
         )
     )
     parser.add_argument(
@@ -155,10 +153,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-r",
         "--preset",
         default="z_image_turbo",
-        help=(
-            "drawthings-py config preset "
-            "(default: z_image_turbo, targeting Z-Image Turbo Q6P in 0.4.0)."
-        ),
+        help=("drawthings-py config preset (default: z_image_turbo, targeting Z-Image Turbo Q6P in 0.4.0)."),
     )
     parser.add_argument(
         "-j",
@@ -189,10 +184,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--out",
         type=Path,
         default=Path("tmp") / "drawthings_concurrency",
-        help=(
-            "Directory for generated PNGs and timing reports "
-            "(default: tmp/drawthings_concurrency)."
-        ),
+        help=("Directory for generated PNGs and timing reports (default: tmp/drawthings_concurrency)."),
     )
     parser.add_argument(
         "-c",
@@ -323,9 +315,7 @@ class DirectCloudAuth:
     def from_environment(cls) -> "DirectCloudAuth":
         api_key = os.environ.get(CLOUD_API_KEY_ENV, "").strip()
         if not api_key:
-            raise CloudAuthError(
-                f"Direct cloud mode requires {CLOUD_API_KEY_ENV} in the environment."
-            )
+            raise CloudAuthError(f"Direct cloud mode requires {CLOUD_API_KEY_ENV} in the environment.")
         return cls(api_key)
 
     async def prepare(self) -> None:
@@ -532,8 +522,7 @@ def generation_warning(args: argparse.Namespace) -> str:
             "subscription quota/credits. PAYG opt-in is disabled."
         )
     return (
-        "This submits through the Draw Things server and may use local compute "
-        "or DT+ quota if Bridge Mode is enabled."
+        "This submits through the Draw Things server and may use local compute or DT+ quota if Bridge Mode is enabled."
     )
 
 
@@ -546,6 +535,7 @@ async def run_job(
     seed: int,
     output_prefix: str,
     barrier: asyncio.Event | None,
+    ready: asyncio.Future[None] | None = None,
 ) -> JobResult:
     request = build_request(
         preset=args.preset,
@@ -557,6 +547,8 @@ async def run_job(
     # Every job owns an independent gRPC channel. In concurrent mode all jobs
     # wait on the shared barrier before entering generate().
     async with create_service(args, cloud_auth) as service:
+        if ready is not None:
+            ready.set_result(None)
         if barrier is not None:
             await barrier.wait()
 
@@ -586,6 +578,15 @@ async def run_job(
             return JobResult(name, started, finished, None, error)
 
 
+async def _wait_for_ready(task: asyncio.Task[JobResult], ready: asyncio.Future[None]) -> None:
+    """Wait for a connected job, propagating any failure before readiness."""
+    done, _ = await asyncio.wait((task, ready), return_when=asyncio.FIRST_COMPLETED)
+    if task in done:
+        await task
+        raise RuntimeError("A probe job ended before the concurrent release.")
+    await ready
+
+
 async def run_concurrent(
     args: argparse.Namespace,
     cloud_auth: DirectCloudAuth | None,
@@ -593,7 +594,7 @@ async def run_concurrent(
     barrier = asyncio.Event()
     job_specs = build_job_specs(args.jobs)
     prefix = "cloud_concurrent" if args.cloud else "concurrent"
-
+    ready = [asyncio.get_running_loop().create_future() for _ in job_specs]
     jobs = [
         asyncio.create_task(
             run_job(
@@ -604,23 +605,29 @@ async def run_concurrent(
                 seed=seed,
                 output_prefix=prefix,
                 barrier=barrier,
+                ready=signal,
             )
         )
-        for name, prompt, seed in job_specs
+        for (name, prompt, seed), signal in zip(job_specs, ready, strict=True)
     ]
 
-    # Give all jobs time to establish their independent gRPC connections and
-    # reach the barrier. Direct-cloud per-request auth happens after release,
-    # matching the official MediaGenerationKit flow.
-    await asyncio.sleep(0.25)
-
-    print(f"[test] Releasing {args.jobs} jobs together. {generation_warning(args)}")
-    wall_started = time.perf_counter()
-    barrier.set()
-
-    results = await asyncio.gather(*jobs)
-    wall_finished = time.perf_counter()
-    return results, wall_finished - wall_started
+    try:
+        # Release only after every independent connection is actually ready.
+        # A failed connection aborts the group before any generation submission.
+        await asyncio.gather(*(_wait_for_ready(task, signal) for task, signal in zip(jobs, ready, strict=True)))
+        print(f"[test] Releasing {args.jobs} jobs together. {generation_warning(args)}")
+        wall_started = time.perf_counter()
+        barrier.set()
+        results = await asyncio.gather(*jobs)
+        return results, time.perf_counter() - wall_started
+    finally:
+        for signal in ready:
+            if not signal.done():
+                signal.cancel()
+        for task in jobs:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*jobs, return_exceptions=True)
 
 
 async def run_serial(
@@ -673,8 +680,7 @@ def analyse_concurrent(
 
     if len(successful) != len(results):
         lines.append(
-            "Conclusion: concurrency cannot be determined because not all "
-            "generation requests completed successfully."
+            "Conclusion: concurrency cannot be determined because not all generation requests completed successfully."
         )
         return "\n".join(lines)
 
@@ -683,10 +689,7 @@ def analyse_concurrent(
     all_overlap = max(0.0, overlap_end - overlap_start)
 
     first_started = min(result.started for result in successful)
-    completion_offsets = ", ".join(
-        f"{result.name}={result.finished - first_started:.2f}s"
-        for result in successful
-    )
+    completion_offsets = ", ".join(f"{result.name}={result.finished - first_started:.2f}s" for result in successful)
 
     lines.append(f"Observed all-request-window overlap: {all_overlap:.2f}s")
     lines.append(f"Completion offsets: {completion_offsets}")
@@ -732,13 +735,10 @@ def analyse_serial(
         measured_generation_time = sum(result.duration for result in successful)
         lines.append(f"Summed generate() durations: {measured_generation_time:.2f}s")
         lines.append(
-            "Use this as the serial baseline for a concurrent run with the "
-            "same --jobs count, preset, and workload."
+            "Use this as the serial baseline for a concurrent run with the same --jobs count, preset, and workload."
         )
     else:
-        lines.append(
-            "Serial baseline is incomplete because not all jobs completed successfully."
-        )
+        lines.append("Serial baseline is incomplete because not all jobs completed successfully.")
 
     return "\n".join(lines)
 
@@ -749,10 +749,7 @@ async def async_main(args: argparse.Namespace) -> int:
         try:
             cloud_auth = DirectCloudAuth.from_environment()
             await cloud_auth.prepare()
-            print(
-                f"[cloud] API-key authentication prepared from {CLOUD_API_KEY_ENV}; "
-                "credentials are not logged."
-            )
+            print(f"[cloud] API-key authentication prepared from {CLOUD_API_KEY_ENV}; credentials are not logged.")
         except Exception as exc:
             print(f"[cloud] FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
             return 2

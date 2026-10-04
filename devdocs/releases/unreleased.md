@@ -4,6 +4,9 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Phase 1 closeout criterion/evidence matrix with bounded feasibility acceptance, explicit recorded/user-reported/offline evidence and Phase 2 owners for remaining progress/error/cancellation gaps.
+- Offline probe checks for connection readiness, pre-release failure, interruption cleanup, empty outputs, malformed authentication responses, HTTP errors, connection-only flow and CLI validation.
+
 - Phase 2A implementation handoff: build a thin headless fake-generation/service/SQLite-attempt/saved-PNG path in a separate implementation PR, enforce import boundaries and refine the existing specs from working code.
 - Planned standard-library SQLite execution store, WAL/FULL durability policy, patched-runtime check, file/database reconciliation and versioned schemas; frozen slotted dataclasses/Protocols avoid a new compiled validation stack. No runtime implementation or dependency change is introduced.
 
@@ -44,6 +47,8 @@ Pending changes for the next DTFlow release.
 - Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in. User-reported live runs validate the path end to end from Python through cloud authentication, direct TLS gRPC generation, result decoding, and concurrent submissions without a MediaGenerationKit runtime dependency.
 
 ## Changed
+
+- Stabilize Phase 1 closeout wording and keep run-specific counts/patch versions/commit identity in the PR description. Plan probe retirement, pytest-asyncio/Qt dependency cleanup and explicit loop-before-guard ownership in the first 2A PR; specify per-instance TLS channels rather than mutation of the dependency's global context.
 
 - Clarify the Phase 1 handoff: recorded connectivity/generation evidence permits starting Phase 2A; remaining cancellation/progress/error evidence stays explicit and is not claimed complete or newly tested.
 
@@ -90,5 +95,10 @@ Pending changes for the next DTFlow release.
 - Reframe the DT+ roadmap around hardening the already-proven native Python direct-cloud path into a production backend. MediaGenerationKit remains a protocol/reference implementation, with a Swift bridge reserved as a fallback for future capabilities that cannot be reproduced reliably in Python.
 
 ## Fixed
+
+- Initialize the test asyncio runner before installing the socket/DNS guard, allowing Windows' private event-loop wakeup socket without allowing test scenarios to dial loopback. Keep run-specific failure/rerun evidence in the closeout PR description.
+
+- Make concurrent probe release wait for all actual connections; a failed connection aborts before group submission and interruption cancels/awaits outstanding jobs. Correct the historical timing caveat without altering recorded measurements.
+- Disable automatic pytest-qt plugin loading until the Qt runtime is introduced, so headless uv run pytest works with the current dependency set; re-enable during Qt implementation.
 
 - Configure Hatchling to package the `src/dtflow` application package so editable `uv sync` installs can build DTFlow.
