@@ -1,6 +1,6 @@
 # Plan: Qt workspace navigation and preview composition
 
-**Status:** In progress  
+**Status:** Implemented; user visual review pending
 **Owner:** DTFlow desktop presentation follow-up  
 **Depends on:** merged PR #16 canonical Designer forms and theme
 
@@ -22,12 +22,12 @@
 ## Action items
 
 - [x] Confirm PR #16 is squash-merged and `main` is clean.
-- [ ] Add Designer-owned navigation and a stacked workspace host.
-- [ ] Compose `generation_page.ui` and `queue_page.ui` through a reusable form loader.
-- [ ] Apply an honest preview state and disable unwired controls.
-- [ ] Update README, initial plan, and unreleased notes.
-- [ ] Mechanically validate all tracked `.ui` files and run focused formatting checks.
-- [ ] Commit, push, and open the follow-up PR.
+- [x] Add Designer-owned navigation and a stacked workspace host.
+- [x] Compose `generation_page.ui` and `queue_page.ui` through a reusable form loader.
+- [x] Apply an honest preview state and disable unwired controls.
+- [x] Update README, initial plan, and unreleased notes.
+- [x] Mechanically validate all tracked `.ui` files and run focused formatting checks.
+- [x] Commit, push, and open the follow-up PR.
 
 ## Decisions
 

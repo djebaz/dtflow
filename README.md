@@ -12,7 +12,7 @@ Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures an
 complete generation smoke checks. The owner reports deployed token/inventory and one bounded generation passed at an
 earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`. This covers that workload only; final-head Windows validation,
 broad model/LoRA compatibility, production cancellation latency, charging/refunds and a Windows stamped release build remain unverified (`tools/packaging/build_exe.py` now stamps the commit; a frozen one-file CLI has run on the target machine; see the [packaging findings](devdocs/research/windows-packaging.md)). Phase 3A exposes those adapters through the source-run CLI (offline-validated; the owner reports one successful local
-and one successful DT+ plain generation through it, plus one local LoRA generation after a first attempt interrupted by an iOS app freeze). Phase 3B adds durable queues with rolling dispatch to the source-run CLI (offline-validated only; no live queue run yet); cloud LoRA upload/reuse and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+and one successful DT+ plain generation through it, plus one local LoRA generation after a first attempt interrupted by an iOS app freeze). Phase 3B adds durable queues with rolling dispatch to the source-run CLI (offline-validated only; no live queue run yet); cloud LoRA upload/reuse remains planned. The Phase 4 Qt connection shell is implemented, and the canonical Phase 5 forms are available as disabled desktop previews while service wiring remains planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles
@@ -186,10 +186,11 @@ uv run dtflow gui    # backend selection, connection check/status, DT+ API-key s
 
 The shell uses the same services as the CLI; connection checks run on a background thread and never generate. On
 Windows the API key is saved in Credential Manager (`DRAWTHINGS_API_KEY` in the environment still takes precedence); on
-other platforms secure storage is unavailable and the environment is the only source. Generation and queue controls
-arrive in Phase 5. The source shell uses the centralized Splitvids-inspired dark theme in
+other platforms secure storage is unavailable and the environment is the only source. Header navigation exposes
+Connection plus disabled Generate and Queues previews; those pages do not submit work or bind durable state. Functional
+generation and queue controls arrive in Phase 5. The source shell uses the centralized Splitvids-inspired dark theme in
 `src/dtflow/resources/styles/dtflow_dark.qss`; canonical Designer sources live under `src/dtflow/ui/forms/`.
-`generation_page.ui` and `queue_page.ui` are reviewable Phase 5 presentation designs only and are not wired or usable yet.
+`generation_page.ui` and `queue_page.ui` are loaded into the shell for visual review, but their action controls are disabled and remain unwired until Phase 5.
 
 ## Repository layout
 
