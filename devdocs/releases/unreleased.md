@@ -33,6 +33,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Specify Phase 7 rolling queue dispatch: refill each released slot with the next eligible item, preserve item/result identity across out-of-order completion, and retain unresolved reservations without replacing potentially running requests.
+
 - Define deterministic environment-over-saved cloud credential precedence with no silent authentication fallback; plan fixture coverage for missing, empty and failed selected credentials.
 - Define Phase 7 unresolved concurrency reservations, backend dispatch pause, explicit user override and paused restart behavior without replaying uncertain attempts.
 - Clarify that the initial CLI runs from source while packaging targets Qt; correct Windows path rendering and remove repeated build-identity wording.

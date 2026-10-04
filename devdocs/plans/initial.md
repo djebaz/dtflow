@@ -267,6 +267,16 @@ Use the shared configurable cloud maximum, default four, in both CLI and Qt sche
 
 Do not infer safe concurrency from client-side capability alone.
 
+### Rolling queue dispatch
+
+Use a rolling scheduler rather than groups separated by a completion barrier. For ten independent eligible cloud items and a maximum of four, start items 1–4. As soon as any attempt reaches a known terminal outcome and releases its reservation, dispatch item 5 without waiting for the other three; refill each available slot with the next eligible item in queue order until the queue is drained.
+
+Completion order may differ from submission order. Keep outputs, errors and metadata attached to stable original item IDs and preserve queue order in presentation. Respect dependencies and queue pause/cancel state; a freed slot does not bypass eligibility or a backend dispatch block. Reserve slots before submission so simultaneous completions cannot oversubscribe the configured maximum.
+
+For normal cloud scheduling, active attempts plus unresolved reservations must not exceed the configured maximum. The tested local Draw Things/Bridge backend uses its separate one-generation policy, regardless of the cloud maximum. A disconnect or local cancellation with possible remote execution does not free a slot; apply the uncertainty rules below.
+
+Phase 7 fixture acceptance includes a ten-item/four-slot scenario with deliberately out-of-order completions: item 5 starts while other initial items remain active, rolling refill stays bounded, results retain item identity, and an uncertain attempt blocks replacement dispatch.
+
 ### Uncertain attempts and slot accounting
 
 If submission definitely never occurred, release the scheduler slot. If a disconnect, local cancellation or other failure leaves remote execution possible, retain a durable unresolved reservation and pause new dispatch for that backend; already-running requests may finish. Release a reservation only on evidence that remote execution is no longer possible or an explicit user override.
