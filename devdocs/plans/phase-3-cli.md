@@ -47,7 +47,7 @@ Owner-run live evidence (2026-10-04, Windows 10, Pentium E6500, reported by the 
 - Local LoRA through the frozen exe (3A LoRA path): an unknown identifier was rejected by preflight with nothing
   dispatched; `zimage_turbo_lora_rank64_512_000006000_lora_f16.ckpt:0.8` with `-r` (preflight `match`) generated
   successfully on the second try (attempt `b61bfe9a…`). The first try lost its stream after one sampling step
-  (`connection_lost`, recorded as an unknown outcome, never retried automatically; cause not established). The owner
+  (`connection_lost`, recorded as an unknown outcome, never retried automatically; the owner reports the cause was a freeze of the Draw Things iOS app). The owner
   reports the LoRA result validated; whether the LoRA visibly changed the image was judged by the owner, not the agent.
 The agent did not inspect any output image.
 
