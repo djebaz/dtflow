@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,8 +15,10 @@ from typing import Any
 
 from dtflow.core.models import BackendFailure, RemoteOutcome, ResolvedGenerationRequest, SubmissionStage
 from dtflow.core.tasks import settle
+from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin
 
-SCHEMA_VERSION = 1
+# 1: attempts only (release 0.1.0). 2: adds queues, items, controls and events; a 1 -> 2 open migrates atomically.
+SCHEMA_VERSION = 2
 
 
 class PersistenceError(RuntimeError):
@@ -27,8 +30,8 @@ def patched_sqlite(version: str) -> bool:
     return parts >= (3, 51, 3) or (3, 50, 7) <= parts < (3, 51, 0) or (3, 44, 6) <= parts < (3, 45, 0)
 
 
-class SQLiteAttempts:
-    """Own one local state directory until close; no queue replay operation."""
+class SQLiteAttempts(QueueMixin):
+    """Own one local state directory until close; queues never replay an attempt."""
 
     def __init__(self, directory: Path):
         self.directory = Path(directory).resolve()
@@ -81,7 +84,7 @@ class SQLiteAttempts:
             self._connection = connection
             connection.row_factory = sqlite3.Row
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, SCHEMA_VERSION):
+            if version not in range(SCHEMA_VERSION + 1):
                 raise PersistenceError("Unsupported execution-state schema; no reset or migration was performed.")
             mode = connection.execute("PRAGMA journal_mode=WAL").fetchone()[0]
             if mode.lower() != "wal":
@@ -89,7 +92,15 @@ class SQLiteAttempts:
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=2000")
-            with connection:
+            if version == 1:
+                # Keep a recoverable copy of the release 0.1.0 records before the first write by this version.
+                copy = self.directory / "attempts.pre-v2.sqlite3"
+                if not copy.exists():
+                    with closing(sqlite3.connect(copy)) as destination:
+                        connection.backup(destination)
+            # One transaction covers creation or migration and ownership reconciliation: failure keeps the old state.
+            connection.execute("BEGIN IMMEDIATE")
+            try:
                 connection.execute("""CREATE TABLE IF NOT EXISTS attempts (
                     attempt_id TEXT PRIMARY KEY,
                     request_id TEXT NOT NULL UNIQUE,
@@ -102,23 +113,31 @@ class SQLiteAttempts:
                     failure_json TEXT,
                     artifacts_json TEXT NOT NULL DEFAULT '[]'
                 )""")
+                for statement in QUEUE_SCHEMA:
+                    connection.execute(statement)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 # Ownership lock ensures we are not reconciling another live dispatcher.
+                now = self._now()
                 connection.execute(
                     """UPDATE attempts SET state='unknown', remote_outcome='unknown',
                     updated_at_utc=? WHERE state='possibly_submitted'""",
-                    (self._now(),),
+                    (now,),
                 )
                 connection.execute(
                     """UPDATE attempts SET state='save_failed',
                     updated_at_utc=? WHERE state='saving'""",
-                    (self._now(),),
+                    (now,),
                 )
                 connection.execute(
                     """UPDATE attempts SET state='interrupted_before_submission',
                     updated_at_utc=? WHERE state='prepared'""",
-                    (self._now(),),
+                    (now,),
                 )
+                self.reconcile(connection, now)
+                connection.execute("COMMIT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
         except BaseException:
             self._close()
             raise

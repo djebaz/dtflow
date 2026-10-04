@@ -1,6 +1,6 @@
 # Phase 3 — Headless CLI and shared application services
 
-**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B is planned.  
+**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B's durable queue and rolling dispatch half is implemented and offline-validated (see [implemented queue scope](#phase-3b-queue-half-implemented-scope-and-limits)); cloud asset upload/reuse is still planned.  
 **Prerequisite:** [Phase 2 backends and offline tests](phase-2-backends.md).  
 **Roadmap:** [initial plan](initial.md).
 
@@ -146,6 +146,26 @@ Reuse Phase 2A crash/write-boundary tests when the same service/store executes; 
 Phase 3A completes the initial Phase 2A durable attempt/artifact foundation for the supported real backends. Phase 3B extends them with transactional queue/job state, rolling scheduling and local restart reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
 
 ## Phase 3B — Durable queues, rolling execution and cloud assets
+
+### Phase 3B queue half: implemented scope and limits
+
+Implemented (3B-O1 to O5, O10, in `tests/integration/test_queue.py`): `dtflow queue add|list|show|start|pause|resume|cancel|override|cap`;
+queue/item/control/event tables in `attempts.sqlite3` (user_version 2; a version 1 database migrates in one transaction after
+a `attempts.pre-v2.sqlite3` copy, newer versions are refused unchanged); exclusive dispatch through the existing 2A ownership
+lock (the OS lock dies with its process, so stale-owner recovery is the next open and a closed owner cannot dispatch; no
+lease was added); controls posted over a short separate connection and polled by the owner; reservation before attempt
+creation; rolling refill without a group barrier; accounting by backend across queues; restart reconciliation inside the
+open transaction; `unknown` blocking and recorded override. Defaults chosen where the plan left room:
+`queue add` takes the generation options of `generate` plus `-k/--count` (seeds increment) and `-j/--jobs`, resolves items without
+contacting a backend and does not support `--prefix`; a new queue starts paused and `queue start` is the explicit resume;
+`start` runs until finished, cancelled or blocked and keeps polling while paused and idle; an override acknowledges every
+unresolved unknown reservation on the same backend and then stops counting them toward the cap; a reservation that crashed
+before its attempt row existed returns to pending, any other ambiguous attempt is never eligible again; an item whose
+attempt was interrupted before submission is `failed`, not retried, because attempt request identities are unique.
+Not done: cloud LoRA upload/receipts/reuse (3B-O6 to O9), a live queue run, and any answer to what the maximum means beyond
+the client policy. Finding: `GenerationService` admits requests through a 256 MiB buffer budget while each real request
+reserves about 100 MiB (3 x the 32 MiB artifact limit plus previews), so real cloud or local runs currently admit about two
+concurrent generations whatever the queue maximum; the budget was left unchanged because it is a memory-safety decision.
 
 Persist queue identity, stable ordered item IDs, immutable resolved requests, item/attempt states, backend selection and concurrency configuration. Use one dispatch owner per application state directory so two CLI processes cannot independently dispatch the same queue or bypass its cap. The CLI presents queue control; shared services own persistence, eligibility, scheduling and reconciliation. Store control requests transactionally for the dispatcher to poll, so basic Pause/Resume/Cancel needs no separate IPC server. SQLite transactions alone do not establish dispatch ownership: implement and test exclusive ownership, stale-owner recovery and protection against an old owner continuing dispatch. Never hold a database transaction while generating.
 
