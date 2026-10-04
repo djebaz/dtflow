@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Add `tools/drawthings/ckpt_probe.py`, a standard-library checkpoint fingerprint helper that streams a local file and reports its exact byte size and SHA-256 without loading the whole checkpoint into memory. It performs no network request, model parsing, generation or upload.
+
 - Optional DT+ live token/inventory check and one complete generation smoke, selected by the existing `-live` and `-gen` test flags. Require environment credentials and an explicit model for generation; preserve saved output/attempt evidence and allow only the two cloud targets in the network guard. Ordinary tests skip these checks; no cloud live request was executed during implementation.
 
 - Phase 2C direct DT+ adapter with async HTTPX API-key authentication, immutable auth scope, expiry-aware shared refresh, per-generation authorization and subscription-only fields. Reuse the actual 2B transport/wire/codec path; add focused cloud fixtures and acceptance ownership notes. Cloud TLS stays on the working probe baseline. Real-backend CLI generation selection remains Phase 3A; the owner reports Windows offline and bounded deployed DT+ smoke success; latest evidence-path changes still need a Windows repeat.
