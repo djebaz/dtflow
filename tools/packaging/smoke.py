@@ -1,6 +1,5 @@
 """Non-generative environment smoke for DTFlow packaging evidence. Makes no network connection."""
 
-import importlib
 import json
 import os
 import platform
@@ -20,21 +19,37 @@ def check(name, fn):
 
 
 def versions():
-    imports = {
-        "numpy": "numpy",
-        "pillow": "PIL",
-        "fpzip": "fpzip",
-        "flatbuffers": "flatbuffers",
-        "grpclib": "grpclib",
-        "betterproto": "betterproto",
-        "drawthings-py": "drawthings_py",
-        "strictyaml": "strictyaml",
-        "tqdm": "tqdm",
+    # Static imports so a freezing tool can discover every module; string-based
+    # importlib calls are invisible to its analysis.
+    import betterproto
+    import drawthings_py
+    import flatbuffers
+    import fpzip
+    import grpclib
+    import numpy
+    import PIL
+    import strictyaml
+    import tqdm
+
+    modules = {
+        "numpy": numpy,
+        "pillow": PIL,
+        "fpzip": fpzip,
+        "flatbuffers": flatbuffers,
+        "grpclib": grpclib,
+        "betterproto": betterproto,
+        "drawthings-py": drawthings_py,
+        "strictyaml": strictyaml,
+        "tqdm": tqdm,
     }
     out = {}
-    for dist, mod in imports.items():
-        importlib.import_module(mod)
-        out[dist] = metadata.version(dist)
+    for dist, module in modules.items():
+        try:
+            out[dist] = metadata.version(dist)
+        except metadata.PackageNotFoundError:
+            # Frozen builds do not bundle package metadata by default. Report that
+            # explicitly instead of failing the import check or inventing a version.
+            out[dist] = f"imported; metadata unavailable (module version: {getattr(module, '__version__', 'n/a')})"
     return out
 
 
