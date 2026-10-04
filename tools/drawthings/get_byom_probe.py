@@ -1,4 +1,4 @@
-"""Probe DT+ cloud storage metadata for one converted checkpoint without uploading it."""
+"""Probe DT+ cloud storage metadata without uploading checkpoint bytes."""
 
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
         description=(
-            "Query DT+ /get_byom_urls for one known checkpoint fingerprint. "
-            "The probe never uploads file bytes."
+            "Probe DT+ /get_byom_urls with complete and deliberately incomplete "
+            "metadata. The probe never uploads file bytes."
         )
     )
     parser.add_argument("--filename", default=DEFAULT_FILENAME, help="Checkpoint filename.")
@@ -66,13 +66,31 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     args.api_base = args.api_base.rstrip("/")
 
 
-def _request_json(
+def _decode_json(raw: bytes, *, operation: str) -> dict[str, Any]:
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProbeError(f"{operation} returned invalid JSON") from exc
+    if not isinstance(decoded, dict):
+        raise ProbeError(f"{operation} returned an unexpected JSON value")
+    return decoded
+
+
+def _read_bounded(response, *, operation: str) -> bytes:
+    raw = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(raw) > MAX_RESPONSE_BYTES:
+        raise ProbeError(f"{operation} response exceeded {MAX_RESPONSE_BYTES} bytes")
+    return raw
+
+
+def _post_json(
     url: str,
     *,
     payload: dict[str, Any],
     headers: dict[str, str] | None = None,
     operation: str,
-) -> dict[str, Any]:
+    allow_http_error: bool = False,
+) -> tuple[int, dict[str, Any]]:
     request_headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -90,27 +108,21 @@ def _request_json(
 
     try:
         with urlopen(request, timeout=30) as response:
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            status = response.status
+            raw = _read_bounded(response, operation=operation)
     except HTTPError as exc:
-        raise ProbeError(f"{operation} failed with HTTP {exc.code}") from exc
+        if not allow_http_error:
+            raise ProbeError(f"{operation} failed with HTTP {exc.code}") from exc
+        status = exc.code
+        raw = _read_bounded(exc, operation=operation)
     except URLError as exc:
         raise ProbeError(f"{operation} failed: {exc.reason}") from exc
 
-    if len(raw) > MAX_RESPONSE_BYTES:
-        raise ProbeError(f"{operation} response exceeded {MAX_RESPONSE_BYTES} bytes")
-
-    try:
-        decoded = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ProbeError(f"{operation} returned invalid JSON") from exc
-
-    if not isinstance(decoded, dict):
-        raise ProbeError(f"{operation} returned an unexpected JSON value")
-    return decoded
+    return status, _decode_json(raw, operation=operation)
 
 
 def _short_term_token(api_base: str, api_key: str) -> str:
-    response = _request_json(
+    _, response = _post_json(
         f"{api_base}/sdk/token",
         payload={
             "apiKey": api_key,
@@ -139,20 +151,17 @@ def _redact_signed_urls(value: Any) -> Any:
     return value
 
 
-def _classify(response: dict[str, Any], sha256: str) -> tuple[str, str | None]:
+def _classify(response: dict[str, Any]) -> tuple[str, str | None]:
     data = response.get("data")
     if not isinstance(data, dict):
         return "unknown_response", None
 
     already_exists = data.get("alreadyExists")
     if isinstance(already_exists, dict):
-        server_sha256 = already_exists.get(sha256)
-        if isinstance(server_sha256, str):
-            return "already_exists", server_sha256
-        return "already_exists_unmatched", None
+        references = [value for value in already_exists.values() if isinstance(value, str)]
+        return "already_exists", references[0] if len(references) == 1 else None
 
-    signed_urls = data.get("signedUrls")
-    if isinstance(signed_urls, dict):
+    if isinstance(data.get("signedUrls"), dict):
         return "upload_required", None
 
     if isinstance(data.get("storageLimitExceeded"), dict):
@@ -161,8 +170,29 @@ def _classify(response: dict[str, Any], sha256: str) -> tuple[str, str | None]:
     return "unknown_response", None
 
 
+def _cases(args: argparse.Namespace) -> list[tuple[str, dict[str, Any]]]:
+    return [
+        (
+            "full_metadata",
+            {"file": args.filename, "sha256": args.sha256, "size": args.size},
+        ),
+        (
+            "without_size",
+            {"file": args.filename, "sha256": args.sha256},
+        ),
+        (
+            "without_sha256",
+            {"file": args.filename, "size": args.size},
+        ),
+        (
+            "filename_only",
+            {"file": args.filename},
+        ),
+    ]
+
+
 def main() -> int:
-    """Run the non-uploading DT+ checkpoint metadata probe."""
+    """Run the non-uploading DT+ metadata omission matrix."""
     parser = build_parser()
     args = parser.parse_args()
     _validate_args(args, parser)
@@ -173,36 +203,41 @@ def main() -> int:
 
     try:
         token = _short_term_token(args.api_base, api_key)
-        response = _request_json(
-            f"{args.api_base}/get_byom_urls",
-            payload={
-                "files": [
-                    {
-                        "file": args.filename,
-                        "sha256": args.sha256,
-                        "size": args.size,
-                    }
-                ]
-            },
-            headers={"Authorization": token},
-            operation="DT+ get_byom_urls request",
-        )
     except ProbeError as exc:
         raise SystemExit(str(exc)) from exc
 
-    result, server_sha256 = _classify(response, args.sha256)
-
     print(f"Filename: {args.filename}")
-    print(f"Size (bytes): {args.size}")
-    print(f"SHA-256: {args.sha256}")
-    print(f"Result: {result}")
-    if server_sha256 is not None:
-        print(f"Server SHA-256: {server_sha256}")
-    print("Raw sanitized response:")
-    print(json.dumps(_redact_signed_urls(response), indent=2, sort_keys=True))
+    print(f"Known size (bytes): {args.size}")
+    print(f"Known SHA-256: {args.sha256}")
+    print()
 
-    if result == "upload_required":
-        print("Note: the server returned an upload slot, but this probe does not upload anything.")
+    for case_name, metadata in _cases(args):
+        print(f"=== {case_name} ===")
+        print("Sent metadata:")
+        print(json.dumps(metadata, indent=2, sort_keys=True))
+        try:
+            http_status, response = _post_json(
+                f"{args.api_base}/get_byom_urls",
+                payload={"files": [metadata]},
+                headers={"Authorization": token},
+                operation=f"DT+ get_byom_urls request ({case_name})",
+                allow_http_error=True,
+            )
+        except ProbeError as exc:
+            print(f"Probe error: {exc}")
+            print()
+            continue
+
+        result, server_reference = _classify(response)
+        print(f"HTTP status: {http_status}")
+        print(f"Result: {result}")
+        if server_reference is not None:
+            print(f"Server reference: {server_reference}")
+        print("Raw sanitized response:")
+        print(json.dumps(_redact_signed_urls(response), indent=2, sort_keys=True))
+        if result == "upload_required":
+            print("Note: the server returned an upload slot, but this probe does not upload anything.")
+        print()
 
     return 0
 
