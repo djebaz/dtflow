@@ -6,7 +6,7 @@
 
 ## Prerequisite: Phase 1 handoff
 
-The [Phase 1 probe](../research/drawthings-grpc-proof.md) already records local connectivity/inventory, successful generation/decoding/saving and user-reported direct-cloud/concurrency evidence. This establishes feasibility for starting 2A. Confirmed remote cancellation and detailed progress/error coverage remain unverified and are Phase 2 validation work; do not describe the entire Phase 1 checklist as tested. Do not rerun live generation merely to close a planning checkbox.
+The [Phase 1 probe](../research/drawthings-grpc-proof.md) already records local connectivity/inventory, successful generation/decoding/saving and user-reported direct-cloud/concurrency evidence. The [Phase 1 closeout matrix](../research/drawthings-grpc-proof.md#phase-1-closeout-decision) records formal feasibility acceptance on merge and assigns every remaining gap. Accept that closeout before opening the separate 2A implementation PR. Confirmed remote cancellation and detailed progress/error coverage remain unverified and are Phase 2 validation work; do not describe the entire Phase 1 checklist as tested. Do not rerun live generation merely to close a planning checkbox.
 
 ## Goal and boundaries
 

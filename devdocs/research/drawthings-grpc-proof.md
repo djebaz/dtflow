@@ -36,6 +36,42 @@ Validate the current Draw Things gRPC interface and the Python-side integration 
 6. Run a single controlled generation only when required to establish generation/progress/result semantics.
 7. Record observed cancellation and concurrency behavior without assuming support.
 
+## Phase 1 closeout decision
+
+**Proposed acceptance:** Close Phase 1 as a bounded connectivity and generation feasibility proof when this closeout PR is merged. It establishes that the selected Python stack can reach the tested Draw Things path and receive/save generation outputs, with separately attributed direct-cloud evidence. It does not certify production adapters, every original checklist item, remote cancellation, packaging or cloud entitlement.
+
+**Evidence baseline:** [main after PR #3](https://github.com/djebaz/dtflow/commit/e4e6538c7f32c80d1e6c0c4a01dc505bfaa8b6b7). Historical live observations and timings below are retained; this closeout does not repeat them. “Recorded” means existing repository evidence, “user-reported” means prior operator runs, “source-inspected” means code behavior without execution, and “offline verified” means this PR's stubbed checks.
+
+| Phase 1 criterion | Evidence and status | Remaining gap / owner |
+| --- | --- | --- |
+| Connection configuration | Recorded Windows gRPC/model-browser success; source probe accepts host/port and explicit cloud mode. Offline checks verify argument validation/legacy aliases and non-generative connection-only control flow. | Actual bad endpoint/TLS/shared-secret behavior: Phase 2B transport fixtures; cloud transport/auth distinctions: 2C. |
+| Protocol/API compatibility | Recorded successful discovery and decoded outputs using Python 3.13, drawthings-py 0.4.0 and NumPy 2.3.5. PR #3 separately records installed generated-service inspection. User-reported cloud runs exercise the token/auth/TLS-gRPC path. | Wire fidelity, terminal statuses and future-version compatibility: 2B/2C fixtures. No universal protocol/model compatibility claim. |
+| One controlled generation request | Recorded local generation/saved images; user-reported direct-cloud controlled runs. Workload/preset/prompts/seeds are defined in the probe. | Effective wire dimensions/seed-zero and complete request provenance: 2B/2C; application persistence: 2A/3A. No new live run is needed for feasibility closure. |
+| Progress behavior | Source-inspected callback support in the dependency; the current probe disables its progress bar and has no captured per-signpost/preview trace. Detailed production progress is unverified. | Signpost/preview ordering and bounded event handling: 2A fake and 2B/2C protocol fixtures. Capture real progress separately only with an authorized workload. |
+| Result behavior | Recorded image decoding/saving; offline checks verify empty output becomes a failed job. The probe saves only the first returned image, consistent with its one-image lightweight scope. | All required artifacts, previews, partial/chunked output and successful terminal completion: 2B/2C fixtures and 3A saving. Full-preset/multiple-output completeness is not accepted here. |
+| Error behavior | Source-inspected reporting paths; offline checks verify malformed JSON/non-object responses, sanitized HTTP status reporting, invalid arguments, empty output and connection failure before group release. Real transport/status/billing taxonomy remains unverified. | Actual terminal gRPC errors, TLS failures, partial-output-plus-error and auth expiry/refusals: 2B/2C fixtures. Documented or authorized sanitized live evidence is required for production billing classifications. |
+| Cancellation capabilities, if exposed | Offline verified: cancelling the probe group propagates cancellation, cancels outstanding client tasks and exits connected service contexts before or after release. Confirmed remote cancellation is unverified. A separate cancel-generation RPC is unsupported by the inspected protocol. | Real stream closure/cleanup and uncertain outcome evidence: 2B/2C. Controlled authorized observations are needed per production backend to claim remote effect; otherwise keep outcome unknown. |
+| Concurrency behavior | Historical user-reported timings below establish overlapping client windows and support different local/cloud scheduling policies. Offline checks verify the corrected readiness barrier and no submission if a connection fails. | Exact remote workers/slots/entitlement remain unknown. Phase 3B tests rolling dispatch/reservations separately; production concurrency requires separately authorized evidence. |
+
+### Probe hardening and verification in this closeout
+
+The earlier concurrent harness waited 0.25 seconds before release, which did not guarantee all channels were ready. It now waits for explicit readiness from every connected job, aborts the group if a job fails before release, and cancels/awaits remaining jobs on failure or interruption. Wall timing starts at release after readiness; per-job timing still includes generation authentication/stream work and excludes file saving. Historical measurements were produced by the earlier harness and are not recalculated or promoted into controlled connection-readiness evidence.
+
+Headless pytest startup previously failed because the declared pytest-qt plugin loaded without any declared Qt runtime. Disable its automatic loading in pytest configuration until Qt implementation adds the runtime and re-enables the plugin. No dependencies or lock entries change.
+
+Verification on Linux CPython 3.13.15 in a reconstructed checkout using the repository's locked project inputs:
+
+- uv run pytest: 10 offline checks passed.
+- uv run ruff check . and uv run ruff format --check .: passed.
+- Probe --help: executed successfully without network or generation.
+- Markdown relative targets, LF/final newlines and paired fences: checked before publishing.
+
+Checks replace services/HTTP responses and refuse socket connections/DNS in test execution. They do not run an actual gRPC fixture server or validate production cancellation, detailed progress, Windows packaging or quotas. Phase 2's full external-network guard remains a separate deliverable. No training, inference, checkpoint download or potentially billable request was performed; GitHub requests read/publish this PR.
+
+### Handoff and closure limits
+
+After accepting this closeout, open the separate Phase 2A implementation PR. Its fake/service/SQLite/artifact slice is already specified in [Phase 2](../plans/phase-2-backends.md). Phase 2B and 2C own the real-adapter fixture gaps above. Missing evidence stays unverified; no gap may be silently changed into a supported feature. Use explicit authorization for any later real generation, including Bridge mode.
+
 ## Observed compatibility evidence
 
 The current tested Windows development machine uses a legacy Intel Pentium E6500 and Python 3.13.
@@ -120,7 +156,7 @@ For the six-job direct-cloud comparison:
 - comparing the serial summed `generate()` duration with concurrent wall time gives about 3.93x generation-path throughput improvement;
 - average individual latency rises from 9.07 s serially to about 10.03 s concurrently, roughly 10.6%, with larger variance on some jobs.
 
-The serial wall time is not used for that throughput ratio because the serial harness creates a fresh connection before each job and therefore includes repeated connection/setup time outside each measured `generate()` duration. Concurrent wall timing begins only after the independent clients have reached the shared release barrier.
+The serial wall time is not used for that throughput ratio because the serial harness creates a fresh connection before each job and therefore includes repeated connection/setup time outside each measured `generate()` duration. In the historical harness, concurrent wall timing began when the release event was set after a fixed 0.25-second delay; it did not verify every connection was ready. The closeout hardening above adds that readiness guarantee for future runs. Historical per-job overlap measurements remain separately reported.
 
 These timings do not identify the number of GPUs, workers, execution slots, or the DT+ scheduling algorithm. They do establish that the tested direct-cloud path is not behaving like a one- or two-slot serialized queue: all six requests were outstanding together and all six completed in 13.84 s, whereas the same six jobs required 54.42 s of summed generation time serially.
 
