@@ -52,6 +52,8 @@ async def test_reuse_expiry_single_refresh_cancelled_waiter_and_immutable_creden
         if len(calls) == 2:
             entered.set()
             await release.wait()
+        if len(calls) == 3:
+            return httpx.Response(503)
         return httpx.Response(200, json={"shortTermToken": f"token-{len(calls)}", "expiresIn": 100})
 
     auth = CloudAuth(keys, transport=httpx.MockTransport(respond), clock=lambda: now[0])
@@ -72,18 +74,28 @@ async def test_reuse_expiry_single_refresh_cancelled_waiter_and_immutable_creden
         assert await auth.token() == "token-2"
         assert len(calls) == 2 and keys.reads == 1
         assert calls[0] == calls[1]
+        now[0] = 200  # expired token; failed refresh is not silently retried
+        with pytest.raises(BackendError):
+            await auth.token()
+        assert len(calls) == 3
+        assert await auth.token() == "token-4"  # a new explicit call may refresh
+        assert keys.reads == 1
     finally:
         await auth.aclose()
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("kind", ["rejection", "oversize", "timeout", "network", "expired", "missing"])
+@pytest.mark.parametrize(
+    "kind", ["rejection", "oversize", "timeout", "network", "expired", "missing", "total_deadline"]
+)
 async def test_http_failures_and_invalid_credentials_never_cache_or_retry(kind, caplog):
     calls = []
     now = [0.0]
 
     async def respond(request):
         calls.append(request)
+        if kind == "total_deadline":
+            await asyncio.Event().wait()
         if kind == "timeout":
             raise httpx.ReadTimeout("FAKE-SECRET", request=request)
         if kind == "network":
@@ -99,7 +111,7 @@ async def test_http_failures_and_invalid_credentials_never_cache_or_retry(kind, 
     auth = CloudAuth(
         Keys(None if kind == "missing" else "FAKE-SECRET"),
         transport=httpx.MockTransport(respond),
-        policy=CloudAuthPolicy(response_bytes=128),
+        policy=CloudAuthPolicy(response_bytes=128, total=0.02 if kind == "total_deadline" else 30.0),
         clock=lambda: now[0],
     )
     try:

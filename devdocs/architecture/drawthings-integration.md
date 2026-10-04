@@ -2,7 +2,7 @@
 
 **Status:** narrow adapter implemented in `src/dtflow/backends/drawthings/` with offline scripted TLS/gRPC coverage.
 Owner-run non-generative checks exposed real-server TLS incompatibilities; the local bundled-CA policy below addresses
-them, but a successful live adapter check after that fix is still pending. No real generation or billable action was
+them; the owner subsequently reported a successful non-generative local connection/inventory check. No real generation or billable action was
 performed while building it.
 
 ## Scope
@@ -34,8 +34,8 @@ weaker trust after a failure. Hostname checking is absent in this local mode, so
 identity; callers deliberately choose their local server.
 
 Owner-reported non-generative diagnostics found code 92 (CA missing key-usage extension) with the bundled CA, then
-code 64 (IP mismatch) after clearing strict validation. These findings justify this compatibility path; a successful
-live connection/inventory check using the updated adapter remains pending.
+code 64 (IP mismatch) after clearing strict validation. These findings justify this compatibility path; the owner subsequently
+reported a successful live connection/inventory check using the updated adapter.
 
 Explicit system/custom-CA policies retain chain and hostname verification, optionally with a configured verified
 server name. Direct DT+ remains on the probe's default system-trust context with h2; it does not inherit the local
@@ -68,7 +68,7 @@ decode isolation or an upstream header API is a follow-up. `TimeoutPolicy.idle` 
 
 ## Concurrency, cancellation, shutdown
 
-One lane (`asyncio.Lock`); the total deadline starts at entry and covers lane wait, connect, stream and decode, and is
+One lane (`asyncio.Semaphore(1)`); the total deadline starts at entry and covers lane wait, connect, stream and decode, and is
 passed to gRPC. Cancelling while waiting never dispatches. Cancelling mid-stream closes the stream (observed on the
 fixture server); remote cancellation is not confirmed. `aclose()` refuses with an active generation and is idempotent.
 
@@ -84,3 +84,6 @@ valid for about 100 years; the keys are committed and labelled test-only. The sc
 fixtures only. One SQLite service path runs through the real adapter. The optional `live` test
 (`tests/integration/test_drawthings_live.py`) is a non-generative connection and Echo check using the bundled local
 policy by default; explicit CA/server-name settings select strict trust instead.
+
+Phase 2C now reuses this actual channel/stream/wire/codec implementation through a pre-submission authorization hook;
+see [cloud integration](cloud-integration.md). The local backend remains one lane and keeps its existing TLS policy.

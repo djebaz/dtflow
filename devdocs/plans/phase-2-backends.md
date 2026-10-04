@@ -1,6 +1,6 @@
 # Phase 2 — Backend contract and initial adapters
 
-**Status:** Phase 2A core/fake and durable headless foundation implemented with offline acceptance tests; 2B has offline TLS/gRPC coverage and a local bundled-CA compatibility policy informed by owner-reported live TLS failures (see [integration notes](../architecture/drawthings-integration.md)); live acceptance after the fix is pending. 2C remains pending and 2D evidence is recorded separately.  
+**Status:** Phase 2A core/fake and durable headless foundation implemented with offline acceptance tests; 2B has offline TLS/gRPC coverage and a local bundled-CA compatibility policy informed by owner-reported live TLS failures (see [integration notes](../architecture/drawthings-integration.md)); the owner reports successful non-generative local acceptance after the fix. 2C has offline cloud auth/adapter acceptance (see [integration notes](../architecture/cloud-integration.md)); the owner reports passing Windows tests of its initial checkpoint; final-head Windows and deployed-cloud checks remain pending. 2D evidence is recorded separately.  
 **Baseline:** main commit `595abf9161a1d9672b055a66cb3e4c659617675f`.  
 **References:** [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md), [initial roadmap](initial.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [recorded gRPC proof](../research/drawthings-grpc-proof.md).
 
@@ -44,11 +44,13 @@ Assert wire configuration, explicit seed zero, sampler/dimension mapping, final-
 
 ### Phase 2C — Direct cloud adapter and pinned auth fixtures
 
+Implemented with HTTP mocks and the existing gRPC fixture; [integration notes](../architecture/cloud-integration.md) map acceptance to the actual shared code and focused cloud tests. Real-backend CLI exposure remains 3A.
+
 Implement the [cloud protocol](../architecture/cloud-protocol.md), sharing provider serialization/codecs privately with 2B. Use the selected async HTTP client, expiry-aware concurrent token refresh, per-generation authorization, TLS and subscription-only fields. Implement non-generative token/transport/Echo health and inventory independently from generation entitlement.
 
 Exercise actual cloud adapter calls against HTTP mocks and the existing scripted TLS/gRPC fixture. Follow the [five cloud acceptance scenario groups and test-layer mapping](../architecture/cloud-protocol.md#phase-2c-acceptance-and-test-layer-mapping): successful generation, token lifecycle/concurrency, authentication failure, submission uncertainty/cancellation, and non-generative health/inventory. Authentication scope is immutable per client; scope changes require a new client rather than runtime cache switching.
 
-Keep acceptance focused on cloud-specific behavior: exact authorization metadata and blob/request consistency, subscription-only fields, token reuse/coalescing and cancelled-waiter handling, sanitized failures, HTTP limits/cancellation, no retries/fallback, and no generation during health checks. Response-shape variants belong in focused parametrized parser/HTTP tests. Reuse 2B tests only for actual shared implementation paths; 2B serialization/codecs and fixtures exist, but shared cloud channel/stream execution must be confirmed during 2C implementation. Do not duplicate generic TLS, wire, codec or stream suites when that same code executes.
+Keep acceptance focused on cloud-specific behavior: exact authorization metadata and blob/request consistency, subscription-only fields, token reuse/coalescing and cancelled-waiter handling, sanitized failures, HTTP limits/cancellation, no retries/fallback, and no generation during health checks. Response-shape variants belong in focused parametrized parser/HTTP tests. Reuse 2B tests only for actual shared implementation paths; 2C inherits 2B's actual channel/stream execution and injects authorization through one hook; its composition tests verify that path. Do not duplicate generic TLS, wire, codec or stream suites when that same code executes.
 
 Use events, mocked clocks and tiny payloads, avoiding sleeps and redundant TLS setup. Measure the runtime added to ordinary tests and record it in the 2C implementation PR; impose no test-count or line-count target. Gate 2C on the pinned source contract and mapped evidence; no deployed compatibility or billing claim follows from mocks.
 

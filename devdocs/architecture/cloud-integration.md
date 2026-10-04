@@ -1,0 +1,65 @@
+# Direct DT+ integration (Phase 2C)
+
+**Status:** implemented against HTTP mocks and the existing scripted TLS/gRPC fixture. The owner reports a passing
+Windows run of the first checkpoint, including the local live check. Final-head Windows and deployed DT+ adapter
+checks remain unverified. The earlier probe establishes feasibility; it is not a live run of this adapter.
+See the [pinned protocol](cloud-protocol.md) and [Phase 2 plan](../plans/phase-2-backends.md).
+
+## Implementation and probe reuse
+
+`cloud_auth.py` follows the probe's `/sdk/token`, `/authenticate`, raw short-token Authorization header,
+contents-free protobuf blob, `fromBridge: true`, and lowercase gRPC `bearer` metadata. Optional generation-auth
+fields are omitted as specified by the official Codable path, rather than sent as null by the probe. No PAYG or
+billing lookup is performed. Tokens and blobs never enter durable metadata or public errors.
+
+The deliberate production changes are scoped async HTTPX instead of diagnostic `to_thread(urllib)`, bounded HTTP
+responses/deadlines, and expiry-aware shared refresh. The API origin and selected credential are fixed per auth
+client. A valid cached token is reused; concurrent refresh callers join one shielded task. Cancellation of one waiter
+does not cancel that task. Each generation obtains its own authorization; failures do not silently retry or switch
+credentials. HTTP uses normal verified HTTPS; gRPC explicitly chooses system trust with h2, exactly the probe baseline.
+No cloud certificate pinning or local bundled-CA exception is introduced.
+
+`DirectCloudBackend` inherits the actual `DrawThingsBackend.generate` implementation, including channel creation,
+wire configuration, codec validation, stream completion, previews, deadlines and failure evidence. Its hook authorizes
+the same built message before the submission boundary and supplies its metadata to the shared stream. Echo obtains
+a short token but carries no generation bearer. Health reports API authentication separately from transport and
+inventory; it never requests generation entitlement. A successful token exchange is not a quota or billing check.
+
+The cloud backend supports a configurable client cap of 1–4 (default 4), using the shared semaphore; local remains
+one lane. This is client support and a product cap, not a server entitlement or the Phase 3B rolling scheduler.
+Only discovered model IDs are admitted. Scope remains txt2img, batch 1/1, the two existing samplers, no LoRA or uploads.
+CLI generation backend selection remains Phase 3A; the current test runner's live check remains local Draw Things.
+
+## Cancellation, ownership and limits
+
+The generation total deadline includes credential preparation, lane admission, connection, authorization, stream and
+decode. Authorization failure is `not_submitted` / `not_started` for GenerateImage; its HTTP effects are not inferred.
+A pending task cancellation is checked after authorization so even a late mock response cannot revive RPC dispatch.
+After possible send, shared 2B evidence rules apply: disconnect without validated completion is unknown, no retry.
+Terminal OK with valid required outputs survives later terminal-event notification failure; services still save durably.
+
+Callers cancel and await owned operations before closing the backend. Close refuses active generations, then closes
+the channel, cancels/awaits the owned refresh and closes the HTTP pool within its cleanup deadline. Closed auth clients
+cannot accept late tokens. The existing service conservatively persists potentially executing state before calling
+an adapter; task cancellation without returned failure evidence may therefore leave an attempt unknown even when
+an offline test proves authorization prevented dispatch. No remote cancellation confirmation is claimed.
+
+HTTP responses are streamed with a decoded-body cap; headers, errors and response bodies are not logged. Existing
+[received-tensor and worker limits](drawthings-integration.md#limits-enforced-and-not-enforced) remain unchanged,
+including grpclib's whole-message receipt and fpzip allocation limitations. No new transport limit is claimed.
+
+## Acceptance ownership
+
+| Scenario group | Evidence in the implementation |
+| --- | --- |
+| Successful generation | `test_drawthings_cloud.py`: real service + SQLite + HTTP mocks + existing gRPC fixture; exact blob/headers/PAYG omission/bearer, two per-request authorizations and saved outputs |
+| Token lifecycle/concurrency | `test_cloud_auth.py`: mocked time, reuse/expiry, shared refresh, cancelled waiter, failed refresh and immutable credential selection |
+| Authentication failure | Representative token/auth refusal prevents dispatch; conspicuous fake secrets absent from public failures and captured logs; parser variants are parametrized unit cases |
+| Submission uncertainty/cancellation | Auth cancellation with a late response cannot submit; post-send connection loss stays unknown and is not retried |
+| Health/inventory | Token acquisition and Echo without `/authenticate` or GenerateImage; cloud inventory provenance |
+
+The unchanged 2B tests own serialization, codecs, TLS policies, generic stream statuses/cleanup/deadlines and stronger
+completion evidence because cloud executes those same functions. HTTP-only tests own response validation/size,
+HTTP and total deadlines, shared-refresh shutdown and no automatic retry. No separate cloud simulator is added.
+Token expiry/concurrency use clocks/events, not sleeps. Runtime measurements belong to the implementation PR.
+Mocks prove this composition, not deployed compatibility, entitlement, cancellation latency or charging/refunds.

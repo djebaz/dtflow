@@ -6,6 +6,7 @@ import asyncio
 import base64
 import copy
 import json
+import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,8 +25,6 @@ class CloudAuthPolicy:
     cleanup: float = 5.0
 
     def __post_init__(self):
-        import math
-
         if any(not math.isfinite(x) or x <= 0 for x in (self.total, self.cleanup)):
             raise ValidationError("HTTP deadlines must be positive and finite.")
         if not math.isfinite(self.refresh_margin) or self.refresh_margin < 0:
@@ -111,24 +110,35 @@ class CloudAuth:
         return await asyncio.shield(refresh)
 
     async def _exchange(self) -> str:
+        try:
+            async with asyncio.timeout(self._policy.total):
+                return await self._load_token()
+        except TimeoutError:
+            raise error(
+                ErrorCategory.TIMEOUT,
+                "cloud_http_deadline",
+                "Cloud authentication deadline exceeded.",
+                timeout_phase="authentication",
+            ) from None
+
+    async def _load_token(self) -> str:
         # The credential is resolved only once, inside the shared refresh task.
-        async with asyncio.timeout(self._policy.total):
-            if self._key is None:
-                credential = await self._credentials.get()
-                if credential is None or not credential.secret.strip():
-                    raise error(ErrorCategory.AUTHENTICATION, "missing_cloud_credentials", "Cloud API key is missing.")
-                self._key = credential.secret.strip()
-            started = self._clock()
-            body = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
-            token, lifetime = parse_response(body, token_exchange=True)
-            expires = started + lifetime
-            if expires <= self._clock():
-                raise error(ErrorCategory.AUTHENTICATION, "cloud_token_expired", "Cloud token arrived expired.")
-            if self._closed:
-                raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
-            self._token, self._expires = token, expires
-            self._margin = min(self._policy.refresh_margin, lifetime / 2)
-            return token
+        if self._key is None:
+            credential = await self._credentials.get()
+            if credential is None or not credential.secret.strip():
+                raise error(ErrorCategory.AUTHENTICATION, "missing_cloud_credentials", "Cloud API key is missing.")
+            self._key = credential.secret.strip()
+        started = self._clock()
+        body = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
+        token, lifetime = parse_response(body, token_exchange=True)
+        expires = started + lifetime
+        if expires <= self._clock():
+            raise error(ErrorCategory.AUTHENTICATION, "cloud_token_expired", "Cloud token arrived expired.")
+        if self._closed:
+            raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
+        self._token, self._expires = token, expires
+        self._margin = min(self._policy.refresh_margin, lifetime / 2)
+        return token
 
     async def authorize(self, message) -> str:
         token = await self.token()
@@ -144,10 +154,14 @@ class CloudAuth:
             },
             token=token,
         )
+        if self._closed:
+            raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
         return parse_response(body, token_exchange=False)[0]
 
     async def _post(self, path: str, payload: dict, *, token: str | None = None) -> bytes:
-        headers = {"Content-Type": "application/json"}
+        if self._closed:
+            raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if token is not None:
             headers["Authorization"] = token
         try:

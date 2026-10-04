@@ -1,6 +1,6 @@
 # Direct DT+ cloud protocol specification
 
-**Status:** Pinned source contract for Phase 2C; production adapter not implemented. Revise mappings against implementation evidence without inventing server behavior.  
+**Status:** Pinned source contract implemented in Phase 2C with offline fixtures; deployed adapter compatibility remains unverified. See [implementation and acceptance ownership](cloud-integration.md).  
 **Related:** [backend contract](backend-contract.md), [Phase 2](../plans/phase-2-backends.md), [recorded probe](../research/drawthings-grpc-proof.md), [LoRA assets](../plans/lora-assets.md).
 
 ## Evidence and scope
@@ -93,7 +93,7 @@ Production cancellation latency, charging/refunds, throttle semantics, generatio
 
 ## HTTP implementation and cancellation
 
-DTFlow choice: use a scoped httpx.AsyncClient with injectable transport and origin; asyncio remains the service runtime. Use validated TLS, follow_redirects false and trust_env false initially so auth requests do not follow implicit redirects or environment proxy settings. Add the chosen bounded HTTPX dependency through uv in Phase 2C, keeping pyproject/uv.lock synchronized; this docs change adds no dependency.
+DTFlow choice: use a scoped httpx.AsyncClient with injectable transport and origin; asyncio remains the service runtime. Use validated TLS, follow_redirects false and trust_env false initially so auth requests do not follow implicit redirects or environment proxy settings. Phase 2C adds HTTPX >=0.28.1,<0.29.0 through uv with a synchronized lock.
 
 Explicit HTTP limits: connect 10 s, read/write 30 s, pool wait 10 s, and outer total 30 s per token/auth operation. HTTPX inactivity limits do not implement a total deadline; use the remaining monotonic outer budget as well. Bound decoded auth response to 1 MiB via streaming/size checks; oversized responses are protocol/resource failures without body logging. Pool/client shutdown follows the backend cleanup deadline.
 
@@ -115,8 +115,8 @@ Exercise actual cloud adapter/service composition against HTTP mocks and the exi
 
 Keep small focused tests for new HTTP response parsing, bounded bodies, failed refresh, HTTP deadlines/cancellation and owned-client/shared-task shutdown. These requirements remain mandatory; equivalent response-shape cases are parametrized at the parser/HTTP boundary instead of becoming independent end-to-end scenarios. Immutable client scope removes runtime scope-switch and late-old-scope cache tests.
 
-Test common behavior once at its owning layer. Reuse seed/sampler/dimension serialization, codecs, certificate/hostname matrices, preview/final validation, generic gRPC statuses, stream cleanup and deadlines from 2B only where 2C actually executes the same code. Reuse of a dependency or intended architecture alone is insufficient. Phase 2B now provides provider serialization/codecs and scripted TLS/gRPC fixtures; shared channel/stream execution must be demonstrated during 2C implementation. Record the acceptance-to-test mapping and any genuinely cloud-specific transport differences in that PR.
+Test common behavior once at its owning layer. Reuse seed/sampler/dimension serialization, codecs, certificate/hostname matrices, preview/final validation, generic gRPC statuses, stream cleanup and deadlines from 2B only where 2C actually executes the same code. Reuse of a dependency or intended architecture alone is insufficient. Phase 2C inherits the actual 2B channel/stream generation path; its authorization hook is the cloud-specific boundary. See the implementation ownership mapping. Record the acceptance-to-test mapping and any genuinely cloud-specific transport differences in that PR.
 
 Reuse tests/support/dt_server.py and tests/fixtures/tls/; do not build a separate cloud simulator. Use events, mocked monotonic clocks and tiny payloads, with no sleeps for expiry/concurrency tests or repeated TLS setup when unnecessary. Measure the runtime added to the default suite and record it in the implementation PR; impose no test-count or line-count target.
 
-Fixture schemas are derived from S1–S5/P1. Mocks validate DTFlow's specified behavior, not production quota, remote cancellation or actual model compatibility. This amendment changes specifications only; it adds no cloud implementation, dependency or executed cloud test, and no live request was submitted while writing it.
+Fixture schemas are derived from S1–S5/P1. Mocks validate DTFlow's specified behavior, not production quota, remote cancellation or actual model compatibility. The Phase 2C implementation and focused fixtures are recorded in the integration note. No deployed request or billable generation was used for that acceptance.

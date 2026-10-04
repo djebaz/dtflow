@@ -1,4 +1,4 @@
-"""Draw Things gRPC backend: connection, inventory, one-lane generation and lifecycle."""
+"""Shared Draw Things gRPC connection, inventory, generation and lifecycle."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ class DrawThingsEndpoint:
 
 
 class DrawThingsBackend:
-    """One channel to one Draw Things server; strict TLS, no silent fallback of any kind."""
+    """One channel to one Draw Things server; explicit trust and no silent fallback."""
 
     backend_id = BACKEND_ID
     max_concurrency = 1
@@ -192,7 +192,7 @@ class DrawThingsBackend:
         return self._inventory
 
     async def generate(self, request: ResolvedGenerationRequest, *, on_event: EventSink) -> GenerationResult:
-        """Run one text-to-image generation; the total deadline covers lane wait, connect, stream and decode.
+        """Run one text-to-image generation; the total deadline covers prepare, lane wait, connect, auth, stream and decode.
 
         ``submission_possible`` is emitted immediately before the request is sent. Decoded partial finals on a failure
         are attached to the failure in memory only; the durable store does not persist their bytes.
@@ -290,7 +290,9 @@ class DrawThingsBackend:
                     except BackendError:
                         # Notification failure cannot erase terminal OK and validated final artifacts.
                         warnings = ("Terminal event delivery failed after validated backend completion.",)
-        except BackendError:
+        except BackendError as exc:
+            if exc.failure.request_id is None:
+                raise BackendError(replace(exc.failure, request_id=request.request_id)) from None
             raise
         except Exception as exc:
             trailers = stream is not None and getattr(stream, "trailing_metadata", None) is not None
