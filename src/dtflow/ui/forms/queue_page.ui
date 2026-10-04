@@ -58,6 +58,53 @@
        </item>
        <item><widget class="QLabel" name="queueMessageLabel"><property name="text"><string>Create a queue from the Generate form, then Start it here.</string></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>unknown</string></property><property name="accessibleName"><string>Queue action status</string></property></widget></item>
        <item>
+        <widget class="QGroupBox" name="planBox">
+         <property name="title"><string>Plan batch (pair or cross)</string></property>
+         <property name="checkable"><bool>true</bool></property>
+         <property name="checked"><bool>false</bool></property>
+         <property name="toolTip"><string>Vary dimensions of the Generate form instead of repeating it. Blank fields stay fixed from the form.</string></property>
+         <layout class="QVBoxLayout" name="planBoxLayout">
+          <item>
+           <widget class="QFrame" name="planBody">
+            <layout class="QVBoxLayout" name="planBodyLayout">
+             <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+             <item>
+              <layout class="QFormLayout" name="planForm">
+          <item row="0" column="0"><widget class="QLabel" name="planModeLabel"><property name="text"><string>Mode</string></property></widget></item>
+          <item row="0" column="1"><widget class="QComboBox" name="planModeCombo"><property name="accessibleName"><string>Plan mode</string></property><item><property name="text"><string>Cross</string></property></item><item><property name="text"><string>Pair</string></property></item></widget></item>
+          <item row="1" column="0"><widget class="QLabel" name="planPromptsLabel"><property name="text"><string>Prompts</string></property></widget></item>
+          <item row="1" column="1"><widget class="QPlainTextEdit" name="planPromptsEdit"><property name="minimumSize"><size><width>0</width><height>42</height></size></property><property name="maximumSize"><size><width>16777215</width><height>54</height></size></property><property name="toolTip"><string>One prompt per line.</string></property><property name="accessibleName"><string>Plan prompts</string></property></widget></item>
+          <item row="2" column="0"><widget class="QLabel" name="planModelsLabel"><property name="text"><string>Models</string></property></widget></item>
+          <item row="2" column="1"><widget class="QLineEdit" name="planModelsEdit"><property name="toolTip"><string>Exact model identifiers separated by ;</string></property><property name="accessibleName"><string>Plan models</string></property></widget></item>
+          <item row="3" column="0"><widget class="QLabel" name="planSeedsLabel"><property name="text"><string>Seeds</string></property></widget></item>
+          <item row="3" column="1"><widget class="QLineEdit" name="planSeedsEdit"><property name="toolTip"><string>Integers or LOW..HIGH ranges separated by ;</string></property><property name="accessibleName"><string>Plan seeds</string></property></widget></item>
+          <item row="4" column="0"><widget class="QLabel" name="planStepsLabel"><property name="text"><string>Steps</string></property></widget></item>
+          <item row="4" column="1"><widget class="QLineEdit" name="planStepsEdit"><property name="toolTip"><string>Integers separated by ;</string></property><property name="accessibleName"><string>Plan steps</string></property></widget></item>
+          <item row="5" column="0"><widget class="QLabel" name="planGuidanceLabel"><property name="text"><string>Guidance</string></property></widget></item>
+          <item row="5" column="1"><widget class="QLineEdit" name="planGuidanceEdit"><property name="toolTip"><string>Numbers separated by ;</string></property><property name="accessibleName"><string>Plan guidance</string></property></widget></item>
+          <item row="6" column="0"><widget class="QLabel" name="planSamplersLabel"><property name="text"><string>Samplers</string></property></widget></item>
+          <item row="6" column="1"><widget class="QLineEdit" name="planSamplersEdit"><property name="toolTip"><string>Sampler names separated by ;</string></property><property name="accessibleName"><string>Plan samplers</string></property></widget></item>
+          <item row="7" column="0"><widget class="QLabel" name="planSizesLabel"><property name="text"><string>Sizes</string></property></widget></item>
+          <item row="7" column="1"><widget class="QLineEdit" name="planSizesEdit"><property name="toolTip"><string>WIDTHxHEIGHT pairs separated by ;, for example 512x512; 768x512</string></property><property name="accessibleName"><string>Plan sizes</string></property></widget></item>
+          <item row="8" column="0"><widget class="QLabel" name="planLorasLabel"><property name="text"><string>LoRA weights</string></property></widget></item>
+          <item row="8" column="1"><widget class="QPlainTextEdit" name="planLorasEdit"><property name="minimumSize"><size><width>0</width><height>42</height></size></property><property name="maximumSize"><size><width>16777215</width><height>54</height></size></property><property name="toolTip"><string>One LoRA per line: IDENTIFIER: 0.6; 0.8. The LoRA must already be on the Generate form.</string></property><property name="accessibleName"><string>Plan LoRA weights</string></property></widget></item>
+              </layout>
+             </item>
+             <item><widget class="QCheckBox" name="planIncrementCheck"><property name="text"><string>Increment the seed per item (otherwise the base seed is kept)</string></property><property name="accessibleName"><string>Increment seed per item</string></property></widget></item>
+             <item>
+              <layout class="QHBoxLayout" name="planActionLayout">
+               <item><widget class="QPushButton" name="planDryRunButton"><property name="text"><string>Dry run</string></property><property name="toolTip"><string>Shows the exact items without creating anything.</string></property></widget></item>
+               <item><widget class="QLabel" name="planCountLabel"><property name="text"><string>Fill at least one dimension.</string></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>unknown</string></property><property name="accessibleName"><string>Planned item count</string></property></widget></item>
+              </layout>
+             </item>
+             <item><widget class="QTableView" name="planTableView"><property name="minimumSize"><size><width>0</width><height>110</height></size></property><property name="maximumSize"><size><width>16777215</width><height>170</height></size></property><property name="alternatingRowColors"><bool>true</bool></property><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="accessibleName"><string>Dry-run items</string></property></widget></item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QFrame" name="queueTableHost">
          <layout class="QVBoxLayout" name="queueTableHostLayout">
           <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>

@@ -5,6 +5,7 @@ and which shared operation each action calls. Dispatch uses the same dispatcher 
 """
 
 import asyncio
+import json
 import os
 import sqlite3
 
@@ -281,3 +282,29 @@ def test_a_busy_state_directory_reports_another_owner(window, qtbot, gated):
     assert states(window) == ["pending"]
     window.runner.submit(owner.aclose(), lambda *_: None)
     qtbot.wait(100)
+
+
+def test_plan_area_dry_run_and_create_use_the_shared_planner(window, qtbot):
+    """6 wiring: widget values reach the planner, and the created queue matches the dry-run table."""
+    page = window.queue_page
+    page.planBox.setChecked(True)
+    page.planPromptsEdit.setPlainText("a cat\nb dog")
+    page.planStepsEdit.setText("4; 8")
+    assert page.planCountLabel.text() == "4 items" and not page.queueCountSpinBox.isEnabled()
+    page.planDryRunButton.click()
+    model = page.planTableView.model()
+    table = [[model.data(model.index(r, c)) for c in range(model.columnCount())] for r in range(model.rowCount())]
+    assert table[0] == ["1", "a cat", "4", "0"] and table[3] == ["4", "b dog", "8", "0"]
+    page.planStepsEdit.setText("4; 500")
+    page.createQueueButton.click()
+    assert page.planStepsEdit.property("invalid") is True and "steps" in page.queueMessageLabel.text()
+    assert page.queueList.count() == 0  # a rejected plan creates nothing
+    page.planStepsEdit.setText("4; 8")
+    page.createQueueButton.click()
+    qtbot.waitUntil(lambda: page.queueList.count() == 1 and page.queueItemsView.model().rowCount() == 4, timeout=5000)
+    assert page.planStepsEdit.property("invalid") is False
+    with sqlite3.connect(window.queue._state / "attempts.sqlite3") as db:
+        stored = [json.loads(raw) for (raw,) in db.execute("SELECT request_json FROM queue_items ORDER BY position")]
+    assert [[str(r["prompt"]), str(r["steps"]), str(r["seed"])] for r in stored] == [
+        [row[1], row[2], row[3]] for row in table
+    ]
