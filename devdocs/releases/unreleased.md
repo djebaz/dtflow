@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Resolve `platform.uname()` before the test network guard blocks subprocesses, so an intermittent Windows WMI fallback during collection no longer fails with "Subprocesses need explicit guarded-test registration".
+
 - Live local checks now separate "Draw Things not running" from real failures: a refused connection or connect deadline warns and skips (the cloud inventory check keeps its passed cloud evidence and omits only local LoRA enrichment), other network errors still fail, and an Echo with no model files warns that "Enable Model Browsing" is probably off. Warnings are retained per check in `results.json`; `check_connection` diagnostics now include `transport_kind`. No live request or generation was run for this change.
 
 - Expose non-generative backend `get_file_identities()` with backend-neutral `FileIdentity` existence/optional SHA-256, and direct DT+ client concurrency 1–4 (default 4). The cap is a client policy, not a service entitlement or rolling scheduler.

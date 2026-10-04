@@ -2,6 +2,7 @@
 
 import asyncio
 import ipaddress
+import platform
 import socket
 import subprocess
 import threading
@@ -87,6 +88,9 @@ def install() -> None:
     """Install before collection/client imports; allow private stdlib socketpairs."""
     if _ORIGINALS:
         return
+    # On Windows platform.uname() may fall back to a one-time `ver` subprocess when its WMI query fails, and imports
+    # such as grpclib call it lazily; resolve and cache it before subprocesses are guarded.
+    platform.uname()
     for name in ("connect", "connect_ex", "sendto"):
         _ORIGINALS[name] = getattr(socket.socket, name)
     for name in ("gethostbyname", "gethostbyname_ex", "gethostbyaddr"):
