@@ -5,7 +5,7 @@ from support.dt_server import TLS_DIR, EchoSpec, black_hole, closed_port, script
 from support.network_guard import endpoint
 
 from dtflow.backends.drawthings import DrawThingsBackend, DrawThingsEndpoint, TlsPolicy
-from dtflow.core.models import BackendError, Credential, ErrorCategory, TimeoutPolicy
+from dtflow.core.models import BackendError, Credential, ErrorCategory, RemoteOutcome, TimeoutPolicy
 
 CA = TLS_DIR / "ca.pem"
 FAST = TimeoutPolicy(connect=1.0, inventory=2.0)
@@ -32,6 +32,13 @@ async def opened(*args, **kwargs):
     await adapter.open()
     return adapter
 
+
+# An unreachable port is refused on Linux but may time out on Windows; either is a valid pre-submission failure.
+UNREACHABLE_CODES = ("connect_failed", "connect_deadline")
+UNREACHABLE_FAILURES = (
+    (ErrorCategory.CONNECTIVITY, "connect_failed"),
+    (ErrorCategory.TIMEOUT, "connect_deadline"),
+)
 
 MODELS = (
     {"name": "Model A", "file": "a_q8p.ckpt", "version": "flux1"},
@@ -110,7 +117,8 @@ async def test_connection_evidence_is_observed_not_assumed(echo, secret, expecte
 async def test_unreachable_and_silent_servers_fail_within_the_connect_deadline():
     async with closed_port() as (host, port):
         adapter = await opened(host, port)
-        assert dict((await adapter.check_connection()).diagnostics)["transport_code"] == "connect_failed"
+        # Refusal surfaces as connect_failed or, on Windows, as the connect deadline; both are pre-submission.
+        assert dict((await adapter.check_connection()).diagnostics)["transport_code"] in UNREACHABLE_CODES
         await adapter.aclose()
     async with black_hole() as (host, port):
         adapter = await opened(host, port, timeouts=TimeoutPolicy(connect=0.3, inventory=1.0))
@@ -191,10 +199,12 @@ async def test_connectivity_failure_on_refresh_keeps_a_snapshot_marked_stale():
         with endpoint(host, port):  # the server is gone but the exact endpoint stays registered
             with pytest.raises(BackendError) as caught:
                 await adapter.get_inventory(refresh=True)
-            assert caught.value.failure.category == ErrorCategory.CONNECTIVITY
+            failure = caught.value.failure
+            assert (failure.category, failure.code) in UNREACHABLE_FAILURES
+            assert failure.remote_outcome == RemoteOutcome.NOT_STARTED
             stale = await adapter.get_inventory()
         diagnostics = dict(stale.diagnostics)
-        assert diagnostics["stale"] == "true" and diagnostics["stale_reason"] == caught.value.failure.code
+        assert diagnostics["stale"] == "true" and diagnostics["stale_reason"] == failure.code
         assert not stale.refreshed and adapter.capabilities.model_ids == ("a_q8p.ckpt",)
     finally:
         await adapter.aclose()

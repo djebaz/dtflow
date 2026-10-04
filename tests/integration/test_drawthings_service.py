@@ -3,7 +3,7 @@
 import pytest
 from support.dt_server import Drop, Image, Signpost, pixel_tensor, scripted_server
 from support.network_guard import endpoint
-from test_drawthings_connection import opened
+from test_drawthings_connection import UNREACHABLE_FAILURES, opened
 from test_drawthings_generate import ECHO, SIZE, make_request
 
 from dtflow.core.models import BackendError, TimeoutPolicy
@@ -60,7 +60,9 @@ async def test_pre_submission_failure_is_recorded_as_not_started(tmp_path):
         finally:
             await adapter.aclose()
         (attempt,) = await store.inspect()
-        assert caught.value.failure.code == "connect_failed"
+        failure = caught.value.failure
+        assert (failure.category, failure.code) in UNREACHABLE_FAILURES  # refused, or a connect deadline on Windows
+        assert not (tmp_path / "out").exists()  # no outputs
         assert attempt["state"] == "failed" and attempt["remote_outcome"] == "not_started"
         assert attempt["submission_stage"] == "not_submitted"
     finally:
