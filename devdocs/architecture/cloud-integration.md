@@ -28,7 +28,8 @@ inventory; it never requests generation entitlement. A successful token exchange
 The cloud backend supports a configurable client cap of 1–4 (default 4), using the shared semaphore; local remains
 one lane. This is client support and a product cap, not a server entitlement or the Phase 3B rolling scheduler.
 Only discovered model IDs are admitted. Scope remains txt2img, batch 1/1, the two existing samplers, no LoRA or uploads.
-CLI generation backend selection remains Phase 3A; the current test runner's live check remains local Draw Things.
+CLI generation backend selection remains Phase 3A. The test runner adds an optional DT+ token/inventory check
+under `-live` and one complete, bounded DT+ service generation under `-gen`; these are skipped by default.
 
 ## Cancellation, ownership and limits
 

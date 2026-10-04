@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Optional DT+ live token/inventory check and one complete generation smoke, selected by the existing `-live` and `-gen` test flags. Require environment credentials and an explicit model for generation; preserve saved output/attempt evidence and allow only the two cloud targets in the network guard. Ordinary tests skip these checks; no cloud live request was executed during implementation.
+
 - Phase 2C direct DT+ adapter with async HTTPX API-key authentication, immutable auth scope, expiry-aware shared refresh, per-generation authorization and subscription-only fields. Reuse the actual 2B transport/wire/codec path; add focused cloud fixtures and acceptance ownership notes. Cloud TLS stays on the working probe baseline. Real-backend CLI generation selection remains Phase 3A; deployed cloud/Windows acceptance is pending.
 
 - Source-run dtflow test wrapper over pytest: -all/--all for offline tests, -live/--live for live connectivity, and -gen/--generate for generation smoke selection. No flags runs offline; explicit live groups can run alone or alongside offline tests. Wrapper selection needs no separate marker/env opt-in; configured endpoints and exact network allowlists remain required. Generation tests are not implemented yet, so requesting them fails clearly. Existing direct pytest gates remain supported.

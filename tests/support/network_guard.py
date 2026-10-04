@@ -5,7 +5,7 @@ import ipaddress
 import socket
 import subprocess
 import threading
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 
 _ORIGINALS = {}
 _endpoints: set[tuple[str, int]] = set()
@@ -17,7 +17,8 @@ _lock = threading.Lock()
 def _address(address) -> tuple[str, int]:
     if not isinstance(address, tuple) or len(address) < 2:
         raise AssertionError("Only registered IP test endpoints are allowed.")
-    host, port = str(address[0]), int(address[1])
+    host = address[0].decode("ascii") if isinstance(address[0], bytes) else str(address[0])
+    port = int(address[1])
     return host, port
 
 
@@ -46,6 +47,29 @@ def endpoint(host: str, port: int):
     finally:
         with _lock:
             _endpoints.discard(value)
+
+
+@contextmanager
+def live_endpoints(*targets: tuple[str, int]):
+    """Allow only named live targets and their resolved numeric endpoints for this explicit check."""
+    with ExitStack() as stack:
+        names = set(targets)
+        addresses = set()
+        for host, port in names:
+            addresses.update(
+                (record[4][0], port) for record in _ORIGINALS["getaddrinfo"](host, port, type=socket.SOCK_STREAM)
+            )
+        for host, port in addresses:
+            stack.enter_context(endpoint(host, port))
+        with _lock:
+            if names & _endpoints:
+                raise AssertionError("Live target already registered.")
+            _endpoints.update(names)
+        try:
+            yield
+        finally:
+            with _lock:
+                _endpoints.difference_update(names)
 
 
 @contextmanager

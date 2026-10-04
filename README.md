@@ -45,13 +45,28 @@ uv run dtflow test -gen            # Live generation only
 ```
 
 Option pairs are `-all/--all`, `-live/--live`, and `-gen/--generate`; groups can be combined.
-Live connectivity requires `DTFLOW_LIVE_HOST` (the server's IP) and `DTFLOW_LIVE_PORT` in the environment;
+Live connectivity runs local Draw Things and DT+ checks. It requires `DRAWTHINGS_API_KEY` for DT+, plus
+`DTFLOW_LIVE_HOST` (the local server's IP) and `DTFLOW_LIVE_PORT` in the environment;
 `DTFLOW_LIVE_SHARED_SECRET` is optional. Local trust defaults to the bundled Draw Things CA, so no manual CA setup
 is needed. Explicit `DTFLOW_LIVE_CA_FILE`/`DTFLOW_LIVE_SERVER_NAME` settings select strict alternative trust.
 The flag supplies the live opt-in without a separate marker or opt-in environment variable. Requested live checks
-fail clearly if unconfigured. Generation checks may consume credits; none are implemented yet, so `-gen` reports
-that absence rather than running ordinary tests or claiming success. The wrapper preserves pytest output/exit status
+fail clearly if unconfigured. The DT+ generation smoke requires an exact discovered `DTFLOW_LIVE_MODEL`. It submits one 256×256, four-step
+image with seed 42 and guidance 1, without LoRA or PAYG fields, and may consume subscription credits.
+`-live` never calls `/authenticate` or submits generation. The wrapper preserves pytest output/exit status
 and requires the checkout's development dependencies. Ordinary `uv run pytest` remains offline with live tests gated.
+
+```powershell
+# DRAWTHINGS_API_KEY must already be set in your environment.
+uv run dtflow test -live
+Get-Content .dtflow/live-cloud/inventory.json
+$env:DTFLOW_LIVE_MODEL = "exact-model-identifier-from-inventory"
+uv run dtflow test -gen
+uv run dtflow test -all -live -gen
+```
+
+The model must support the stated txt2img workload; listing alone does not establish compatibility.
+Live outputs, metadata and durable attempts remain under `.dtflow/live-cloud/`, including failed/unknown attempts.
+Each explicit `-gen` run requests a new generation; unknown attempts are never automatically replayed.
 
 Run project tools through `uv run` so they use the project environment. The lockfile records resolved dependencies.
 The current compatibility path pins NumPy 2.3.5 for the tested legacy Windows machine; see the

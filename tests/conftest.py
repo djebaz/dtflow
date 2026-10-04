@@ -32,9 +32,14 @@ def pytest_collection_modifyitems(config, items):
     mode = config.getoption("--dtflow-test-mode")
     if mode in ("generation", "both") and not any(item.get_closest_marker("live_generation") for item in items):
         raise pytest.UsageError("No live generation tests are implemented yet.")
+    if mode in ("live", "generation", "both"):
+        if not os.environ.get("DRAWTHINGS_API_KEY", "").strip():
+            raise pytest.UsageError("DT+ live checks require DRAWTHINGS_API_KEY in the environment.")
     if mode in ("live", "both"):
         if not os.environ.get("DTFLOW_LIVE_HOST") or not os.environ.get("DTFLOW_LIVE_PORT"):
-            raise pytest.UsageError("Live checks require DTFLOW_LIVE_HOST (IP literal) and DTFLOW_LIVE_PORT.")
+            raise pytest.UsageError("Local live checks require DTFLOW_LIVE_HOST (IP literal) and DTFLOW_LIVE_PORT.")
+    if mode in ("generation", "both") and not os.environ.get("DTFLOW_LIVE_MODEL", "").strip():
+        raise pytest.UsageError("DT+ generation requires an exact DTFLOW_LIVE_MODEL identifier.")
     for item in items:
         generation = item.get_closest_marker("live_generation") is not None
         if generation or item.get_closest_marker("live") is not None:
