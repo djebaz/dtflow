@@ -1,22 +1,15 @@
-"""Resolve a DT+ checkpoint hash remotely and probe cloud storage reuse without uploading bytes."""
+"""Probe DT+ BYOM reuse for a known checkpoint fingerprint without transferring file bytes."""
 
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import os
-import ssl
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from drawthings_py.generated.dt_grpc import image_service
-from grpclib.client import Channel
-
 DEFAULT_API_BASE = "https://api.drawthings.ai"
-DEFAULT_GRPC_HOST = "compute.drawthings.ai"
-DEFAULT_GRPC_PORT = 443
 DEFAULT_FILENAME = (
     "the_body_version_m_zit_512_r16_adamw8bit_weighted_bf16_"
     "womanonly_000008000_lora_f16.ckpt"
@@ -35,15 +28,15 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser."""
     parser = argparse.ArgumentParser(
         description=(
-            "Ask DT+ FilesExist to hash a remote checkpoint, then query /get_byom_urls "
-            "with filename + server SHA-256 only. No checkpoint bytes are downloaded or uploaded."
+            "Query DT+ /get_byom_urls for a known filename + SHA-256 without sending size "
+            "or checkpoint bytes. DT+ cloud inventory does not expose custom-file SHA-256."
         )
     )
-    parser.add_argument("--filename", default=DEFAULT_FILENAME, help="Remote checkpoint filename.")
+    parser.add_argument("--filename", default=DEFAULT_FILENAME, help="Checkpoint filename.")
     parser.add_argument(
         "--sha256",
         default=DEFAULT_SHA256,
-        help="Known SHA-256 used only for comparison and optional --matrix requests.",
+        help="Known lowercase SHA-256 hex digest for the checkpoint.",
     )
     parser.add_argument(
         "--size",
@@ -57,20 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"DT+ API base URL (default: {DEFAULT_API_BASE}).",
     )
     parser.add_argument(
-        "--grpc-host",
-        default=DEFAULT_GRPC_HOST,
-        help=f"DT+ gRPC host (default: {DEFAULT_GRPC_HOST}).",
-    )
-    parser.add_argument(
-        "--grpc-port",
-        type=int,
-        default=DEFAULT_GRPC_PORT,
-        help=f"DT+ gRPC port (default: {DEFAULT_GRPC_PORT}).",
-    )
-    parser.add_argument(
         "--matrix",
         action="store_true",
-        help="Also rerun the earlier full/omitted size/omitted SHA/filename-only HTTP matrix.",
+        help="Also run full/omitted-size/omitted-SHA/filename-only request shapes.",
     )
     return parser
 
@@ -78,19 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if not args.filename or args.filename in {".", ".."} or "/" in args.filename or "\\" in args.filename:
         parser.error("--filename must be a basename, not a path")
-    if args.size <= 0:
-        parser.error("--size must be a positive integer")
     digest = args.sha256.lower()
     if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
         parser.error("--sha256 must be exactly 64 hexadecimal characters")
     args.sha256 = digest
+    if args.size <= 0:
+        parser.error("--size must be a positive integer")
     if not args.api_base.startswith("https://"):
         parser.error("--api-base must use https://")
     args.api_base = args.api_base.rstrip("/")
-    if not args.grpc_host.strip():
-        parser.error("--grpc-host must not be empty")
-    if not 1 <= args.grpc_port <= 65535:
-        parser.error("--grpc-port must be in 1..65535")
 
 
 def _decode_json(raw: bytes, *, operation: str) -> dict[str, Any]:
@@ -162,43 +140,6 @@ def _short_term_token(api_base: str, api_key: str) -> str:
     if not isinstance(token, str) or not token.strip():
         raise ProbeError("DT+ short-term token response did not contain a token")
     return token
-
-
-async def _remote_sha256(filename: str, host: str, port: int) -> tuple[bool, str | None]:
-    """Ask the DT+ gRPC server to hash one named remote checkpoint."""
-    channel = Channel(host, port, ssl=ssl.create_default_context())
-    try:
-        await channel.__connect__()
-        stub = image_service.ImageGenerationServiceStub(channel)
-        response = await stub.files_exist(
-            image_service.FileListRequest(
-                files=[filename],
-                files_with_hash=[filename],
-            ),
-            timeout=30,
-        )
-    except Exception as exc:
-        raise ProbeError(f"DT+ FilesExist request failed: {type(exc).__name__}: {exc}") from exc
-    finally:
-        channel.close()
-
-    try:
-        index = response.files.index(filename)
-    except ValueError as exc:
-        raise ProbeError("DT+ FilesExist response did not include the requested filename") from exc
-
-    if index >= len(response.existences):
-        raise ProbeError("DT+ FilesExist response did not include an existence value")
-    exists = bool(response.existences[index])
-
-    if index >= len(response.hashes):
-        return exists, None
-    digest = response.hashes[index]
-    if not digest:
-        return exists, None
-    if len(digest) != 32:
-        raise ProbeError(f"DT+ FilesExist returned an unexpected hash length: {len(digest)} bytes")
-    return exists, digest.hex()
 
 
 def _redact_signed_urls(value: Any) -> Any:
@@ -295,7 +236,7 @@ def _print_http_result(
 
 
 def main() -> int:
-    """Run the Windows-only remote-hash -> BYOM reuse probe."""
+    """Run the non-uploading DT+ BYOM lookup probe."""
     parser = build_parser()
     args = parser.parse_args()
     _validate_args(args, parser)
@@ -306,27 +247,11 @@ def main() -> int:
 
     try:
         token = _short_term_token(args.api_base, api_key)
-        exists, server_sha256 = asyncio.run(
-            _remote_sha256(args.filename, args.grpc_host, args.grpc_port)
-        )
     except ProbeError as exc:
         raise SystemExit(str(exc)) from exc
 
-    print("=== remote_hash_lookup ===")
-    print(f"Filename: {args.filename}")
-    print(f"Exists: {exists}")
-    print(f"Server SHA-256: {server_sha256 or '<not returned>'}")
-    if server_sha256 is not None:
-        print(f"Matches known diagnostic SHA-256: {server_sha256 == args.sha256}")
-    print()
-
-    if not exists:
-        raise SystemExit("Remote checkpoint was not found; BYOM lookup was not attempted.")
-    if server_sha256 is None:
-        raise SystemExit("Remote checkpoint exists but FilesExist did not return a SHA-256.")
-
-    print("=== byom_from_remote_hash ===")
-    metadata = {"file": args.filename, "sha256": server_sha256}
+    print("=== byom_known_hash_without_size ===")
+    metadata = {"file": args.filename, "sha256": args.sha256}
     print("Sent metadata:")
     print(json.dumps(metadata, indent=2, sort_keys=True))
     try:
@@ -334,7 +259,7 @@ def main() -> int:
             args.api_base,
             token,
             metadata,
-            operation="DT+ get_byom_urls request from remote FilesExist SHA-256",
+            operation="DT+ get_byom_urls request with known SHA-256 and no size",
         )
     except ProbeError as exc:
         raise SystemExit(str(exc)) from exc
