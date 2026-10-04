@@ -4,6 +4,9 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Phase 2A implementation handoff: build a thin headless fake-generation/service/SQLite-attempt/saved-PNG path in a separate implementation PR, enforce import boundaries and refine the existing specs from working code.
+- Planned standard-library SQLite execution store, WAL/FULL durability policy, patched-runtime check, file/database reconciliation and versioned schemas; frozen slotted dataclasses/Protocols avoid a new compiled validation stack. No runtime implementation or dependency change is introduced.
+
 - Phase 2 backend architecture specification: async loop ownership, lifecycle/health/inventory/generation operations, immutable requests/artifacts/events/errors, independent submission evidence, concrete deadlines/resource limits, replaceable dependency integration and credential-provider scope.
 - Pinned direct-cloud protocol specification with official/probe sources, exact token/auth fields and blob construction, expiry/coalesced refresh, subscription-only policy, async HTTP/cancellation choices and required offline fixtures.
 
@@ -41,6 +44,10 @@ Pending changes for the next DTFlow release.
 - Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in. User-reported live runs validate the path end to end from Python through cloud authentication, direct TLS gRPC generation, result decoding, and concurrent submissions without a MediaGenerationKit runtime dependency.
 
 ## Changed
+
+- Clarify the Phase 1 handoff: recorded connectivity/generation evidence permits starting Phase 2A; remaining cancellation/progress/error evidence stays explicit and is not claimed complete or newly tested.
+
+- Bring the minimal Phase 3A persistence/service/entry-point foundation into Phase 2A without claiming the full CLI or a release. Retain tested rolling queues and custom cloud LoRA upload/reuse in Phase 3B before Qt; add a pre-Phase-4 worker-thread spike and a drawthings-py replacement-risk estimate. Align the initial and CLI plans with the selected SQLite store and database-polled queue controls.
 
 - Split Phase 2 into 2A contract/fake, 2B local gRPC, 2C direct cloud and parallel 2D packaging/licensing/upstream feature inventory. Add connectivity/inventory acceptance, installed-stub fixture design, planned asyncio/TLS/network/live-test infrastructure and explicit Phase 4 saved-credential storage. Documentation only; no runtime/dependency changes.
 

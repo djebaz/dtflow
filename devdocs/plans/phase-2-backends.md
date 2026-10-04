@@ -4,6 +4,10 @@
 **Baseline:** main commit `595abf9161a1d9672b055a66cb3e4c659617675f`.  
 **References:** [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md), [initial roadmap](initial.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [recorded gRPC proof](../research/drawthings-grpc-proof.md).
 
+## Prerequisite: Phase 1 handoff
+
+The [Phase 1 probe](../research/drawthings-grpc-proof.md) already records local connectivity/inventory, successful generation/decoding/saving and user-reported direct-cloud/concurrency evidence. This establishes feasibility for starting 2A. Confirmed remote cancellation and detailed progress/error coverage remain unverified and are Phase 2 validation work; do not describe the entire Phase 1 checklist as tested. Do not rerun live generation merely to close a planning checkbox.
+
 ## Goal and boundaries
 
 Establish one backend-neutral generation contract, exercised by a deterministic fake, Draw Things gRPC and narrow direct DT+ Cloud Compute adapters. Keep Qt, client/protobuf types and cloud authentication inside their proper boundaries.
@@ -12,7 +16,7 @@ Start real adapters with controlled text-to-image requests. Define model/LoRA me
 
 Direct DT+ is the primary expected production backend; local gRPC is a supported runtime and the frequent development/smoke-test path. Local smoke success does not prove cloud readiness.
 
-Phase 3A adds durable attempts; Phase 3B adds durable queues, rolling orchestration and custom cloud LoRA upload/reuse before Qt. Phase 2 must expose enough outcome information to support both safely.
+Phase 2A proves a minimal headless fake-generation path with durable attempts and saved artifacts; Phase 3A expands it into the usable real-backend CLI. Phase 3B adds durable queues, rolling orchestration and custom cloud LoRA upload/reuse before Qt. Phase 2 must expose enough outcome information to support both safely.
 
 ## Implementation slices and parallel investigation
 
@@ -22,7 +26,11 @@ Implement the [backend contract](../architecture/backend-contract.md): immutable
 
 Define timeout/resource policies and cancellation propagation now. Establish pytest-asyncio support, fixture endpoint registration, offline network guard and live-test gates before adapter tests. Follow the repository uv workflow for any implementation dependencies; this plan changes none.
 
-Phase 2A can start from these specifications. Its gate is core/fake contract acceptance without Qt/provider types, not target-Windows packaging.
+Phase 2A can start now. Build a thin working slice first: a source-run fake-generation command calls one shared async service, persists a resolved request/attempt in the selected SQLite store before dispatch, saves a fixture PNG plus reproducibility metadata and reports the actual outcome. Keep command parsing/presentation separate from services. Start with one attempt and explicit fake selection; do not build the queue scheduler or all Phase 3 CLI features here.
+
+Prove success, failure before submission, uncertain interruption, failed persistence preventing dispatch and restart inspection without replay. Add the import-boundary check. Refine the existing architecture notes from this slice; do not require another speculative specification before coding. This brings forward only the minimal Phase 3A service/entry-point/persistence foundation. It does not complete Phase 3A, create a release or change the 3A/3B gates.
+
+Its gate is the working path and core/fake contract acceptance without Qt/provider types. Target-Windows packaging runs separately.
 
 ### Phase 2B — Local gRPC adapter and fixture server
 
@@ -44,13 +52,13 @@ Run this investigation alongside 2A–2C; it does not block starting 2A. Licensi
 
 Deliver a version-pinned upstream feature inventory from TanqueStudio source/UI/docs into the parity matrix: feature, evidence, shared ownership, CLI/Qt exposure, backend limits, target milestone and acceptance. Mark gaps/exclusions explicitly; no full-parity claim while inventory remains incomplete.
 
-Record packaging and distribution findings or explicit pending/blocker status with the evidence required. Actual target-machine acceptance remains a packaged-release gate; no inferred Windows success is required to merge the core/fake slice. Do not silently change licenses or replace dependencies.
+Record packaging and distribution findings or explicit pending/blocker status with the evidence required. Actual target-machine acceptance remains a packaged-release gate; no inferred Windows success is required to merge the core/fake slice. Keep a short replacement estimate for the generated protocol bindings, FlatBuffer configuration and tensor codecs, with sources/licenses and required fixtures. Validate the bundled SQLite version as well as native codecs on the target machine. Do not silently change licenses or replace dependencies.
 
 ## Required semantics
 
 ### Completion and artifacts
 
-Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. Phase 3 introduces a durable pre-submission request/attempt record plus output/metadata saving; those writes must finish before reporting application success. Phase 3B extends it with durable queue/job lifecycle state and tested rolling scheduling.
+Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. Phase 2A proves the minimal durable pre-submission request/attempt record plus output/metadata saving; Phase 3A completes that path for real backends. Required artifact and metadata writes must finish before reporting application success. Phase 3B extends it with durable queue/job lifecycle state and tested rolling scheduling.
 
 Preserve incomplete outputs as partial evidence. A preview saved after failed generation must remain labeled as a preview or diagnostic artifact in metadata and the UI; never promote it to a completed result or use it to imply success.
 
@@ -134,7 +142,8 @@ No pytest/ruff or live tests were run for this documentation amendment. Installe
 
 ## Validation and exit criteria
 
-- Phase 2A: specified immutable contract and async ownership implemented; fake supports lifecycle, connectivity, inventory and generation; core imports do not require Qt/provider types.
+- Phase 2A: specified immutable contract and async ownership implemented; fake supports lifecycle, connectivity, inventory and generation; import-boundary/headless checks enforce core/service separation.
+- Phase 2A thin slice: a headless fake command goes through shared services and SQLite attempts to saved PNG/metadata; persistence failures prevent submission, interrupted attempts remain unknown and restart never replays them. Include schema/runtime checks and focused failure-boundary tests.
 - Phase 2B/2C: real adapters implement those same operations with bounded deadlines, distinct transport/auth/inventory status, refresh/provenance and fixture coverage.
 - Fake and protocol-fixture tests make no real generation requests and fail on unexpected external connections.
 - Real adapters are exercised through local gRPC transport, including terminal status, deadlines, cancellation/disconnects and cloud authorization metadata.
@@ -152,6 +161,12 @@ Use `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .` fo
 
 The [TanqueStudio parity matrix](tanquestudio-parity.md) tracks later feature milestones without making full parity a prerequisite for Qt.
 
+## Handoff to the next implementation PR
+
+Keep PR #3 documentation-only. After it is merged, branch from updated main and open an early, separate Phase 2A implementation PR. Its first coherent deliverable is the thin fake/service/SQLite/artifact path above, with tests and an updated unreleased entry; use the existing uv workflow. Decide exact command spelling in code and keep help accurate. Report only checks actually run.
+
+Use separate PRs for 2A, 2B and 2C: 2A establishes the tested foundation; 2B adds the local gRPC adapter/server fixtures; 2C adds direct-cloud authentication/adapter fixtures. Split a slice further when needed for coherent review rather than combining all adapters into one PR. Run 2D alongside them and publish its packaging/licensing/replacement and feature-inventory findings in separate documentation PRs as evidence becomes available. Pending owner-machine or licensing evidence remains explicit. Real-adapter fixtures precede any separately authorized live checks. Prove the Qt worker-thread approach before Phase 4; functional Phase 3B rolling dispatch and the agreed LoRA delivery gates still precede Qt.
+
 ## Deferred work
 
-[Phase 3](phase-3-cli.md) delivers the headless CLI: 3A adds single-generation services, durable attempts and output saving; 3B adds durable queues, rolling dispatch, restart reconciliation and custom cloud LoRA upload/reuse before Qt. Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds batch planning; Phase 7 extends advanced scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
+[Phase 3](phase-3-cli.md) delivers the headless CLI: 3A expands the 2A foundation into real-backend single-generation CLI/services, durable attempts and output saving; 3B adds durable queues, rolling dispatch, restart reconciliation and custom cloud LoRA upload/reuse before Qt. Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds batch planning; Phase 7 extends advanced scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.

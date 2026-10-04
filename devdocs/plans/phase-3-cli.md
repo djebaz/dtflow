@@ -12,7 +12,7 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 
 ## Delivery sequence
 
-Phase 3A establishes single-generation CLI/services, bounded LoRA selection/preflight, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling, restart reconciliation and custom cloud LoRA upload/reuse. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
+Phase 2A supplies the minimal fake/service/SQLite/artifact slice. Phase 3A expands it into usable real-backend single-generation CLI/services, bounded LoRA selection/preflight, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling, restart reconciliation and custom cloud LoRA upload/reuse. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
 
 ## Release gates and schema compatibility
 
@@ -87,7 +87,7 @@ A successful terminal RPC and valid outputs establish backend success; successfu
 
 Before any generation submission, atomically persist an immutable resolved request plus a unique attempt ID, backend identity and credential-free configuration/version metadata. Before crossing the submission boundary, durably mark the attempt as potentially executing remotely. If either write fails, do not submit.
 
-Use same-directory temporary-file replacement with the appropriate flush/fsync behavior, or a transactional store. Define and test the actual durability guarantee on the target filesystem; do not equate a buffered write with a durable commit.
+Use the standard-library SQLite store selected in the [backend contract](../architecture/backend-contract.md), with WAL, synchronous=FULL, short transactions, independent schema versions and a verified patched runtime. Canonical execution records are transactional; JSON is for credential-free configuration/metadata interchange, not dispatch ownership. Save image/sidecar files through same-directory temporary-file replacement with appropriate flush/fsync behavior before committing successful artifact references. Database and filesystem writes are not jointly atomic; reconcile orphaned/partial files conservatively. Define and test durability on the target filesystem.
 
 Update outcomes and artifact references atomically as evidence arrives. Distinguish definitely not submitted, potentially executing/outcome unknown, confirmed failure and successful output persistence. Never persist credentials or bearer tokens.
 
@@ -95,11 +95,11 @@ On startup/record inspection, unfinished attempts that crossed the boundary rema
 
 Test crashes/failures before recording, after marking potential execution, during generation and between artifact saving and outcome commit. Previously saved artifacts remain evidence, not automatic proof of full completion.
 
-Phase 3A supplies these durable attempts and artifact metadata. Phase 3B extends them with transactional queue/job state, rolling scheduling and local restart reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
+Phase 3A completes the initial Phase 2A durable attempt/artifact foundation for the supported real backends. Phase 3B extends them with transactional queue/job state, rolling scheduling and local restart reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
 
 ## Phase 3B — Durable queues, rolling execution and cloud assets
 
-Persist queue identity, stable ordered item IDs, immutable resolved requests, item/attempt states, backend selection and concurrency configuration. Use one dispatch owner per application state directory so two CLI processes cannot independently dispatch the same queue or bypass its cap. The CLI presents queue control; shared services own persistence, eligibility, scheduling and reconciliation.
+Persist queue identity, stable ordered item IDs, immutable resolved requests, item/attempt states, backend selection and concurrency configuration. Use one dispatch owner per application state directory so two CLI processes cannot independently dispatch the same queue or bypass its cap. The CLI presents queue control; shared services own persistence, eligibility, scheduling and reconciliation. Store control requests transactionally for the dispatcher to poll, so basic Pause/Resume/Cancel needs no separate IPC server. SQLite transactions alone do not establish dispatch ownership: implement and test exclusive ownership, stale-owner recovery and protection against an old owner continuing dispatch. Never hold a database transaction while generating.
 
 For ten independent eligible cloud items and a maximum of four, submit items 1–4. As any attempt reaches a known terminal outcome and releases its reservation, start the next eligible item immediately, without a group-completion barrier. Preserve original item identity and queue order in result presentation even when completion order differs. Reserve slots before remote submission and bound active attempts plus unresolved reservations. The tested local app/Bridge policy is one lane.
 

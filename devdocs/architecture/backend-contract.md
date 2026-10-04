@@ -10,11 +10,23 @@ Backends and application services are async-native. The CLI creates one top-leve
 
 Qt later hosts the same services in one dedicated worker thread with its own long-lived asyncio loop. Submit commands thread-safely; return immutable events/results through Qt signals. Widgets never access channels, futures or provider objects. Network work stays off the GUI thread. Shutdown stops admission, cancels/waits for owned tasks, closes clients, then joins the worker; do not destroy a live loop.
 
+Before Phase 4, run a small throwaway Qt/asyncio worker-thread spike covering signal delivery, interruption and shutdown while the GUI remains responsive. Record the result and revise this choice if it fails; the spike does not deliver the Qt shell or relax the pre-Qt CLI gates.
+
 No synchronous backend facade or qasync dependency is required initially. Blocking codecs/file operations run in bounded workers where necessary; task cancellation cannot kill a Python thread, so guard late results and preserve submission evidence. Pure core imports need neither Qt nor provider libraries.
+
+## Durable state and layer enforcement
+
+Use standard-library sqlite3 for canonical execution state. Start with requests/attempts in the Phase 2A working slice; extend the same store with queues, reservations and asset receipts in Phase 3B. Use a local application state directory, WAL mode, synchronous=FULL, foreign_keys=ON per connection, a bounded busy timeout and short transactions. Keep database work off the event loop through a single owned worker; never hold a transaction across network or artifact I/O. SQLite permits one writer at a time; concurrent generation is separate from concurrent database writes.
+
+Require a patched bundled SQLite runtime: 3.51.3 or newer, or an explicitly documented official backport. The official [WAL documentation](https://www.sqlite.org/wal.html) records the multi-connection WAL-reset fix in 3.51.3, 3.50.7 and 3.44.6. Inspect sqlite3.sqlite_version on each target; the inspected Linux runtime is 3.53.1, which is not Windows evidence. Do not silently ship an affected runtime.
+
+WAL state stays on a local filesystem. Use SQLite's backup API for a consistent backup, rather than copying only the main database while WAL is active. FULL is a DTFlow durability choice; see [synchronous semantics](https://www.sqlite.org/pragma.html#pragma_synchronous). Verify crash behavior on the target filesystem. Database commits and image-file replacement are not one atomic transaction: save artifacts durably, then commit references/success; reconcile interrupted writes without resubmitting unknown attempts. Schema versions start in the first slice. No JSON execution store or ORM is needed.
+
+In Phase 2A, add a small pytest import-boundary check using standard-library AST inspection and headless import coverage: core imports no Qt, backend implementation or provider types; services depend on core contracts, not concrete provider classes; provider imports stay inside the integration boundary. Cover absolute/relative imports and local imports. This enforces the written rules without a new lint dependency.
 
 ## Specified operations
 
-Use a typed Protocol and immutable dataclasses/enums in core. Method names below are the implementation contract, not existing CLI commands.
+Use typing.Protocol, frozen slotted standard-library dataclasses and enums in core. Validate inputs explicitly at configuration/import boundaries and preserve immutable nested values. Do not add pydantic-core or another compiled validation dependency for these types; any new native dependency needs evidence on the target Pentium E6500 before adoption. Method names below are the implementation contract, not existing CLI commands.
 
 | Operation | Signature intent | Semantics |
 | --- | --- | --- |
@@ -104,7 +116,7 @@ Confine drawthings-py builders/serialization, tensor codecs, generated bindings,
 
 The probe's subclass and __getattr__ stub wrapper are diagnostic evidence, not an architecture to spread. Keep any required private access version-pinned, narrow, documented and covered by actual-adapter fixtures. Prefer public serializer/codec functions. In 0.4.0 build_grpc_message uses seed or -1; build/override the configuration using the exact resolved seed via the serializer inside this boundary, then decode/assert wire seed zero. Do not mutate installed dependency files or patch global behavior.
 
-Keep an integration workaround ledger (version, source, reason, fixture, removal condition) with implementation. Dependency replacement/licensing evaluation must not alter the application contract. No licensing outcome is implied by module isolation.
+Keep an integration workaround ledger (version, source, reason, fixture, removal condition) with implementation. In 2D, size replacement work separately for generated gRPC/protobuf bindings, FlatBuffer configuration serialization and compressed tensor decoding/PNG encoding; identify source licenses, fixture coverage and target-machine constraints. This is a risk estimate, not authorization to rewrite or relicense the dependency. Dependency replacement/licensing evaluation must not alter the application contract. No licensing outcome is implied by module isolation.
 
 Phase 2 implements the credential-provider interface, environment provider and injected fake saved provider only. Real Windows Credential Manager entry/storage arrives in Phase 4. Preserve environment-presence precedence, including empty/invalid failure with no fallback. The Phase 2 default saved provider is unavailable; tests inject it to cover precedence. Credentials/tokens never enter connection records, requests, artifacts or logs.
 

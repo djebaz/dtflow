@@ -100,7 +100,7 @@ The core must not depend on Qt, protobuf, gRPC, or a specific remote service.
 
 A `GenerationBackend`-style contract will isolate generation providers.
 
-The first implementation is a Draw Things gRPC backend. Protocol conversion, generated protobuf types, connection details, and Draw Things-specific mappings remain inside that backend package.
+The first working slice uses an explicitly selected fake backend; real Draw Things gRPC and direct-cloud adapters follow behind the same tested contract. Protocol conversion, generated protobuf types, connection details, and Draw Things-specific mappings remain inside that backend package.
 
 The Phase 2 DT+ backend will use the validated Python direct-cloud path, but the diagnostic probe must not simply become production code by relocation. Authentication/token lifecycle, credential storage, entitlement/PAYG rules, retries, cancellation, throttling, error mapping, persistence, model/file compatibility, and safe concurrency must be made explicit behind the backend boundary first. MediaGenerationKit remains a reference for protocol behavior, not a required DTFlow runtime dependency for the path already proven.
 
@@ -132,7 +132,7 @@ Persistence should eventually cover:
 - output references
 - versioned cloud asset receipts and their backend/account scope, without credentials or signed URLs
 
-The exact storage format/database is intentionally undecided until the first persistence requirements are implemented.
+Use standard-library SQLite for canonical durable execution state, starting with the Phase 2A attempt slice and extending it in Phase 3. WAL, synchronous=FULL, a patched bundled SQLite runtime and local-filesystem storage follow the [backend contract](../architecture/backend-contract.md). Keep file artifacts separate and reconcile crash boundaries; JSON remains an interchange format rather than the execution store. Schema, migration and dispatch-ownership details are validated during implementation.
 
 ## 5. Repository direction
 
@@ -196,6 +196,10 @@ Track the intended full TanqueStudio port in the [parity matrix](tanquestudio-pa
 
 ### Phase 1 — gRPC connectivity proof
 
+**Handoff status:** Core connectivity feasibility is established by the [recorded probe evidence](../research/drawthings-grpc-proof.md): the tested Windows stack connects/discovers files, generates, decodes and saves images; user-reported controlled runs also exercise direct-cloud authentication/generation and concurrency. These are existing observations, not tests run by this documentation PR. The probe remains diagnostic tooling, not an application adapter.
+
+The original checklist below is not fully verified: confirmed remote cancellation, detailed progress/error cases and wider compatibility remain open. Carry them into Phase 2 source/fixture work and separately authorized live validation where needed; unsupported behavior stays explicit. These gaps do not block starting 2A, and no new generation is required merely to repeat the feasibility proof.
+
 Prove the smallest useful Draw Things connection outside the GUI.
 
 Validate:
@@ -214,7 +218,7 @@ Keep prompts, seeds, dimensions, and parameters controlled when comparing behavi
 
 Follow [the Phase 2 implementation plan](phase-2-backends.md), [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md) and [source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
 
-Deliver coherent slices: 2A contract/async decisions, fake and foundational fixtures; 2B local gRPC adapter with connectivity/inventory and transport fixtures; 2C direct-cloud adapter against the pinned auth contract; 2D packaging/licensing and version-pinned upstream feature inventory alongside implementation. Phase 2D does not block starting 2A; licensing informs dependency investment and target-Windows verification remains a packaged-release gate.
+Deliver coherent slices: 2A contract/async decisions, fake, foundational fixtures and a thin headless service/SQLite-attempt/saved-image path; 2B local gRPC adapter with connectivity/inventory and transport fixtures; 2C direct-cloud adapter against the pinned auth contract; 2D packaging/licensing and version-pinned upstream feature inventory alongside implementation. Phase 2D does not block starting 2A; licensing informs dependency investment and target-Windows verification remains a packaged-release gate.
 
 Introduce backend-neutral request, result, progress, error and capability types. Implement a deterministic fake backend, wrap the validated Draw Things gRPC path, and add narrow direct DT+ text-to-image support through native Python. Define structured model/LoRA metadata, shared compatibility preflight and a separate cloud asset contract for Phase 3; audit converted-format and generation-reference requirements.
 
@@ -393,7 +397,7 @@ Source-inspected answers and remaining evidence requirements are recorded in [re
 - Exact `drawthings-py` version/API and how much of the gRPC client it should own.
 - Whether DTFlow should generate protobuf bindings itself or consume them through a dependency.
 - Exact Draw Things progress and cancellation semantics, plus whether any server/app configuration can expose parallel backend execution beyond the effective single lane observed in the tested iPhone/Bridge path.
-- Persistence technology and schema, including durable upload receipts, uncertain upload reconciliation and backend/account-scoped asset references.
+- SQLite schema, migrations, busy/ownership policy and crash reconciliation, including durable upload receipts, uncertain upload reconciliation and backend/account-scoped asset references; the storage technology is selected.
 - Custom cloud LoRA converted-format/metadata requirements, deduplication identity, generation references, retention/availability evidence and deployed upload/use behavior; remote listing/delete-key discovery is absent in the inspected SDK.
 - Windows packaging feasibility on the target machine, native-module and certificate resources, and the distribution implications of the GPL-3.0-only drawthings-py dependency in the currently MIT-declared project.
 - Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, model/file compatibility, cancellation/retry semantics, throttling and behavior at the selected concurrency. The diagnostic API-key token/auth/gRPC path is proven separately; the default of four is a product choice.
