@@ -105,6 +105,17 @@ def live_run(request):
     return root
 
 
+def _live_warnings(properties) -> list[dict]:
+    """Pair each ("warning", text) with the ("fix", text) recorded right after it, if any."""
+    notes: list[dict] = []
+    for key, value in properties:
+        if key == "warning":
+            notes.append({"message": value, "fix": None})
+        elif key == "fix" and notes:
+            notes[-1]["fix"] = value
+    return notes
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     result = yield
@@ -118,11 +129,7 @@ def pytest_runtest_makereport(item, call):
                 "phase": report.when,
                 "outcome": report.outcome,
                 "seconds": report.duration,
-                **{
-                    name: values
-                    for key, name in (("warning", "warnings"), ("fix", "fixes"))
-                    if (values := [v for k, v in report.user_properties if k == key])
-                },
+                **({"warnings": notes} if (notes := _live_warnings(report.user_properties)) else {}),
             }
         )
 
@@ -144,9 +151,8 @@ def _write_live_warnings(terminalreporter, checks) -> None:
     """Print each distinct live-check warning with how to resolve it, instead of raw pytest warning text."""
     seen: dict[str, str | None] = {}
     for check in checks:
-        fixes = check.get("fixes", [])
-        for index, message in enumerate(check.get("warnings", [])):
-            seen.setdefault(message, fixes[index] if index < len(fixes) else (fixes[-1] if fixes else None))
+        for note in check.get("warnings", []):
+            seen.setdefault(note["message"], note["fix"])
     if not seen:
         return
     terminalreporter.write_sep("-", "DTFlow live-check warnings (not failures)", yellow=True, bold=True)
