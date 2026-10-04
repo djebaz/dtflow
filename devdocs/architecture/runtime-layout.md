@@ -5,7 +5,9 @@
 Development application state uses `.dtflow/attempts.sqlite3` and final outputs use
 `.dtflow/outputs/<attempt-id>/`. Output placement is backend-neutral; metadata and durable records identify the
 backend. Each attempt groups its image(s) and metadata. Outputs are durable artifacts, not disposable cache.
-SQLite manages its WAL/SHM sidecars in the database directory.
+SQLite manages its WAL/SHM sidecars in the database directory. Since the queue schema (version 2) the same database
+also holds queues, items, posted controls and queue events; opening a release 0.1.0 (version 1) database writes a
+one-time `attempts.pre-v2.sqlite3` copy beside it before migrating.
 
 Explicit live tests retain a separate repository-root `test-runs/<run-id>/`, ignored by Git. A run ID combines
 UTC time and a random suffix. Local/cloud checks share that root; generation uses its own SQLite state and output

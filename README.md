@@ -12,7 +12,7 @@ Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures an
 complete generation smoke checks. The owner reports deployed token/inventory and one bounded generation passed at an
 earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`. This covers that workload only; final-head Windows validation,
 broad model/LoRA compatibility, production cancellation latency, charging/refunds and a Windows stamped release build remain unverified (`tools/packaging/build_exe.py` now stamps the commit; a frozen one-file CLI has run on the target machine; see the [packaging findings](devdocs/research/windows-packaging.md)). Phase 3A exposes those adapters through the source-run CLI (offline-validated; the owner reports one successful local
-and one successful DT+ plain generation through it, plus one local LoRA generation after a first attempt interrupted by an iOS app freeze). Durable rolling queues, cloud LoRA upload/reuse and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+and one successful DT+ plain generation through it, plus one local LoRA generation after a first attempt interrupted by an iOS app freeze). Phase 3B adds durable queues with rolling dispatch to the source-run CLI (offline-validated only; no live queue run yet); cloud LoRA upload/reuse and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles
@@ -125,6 +125,10 @@ uv run dtflow generate -b cloud -m EXACT_MODEL -p "a cat" -l EXACT_LORA:0.8 -r -
 uv run dtflow generate -b cloud -c cat.json -s 7                  # reuse a config; explicit flags override it
 uv run dtflow attempts                                            # inspect durable attempts; never resubmits
 uv run dtflow settings -j 2                                       # persist the cloud concurrency maximum (1-4, default 4)
+uv run dtflow queue add -b fake -p "Offline fixture" -k 10 -j 4   # persist a paused queue of 10 items (seeds s, s+1, ...)
+uv run dtflow queue start QUEUE                                   # become the dispatch owner and run it (Ctrl-C interrupts)
+uv run dtflow queue pause QUEUE                                   # from another terminal; also resume, cancel, override, cap -j N
+uv run dtflow queue show QUEUE                                    # items in queue order with state, attempt and outputs
 ```
 
 `generate`, `check` and `models` are the only commands that contact a backend; `generate -b local|cloud` submits a
@@ -152,6 +156,22 @@ Local/cloud generation requires an exact `-m/--model` listed by the server's inv
 - **Logging.** One shared logging setup writes rotating UTF-8 `dtflow-<session>.log` files under repository `logs/`
   (or `%LOCALAPPDATA%\DTFlow\logs\` outside a checkout), with session/attempt correlation and bounded retention.
   Prompts, credentials, headers and payloads are not logged; a log failure is reported once and never changes the command.
+
+- **Queues.** `queue add` persists independent, immutable resolved items (it contacts no backend and does not
+  support `-r/--prefix`; put prefixes in the prompt) in a queue that starts paused. `queue start` makes that process the
+  single dispatch owner of the state directory, resumes the queue and rolls: it admits the next item as soon as any
+  reservation is released, never exceeding the queue maximum (`-j` on `add` or `queue cap`) or the backend's own limit
+  (local gRPC is one lane). Another process can run `list`, `show`, `pause`, `resume`, `cancel`, `override` and `cap`
+  while dispatch is running: controls are stored and polled, and `add` and `start` need the state directory to themselves.
+  A paused, idle dispatcher keeps polling until resumed or interrupted. `cancel` stops pending items and interrupts
+  local waiting on active ones; it never claims remote cancellation, so an item interrupted after submission is
+  `unknown`. An `unknown` item keeps its reservation and blocks that backend (across queues): ordinary `resume` and
+  restart cannot clear it, `queue start` exits `4`, and only `override` lets eligible items continue; the override is
+  recorded, and the uncertain attempt is never resolved or replayed. After a restart queues are restored paused, completed
+  results are kept, and no item that reached the remote boundary becomes eligible again. `queue start` exits `0` when
+  every item succeeded, `4` if any item is unknown, otherwise `3` if any failed, was cancelled or remains pending.
+  Note: the shared buffer budget (256 MiB, about 100 MiB reserved per request) currently admits only about two
+  concurrent real generations, whatever the queue maximum.
 
 The fixture backend is a deterministic color swatch; no model inference occurs. State is stored in
 `.dtflow/attempts.sqlite3` and outputs under `.dtflow/outputs/<attempt-id>/`. Run state on a local filesystem, with a
