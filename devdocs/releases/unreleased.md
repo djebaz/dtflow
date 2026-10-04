@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Add `tools/drawthings/grpc_capabilities_probe.py`, a non-generative local Draw Things gRPC capability diagnostic covering the complete current read-only surface (`Echo`, `FilesExist`, `Pubkey`, and `Hours`) while explicitly excluding generation and upload. It preserves full Echo metadata fields, checks local registry-file visibility, requests SHA-256 only for small registry candidates plus explicit `--hash-file` values, and can retain a sanitized JSON report. Add focused offline parsing/alignment tests and source-backed capability documentation; no live RPC is run by the test suite.
+
 - Add `tools/drawthings/local_files_exist_probe.py`, a non-generative local Draw Things gRPC diagnostic that requests a named converted checkpoint through `FilesExist(filesWithHash=...)` and reports the server-computed SHA-256 when available. It uses the same bundled Draw Things CA policy as `drawthings-py`, supports an optional `DRAWTHINGS_SHARED_SECRET`, and transfers no checkpoint bytes.
 
 - Add `tools/drawthings/get_byom_probe.py`, a non-uploading DT+ `/get_byom_urls` diagnostic for a known checkpoint fingerprint. Owner-run deployed evidence shows filename + SHA-256 reuses an existing asset without a size field, while omitting SHA-256 returns no usable match. The earlier full/omitted-size/omitted-SHA/filename-only request matrix remains available through `--matrix`. Current DT+ proxy `FilesExist` does not return hashes, so the probe no longer claims remote checksum discovery. It records sanitized responses, redacts signed URLs, and never downloads checkpoint bytes, performs a PUT upload, or submits generation.
