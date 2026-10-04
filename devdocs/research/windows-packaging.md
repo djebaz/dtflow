@@ -116,13 +116,13 @@ Compare with P6: same exit codes, a readable PNG and metadata, and the same atte
 `tools/packaging/build_exe.py` records the full source commit and clean/dirty status in the ignored `src/dtflow/_buildinfo.py`, runs the P7 PyInstaller command, removes the generated module and renames the result to `dtflow-<version>-g<short-sha>-<platform>-<arch>.exe`. Build public releases from a clean checkout; a modified tree reports `dirty` and warns.
 
 ```powershell
-git checkout v0.1.0
+git pull origin main
 uv sync
 uv run --with pyinstaller python tools/packaging/build_exe.py
-.\dist\dtflow-0.1.0-g8c4e787-windows-x64.exe --version
+.\dist\dtflow-0.1.0-g<short-sha>-windows-x64.exe --version
 ```
 
-The version line must show `g8c4e787` and `source status clean`. Only a Linux build in the agent sandbox was exercised so far (version line showed the commit with status `dirty`, as the tree had uncommitted changes); a Windows run is not yet recorded.
+The version line must show the same `g<short-sha>` as the filename and `source status clean`. The script only exists from the commit that added it, so the `v0.1.0` tag cannot be built stamped. See W21 for the first Windows result.
 
 ## Findings table
 
@@ -150,6 +150,7 @@ Statuses: **Not run** / **Pass** / **Partial** / **Fail** / **Blocked**. Partial
 | W18 | PyInstaller `dtflow` launcher builds and `--version` runs (P7) | Pass | 2026-10-04 | as W9 | Build exit 0; frozen `--version` printed the same line as the source run, so `--copy-metadata dtflow` supplied the version. Commit and status are `unknown` until a build step stamps them, as expected |
 | W19 | Frozen fake `generate` and `attempts` match source-run behavior (P7) | Pass | 2026-10-04 | as W9 | Frozen `generate` and `attempts` exited 0; the attempt record has the same state, stages and request fields as the source run; same file set and sizes (404 and 1,506 bytes; `attempts.sqlite3` 16,384). Differences are only IDs, timestamps and paths. The clean-path `generate` also succeeded. File contents were compared by size, not byte for byte |
 | W20 | Frozen Phase 3A CLI (`--collect-data drawthings_py`): fake `generate`, `attempts`, `settings -j`, invalid input and per-user logs (P7) | Pass | 2026-10-04 | PR #10 head; PyInstaller 6.22.3; Python 3.13.13; Windows 10 Pro 10.0.19045 | Without `--collect-data drawthings_py` every command failed with `No module named 'drawthings_py.resources'`; with it `--version` printed `DTFlow 0.0.0 (revision unknown; source status unknown)`, fake `generate` exited 0 with the attempt `succeeded`, `settings -j 2` persisted 2, `-w 300` printed `Invalid request: width_px must be a multiple of 64.` and four `dtflow-<session>.log` files appeared under `%LOCALAPPDATA%\DTFlow\logs`. Owner-reported output. Follow-up the same day: invalid input exited 2 and `attempts` returned `[]`; frozen `generate -b cloud` and a local LoRA generation succeeded, and `check -b local` returned 56 inventory entries; the owner reports the frozen local generation and a clean-`PATH` rerun passed (output not pasted). Not done: a second machine, a stamped commit ID, byte-level comparison with the source run |
+| W21 | Stamped Windows build (P8) | Pass | 2026-10-04 | `main` at `13231d02a666e7984be6d6088e8324702e464dec` (clean); PyInstaller via `uv run --with`; Windows 10, Pentium E6500 | `build_exe.py` built `dtflow-0.1.0-g13231d0-windows-x64.exe` and reported `commit 13231d02a666e7984be6d6088e8324702e464dec (clean)`; its `--version` printed `DTFlow 0.1.0 (g13231d0; source status clean)`, matching the filename (owner-reported). Not run: generation with this exe, a second machine, a public-release build |
 
 ### Recorded results
 
