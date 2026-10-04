@@ -321,6 +321,8 @@ Expose the generation form, actual progress, outputs/errors, bounded LoRA select
 
 #### Phase 5B — Desktop queue controls
 
+The detailed, PR-sequenced plan is [Phase 5B desktop queue controls](2026-10-04-phase-5b-desktop-queue.md); its first step extracts the CLI's queue orchestration into shared Qt-independent functions, and it records the proposed decision that desktop dispatch is an exclusive activity because it holds the state ownership lock.
+
 Expose queue creation/inspection, stable item status, concurrency, Pause/Resume/Cancel, paused restart and explicit uncertainty handling through the existing Phase 3B services. The first desktop release requires both 5A and 5B; queue controls are not deferred to batch planning or advanced scheduling.
 
 Persist enough metadata to reproduce the request. Mark a job completed only after successful terminal RPC status, validated final artifacts and durable output/metadata persistence. Saved previews must remain labeled as previews or diagnostics when final generation fails.
