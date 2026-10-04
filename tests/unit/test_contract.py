@@ -86,8 +86,8 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
     root = ROOT / "src/dtflow"
     for path in root.rglob("*.py"):
         relative = path.relative_to(root)
-        if relative.parts[:2] == ("backends", "drawthings"):
-            continue
+        if relative.parts[:2] == ("backends", "drawthings") or relative.parts[:1] == ("ui",):
+            continue  # the Qt shell may import Qt; every other package may not
         package = ".".join(("dtflow", *relative.parts[:-1]))
         assert not forbidden_imports(path.read_text(), package, backends=False), path
 

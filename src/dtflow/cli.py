@@ -50,6 +50,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Log directory (default: repository logs/ or per-user data).")
     commands = command.add_subparsers(dest="command", required=True)
+    commands.add_parser("gui", help=COMMAND_HELP["gui"])
     testing = commands.add_parser("test", help="Run repository tests through pytest.")
     testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
     testing.add_argument("-live", "--live", action="store_true", help="Run non-generative live connectivity checks.")
@@ -194,6 +195,7 @@ def add_queue_commands(commands) -> None:
 
 
 COMMAND_HELP = {
+    "gui": "Launch the Qt shell (connection selection, status and API-key management).",
     "generate": "Generate one text-to-image result and save it with reproducibility metadata.",
     "check": "Bounded non-generative connectivity/authentication check.",
     "models": "List backend inventory with provenance (models, LoRAs, controls, unknown entries).",
@@ -456,6 +458,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     logging_session = None if args.command == "test" else start_logging(args)
     try:
+        if args.command == "gui":
+            return run_gui_command()
         if args.command == "test":
             return run_tests(args)
         return asyncio.run(run(args))
@@ -497,6 +501,16 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if logging_session is not None:
             logging_session.close()
+
+
+def run_gui_command() -> int:
+    """Qt is imported only here, so every other command runs without it."""
+    try:
+        from dtflow.ui.app import run_gui
+    except ImportError:
+        print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
+        return EXIT_INVALID
+    return run_gui()
 
 
 def run_tests(args: argparse.Namespace) -> int:

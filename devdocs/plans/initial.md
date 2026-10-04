@@ -280,6 +280,8 @@ After restart, restore the queue paused with unresolved reservations intact. Ord
 
 ### Phase 4 — Minimal Qt shell and connection management
 
+**Implementation status:** the shell, background execution boundary, connection presentation, credential entry wiring, identity display and headless separation (4-O1 to 4-O6) are implemented and offline-validated on Linux (`dtflow gui`). Not yet verified: the real Windows Credential Manager boundary, a Windows launch, and PyInstaller packaging of the Qt shell. Defaults chosen: `keyring` with a Windows-vault-only backend check; the GUI never stores the local shared secret (environment only); no generation, queue or LoRA controls (Phase 5).
+
 Create the PySide6 application shell and canonical Qt Designer sources after both Phase 3A and Phase 3B CLI/service acceptance gates pass.
 
 Wire startup, main window, UI/resources, background execution and clean shutdown. Add Draw Things/cloud connection selection and useful status/failure presentation through the same services exercised by the CLI.
