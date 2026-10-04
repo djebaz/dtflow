@@ -25,9 +25,8 @@ class Secret:
         return Credential("env", self.value)
 
 
-@pytest.mark.live
-@pytest.mark.asyncio
-async def test_local_connection_and_inventory(live_run):
+def configured_local_adapter():
+    """Build the configured local gRPC adapter without opening a connection."""
     host, port = os.environ.get("DTFLOW_LIVE_HOST"), os.environ.get("DTFLOW_LIVE_PORT")
     if not host or not port:
         pytest.skip("DTFLOW_LIVE_HOST (an IP literal) and DTFLOW_LIVE_PORT are required.")
@@ -43,9 +42,16 @@ async def test_local_connection_and_inventory(live_run):
         timeouts=TimeoutPolicy(connect=10.0, inventory=20.0),
         shared_secret=Secret(secret) if secret else None,
     )
+    return adapter, host, int(port)
+
+
+@pytest.mark.live
+@pytest.mark.asyncio
+async def test_local_connection_and_inventory(live_run):
+    adapter, host, port = configured_local_adapter()
     await adapter.open()
     try:
-        with endpoint(host, int(port)):
+        with endpoint(host, port):
             status = await adapter.check_connection()
             assert status.transport == "ok", f"sanitized diagnostics: {status.diagnostics}"
             assert status.inventory == "ok", f"sanitized diagnostics: {status.diagnostics}"

@@ -20,12 +20,34 @@ class Local:
             refresh,
             (
                 InventoryEntry(
-                    "native.ckpt", "lora", "Native", "z_image", "listed_in_server_inventory",
-                    "echo.override", trigger_prefix="native", default_weight=0.8,
+                    "native.ckpt",
+                    "lora",
+                    "Native",
+                    "z_image",
+                    "listed_in_server_inventory",
+                    "echo.override",
+                    trigger_prefix="native",
+                    default_weight=0.8,
                 ),
                 InventoryEntry(
-                    "custom.ckpt", "lora", "Custom", "z_image", "listed_in_server_inventory",
-                    "echo.override", trigger_prefix="custom", default_weight=1.0,
+                    "custom.ckpt",
+                    "lora",
+                    "Custom",
+                    "z_image",
+                    "listed_in_server_inventory",
+                    "echo.override",
+                    trigger_prefix="custom",
+                    default_weight=1.0,
+                ),
+                InventoryEntry(
+                    "unprobed.ckpt",
+                    "lora",
+                    "Unprobed",
+                    "z_image",
+                    "listed_in_server_inventory",
+                    "echo.override",
+                    trigger_prefix="other",
+                    default_weight=0.6,
                 ),
             ),
         )
@@ -42,29 +64,53 @@ class Cloud:
             "cloud",
             "2026-10-04T00:00:00+00:00",
             refresh,
-            (InventoryEntry("native.ckpt", "unknown", "native.ckpt", None, "listed_in_server_inventory", "echo.files"),),
+            (
+                InventoryEntry(
+                    "native.ckpt",
+                    "unknown",
+                    "native.ckpt",
+                    None,
+                    "listed_in_server_inventory",
+                    "echo.files",
+                ),
+            ),
         )
 
     async def lookup_lora_assets(self, identities):
         assert identities == (FileIdentity("custom.ckpt", True, "cc" * 32),)
         return {
             "custom.ckpt": LoRABackendAvailability(
-                "byom_reusable", "dt_cloud.get_byom_urls", "cc" * 32, ("cc" * 32) + "_remote"
+                "byom_reusable",
+                "dt_cloud.get_byom_urls",
+                "cc" * 32,
+                ("cc" * 32) + "_remote",
             )
         }
 
 
 @pytest.mark.asyncio
-async def test_refresh_writes_cross_backend_cache_and_hashes_only_non_cloud_loras(tmp_path):
+async def test_refresh_writes_cross_backend_cache_and_bounds_byom_lookup(tmp_path):
     local = Local()
-    snapshot, path = await refresh_lora_inventory(local, Cloud(), tmp_path)
+    snapshot, path = await refresh_lora_inventory(
+        local,
+        Cloud(),
+        tmp_path,
+        lookup_identifiers=("custom.ckpt",),
+    )
 
     assert local.requested == (("custom.ckpt",), ("custom.ckpt",))
     by_id = {entry.identifier: entry for entry in snapshot.entries}
     assert by_id["native.ckpt"].dt_cloud.availability == "listed_in_server_inventory"
     assert by_id["custom.ckpt"].dt_cloud.availability == "byom_reusable"
     assert by_id["custom.ckpt"].local_grpc.sha256 == "cc" * 32
+    assert by_id["unprobed.ckpt"].dt_cloud.availability == "unknown"
+    assert by_id["unprobed.ckpt"].local_grpc.sha256 is None
     assert path == tmp_path / "cache" / "inventory" / "lora_inventory.json"
+
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["cache_version"] == 1
-    assert {entry["identifier"] for entry in data["entries"]} == {"native.ckpt", "custom.ckpt"}
+    assert {entry["identifier"] for entry in data["entries"]} == {
+        "native.ckpt",
+        "custom.ckpt",
+        "unprobed.ckpt",
+    }

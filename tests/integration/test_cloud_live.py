@@ -7,8 +7,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from support.live_evidence import save_inventory
-from support.network_guard import live_endpoints
+from support.live_evidence import save_inventory, save_lora_inventory
+from support.network_guard import endpoint, live_endpoints
+from test_local_grpc_live import configured_local_adapter
 
 from dtflow.backends.drawthings.cloud import DirectCloudBackend
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
@@ -16,6 +17,7 @@ from dtflow.core.models import ResolvedGenerationRequest, TimeoutPolicy
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.credentials import EnvironmentCredentials
 from dtflow.services.generation import GenerationService
+from dtflow.services.lora_inventory import resolve_lora_inventory
 
 
 @asynccontextmanager
@@ -34,13 +36,61 @@ async def deployed_cloud():
 
 @pytest.mark.live
 @pytest.mark.asyncio
-async def test_cloud_token_connection_and_model_inventory(live_run):
-    async with deployed_cloud() as adapter:
-        status = await adapter.check_connection()
+async def test_cloud_token_model_and_lora_inventory(live_run):
+    async with deployed_cloud() as cloud:
+        status = await cloud.check_connection()
         assert (status.transport, status.authentication, status.inventory) == ("ok", "ok", "ok"), status.diagnostics
-        inventory = await adapter.get_inventory(refresh=True)
-        assert inventory.backend_id == "drawthings-cloud"
-        save_inventory(live_run, "cloud", adapter.endpoint.label, inventory)
+        cloud_inventory = await cloud.get_inventory(refresh=True)
+        assert cloud_inventory.backend_id == "drawthings-cloud"
+        save_inventory(live_run, "cloud", cloud.endpoint.label, cloud_inventory)
+
+        local, host, port = configured_local_adapter()
+        await local.open()
+        try:
+            with endpoint(host, port):
+                local_inventory = await local.get_inventory(refresh=True)
+                save_inventory(live_run, "local", local.endpoint.label, local_inventory)
+                local_loras = tuple(entry for entry in local_inventory.entries if entry.kind == "lora")
+                assert local_loras, "Local Draw Things inventory contains no structured LoRA entries."
+
+                requested = os.environ.get("DTFLOW_LIVE_LORA", "").strip()
+                if requested:
+                    selected = next((entry for entry in local_loras if entry.identifier == requested), None)
+                    assert selected is not None, "DTFLOW_LIVE_LORA is not present in the local LoRA inventory."
+                else:
+                    selected = max(local_loras, key=lambda entry: len(entry.identifier))
+
+                lora_inventory = await resolve_lora_inventory(
+                    local,
+                    cloud,
+                    local_snapshot=local_inventory,
+                    cloud_snapshot=cloud_inventory,
+                    lookup_identifiers=(selected.identifier,),
+                )
+                lora_path = save_lora_inventory(
+                    live_run,
+                    lora_inventory,
+                    lookup_identifier=selected.identifier,
+                )
+                resolved = next(entry for entry in lora_inventory.entries if entry.identifier == selected.identifier)
+                assert resolved.dt_cloud.availability in {
+                    "listed_in_server_inventory",
+                    "byom_reusable",
+                }, (
+                    f"Selected LoRA is not currently reusable in DT+: "
+                    f"{resolved.identifier} -> {resolved.dt_cloud.availability}"
+                )
+                print(
+                    json.dumps(
+                        {
+                            "lora_inventory": str(lora_path),
+                            "dt_cloud_lookup_identifier": selected.identifier,
+                            "dt_cloud_availability": resolved.dt_cloud.availability,
+                        }
+                    )
+                )
+        finally:
+            await local.aclose()
 
 
 @pytest.mark.live_generation
