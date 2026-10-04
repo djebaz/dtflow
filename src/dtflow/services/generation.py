@@ -1,0 +1,244 @@
+"""One async application path from immutable request to durable output."""
+
+import asyncio
+from collections.abc import Callable
+from pathlib import Path
+from uuid import uuid4
+
+from dtflow.build import identity
+from dtflow.core.models import (
+    Backend,
+    BackendError,
+    BackendEvent,
+    BackendFailure,
+    CancellationEvidence,
+    ErrorCategory,
+    EventSink,
+    RemoteOutcome,
+    ResolvedGenerationRequest,
+    SavedGeneration,
+    SubmissionStage,
+    TimeoutPolicy,
+)
+from dtflow.core.storage import AttemptStore
+from dtflow.core.tasks import settle
+from dtflow.services.artifacts import save_artifacts, validate_result
+from dtflow.services.budget import BufferBudget
+from dtflow.services.events import EventBuffer
+
+
+class GenerationService:
+    """Own orchestration only; adapters, persistence and presentation are injected."""
+
+    def __init__(
+        self,
+        backend: Backend,
+        store: AttemptStore,
+        output: Path,
+        *,
+        timeouts: TimeoutPolicy | None = None,
+        saver: Callable = save_artifacts,
+        budget: BufferBudget | None = None,
+    ):
+        self.backend, self.store, self.output = backend, store, Path(output)
+        self.timeouts = timeouts or TimeoutPolicy()
+        self.saver = saver
+        self.budget = budget or BufferBudget(backend.capabilities.limits.buffer_budget)
+        # Serialize validation/saving while admitted backend requests may overlap.
+        self._buffers = asyncio.Semaphore(1)
+
+    async def _bounded(self, operation, deadline: float, phase: str):
+        try:
+            async with asyncio.timeout(deadline):
+                return await operation
+        except TimeoutError as exc:
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory.TIMEOUT,
+                    phase + "_deadline",
+                    "Backend operation deadline exceeded.",
+                    timeout_phase=phase,
+                )
+            ) from exc
+
+    async def check_connection(self):
+        return await self._bounded(
+            self.backend.check_connection(), self.timeouts.connect + self.timeouts.inventory, "connectivity"
+        )
+
+    async def get_inventory(self, refresh: bool = False):
+        return await self._bounded(self.backend.get_inventory(refresh=refresh), self.timeouts.inventory, "inventory")
+
+    async def generate(
+        self, request: ResolvedGenerationRequest, *, on_event: EventSink | None = None
+    ) -> SavedGeneration:
+        caps = self.backend.capabilities
+        if (
+            request.operation not in caps.operations
+            or request.sampler_id not in caps.samplers
+            or request.model_id not in caps.model_ids
+            or request.loras
+            or request.batch_size != caps.batch_size
+            or request.batch_count != caps.batch_count
+        ):
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory.VALIDATION,
+                    "unsupported_request",
+                    "Request is unsupported by the selected backend.",
+                    request.request_id,
+                )
+            )
+        raw_bytes = request.height_px * (1 + request.width_px * 4)
+        reservation = raw_bytes + 3 * caps.limits.artifact_bytes + caps.limits.preview_bytes
+        if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory.RESOURCE_LIMIT,
+                    "buffer_admission",
+                    "Request exceeds the buffer admission budget.",
+                    request.request_id,
+                )
+            )
+        reserved = False
+        attempt_id = uuid4().hex
+        await self.store.create(attempt_id, caps.backend_id, request)
+        stage = SubmissionStage.NOT_SUBMITTED
+        outcome = RemoteOutcome.NOT_STARTED
+        state = "prepared"
+        last_sequence = 0
+        events = EventBuffer(preview_bytes=caps.limits.preview_bytes)
+
+        def receive(event: BackendEvent) -> None:
+            nonlocal last_sequence
+            if event.request_id != request.request_id or event.sequence <= last_sequence:
+                raise ValueError("Backend event identity/order is invalid.")
+            last_sequence = event.sequence
+            if event.artifact and len(event.artifact.encoded) > caps.limits.artifact_bytes:
+                raise ValueError("Event artifact exceeds the limit.")
+            events(event)
+            if on_event is not None:
+                on_event(event)
+
+        try:
+            await self.budget.acquire(reservation)
+            reserved = True
+            await self.store.transition(
+                attempt_id,
+                ("prepared",),
+                "possibly_submitted",
+                SubmissionStage.POSSIBLY_SUBMITTED,
+                RemoteOutcome.UNKNOWN,
+            )
+            state, stage, outcome = "possibly_submitted", SubmissionStage.POSSIBLY_SUBMITTED, RemoteOutcome.UNKNOWN
+            async with asyncio.timeout(self.timeouts.total):
+                result = await self.backend.generate(request, on_event=receive)
+            stage = SubmissionStage.TERMINAL_OBSERVED
+            if result.backend_id != caps.backend_id:
+                raise ValueError("Result backend identity does not match.")
+            # Validation/encoding run in the bounded worker path, not the owning loop.
+            async with self._buffers:
+                await settle(asyncio.to_thread(validate_result, result, request, caps.limits))
+                outcome = RemoteOutcome.SUCCEEDED
+                await self.store.transition(attempt_id, ("possibly_submitted",), "saving", stage, outcome)
+                state = "saving"
+                paths, metadata = await settle(
+                    asyncio.to_thread(self.saver, self.output, attempt_id, request, result, identity(), caps.limits)
+                )
+            await self.store.transition(
+                attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
+            )
+            return SavedGeneration(attempt_id, paths, metadata, result)
+        except asyncio.CancelledError:
+            failure = BackendFailure(
+                ErrorCategory.CANCELLATION,
+                "local_cancelled",
+                "Local waiting stopped; no remote cancellation is confirmed.",
+                request.request_id,
+                stage,
+                outcome,
+                cancellation=CancellationEvidence(True, True, False, outcome == RemoteOutcome.UNKNOWN),
+            )
+            # A cancelled disk commit may have completed; inspect before the final transition.
+            current = (await self.store.inspect(attempt_id))[0]
+            if current["state"] not in ("succeeded", "failed", "cancelled", "unknown", "save_failed"):
+                recorded_stage = SubmissionStage(current["submission_stage"])
+                recorded_outcome = RemoteOutcome(current["remote_outcome"])
+                failure = BackendFailure(
+                    failure.category,
+                    failure.code,
+                    failure.message,
+                    request.request_id,
+                    recorded_stage,
+                    recorded_outcome,
+                    cancellation=CancellationEvidence(True, True, False, recorded_outcome == RemoteOutcome.UNKNOWN),
+                )
+                await self.store.transition(
+                    attempt_id,
+                    (current["state"],),
+                    "unknown"
+                    if recorded_outcome == RemoteOutcome.UNKNOWN
+                    else ("save_failed" if recorded_outcome == RemoteOutcome.SUCCEEDED else "cancelled"),
+                    recorded_stage,
+                    recorded_outcome,
+                    failure=failure,
+                )
+            raise
+        except BackendError as exc:
+            failure = exc.failure
+            await self.store.transition(
+                attempt_id,
+                (state,),
+                "unknown" if failure.remote_outcome == RemoteOutcome.UNKNOWN else "failed",
+                failure.submission_stage,
+                failure.remote_outcome,
+                failure=failure,
+            )
+            raise
+        except TimeoutError as exc:
+            failure = BackendFailure(
+                ErrorCategory.TIMEOUT,
+                "generation_deadline",
+                "Generation deadline exceeded.",
+                request.request_id,
+                stage,
+                outcome,
+                timeout_phase="generation_total",
+            )
+            await self.store.transition(
+                attempt_id,
+                (state,),
+                "save_failed" if outcome == RemoteOutcome.SUCCEEDED else "unknown",
+                stage,
+                outcome,
+                failure=failure,
+            )
+            raise BackendError(failure) from exc
+        except Exception as exc:
+            category = ErrorCategory.PERSISTENCE if state in ("saving", "prepared") else ErrorCategory.PROTOCOL
+            failure = BackendFailure(
+                category,
+                "output_or_protocol_failure",
+                "Output could not be validated or durably saved.",
+                request.request_id,
+                stage,
+                outcome,
+            )
+            # If the state store itself failed, leave the last durable marker for restart.
+            current = (await self.store.inspect(attempt_id))[0]
+            if current["state"] in ("prepared", "possibly_submitted", "saving"):
+                await self.store.transition(
+                    attempt_id,
+                    (current["state"],),
+                    "save_failed"
+                    if outcome == RemoteOutcome.SUCCEEDED
+                    else ("unknown" if outcome == RemoteOutcome.UNKNOWN else "failed"),
+                    stage,
+                    outcome,
+                    failure=failure,
+                )
+            raise BackendError(failure) from exc
+
+        finally:
+            if reserved:
+                await settle(self.budget.release(reservation))

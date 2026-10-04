@@ -4,6 +4,16 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Phase 2A async backend-neutral contracts and deterministic fake backend with lifecycle, connectivity, inventory,
+  typed failures and explicit fixture provenance; environment/fake-saved credential providers preserve precedence.
+- Minimal `dtflow` CLI for explicit fake generation, connectivity, inventory and attempt inspection through shared
+  services. Save validated fixture PNGs and reproducibility metadata before application success; preserve seed zero.
+- SQLite attempt schema, exclusive state ownership, runtime/schema rejection, backup and restart reconciliation
+  without replay. Failed or interrupted output saving preserves known backend success separately from local success.
+- Shared offline endpoint/network/subprocess guard, asyncio ownership and import-boundary checks, with focused fake,
+  persistence, cancellation, deadline, memory/event admission and headless process coverage. Real adapter/TLS/cloud
+  fixtures and packaged Windows acceptance remain future work; this introduces no release tag.
+
 - Phase 1 closeout criterion/evidence matrix with bounded feasibility acceptance, explicit recorded/user-reported/offline evidence and Phase 2 owners for remaining progress/error/cancellation gaps.
 - Offline probe checks for connection readiness, pre-release failure, interruption cleanup, empty outputs, malformed authentication responses, HTTP errors, connection-only flow and CLI validation.
 
@@ -48,6 +58,10 @@ Pending changes for the next DTFlow release.
 - Phase 2D investigation documents: a proposed `drawthings-py` GPL-3.0 licensing decision record with the locked runtime license table, a replacement-cost estimate, a Windows packaging checklist with an all-"Not run" findings table, a non-generative `tools/packaging/smoke.py` environment check, and a TanqueStudio feature inventory pinned to commit `6474f1e`. No application behavior, dependency or generation change; Windows results are recorded only from owner-run checks.
 
 ## Changed
+
+- Expand README with current development status, setup/validation, diagnostic help, repository layout, design requirements and dependency-distribution references. Distinguish planned application features from existing probe tooling.
+
+- Start Phase 2A maintenance: rename the diagnostic tool to tools/drawthings/drawthings_probe.py and relocate its existing checks to tests/unit/tools/ with explicit retirement scope. Preserve historical pinned URLs. Add pytest-asyncio through uv, remove pytest-qt from the default dev group until Qt arrives, and remove the now-unneeded plugin-disable configuration. No new probe tests were added; the following implementation commits add the core/fake application path.
 
 - Stabilize Phase 1 closeout wording and keep run-specific counts/patch versions/commit identity in the PR description. Plan probe retirement, pytest-asyncio/Qt dependency cleanup and explicit loop-before-guard ownership in the first 2A PR; specify per-instance TLS channels rather than mutation of the dependency's global context.
 

@@ -1,6 +1,6 @@
 # Backend contract and async execution
 
-**Status:** Implementation baseline for Phase 2; APIs below are specified, not shipped. Refine this baseline from the first thin working slice rather than adding speculative interfaces.  
+**Status:** Core contracts, fake backend and the minimal durable service/CLI slice are implemented in Phase 2A. Real-adapter transport, TLS and cloud behavior below remain specified for 2B/2C; fake evidence does not verify them.  
 **Scope:** Phase 2A core/fake, 2B local gRPC and 2C direct DT+; [Phase 2 plan](../plans/phase-2-backends.md), [cloud protocol](cloud-protocol.md), [LoRA scope](../plans/lora-assets.md).  
 **Decision basis:** drawthings-py 0.4.0 is async-native; preserve one service path for CLI and Qt.
 
@@ -97,7 +97,7 @@ SubmissionStage is a separate evidence field:
 
 No inspected generation job/status API resolves ambiguity. TERMINAL_OBSERVED alone is not confirmed success or a universal guarantee compute stopped. Carry terminal status when known and remote outcome separately (not_started / unknown / succeeded / failed / cancelled_confirmed); only promote an outcome when supported by evidence. Phase 3's durable potentially-executing mark precedes adapter dispatch; transport events cannot replace that write.
 
-BackendFailure contains category, stable code, sanitized message, request_id, submission_stage, remote_outcome, known terminal status, timeout phase if relevant, diagnostics and optional partial artifact evidence. Categories: validation, credentials, authentication, connectivity, timeout, remote_rejection, protocol, decoding, resource_limit and cancellation. Preserve provider status behind a sanitized diagnostic field, not provider exception types. Unknown refusal stays generic remote_rejection; no invented quota taxonomy. Never auto-retry generation from category alone.
+BackendFailure contains category, stable code, sanitized message, request_id, submission_stage, remote_outcome, known terminal status, timeout phase if relevant, diagnostics and optional partial artifact evidence. Categories: validation, credentials, authentication, connectivity, timeout, remote_rejection, protocol, decoding, resource_limit and cancellation. The application service adds persistence for state/output failures. Preserve provider status behind a sanitized diagnostic field, not provider exception types. Unknown refusal stays generic remote_rejection; no invented quota taxonomy. Never auto-retry generation from category alone.
 
 Cancellation evidence tracks requested, local_stopped, remote_confirmed and outcome_unknown explicitly. Cancelling an asyncio task closes its owned stream in a finally block, with bounded cleanup, then preserves CancelledError/control cancellation for the caller and publishes immutable outcome evidence through the service-owned attempt context. Do not swallow cancellation or return a success result. Shared channel cleanup must not cancel unrelated attempts. No separate server-cancel operation is promised.
 
@@ -133,3 +133,50 @@ On 4 October 2026, an isolated uv sync --locked of PR d8e28fa's pyproject/lock/p
 Use those bindings for the Phase 2B fixture server; no second generated schema or gRPC stack is required. Capture authorization/deadline metadata through grpclib events when the high-level service base does not expose the stream. Test the contract through actual adapters, including terminal-error preservation and no final output. Revisit this evidence on dependency updates.
 
 Sources: [0.4.0 builder](https://github.com/kcjerrell/drawthings-py/blob/v0.4.0/src/drawthings_py/request_builder.py), [client](https://github.com/kcjerrell/drawthings-py/blob/v0.4.0/src/drawthings_py/grpc/grpc_service.py), [configuration serializer](https://github.com/kcjerrell/drawthings-py/blob/v0.4.0/src/drawthings_py/configs/gen_config.py), [generated bindings](https://github.com/kcjerrell/drawthings-py/blob/v0.4.0/src/drawthings_py/generated/dt_grpc/image_service/__init__.py), [research](../research/dtflow-ecosystem-research-report.md).
+
+## Phase 2A implementation evidence and limits
+
+The source-run `dtflow` entry point owns one loop. `generate --backend fake` calls `GenerationService` with
+`FakeBackend` and an injected `AttemptStore`; the CLI composes `SQLiteAttempts`. Provider imports are absent from
+core/services and checked by AST tests. Requests use frozen slotted dataclasses; nested request/result metadata and
+artifact payloads reject mutable values. Inventory/preflight types define the future adapter boundary; no real LoRA
+compatibility rule or cloud upload is implemented here.
+
+The deterministic fixture swatch records every requested parameter and explicit seed zero. It does not exercise
+sampler algorithms or diffusion steps. Fake scenarios include pre-submission refusal, lost connection, empty output,
+terminal failure, controlled delay and concurrent calls. The empty scenario deliberately violates successful-output
+expectations to exercise defensive service validation. Fake events are explicitly fixture events. Authentication is
+not applicable; no credential is read by fake generation.
+
+Attempt schema version 1 has unique request identities and transactional state changes. The service commits
+`prepared` before admission and `possibly_submitted` before calling the backend. Terminal OK plus validated PNG moves
+an attempt to `saving`; only completed file/metadata writes and a final commit produce `succeeded`. Reopening an owned
+store reconciles `prepared` to `interrupted_before_submission`, `possibly_submitted` to `unknown`, and `saving` to
+`save_failed` while preserving known backend success. No path automatically submits these records again. The current
+`attempts` command inspects; retry, acknowledgement and queue controls belong to Phase 3.
+
+One OS advisory owner lock covers the state directory. SQLite uses its owned worker, WAL, FULL, foreign keys and a
+bounded busy timeout; backup uses the SQLite API. Unsupported schema/runtime versions fail without reset. Local
+filesystem placement is an operator requirement; UNC paths are rejected, but mounted network filesystems are not
+reliably detected. Windows process-crash, locking and file-durability acceptance still needs target-machine evidence.
+Individual files use same-directory replacement with file fsync and directory fsync where supported. Files and the
+database are not jointly atomic. Failed/interrupted saves retain the attempt directory as diagnostic evidence; they
+are never presented as application success or automatically promoted on restart.
+
+Admission reserves the requested RGBA-sized buffer plus three encoded-artifact allowances and a preview allowance
+against the shared service budget before backend submission. Codec validation and saving are serialized per service;
+callers composing multiple services must inject the same budget for aggregate admission. Returned results and external
+consumer retention are outside that budget; it is not an RSS guarantee. Event buffering coalesces transient updates
+and does not retain final artifact payloads. Backend-total deadlines exclude admission and durable saving. Already
+started worker operations finish before cancellation propagates; Python cannot kill a blocked worker, so the cleanup
+deadline does not bound disk/codec worker completion. Do not destroy their loop or release state ownership early.
+
+Phase 2A tests cover fake lifecycle/inventory, failure boundaries, PNG validation, bounded event/memory admission,
+owned-worker cancellation, fresh-process restart and CLI inspection without replay. The root test guard installs
+before collection, permits exact registered numeric IP/port fixtures, and guards DNS, socket and asyncio transport
+sends. Only explicitly registered Python children bootstrap that same guard. This is an accidental-call guard,
+not an OS sandbox. No gRPC/TLS server fixture or HTTP auth mock is claimed until 2B/2C.
+
+Build metadata currently reports the package version and explicitly unknown source revision/status, without runtime
+Git. Bundled revision generation, production logging, secure saved credentials and packaged per-user paths remain
+later milestones. Fake CLI progress goes to stderr and result/inspection JSON to stdout. No release tag is created.
