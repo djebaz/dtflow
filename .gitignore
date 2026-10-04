@@ -261,3 +261,6 @@ resources_rc.py
 *.pth
 *.onnx
 *.gguf
+
+# Retained live-test outputs, execution records and reports.
+/test-runs/

@@ -65,6 +65,10 @@ Expose a validated positive-integer cloud concurrency maximum in the CLI from th
 
 Qt exposes the same setting and uses a subtle color change above **2**, without a prominent warning or confirmation dialog.
 
+## Runtime paths
+
+Use the [shared runtime layout](../architecture/runtime-layout.md): backend-neutral outputs grouped by attempt, durable state separate from disposable cache, and flat `cache/inventory/local_<endpoint-id>.json` / `cloud_<endpoint-id>.json` names. When persistent inventory caching is introduced, use an integer `CACHE_VERSION` and rebuild missing/mismatched formats; do not confuse cache format with durable-state schema. Live evidence stays under `test-runs/<run-id>/`, outside the application root. Create optional directories on demand.
+
 ## Shared logging and development mode
 
 Implement the repository logging contract through one shared standard-library Python logging configuration. Use repository-root `logs/` for development and `%LOCALAPPDATA%\DTFlow\logs\` for packaged Windows builds; support an explicit destination override. Neither packaged path resolution nor logging setup may require Git or Qt.

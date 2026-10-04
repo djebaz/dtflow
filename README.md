@@ -61,14 +61,18 @@ and requires the checkout's development dependencies. Ordinary `uv run pytest` r
 ```powershell
 # DRAWTHINGS_API_KEY must already be set in your environment.
 uv run dtflow test -live
-Get-Content .dtflow/live-cloud/inventory.json
+$run = Get-ChildItem test-runs -Directory | Sort-Object Name -Descending | Select-Object -First 1
+Get-Content "$($run.FullName)\inventory\cloud_*.json"
 $env:DTFLOW_LIVE_MODEL = "exact-model-identifier-from-inventory"
 uv run dtflow test -gen
 uv run dtflow test -all -live -gen
 ```
 
 The model must support the stated txt2img workload; listing alone does not establish compatibility.
-Live outputs, metadata and durable attempts remain under `.dtflow/live-cloud/`, including failed/unknown attempts.
+Each invocation retains evidence under `test-runs/<run-id>/`: flat `inventory/local_<endpoint-id>.json` and
+`cloud_<endpoint-id>.json` snapshots, `state/attempts.sqlite3` when generating, `outputs/<attempt-id>/`, and one
+`results.json` with build identity and check outcomes. The run path is printed after testing. Inventory JSON includes
+`cache_version`; these snapshots are retained evidence, not application cache. Failed/unknown attempts remain recorded.
 Each explicit `-gen` run requests a new generation; unknown attempts are never automatically replayed.
 
 Run project tools through `uv run` so they use the project environment. The lockfile records resolved dependencies.
@@ -112,8 +116,9 @@ tools/        diagnostic and development tooling
 devdocs/      plans, research, architecture, decisions and release notes
 ```
 
-Repository conventions reserve ignored `.dtflow/` for local runtime state, `logs/` for diagnostics and `tmp/`
-for scratch outputs. Packaged per-user paths are planned separately.
+Repository conventions reserve ignored `.dtflow/` for application state/outputs, `test-runs/` for retained live-test
+evidence, `logs/` for diagnostics and `tmp/` for disposable scratch. See the
+[runtime layout](devdocs/architecture/runtime-layout.md) for current paths and planned cache/packaged paths.
 
 ## Documentation
 

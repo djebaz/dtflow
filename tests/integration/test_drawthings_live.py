@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 import pytest
+from support.live_evidence import save_inventory
 from support.network_guard import endpoint
 
 from dtflow.backends.drawthings import DrawThingsBackend, DrawThingsEndpoint, TlsPolicy
@@ -26,7 +27,7 @@ class Secret:
 
 @pytest.mark.live
 @pytest.mark.asyncio
-async def test_local_connection_and_inventory():
+async def test_local_connection_and_inventory(live_run):
     host, port = os.environ.get("DTFLOW_LIVE_HOST"), os.environ.get("DTFLOW_LIVE_PORT")
     if not host or not port:
         pytest.skip("DTFLOW_LIVE_HOST (an IP literal) and DTFLOW_LIVE_PORT are required.")
@@ -48,5 +49,7 @@ async def test_local_connection_and_inventory():
             status = await adapter.check_connection()
             assert status.transport == "ok", f"sanitized diagnostics: {status.diagnostics}"
             assert status.inventory == "ok", f"sanitized diagnostics: {status.diagnostics}"
+            inventory = await adapter.get_inventory(refresh=True)
+            save_inventory(live_run, "local", adapter.endpoint.label, inventory)
     finally:
         await adapter.aclose()

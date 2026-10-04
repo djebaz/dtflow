@@ -182,7 +182,7 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 - `pyproject.toml` is the canonical Python project/dependency configuration and `uv.lock` is tracked for reproducible development and builds.
 - Use `uv sync` for environment setup/synchronization and `uv run` for project commands and tools.
 - Do not maintain a parallel hand-edited `requirements.txt`; add an exported compatibility file only if a concrete external integration requires it.
-- Development runtime state lives under repository-root `.dtflow/`, which is ignored by Git.
+- Development application state and backend-neutral outputs live under ignored `.dtflow/`. Retained live-test evidence uses ignored `test-runs/<run-id>/`; offline tests use temporary directories. Follow [the runtime layout](../architecture/runtime-layout.md), including flat inventory names and an independent integer cache format version. Persistent application cache remains planned; no old-tree migration or fallback is required.
 - Development diagnostic logs live under repository-root `logs/`, already ignored; `tmp/` remains disposable scratch. Packaged Windows logs default to `%LOCALAPPDATA%\DTFlow\logs\`, with an explicit location override when implemented.
 - Packaged Windows builds use the platform-local application data location by default rather than writing beside the executable; an explicit DTFlow home override may be added for development/portable use.
 - Cache is disposable and must remain separate from durable application state. Cache storage should be split into type-specific subdirectories so categories can be measured and purged independently.

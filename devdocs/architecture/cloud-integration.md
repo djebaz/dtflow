@@ -1,8 +1,9 @@
 # Direct DT+ integration (Phase 2C)
 
 **Status:** implemented against HTTP mocks and the existing scripted TLS/gRPC fixture. The owner reports a passing
-Windows run of the first checkpoint, including the local live check. Final-head Windows and deployed DT+ adapter
-checks remain unverified. The earlier probe establishes feasibility; it is not a live run of this adapter.
+Windows offline suite and successful deployed token/inventory and bounded generation checks through this adapter,
+using `z_image_turbo_1.0_q6p.ckpt`. This is user-reported evidence for that workload, not broad model compatibility.
+The latest evidence-path changes still need a Windows repeat; production cancellation and charging/refunds remain unverified.
 See the [pinned protocol](cloud-protocol.md) and [Phase 2 plan](../plans/phase-2-backends.md).
 
 ## Implementation and probe reuse
@@ -30,6 +31,8 @@ one lane. This is client support and a product cap, not a server entitlement or 
 Only discovered model IDs are admitted. Scope remains txt2img, batch 1/1, the two existing samplers, no LoRA or uploads.
 CLI generation backend selection remains Phase 3A. The test runner adds an optional DT+ token/inventory check
 under `-live` and one complete, bounded DT+ service generation under `-gen`; these are skipped by default.
+Both use the [shared live-run layout](runtime-layout.md), outside `.dtflow/`, with versioned inventory snapshots
+and one credential-free summary. The local live check uses the same run root.
 
 ## Cancellation, ownership and limits
 

@@ -3,11 +3,11 @@
 import json
 import os
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from support.live_evidence import save_inventory
 from support.network_guard import live_endpoints
 
 from dtflow.backends.drawthings.cloud import DirectCloudBackend
@@ -34,20 +34,18 @@ async def deployed_cloud():
 
 @pytest.mark.live
 @pytest.mark.asyncio
-async def test_cloud_token_connection_and_model_inventory():
+async def test_cloud_token_connection_and_model_inventory(live_run):
     async with deployed_cloud() as adapter:
         status = await adapter.check_connection()
         assert (status.transport, status.authentication, status.inventory) == ("ok", "ok", "ok"), status.diagnostics
         inventory = await adapter.get_inventory(refresh=True)
         assert inventory.backend_id == "drawthings-cloud"
-        target = Path(".dtflow/live-cloud/inventory.json")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(asdict(inventory), indent=2), encoding="utf-8")
+        save_inventory(live_run, "cloud", adapter.endpoint.label, inventory)
 
 
 @pytest.mark.live_generation
 @pytest.mark.asyncio
-async def test_cloud_authorized_generation_and_saved_result():
+async def test_cloud_authorized_generation_and_saved_result(live_run):
     model = os.environ.get("DTFLOW_LIVE_MODEL", "").strip()
     if not model:
         pytest.fail("Set DTFLOW_LIVE_MODEL to an exact discovered model identifier before generation.", pytrace=False)
@@ -62,13 +60,14 @@ async def test_cloud_authorized_generation_and_saved_result():
         steps=4,
         guidance=1.0,
     )
-    state = Path(".dtflow/live-cloud")
+    state = live_run / "state"
     store = SQLiteAttempts(state)
     await store.open()
     try:
         async with deployed_cloud() as adapter:
-            service = GenerationService(adapter, store, state / "outputs", timeouts=adapter.timeouts)
-            await service.get_inventory(refresh=True)
+            service = GenerationService(adapter, store, live_run / "outputs", timeouts=adapter.timeouts)
+            inventory = await service.get_inventory(refresh=True)
+            save_inventory(live_run, "cloud", adapter.endpoint.label, inventory)
             saved = await service.generate(request)
             assert saved.backend_result.completion.terminal_status == "OK"
             assert saved.backend_result.completion.required_outputs_valid

@@ -1,9 +1,12 @@
 """Shared guard initialization precedes test collection and async client imports."""
 
 import asyncio
+import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -86,3 +89,41 @@ def guarded_python():
             return subprocess.run(command, text=True, capture_output=True, env=env, timeout=timeout)
 
     return run
+
+
+@pytest.fixture(scope="session")
+def live_run(request):
+    """Retain one isolated evidence directory per explicitly executed live-test invocation."""
+    from dtflow.build import identity
+
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
+    root = Path(__file__).resolve().parents[1] / "test-runs" / run_id
+    root.mkdir(parents=True)
+    request.config._dtflow_live_root = root
+    request.config._dtflow_live_reports = []
+    request.config._dtflow_live_build = identity()
+    return root
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    result = yield
+    report = result.get_result()
+    if hasattr(item.config, "_dtflow_live_reports") and (
+        item.get_closest_marker("live") or item.get_closest_marker("live_generation")
+    ):
+        item.config._dtflow_live_reports.append(
+            {"test": report.nodeid, "phase": report.when, "outcome": report.outcome, "seconds": report.duration}
+        )
+
+
+def pytest_terminal_summary(terminalreporter):
+    root = getattr(terminalreporter.config, "_dtflow_live_root", None)
+    if root is not None:
+        evidence = {
+            "run_id": root.name,
+            "build": terminalreporter.config._dtflow_live_build,
+            "checks": terminalreporter.config._dtflow_live_reports,
+        }
+        (root / "results.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+        terminalreporter.write_line(f"Live-test evidence: {root}")
