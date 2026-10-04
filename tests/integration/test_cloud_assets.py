@@ -254,7 +254,8 @@ async def test_unresolved_intent_survives_restart_as_unknown_and_unknown_is_neve
 
 @pytest.mark.asyncio
 async def test_file_changed_during_upload_is_unknown_and_records_no_receipt(tmp_path):
-    cloud, file = DtPlus(), lora_file(tmp_path)
+    # Larger than any read-ahead buffer (Windows buffers 8 KiB), so the tail is genuinely unread at the first chunk.
+    cloud, file = DtPlus(), lora_file(tmp_path, data=bytes(range(256)) * 512)
 
     async def mutate():
         with file.open("r+b") as handle:
