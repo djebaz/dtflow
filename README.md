@@ -80,11 +80,14 @@ The current compatibility path pins NumPy 2.3.5 for the tested legacy Windows ma
 [recorded dependency findings](devdocs/research/drawthings-grpc-proof.md#observed-compatibility-evidence).
 Source execution does not establish packaged Windows compatibility.
 
-The diagnostic probe's help is available without submitting generation:
+The diagnostic probes' help is available without submitting generation:
 
 ```sh
 uv run python tools/drawthings/drawthings_probe.py --help
+uv run python tools/drawthings/grpc_capabilities_probe.py --help
 ```
+
+The gRPC capability probe is read-only/non-generative: it calls only Echo, FilesExist, Pubkey, and Hours and can save a sanitized JSON report. GenerateImage and UploadFile are deliberately excluded.
 
 Diagnostic tools can contact a real Draw Things server or direct DT+ Cloud Compute and submit potentially billable
 generation, including through Bridge mode. Read `--help` and select the intended operation deliberately.
