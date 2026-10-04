@@ -1,6 +1,6 @@
 # Phase 3 — Headless CLI and shared application services
 
-**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B's durable queue and rolling dispatch half is implemented and offline-validated (see [implemented queue scope](#phase-3b-queue-half-implemented-scope-and-limits)); cloud asset upload/reuse is still planned.  
+**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B's durable queue and rolling dispatch half is implemented and offline-validated (see [implemented queue scope](#phase-3b-queue-half-implemented-scope-and-limits)); cloud asset upload/reuse is still planned in the [detailed Phase 3B completion plan](2026-10-04-phase-3b-cloud-assets.md).
 **Prerequisite:** [Phase 2 backends and offline tests](phase-2-backends.md).  
 **Roadmap:** [initial plan](initial.md).
 

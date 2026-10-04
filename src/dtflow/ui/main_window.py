@@ -4,7 +4,17 @@ from pathlib import Path
 
 from PySide6.QtCore import QFile, QIODevice
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QMainWindow, QMessageBox
+from PySide6.QtWidgets import (
+    QAbstractButton,
+    QAbstractItemView,
+    QAbstractSpinBox,
+    QComboBox,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QWidget,
+)
 
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
@@ -15,20 +25,39 @@ from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailab
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
 
-UI_FILE = Path(__file__).with_name("forms") / "main_window.ui"
+FORMS_DIR = Path(__file__).with_name("forms")
+UI_FILE = FORMS_DIR / "main_window.ui"
+GENERATION_UI_FILE = FORMS_DIR / "generation_page.ui"
+QUEUE_UI_FILE = FORMS_DIR / "queue_page.ui"
+PREVIEW_CONTROL_TYPES = (
+    QAbstractButton,
+    QAbstractSpinBox,
+    QComboBox,
+    QLineEdit,
+    QPlainTextEdit,
+    QAbstractItemView,
+)
+
+
+def load_ui(path: Path) -> QWidget:
+    """Load a canonical Designer form without committing generated Python."""
+    file = QFile(str(path))
+    if not file.open(QIODevice.OpenModeFlag.ReadOnly):
+        raise OSError(f"{path.name} could not be opened.")
+    try:
+        widget = QUiLoader().load(file)
+    finally:
+        file.close()
+    if widget is None:
+        raise OSError(f"{path.name} could not be loaded.")
+    return widget
 
 
 def load_form() -> QMainWindow:
-    """Load the canonical Designer file; no generated Python is committed."""
-    file = QFile(str(UI_FILE))
-    if not file.open(QIODevice.OpenModeFlag.ReadOnly):
-        raise OSError("main_window.ui could not be opened.")
-    try:
-        window = QUiLoader().load(file)
-    finally:
-        file.close()
-    if window is None:
-        raise OSError("main_window.ui could not be loaded.")
+    """Load the canonical main-window form."""
+    window = load_ui(UI_FILE)
+    if not isinstance(window, QMainWindow):
+        raise TypeError("main_window.ui must define a QMainWindow.")
     return window
 
 
@@ -37,6 +66,13 @@ class MainWindow:
 
     def __init__(self, *, saved: SavedCredentials | None = None, runner: AsyncRunner | None = None, environ=None):
         self.form = load_form()
+        self.generation_page = load_ui(GENERATION_UI_FILE)
+        self.queue_page = load_ui(QUEUE_UI_FILE)
+        self._disable_preview_controls(self.generation_page)
+        self._disable_preview_controls(self.queue_page)
+        self.form.workspaceStack.addWidget(self.generation_page)
+        self.form.workspaceStack.addWidget(self.queue_page)
+
         self._saved = saved or SavedCredentials()
         self._environ = environ
         self.runner = runner or AsyncRunner(self.form)
@@ -49,8 +85,21 @@ class MainWindow:
         form.removeKeyButton.clicked.connect(self.remove_key)
         form.aboutAction.triggered.connect(self.about)
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
+        form.connectionNavigationButton.clicked.connect(
+            lambda: form.workspaceStack.setCurrentWidget(form.connectionPage)
+        )
+        form.generationNavigationButton.clicked.connect(
+            lambda: form.workspaceStack.setCurrentWidget(self.generation_page)
+        )
+        form.queueNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.queue_page))
         self._backend_changed(form.backendCombo.currentText())
         self.refresh_credentials()
+
+    @staticmethod
+    def _disable_preview_controls(page: QWidget) -> None:
+        for control_type in PREVIEW_CONTROL_TYPES:
+            for control in page.findChildren(control_type):
+                control.setEnabled(False)
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
