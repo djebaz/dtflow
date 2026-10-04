@@ -148,6 +148,7 @@ async def test_unreachable_and_silent_servers_fail_within_the_connect_deadline()
         assert detail["transport_code"] in UNREACHABLE_CODES
         # Live checks warn and skip only for refusal or deadline; other network errors stay failures.
         assert unreachable_reason(detail["transport_code"], detail.get("transport_kind"), "host:1") is not None
+        assert "API server" in unreachable_reason("connect_failed", "ConnectionResetError", "host:1")
         assert unreachable_reason("connect_failed", "OSError", "host:1") is None
         await adapter.aclose()
     async with black_hole() as (host, port):
