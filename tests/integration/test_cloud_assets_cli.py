@@ -22,8 +22,9 @@ from dtflow.services.queue import QueueDispatcher
 @pytest.fixture
 def cloud(monkeypatch):
     fixture = DtPlus()
-    monkeypatch.setattr(cli, "create_backend", lambda *args, **kwargs: fixture.backend())  # queue start
-    monkeypatch.setattr(session, "create_backend", lambda *args, **kwargs: fixture.backend())  # assets and generation
+    monkeypatch.setattr(
+        session, "create_backend", lambda *args, **kwargs: fixture.backend()
+    )  # assets, generation and queue dispatch
     return fixture
 
 
