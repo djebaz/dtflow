@@ -20,8 +20,16 @@ sys.modules[spec.name] = probe
 spec.loader.exec_module(probe)
 
 
+@pytest.fixture
+def run_async():
+    # Windows creates its private wakeup socket pair while initializing the loop.
+    # Allocate it before the network guard; scenarios run under the guard.
+    with asyncio.Runner() as runner:
+        yield runner.run
+
+
 @pytest.fixture(autouse=True)
-def refuse_network(monkeypatch):
+def refuse_network(monkeypatch, run_async):
     def blocked(*args, **kwargs):
         raise AssertionError("Phase 1 unit checks must not connect to a network")
 
@@ -63,7 +71,7 @@ class Service:
         )
 
 
-def test_group_waits_for_every_connection(monkeypatch, tmp_path):
+def test_group_waits_for_every_connection(monkeypatch, tmp_path, run_async):
     async def scenario():
         entered, closed, generated = set(), set(), []
         slow = asyncio.Event()
@@ -85,10 +93,10 @@ def test_group_waits_for_every_connection(monkeypatch, tmp_path):
         assert closed == {0, 1}
         assert all(result.error is None for result in results)
 
-    asyncio.run(scenario())
+    run_async(scenario())
 
 
-def test_connection_failure_prevents_group_submission(monkeypatch, tmp_path):
+def test_connection_failure_prevents_group_submission(monkeypatch, tmp_path, run_async):
     async def scenario():
         entered, closed, generated = set(), set(), []
         count = iter(range(2))
@@ -99,11 +107,11 @@ def test_connection_failure_prevents_group_submission(monkeypatch, tmp_path):
             await asyncio.wait_for(probe.run_concurrent(args(tmp_path), None), 1)
         assert generated == []
 
-    asyncio.run(scenario())
+    run_async(scenario())
 
 
 @pytest.mark.parametrize("before_release", [True, False])
-def test_interruption_closes_connected_jobs(monkeypatch, tmp_path, before_release):
+def test_interruption_closes_connected_jobs(monkeypatch, tmp_path, before_release, run_async):
     async def scenario():
         entered, closed, generated = set(), set(), []
         never_ready = asyncio.Event()
@@ -130,10 +138,10 @@ def test_interruption_closes_connected_jobs(monkeypatch, tmp_path, before_releas
             await group
         assert closed == entered
 
-    asyncio.run(scenario())
+    run_async(scenario())
 
 
-def test_empty_output_is_failure(monkeypatch, tmp_path):
+def test_empty_output_is_failure(monkeypatch, tmp_path, run_async):
     async def scenario():
         monkeypatch.setattr(probe, "create_service", lambda *unused: Service(0, set(), set(), [], images=[]))
         result = await probe.run_job(
@@ -149,7 +157,7 @@ def test_empty_output_is_failure(monkeypatch, tmp_path):
         assert "no images" in result.error
         assert list(tmp_path.iterdir()) == []
 
-    asyncio.run(scenario())
+    run_async(scenario())
 
 
 @pytest.mark.parametrize("raw", [b"not json", b"[]"])
@@ -169,7 +177,7 @@ def test_http_failure_excludes_response_body(monkeypatch):
     assert "private-token" not in str(exc.value)
 
 
-def test_connection_only_never_generates(monkeypatch):
+def test_connection_only_never_generates(monkeypatch, run_async):
     async def scenario():
         calls = []
 
@@ -181,7 +189,7 @@ def test_connection_only_never_generates(monkeypatch):
         assert result == 0
         assert calls == ["connection"]
 
-    asyncio.run(scenario())
+    run_async(scenario())
 
 
 def test_cli_validation_and_legacy_aliases():
@@ -191,3 +199,13 @@ def test_cli_validation_and_legacy_aliases():
         probe.parse_args(["--cloud", "--host", "fixture"])
     with pytest.raises(SystemExit):
         probe.parse_args(["--host", "fixture", "--jobs", "9"])
+
+
+def test_guard_still_blocks_loopback_and_dns():
+    with socket.socket() as client:
+        with pytest.raises(AssertionError, match="must not connect"):
+            client.connect(("127.0.0.1", 7859))
+        with pytest.raises(AssertionError, match="must not connect"):
+            client.connect_ex(("127.0.0.1", 7859))
+    with pytest.raises(AssertionError, match="must not connect"):
+        socket.getaddrinfo("fixture.invalid", 443)

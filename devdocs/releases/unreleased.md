@@ -5,7 +5,7 @@ Pending changes for the next DTFlow release.
 ## Added
 
 - Phase 1 closeout criterion/evidence matrix with bounded feasibility acceptance, explicit recorded/user-reported/offline evidence and Phase 2 owners for remaining progress/error/cancellation gaps.
-- Ten offline probe checks for connection readiness, pre-release failure, interruption cleanup, empty outputs, malformed authentication responses, HTTP errors, connection-only flow and CLI validation.
+- Eleven offline probe checks for connection readiness, pre-release failure, interruption cleanup, empty outputs, malformed authentication responses, HTTP errors, connection-only flow and CLI validation.
 
 - Phase 2A implementation handoff: build a thin headless fake-generation/service/SQLite-attempt/saved-PNG path in a separate implementation PR, enforce import boundaries and refine the existing specs from working code.
 - Planned standard-library SQLite execution store, WAL/FULL durability policy, patched-runtime check, file/database reconciliation and versioned schemas; frozen slotted dataclasses/Protocols avoid a new compiled validation stack. No runtime implementation or dependency change is introduced.
@@ -93,6 +93,8 @@ Pending changes for the next DTFlow release.
 - Reframe the DT+ roadmap around hardening the already-proven native Python direct-cloud path into a production backend. MediaGenerationKit remains a protocol/reference implementation, with a Swift bridge reserved as a fallback for future capabilities that cannot be reproduced reliably in Python.
 
 ## Fixed
+
+- Initialize the test asyncio runner before installing the socket/DNS guard, allowing Windows' private event-loop wakeup socket without allowing test scenarios to dial loopback. Record the supplied Windows failure and require a corrected Windows rerun.
 
 - Make concurrent probe release wait for all actual connections; a failed connection aborts before group submission and interruption cancels/awaits outstanding jobs. Correct the historical timing caveat without altering recorded measurements.
 - Disable automatic pytest-qt plugin loading until the Qt runtime is introduced, so headless uv run pytest works with the current dependency set; re-enable during Qt implementation.

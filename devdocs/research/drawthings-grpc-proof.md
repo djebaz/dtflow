@@ -61,10 +61,12 @@ Headless pytest startup previously failed because the declared pytest-qt plugin 
 
 Verification on Linux CPython 3.13.15 in a reconstructed checkout using the repository's locked project inputs:
 
-- uv run pytest: 10 offline checks passed.
+- Initial uv run pytest: 10 offline checks passed on Linux; after the Windows test-guard correction, 11 passed on Linux.
 - uv run ruff check . and uv run ruff format --check .: passed.
 - Probe --help: executed successfully without network or generation.
 - Markdown relative targets, LF/final newlines and paired fences: checked before publishing.
+
+The supplied Windows run (Python 3.13.13) reported six failures and four passes: the guard blocked asyncio's internal loopback wakeup socket during event-loop construction. The subsequent _ssock/unawaited-coroutine warnings followed failed initialization. Tests now create an asyncio.Runner/event loop before installing the guard and execute scenarios through that runner under the guard. An additional check proves test code still cannot dial loopback or resolve DNS; no blanket loopback exception or production event-loop-policy change is introduced. A fresh Windows rerun of this correction is still required before claiming Windows acceptance.
 
 Checks replace services/HTTP responses and refuse socket connections/DNS in test execution. They do not run an actual gRPC fixture server or validate production cancellation, detailed progress, Windows packaging or quotas. Phase 2's full external-network guard remains a separate deliverable. No training, inference, checkpoint download or potentially billable request was performed; GitHub requests read/publish this PR.
 
