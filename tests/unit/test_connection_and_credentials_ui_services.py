@@ -25,7 +25,14 @@ async def test_saved_key_round_trip_precedence_status_and_no_plaintext_fallback(
     saved.remove()
     saved.remove()  # idempotent
     assert await saved.get() is None
-    # Without an injected vault, a non-Windows-Credential-Manager keyring is refused, never used as plaintext storage.
+
+
+def test_non_windows_vault_keyring_is_refused_never_used_as_plaintext_storage(monkeypatch):
+    """Platform independent: the active keyring is replaced, so no platform query or real vault is touched."""
+    import keyring
+    from keyring.backends.fail import Keyring as FailKeyring
+
+    monkeypatch.setattr(keyring, "get_keyring", lambda: FailKeyring())
     assert SavedCredentials().available() is False
     with pytest.raises(SecureStorageUnavailable):
         SavedCredentials().save("x")

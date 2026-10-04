@@ -16,13 +16,25 @@ class AsyncRunner(QObject):
         super().__init__(parent)
         self._loop = asyncio.new_event_loop()
         self._pending: set = set()
+        self._coroutines: list = []
+        self._stop = asyncio.Event()
+        self._closed = False
         self._thread = threading.Thread(target=self._serve, name="dtflow-qt-async", daemon=True)
         self._done.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
         self._thread.start()
 
     def _serve(self) -> None:
         asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
+        self._loop.run_until_complete(self._main())
+
+    async def _main(self) -> None:
+        # A stop requested before this loop starts is already set, so shutdown can never be lost.
+        await self._stop.wait()
+        current = asyncio.current_task()
+        tasks = [task for task in asyncio.all_tasks() if task is not current]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     @staticmethod
     def _deliver(callback, result, exception) -> None:
@@ -30,6 +42,11 @@ class AsyncRunner(QObject):
 
     def submit(self, coroutine: Coroutine, callback: Callable[[object, Exception | None], None]):
         """Run ``coroutine`` in the background; ``callback(result, exception)`` runs on the GUI thread."""
+
+        if self._closed:
+            coroutine.close()
+            raise RuntimeError("AsyncRunner is shut down.")
+        self._coroutines.append(coroutine)
 
         async def wrapper():
             try:
@@ -44,11 +61,13 @@ class AsyncRunner(QObject):
         return future
 
     def shutdown(self, timeout: float = 5.0) -> None:
-        """Cancel outstanding work, stop the loop and join its thread."""
-        for future in tuple(self._pending):
-            future.cancel()
-        if self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
+        """Cancel outstanding work, stop the loop and join its thread; safe at any time and idempotent."""
+        self._closed = True
+        if self._loop.is_closed():
+            return
+        self._loop.call_soon_threadsafe(self._stop.set)
         self._thread.join(timeout)
         if not self._thread.is_alive():
+            for coroutine in self._coroutines:
+                coroutine.close()  # a coroutine cancelled before it ever started is closed, not leaked
             self._loop.close()

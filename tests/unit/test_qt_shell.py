@@ -36,6 +36,26 @@ def test_lifecycle_from_designer_file_and_clean_shutdown(window):
     assert not window.runner._thread.is_alive()
 
 
+def test_shutdown_before_the_loop_starts_is_not_lost(qtbot):
+    import warnings
+
+    async def never():
+        await asyncio.sleep(60)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # "coroutine was never awaited" would fail here
+        for _ in range(20):
+            runner = AsyncRunner()
+            coroutine = never()
+            runner.submit(coroutine, lambda result, failure: None)
+            runner.shutdown()  # immediately, possibly before the worker loop is running
+            assert not runner._thread.is_alive()
+            assert coroutine.cr_frame is None  # closed or finished, never left pending
+            runner.shutdown()  # idempotent
+            with pytest.raises(RuntimeError):
+                runner.submit(never(), lambda result, failure: None)
+
+
 def test_background_work_leaves_event_loop_responsive_and_returns_on_gui_thread(qtbot):
     runner = AsyncRunner()
     results = []
