@@ -56,7 +56,8 @@ def test_headless_cli_success_unknown_and_inspection(tmp_path, guarded_python):
     environment = dict(os.environ, DRAWTHINGS_API_KEY="private-sentinel")
 
     def command(*args):
-        return guarded_python(f"from dtflow.cli import main; raise SystemExit(main({list(args)!r}))", env=environment)
+        argv = ["-q", str(tmp_path / "logs"), *args]
+        return guarded_python(f"from dtflow.cli import main; raise SystemExit(main({argv!r}))", env=environment)
 
     help_result = command("--help")
     assert help_result.returncode == 0 and "generate" in help_result.stdout

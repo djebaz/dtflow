@@ -43,7 +43,8 @@ inventory snapshots are saved. Create optional folders only on demand:
 | `.dtflow/cache/inventory/lora_inventory.json` | Derived local-gRPC + DT+ LoRA availability cache; rebuildable from live evidence |
 | `.dtflow/cache/thumbnails/<artifact-id>.webp` | Regenerable thumbnail |
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
-| `logs/dtflow.log` | Rotating application diagnostics when shared logging is implemented |
+| `logs/dtflow-<session>.log` | Rotating application diagnostics, one file set per process; the newest 20 sessions are kept |
+| `.dtflow/settings.json` | Versioned, credential-free shared settings (currently the cloud concurrency maximum); durable, not cache |
 | `logs/tests/<run-id>.log` | Optional live-run diagnostics when implemented |
 | `tmp/<operation-id>/` | Disposable operation scratch; no predetermined backend categories |
 

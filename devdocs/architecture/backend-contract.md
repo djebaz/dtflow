@@ -52,7 +52,7 @@ ConnectionStatus contains backend_id, endpoint identity without credentials, che
 
 InventorySnapshot contains backend_id, server identity when exposed, observed_at_utc, refreshed flag, entries and diagnostics. Entries retain exact identifier, kind (model / lora / control / other / unknown), display name, architecture string or unknown, availability evidence and metadata source/revision. Preserve unknown future architecture strings. Raw file entries need no fabricated family/kind. No public cloud asset list is implied; see the LoRA plan.
 
-Capabilities describe supported operations, supported sampler IDs, client/output limits and model-combination evidence separately. A transport accepting a field does not establish model compatibility. Phase 2 defines preflight types and metadata; bounded LoRA application is Phase 3A and cloud upload/reuse Phase 3B.
+Capabilities describe supported operations, supported sampler IDs, client/output limits and model-combination evidence separately. A transport accepting a field does not establish model compatibility. Phase 2 defines preflight types and metadata; bounded LoRA selection is implemented in Phase 3A (offline-verified wire mapping, application unconfirmed) and cloud upload/reuse is Phase 3B.
 
 ## Immutable resolved request
 

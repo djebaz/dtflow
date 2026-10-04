@@ -25,7 +25,6 @@ from dtflow.core.models import (
     BackendError,
     Designation,
     ErrorCategory,
-    LoRASelection,
     RemoteOutcome,
     ResolvedGenerationRequest,
     ResourceLimits,
@@ -177,7 +176,7 @@ async def test_unknown_model_is_rejected_before_any_network_use():
     failure, events, seen = await run((Image(GOOD),), request=make_request(model_id="missing.ckpt"))
     assert failure.code == "unknown_model" and failure.remote_outcome == RemoteOutcome.NOT_STARTED
     assert events == [] and seen.generate_requests == []
-    for request in (make_request(batch_size=2), make_request(loras=(LoRASelection("unsupported.ckpt", 1.0),))):
+    for request in (make_request(batch_size=2),):
         invalid, events, seen = await run((Image(GOOD),), request=request)
         assert invalid.category == ErrorCategory.VALIDATION
         assert invalid.submission_stage == SubmissionStage.NOT_SUBMITTED

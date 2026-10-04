@@ -34,7 +34,7 @@ Only discovered model IDs are admitted. Generation scope remains txt2img, batch 
 Separate metadata-only LoRA availability enrichment uses local `FilesExist` identities and DT+ BYOM lookup. It
 validates returned checksum/entry structure and retains source observation times/freshness separately from resolution
 time in `lora_inventory.json`. Fresh negative file-existence evidence overrides older Echo availability.
-CLI generation backend selection remains Phase 3A. The test runner adds an optional DT+ token/inventory check
+CLI generation backend selection is implemented in Phase 3A (`dtflow generate -b cloud`; offline-validated only). The test runner adds an optional DT+ token/inventory check
 under `-live` and one complete, bounded DT+ service generation under `-gen`; these are skipped by default.
 Both use the [shared live-run layout](runtime-layout.md), outside `.dtflow/`, with versioned inventory snapshots
 and one credential-free summary. The local live check uses the same run root.

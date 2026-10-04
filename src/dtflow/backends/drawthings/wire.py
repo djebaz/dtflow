@@ -23,6 +23,8 @@ SAMPLER_WIRE_VALUE = {"EulerA": 1, "DPMPP2MKarras": 0}
 # Text-to-image runs at full strength in every drawthings-py preset; the library default is 0.0.
 TXT2IMG_STRENGTH = 1.0
 CLIENT_NAME = "dtflow"
+# Every selected LoRA applies to the whole base model; refiner/modifier-only modes are not part of 3A.
+LORA_MODE = "All"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +45,6 @@ def validate_supported(request: ResolvedGenerationRequest) -> None:
     """Reject anything outside the verified txt2img scope before any serialization."""
     if request.operation != "txt2img":
         raise _reject(request, "unsupported_operation", "Only text-to-image is supported.")
-    if request.loras:
-        raise _reject(request, "unsupported_lora", "LoRA selection is not supported by this adapter yet.")
     if (request.batch_size, request.batch_count) != (1, 1):
         raise _reject(request, "unsupported_batch", "Only a single output per request is supported.")
     if request.sampler_id not in SAMPLER_NAME:
@@ -65,6 +65,8 @@ def build_generation_message(request: ResolvedGenerationRequest, shared_secret: 
         batch_size=1,
         batch_count=1,
     )
+    for selection in request.loras:
+        config.add_lora(selection.identifier, selection.weight, LORA_MODE)
     configuration = config.to_fbs(request.seed)
     effective = verify_wire_configuration(request, configuration)
     message = image_service.ImageGenerationRequest(
@@ -94,6 +96,10 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
         "batch_count": 1,
     }
     mismatches = [key for key, value in expected.items() if decoded.get(key) != value]
+    sent = [(item.get("file"), item.get("weight"), item.get("mode")) for item in decoded.get("loras") or []]
+    wanted = [(item.identifier, float32(item.weight), LORA_MODE) for item in request.loras]
+    if [(f, w, m) for f, w, m in sent] != wanted:
+        mismatches.append("loras")
     if float32(request.guidance) != decoded.get("guidance"):
         mismatches.append("guidance")
     if raw.Sampler() != SAMPLER_WIRE_VALUE[SAMPLER_NAME[request.sampler_id]]:
@@ -107,5 +113,6 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
         )
     pairs = {key: str(value) for key, value in decoded.items() if value is not None}
     pairs["sampler_wire_value"] = str(raw.Sampler())
+    pairs["loras"] = ",".join(f"{item.identifier}@{item.weight}" for item in request.loras)
     pairs["config_source"] = "drawthings-py " + version("drawthings-py")
     return tuple(sorted(pairs.items()))
