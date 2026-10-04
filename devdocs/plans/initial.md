@@ -315,7 +315,7 @@ Connect the desktop UI to the generation services already exercised by the headl
 
 The detailed, PR-sequenced plan is [Phase 5A desktop generation wiring](2026-10-04-phase-5a-desktop-generation.md); its first step extracts the CLI's orchestration into a Qt-independent session service.
 
-**Implementation status:** PR 1 is implemented and offline-validated (5A-O1, O2, O4 and O6; no live desktop run): shared `services/session.py`, a wired Generate page for plain single generations, inventory refresh, and configuration save/load. LoRA selection and cloud asset actions (5A-O3, O5) remain PR 2.
+**Implementation status:** PR 1 and PR 2 are implemented and offline-validated in one pull request (5A-O1 to O6; no live desktop run): shared `services/session.py`, a wired Generate page with inventory refresh, configuration save/load, LoRA selection with preflight diagnostics and cloud asset actions. The phase gate (Windows visual review, live `5-LG1`/`5-LG2`, `3-LG4`) remains open.
 
 Expose the generation form, actual progress, outputs/errors, bounded LoRA selection/weights, compatibility diagnostics and cloud upload/known-receipt reuse through existing shared services. Save/load credential-free generation configurations through the versioned shared contract from Phase 3A; the full preset browser remains Phase 8.
 

@@ -12,7 +12,7 @@ Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures an
 complete generation smoke checks. The owner reports deployed token/inventory and one bounded generation passed at an
 earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`. This covers that workload only; final-head Windows validation,
 broad model/LoRA compatibility, production cancellation latency, charging/refunds and a Windows stamped release build remain unverified (`tools/packaging/build_exe.py` now stamps the commit; a frozen one-file CLI has run on the target machine; see the [packaging findings](devdocs/research/windows-packaging.md)). Phase 3A exposes those adapters through the source-run CLI (offline-validated; the owner reports one successful local
-and one successful DT+ plain generation through it, plus one local LoRA generation after a first attempt interrupted by an iOS app freeze). Phase 3B adds durable queues with rolling dispatch to the source-run CLI (offline-validated only; no live queue run yet); the cloud half adds explicit `dtflow assets prepare|list|show|reconcile` with durable receipts and prepared references for generation and queues (offline-validated only; no live upload has run, `3-LG4` is pending). The Phase 4 Qt connection shell is implemented, and the Phase 5A Generate page is wired for single generations (offline-validated; no live desktop run yet) while LoRA/asset controls and queue controls remain disabled previews. See the [implementation plan](devdocs/plans/initial.md),
+and one successful DT+ plain generation through it, plus one local LoRA generation after a first attempt interrupted by an iOS app freeze). Phase 3B adds durable queues with rolling dispatch to the source-run CLI (offline-validated only; no live queue run yet); the cloud half adds explicit `dtflow assets prepare|list|show|reconcile` with durable receipts and prepared references for generation and queues (offline-validated only; no live upload has run, `3-LG4` is pending). The Phase 4 Qt connection shell is implemented, and the Phase 5A Generate page is wired for single generations with LoRA selection and cloud asset actions (offline-validated; no live desktop run yet) while queue controls remain a disabled preview. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles
@@ -191,12 +191,15 @@ Connection, Generate and Queues. The Generate page is wired (Phase 5A, PR 1) for
 local and cloud backends through the same session service as `dtflow generate`: prompt, negative prompt, model (from an
 explicit inventory refresh), seed, size, steps, guidance and sampler; progress, previews (never shown as results),
 saved outputs with metadata paths, honest failure/unknown/local-stop wording, and save/load of the versioned
-credential-free generation configuration. The backend and endpoint come from the Connection page. LoRA selection, cloud
-asset actions and the Queues page remain disabled previews (Phase 5A PR 2 and Phase 5B); a LoRA named by a loaded
-configuration is shown but not bound to any cloud receipt. The source shell uses the centralized Splitvids-inspired dark theme in
+credential-free generation configuration. The backend and endpoint come from the Connection page. LoRAs are chosen by exact
+identifier with an explicit weight (inventory suggestions after a refresh) and checked through the shared preflight
+service (architecture match/mismatch/unknown, availability and "application unconfirmed" stay separate), with an
+explicit trigger-prefix option. For the cloud backend the page lists this machine's local asset receipts (not DT+
+account inventory): Prepare is the only action that can upload and sits behind a confirmation, Reconcile is a
+metadata-only check, and a confirmed receipt can be bound to a selected LoRA (never exported to configurations). The
+Queues page remains a disabled preview (Phase 5B). The source shell uses the centralized Splitvids-inspired dark theme in
 `src/dtflow/resources/styles/dtflow_dark.qss`; canonical Designer sources live under `src/dtflow/ui/forms/`.
-`queue_page.ui` is loaded for visual review with its controls disabled until Phase 5B; `generation_page.ui` keeps its LoRA
-and asset controls disabled until Phase 5A PR 2. The desktop holds the state directory's ownership lock only while a
+`queue_page.ui` is loaded for visual review with its controls disabled until Phase 5B. The desktop holds the state directory's ownership lock only while a
 generation runs (not for the window's lifetime), so a CLI run next to an open desktop succeeds between generations or
 fails clearly while one is running.
 
