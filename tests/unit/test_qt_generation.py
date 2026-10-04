@@ -119,7 +119,8 @@ def test_invalid_field_is_marked_and_nothing_is_submitted(window, qtbot):
     page.generateButton.click()
     assert page.generationStatusLabel.text().startswith("Invalid request")
     assert page.widthSpinBox.property("invalid") is True
-    assert page.generateButton.isEnabled() and not window.runner._pending
+    assert page.generateButton.isEnabled()
+    assert not (window.state_dir / "attempts.sqlite3").exists()  # no attempt, no state opened
 
 
 def test_state_busy_is_reported_without_dispatch(window, qtbot):
