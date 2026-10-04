@@ -12,7 +12,7 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 
 ## Delivery sequence
 
-Phase 3A establishes single-generation CLI/services, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling and restart reconciliation. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
+Phase 3A establishes single-generation CLI/services, bounded LoRA selection/preflight, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling, restart reconciliation and custom cloud LoRA upload/reuse. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
 
 ## Release gates and schema compatibility
 
@@ -27,6 +27,8 @@ Before the 0.2.0 durable release, version saved-state schemas separately from th
 | Backend selection | Explicit fake, Draw Things gRPC or direct DT+ selection; no silent fallback |
 | Connectivity | Bounded non-generative transport/authentication check with useful sanitized errors |
 | Model inventory | Explicit refresh; retain backend/server provenance and observation time; classify models, LoRAs and controls only from reliable server metadata, leaving unknown files unclassified; distinguish failure, empty inventory and compatibility uncertainty |
+| LoRA selection/preflight | Select exact identifiers and explicit weights; inspect metadata and availability; return structured architecture match/mismatch/unknown diagnostics before generation |
+| Cloud LoRA assets | Upload supported converted files, handle server deduplication, save durable receipts and reuse identifiers across requests/restarts; local known-upload registry is not remote listing |
 | Request resolution | Resolve configuration/preset plus explicit overrides into a reproducible request; validate before submitting |
 | Generation | Submit supported text-to-image requests, expose actual progress and collect validated final outputs |
 | Output saving | Save all required final images plus reproducibility metadata without silently overwriting useful results |
@@ -95,7 +97,7 @@ Test crashes/failures before recording, after marking potential execution, durin
 
 Phase 3A supplies these durable attempts and artifact metadata. Phase 3B extends them with transactional queue/job state, rolling scheduling and local restart reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
 
-## Phase 3B — Durable queues and rolling execution
+## Phase 3B — Durable queues, rolling execution and cloud assets
 
 Persist queue identity, stable ordered item IDs, immutable resolved requests, item/attempt states, backend selection and concurrency configuration. Use one dispatch owner per application state directory so two CLI processes cannot independently dispatch the same queue or bypass its cap. The CLI presents queue control; shared services own persistence, eligibility, scheduling and reconciliation.
 
@@ -108,6 +110,14 @@ A definitely unsubmitted failure releases its slot. If remote execution remains 
 After restart, restore the queue paused, retain completed results and unresolved reservations, and exclude ambiguous attempts from replay. Ordinary Resume cannot silently clear an uncertainty block. Changing the maximum downward does not cancel active requests; withhold new dispatch until reservation count is below the new cap.
 
 Phase 6 adds pair/cross-product batch planning; Phase 7 adds advanced scheduling. Neither is required for this basic rolling execution path.
+
+## LoRA scope before Qt
+
+Follow [LoRA compatibility and cloud asset plan](lora-assets.md). Phase 3A implements structured local model/LoRA discovery, selection/weights and shared preflight for a bounded verified text-to-image scope. Phase 3B adds the separate direct-cloud upload/receipt/reuse path and validates using an uploaded custom LoRA in supported generation. Both are pre-Qt gates; do not leave cloud upload in Phase 11 by default.
+
+Accept already converted Draw Things LoRA files initially. Audit required metadata and cloud generation references before committing the supported subset. Arbitrary safetensors conversion and a LoRA editor are separate work. Reuse server-acknowledged uploads without transferring weights for every generation or queue item; keep immutable asset references in resolved requests and revalidate metadata before dispatch.
+
+Expose receipt/known-upload inspection without pretending it lists the complete cloud account. The inspected SDK has no usable remote list operation; upload responses supply no delete key. Remote listing/deletion and authoritative storage balance remain unavailable until verified. Unknown upload outcomes require explicit reconciliation, not automatic transfer retries or success claims.
 
 ## Testing and acceptance
 
@@ -123,6 +133,10 @@ Phase 6 adds pair/cross-product batch planning; Phase 7 adds advanced scheduling
 - Restart tests restore paused queues, completed outputs and unresolved reservations, never replay ambiguous attempts, and require explicit action before eligible work resumes.
 - Cover one local lane, changing concurrency downward and exclusive dispatch ownership. Use deterministic fake timing and focused real-adapter protocol fixtures, with no external generation.
 - Discovery tests cover explicit refresh, backend provenance, reliable model/LoRA/control classification and unclassified files.
+- Phase 3A LoRA fixtures cover metadata, exact identifiers/weights, match/mismatch/unknown diagnostics, official exception/refiner rules in supported scope, config round trips and rejection before generation of confirmed incompatible selections.
+- Phase 3B upload fixtures exercise actual shared services/CLI: metadata POST, signed PUT, already-existing response without PUT, checksum/size/identifier fidelity, storage/auth failures, secret/signed-URL redaction, ambiguous transfer and failed durable receipt writes.
+- Cover repeated use and restart without repeated weight transfers, changed file content, backend/account separation, stale receipts, queue references and absent remote listing/delete support. A receipt is not proof of perpetual remote availability or LoRA application.
+- Record separately authorized deployed-cloud upload plus generation evidence for the advertised subset; mocks and successful plain text-to-image runs do not establish custom LoRA use.
 - An unexpected external connection fails ordinary tests; no subscription credits are consumed by fixture coverage.
 - Cloud subscription-only policy, token refresh and sanitized failures remain covered.
 - Validate syntax/imports, parsing/help, `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .`.
@@ -132,10 +146,10 @@ Explicitly authorized live checks can verify deployed behavior after offline cov
 
 ## Scope and later expansion
 
-“Complete CLI” means an end-to-end application for supported operations, not all TanqueStudio features in one phase. Pair/cross-product queue matrix expansion, advanced scheduling, workflows, advanced image/control combinations, video and cloud asset/LoRA upload remain separate work until their contracts and compatibility are verified.
+“Complete CLI” means an end-to-end application for supported operations, not all TanqueStudio features in one phase. Pair/cross-product queue matrix expansion, advanced scheduling, workflows, advanced image/control combinations, video, arbitrary LoRA conversion and broader asset management remain later work. Bounded LoRA selection and custom cloud LoRA upload/reuse are required in this CLI phase after contract verification.
 
 Track the intended port in the [TanqueStudio parity matrix](tanquestudio-parity.md); later work requires an explicit milestone rather than indefinite deferral. This matrix is not a requirement to expose every feature before Qt.
 
-Model discovery is included now. Basic compatible LoRA selection and explicit weights are assigned to Phase 5 through shared services, with CLI and Qt exposure. Cloud LoRA upload is distinct from generation and must not be assumed to use the same endpoint, format or authorization contract.
+Model discovery and bounded LoRA selection/weights arrive in Phase 3A. Custom cloud upload/reuse arrives in Phase 3B through a separate asset service with the same credential policy. Phase 5A exposes those existing services in Qt. If format or deployed API evidence blocks the agreed subset, record the blocker explicitly; do not silently move it behind Qt or advertise it as usable.
 
 Phase 4 adds the minimal Qt shell and connection management after both the single-generation and rolling-queue CLI gates pass. Phase 5A adds GUI generation/configuration reuse and Phase 5B exposes the existing queue controls, both through these services and both required for the first desktop release. Later features should expose the same underlying services through the CLI wherever practical so Qt remains presentation rather than a second execution engine.

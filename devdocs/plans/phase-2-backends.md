@@ -8,7 +8,7 @@
 
 Establish one backend-neutral generation contract, exercised by a deterministic fake, Draw Things gRPC and narrow direct DT+ Cloud Compute adapters. Keep Qt, client/protobuf types and cloud authentication inside their proper boundaries.
 
-Start real adapters with controlled text-to-image requests. Image-to-image, inpainting, control/LoRA combinations, video, account login, PAYG opt-in and advanced scheduling are not Phase 2 promises. Request expressibility is not verified compatibility.
+Start real adapters with controlled text-to-image requests. Define model/LoRA metadata and compatibility preflight contracts now; investigate the separate cloud LoRA storage protocol for Phase 3 delivery. Image-to-image, inpainting, broad control/LoRA combinations, video, account login, PAYG opt-in and advanced scheduling are not Phase 2 promises. Request expressibility is not verified compatibility.
 
 Direct DT+ is the primary expected production backend; local gRPC is a supported runtime and the frequent development/smoke-test path. Local smoke success does not prove cloud readiness.
 
@@ -21,7 +21,8 @@ Phase 3A adds durable attempts; Phase 3B adds durable queues and rolling orchest
 3. Implement the fake backend through the same contract.
 4. Wrap the recorded Draw Things gRPC path and exercise the actual adapter against a local gRPC test server, reusing existing serialization/codecs where appropriate.
 5. Implement direct DT+ authentication and transport behind its own adapter, with HTTP authentication mocks and cloud authorization checks on the shared local gRPC fixture.
-6. Add shared contract and mocked transport coverage; document limitations before the headless CLI consumes the adapters.
+6. Define inventory/preflight and separate asset-storage contracts from inspected sources; audit custom-LoRA format, generation references and upload/deduplication responses under [LoRA compatibility and cloud asset plan](lora-assets.md).
+7. Add shared contract and mocked transport coverage; document limitations before the headless CLI consumes the adapters.
 
 ## Required semantics
 
@@ -42,6 +43,14 @@ Record whether a failure occurred before submission or after remote execution be
 Map actual signposts to backend-neutral events. Do not advertise estimated client progress as authoritative server completion.
 
 Represent verified, unsupported and unknown capabilities distinctly. Keep model inventory separate from evidence that a specific model/input/adapter combination works. Start with one effective app/Bridge generation lane; direct-cloud scheduling policy remains separately configurable and must not assume six entitled slots.
+
+### Model/LoRA metadata and preflight
+
+Preserve exact provider identifiers, architecture/version, availability, backend/server provenance, observation time and metadata source. Reuse drawthings-py's structured Echo metadata where available; filename presence alone does not establish architecture or compatibility. Unknown/missing metadata stays unknown, with no guessed architecture default.
+
+Shared preflight returns structured diagnostics for each selected LoRA and separates architecture match/mismatch/unknown from availability and verified generation evidence. DrawHeadlessThings is the validation-design reference; pin the applicable official Draw Things rules, including refiner/exception behavior, rather than imposing universal architecture equality. Successful generation is not proof a requested LoRA was applied.
+
+Define a separate cloud asset service and durable receipt contract, sharing credentials/token lifecycle with generation without treating upload as generation or remote job recovery. Phase 3A implements bounded LoRA selection; Phase 3B implements upload/reuse before Qt. See [LoRA compatibility and cloud asset plan](lora-assets.md) for source evidence, unsupported remote listing and acceptance.
 
 ### Direct-cloud authentication and billing
 
@@ -67,7 +76,7 @@ Implement the fake first, then add transport fixtures alongside each real adapte
 | --- | --- | --- |
 | Deterministic fake backend | Core contract, progress and uncertain outcomes; later UI, jobs, queues and persistence | First |
 | Local gRPC test server | Actual adapters/client transport, streamed previews and final output, chunks, empty output, terminal status, deadlines and cancellation/disconnects | Alongside the Draw Things adapter |
-| DT+ HTTP mocks | Token acquisition, expiry, concurrent refresh, per-generation authentication and subscription-only request policy | Alongside the cloud adapter |
+| DT+ HTTP mocks | Token acquisition, expiry, concurrent refresh, per-generation authentication and subscription-only request policy; later signed-upload/deduplication fixtures | Alongside the cloud adapter; asset cases in Phase 3B |
 
 Reuse the local gRPC server for cloud generation where the inspected wire contract is shared. Assert cloud-specific authorization metadata on the gRPC side, in addition to checking HTTP token/authentication requests. Exercise the actual adapters, not only isolated payload decoders.
 
@@ -96,6 +105,8 @@ Phase 2 covers the contract and adapters. Phase 3B extends fake and transport-fi
 - Stream tests cover terminal failures, no final output, partial outputs and preview labeling.
 - Cloud tests cover credential precedence (including both sources, empty environment values and failed selected credentials), absence of silent fallback, token expiry, concurrent refresh, per-generation authentication, sanitized errors and disabled PAYG opt-in.
 - Document the actual target-Windows packaging outcome; unresolved distribution or packaging decisions stay explicit.
+- Inventory/preflight fixtures cover structured model/LoRA versions, missing metadata, architecture matches/mismatches and applicable exception/refiner rules; keep metadata checks distinct from successful application.
+- Record the source-audited cloud upload contract and remaining converted-format/generation-reference questions before Phase 3B implementation.
 - Record unsupported/unverified cancellation, recovery and compatibility behavior rather than inventing it.
 
 Use `uv run pytest`, `uv run ruff check .` and `uv run ruff format --check .` for implementation validation. Any live generation is separately gated and requires task authorization; do not use it merely to validate plumbing.

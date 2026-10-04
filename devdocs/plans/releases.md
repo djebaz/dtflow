@@ -16,9 +16,9 @@ Phase 2 is an internal foundation milestone rather than a user release: contract
 
 | Target | Engineering gate | Independently usable behavior | Delivery |
 | --- | --- | --- | --- |
-| 0.1.0 | Phase 3A | Select backend; check connectivity; discover models; resolve/import generation configuration; generate a single request; save final artifacts and reproducibility metadata; inspect failures and attempts | Private tagged source-run CLI |
-| 0.2.0 | Phase 3B | Create/list/control durable queues; rolling cloud dispatch with configurable maximum, default four; one tested local lane; Pause/Resume/Cancel; paused restart and honest uncertain outcomes | Private tagged source-run CLI |
-| 0.3.0 | Phase 4 plus 5A/5B | Complete Qt generation and queue paths; secure credential entry/storage; basic configuration save/load; bounded verified LoRA selections; discreet version/commit identity | First useful portable Windows Qt executable |
+| 0.1.0 | Phase 3A | Select backend; check connectivity; discover models; resolve/import generation configuration; select bounded LoRAs with weights/preflight; generate a single request; save final artifacts and reproducibility metadata; inspect failures and attempts | Private tagged source-run CLI |
+| 0.2.0 | Phase 3B | Create/list/control durable queues; rolling cloud dispatch with configurable maximum, default four; one tested local lane; Pause/Resume/Cancel; paused restart and honest uncertain outcomes; upload/reuse supported custom cloud LoRAs with durable receipts | Private tagged source-run CLI |
+| 0.3.0 | Phase 4 plus 5A/5B | Complete Qt generation and queue paths; secure credential entry/storage; basic configuration save/load; bounded verified LoRA selections, compatibility diagnostics and cloud upload/known-receipt reuse; discreet version/commit identity | First useful portable Windows Qt executable |
 | 0.4.0 | Phase 6 plus Phase 8 | Plan bounded batches; manage reusable presets; browse results and provenance; reuse generation settings; inspect and clean disposable cache | Desktop refinement for daily use |
 | 0.5.0 | Initial Phase 9A gate | Verified image-to-image path through shared services and CLI/Qt, including explicit input preparation and effective parameters | First image-editing release |
 | 0.6.0, provisionally | Initial Phase 10A gate | Validate/inspect/execute supported workflow files with durable provenance and truthful restart limits | First workflow execution release |
@@ -35,7 +35,7 @@ Phase 7 advanced priorities, fairness or adaptive scheduling is not a mandatory 
 
 ### 0.1.0 — Single-generation CLI
 
-Pass Phase 3A offline acceptance through actual services/adapters: configuration validation, parameter/wire fidelity, token refresh, selected credential behavior, terminal errors, previews, final artifacts, atomic attempt records and logging. Startup/help/version output must work without Qt.
+Pass Phase 3A offline acceptance through actual services/adapters: configuration validation, parameter/wire fidelity, token refresh, selected credential behavior, terminal errors, previews, final artifacts, atomic attempt records and logging. Startup/help/version output must work without Qt. Include structured local model/LoRA discovery, exact LoRA identifiers/weights, match/mismatch/unknown diagnostics and the bounded generation subset under [the LoRA asset plan](lora-assets.md).
 
 For each real backend advertised as usable, record a focused actual end-to-end smoke result separately from fixture coverage. Direct-cloud evidence must exercise the release implementation rather than rely solely on the diagnostic probe. Live generation remains small, separately gated and explicitly authorized; it is not part of ordinary tests.
 
@@ -49,17 +49,19 @@ Cover paused restart, completed output preservation, pre-submission failures, un
 
 Record focused real-adapter/cloud smoke evidence for the advertised queue path separately from deterministic offline scheduling tests. Fixtures establish application scheduling behavior; they do not prove cloud entitlement, remote cancellation or billing behavior.
 
+Custom cloud LoRA upload/reuse is also a 0.2.0 gate before Qt. Pass source-backed metadata POST/signed PUT/already-existing fixtures, durable receipt/restart behavior, unknown-outcome handling and queued reference fidelity. Record separately authorized deployed upload plus generation evidence for the advertised converted-file subset. No usable remote list API is established; inspect locally known receipts without claiming complete cloud inventory. Conversion/editor and broader asset management are outside this gate.
+
 Introduce saved-state schema versioning and the compatibility contract below before declaring this durable release usable.
 
 ### 0.3.0 — Complete desktop path
 
-Phase 4 supplies the shell and secure connection setup. Phase 5A supplies the generation form, actual progress, output/error presentation, a bounded verified LoRA scope and basic configuration save/load. Phase 5B supplies queue creation/inspection, item status, concurrency, Pause/Resume/Cancel and restart/uncertainty presentation through existing Phase 3B services.
+Phase 4 supplies the shell and secure connection setup. Phase 5A supplies the generation form, actual progress, output/error presentation, a bounded verified LoRA scope, shared compatibility diagnostics, cloud upload/known-receipt reuse and basic configuration save/load. Phase 5B supplies queue creation/inspection, item status, concurrency, Pause/Resume/Cancel and restart/uncertainty presentation through existing Phase 3B services.
 
 Basic configuration reuse should already have a shared versioned import/export contract in Phase 3A; the Qt save/load surface belongs here. The richer preset library/browser remains 0.4.0. Saved configuration must not contain credentials.
 
 Exercise the exact portable executable on the owner's Windows 10 / Intel Pentium E6500 machine: startup, native codecs, TLS/certificate resources, Qt plugins, credential storage, per-user paths, logging, build identity and responsive background execution. Record end-to-end generation/queue evidence for supported backends separately from packaging-only checks.
 
-Limit LoRA acceptance to explicitly verified combinations; do not require universal compatibility to release. Document unsupported combinations and unavailable cloud upload.
+Limit LoRA acceptance to explicitly verified combinations; do not require universal compatibility to release. Document unsupported combinations and unverified conversion/listing/deletion operations. The agreed bounded custom upload/reuse path already passes the Phase 3B CLI gate; Qt reuses it.
 
 ### 0.4.0 — Daily-use refinement
 
@@ -75,11 +77,11 @@ Phase 10A delivers a supported versioned workflow-file contract, preflight/plan 
 
 Each slice records its supported operations, backend/model combinations, input/output semantics and actual validation evidence. Request expressibility or model inventory alone does not establish compatibility. Preserve all intended TanqueStudio features in the parity matrix, including blocked or conditional items.
 
-Cloud asset/LoRA upload and video/audio releases require verified service contracts and metadata semantics before commitment. PAYG remains outside the first release scope; adding it later requires a separate explicit policy.
+Bounded custom cloud LoRA upload/reuse is required in 0.2.0, using a verified converted-file contract; broader asset management, conversion and video/audio releases require additional verified service contracts and metadata semantics. PAYG remains outside the first release scope; adding it later requires a separate explicit policy.
 
 ## Saved-state compatibility from 0.2.0
 
-Keep application version, build identity and storage schema versions distinct. Version settings, generation configurations, queue/job/attempt records and, when introduced, presets and workflow files explicitly. Do not use the application version as the sole schema discriminator.
+Keep application version, build identity and storage schema versions distinct. Version settings, generation configurations, queue/job/attempt records, cloud asset receipts and, when introduced, presets and workflow files explicitly. Do not use the application version as the sole schema discriminator.
 
 Before opening older durable state for writing, determine whether it is supported. Migrate supported versions through an atomic/transactional path, preserving a recoverable pre-migration copy of affected durable records. Preserve artifact files and references; do not duplicate large outputs unnecessarily or include secrets in ordinary backups.
 

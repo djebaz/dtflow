@@ -57,7 +57,7 @@ Backend direction is therefore:
 - a lightweight Swift/MediaGenerationKit bridge only as a fallback if a future DT+ capability cannot be reproduced reliably in Python
 - a separate experimental native Windows Draw Things gRPC server
 
-Phase 2 brings a narrow text-to-image direct DT+ adapter forward from Phase 11. The existing probe remains diagnostic tooling; the adapter must explicitly handle token expiry, authenticated transport, subscription-only policy, sanitized failures and uncertain outcomes. Unsupported cancellation, remote recovery and input combinations must remain unavailable or unknown. Phase 11 broadens cloud capabilities and hardening.
+Phase 2 brings a narrow text-to-image direct DT+ adapter forward from Phase 11 and defines inventory/LoRA preflight plus separate asset-storage contracts. Phase 3A delivers bounded LoRA selection; Phase 3B delivers custom cloud upload/reuse before Qt under the [LoRA compatibility and cloud asset plan](lora-assets.md). The existing probe remains diagnostic tooling; the adapter must explicitly handle token expiry, authenticated transport, subscription-only policy, sanitized failures and uncertain outcomes. Unsupported cancellation, remote recovery and input combinations must remain unavailable or unknown. Phase 11 broadens cloud capabilities and hardening.
 
 ## 4. Architectural boundaries
 
@@ -109,6 +109,8 @@ The Phase 2 DT+ backend will use the validated Python direct-cloud path, but the
 Services orchestrate application use cases, including:
 
 - connection management
+- model/LoRA inventory and compatibility preflight
+- separate cloud LoRA upload, durable receipts and reuse
 - generation submission
 - job lifecycle
 - queue execution
@@ -128,6 +130,7 @@ Persistence should eventually cover:
 - workflow definitions
 - generation metadata
 - output references
+- versioned cloud asset receipts and their backend/account scope, without credentials or signed URLs
 
 The exact storage format/database is intentionally undecided until the first persistence requirements are implemented.
 
@@ -211,7 +214,7 @@ Keep prompts, seeds, dimensions, and parameters controlled when comparing behavi
 
 Follow [the Phase 2 implementation plan](phase-2-backends.md) and [the source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
 
-Introduce backend-neutral request, result, progress, error and capability types. Implement a deterministic fake backend, wrap the validated Draw Things gRPC path, and add narrow direct DT+ text-to-image support through native Python.
+Introduce backend-neutral request, result, progress, error and capability types. Implement a deterministic fake backend, wrap the validated Draw Things gRPC path, and add narrow direct DT+ text-to-image support through native Python. Define structured model/LoRA metadata, shared compatibility preflight and a separate cloud asset contract for Phase 3; audit converted-format and generation-reference requirements.
 
 Define completion and uncertain-outcome semantics before wiring the UI. Preserve previews and incomplete outputs as explicitly labeled diagnostic/partial artifacts, never completed results. Ordinary tests must stay offline.
 
@@ -233,11 +236,11 @@ Validate command parsing, help, exit behavior, saved metadata and end-to-end fix
 
 #### Phase 3A — Single-generation foundation
 
-Complete backend selection, connectivity, inventory, request resolution, durable attempts, output saving, logging and truthful interruption through the headless CLI.
+Complete backend selection, connectivity, structured model/LoRA inventory, bounded LoRA selection with explicit weights and preflight, request resolution, durable attempts, output saving, logging and truthful interruption through the headless CLI. Preserve architecture-match, mismatch and unknown states separately from availability or confirmed application; use official rules and no filename-based compatibility guesses.
 
-#### Phase 3B — Durable queue and rolling dispatch
+#### Phase 3B — Durable queue, rolling dispatch and cloud assets
 
-Extend the same services with persistent queue items and lifecycle state, queue inspection, Pause/Resume/Cancel, and rolling scheduling. Cloud concurrency defaults to four and is configurable; the tested app/Bridge path remains one effective lane. Restore queues paused after restart, never replay ambiguous attempts, and test the ten-item/four-slot scenario through CLI commands before Qt.
+Extend the same services with persistent queue items and lifecycle state, queue inspection, Pause/Resume/Cancel, and rolling scheduling. Also deliver a separate custom cloud LoRA upload/reuse service through the CLI: supported converted files, SHA-256/size-based negotiation, signed transfer when needed, durable receipts and reuse across requests/restarts. The inspected API has no usable remote listing; local receipt inspection is not complete account inventory. Validate the upload-to-generation reference path for the advertised subset before Qt. Cloud concurrency defaults to four and is configurable; the tested app/Bridge path remains one effective lane. Restore queues paused after restart, never replay ambiguous attempts, and test the ten-item/four-slot scenario through CLI commands before Qt.
 
 Current Phase 1 evidence supports treating one tested Draw Things gRPC server as one effective generation lane: concurrent client RPCs can be in flight together, but the tested iPhone/Bridge path completes work in an effectively serialized staircase and is slower than the matching serial baseline.
 
@@ -277,11 +280,11 @@ Keep business logic and backend protocol code outside UI classes. Network and ge
 
 ### Phase 5 — Desktop generation and queue controls
 
-Connect the desktop UI to the generation services already exercised by the headless CLI for a complete single-generation flow. Reuse request resolution, progress/error handling and output persistence rather than creating a second execution path. Add basic LoRA selection with explicit weights through shared services and CLI/Qt exposure, gated by verified backend/model compatibility.
+Connect the desktop UI to the generation services already exercised by the headless CLI for a complete single-generation flow. Reuse request resolution, progress/error handling and output persistence rather than creating a second execution path. Expose the bounded LoRA selection/preflight and custom cloud upload/reuse services already exercised by the Phase 3 CLI; Qt adds presentation rather than the first implementation of those behaviors.
 
 #### Phase 5A — Generation and configuration reuse
 
-Expose the generation form, actual progress, outputs/errors and a bounded verified LoRA scope. Save/load credential-free generation configurations through the versioned shared contract from Phase 3A; the full preset browser remains Phase 8.
+Expose the generation form, actual progress, outputs/errors, bounded LoRA selection/weights, compatibility diagnostics and cloud upload/known-receipt reuse through existing shared services. Save/load credential-free generation configurations through the versioned shared contract from Phase 3A; the full preset browser remains Phase 8.
 
 #### Phase 5B — Desktop queue controls
 
@@ -315,7 +318,7 @@ Workflow execution should remain resumable and inspectable within documented rem
 
 Phase 1 diagnostic work has already established that a direct Python DT+ implementation is viable. The live-tested probe has exercised the API-key short-term-token flow, per-generation authentication, direct TLS gRPC generation against DT+ Cloud Compute, image-result decoding, and concurrent submissions without requiring MediaGenerationKit as a runtime component.
 
-Phase 2 introduces the narrow direct Python backend. Phase 11 broadens its verified operations and production behavior rather than re-evaluating Python feasibility or delaying basic cloud integration.
+Phase 2 introduces the narrow direct Python backend; Phase 3 already delivers bounded LoRA selection and custom cloud upload/reuse. Phase 11 broadens its verified operations and production behavior rather than re-evaluating Python feasibility or delaying basic cloud integration.
 
 ### Foundations required by the first adapter
 
@@ -372,6 +375,7 @@ Apply the Windows packaging requirement during Phase 2/3 investigation. Phase 3B
 ### Additional confirmed product decisions
 
 - Cloud credentials: enter the API key in Qt and save it securely through Windows Credential Manager. When an environment key is present it takes precedence, including failure for an empty/invalid value; otherwise use the saved key. Never silently switch sources after authentication failure. Keep environment-supplied credentials available for CLI use. Credential resolution belongs in shared services and must not require Qt; keys/tokens never enter ordinary settings, output metadata or logs. Secure storage failure must not silently fall back to plaintext.
+- LoRA delivery: bounded identifier/weight selection and compatibility preflight must work in Phase 3A; supported custom cloud LoRA upload/reuse must work in Phase 3B before Qt. Prefer upload once then reuse when the server acknowledges existing content, without assuming indefinite retention. Start with converted Draw Things files; broad conversion/editing and unverified remote listing/deletion are later scope.
 - PAYG: unavailable in the first release; defer opt-in support to a later version. Initial requests remain explicitly subscription-only regardless of account PAYG settings.
 - Updates: manual downloads initially, with no integrated updater or Microsoft Store requirement. A future release-page check is optional later work.
 - Build identity: show the application version plus a short Git commit ID in CLI version output and a discreet Qt About/status area, and include both in distributed build filenames. Bundle the full source commit and dirty-worktree status so the executable needs no Git installation at runtime. Release builds must come from a clean checkout; development builds disclose local modifications and missing revision metadata instead of inventing an ID. Persist version/full commit in generation metadata where available.
@@ -385,7 +389,8 @@ Source-inspected answers and remaining evidence requirements are recorded in [re
 - Exact `drawthings-py` version/API and how much of the gRPC client it should own.
 - Whether DTFlow should generate protobuf bindings itself or consume them through a dependency.
 - Exact Draw Things progress and cancellation semantics, plus whether any server/app configuration can expose parallel backend execution beyond the effective single lane observed in the tested iPhone/Bridge path.
-- Persistence technology and schema.
+- Persistence technology and schema, including durable upload receipts, uncertain upload reconciliation and backend/account-scoped asset references.
+- Custom cloud LoRA converted-format/metadata requirements, deduplication identity, generation references, retention/availability evidence and deployed upload/use behavior; remote listing/delete-key discovery is absent in the inspected SDK.
 - Windows packaging feasibility on the target machine, native-module and certificate resources, and the distribution implications of the GPL-3.0-only drawthings-py dependency in the currently MIT-declared project.
 - Production DT+ authentication lifecycle, failure behavior, entitlement/PAYG semantics, persistence requirements, model/file compatibility, cancellation/retry semantics, throttling and behavior at the selected concurrency. The diagnostic API-key token/auth/gRPC path is proven separately; the default of four is a product choice.
 - Whether any future DT+ capability actually requires MediaGenerationKit or a Swift bridge. No runtime dependency on MediaGenerationKit has been demonstrated for the currently proven direct generation path.

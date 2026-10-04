@@ -1,7 +1,7 @@
 # DTFlow: Draw Things ecosystem implementation research
 
 Prepared: 4 October 2026 (Europe/Paris)  
-Updated: 4 October 2026 — backend-contract and implementation-phase follow-up  
+Updated: 4 October 2026 — backend-contract, implementation-phase and LoRA/cloud-storage follow-ups  
 Purpose: identify code, algorithms, workflows and architectural methods useful for developing [DTFlow](https://github.com/djebaz/dtflow).
 
 ## 1. Findings and recommendation
@@ -287,7 +287,7 @@ At the original inspection, the roadmap placed the desktop shell in Phase 3 and 
 | 11 | Add presets, image inputs and compiled workflows | Capability preflight, verified combinations and provenance |
 | 12 | Broaden DT+ hardening and optional MCP automation | Additional inputs, billing opt-in if requested, verified cancellation and service-backed automation |
 
-Phase 3 should deliver a working headless CLI through shared application services before Phase 4 adds Qt. Include explicit backend selection, non-generative connectivity, advertised model inventory, supported txt2img generation, output/reproducibility metadata saving and honest interruption. Qt must call the same services; it must not introduce a parallel orchestration path. Phase 3B also requires functional durable queues and rolling dispatch tested through the CLI, including ten items at a cap of four, paused restart and uncertainty handling. Full backend feature parity, cloud uploads, workflows and advanced scheduling remain separately scoped work.
+Phase 3 should deliver a working headless CLI through shared application services before Phase 4 adds Qt. Include explicit backend selection, non-generative connectivity, advertised model inventory, supported txt2img generation, output/reproducibility metadata saving and honest interruption. Qt must call the same services; it must not introduce a parallel orchestration path. Phase 3B also requires functional durable queues and rolling dispatch tested through the CLI, including ten items at a cap of four, paused restart and uncertainty handling. The LoRA follow-up in Appendix E now requires bounded selection/preflight in Phase 3A and custom cloud upload/reuse in Phase 3B before Qt. Full backend feature parity, broader asset management, workflows and advanced scheduling remain separately scoped work.
 
 MediaGenerationKit should remain a protocol/reference source. No Swift runtime is required by the recorded successful Python diagnostic path. A Swift bridge is a fallback only for a concrete capability that cannot be implemented reliably in Python.
 
@@ -592,3 +592,82 @@ Search results included the SDK, MediaGenerationKit, its documentation, communit
 A shell `git clone --depth 1 https://github.com/djebaz/dtflow.git` failed because credentials were unavailable to Git. Authenticated GitHub reads subsequently succeeded. A follow-up public-web open of TanqueStudio failed; this does not invalidate the original report’s separately recorded successful GitHub source inspection. A GitHub tags-endpoint read was rejected by the connector URL rules; direct v0.4.0 source reads succeeded. Public-web attempts to open six raw source URLs failed, while authenticated GitHub retrieval of those files succeeded. These failures are not claimed as successful source verification.
 
 No repository implementation changes, tests, installations, checkpoint downloads, training, inference or billable jobs were performed during this update. Only document editing and source retrieval occurred.
+
+## Appendix E — LoRA compatibility and cloud storage follow-up
+
+### E.1 Scope and findings
+
+This follow-up inspected pinned source from TanqueStudio, DrawHeadlessThings, drawthings-py v0.4.0 and the official Draw Things/MediaGenerationKit repositories. No upstream application, upload or generation was run. The following updates supplement the earlier report; they do not turn earlier inventory or text-to-image evidence into verified custom-LoRA compatibility.
+
+| Reference | Observed mechanism | DTFlow use and limit |
+| --- | --- | --- |
+| TanqueStudio | Imports custom_lora.json version/prefix/default weight; inspected picker searches name/filename and add action prevents duplicates | Metadata reference; no model-family comparison found in the inspected selection path |
+| DrawHeadlessThings | Checks installed LoRA specification and architecture equality; returns indexed typed errors or collected diagnostics before generation | Strong shared-preflight design; strict equality needs adjustment for applicable official rules; GPL implementation is not a copy recommendation |
+| drawthings-py v0.4.0 | Parses structured Echo model/LoRA JSON, retaining name/file/version; raw file inventory remains separate | Reuse this metadata path; absent metadata stays unknown; inventory does not prove application |
+| dts-utils server catalog | Retrieves filenames and override blob sizes | Useful discovery diagnostics; inspected catalog path does not check LoRA compatibility |
+| Official generation engine | Filters LoRAs by availability and base/refiner version, with a Kandinsky/SD-v1 exception | Pin supported rules; unmatched LoRAs may be omitted, so generation success is not application confirmation |
+| Official LoRAZoo | Unknown specification makes versionForModel return v1 | Do not inherit this guessed default; preserve unknown architecture |
+| Official LoRAImporter | Can inspect/detect version using the importer path; converts local weights | Conversion is separate from storage and is not evidence of target-model runtime compatibility |
+| Official LoRAStore | Authenticated metadata negotiation, signed PUT and alreadyExists branch; upload receipts contain file/checksum but no delete key | Supports upload/reuse design; deployed Python path, retention and precise compatibility remain unverified |
+
+The owner reports iOS custom LoRA upload usually occurs once followed by server reuse. The official alreadyExists branch independently supports avoiding byte transfer when the server reports existing content. It does not establish indefinite storage, the complete deduplication identity or account-wide listing.
+
+LoRAStore.list explicitly throws because no public cloud list endpoint is exposed. Delete requires nonempty keys unavailable in the upload receipt; storage inspection is also described as unavailable in the official guide. A durable DTFlow registry can list locally known receipts, not the complete remote account.
+
+The storage flow computes SHA-256/size, POSTs files metadata to /get_byom_urls using a short-term token, and PUTs bytes to a signed URL when supplied. The upload service itself does not validate architecture. Its otherwise-unhandled-response branch reports storage-limit failure; DTFlow must classify only verified response shapes and preserve generic unknown failures.
+
+The official guide demonstrates converting safetensors separately and uploading the converted ckpt. The inspected Swift CLI calls LoRAStore and displays the returned file/checksum. These are source-level interface findings, not proof that an arbitrary raw LoRA works in cloud generation or that DTFlow needs a Swift runtime.
+
+### E.2 Revised planning recommendation
+
+Use the [LoRA compatibility and cloud asset plan](../plans/lora-assets.md): Phase 2 contracts/source audit, Phase 3A bounded LoRA selection/preflight, Phase 3B custom cloud upload/durable receipts/reuse before Qt, and Phase 5A presentation through those services. Broader conversion/editor and remote asset management remain later work.
+
+Separate architecture match/mismatch/unknown, availability and actual combination/application evidence. Preserve exact identifiers, weights, checksum/provenance and backend/account scope. Preflight complete requests and revalidate queued references before dispatch. Use structured errors without silently dropping LoRAs or guessing family from a filename.
+
+Upload explicitly during preparation and reuse confirmed references across requests/restarts. Preserve ambiguous transfer or receipt-write outcomes; avoid blind retries. The live acceptance gap is a separately authorized actual-adapter custom upload/reuse and generation check for the advertised subset. Mocks verify DTFlow behavior, not deployed storage or application.
+
+### E.3 Sources inspected for this follow-up
+
+TanqueStudio, pinned to 6474f1ea575afa50dea92ab56ef01b5bf50d1bd7:
+
+- [Repository tree](https://api.github.com/repos/skeptict/TanqueStudio/git/trees/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7?recursive=1)
+- [Asset metadata import](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/DrawThingsAssetManager.swift)
+- [Picker](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/Dashboard/DashboardFocusPanels.swift)
+- [LoRA model metadata](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/DrawThingsProvider.swift)
+- [Selection/configuration behavior](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/GenerateViewModel.swift)
+- [gRPC discovery](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/DrawThingsGRPCClient.swift)
+- [Cloud model catalog](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/CloudModelCatalog.swift)
+- [LoRA help](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/Resources/Help/presets-loras.md)
+- Additional inspected paths: [data models](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/DataModels.swift), [availability](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/ModelAvailability.swift), [focus view](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/Dashboard/FocusRoomView.swift), [config picker](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/ConfigPickerSheet.swift), [settings](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/SettingsView.swift), [workflow preflight](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/StoryFlowRunPreflight.swift), [cast validator](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/StoryFlowCastValidator.swift), [queue expander](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/DrawThingsStudio/RenderQueueExpander.swift), [README](https://github.com/skeptict/TanqueStudio/blob/6474f1ea575afa50dea92ab56ef01b5bf50d1bd7/README.md).
+
+DrawHeadlessThings, pinned to 3a8a0c0053db4cde64718ca6a655695ad274d10f:
+
+- [Repository tree](https://api.github.com/repos/gwenn-ha-dev/DrawHeadlessThings/git/trees/3a8a0c0053db4cde64718ca6a655695ad274d10f?recursive=1)
+- [Validation and collected diagnostics](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Sources/dht-server/DrawThingsEngine.swift)
+- [Typed HTTP errors](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Sources/dht-server/Routes.swift)
+- [Asset types](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Sources/dht-server/AssetTypes.swift)
+- [Asset inventory](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Sources/dht-server/AssetManager.swift)
+- [Capability definitions](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Sources/dht-server/CapabilityMap.swift) and [cells](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Sources/dht-server/CapabilityMap%2BCells.swift)
+- [Request models](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Sources/dht-server/Models.swift) and [integration-test source](https://github.com/gwenn-ha-dev/DrawHeadlessThings/blob/3a8a0c0053db4cde64718ca6a655695ad274d10f/Tests/DHTServerTests/RoutesIntegrationTests.swift), inspected but not executed.
+
+Python references:
+
+- [drawthings-py v0.4.0 metadata](https://github.com/kcjerrell/drawthings-py/blob/v0.4.0/src/drawthings_py/models/types.py) and [gRPC discovery](https://github.com/kcjerrell/drawthings-py/blob/v0.4.0/src/drawthings_py/grpc/grpc_service.py)
+- [drawthings-py main tree](https://api.github.com/repos/kcjerrell/drawthings-py/git/trees/e459f75a430ce5bdd21ce80f70b19e846682f511?recursive=1) and [metadata source](https://github.com/kcjerrell/drawthings-py/blob/e459f75a430ce5bdd21ce80f70b19e846682f511/src/drawthings_py/models/types.py), subsequently checked against v0.4.0.
+- [dts-utils server catalog](https://github.com/funkatron/dts-utils/blob/559ae2a53f99e0e64aa4c35e93a986fd9da4a028/src/dts_utils/grpc/server_catalog.py), [metadata parser](https://github.com/funkatron/dts-utils/blob/559ae2a53f99e0e64aa4c35e93a986fd9da4a028/src/dts_utils/model_index/parse.py) and [tree](https://api.github.com/repos/funkatron/dts-utils/git/trees/559ae2a53f99e0e64aa4c35e93a986fd9da4a028?recursive=1).
+
+Official Draw Things source, pinned to b5e9fb925ca5394b747e0e98a8c293bbab5091ca:
+
+- [Generation filtering rules](https://github.com/drawthingsai/draw-things-community/blob/b5e9fb925ca5394b747e0e98a8c293bbab5091ca/Libraries/LocalImageGenerator/Sources/LocalImageGenerator.swift#L4010-L4035)
+- [LoRA specification/version lookup](https://github.com/drawthingsai/draw-things-community/blob/b5e9fb925ca5394b747e0e98a8c293bbab5091ca/Libraries/ModelZoo/Sources/LoRAZoo.swift)
+- [Importer wrapper](https://github.com/drawthingsai/draw-things-community/blob/b5e9fb925ca5394b747e0e98a8c293bbab5091ca/Libraries/MediaGenerationKit/Sources/LoRAImporter.swift)
+- [Cloud LoRA storage](https://github.com/drawthingsai/draw-things-community/blob/b5e9fb925ca5394b747e0e98a8c293bbab5091ca/Libraries/MediaGenerationKit/Sources/LoRAStore.swift)
+- [Remote execution](https://github.com/drawthingsai/draw-things-community/blob/b5e9fb925ca5394b747e0e98a8c293bbab5091ca/Libraries/MediaGenerationKit/Sources/MediaGenerationRemoteExecution.swift) and [tree](https://api.github.com/repos/drawthingsai/draw-things-community/git/trees/b5e9fb925ca5394b747e0e98a8c293bbab5091ca?recursive=1).
+
+MediaGenerationKit wrapper, pinned to 8868a9685d9c299816f43ef53efd455ffca437f0:
+
+- [Public guide](https://github.com/drawthingsai/media-generation-kit/blob/8868a9685d9c299816f43ef53efd455ffca437f0/README.md)
+- [CLI upload implementation](https://github.com/drawthingsai/media-generation-kit/blob/8868a9685d9c299816f43ef53efd455ffca437f0/Sources/MediaGenerationKitCLI/MediaGenerationKitCLI.swift#L997-L1027)
+- [Repository tree](https://api.github.com/repos/drawthingsai/media-generation-kit/git/trees/8868a9685d9c299816f43ef53efd455ffca437f0?recursive=1).
+
+A read of the community-repository CLI path did not provide usable source; the wrapper-repository CLI above was successfully read instead. No claims depend on that failed read. This follow-up made documentation changes only, with no runtime tests, installations, model downloads, training, inference or cloud storage requests.

@@ -4,6 +4,9 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Source-backed LoRA compatibility/cloud asset plan: structured metadata, shared preflight diagnostics, official exception/refiner rules, separate availability/application evidence, custom upload negotiation/deduplication, durable receipts and honest remote-listing limitations.
+- Research follow-up with pinned TanqueStudio, DrawHeadlessThings, drawthings-py and official LoRA importer/store/engine sources. Findings are source inspection, not deployed upload/use verification.
+
 - Planned release roadmap with private source CLI milestones, the first complete Qt executable, incremental image/workflow releases, release evidence and a scoped 1.0 reliability gate. No release/tag/version bump is introduced.
 - Saved-state compatibility requirements from the durable queue release: independent schema versions, recoverable atomic migration, clear unsupported-schema rejection and no ambiguous replay.
 
@@ -36,6 +39,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Move bounded LoRA selection/weights/preflight to Phase 3A and custom direct-cloud upload/reuse to Phase 3B, both exercised by the CLI before Qt. Update proposed 0.1/0.2/0.3 scope and Phase 5A presentation accordingly; broader conversion/editor and remote asset management remain later work.
+
 - Split Phase 5 into generation/configuration reuse (5A) and desktop queue controls (5B), both required for the first executable; plan basic configuration import/export in 3A and Qt save/load in 5A before the richer preset library.
 - Define incremental Phase 9 image and Phase 10 workflow delivery gates, and link release planning from README, AGENTS.md, roadmap and parity matrix.
 
@@ -56,7 +61,7 @@ Pending changes for the next DTFlow release.
 - Plan cloud concurrency configuration from Phase 3, default four, shared with Qt; use a subtle color above two and implement and test bounded concurrent queue execution in Phase 3B before Qt. These are planned policies, not implemented runtime features.
 
 - Require a minimal atomic request/attempt record before Phase 3 remote submission and prevent automatic retries of unfinished potentially submitted attempts.
-- Separate initial cloud safety/authentication foundations from Phase 11 expansion; clarify inventory refresh/provenance/classification, Phase 5 basic LoRA selection and request-fidelity validation.
+- Separate initial cloud safety/authentication foundations from Phase 11 expansion; clarify inventory refresh/provenance/classification, Phase 3A basic LoRA selection and request-fidelity validation, with Phase 5A Qt presentation.
 
 - Deliver a working CLI in Phase 3 before the Phase 4 Qt shell; GUI generation reuses CLI-exercised services. Phase 3B includes durable jobs/queues and rolling dispatch; batch expansion and advanced operations retain later phases.
 
