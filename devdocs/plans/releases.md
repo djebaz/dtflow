@@ -10,7 +10,7 @@ Implementation phases describe engineering work. Releases deliver independently 
 
 This document owns proposed release scope and acceptance gates. The initial plan owns engineering sequence, the parity matrix tracks intended features, and versioned release notes record what actually shipped. Keep them consistent in implementation PRs. The version numbers below are targets, not current application versions, dates or promises of backend compatibility.
 
-Phase 2 is an internal foundation milestone rather than a user release: contract, fake, real adapters, protocol fixtures, target-Windows packaging investigation and dependency-distribution decision. Preserve source-run development support throughout.
+Phase 2 is an internal foundation milestone rather than a user release: contract, fake, real adapters, protocol fixtures, target-Windows packaging investigation and dependency-distribution compliance review. Preserve source-run development support throughout.
 
 ## Proposed usable releases
 
@@ -110,4 +110,4 @@ At release time, update the authoritative project version through the repository
 
 Agree the supported feature set before declaring 1.0. Require target-Windows executable verification, separate deployed-cloud evidence, responsive Qt execution, bounded resource use, safe output persistence, queue/restart/uncertainty handling, supported upgrade paths and documented limitations.
 
-Full TanqueStudio parity is not the definition of 1.0. Keep outstanding parity work tracked beyond it. Public distribution additionally needs the dependency licensing/distribution decision and suitable release documentation; personal acceptance does not establish those conditions.
+Full TanqueStudio parity is not the definition of 1.0. Keep outstanding parity work tracked beyond it. Public distribution additionally needs GPL-3.0-only packaging compliance, corresponding-source/notice handling and suitable release documentation; personal acceptance does not establish those conditions.

@@ -1,5 +1,7 @@
 # DTFlow: Draw Things ecosystem implementation research
 
+> **Historical licensing note (2026-10-04):** this report recorded DTFlow as MIT at the time of the research. DTFlow subsequently adopted GPL-3.0-only before its first public release. Historical observations below are intentionally preserved as written.
+
 Prepared: 4 October 2026 (Europe/Paris)  
 Updated: 4 October 2026 — backend-contract, implementation-phase and LoRA/cloud-storage follow-ups  
 Purpose: identify code, algorithms, workflows and architectural methods useful for developing [DTFlow](https://github.com/djebaz/dtflow).
