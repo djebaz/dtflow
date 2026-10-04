@@ -29,7 +29,7 @@ Today a queue is one resolved request repeated N times with seeds `seed, seed+1,
 
 ## Entry conditions and preserved contracts
 
-- Phase 5B is merged; the branch starts from current `main`.
+- Phase 5B is merged; the branch starts from current `main`, and the whole phase lands in one pull request.
 - The planner lives in `src/dtflow/services/` and imports no Qt, SQLite, gRPC or HTTP types; UI and CLI call it.
 - Output is deterministic: the same plan and base request yield the same ordered requests (request ids excepted, which are fresh per creation and never part of the ordering).
 - Existing `queue add -k N` behaviour and outputs are unchanged.
@@ -58,9 +58,9 @@ Today a queue is one resolved request repeated N times with seeds `seed, seed+1,
 
 ## Pull-request sequence
 
-Each step starts from current `main` unless the owner folds steps into one pull request; each opens as a draft after its first coherent commit, updates this plan with decisions and is merged only by the owner.
+All of Phase 6 is delivered in one pull request, in the two ordered steps below: the first commit is the planner and CLI, the second the desktop surface. It opens as a draft after the first coherent commit, updates this plan with decisions and is merged only by the owner.
 
-### PR 1: Pure planner and CLI
+### Step 1: Pure planner and CLI
 
 1. **Planner** `src/dtflow/services/planning.py`:
    - `Plan` (frozen dataclass): `mode` (`seed`, `pair`, `cross`), ordered `dimensions` (name to tuple of values), `count` for the seed mode.
@@ -73,7 +73,7 @@ Each step starts from current `main` unless the owner folds steps into one pull 
 
 Owned checks: `6-O1`, `6-O2`, `6-O3` as parametrized pure tests on `planning.py` (representative matched and mismatched pair inputs, small cross products with exact cardinality and order, bounds and invalid values that fail before enqueueing), plus `6-O4`: one composition scenario from plan to persisted queue with the fake backend asserting the items equal the planner output unchanged. The scheduler is not retested.
 
-### PR 2: Desktop planning surface
+### Step 2: Desktop planning surface
 
 1. **Presenter** `ui/planning_presenter.py` (Qt-free): maps form inputs to a `Plan`, summarises the dry-run table and cardinality, and maps planner errors to the owning widget with the existing error-field approach.
 2. **Queues page**: a compact "Plan" area next to the item count with mode selection, per-dimension value entry, a live count readout and a dry-run table; Create calls `expand_plan` then `create_queue`. The existing count spin box remains the seed-sweep shortcut. Large cardinalities show a clear refusal, not a truncated list.
@@ -85,7 +85,7 @@ Owned checks: `6-O1`, `6-O2`, `6-O3` as parametrized pure tests on `planning.py`
 - Update README (queue planning usage and `--help` flags), `initial.md` status, `releases.md` 0.4.0 notes, `runtime-layout.md` only if plan files are stored (default: they are user-supplied files, not state), and `unreleased.md`.
 - No live workflow is required; batch planning adds no new composition boundary.
 
-## Decisions to take in PR 1 (defaults proposed)
+## Decisions to take in the pull request (defaults proposed)
 
 - **Mode names and CLI spelling**: `seed`, `pair`, `cross`; `-l/--plan FILE` and `--dry`. Alternatives: separate `queue plan` subcommand. Default keeps one entry point (`queue add`).
 - **Cross ordering**: last listed dimension varies fastest, so results read like nested loops in the order written.
