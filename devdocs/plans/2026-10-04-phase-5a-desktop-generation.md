@@ -9,6 +9,22 @@
 
 Turn the disabled Generate preview into a working single-generation workflow without making Qt a second implementation. The Generate page collects a request, shows progress and outcomes, selects LoRAs with diagnostics, prepares or reuses cloud assets, and saves or loads credential-free configurations, all by calling shared services that the CLI already exercises. Phase 5B (queue controls) is a separate later plan.
 
+## What already exists (audited against `main` after PR #17)
+
+Reuse these; do not rebuild them.
+
+| Already delivered | Where | Consequence for 5A |
+| --- | --- | --- |
+| Background execution boundary (`4-O2`): owned asyncio thread, results returned on the GUI thread, shutdown-before-start safe | `ui/runner.py`, tested in `test_qt_shell.py` | Use `AsyncRunner.submit` for every service call; add no second runner. Only event coalescing for progress is new. |
+| Backend selection, connection check, credential entry, identity display (`4-O1` to `4-O6`) | `ui/main_window.py`, `services/connection.py`, `services/credentials.py` | The Generate page reads the backend and endpoint already chosen on the Connection page; no second selector wiring. |
+| Status/failure presentation mapping (`Presentation`, `present_status`, `present_failure`) | `services/connection.py` | Extend the same mapping for generation outcomes instead of a new vocabulary. |
+| Form loading, stacked workspace, preview-disable helper, theme, dynamic `state` properties | `ui/main_window.py`, `ui/theme.py`, `dtflow_dark.qss` | Enabling a page means removing its controls from the preview-disable pass one group at a time. |
+| Canonical Generate form with every needed object name (`promptEdit`, `modelCombo`, `seedEdit`, `samplerCombo`, `generateButton`, `generationProgressBar`, `previewHost`, `loraList`, `addLoraButton`, `compatibilityStatusLabel`, `inventoryEvidenceLabel`, `effectiveRequestBrowser`, `attemptIdentityLabel`, `configurationCombo`, `saveConfigurationButton`, `loadConfigurationButton`) | `ui/forms/generation_page.ui` | No new Designer work is expected; only small additions (for example an asset action row) if needed. |
+| Queue form with its object names | `ui/forms/queue_page.ui` | Reserved for Phase 5B. |
+| Every service the page needs, as pure functions or classes with no Qt: request resolution and config import/export (`services/config.py`), inventory, preflight and trigger prefixes (`services/preflight.py`), generation (`services/generation.py`), asset prepare/reconcile/validate (`services/assets.py`), queue (`services/queue.py`) | `services/` | Nothing to implement in these; Qt only calls them. |
+
+Not delivered: any wiring of the Generate or Queue pages (every control is disabled), and the one piece of orchestration that is still CLI-only (below). Of the roadmap's 5A bullets, configuration save/load is the cheapest because `export_config`/`load_config`/`resolve_request` are already pure and need no extraction, so it moves into PR 1.
+
 ## Finding that shapes the sequence
 
 The orchestration that turns arguments into a generation currently lives in `cli.py`: open the store, create and open the backend with a deadline, refresh inventory, apply trigger prefixes, run LoRA preflight, bind prepared assets, call `GenerationService.generate`, and close everything in the right order. Qt cannot import that and must not copy it. The first PR therefore extracts it into a Qt-independent service that both the CLI and the desktop call, before any widget is enabled. This is the main risk reducer for the whole phase.
@@ -33,7 +49,7 @@ The orchestration that turns arguments into a generation currently lives in `cli
 - Real progress, preview, final-output, failure and unknown-outcome presentation.
 - Bounded LoRA selection with weights, preflight diagnostics and the explicit trigger-prefix option.
 - Cloud asset actions: prepare a file (explicit upload), reconcile, and select a known local receipt; clear wording that the list is a local registry, not account inventory.
-- Save and load of the versioned credential-free generation configuration.
+- Save and load of the versioned credential-free generation configuration (already pure in `services/config.py`; wired in PR 1).
 - Local interruption with honest evidence.
 
 ### Out
@@ -50,7 +66,7 @@ Each PR starts from current `main`, opens as a draft after its first coherent co
 
 ### PR 1: Generation session service and basic Generate page (the next PR)
 
-Goal: one shared path from form values to a saved result, with the Generate page wired for plain single generations.
+Goal: one shared path from form values to a saved result, with the Generate page wired for plain single generations and credential-free configuration save/load.
 
 1. **Extract the session service** into `src/dtflow/services/session.py` (name open to adjustment):
    - owns backend creation through the composition root, bounded open, inventory refresh, optional trigger prefixes, preflight, prepared-asset binding and `GenerationService.generate`, plus ordered close;
@@ -59,11 +75,12 @@ Goal: one shared path from form values to a saved result, with the Generate page
    - decides state-directory ownership scope: the store's ownership lock is held only for the duration of an operation, not for the window's lifetime, so a CLI run next to an open GUI fails clearly or succeeds between operations instead of the GUI blocking it forever. Record the chosen lifetime as a decision; add an explicit "state is busy" outcome.
    - Move the corresponding logic out of `cli.py` so `cli.py` only parses arguments, calls the session service and prints JSON. Existing CLI tests are the regression evidence; do not add a parallel matrix.
 2. **Request form mapping** in a presenter module (`src/dtflow/ui/generation_presenter.py`): widget values to the same `resolve_request` overrides the CLI builds, with validation errors mapped back to fields by a stable error-to-field table. No resolver logic in widgets.
-3. **Enable the Generate page** for the three backends: Generate/Cancel buttons, progress bar, `previewHost` preview, result list with output path and metadata path, failure and unknown banners using the existing `Presentation` mapping. LoRA, configuration and asset controls stay disabled with preview wording in this PR.
+3. **Enable the Generate page** for the three backends: Generate/Cancel buttons, progress bar, `previewHost` preview, result list with output path and metadata path, failure and unknown banners using the existing `Presentation` mapping. The backend and endpoint come from the Connection page. LoRA and asset controls stay disabled with preview wording in this PR.
+3a. **Configuration save and load** (moved here from the former PR 3): wire `configurationCombo` and the save/load buttons to `export_config`/`load_config` through the presenter. The effective request panel shows `resolution_evidence`, so no UI-only defaults exist. A loaded configuration that names a LoRA does not bind a receipt, and the page says so; prepared references are never exported. Owned check: `5A-O4`.
 4. **Model and inventory**: populate `modelCombo` from the session's inventory (refresh is an explicit action and runs on the background loop); show inventory observation time and staleness text as given by the snapshot, never inventing freshness.
 5. **Interruption**: Cancel calls the shared local interruption path; the UI shows `local stop requested`, then the recorded evidence (`outcome unknown` for a possibly submitted attempt), never "cancelled on server".
 
-Owned checks: `5A-O1`, `5A-O2`, `5A-O6` with a controlled fake session and `pytest-qt` (event-loop responsiveness during a gated generation, field-error mapping, previews never promoted to final, unknown outcome wording). Reuse the fake backend scenarios (`success`, `reject`, `lost`, `terminal_error`) instead of new fixtures. Run the fake-backed desktop flow end to end offline.
+Owned checks: `5A-O1`, `5A-O2`, `5A-O4`, `5A-O6` with a controlled fake session and `pytest-qt` (event-loop responsiveness during a gated generation, field-error mapping, previews never promoted to final, unknown outcome wording). Reuse the fake backend scenarios (`success`, `reject`, `lost`, `terminal_error`) instead of new fixtures. Run the fake-backed desktop flow end to end offline.
 
 ### PR 2: LoRA selection and cloud asset presentation
 
@@ -71,12 +88,6 @@ Owned checks: `5A-O1`, `5A-O2`, `5A-O6` with a controlled fake session and `pyte
 - Asset actions: choose a file and call `prepare` (explicit upload with a confirmation dialog that states bytes may be uploaded and credits are not consumed by upload itself but may be by later generation, without inventing pricing), reconcile a record, pick a confirmed receipt for a selected LoRA. Display `confirmed`, `unknown` (with evidence code), `failed`, and the local-registry disclaimer.
 - Writer-lock contention (`assets.lock`) shown as a clear "another DTFlow process is preparing assets" message.
 - Owned checks: `5A-O3`, `5A-O5` against the in-memory DT+ fixture from `tests/support/cloud_assets.py`; no real upload.
-
-### PR 3: Configuration save and load
-
-- Wire `configurationCombo` and the save/load buttons to `export_config` and `load_config`; the effective request panel shows `resolution_evidence` so no UI-only defaults exist.
-- Prepared references are never written to portable configuration; loading a configuration that names a LoRA does not bind a receipt, and the UI says so.
-- Owned checks: `5A-O4` (round trip preserves effective values; credential-looking keys rejected by the shared contract; no hidden defaults).
 
 ### Gate: desktop composition and live evidence
 
@@ -88,7 +99,7 @@ Owned checks: `5A-O1`, `5A-O2`, `5A-O6` with a controlled fake session and `pyte
 ## Decisions to take in PR 1
 
 - Session service lifetime and state-lock scope (per operation versus per window).
-- Whether the session service owns the `AsyncRunner` contract or only exposes coroutines (recommendation: coroutines only; the runner stays in `ui/`).
+- The session service only exposes coroutines; the existing `AsyncRunner` stays in `ui/` (no new runner).
 - Event delivery: progress events cross from the background loop to the GUI thread through the runner's queued signal, coalesced so previews cannot flood the GUI.
 - Error-to-field table location (presenter, not widgets).
 
