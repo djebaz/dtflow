@@ -26,6 +26,8 @@ Pending changes for the next DTFlow release.
 
 - Phase 6 plan: [queue planning and batch expansion](../plans/2026-10-04-phase-6-queue-planning.md) sequences a pure planner (seed, pair and cross modes, bounds, dry run), CLI and desktop entry points and its decisions. Planning only; no planner behavior was added.
 
+- Queue planning, first step (Phase 6): the Qt-free `dtflow.services.planning` turns a base request plus varied dimensions into an ordered list of fully resolved requests. Modes are `seed` (the `queue add -k` rule, now the shared path behind `expand_items`; its items and `queue_position` evidence are unchanged), `pair` and `cross` (last dimension varies fastest); dimensions are prompt, model, seed (list or range), steps, guidance, sampler, size (width/height pairs) and per-LoRA weight. The cardinality is computed arithmetically and refused above 1000 before anything is enumerated; unequal pair lengths, empty or duplicate-valued dimensions, validator-rejected values and seed overflow fail before enqueueing. Items carry `plan.index`, `plan.mode`, `plan.seed` and `plan.dimension.*` evidence. `dtflow queue add` gains `-r/--plan FILE` (a versioned, credential-free `dtflow.queue-plan` document; mutually exclusive with `-k`) and `-u/--dry` (prints the item table and count as JSON and creates nothing). Decision: in pair and cross batches the base seed stays fixed unless a seed dimension is listed or the plan says `"seed": "increment"`, unlike `queue add -k`. The plan's proposed `-l/--plan` clashed with the existing `-l/--lora`, so the canonical pair is `-r/--plan`. Verified offline (6-O1 to 6-O4, CLI dry run); no live queue run, generation, upload or billable action was performed.
+
 ## Changed
 
 ## Fixed

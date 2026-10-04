@@ -126,6 +126,8 @@ uv run dtflow generate -b cloud -c cat.json -s 7                  # reuse a conf
 uv run dtflow attempts                                            # inspect durable attempts; never resubmits
 uv run dtflow settings -j 2                                       # persist the cloud concurrency maximum (1-4, default 4)
 uv run dtflow queue add -b fake -p "Offline fixture" -k 10 -j 4   # persist a paused queue of 10 items (seeds s, s+1, ...)
+uv run dtflow queue add -b fake -p "Offline fixture" -r plan.json -u   # dry run: print the exact items of a plan, create nothing
+uv run dtflow queue add -b fake -p "Offline fixture" -r plan.json   # persist a paused queue of the planned items
 uv run dtflow queue start QUEUE                                   # become the dispatch owner and run it (Ctrl-C interrupts)
 uv run dtflow queue pause QUEUE                                   # from another terminal; also resume, cancel, override, cap -j N
 uv run dtflow queue show QUEUE                                    # items in queue order with state, attempt and outputs
@@ -172,6 +174,27 @@ Local/cloud generation requires an exact `-m/--model` listed by the server's inv
   every item succeeded, `4` if any item is unknown, otherwise `3` if any failed, was cancelled or remains pending.
   Note: the shared buffer budget (256 MiB, about 100 MiB reserved per request) currently admits only about two
   concurrent real generations, whatever the queue maximum.
+
+- **Queue plans.** `queue add -r/--plan FILE` replaces `-k/--count` (the two are mutually exclusive) with a bounded,
+  deterministic batch built from the resolved base request (the usual `-p`, `-m`, `-c`, `-l` options) plus varied
+  dimensions; `-u/--dry` prints the exact item table (index, varied values, resulting seed) and the count as JSON and
+  persists nothing, for a plan or a plain `-k`. A plan file is versioned, credential-free JSON, user-supplied (it is
+  never copied into state; each queued item records its resolved request and `plan.*` evidence):
+
+  ```json
+  {"schema": "dtflow.queue-plan", "version": 1, "mode": "cross",
+   "dimensions": {"prompt": ["a cat", "a dog"], "steps": [4, 8], "size": [[512, 512], [768, 512]],
+                  "lora_weight": [{"identifier": "EXACT_LORA", "weights": [0.6, 1.0]}]}}
+  ```
+
+  Modes are `seed` (`"count": N`, seeds increment from the base seed, the `-k` rule), `pair` (equal-length dimensions
+  matched position by position; unequal lengths are an error, never truncated) and `cross` (every combination, the last
+  listed dimension varying fastest). Dimensions are `prompt`, `model`, `seed` (a list or `{"start": S, "count": N}`),
+  `steps`, `guidance`, `sampler`, `size` (`[width, height]` pairs, never independent axes) and `lora_weight` (weights
+  for a LoRA already given with `-l`; no compatibility is inferred). In `pair` and `cross` the base seed stays fixed
+  for every item unless a `seed` dimension is listed or the plan sets `"seed": "increment"`. A plan larger than 1000
+  items, an empty or duplicate-valued dimension, unequal pair lengths, a value the request validators reject or a seed
+  overflow fails before anything is created.
 
 The fixture backend is a deterministic color swatch; no model inference occurs. State is stored in
 `.dtflow/attempts.sqlite3` and outputs under `.dtflow/outputs/<attempt-id>/`. Run state on a local filesystem, with a

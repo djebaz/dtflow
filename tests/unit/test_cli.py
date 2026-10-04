@@ -202,3 +202,28 @@ def test_cli_missing_selection_inputs_exit_2(invoke, monkeypatch):
     assert invoke("check", "-b", "local")[0] == 2
     assert invoke("check", "-b", "cloud")[0] == 2
     assert invoke("generate", "-b", "cloud", "-p", "x", "-m", "m")[0] == 2
+
+
+def test_queue_add_plan_dry_run_prints_the_exact_items_and_creates_nothing(invoke, tmp_path):
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "schema": "dtflow.queue-plan",
+                "version": 1,
+                "mode": "cross",
+                "dimensions": {"prompt": ["a", "b"], "steps": [4, 8]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    add = ("queue", "add", "-b", "fake", "-p", "fixture")
+    code, out, _ = invoke(*add, "-r", str(plan), "-u")
+    table = json.loads(out)
+    assert code == 0 and table["total"] == 4 and table["seed_policy"] == "fixed"
+    assert table["rows"][1] == ["2", "a", "8", "0"] and not (tmp_path / "state").exists()  # dry run persists nothing
+    assert invoke(*add, "-k", "2", "-u")[0] == 0 and json.loads(invoke(*add, "-k", "2", "-u")[1])["total"] == 2
+    code, _, err = invoke(*add, "-r", str(plan), "-k", "2")
+    assert code == 2 and "mutually exclusive" in err and not (tmp_path / "state").exists()
+    choices = cli.parser()._subparsers._group_actions[0].choices["queue"]._subparsers._group_actions[0].choices
+    assert "-r, --plan" in choices["add"].format_help() and "-u, --dry" in choices["add"].format_help()

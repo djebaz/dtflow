@@ -27,7 +27,8 @@ from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concu
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.config import export_config, load_config, resolve_request
-from dtflow.services.queue_session import create_queue, dispatch_queue, expand_items
+from dtflow.services.planning import Plan, describe_plan, expand_plan, load_plan
+from dtflow.services.queue_session import create_queue, dispatch_queue
 from dtflow.services.session import (
     ASSET_NOTE,
     asset_view,
@@ -219,8 +220,19 @@ def add_queue_commands(commands) -> None:
         "-k",
         "--count",
         type=int,
-        default=1,
         help="Number of independent items; item N uses seed + N - 1 (default 1, at most 1000).",
+    )
+    add.add_argument(
+        "-r",
+        "--plan",
+        type=Path,
+        help="Versioned queue plan (seed, pair or cross batch); replaces --count. See the README for the file format.",
+    )
+    add.add_argument(
+        "-u",
+        "--dry",
+        action="store_true",
+        help="Print the exact item table and count for --plan or --count, then stop; creates nothing.",
     )
     add.add_argument(
         "-j", "--jobs", type=int, help="Queue concurrency maximum, 1-4 (default: the cloud setting, else 4)."
@@ -324,10 +336,19 @@ def queue_exit_code(queue: dict) -> int:
     return EXIT_OK
 
 
-async def queue_requests(args: argparse.Namespace) -> list[ResolvedGenerationRequest]:
+def queue_plan(args: argparse.Namespace) -> Plan:
+    if args.plan is not None and args.count is not None:
+        raise ValidationError("--plan and --count are mutually exclusive.")
+    return (
+        load_plan(args.plan) if args.plan is not None else Plan("seed", count=1 if args.count is None else args.count)
+    )
+
+
+async def queue_base(args: argparse.Namespace) -> tuple[Plan, ResolvedGenerationRequest]:
     if args.scenario != "success" and args.backend != "fake":
         raise ValidationError("--scenario applies to the fake backend only.")
-    return expand_items(await bind_assets(args, resolve_generation(args)), args.count)
+    plan = queue_plan(args)
+    return plan, await bind_assets(args, resolve_generation(args))
 
 
 async def run_queue(args: argparse.Namespace) -> int:
@@ -343,7 +364,11 @@ async def run_queue(args: argparse.Namespace) -> int:
         print(json.dumps({"queue": args.queue, "posted": command, "applied_by": "dispatcher poll or next start"}))
         return EXIT_OK
     if command == "add":
-        requests = await queue_requests(args)
+        plan, base = await queue_base(args)
+        if args.dry:
+            print(json.dumps(asdict(describe_plan(base, plan)), indent=2))
+            return EXIT_OK
+        requests = expand_plan(base, plan)
         backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": args.scenario}
         queue_id, cap = await create_queue(args.state, backend, requests, args.jobs)
         print(json.dumps({"queue_id": queue_id, "state": "paused", "items": len(requests), "cap": cap}))
