@@ -20,6 +20,10 @@ QToolTip {
   padding: 5px;
 }
 
+QLabel {
+  background: transparent;
+}
+
 QFrame#headerFrame,
 QFrame#contextRail,
 QFrame#workspaceFrame,
