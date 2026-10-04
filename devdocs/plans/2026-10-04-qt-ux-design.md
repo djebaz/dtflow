@@ -23,11 +23,11 @@
 
 - [x] Inspect the current DTFlow phase/release contracts and the Splitvids stylesheet/layout conventions.
 - [x] Record the presentation architecture, visual tokens and canonical `.ui` workflow.
-- [ ] Add the centralized DTFlow dark QSS without Splitvids-specific selectors or inline runtime styling.
-- [ ] Add canonical Designer forms for the shell, generation workspace and queue workspace.
-- [ ] Define promoted-widget seams for custom previews, queue views and future rich editors.
-- [ ] Document how PR #15 should compose the forms and apply the theme after its Phase 4 shell lands.
-- [ ] Synchronize the initial plan and pending release notes without claiming runtime Qt behavior.
+- [x] Add the centralized DTFlow dark QSS without Splitvids-specific selectors or inline runtime styling.
+- [x] Add canonical Designer forms for the shell, generation workspace and queue workspace.
+- [x] Define promoted-widget/model seams for custom previews, queue views and future rich editors.
+- [x] Integrate the theme and relocated main form with the Phase 4 shell after PR #15 landed.
+- [x] Synchronize the repository contract, README, initial plan and pending release notes without claiming runtime Phase 5 behavior.
 - [ ] Commit, push and maintain a draft pull request for review.
 
 ## UX architecture
@@ -77,7 +77,8 @@ Selectors use stable semantic object names and dynamic properties such as `role`
 - 2026-10-04: start the UX design foundation in a separate review branch while PR #15 owns the minimal Phase 4 runtime shell.
 - 2026-10-04: base visual tokens on Splitvids but replace its imperative builder and inline-style patterns with canonical Designer forms and one application QSS.
 - 2026-10-04: treat generation and queue forms as Phase 5 presentation contracts; adding the forms does not claim that those workflows are wired or usable.
-- 2026-10-04: keep the design PR based on `main`; integrate PR #15 after it lands rather than duplicating its connection/credential implementation.
+- 2026-10-04: PR #15 was squash-merged first; rebase this branch and integrate its existing shell rather than duplicating connection or credential behavior.
+- 2026-10-04: keep `previewHost` as a future custom preview promotion point and `queueItemsView` as a model/view seam; neither form imports backend types.
 
 ## Open questions
 
@@ -85,7 +86,6 @@ None blocking. Detailed control ordering and text can change during visual revie
 
 ## Validation
 
-- [ ] Review the forms interactively in Qt Designer after PySide6 lands on `main`.
-- [ ] Validate generated form imports and focused Qt behavior after integration with PR #15.
+- [ ] Review the forms interactively in Qt Designer.
+- [x] Mechanically convert all three tracked forms with `pyside6-uic` after integration with PR #15.
 - [ ] Final tests and smoke tests deferred to the user under the fast implementation workflow.
-
