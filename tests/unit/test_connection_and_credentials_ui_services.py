@@ -62,7 +62,8 @@ def test_failure_presentation_uses_codes_not_text():
 
 
 @pytest.mark.asyncio
-async def test_check_connection_composes_fake_backend_and_saved_provider_selects_cloud():
+async def test_check_connection_composes_fake_backend_and_saved_provider_selects_cloud(monkeypatch):
+    monkeypatch.delenv("DRAWTHINGS_API_KEY", raising=False)  # a developer's live-test key must not reach this check
     assert (await check_connection(BackendSelection("fake"))).transport == "ok"
     with pytest.raises(ValidationError):  # no env key and no saved provider: refused before any network use
         await check_connection(BackendSelection("cloud"), saved=None)

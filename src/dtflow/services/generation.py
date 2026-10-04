@@ -25,6 +25,7 @@ from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.logging_setup import ATTEMPT
 from dtflow.services.artifacts import save_artifacts, validate_result
+from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
 from dtflow.services.events import EventBuffer
 from dtflow.services.preflight import preflight_loras, raise_if_blocked
@@ -44,7 +45,9 @@ class GenerationService:
         timeouts: TimeoutPolicy | None = None,
         saver: Callable = save_artifacts,
         budget: BufferBudget | None = None,
+        assets: AssetValidator | None = None,
     ):
+        self.assets = assets
         self.backend, self.store, self.output = backend, store, Path(output)
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
@@ -98,6 +101,20 @@ class GenerationService:
                     request.request_id,
                 )
             )
+        if request.prepared_assets:
+            # Validation is metadata-only: a stale, inaccessible or unconfirmed reference blocks the request here,
+            # before any attempt exists, and never triggers an upload or substitutes another receipt.
+            if self.assets is None or any(item.backend_id != caps.backend_id for item in request.prepared_assets):
+                raise BackendError(
+                    BackendFailure(
+                        ErrorCategory.VALIDATION,
+                        "prepared_asset_unsupported",
+                        "Prepared cloud assets are unsupported by the selected backend.",
+                        request.request_id,
+                    )
+                )
+            for prepared in request.prepared_assets:
+                await self._bounded(self.assets.validate(prepared), self.timeouts.http, "asset_validation")
         if request.loras:
             # Confirmed incompatibility or absence must stop the request before any durable attempt exists.
             raise_if_blocked(request, await self.preflight(request))

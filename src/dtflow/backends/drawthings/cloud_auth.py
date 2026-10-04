@@ -8,6 +8,7 @@ import copy
 import json
 import math
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -95,6 +96,16 @@ class CloudAuth:
         self._lock = asyncio.Lock()
         self._refresh: asyncio.Task[str] | None = None
         self._closed = False
+        self._scope = uuid.uuid4().hex
+
+    @property
+    def origin(self) -> str:
+        return self._origin
+
+    @property
+    def scope(self) -> str:
+        """Opaque identity of this client's credential/origin scope; carries nothing derived from the credential."""
+        return self._scope
 
     async def token(self) -> str:
         if self._closed:

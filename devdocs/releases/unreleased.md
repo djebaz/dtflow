@@ -14,6 +14,8 @@ Pending changes for the next DTFlow release.
 
 - Qt workspace preview composition: the shell now provides Connection, Generate, and Queues navigation and loads all three canonical Designer forms into one stacked workspace. Connection remains the only wired page; every interactive control on Generate and Queues is disabled and both pages are labelled preview-only. No generation, queue, inventory, configuration, LoRA, network, or persistence behavior was added.
 
+- Cloud LoRA assets (Phase 3B, cloud half): `dtflow assets prepare|list|show|reconcile`; an independent durable asset registry `<state>/assets.sqlite3` (schema version 1, never reset); BYOM negotiation with streamed, hash-verified signed PUT (no DT+ authorization, redacted URLs); explicit `unknown` evidence for ambiguous transfers, failed receipt writes and interrupted operations, never re-uploaded automatically; metadata-only reconcile; in-process coalescing of identical concurrent prepares; `-z/--asset` binding of confirmed receipts into generation and queue requests with a metadata-only revalidation before every cloud dispatch. Verified offline with in-memory fixtures (3B-O6 to O9). No live upload, generation or billable action was run; `3-LG4` and custom cloud LoRA support claims remain pending.
+
 ## Changed
 
 ## Fixed
