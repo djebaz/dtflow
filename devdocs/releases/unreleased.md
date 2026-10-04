@@ -6,6 +6,8 @@ Pending changes for the next DTFlow release.
 
 - `tools/packaging/build_exe.py` stamped one-file build: records the full source commit and clean/dirty status in an ignored generated `dtflow/_buildinfo.py`, so a frozen executable reports its identity without Git, and names the artifact `dtflow-<version>-g<short-sha>-<platform>-<arch>.exe`. Source runs still report `unknown`. Verified offline by unit tests and one Linux PyInstaller build in the agent sandbox; no Windows build, generation or billable action was run.
 
+- Durable queues and rolling dispatch (Phase 3B, queue half): `dtflow queue add|list|show|start|pause|resume|cancel|override|cap`. Queue, item, control and event tables join the attempts database (schema version 2; a release 0.1.0 database migrates atomically after a recoverable `attempts.pre-v2.sqlite3` copy, newer versions are refused). The dispatch owner is the process holding the state directory's ownership lock; other processes read and post controls only. Items reserve slots before any attempt exists, refill immediately on release, honour the queue and backend maximum, restore paused after restart, and keep `unknown` reservations blocking until an explicit recorded override. Verified offline only (3B-O1 to O5 and O10); no live queue run, generation or billable action was performed.
+
 ## Changed
 
 ## Fixed
