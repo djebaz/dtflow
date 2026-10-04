@@ -2,6 +2,7 @@
 
 import pytest
 from support.dt_server import TLS_DIR, EchoSpec, black_hole, closed_port, scripted_server
+from support.live_local import unreachable_reason, warn_if_model_browsing_off
 from support.network_guard import endpoint
 
 from dtflow.backends.drawthings import DrawThingsBackend, DrawThingsEndpoint, TlsPolicy
@@ -143,7 +144,11 @@ async def test_unreachable_and_silent_servers_fail_within_the_connect_deadline()
     async with closed_port() as (host, port):
         adapter = await opened(host, port)
         # Refusal surfaces as connect_failed or, on Windows, as the connect deadline; both are pre-submission.
-        assert dict((await adapter.check_connection()).diagnostics)["transport_code"] in UNREACHABLE_CODES
+        detail = dict((await adapter.check_connection()).diagnostics)
+        assert detail["transport_code"] in UNREACHABLE_CODES
+        # Live checks warn and skip only for refusal or deadline; other network errors stay failures.
+        assert unreachable_reason(detail["transport_code"], detail.get("transport_kind"), "host:1") is not None
+        assert unreachable_reason("connect_failed", "OSError", "host:1") is None
         await adapter.aclose()
     async with black_hole() as (host, port):
         adapter = await opened(host, port, timeouts=TimeoutPolicy(connect=0.3, inventory=1.0))
@@ -182,6 +187,19 @@ async def test_inventory_mapping_provenance_and_cache():
             cached = await adapter.get_inventory()
             assert not cached.refreshed and len(server.seen.echo_requests) == 1
             assert cached.entries == fresh.entries
+        finally:
+            await adapter.aclose()
+
+
+@pytest.mark.asyncio
+async def test_inventory_without_files_triggers_model_browsing_warning(request):
+    async with scripted_server(echo=EchoSpec(models=MODELS)) as server:
+        adapter = await opened(server.host, server.port)
+        try:
+            snapshot = await adapter.get_inventory(refresh=True)
+            with pytest.warns(UserWarning, match="Enable Model Browsing"):
+                warn_if_model_browsing_off(request, snapshot)
+            assert [value for key, value in request.node.user_properties if key == "warning"]
         finally:
             await adapter.aclose()
 

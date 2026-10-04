@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Live local checks now separate "Draw Things not running" from real failures: a refused connection or connect deadline warns and skips (the cloud inventory check keeps its passed cloud evidence and omits only local LoRA enrichment), other network errors still fail, and an Echo with no model files warns that "Enable Model Browsing" is probably off. Warnings are retained per check in `results.json`; `check_connection` diagnostics now include `transport_kind`. No live request or generation was run for this change.
+
 - Expose non-generative backend `get_file_identities()` with backend-neutral `FileIdentity` existence/optional SHA-256, and direct DT+ client concurrency 1–4 (default 4). The cap is a client policy, not a service entitlement or rolling scheduler.
 
 - Add production LoRA availability enrichment across local Draw Things gRPC and direct DT+: preserve Echo trigger prefix/default weight, selectively resolve converted SHA-256 with `FilesExist`, classify DT+ direct listing or metadata-only BYOM reuse/upload-required evidence, and atomically write the rebuildable `.dtflow/cache/inventory/lora_inventory.json`. The source path never follows signed upload URLs and no generation/upload is performed by offline tests. The existing non-generative live inventory group now also retains `inventory/lora_inventory.json`; its DT+ BYOM lookup is bounded to `DTFLOW_LIVE_LORA` when provided, otherwise the longest local LoRA filename, while other non-cloud-listed LoRAs remain unresolved rather than being mass-hashed. Rename local-only integration tests from `test_drawthings_*` to `test_local_grpc_*` while retaining `drawthings` for shared provider protocol modules.

@@ -8,12 +8,13 @@ from uuid import uuid4
 
 import pytest
 from support.live_evidence import save_inventory, save_lora_inventory
+from support.live_local import unreachable_reason, warn_if_model_browsing_off, warn_live
 from support.network_guard import endpoint, live_endpoints
 from test_local_grpc_live import configured_local_adapter
 
 from dtflow.backends.drawthings.cloud import DirectCloudBackend
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
-from dtflow.core.models import ResolvedGenerationRequest, TimeoutPolicy
+from dtflow.core.models import BackendError, ResolvedGenerationRequest, TimeoutPolicy
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.credentials import EnvironmentCredentials
 from dtflow.services.generation import GenerationService
@@ -36,7 +37,7 @@ async def deployed_cloud():
 
 @pytest.mark.live
 @pytest.mark.asyncio
-async def test_cloud_token_model_and_lora_inventory(live_run):
+async def test_cloud_token_model_and_lora_inventory(live_run, request):
     async with deployed_cloud() as cloud:
         status = await cloud.check_connection()
         assert (status.transport, status.authentication, status.inventory) == ("ok", "ok", "ok"), status.diagnostics
@@ -48,8 +49,18 @@ async def test_cloud_token_model_and_lora_inventory(live_run):
         await local.open()
         try:
             with endpoint(host, port):
-                local_inventory = await local.get_inventory(refresh=True)
+                try:
+                    local_inventory = await local.get_inventory(refresh=True)
+                except BackendError as exc:
+                    failure = exc.failure
+                    reason = unreachable_reason(failure.code, dict(failure.diagnostics).get("kind"), f"{host}:{port}")
+                    if reason is None:
+                        raise
+                    # The cloud checks above already passed and stay retained; only local LoRA enrichment is omitted.
+                    warn_live(request, reason + " Local LoRA inventory skipped.")
+                    return
                 save_inventory(live_run, "local", local.endpoint.label, local_inventory)
+                warn_if_model_browsing_off(request, local_inventory)
                 local_loras = tuple(entry for entry in local_inventory.entries if entry.kind == "lora")
                 requested = os.environ.get("DTFLOW_LIVE_LORA", "").strip()
                 if not local_loras and not requested:

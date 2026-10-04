@@ -113,7 +113,13 @@ def pytest_runtest_makereport(item, call):
         item.get_closest_marker("live") or item.get_closest_marker("live_generation")
     ):
         item.config._dtflow_live_reports.append(
-            {"test": report.nodeid, "phase": report.when, "outcome": report.outcome, "seconds": report.duration}
+            {
+                "test": report.nodeid,
+                "phase": report.when,
+                "outcome": report.outcome,
+                "seconds": report.duration,
+                **({"warnings": notes} if (notes := [v for k, v in report.user_properties if k == "warning"]) else {}),
+            }
         )
 
 

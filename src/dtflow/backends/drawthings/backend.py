@@ -142,7 +142,14 @@ class DrawThingsBackend:
         try:
             await self._connect()
         except BackendError as exc:
-            return status("failed", "unknown", "unknown", transport_code=exc.failure.code)
+            kind = dict(exc.failure.diagnostics).get("kind")
+            return status(
+                "failed",
+                "unknown",
+                "unknown",
+                transport_code=exc.failure.code,
+                **({"transport_kind": kind} if kind else {}),
+            )
         try:
             reply, secret_sent = await self._echo()
         except BackendError as exc:
