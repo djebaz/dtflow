@@ -1,4 +1,4 @@
-"""Optional non-generative live check: local Draw Things connection and Echo inventory.
+"""Optional non-generative live check: local Draw Things gRPC connection and Echo inventory.
 
 Run explicitly:  DTFLOW_LIVE_TESTS=1 DTFLOW_LIVE_HOST=<ip> DTFLOW_LIVE_PORT=<port> uv run pytest -m live
 Optional: DTFLOW_LIVE_CA_FILE (explicit CA bundle), DTFLOW_LIVE_SERVER_NAME (verified TLS name when connecting by IP),
@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 
 import pytest
+from support.live_evidence import save_inventory
+from support.live_local import fail_local, skip_if_local_unreachable, warn_if_model_browsing_off
 from support.network_guard import endpoint
 
 from dtflow.backends.drawthings import DrawThingsBackend, DrawThingsEndpoint, TlsPolicy
@@ -24,9 +26,8 @@ class Secret:
         return Credential("env", self.value)
 
 
-@pytest.mark.live
-@pytest.mark.asyncio
-async def test_local_connection_and_inventory():
+def configured_local_adapter():
+    """Build the configured local gRPC adapter without opening a connection."""
     host, port = os.environ.get("DTFLOW_LIVE_HOST"), os.environ.get("DTFLOW_LIVE_PORT")
     if not host or not port:
         pytest.skip("DTFLOW_LIVE_HOST (an IP literal) and DTFLOW_LIVE_PORT are required.")
@@ -42,11 +43,28 @@ async def test_local_connection_and_inventory():
         timeouts=TimeoutPolicy(connect=10.0, inventory=20.0),
         shared_secret=Secret(secret) if secret else None,
     )
+    return adapter, host, int(port)
+
+
+@pytest.mark.live
+@pytest.mark.local
+@pytest.mark.asyncio
+async def test_local_connection_and_inventory(live_run, request):
+    adapter, host, port = configured_local_adapter()
     await adapter.open()
     try:
-        with endpoint(host, int(port)):
+        with endpoint(host, port):
             status = await adapter.check_connection()
-            assert status.transport == "ok", f"sanitized diagnostics: {status.diagnostics}"
+            detail = dict(status.diagnostics)
+            if status.transport == "failed":
+                skip_if_local_unreachable(
+                    request, detail.get("transport_code"), detail.get("transport_kind"), f"{host}:{port}"
+                )
+            if status.transport != "ok":
+                fail_local(f"{host}:{port}", detail.get("transport_code"), detail.get("transport_kind"))
             assert status.inventory == "ok", f"sanitized diagnostics: {status.diagnostics}"
+            inventory = await adapter.get_inventory(refresh=True)
+            save_inventory(live_run, "local", adapter.endpoint.label, inventory)
+            warn_if_model_browsing_off(request, inventory)
     finally:
         await adapter.aclose()

@@ -65,6 +65,10 @@ Expose a validated positive-integer cloud concurrency maximum in the CLI from th
 
 Qt exposes the same setting and uses a subtle color change above **2**, without a prominent warning or confirmation dialog.
 
+## Runtime paths
+
+Use the [shared runtime layout](../architecture/runtime-layout.md): backend-neutral outputs grouped by attempt, durable state separate from disposable cache, and flat `cache/inventory/local_inventory.json` / `cloud_inventory.json` names, alongside `lora_inventory.json`. Keep endpoint/server observations inside JSON, not filenames; invalidate account-dependent evidence when credentials change. The derived LoRA cache writer exists; raw inventory disk-cache integration remains planned. When persistent inventory caching is introduced, use an integer `CACHE_VERSION` and rebuild missing/mismatched formats; do not confuse cache format with durable-state schema. Live evidence stays under `test-runs/<run-id>/`, outside the application root. Create optional directories on demand.
+
 ## Shared logging and development mode
 
 Implement the repository logging contract through one shared standard-library Python logging configuration. Use repository-root `logs/` for development and `%LOCALAPPDATA%\DTFlow\logs\` for packaged Windows builds; support an explicit destination override. Neither packaged path resolution nor logging setup may require Git or Qt.
@@ -125,9 +129,9 @@ Expose receipt/known-upload inspection without pretending it lists the complete 
 
 Each behavior has one authoritative automated test layer. Higher layers test only behavior they uniquely add or necessary composition between tested layers. Reuse counts only when the same implementation executes; a new override or execution path needs focused coverage. Acceptance requirements do not imply one test function each. Prefer extending an existing scenario or parametrized test, while allowing a focused regression for a genuinely distinct boundary.
 
-The source-run `dtflow test` wrapper already exists in PR #8; do not build another runner. `-all/--all` selects offline tests, `-live/--live` selects non-generative live checks, and `-gen/--generate` selects generation smoke tests. Groups combine additively; no flags means offline. Ordinary `uv run pytest` keeps live tests gated. Requested unconfigured live checks fail clearly; the generation group currently has no tests and reports that absence. Owner-reported Windows evidence covers offline, live-only and offline-plus-live runs, not generation workflows.
+The source-run `dtflow test` wrapper already exists in the repository (introduced by PR #8); do not build another runner. `-all/--all` selects offline tests, `-live/--live` selects non-generative live checks, and `-gen/--generate` selects generation smoke tests. Groups combine additively; no flags means offline. Ordinary `uv run pytest` keeps live tests gated. Requested unconfigured live checks fail clearly; the generation group implements one bounded DT+ authorization/generation/saving smoke requiring DRAWTHINGS_API_KEY and an exact DTFLOW_LIVE_MODEL. The live group includes local Draw Things and DT+ token/inventory checks. The owner reports Windows offline/live runs and a bounded deployed DT+ generation at an earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`; final-head Windows repetition and broader compatibility remain pending.
 
-Phase 2A owns unchanged credential selection, core output validation, base attempt-before-submission persistence and unfinished-attempt recovery. Phase 2B owns provider wire mapping (including seed zero, samplers and dimensions), codecs, TLS policies, generic stream/terminal behavior, preview/final validation and inventory parsing/classification. Phase 2C must own cloud token lifecycle, authorization, response parsing, subscription-only fields and cloud-specific sanitization; that coverage remains planned until implemented. Shared infrastructure owns unexpected-network refusal and test selection. Do not duplicate these matrices in Phase 3. A CLI configuration scenario may assert a saved resolved seed of zero without decoding the provider wire again.
+Phase 2A owns unchanged credential selection, core output validation, base attempt-before-submission persistence and unfinished-attempt recovery. Phase 2B owns provider wire mapping (including seed zero, samplers and dimensions), codecs, TLS policies, generic stream/terminal behavior, preview/final validation and inventory parsing/classification. Phase 2C owns implemented offline coverage for cloud token lifecycle, authorization, response parsing, subscription-only fields and cloud-specific sanitization; optional cloud live checks exist with owner-reported success for the earlier tested workload, not final-head or broad compatibility acceptance. Shared infrastructure owns unexpected-network refusal and test selection. Do not duplicate these matrices in Phase 3. A CLI configuration scenario may assert a saved resolved seed of zero without decoding the provider wire again.
 
 Occasional live workflows can replace duplicated high-level fixture happy paths, but cannot replace controlled tests for queue/persistence correctness, uncertainty, failed writes or cancellation boundaries. A small fixture composition smoke remains useful where it proves new wiring cheaply; do not require both fixture and live scenarios to repeat the same assertion matrix.
 
@@ -135,8 +139,8 @@ Occasional live workflows can replace duplicated high-level fixture happy paths,
 
 | ID | Scenario group and authoritative layer | New evidence |
 | --- | --- | --- |
-| 3A-O1 | CLI surface/presentation; compact CLI tests | Headless startup/help/version, implemented options, stdout/stderr and parametrized mapping for success, validation, rejection, interruption and unknown outcomes. Invalid CLI input prevents dispatch. |
-| 3A-O2 | Configuration resolution and persistence; service plus one CLI composition | Import/defaults/overrides → immutable effective request → output metadata; distinctive parameter values, round trips and no-cache bypass. Reuse base attempt/output durability tests. |
+| 3A-O1 | CLI surface/presentation; compact CLI tests | Headless startup/help/version using the shared application/build identity, implemented options, stdout/stderr and parametrized mapping for success, validation, rejection, interruption and unknown outcomes. Invalid CLI input prevents dispatch. |
+| 3A-O2 | Configuration resolution and persistence; service plus one CLI composition | Import/defaults/overrides → immutable effective request → output metadata, including application version/full source commit where available; distinctive parameter values, round trips and no-cache bypass. Reuse base attempt/output durability tests. |
 | 3A-O3 | Real-backend application composition; narrow local/cloud fixture smoke where needed | Backend selection reaches the intended adapter through CLI/services and saves the application result. No repeated protocol assertions; live evidence can replace duplicated high-level happy paths. |
 | 3A-O4 | Application inventory presentation/filtering | Only new application behavior: selection/display of supplied provenance and unknown entries, without inventing compatibility. Existing adapter tests own refresh/parsing/classification when unchanged. |
 | 3A-O5 | LoRA compatibility/preflight; parametrized pure/service tests | Match/mismatch/unknown and supported official exception/refiner rules; confirmed incompatibility prevents dispatch. Keep availability distinct from compatibility. |
@@ -163,7 +167,7 @@ These eighteen groups are an outline, not a function-count quota or ceiling. A g
 
 ### Separately selected live workflows
 
-Reuse the existing local non-generative check and the future 2C cloud check; do not add another connection test merely because Phase 3 exposes a CLI. Add composition assertions only if the application path differs materially.
+Reuse the existing local non-generative check and the existing 2C cloud check; do not add another connection test merely because Phase 3 exposes a CLI. Add composition assertions only if the application path differs materially.
 
 | ID | Planned live-generation workflow | Evidence |
 | --- | --- | --- |

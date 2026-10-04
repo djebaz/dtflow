@@ -10,6 +10,8 @@ Implementation phases describe engineering work. Releases deliver independently 
 
 This document owns proposed release scope and acceptance gates. The initial plan owns engineering sequence, the parity matrix tracks intended features, and versioned release notes record what actually shipped. Keep them consistent in implementation PRs. The version numbers below are targets, not current application versions, dates or promises of backend compatibility.
 
+Release acceptance consumes the authoritative scenario groups and evidence owned by the implementation phases; it does not create a second test suite simply because the same behavior is now exposed through a CLI, Qt surface, planner, workflow or packaged executable. Packaging/live checks prove packaging, deployed compatibility and full composition only. They do not replace deterministic lower-layer tests or require those matrices to be rerun through a later presentation layer.
+
 Phase 2 is an internal foundation milestone rather than a user release: contract, fake, real adapters, protocol fixtures, target-Windows packaging investigation and dependency-distribution compliance review. Preserve source-run development support throughout.
 
 ## Proposed usable releases
@@ -37,7 +39,7 @@ Phase 7 advanced priorities, fairness or adaptive scheduling is not a mandatory 
 
 Consume the [Phase 3A authoritative scenario groups](phase-3-cli.md#phase-3a-scenario-groups) and applicable existing Phase 2 evidence. Do not define a second wire/token/codec/persistence matrix at release time. The implemented configuration, CLI, bounded LoRA/preflight and logging scope must pass its mapped acceptance.
 
-Record 3-LG1 and/or 3-LG2 through the actual release application for each real backend advertised as usable. Workflows are small, individually selectable when implemented and separately authorized; diagnostic-probe evidence alone does not validate the release adapter. Retain source/build identity, supported combinations and limits. Source CLI success does not establish executable packaging.
+Record the corresponding live workflow for every real backend advertised as usable: 3-LG1 for local Draw Things and 3-LG2 for direct DT+. Workflows are small, individually selectable when implemented and separately authorized; diagnostic-probe evidence alone does not validate the release adapter. Retain source/build identity, supported combinations and limits. Source CLI success does not establish executable packaging.
 
 ### 0.2.0 — Durable rolling queues
 
@@ -49,25 +51,43 @@ Introduce saved-state versioning and the compatibility contract below before dec
 
 ### 0.3.0 — Complete desktop path
 
+Consume the [Phase 4 testing ownership](initial.md#phase-4-testing-ownership) and [Phase 5 testing ownership](initial.md#phase-5-testing-ownership) scenario groups together with the existing Phase 2/3 authoritative evidence. Phase 4/5 tests own Qt shell, credential-platform wiring, presentation and service composition; they do not rerun backend protocol, request-resolution, persistence or scheduler matrices through widgets.
+
 Phase 4 supplies the shell and secure connection setup. Phase 5A supplies the generation form, actual progress, output/error presentation, a bounded verified LoRA scope, shared compatibility diagnostics, cloud upload/known-receipt reuse and basic configuration save/load. Phase 5B supplies queue creation/inspection, item status, concurrency, Pause/Resume/Cancel and restart/uncertainty presentation through existing Phase 3B services.
 
 Basic configuration reuse should already have a shared versioned import/export contract in Phase 3A; the Qt save/load surface belongs here. The richer preset library/browser remains 0.4.0. Saved configuration must not contain credentials.
 
-Exercise the exact portable executable on the owner's Windows 10 / Intel Pentium E6500 machine: startup, native codecs, TLS/certificate resources, Qt plugins, credential storage, per-user paths, logging, build identity and responsive background execution. Record end-to-end generation/queue evidence for supported backends separately from packaging-only checks.
+Exercise the exact portable executable on the owner's Windows 10 / Intel Pentium E6500 machine: startup, native codecs, TLS/certificate resources, Qt plugins, credential storage, per-user paths, logging, build identity and responsive background execution. The focused Windows Credential Manager check establishes the real platform-storage boundary; generic credential precedence remains owned by shared services.
+
+For every real backend advertised in the desktop release, record the corresponding small live desktop-composition workflow: 5-LG1 for local Draw Things and 5-LG2 for direct DT+. These prove Qt → shared services → real backend → durable result → UI presentation. Do not repeat the Phase 3 10/4 queue matrix through Qt; Phase 5B controlled queue-state scenarios prove the desktop surface while Phase 3B remains authoritative for scheduling/restart semantics.
 
 Limit LoRA acceptance to explicitly verified combinations; do not require universal compatibility to release. Document unsupported combinations and unverified conversion/listing/deletion operations. The agreed bounded custom upload/reuse path already passes the Phase 3B CLI gate; Qt reuses it.
 
 ### 0.4.0 — Daily-use refinement
 
-Validate bounded pair/cross expansion, stable ordering, explicit resolved requests and mismatch/invalid-value handling before enqueueing. Keep the established scheduler and no-replay behavior.
+Consume the Phase 6 planner and Phase 8 gallery/preset scenario groups from the [implementation plan](initial.md). Validate bounded pair/cross expansion, stable ordering, explicit resolved requests and mismatch/invalid-value handling before enqueueing. Keep the established Phase 3 scheduler and no-replay behavior authoritative rather than rerunning it through every expanded batch.
 
-Validate preset round trips, gallery provenance, metadata reuse and explicit regeneration. Cache cleanup must preserve durable outputs, queue records, credentials and model assets. Basic bounded logging and cache separation remain requirements of earlier releases.
+Validate preset round trips, gallery provenance, metadata reuse, explicit regeneration and cache cleanup through local fixtures/services. Cache cleanup must preserve durable outputs, queue records, credentials and model assets. Basic bounded logging and cache separation remain requirements of earlier releases. No new live generation is required merely because batching, gallery or presets are usable; separately authorize a live run only when a new composition boundary genuinely needs inference evidence.
 
-### Incremental image and workflow releases
+### 0.5.0 — First image-to-image release
 
-Phase 9A delivers verified image-to-image. Phase 9B delivers inpainting using an existing mask file with explicit polarity and preparation. Phase 9C adds interactive painting and selected control/reference combinations as separate bounded slices; these need not all ship together.
+Consume the Phase 9A image-preparation, operation-specific backend-mapping and application-composition groups from the [implementation plan](initial.md). Reuse common seed/sampler/auth/TLS/stream/output behavior when the same implementation path executes; 9A tests only the new img2img content and preparation semantics.
 
-Phase 10A delivers a supported versioned workflow-file contract, preflight/plan inspection and execution through shared services. Begin with a bounded step set. Phase 10B adds visual authoring and additional proven execution semantics incrementally. A full visual editor is not a prerequisite for the first workflow-file release.
+Record 9A-LG1 for every backend/model combination actually advertised as supported. Keep the live matrix intentionally bounded: request expressibility does not prove model compatibility, but the release does not need a Cartesian sweep of every available model, resolution or strength value.
+
+### 0.6.0 — First workflow execution release
+
+Consume the Phase 10A compiler/preflight and deterministic execution-engine scenario groups from the [implementation plan](initial.md). Compiler/parser variants stay cheap and parametrized; restart, uncertainty, loop bounds and state isolation remain deterministic offline engine evidence.
+
+If the released workflow step set includes real generation, record one bounded 10A-LG1 workflow per materially distinct advertised backend composition that needs deployed evidence. Live inference does not own loop, restart, no-replay or uncertainty semantics, and a full visual editor is not a prerequisite for this release.
+
+### Later incremental image, workflow and cloud releases
+
+Phase 9B delivers inpainting using an existing mask file with explicit polarity and preparation. Phase 9C adds interactive painting and selected control/reference combinations as separate bounded slices; these need not all ship together. Consume each slice's operation-specific authoritative groups and selected live compatibility evidence without repeating common transport/authentication matrices.
+
+Phase 10B adds visual authoring and additional proven semantics incrementally. Its Qt tests own graph editing, serialization/loading and diagnostic presentation; the Phase 10A compiler/execution engine remains authoritative for workflow semantics.
+
+Phase 11 capabilities follow the same delta rule: focused tests for genuinely new cloud protocol/policy behavior, one application-composition scenario, and a separately named live workflow only when real deployed compatibility is needed. PAYG or any other potentially billable capability requires explicit opt-in and a specifically selected live workload; generic live generation must never silently broaden into paid acceptance work.
 
 Each slice records its supported operations, backend/model combinations, input/output semantics and actual validation evidence. Request expressibility or model inventory alone does not establish compatibility. Preserve all intended TanqueStudio features in the parity matrix, including blocked or conditional items.
 

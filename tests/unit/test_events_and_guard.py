@@ -5,7 +5,7 @@ import socket
 import subprocess
 
 import pytest
-from support.network_guard import live_allowed
+from support.network_guard import _ORIGINALS, live_allowed, live_endpoints
 
 from dtflow.core.models import BackendEvent
 from dtflow.services.events import EventBuffer
@@ -39,6 +39,20 @@ def test_guard_blocks_unregistered_loopback_dns_udp_and_children():
             client.sendto(b"fixture", ("127.0.0.1", 7859))
     with pytest.raises(AssertionError, match="Subprocesses"):
         subprocess.run(["unexpected-child"], check=False)
+    # Named cloud allowance resolves only the requested target and restores the default deny policy.
+    original = _ORIGINALS["getaddrinfo"]
+    _ORIGINALS["getaddrinfo"] = lambda *args, **kwargs: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))
+    ]
+    try:
+        with live_endpoints(("fixture.invalid", 443)):
+            assert socket.getaddrinfo("fixture.invalid", 443)[0][4] == ("127.0.0.1", 443)
+            with pytest.raises(AssertionError, match="Unregistered"):
+                socket.getaddrinfo("other.invalid", 443)
+        with pytest.raises(AssertionError, match="Unregistered"):
+            socket.getaddrinfo("fixture.invalid", 443)
+    finally:
+        _ORIGINALS["getaddrinfo"] = original
 
 
 @pytest.mark.asyncio
