@@ -18,6 +18,7 @@ from dtflow.core.models import (
     Metadata,
     RemoteOutcome,
     SubmissionStage,
+    ValidationError,
 )
 
 _AUTHENTICATION = (Status.UNAUTHENTICATED, Status.PERMISSION_DENIED)
@@ -69,6 +70,17 @@ def from_exception(
     if isinstance(exc, asyncio.CancelledError):
         raise exc
     recorded_stage, outcome = evidence(stage, trailers=trailers and isinstance(exc, GRPCError))
+    if isinstance(exc, ValidationError):
+        # Wire validation runs inside the owned generation task, before any submission.
+        return failure(
+            ErrorCategory.VALIDATION,
+            "invalid_generation_request",
+            "Generation request is unsupported or invalid.",
+            request_id,
+            recorded_stage,
+            outcome,
+            diagnostics=diagnostics(phase=phase),
+        )
     tls = classify_tls_error(exc)
     if tls is not None:
         # TLS verification happens before any request bytes exist.

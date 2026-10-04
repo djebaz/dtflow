@@ -6,8 +6,13 @@ DTFlow (DTF) is a Windows-first project for reproducible generation, durable job
 It targets direct DT+ Cloud Compute and a local Draw Things gRPC server through one backend-neutral contract.
 
 **Current status:** Phase 2A provides an offline fake backend, shared async services, SQLite attempt records,
-and a minimal headless command that saves a fixture PNG and reproducibility metadata. Real local gRPC and direct
-cloud adapters, durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+and a minimal headless command that saves a fixture PNG and reproducibility metadata. Phase 2B adds the local
+Draw Things gRPC adapter, scripted TLS/gRPC fixtures and an optional non-generative live connectivity/inventory check.
+Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures and optional live token/inventory and
+complete generation smoke checks. The owner reports deployed token/inventory and one bounded generation passed at an
+earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`. This covers that workload only; final-head Windows validation,
+broad model/LoRA compatibility, production cancellation latency, charging/refunds and packaged execution remain unverified. Real-backend CLI generation selection,
+durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles
@@ -42,27 +47,62 @@ uv run dtflow test -all -live      # Offline suite plus live connectivity
 uv run dtflow test -all -gen       # Offline suite plus live generation
 uv run dtflow test -live           # Live connectivity only
 uv run dtflow test -gen            # Live generation only
+uv run dtflow test -live -local    # Live connectivity, local Draw Things only
+uv run dtflow test -live -cloud    # Live connectivity, DT+ only
 ```
 
-Option pairs are `-all/--all`, `-live/--live`, and `-gen/--generate`; groups can be combined.
-Live connectivity requires `DTFLOW_LIVE_HOST` (the server's IP) and `DTFLOW_LIVE_PORT` in the environment;
+Option pairs are `-all/--all`, `-live/--live`, `-gen/--generate`, `-local/--local` and `-cloud/--cloud`; groups can be
+combined. `-local` and `-cloud` limit the live checks to one side (and imply `-live` when given alone); `-local` cannot
+be combined with `-gen`, which is DT+ only. A cloud-only run omits the local LoRA inventory comparison, and each scope
+requires only its own settings.
+Live connectivity runs local Draw Things and DT+ checks. It requires `DRAWTHINGS_API_KEY` for DT+, plus
+`DTFLOW_LIVE_HOST` (the local server's IP) and `DTFLOW_LIVE_PORT` in the environment;
 `DTFLOW_LIVE_SHARED_SECRET` is optional. Local trust defaults to the bundled Draw Things CA, so no manual CA setup
 is needed. Explicit `DTFLOW_LIVE_CA_FILE`/`DTFLOW_LIVE_SERVER_NAME` settings select strict alternative trust.
 The flag supplies the live opt-in without a separate marker or opt-in environment variable. Requested live checks
-fail clearly if unconfigured. Generation checks may consume credits; none are implemented yet, so `-gen` reports
-that absence rather than running ordinary tests or claiming success. The wrapper preserves pytest output/exit status
+fail clearly if unconfigured. The DT+ generation smoke requires an exact discovered `DTFLOW_LIVE_MODEL`. It submits one 256×256, four-step
+image with seed 42 and guidance 1, without LoRA or PAYG fields, and may consume subscription credits.
+The live inventory check enriches local LoRA availability using a bounded metadata-only BYOM lookup. Without
+`DTFLOW_LIVE_LORA`, it records the selected LoRA's availability, including legitimate upload-required/unknown states;
+an empty local LoRA inventory omits enrichment. Set `DTFLOW_LIVE_LORA` only to a known already-available cloud fixture
+when you want to assert reuse. It retains `inventory/lora_inventory.json` when enrichment runs.
+`-live` never calls `/authenticate` or submits generation. The wrapper preserves pytest output/exit status
 and requires the checkout's development dependencies. Ordinary `uv run pytest` remains offline with live tests gated.
+
+```powershell
+# DRAWTHINGS_API_KEY must already be set in your environment.
+uv run dtflow test -live
+$run = Get-ChildItem test-runs -Directory | Sort-Object Name -Descending | Select-Object -First 1
+Get-Content "$($run.FullName)\inventory\cloud_inventory.json"
+$env:DTFLOW_LIVE_MODEL = "exact-model-identifier-from-inventory"
+uv run dtflow test -gen
+uv run dtflow test -all -live -gen
+```
+
+The model must support the stated txt2img workload; listing alone does not establish compatibility.
+Each invocation retains evidence under `test-runs/<run-id>/`: flat `inventory/local_inventory.json` and
+`cloud_inventory.json` snapshots, `state/attempts.sqlite3` when generating, `outputs/<attempt-id>/`, and one
+`results.json` with build identity and check outcomes. The run path is printed after testing. Inventory JSON includes
+`cache_version`; these snapshots are retained evidence, not application cache. Failed/unknown attempts remain recorded.
+Each explicit `-gen` run requests a new generation; unknown attempts are never automatically replayed.
 
 Run project tools through `uv run` so they use the project environment. The lockfile records resolved dependencies.
 The current compatibility path pins NumPy 2.3.5 for the tested legacy Windows machine; see the
 [recorded dependency findings](devdocs/research/drawthings-grpc-proof.md#observed-compatibility-evidence).
 Source execution does not establish packaged Windows compatibility.
 
-The diagnostic probe's help is available without submitting generation:
+The diagnostic probes' help is available without submitting generation:
 
 ```sh
 uv run python tools/drawthings/drawthings_probe.py --help
+uv run python tools/drawthings/grpc_capabilities_probe.py --help
 ```
+
+Metadata probe option pairs are `-f/--filename`, `-s/--sha256`, `-z/--size`, `-a/--api-base` and `-m/--matrix`
+for `get_byom_probe.py`; the local fingerprint probe uses `-f/--filename` and `-s/--known-sha256`, alongside
+`-a/--host` and `-p/--port`. Existing long spellings remain supported.
+
+The gRPC capability probe is read-only/non-generative: it calls only Echo, FilesExist, Pubkey, and Hours and can save a sanitized JSON report. GenerateImage and UploadFile are deliberately excluded.
 
 Diagnostic tools can contact a real Draw Things server or direct DT+ Cloud Compute and submit potentially billable
 generation, including through Bridge mode. Read `--help` and select the intended operation deliberately.
@@ -94,8 +134,9 @@ tools/        diagnostic and development tooling
 devdocs/      plans, research, architecture, decisions and release notes
 ```
 
-Repository conventions reserve ignored `.dtflow/` for local runtime state, `logs/` for diagnostics and `tmp/`
-for scratch outputs. Packaged per-user paths are planned separately.
+Repository conventions reserve ignored `.dtflow/` for application state/outputs, `test-runs/` for retained live-test
+evidence, `logs/` for diagnostics and `tmp/` for disposable scratch. See the
+[runtime layout](devdocs/architecture/runtime-layout.md) for current paths and planned cache/packaged paths.
 
 ## Documentation
 

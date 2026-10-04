@@ -54,7 +54,7 @@ def test_timeout_policy_refuses_unbounded_values(value):
 def forbidden_imports(source: str, package: str, *, backends: bool = True) -> tuple[str, ...]:
     """Resolve absolute, relative and function-local imports through AST traversal."""
     bad = []
-    banned = ("PySide6", "PyQt", "drawthings_py", "grpclib", "numpy", "PIL", "betterproto", "flatbuffers")
+    banned = ("PySide6", "PyQt", "drawthings_py", "grpclib", "numpy", "PIL", "betterproto", "flatbuffers", "httpx")
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             modules = [x.name for x in node.names]

@@ -1,9 +1,12 @@
 """Shared guard initialization precedes test collection and async client imports."""
 
 import asyncio
+import json
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -19,22 +22,41 @@ def pytest_addoption(parser):
         default=None,
         help="Internal selection used by dtflow test.",
     )
+    parser.addoption(
+        "--dtflow-live-scope",
+        choices=("local", "cloud", "both"),
+        default="both",
+        help="Internal live-check scope used by dtflow test.",
+    )
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "live: explicitly selected non-generative live checks")
     config.addinivalue_line("markers", "live_generation: separately authorized named live generation workload")
+    config.addinivalue_line("markers", "local: live check against the local Draw Things server")
+    config.addinivalue_line("markers", "cloud: live check against DT+ cloud")
 
 
 def pytest_collection_modifyitems(config, items):
     import os
 
     mode = config.getoption("--dtflow-test-mode")
+    scope = config.getoption("--dtflow-live-scope")
+    if scope != "both":
+        dropped = [item for item in items if item.get_closest_marker("local" if scope == "cloud" else "cloud")]
+        items[:] = [item for item in items if item not in dropped]
+        config.hook.pytest_deselected(items=dropped)
     if mode in ("generation", "both") and not any(item.get_closest_marker("live_generation") for item in items):
         raise pytest.UsageError("No live generation tests are implemented yet.")
-    if mode in ("live", "both"):
+    cloud_live = mode in ("live", "both") and scope != "local"
+    if cloud_live or mode in ("generation", "both"):
+        if not os.environ.get("DRAWTHINGS_API_KEY", "").strip():
+            raise pytest.UsageError("DT+ live checks require DRAWTHINGS_API_KEY in the environment.")
+    if mode in ("live", "both") and scope != "cloud":
         if not os.environ.get("DTFLOW_LIVE_HOST") or not os.environ.get("DTFLOW_LIVE_PORT"):
-            raise pytest.UsageError("Live checks require DTFLOW_LIVE_HOST (IP literal) and DTFLOW_LIVE_PORT.")
+            raise pytest.UsageError("Local live checks require DTFLOW_LIVE_HOST (IP literal) and DTFLOW_LIVE_PORT.")
+    if mode in ("generation", "both") and not os.environ.get("DTFLOW_LIVE_MODEL", "").strip():
+        raise pytest.UsageError("DT+ generation requires an exact DTFLOW_LIVE_MODEL identifier.")
     for item in items:
         generation = item.get_closest_marker("live_generation") is not None
         if generation or item.get_closest_marker("live") is not None:
@@ -47,6 +69,11 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(
                     pytest.mark.skip(reason="Explicit live selection, opt-ins and workload authorization required.")
                 )
+
+
+@pytest.fixture
+def live_scope(request):
+    return request.config.getoption("--dtflow-live-scope")
 
 
 @pytest_asyncio.fixture
@@ -81,3 +108,74 @@ def guarded_python():
             return subprocess.run(command, text=True, capture_output=True, env=env, timeout=timeout)
 
     return run
+
+
+@pytest.fixture(scope="session")
+def live_run(request):
+    """Retain one isolated evidence directory per explicitly executed live-test invocation."""
+    from dtflow.build import identity
+
+    run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
+    root = Path(__file__).resolve().parents[1] / "test-runs" / run_id
+    root.mkdir(parents=True)
+    request.config._dtflow_live_root = root
+    request.config._dtflow_live_reports = []
+    request.config._dtflow_live_build = identity()
+    return root
+
+
+def _live_warnings(properties) -> list[dict]:
+    """Pair each ("warning", text) with the ("fix", text) recorded right after it, if any."""
+    notes: list[dict] = []
+    for key, value in properties:
+        if key == "warning":
+            notes.append({"message": value, "fix": None})
+        elif key == "fix" and notes:
+            notes[-1]["fix"] = value
+    return notes
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    result = yield
+    report = result.get_result()
+    if hasattr(item.config, "_dtflow_live_reports") and (
+        item.get_closest_marker("live") or item.get_closest_marker("live_generation")
+    ):
+        item.config._dtflow_live_reports.append(
+            {
+                "test": report.nodeid,
+                "phase": report.when,
+                "outcome": report.outcome,
+                "seconds": report.duration,
+                **({"warnings": notes} if (notes := _live_warnings(report.user_properties)) else {}),
+            }
+        )
+
+
+def pytest_terminal_summary(terminalreporter):
+    root = getattr(terminalreporter.config, "_dtflow_live_root", None)
+    if root is not None:
+        evidence = {
+            "run_id": root.name,
+            "build": terminalreporter.config._dtflow_live_build,
+            "checks": terminalreporter.config._dtflow_live_reports,
+        }
+        (root / "results.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+        terminalreporter.write_line(f"Live-test evidence: {root}")
+        _write_live_warnings(terminalreporter, terminalreporter.config._dtflow_live_reports)
+
+
+def _write_live_warnings(terminalreporter, checks) -> None:
+    """Print each distinct live-check warning with how to resolve it, instead of raw pytest warning text."""
+    seen: dict[str, str | None] = {}
+    for check in checks:
+        for note in check.get("warnings", []):
+            seen.setdefault(note["message"], note["fix"])
+    if not seen:
+        return
+    terminalreporter.write_sep("-", "DTFlow live-check warnings (not failures)", yellow=True, bold=True)
+    for message, fix in seen.items():
+        terminalreporter.write_line(f"WARNING: {message}", yellow=True)
+        if fix:
+            terminalreporter.write_line(f"  To fix: {fix}", cyan=True, bold=True)

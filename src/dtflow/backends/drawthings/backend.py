@@ -1,4 +1,4 @@
-"""Draw Things gRPC backend: connection, inventory, one-lane generation and lifecycle."""
+"""Shared Draw Things gRPC connection, inventory, generation and lifecycle."""
 
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from dtflow.core.models import (
     Designation,
     ErrorCategory,
     EventSink,
+    FileIdentity,
     GenerationResult,
     ImageArtifact,
     InventorySnapshot,
@@ -73,7 +74,10 @@ class DrawThingsEndpoint:
 
 
 class DrawThingsBackend:
-    """One channel to one Draw Things server; strict TLS, no silent fallback of any kind."""
+    """One channel to one Draw Things server; explicit trust and no silent fallback."""
+
+    backend_id = BACKEND_ID
+    max_concurrency = 1
 
     def __init__(
         self,
@@ -91,7 +95,7 @@ class DrawThingsBackend:
         self._closing = False
         self._closed = False
         self._active = 0
-        self._lane = asyncio.Lock()  # exactly one active generation per server
+        self._lane = asyncio.Semaphore(self.max_concurrency)
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
 
@@ -102,7 +106,12 @@ class DrawThingsBackend:
         """Model identifiers come from the last inventory; before any inventory no model is accepted."""
         model_ids = eligible_model_ids(self._inventory) if self._inventory is not None else ()
         return Capabilities(
-            BACKEND_ID, model_ids=model_ids, max_concurrency=1, batch_size=1, batch_count=1, limits=self.limits
+            self.backend_id,
+            model_ids=model_ids,
+            max_concurrency=self.max_concurrency,
+            batch_size=1,
+            batch_count=1,
+            limits=self.limits,
         )
 
     async def open(self) -> None:
@@ -121,7 +130,7 @@ class DrawThingsBackend:
 
         def status(transport, authentication, inventory, **diag):
             return ConnectionStatus(
-                BACKEND_ID,
+                self.backend_id,
                 self.endpoint.label,
                 checked,
                 transport,
@@ -133,7 +142,14 @@ class DrawThingsBackend:
         try:
             await self._connect()
         except BackendError as exc:
-            return status("failed", "unknown", "unknown", transport_code=exc.failure.code)
+            kind = dict(exc.failure.diagnostics).get("kind")
+            return status(
+                "failed",
+                "unknown",
+                "unknown",
+                transport_code=exc.failure.code,
+                **({"transport_kind": kind} if kind else {}),
+            )
         try:
             reply, secret_sent = await self._echo()
         except BackendError as exc:
@@ -147,7 +163,14 @@ class DrawThingsBackend:
                 "unknown",
                 shared_secret="rejected_or_missing" if secret_sent else "required_not_configured",
             )
-        snapshot = build_snapshot(BACKEND_ID, reply, observed_at_utc=checked, refreshed=True, secret_sent=secret_sent)
+        snapshot = build_snapshot(
+            self.backend_id,
+            reply,
+            observed_at_utc=checked,
+            refreshed=True,
+            secret_sent=secret_sent,
+            endpoint=self.endpoint.label,
+        )
         return status("ok", "ok" if secret_sent else "not_applicable", "ok", entries=len(snapshot.entries), **base)
 
     async def get_inventory(self, refresh: bool = False) -> InventorySnapshot:
@@ -176,13 +199,63 @@ class DrawThingsBackend:
                 diagnostics=diagnostics(shared_secret="sent" if secret_sent else "not_configured"),
             )
         self._inventory = build_snapshot(
-            BACKEND_ID, reply, observed_at_utc=now(), refreshed=True, secret_sent=secret_sent
+            self.backend_id,
+            reply,
+            observed_at_utc=now(),
+            refreshed=True,
+            secret_sent=secret_sent,
+            endpoint=self.endpoint.label,
         )
         self._stale_reason = None
         return self._inventory
 
+    async def get_file_identities(
+        self, identifiers: tuple[str, ...], *, with_sha256: tuple[str, ...] = ()
+    ) -> tuple[FileIdentity, ...]:
+        """Return server-side existence and optional SHA-256 without transferring file bytes."""
+        if not isinstance(identifiers, tuple) or any(
+            not isinstance(name, str) or not name or "/" in name or "\\" in name for name in identifiers
+        ):
+            raise ValidationError("File identities require checkpoint basenames.")
+        hash_names = set(with_sha256)
+        if not hash_names.issubset(set(identifiers)):
+            raise ValidationError("SHA-256 may be requested only for listed file identifiers.")
+        if not identifiers:
+            return ()
+        await self._connect()
+        secret = await self._secret()
+        request = image_service.FileListRequest(files=list(identifiers), files_with_hash=list(with_sha256))
+        if secret:
+            request.shared_secret = secret
+        stub = image_service.ImageGenerationServiceStub(self._require_channel())
+        try:
+            response = await stub.files_exist(request, timeout=self.timeouts.inventory)
+        except Exception as exc:
+            raise BackendError(from_exception(exc, phase="inventory")) from exc
+        by_name: dict[str, FileIdentity] = {}
+        for index, name in enumerate(response.files):
+            exists = bool(response.existences[index]) if index < len(response.existences) else False
+            digest = response.hashes[index] if index < len(response.hashes) else b""
+            if digest and len(digest) != 32:
+                raise error(
+                    ErrorCategory.PROTOCOL,
+                    "file_hash_invalid",
+                    "Server returned an invalid file hash.",
+                    diagnostics=diagnostics(identifier=name),
+                )
+            by_name[str(name)] = FileIdentity(str(name), exists, digest.hex() if digest else None)
+        missing = [name for name in identifiers if name not in by_name]
+        if missing:
+            raise error(
+                ErrorCategory.PROTOCOL,
+                "file_identity_incomplete",
+                "Server omitted requested file identity results.",
+                diagnostics=diagnostics(missing=len(missing)),
+            )
+        return tuple(by_name[name] for name in identifiers)
+
     async def generate(self, request: ResolvedGenerationRequest, *, on_event: EventSink) -> GenerationResult:
-        """Run one text-to-image generation; the total deadline covers lane wait, connect, stream and decode.
+        """Run one text-to-image generation; the total deadline covers prepare, lane wait, connect, auth, stream and decode.
 
         ``submission_possible`` is emitted immediately before the request is sent. Decoded partial finals on a failure
         are attached to the failure in memory only; the durable store does not persist their bytes.
@@ -216,15 +289,18 @@ class DrawThingsBackend:
                 "Model is not in the server inventory; refresh the inventory first.",
                 request.request_id,
             )
-        wire = build_generation_message(request, await self._secret())
         limits = self.limits
         expected = request.batch_size * request.batch_count
         self._active += 1
         try:
-            emit("preparing", stage="wire_validated")
             async with asyncio.timeout(remaining()):
+                wire = build_generation_message(request, await self._secret())
+                emit("preparing", stage="wire_validated")
                 async with self._lane:
                     await self._connect()
+                    metadata = await self._generation_metadata(wire.message)
+                    if asyncio.current_task().cancelling():
+                        raise asyncio.CancelledError
                     stage = SubmissionStage.POSSIBLY_SUBMITTED
                     emit("submission_possible", stage="grpc_request")
                     channel = self._require_channel()
@@ -235,6 +311,7 @@ class DrawThingsBackend:
                         image_service.ImageGenerationRequest,
                         image_service.ImageGenerationResponse,
                         timeout=remaining(),
+                        metadata=metadata,
                     ) as stream:
                         await stream.send_message(wire.message, end=True)
                         previews = 0
@@ -276,7 +353,9 @@ class DrawThingsBackend:
                     except BackendError:
                         # Notification failure cannot erase terminal OK and validated final artifacts.
                         warnings = ("Terminal event delivery failed after validated backend completion.",)
-        except BackendError:
+        except BackendError as exc:
+            if exc.failure.request_id is None:
+                raise BackendError(replace(exc.failure, request_id=request.request_id)) from None
             raise
         except Exception as exc:
             trailers = stream is not None and getattr(stream, "trailing_metadata", None) is not None
@@ -289,7 +368,7 @@ class DrawThingsBackend:
         server = self._inventory.server_identity if self._inventory is not None else "unknown"
         return GenerationResult(
             request.request_id,
-            BACKEND_ID,
+            self.backend_id,
             server,
             tuple(finals),
             wire.effective_configuration,
@@ -352,6 +431,10 @@ class DrawThingsBackend:
         if self._closing or self._closed or self._channel is None:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed or not open.")
         return self._channel
+
+    async def _generation_metadata(self, message):
+        """Authorize the exact wire message before any generation submission becomes possible."""
+        return None
 
     async def _secret(self) -> str | None:
         if self._shared_secret is None:

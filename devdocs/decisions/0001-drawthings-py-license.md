@@ -25,15 +25,21 @@ Source labels: **observed** = read from installed package metadata or files in t
 | Prior public DTFlow MIT release | None | owner-confirmed before this decision |
 | drawthings-py 0.4.0 | `License-Expression: GPL-3.0-only`; `licenses/LICENSE` is the GPL-3.0 text (34,892 bytes) | observed: installed `drawthings_py-0.4.0.dist-info` |
 | Official Draw Things source (`drawthingsai/draw-things-community`) | GPL-3.0 (`LICENSE.md`); contributions require a CLA; it contains `imageService.proto` (190 lines) and `config.fbs` (191 lines) among its sources | source-read at commit `e51089d5229b3147e13a21cfe0c379deff851715` (2026-10-04) |
-| Where DTFlow uses drawthings-py | Only the diagnostic probe today; production use is planned behind one replaceable integration module (see backend contract) | observed: repository sources and architecture docs |
+| Where DTFlow uses drawthings-py | Diagnostic probe and Phase 2B/2C adapters; provider use remains inside one replaceable integration package (see backend contract) | observed: repository sources and architecture docs |
 | Full legal/compliance effect of a future packaged distribution | Not determined here | unverified; release packaging still needs notice/source review |
 
 ### Locked runtime dependency licenses
 
-Read from installed metadata after `uv sync --no-dev` on Linux CPython 3.13 against `uv.lock` at repository commit `fb1615ee70bdb5c9767320db7f04973364df314c`. The runtime closure (`uv export --no-dev --no-emit-project`) was compared again at `a357f1f` after Phase 2A merged and is identical; only development dependencies changed. The list is the `uv export --no-dev --no-emit-project` closure. Re-read it whenever the lock changes. These values are metadata declarations, not legal conclusions; a package's own bundled third-party code may carry additional licenses.
+Read from installed metadata after `uv sync --no-dev` on Linux CPython 3.13 against `uv.lock` at repository commit `fb1615ee70bdb5c9767320db7f04973364df314c`. The runtime closure (`uv export --no-dev --no-emit-project`) was compared again at `a357f1f` after Phase 2A merged and is identical; only development dependencies changed. The list is the `uv export --no-dev --no-emit-project` closure. Re-read it whenever the lock changes. Phase 2C adds HTTPX and its six-package runtime closure listed below, re-read from installed metadata and compared with `uv export --no-dev --no-emit-project` after the uv lock update. These values are metadata declarations, not legal conclusions; a package's own bundled third-party code may carry additional licenses.
 
 | Package | Version | Declared license (metadata) | Notes |
 | --- | --- | --- | --- |
+| httpx | 0.28.1 | BSD-3-Clause | Phase 2C HTTP client |
+| httpcore | 1.0.9 | BSD-3-Clause | HTTPX dependency |
+| anyio | 4.15.1 | MIT | HTTPX dependency; services remain asyncio-native |
+| certifi | 2026.7.22 | MPL-2.0 | HTTPX CA bundle |
+| h11 | 0.16.0 | MIT | HTTPX dependency |
+| idna | 3.20 | BSD-3-Clause | HTTPX dependency |
 | drawthings-py | 0.4.0 | GPL-3.0-only | The decision subject |
 | betterproto | 2.0.0b7 | MIT | |
 | grpclib | 0.4.9 | BSD-3-Clause | |

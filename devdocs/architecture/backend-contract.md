@@ -179,8 +179,12 @@ Phase 2A tests cover fake lifecycle/inventory, failure boundaries, PNG validatio
 owned-worker cancellation, fresh-process restart and CLI inspection without replay. The root test guard installs
 before collection, permits exact registered numeric IP/port fixtures, and guards DNS, socket and asyncio transport
 sends. Only explicitly registered Python children bootstrap that same guard. This is an accidental-call guard,
-not an OS sandbox. No gRPC/TLS server fixture or HTTP auth mock is claimed until 2B/2C.
+not an OS sandbox. Phase 2B adds the scripted TLS/gRPC fixture, and Phase 2C composes it with HTTP mocks.
 
 Build metadata currently reports the package version and explicitly unknown source revision/status, without runtime
 Git. Bundled revision generation, production logging, secure saved credentials and packaged per-user paths remain
 later milestones. Fake CLI progress goes to stderr and result/inspection JSON to stdout. No release tag is created.
+
+Phase 2C implements [direct-cloud composition](cloud-integration.md) by inheriting the local adapter's actual channel,
+stream, serialization and codec path. Only authorization/health hooks, backend identity and client concurrency differ;
+shared behavior remains authoritative in 2B tests. Cloud-specific auth/parser/HTTP tests cover the new boundaries.

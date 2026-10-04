@@ -32,6 +32,10 @@ def parser() -> argparse.ArgumentParser:
     testing.add_argument(
         "-gen", "--generate", action="store_true", help="Run live generation smoke tests (may use credits)."
     )
+    testing.add_argument(
+        "-local", "--local", action="store_true", help="Limit live checks to the local Draw Things server."
+    )
+    testing.add_argument("-cloud", "--cloud", action="store_true", help="Limit live checks to DT+ cloud.")
     for name in ("generate", "check", "models", "attempts"):
         child = commands.add_parser(name)
         child.add_argument(
@@ -191,17 +195,21 @@ def run_tests(args: argparse.Namespace) -> int:
     if not (root / "tests/conftest.py").is_file():
         print("The test command requires a source checkout with its tests directory.", file=sys.stderr)
         return 2
-    offline = args.all or not (args.live or args.generate)
+    if args.local and args.generate:
+        print("Live generation runs on DT+ only; -local cannot be combined with -gen.", file=sys.stderr)
+        return 2
+    # A scope flag selects live connectivity checks without a separate -live, unless -gen already names the group.
+    live = args.live or ((args.local or args.cloud) and not args.generate)
+    scope = "local" if args.local and not args.cloud else "cloud" if args.cloud and not args.local else "both"
+    offline = args.all or not (live or args.generate)
     groups = []
     if offline:
         groups.append("(not live and not live_generation)")
-    if args.live:
+    if live:
         groups.append("(live and not live_generation)")
     if args.generate:
         groups.append("live_generation")
-    mode = (
-        "both" if args.live and args.generate else "generation" if args.generate else "live" if args.live else "offline"
-    )
+    mode = "both" if live and args.generate else "generation" if args.generate else "live" if live else "offline"
     return int(
         pytest.main(
             [
@@ -212,6 +220,8 @@ def run_tests(args: argparse.Namespace) -> int:
                 " or ".join(groups),
                 "--dtflow-test-mode",
                 mode,
+                "--dtflow-live-scope",
+                scope,
             ]
         )
     )

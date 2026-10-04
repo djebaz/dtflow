@@ -39,7 +39,9 @@ These instructions apply throughout `dtflow`.
 
 ## Runtime state and cache
 
-- During repository development, local runtime state lives under repository-root `.dtflow/`; it is ignored by Git.
+- Follow [the runtime layout](devdocs/architecture/runtime-layout.md). During repository development, application state and backend-neutral outputs live under ignored `.dtflow/`; retained live-test evidence lives separately under ignored `test-runs/<run-id>/`. Offline tests use temporary directories.
+- Keep cache flat within each type: inventory uses `cache/inventory/local_inventory.json` and `cloud_inventory.json`, plus `lora_inventory.json`, not nested backend/endpoint directories. Use these fixed names for the current single-local/single-cloud configuration and retained live evidence. Endpoint/server identities belong inside JSON as observations, not stable filename keys. When cache reads are introduced, refresh/invalidate on endpoint or credential changes; never reuse account-dependent evidence across changed credentials. Include integer `cache_version` from the inventory writer's `CACHE_VERSION`; future cache readers treat missing/mismatched versions as cache misses and rebuild, without migrating. Durable state has its own schema policy.
+- Keep outputs grouped by attempt, not backend. Create directories only when needed; cache cleanup must preserve outputs, durable state and retained test evidence.
 - Packaged Windows builds must use an appropriate per-user application-data location by default rather than writing beside the executable.
 - Keep disposable cache separate from durable state. Organize cache by type so categories can be measured and purged independently.
 - Provide cache cleanup early enough to prevent generated images and derived assets from growing without bounds.

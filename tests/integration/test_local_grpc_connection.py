@@ -2,6 +2,7 @@
 
 import pytest
 from support.dt_server import TLS_DIR, EchoSpec, black_hole, closed_port, scripted_server
+from support.live_local import unreachable_reason, warn_if_model_browsing_off
 from support.network_guard import endpoint
 
 from dtflow.backends.drawthings import DrawThingsBackend, DrawThingsEndpoint, TlsPolicy
@@ -44,7 +45,15 @@ MODELS = (
     {"name": "Model A", "file": "a_q8p.ckpt", "version": "flux1"},
     {"name": "Model B", "file": "b.ckpt", "version": "some_future_architecture"},
 )
-LORAS = ({"name": "A LoRA", "file": "lora.ckpt", "version": "flux1"},)
+LORAS = (
+    {
+        "name": "A LoRA",
+        "file": "lora.ckpt",
+        "version": "flux1",
+        "prefix": "trigger phrase",
+        "weight": {"lower_bound": -1.0, "value": 0.75, "upper_bound": 2.0},
+    },
+)
 CONTROLS = ({"name": "A Control", "file": "control.ckpt", "version": "flux1"},)
 
 
@@ -135,7 +144,12 @@ async def test_unreachable_and_silent_servers_fail_within_the_connect_deadline()
     async with closed_port() as (host, port):
         adapter = await opened(host, port)
         # Refusal surfaces as connect_failed or, on Windows, as the connect deadline; both are pre-submission.
-        assert dict((await adapter.check_connection()).diagnostics)["transport_code"] in UNREACHABLE_CODES
+        detail = dict((await adapter.check_connection()).diagnostics)
+        assert detail["transport_code"] in UNREACHABLE_CODES
+        # Live checks warn and skip only for refusal or deadline; other network errors stay failures.
+        assert unreachable_reason(detail["transport_code"], detail.get("transport_kind"), "host:1") is not None
+        assert unreachable_reason("connect_failed", "ConnectionResetError", "host:1") is None
+        assert unreachable_reason("connect_failed", "OSError", "host:1") is None
         await adapter.aclose()
     async with black_hole() as (host, port):
         adapter = await opened(host, port, timeouts=TimeoutPolicy(connect=0.3, inventory=1.0))
@@ -168,10 +182,25 @@ async def test_inventory_mapping_provenance_and_cache():
                 "stray.bin": ("unknown", None),  # unclassified files get no fabricated kind or family
             }
             assert {entry.availability for entry in fresh.entries} == {"listed_in_server_inventory"}
+            lora = next(entry for entry in fresh.entries if entry.identifier == "lora.ckpt")
+            assert (lora.trigger_prefix, lora.default_weight) == ("trigger phrase", 0.75)
             assert adapter.capabilities.model_ids == ("a_q8p.ckpt", "b.ckpt")
             cached = await adapter.get_inventory()
             assert not cached.refreshed and len(server.seen.echo_requests) == 1
             assert cached.entries == fresh.entries
+        finally:
+            await adapter.aclose()
+
+
+@pytest.mark.asyncio
+async def test_inventory_without_files_triggers_model_browsing_warning(request):
+    async with scripted_server(echo=EchoSpec(models=MODELS)) as server:
+        adapter = await opened(server.host, server.port)
+        try:
+            snapshot = await adapter.get_inventory(refresh=True)
+            warn_if_model_browsing_off(request, snapshot)
+            retained = dict(request.node.user_properties)
+            assert "Enable Model Browsing" in retained["warning"] and "Enable Model Browsing" in retained["fix"]
         finally:
             await adapter.aclose()
 
@@ -225,3 +254,20 @@ async def test_connectivity_failure_on_refresh_keeps_a_snapshot_marked_stale():
         assert not stale.refreshed and adapter.capabilities.model_ids == ("a_q8p.ckpt",)
     finally:
         await adapter.aclose()
+
+
+@pytest.mark.asyncio
+async def test_file_identity_returns_selected_hash_without_transferring_file_bytes():
+    digest = bytes.fromhex("ab" * 32)
+    echo = EchoSpec(files=("lora.ckpt", "other.ckpt"), file_hashes={"lora.ckpt": digest})
+    async with scripted_server(echo=echo) as server:
+        adapter = await opened(server.host, server.port)
+        try:
+            identities = await adapter.get_file_identities(("lora.ckpt", "other.ckpt"), with_sha256=("lora.ckpt",))
+            assert identities[0].exists and identities[0].sha256 == "ab" * 32
+            assert identities[1].exists and identities[1].sha256 is None
+            (request,) = server.seen.files_exist_requests
+            assert request.files == ["lora.ckpt", "other.ckpt"]
+            assert request.files_with_hash == ["lora.ckpt"]
+        finally:
+            await adapter.aclose()
