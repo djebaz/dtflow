@@ -20,6 +20,26 @@ def fixture_png(width: int, height: int, seed: int) -> bytes:
     return SIGNATURE + _chunk(b"IHDR", header) + _chunk(b"IDAT", compressed) + _chunk(b"IEND", b"")
 
 
+def encode_png(pixels: bytes, width: int, height: int, channels: int) -> bytes:
+    """Encode raw 8-bit pixels as an RGB/RGBA PNG; one-channel input is expanded to RGB."""
+    if channels not in (1, 3, 4) or width <= 0 or height <= 0 or len(pixels) != width * height * channels:
+        raise ValueError("Pixel data does not match the declared dimensions.")
+    if channels == 1:
+        expanded = bytearray(len(pixels) * 3)
+        expanded[0::3] = pixels
+        expanded[1::3] = pixels
+        expanded[2::3] = pixels
+        pixels, channels = bytes(expanded), 3
+    stride = width * channels
+    compressor = zlib.compressobj()
+    compressed = (
+        b"".join(compressor.compress(b"\0" + pixels[row * stride : (row + 1) * stride]) for row in range(height))
+        + compressor.flush()
+    )
+    header = struct.pack(">IIBBBBB", width, height, 8, 2 if channels == 3 else 6, 0, 0, 0)
+    return SIGNATURE + _chunk(b"IHDR", header) + _chunk(b"IDAT", compressed) + _chunk(b"IEND", b"")
+
+
 def validate_png(data: bytes, width: int, height: int, *, decoded_limit: int) -> None:
     """Check complete non-interlaced RGB/RGBA PNGs with bounded inflation."""
     if type(data) is not bytes or not data.startswith(SIGNATURE):
