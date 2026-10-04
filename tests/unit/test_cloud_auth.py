@@ -126,23 +126,43 @@ async def test_http_failures_and_invalid_credentials_never_cache_or_retry(kind, 
 
 
 @pytest.mark.asyncio
-async def test_shutdown_cancels_owned_refresh_and_closes_client():
-    entered, stopped = asyncio.Event(), asyncio.Event()
+async def test_shutdown_cancels_owned_refresh_and_closes_client(monkeypatch):
+    for slow in (False, True):
+        entered, stopped, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
-    async def respond(request):
-        entered.set()
+        async def respond(request, entered=entered, stopped=stopped, slow=slow, release=release):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                stopped.set()
+                if slow:
+                    await release.wait()
+                raise
+
+        auth = CloudAuth(Keys(), transport=httpx.MockTransport(respond))
+        waiter = asyncio.create_task(auth.token())
+        await entered.wait()
         try:
-            await asyncio.Event().wait()
-        finally:
-            stopped.set()
+            if slow:
 
-    auth = CloudAuth(Keys(), transport=httpx.MockTransport(respond))
-    waiter = asyncio.create_task(auth.token())
-    await entered.wait()
-    await auth.aclose()
-    with pytest.raises(asyncio.CancelledError):
-        await waiter
-    assert stopped.is_set() and auth._client.is_closed
-    with pytest.raises(BackendError) as caught:
-        await auth.token()
-    assert caught.value.failure.category == ErrorCategory.CONNECTIVITY
+                async def expired_wait(tasks, *, timeout, auth=auth, stopped=stopped):
+                    assert tasks == (auth._refresh,) and timeout == auth._policy.cleanup
+                    await stopped.wait()
+                    return set(), set(tasks)  # controlled expiry; no wall-clock wait
+
+                with monkeypatch.context() as patch:
+                    patch.setattr(asyncio, "wait", expired_wait)
+                    with pytest.raises(TimeoutError):
+                        await auth.aclose()
+            else:
+                await auth.aclose()
+            assert stopped.is_set() and auth._client.is_closed
+            await auth.aclose()  # a repeated close does not restart cleanup or authentication
+            with pytest.raises(BackendError) as caught:
+                await auth.token()
+            assert caught.value.failure.category == ErrorCategory.CONNECTIVITY
+        finally:
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter

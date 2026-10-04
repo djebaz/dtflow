@@ -44,11 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Draw Things gRPC port (default: {DEFAULT_GRPC_PORT}).",
     )
     parser.add_argument(
+        "-f",
         "--filename",
         default=DEFAULT_FILENAME,
         help="Converted checkpoint basename to query.",
     )
     parser.add_argument(
+        "-s",
         "--known-sha256",
         default=DEFAULT_KNOWN_SHA256,
         help="Optional known SHA-256 used only for comparison with the server result.",

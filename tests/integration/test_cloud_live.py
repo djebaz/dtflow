@@ -51,9 +51,10 @@ async def test_cloud_token_model_and_lora_inventory(live_run):
                 local_inventory = await local.get_inventory(refresh=True)
                 save_inventory(live_run, "local", local.endpoint.label, local_inventory)
                 local_loras = tuple(entry for entry in local_inventory.entries if entry.kind == "lora")
-                assert local_loras, "Local Draw Things inventory contains no structured LoRA entries."
-
                 requested = os.environ.get("DTFLOW_LIVE_LORA", "").strip()
+                if not local_loras and not requested:
+                    print("LoRA enrichment omitted: local inventory has no structured LoRA entries.")
+                    return
                 if requested:
                     selected = next((entry for entry in local_loras if entry.identifier == requested), None)
                     assert selected is not None, "DTFLOW_LIVE_LORA is not present in the local LoRA inventory."
@@ -73,13 +74,13 @@ async def test_cloud_token_model_and_lora_inventory(live_run):
                     lookup_identifier=selected.identifier,
                 )
                 resolved = next(entry for entry in lora_inventory.entries if entry.identifier == selected.identifier)
-                assert resolved.dt_cloud.availability in {
-                    "listed_in_server_inventory",
-                    "byom_reusable",
-                }, (
-                    f"Selected LoRA is not currently reusable in DT+: "
-                    f"{resolved.identifier} -> {resolved.dt_cloud.availability}"
-                )
+                if requested:
+                    # An explicit fixture is expected to be already available in the selected cloud account.
+                    assert resolved.dt_cloud.availability in {"listed_in_server_inventory", "byom_reusable"}, (
+                        f"Configured LoRA fixture is not currently reusable in DT+: "
+                        f"{resolved.identifier} -> {resolved.dt_cloud.availability}"
+                    )
+                # Automatic selection is discovery: upload_required/unknown are legitimate observations.
                 print(
                     json.dumps(
                         {

@@ -25,7 +25,13 @@ def _default_weight(item: dict) -> float | None:
 
 
 def build_snapshot(
-    backend_id: str, reply: image_service.EchoReply, *, observed_at_utc: str, refreshed: bool, secret_sent: bool
+    backend_id: str,
+    reply: image_service.EchoReply,
+    *,
+    observed_at_utc: str,
+    refreshed: bool,
+    secret_sent: bool,
+    endpoint: str | None = None,
 ) -> InventorySnapshot:
     try:
         info = ModelsInfo.from_echo_reply(reply)
@@ -73,6 +79,7 @@ def build_snapshot(
             model_metadata="present" if info.models else "absent",
             secret="sent" if secret_sent else "not_sent",
         ),
+        endpoint=endpoint,
     )
 
 

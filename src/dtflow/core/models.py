@@ -257,11 +257,28 @@ class LoRAInventoryEntry:
 
 
 @dataclass(frozen=True, slots=True)
-class LoRAInventorySnapshot:
+class InventorySource:
+    backend_id: str
+    server_identity: str
+    endpoint: str | None
     observed_at_utc: str
-    entries: tuple[LoRAInventoryEntry, ...]
+    refreshed: bool
+    diagnostics: Metadata = ()
 
     def __post_init__(self) -> None:
+        validate_metadata(self.diagnostics)
+
+
+@dataclass(frozen=True, slots=True)
+class LoRAInventorySnapshot:
+    resolved_at_utc: str
+    entries: tuple[LoRAInventoryEntry, ...]
+    local_source: InventorySource
+    cloud_source: InventorySource
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.local_source, InventorySource) or not isinstance(self.cloud_source, InventorySource):
+            raise ValidationError("LoRA inventory sources must be immutable typed values.")
         if not isinstance(self.entries, tuple) or any(not isinstance(x, LoRAInventoryEntry) for x in self.entries):
             raise ValidationError("LoRA inventory entries must be immutable typed values.")
 
@@ -274,6 +291,7 @@ class InventorySnapshot:
     refreshed: bool
     entries: tuple[InventoryEntry, ...]
     diagnostics: Metadata = ()
+    endpoint: str | None = None
 
     def __post_init__(self) -> None:
         validate_metadata(self.diagnostics)

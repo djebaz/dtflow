@@ -18,24 +18,46 @@ async def lookup_lora_assets(
         "/get_byom_urls",
         {"files": [{"file": item.identifier, "sha256": item.sha256} for item in usable]},
     )
+
+    def invalid():
+        return error(ErrorCategory.PROTOCOL, "cloud_byom_response_invalid", "DT+ LoRA lookup response is invalid.")
+
     data = response.get("data")
     if not isinstance(data, dict):
-        raise error(ErrorCategory.PROTOCOL, "cloud_byom_response_invalid", "DT+ LoRA lookup response is invalid.")
+        raise invalid()
 
-    already = data.get("alreadyExists")
-    already = already if isinstance(already, dict) else {}
-    signed = data.get("signedUrls")
-    urls = signed.get("urls") if isinstance(signed, dict) else {}
-    urls = urls if isinstance(urls, dict) else {}
+    already = data.get("alreadyExists", {})
+    signed = data.get("signedUrls", {})
+    # Optional response branches may be absent or null when the other branch supplies the evidence.
+    if already is None:
+        already = {}
+    if signed is None:
+        signed = {}
+    if not isinstance(already, dict) or not isinstance(signed, dict):
+        raise invalid()
+    urls = signed.get("urls", {})
+    if not isinstance(urls, dict):
+        raise invalid()
 
     results: dict[str, LoRABackendAvailability] = {}
     for item in usable:
         reference = already.get(item.sha256)
+        if item.sha256 in already and (not isinstance(reference, str) or not reference.strip()):
+            raise invalid()
         if isinstance(reference, str) and reference:
             results[item.identifier] = LoRABackendAvailability(
                 "byom_reusable", "dt_cloud.get_byom_urls", sha256=item.sha256, reference=reference
             )
         elif item.identifier in urls:
+            upload = urls[item.identifier]
+            if (
+                not isinstance(upload, dict)
+                or not isinstance(upload.get("sha256"), str)
+                or upload["sha256"].lower() != item.sha256
+                or not isinstance(upload.get("url"), str)
+                or not upload["url"].strip()
+            ):
+                raise invalid()
             results[item.identifier] = LoRABackendAvailability(
                 "upload_required", "dt_cloud.get_byom_urls", sha256=item.sha256
             )

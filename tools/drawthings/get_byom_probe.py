@@ -29,24 +29,28 @@ def build_parser() -> argparse.ArgumentParser:
             "or checkpoint bytes. DT+ cloud inventory does not expose custom-file SHA-256."
         )
     )
-    parser.add_argument("--filename", default=DEFAULT_FILENAME, help="Checkpoint filename.")
+    parser.add_argument("-f", "--filename", default=DEFAULT_FILENAME, help="Checkpoint filename.")
     parser.add_argument(
+        "-s",
         "--sha256",
         default=DEFAULT_SHA256,
         help="Known lowercase SHA-256 hex digest for the checkpoint.",
     )
     parser.add_argument(
+        "-z",
         "--size",
         type=int,
         default=DEFAULT_SIZE_BYTES,
         help=f"Known size used only by optional --matrix requests (default: {DEFAULT_SIZE_BYTES}).",
     )
     parser.add_argument(
+        "-a",
         "--api-base",
         default=DEFAULT_API_BASE,
         help=f"DT+ API base URL (default: {DEFAULT_API_BASE}).",
     )
     parser.add_argument(
+        "-m",
         "--matrix",
         action="store_true",
         help="Also run full/omitted-size/omitted-SHA/filename-only request shapes.",

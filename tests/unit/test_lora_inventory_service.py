@@ -6,12 +6,15 @@ import pytest
 from support.live_evidence import save_inventory
 
 from dtflow.core.models import FileIdentity, InventoryEntry, InventorySnapshot, LoRABackendAvailability
+from dtflow.persistence.inventory_cache import CACHE_VERSION
 from dtflow.services.lora_inventory import refresh_lora_inventory
 
 
 class Local:
     def __init__(self):
         self.requested = None
+        self.exists = True
+        self.stale = False
 
     async def get_inventory(self, refresh=False):
         return InventorySnapshot(
@@ -51,11 +54,13 @@ class Local:
                     default_weight=0.6,
                 ),
             ),
+            diagnostics=(("stale", "true"),) if self.stale else (),
+            endpoint="grpcs://192.168.1.142:7859",
         )
 
     async def get_file_identities(self, identifiers, *, with_sha256=()):
         self.requested = (identifiers, with_sha256)
-        return (FileIdentity("custom.ckpt", True, "cc" * 32),)
+        return (FileIdentity("custom.ckpt", self.exists, "cc" * 32 if self.exists else None),)
 
 
 class Cloud:
@@ -75,6 +80,7 @@ class Cloud:
                     "echo.files",
                 ),
             ),
+            endpoint="grpcs://compute.drawthings.ai:443",
         )
 
     async def lookup_lora_assets(self, identities):
@@ -109,7 +115,11 @@ async def test_refresh_writes_cross_backend_cache_and_bounds_byom_lookup(tmp_pat
     assert path == tmp_path / "cache" / "inventory" / "lora_inventory.json"
 
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["cache_version"] == 1
+    assert data["cache_version"] == CACHE_VERSION == 2
+    assert data["local_source"]["endpoint"] == "grpcs://192.168.1.142:7859"
+    assert data["cloud_source"]["server_identity"] == "cloud"
+    assert data["local_source"]["observed_at_utc"] == "2026-10-04T00:00:00+00:00"
+    assert data["resolved_at_utc"] == snapshot.resolved_at_utc
     assert {entry["identifier"] for entry in data["entries"]} == {
         "native.ckpt",
         "custom.ckpt",
@@ -130,3 +140,16 @@ async def test_refresh_writes_cross_backend_cache_and_bounds_byom_lookup(tmp_pat
         "cloud_inventory.json",
         "local_inventory.json",
     ]
+
+    local.stale = True
+    stale, _ = await refresh_lora_inventory(local, Cloud(), tmp_path, refresh=False, lookup_identifiers=())
+    assert stale.local_source.observed_at_utc == snapshot.local_source.observed_at_utc
+    assert stale.resolved_at_utc != stale.local_source.observed_at_utc
+    assert not stale.local_source.refreshed and dict(stale.local_source.diagnostics)["stale"] == "true"
+
+    local.exists = False
+    absent, _ = await refresh_lora_inventory(local, Cloud(), tmp_path, lookup_identifiers=("custom.ckpt",))
+    custom = next(entry for entry in absent.entries if entry.identifier == "custom.ckpt")
+    assert custom.local_grpc.availability == "absent" and custom.local_grpc.evidence_source == "grpc.files_exist"
+    assert custom.dt_cloud.availability == "unknown"
+    assert sorted(item.name for item in path.parent.iterdir()) == ["lora_inventory.json"]

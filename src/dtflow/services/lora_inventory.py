@@ -9,6 +9,7 @@ from typing import Protocol
 from dtflow.core.models import (
     FileIdentity,
     InventorySnapshot,
+    InventorySource,
     LoRABackendAvailability,
     LoRAInventoryEntry,
     LoRAInventorySnapshot,
@@ -54,14 +55,15 @@ async def resolve_lora_inventory(
     needs_lookup = tuple(identifier for identifier in unresolved if identifier in selected)
     identities = await local.get_file_identities(needs_lookup, with_sha256=needs_lookup) if needs_lookup else ()
     identity_by_id = {item.identifier: item for item in identities}
-    byom = await cloud.lookup_lora_assets(identities) if identities else {}
+    usable = tuple(identity for identity in identities if identity.exists and identity.sha256 is not None)
+    byom = await cloud.lookup_lora_assets(usable) if usable else {}
 
     entries: list[LoRAInventoryEntry] = []
     for entry in local_loras:
         identity = identity_by_id.get(entry.identifier)
         local_status = LoRABackendAvailability(
-            entry.availability,
-            entry.metadata_source,
+            "absent" if identity is not None and not identity.exists else entry.availability,
+            "grpc.files_exist" if identity is not None and not identity.exists else entry.metadata_source,
             sha256=identity.sha256 if identity is not None else None,
         )
         cloud_status = (
@@ -81,7 +83,19 @@ async def resolve_lora_inventory(
             )
         )
 
-    return LoRAInventorySnapshot(datetime.now(UTC).isoformat(), tuple(entries))
+    def source(snapshot: InventorySnapshot) -> InventorySource:
+        return InventorySource(
+            snapshot.backend_id,
+            snapshot.server_identity,
+            snapshot.endpoint,
+            snapshot.observed_at_utc,
+            snapshot.refreshed,
+            snapshot.diagnostics,
+        )
+
+    return LoRAInventorySnapshot(
+        datetime.now(UTC).isoformat(), tuple(entries), source(local_snapshot), source(cloud_snapshot)
+    )
 
 
 async def refresh_lora_inventory(

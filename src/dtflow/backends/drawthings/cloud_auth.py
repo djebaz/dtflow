@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import httpx
 
 from dtflow.backends.drawthings.errors import diagnostics, error
-from dtflow.core.models import BackendError, CredentialProvider, ErrorCategory, ValidationError
+from dtflow.core.models import CredentialProvider, ErrorCategory, ValidationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,13 +214,18 @@ class CloudAuth:
             ) from None
 
     async def aclose(self) -> None:
+        if self._closed and self._client.is_closed:
+            return
         self._closed = True
         self._token = self._key = None
-        async with asyncio.timeout(self._policy.cleanup):
+        try:
             if self._refresh is not None and not self._refresh.done():
                 self._refresh.cancel()
-                try:
-                    await self._refresh
-                except (asyncio.CancelledError, BackendError):
-                    pass
-            await self._client.aclose()
+                # Unlike awaiting a cancelled task, wait has a bound even if it suppresses cancellation.
+                done, _ = await asyncio.wait((self._refresh,), timeout=self._policy.cleanup)
+                if not done:
+                    raise TimeoutError("Cloud token refresh cleanup deadline exceeded.")
+        finally:
+            # Refresh cleanup cannot consume the HTTP pool's separate shutdown budget.
+            async with asyncio.timeout(self._policy.cleanup):
+                await self._client.aclose()

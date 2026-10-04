@@ -13,7 +13,7 @@ def save_inventory(run: Path, kind: str, endpoint: str, snapshot) -> Path:
     target = run / "inventory" / f"{kind}_inventory.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
-        json.dumps({"cache_version": CACHE_VERSION, "endpoint": endpoint, **asdict(snapshot)}, indent=2) + "\n",
+        json.dumps({"cache_version": CACHE_VERSION, **asdict(snapshot), "endpoint": endpoint}, indent=2) + "\n",
         encoding="utf-8",
     )
     return target

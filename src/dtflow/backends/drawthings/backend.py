@@ -157,7 +157,12 @@ class DrawThingsBackend:
                 shared_secret="rejected_or_missing" if secret_sent else "required_not_configured",
             )
         snapshot = build_snapshot(
-            self.backend_id, reply, observed_at_utc=checked, refreshed=True, secret_sent=secret_sent
+            self.backend_id,
+            reply,
+            observed_at_utc=checked,
+            refreshed=True,
+            secret_sent=secret_sent,
+            endpoint=self.endpoint.label,
         )
         return status("ok", "ok" if secret_sent else "not_applicable", "ok", entries=len(snapshot.entries), **base)
 
@@ -187,7 +192,12 @@ class DrawThingsBackend:
                 diagnostics=diagnostics(shared_secret="sent" if secret_sent else "not_configured"),
             )
         self._inventory = build_snapshot(
-            self.backend_id, reply, observed_at_utc=now(), refreshed=True, secret_sent=secret_sent
+            self.backend_id,
+            reply,
+            observed_at_utc=now(),
+            refreshed=True,
+            secret_sent=secret_sent,
+            endpoint=self.endpoint.label,
         )
         self._stale_reason = None
         return self._inventory
