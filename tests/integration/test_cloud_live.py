@@ -57,7 +57,8 @@ async def test_cloud_token_model_and_lora_inventory(live_run, request):
                     if reason is None:
                         raise
                     # The cloud checks above already passed and stay retained; only local LoRA enrichment is omitted.
-                    warn_live(request, reason + " Local LoRA inventory skipped.", UNREACHABLE_FIX)
+                    warn_live(request, reason, UNREACHABLE_FIX)
+                    warn_live(request, "Cloud checks passed; local LoRA inventory was skipped.")
                     return
                 save_inventory(live_run, "local", local.endpoint.label, local_inventory)
                 warn_if_model_browsing_off(request, local_inventory)
