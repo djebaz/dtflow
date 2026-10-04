@@ -34,6 +34,25 @@ uv run ruff format --check .
 uv run pytest
 ```
 
+The source checkout also provides a thin pytest wrapper with explicit test groups:
+
+```powershell
+uv run dtflow test                 # Offline suite (default)
+uv run dtflow test -all -live      # Offline suite plus live connectivity
+uv run dtflow test -all -gen       # Offline suite plus live generation
+uv run dtflow test -live           # Live connectivity only
+uv run dtflow test -gen            # Live generation only
+```
+
+Option pairs are `-all/--all`, `-live/--live`, and `-gen/--generate`; groups can be combined.
+Live connectivity requires `DTFLOW_LIVE_HOST` (the server's IP) and `DTFLOW_LIVE_PORT` in the environment;
+`DTFLOW_LIVE_SHARED_SECRET` is optional. Local trust defaults to the bundled Draw Things CA, so no manual CA setup
+is needed. Explicit `DTFLOW_LIVE_CA_FILE`/`DTFLOW_LIVE_SERVER_NAME` settings select strict alternative trust.
+The flag supplies the live opt-in without a separate marker or opt-in environment variable. Requested live checks
+fail clearly if unconfigured. Generation checks may consume credits; none are implemented yet, so `-gen` reports
+that absence rather than running ordinary tests or claiming success. The wrapper preserves pytest output/exit status
+and requires the checkout's development dependencies. Ordinary `uv run pytest` remains offline with live tests gated.
+
 Run project tools through `uv run` so they use the project environment. The lockfile records resolved dependencies.
 The current compatibility path pins NumPy 2.3.5 for the tested legacy Windows machine; see the
 [recorded dependency findings](devdocs/research/drawthings-grpc-proof.md#observed-compatibility-evidence).

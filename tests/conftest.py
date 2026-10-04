@@ -12,6 +12,15 @@ from support.network_guard import child_command, endpoint, install, live_allowed
 install()
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--dtflow-test-mode",
+        choices=("offline", "live", "generation", "both"),
+        default=None,
+        help="Internal selection used by dtflow test.",
+    )
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "live: explicitly selected non-generative live checks")
     config.addinivalue_line("markers", "live_generation: separately authorized named live generation workload")
@@ -20,10 +29,21 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     import os
 
+    mode = config.getoption("--dtflow-test-mode")
+    if mode in ("generation", "both") and not any(item.get_closest_marker("live_generation") for item in items):
+        raise pytest.UsageError("No live generation tests are implemented yet.")
+    if mode in ("live", "both"):
+        if not os.environ.get("DTFLOW_LIVE_HOST") or not os.environ.get("DTFLOW_LIVE_PORT"):
+            raise pytest.UsageError("Live checks require DTFLOW_LIVE_HOST (IP literal) and DTFLOW_LIVE_PORT.")
     for item in items:
         generation = item.get_closest_marker("live_generation") is not None
         if generation or item.get_closest_marker("live") is not None:
-            if not live_allowed(config.option.markexpr, os.environ, generation):
+            allowed = (
+                (mode in ("generation", "both") if generation else mode in ("live", "both"))
+                if mode
+                else live_allowed(config.option.markexpr, os.environ, generation)
+            )
+            if not allowed:
                 item.add_marker(
                     pytest.mark.skip(reason="Explicit live selection, opt-ins and workload authorization required.")
                 )

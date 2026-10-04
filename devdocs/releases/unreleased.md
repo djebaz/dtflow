@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Source-run dtflow test wrapper over pytest: -all/--all for offline tests, -live/--live for live connectivity, and -gen/--generate for generation smoke selection. No flags runs offline; explicit live groups can run alone or alongside offline tests. Wrapper selection needs no separate marker/env opt-in; configured endpoints and exact network allowlists remain required. Generation tests are not implemented yet, so requesting them fails clearly. Existing direct pytest gates remain supported.
+
 - Phase 2B narrow local Draw Things gRPC adapter (`dtflow.backends.drawthings`): bundled local-CA compatibility with optional strict system/custom trust, txt2img with seed-zero and wire-configuration fidelity, inventory with provenance, one-lane generation with shared deadline, received-tensor checks, honest failure evidence, and a scripted TLS/gRPC fixture server with test-only certificates. Adds the direct `grpclib` dependency. Verified offline only; real-server TLS, compatibility and cancellation remain unverified, and the CLI does not expose it yet.
 
 - Phase 2A async backend-neutral contracts and deterministic fake backend with lifecycle, connectivity, inventory,
