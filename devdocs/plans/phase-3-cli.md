@@ -67,7 +67,7 @@ Qt exposes the same setting and uses a subtle color change above **2**, without 
 
 ## Runtime paths
 
-Use the [shared runtime layout](../architecture/runtime-layout.md): backend-neutral outputs grouped by attempt, durable state separate from disposable cache, and flat `cache/inventory/local_<endpoint-id>.json` / `cloud_<endpoint-id>.json` names. When persistent inventory caching is introduced, use an integer `CACHE_VERSION` and rebuild missing/mismatched formats; do not confuse cache format with durable-state schema. Live evidence stays under `test-runs/<run-id>/`, outside the application root. Create optional directories on demand.
+Use the [shared runtime layout](../architecture/runtime-layout.md): backend-neutral outputs grouped by attempt, durable state separate from disposable cache, and flat `cache/inventory/local_inventory.json` / `cloud_inventory.json` names, alongside `lora_inventory.json`. Keep endpoint/server observations inside JSON, not filenames; invalidate account-dependent evidence when credentials change. The derived LoRA cache writer exists; raw inventory disk-cache integration remains planned. When persistent inventory caching is introduced, use an integer `CACHE_VERSION` and rebuild missing/mismatched formats; do not confuse cache format with durable-state schema. Live evidence stays under `test-runs/<run-id>/`, outside the application root. Create optional directories on demand.
 
 ## Shared logging and development mode
 

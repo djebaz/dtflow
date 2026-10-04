@@ -77,6 +77,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Use fixed `local_inventory.json`, `cloud_inventory.json` and `lora_inventory.json` names across inventory cache, development application layout, operation-owned scratch snapshots and retained live evidence. Keep endpoint/server observations in JSON instead of filename hashes; no stable account/device identity is claimed. Update live evidence writing and README examples. Raw application inventory disk-cache integration remains planned; no old-tree migration, cache reader or live request is introduced.
+
 - Separate retained live-test evidence into ignored `test-runs/<run-id>/`, with flat local/cloud inventory JSON, shared state/outputs and one build/check summary. Keep normal application outputs backend-neutral; document planned flat cache paths and `CACHE_VERSION` invalidation. No old-tree migration/fallback, dependency changes or live requests during this layout change.
 
 - Extend the authoritative-layer testing model beyond Phase 3 through Phases 4–11: Qt tests own presentation/wiring rather than backend semantics, planners/compilers use cheap deterministic tests, advanced image/cloud phases test only operation-specific deltas, and release gates consume rather than duplicate earlier evidence. Add bounded individually selectable live-workload intent for desktop, image, workflow and later cloud compatibility without advertising an unimplemented selector command. No runtime, dependency or test implementation changes are introduced by this planning amendment.

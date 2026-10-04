@@ -62,15 +62,15 @@ and requires the checkout's development dependencies. Ordinary `uv run pytest` r
 # DRAWTHINGS_API_KEY must already be set in your environment.
 uv run dtflow test -live
 $run = Get-ChildItem test-runs -Directory | Sort-Object Name -Descending | Select-Object -First 1
-Get-Content "$($run.FullName)\inventory\cloud_*.json"
+Get-Content "$($run.FullName)\inventory\cloud_inventory.json"
 $env:DTFLOW_LIVE_MODEL = "exact-model-identifier-from-inventory"
 uv run dtflow test -gen
 uv run dtflow test -all -live -gen
 ```
 
 The model must support the stated txt2img workload; listing alone does not establish compatibility.
-Each invocation retains evidence under `test-runs/<run-id>/`: flat `inventory/local_<endpoint-id>.json` and
-`cloud_<endpoint-id>.json` snapshots, `state/attempts.sqlite3` when generating, `outputs/<attempt-id>/`, and one
+Each invocation retains evidence under `test-runs/<run-id>/`: flat `inventory/local_inventory.json` and
+`cloud_inventory.json` snapshots, `state/attempts.sqlite3` when generating, `outputs/<attempt-id>/`, and one
 `results.json` with build identity and check outcomes. The run path is printed after testing. Inventory JSON includes
 `cache_version`; these snapshots are retained evidence, not application cache. Failed/unknown attempts remain recorded.
 Each explicit `-gen` run requests a new generation; unknown attempts are never automatically replayed.

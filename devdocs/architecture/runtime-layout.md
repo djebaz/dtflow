@@ -14,28 +14,32 @@ until deliberately removed; application cache cleanup does not touch it.
 
 | Current live-run path | Contents |
 | --- | --- |
-| `test-runs/<run-id>/inventory/local_<endpoint-id>.json` | Local Echo inventory snapshot |
-| `test-runs/<run-id>/inventory/cloud_<endpoint-id>.json` | DT+ inventory snapshot |
+| `test-runs/<run-id>/inventory/local_inventory.json` | Local Echo inventory snapshot |
+| `test-runs/<run-id>/inventory/cloud_inventory.json` | DT+ inventory snapshot |
+| `test-runs/<run-id>/inventory/lora_inventory.json` | Derived local/cloud LoRA availability evidence |
 | `test-runs/<run-id>/state/attempts.sqlite3` | Durable live generation attempts, including unknown outcomes |
 | `test-runs/<run-id>/outputs/<attempt-id>/final-1.png` | Validated final output |
 | `test-runs/<run-id>/outputs/<attempt-id>/metadata.json` | Reproducibility metadata |
 | `test-runs/<run-id>/results.json` | One build/check summary, including failed check outcomes |
 
-The endpoint ID is the first 16 hexadecimal characters of SHA-256 of the credential-free endpoint label (`host:port`).
-The `local_`/`cloud_` prefix distinguishes backend types without another directory level. Inventory snapshots contain
-endpoint, observation/provenance fields and `cache_version`. The terminal summary prints the run directory.
+Fixed names distinguish the current single local and single cloud connection without another directory level.
+Inventory snapshots contain endpoint, observed server identity, observation/provenance fields and `cache_version`.
+Neither a LAN IP nor Echo's server identifier is established as a permanent device/account identity; keep these
+values inside JSON rather than using them as filename keys. The terminal summary prints the run directory.
 No API keys, tokens or authentication blobs are written. A forced process termination can leave a partial run without
 `results.json`; saved artifacts and attempt state remain evidence, not proof that every check completed.
 
 ## Planned application cache, logs and packaged paths
 
-Persistent application inventory caching is not implemented yet; adapters currently cache inventory in memory.
-When introduced, use these paths, creating optional folders only on demand:
+The derived LoRA cache writer is implemented. Raw local/cloud inventories remain in memory during application
+execution; their disk-cache integration is planned. Retained live checks already write all three inventory files.
+Use the same filenames in development application cache, packaged application cache and test/scratch roots when
+inventory snapshots are saved. Create optional folders only on demand:
 
 | Development path | Ownership |
 | --- | --- |
-| `.dtflow/cache/inventory/local_<endpoint-id>.json` | Disposable local inventory cache |
-| `.dtflow/cache/inventory/cloud_<endpoint-id>.json` | Disposable cloud inventory cache |
+| `.dtflow/cache/inventory/local_inventory.json` | Disposable local inventory cache |
+| `.dtflow/cache/inventory/cloud_inventory.json` | Disposable cloud inventory cache |
 | `.dtflow/cache/inventory/lora_inventory.json` | Derived local-gRPC + DT+ LoRA availability cache; rebuildable from live evidence |
 | `.dtflow/cache/thumbnails/<artifact-id>.webp` | Regenerable thumbnail |
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
@@ -48,11 +52,18 @@ Packaged Windows defaults to `%LOCALAPPDATA%\DTFlow\` with `attempts.sqlite3`, `
 `tmp/` beneath that root when those features exist. Development `test-runs/` is not part of packaged application state.
 Cache/log cleanup preserves durable records, outputs, credentials and model assets.
 
+For the current single-local/single-cloud setup, no endpoint/pair hash is needed in filenames. Temporary snapshots
+use an operation-owned `inventory/` directory with the same names; do not create a shared scratch inventory that
+mixes operations. Future cache readers must check connection configuration and freshness, refresh/invalidate on
+endpoint or credential changes, and never reuse account-dependent BYOM evidence across changed credentials.
+There is no verified stable cloud account ID in the inspected API contract. Multiple saved connections may later
+use explicit application connection-profile IDs; do not infer permanent identity from IPs or server identifiers.
+
 ## Cache format version
 
-Use an integer `CACHE_VERSION = 1`, written as `cache_version` in inventory JSON. The current live evidence writer
-owns this constant; the future application cache implementation should own the shared inventory JSON format rather
-than introduce an independent copy. Increment it when that format changes incompatibly, not on every release or
+Use an integer `CACHE_VERSION = 1`, written as `cache_version` in inventory JSON. Application inventory persistence
+owns this constant and the live evidence writer imports it rather than maintaining an independent copy.
+Increment it when that format changes incompatibly, not on every release or
 inventory refresh. It is independent of application version, run identity and SQLite schema version.
 
 Future disposable-cache readers must treat a missing or mismatched version as a cache miss and fetch a fresh

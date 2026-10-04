@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from support.live_evidence import save_inventory
 
 from dtflow.core.models import FileIdentity, InventoryEntry, InventorySnapshot, LoRABackendAvailability
 from dtflow.services.lora_inventory import refresh_lora_inventory
@@ -114,3 +115,18 @@ async def test_refresh_writes_cross_backend_cache_and_bounds_byom_lookup(tmp_pat
         "custom.ckpt",
         "unprobed.ckpt",
     }
+
+    # Live evidence uses the same fixed names; connection identities stay in JSON.
+    run = tmp_path / "test-run"
+    for kind, endpoint in (("local", "grpcs://192.168.1.142:7859"), ("cloud", "grpcs://compute.drawthings.ai:443")):
+        raw = await (local if kind == "local" else Cloud()).get_inventory()
+        evidence = save_inventory(run, kind, endpoint, raw)
+        assert evidence == run / "inventory" / f"{kind}_inventory.json"
+        assert json.loads(evidence.read_text(encoding="utf-8"))["endpoint"] == endpoint
+        changed = save_inventory(run, kind, "grpcs://another-host:443", raw)
+        assert changed == evidence
+        assert json.loads(changed.read_text(encoding="utf-8"))["endpoint"] == "grpcs://another-host:443"
+    assert sorted(item.name for item in (run / "inventory").iterdir()) == [
+        "cloud_inventory.json",
+        "local_inventory.json",
+    ]
