@@ -10,7 +10,7 @@ Pending changes for the next DTFlow release.
 
 - Source-run dtflow test wrapper over pytest: -all/--all for offline tests, -live/--live for live connectivity, and -gen/--generate for generation smoke selection. No flags runs offline; explicit live groups can run alone or alongside offline tests. Wrapper selection needs no separate marker/env opt-in; configured endpoints and exact network allowlists remain required. Generation tests are not implemented yet, so requesting them fails clearly. Existing direct pytest gates remain supported.
 
-- Phase 2B narrow local Draw Things gRPC adapter (`dtflow.backends.drawthings`): bundled local-CA compatibility with optional strict system/custom trust, txt2img with seed-zero and wire-configuration fidelity, inventory with provenance, one-lane generation with shared deadline, received-tensor checks, honest failure evidence, and a scripted TLS/gRPC fixture server with test-only certificates. Adds the direct `grpclib` dependency. Verified offline only; real-server TLS, compatibility and cancellation remain unverified, and the CLI does not expose it yet.
+- Phase 2B narrow local Draw Things gRPC adapter (`dtflow.backends.drawthings`): bundled local-CA compatibility with optional strict system/custom trust, txt2img with seed-zero and wire-configuration fidelity, inventory with provenance, one-lane generation with shared deadline, received-tensor checks, honest failure evidence, and a scripted TLS/gRPC fixture server with test-only certificates. Adds the direct `grpclib` dependency. Offline adapter/fixture validation is recorded, and the owner reported successful Windows non-generative live connectivity/inventory after the TLS fix, including wrapper live-only and offline-plus-live runs. Live generation, production cancellation behavior and packaged execution remain unverified, and the full CLI does not expose the real adapter yet.
 
 - Phase 2A async backend-neutral contracts and deterministic fake backend with lifecycle, connectivity, inventory,
   typed failures and explicit fixture provenance; environment/fake-saved credential providers preserve precedence.
@@ -66,6 +66,8 @@ Pending changes for the next DTFlow release.
 - Phase 2D investigation documents: an accepted GPL-3.0-only DTFlow licensing decision with the locked runtime license table, a replacement-cost estimate, a Windows packaging checklist with an all-"Not run" findings table, a non-generative `tools/packaging/smoke.py` environment check, and a TanqueStudio feature inventory pinned to commit `6474f1e`. Windows results are recorded only from owner-run checks.
 
 ## Changed
+
+- Extend the authoritative-layer testing model beyond Phase 3 through Phases 4–11: Qt tests own presentation/wiring rather than backend semantics, planners/compilers use cheap deterministic tests, advanced image/cloud phases test only operation-specific deltas, and release gates consume rather than duplicate earlier evidence. Add bounded individually selectable live-workload intent for desktop, image, workflow and later cloud compatibility without advertising an unimplemented selector command. No runtime, dependency or test implementation changes are introduced by this planning amendment.
 
 - Replace overlapping Phase 3 acceptance checklists with authoritative-layer ownership, flexible single-generation/queue/asset scenario groups and separately selected live workflows. Align LoRA and release acceptance to consume the same evidence; retain behavioral requirements and deterministic failure/recovery coverage. Plan individual live-workload selection without claiming it exists. No runtime, dependency or test implementation changes are introduced by this amendment.
 
@@ -125,7 +127,7 @@ Pending changes for the next DTFlow release.
 
 ## Fixed
 
-- Use an explicit local Draw Things bundled-CA TLS policy by default, matching the working probe's hostname behavior while retaining certificate-chain verification. Clear Python 3.13's strict X.509 flag only for this CA compatibility path; owner-reported live diagnostics found a missing key-usage extension and IP mismatch. The non-generative live check uses this policy without manual CA setup. System/custom-CA policies remain verified; planned direct DT+ TLS follows the probe baseline without added certificate requirements. Successful live acceptance after this change remains pending.
+- Use an explicit local Draw Things bundled-CA TLS policy by default, matching the working probe's hostname behavior while retaining certificate-chain verification. Clear Python 3.13's strict X.509 flag only for this CA compatibility path; owner-reported live diagnostics found a missing key-usage extension and IP mismatch. The non-generative live check uses this policy without manual CA setup. System/custom-CA policies remain verified; planned direct DT+ TLS follows the probe baseline without added certificate requirements. The owner reported a successful Windows non-generative local connection/inventory check after this change; live generation and production cancellation behavior remain unverified.
 
 - Preserve validated local gRPC backend completion and final artifacts when terminal-event delivery fails; return a sanitized warning so the service can proceed with durable saving rather than recording the remote outcome as unknown.
 

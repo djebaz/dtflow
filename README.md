@@ -6,8 +6,9 @@ DTFlow (DTF) is a Windows-first project for reproducible generation, durable job
 It targets direct DT+ Cloud Compute and a local Draw Things gRPC server through one backend-neutral contract.
 
 **Current status:** Phase 2A provides an offline fake backend, shared async services, SQLite attempt records,
-and a minimal headless command that saves a fixture PNG and reproducibility metadata. Real local gRPC and direct
-cloud adapters, durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+and a minimal headless command that saves a fixture PNG and reproducibility metadata. Phase 2B adds the local
+Draw Things gRPC adapter, scripted TLS/gRPC fixtures and an optional non-generative live connectivity/inventory check.
+The direct DT+ adapter, durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles

@@ -216,7 +216,7 @@ Keep prompts, seeds, dimensions, and parameters controlled when comparing behavi
 
 ### Phase 2 — Backend contract and initial adapters
 
-Phase 2A now implements the offline contract/fake/service/SQLite foundation and a minimal `dtflow` command. Real adapters (2B/2C), parallel investigations (2D), full CLI and queues remain pending. See the [implemented scope and limits](../architecture/backend-contract.md#phase-2a-implementation-evidence-and-limits).
+Phase 2A implements the offline contract/fake/service/SQLite foundation and minimal `dtflow` command. Phase 2B now implements the local Draw Things gRPC adapter, its scripted TLS/gRPC fixtures and an optional non-generative live connection/inventory check. Phase 2C direct cloud remains pending; Phase 2D documents packaging/licensing/upstream investigations while target-Windows packaging evidence remains a release gate. Full CLI and queues remain Phase 3 work.
 
 Follow [the Phase 2 implementation plan](phase-2-backends.md), [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md) and [source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
 
@@ -288,6 +288,21 @@ Add secure API-key entry and Windows Credential Manager storage through shared c
 
 Keep business logic and backend protocol code outside UI classes. Network and generation work must not block the Qt event loop. CLI execution must continue working without importing Qt.
 
+#### Phase 4 testing ownership
+
+Phase 4 tests the Qt shell, platform credential integration and presentation boundaries it introduces. It does not repeat Phase 2/3 backend, inventory, token, TLS or failure-taxonomy matrices when the same services execute underneath. Use `pytest-qt` for direct widget/event-loop behavior and injected service results for presentation states; use a real Windows Credential Manager integration check only for the platform boundary itself.
+
+| ID | Scenario group | New evidence |
+| --- | --- | --- |
+| 4-O1 | Qt shell lifecycle | Application/window/resources start from canonical UI sources and close cleanly without leaving workers/tasks behind. |
+| 4-O2 | Background execution boundary | A controlled long-running service call does not block the Qt event loop; completion/error delivery returns on the UI side safely. |
+| 4-O3 | Connection presentation | Backend selection plus supplied healthy/auth-failed/unreachable service results map to the correct status/actions without retesting the network behavior that produced them. |
+| 4-O4 | Credential UI and storage wiring | Enter/save/replace/remove API-key operations call the shared credential service; plaintext fallback is refused and secrets are not echoed or logged. A focused Windows check covers the actual Credential Manager boundary. |
+| 4-O5 | Build identity and application paths | About/status uses the shared version/commit identity and packaged/development path resolution is presented from shared sources rather than duplicated UI constants. |
+| 4-O6 | Headless separation | CLI/services still import and run without Qt initialization; UI modules do not become service/backend dependencies. |
+
+This is a scenario outline, not a function-count target. Phase 4 needs no live generation merely to validate shell or connection presentation.
+
 ### Phase 5 — Desktop generation and queue controls
 
 Connect the desktop UI to the generation services already exercised by the headless CLI for a complete single-generation flow. Reuse request resolution, progress/error handling and output persistence rather than creating a second execution path. Expose the bounded LoRA selection/preflight and custom cloud upload/reuse services already exercised by the Phase 3 CLI; Qt adds presentation rather than the first implementation of those behaviors.
@@ -302,27 +317,121 @@ Expose queue creation/inspection, stable item status, concurrency, Pause/Resume/
 
 Persist enough metadata to reproduce the request. Mark a job completed only after successful terminal RPC status, validated final artifacts and durable output/metadata persistence. Saved previews must remain labeled as previews or diagnostics when final generation fails.
 
+#### Phase 5 testing ownership
+
+Phase 5 verifies that Qt calls and presents the Phase 3 services correctly. It does not make Qt an authoritative second implementation of request resolution, LoRA compatibility, queue scheduling, restart/no-replay, persistence or backend protocols.
+
+| ID | Scenario group | New evidence |
+| --- | --- | --- |
+| 5A-O1 | Generation form wiring | Widget values map to the shared configuration/request service and validation feedback maps back to the correct fields without duplicating resolver logic. |
+| 5A-O2 | Progress/result/error presentation | Controlled service events, previews, final results, failures and unknown outcomes update the correct UI state; previews never become final artifacts. |
+| 5A-O3 | LoRA presentation | Selector/weights call the existing preflight service and render match/mismatch/unknown diagnostics without reimplementing compatibility rules. |
+| 5A-O4 | Configuration save/load | Qt save/load uses the Phase 3 versioned credential-free contract and preserves effective values without hidden UI-only defaults. |
+| 5A-O5 | Cloud asset presentation | Upload/select-known-receipt UI calls the existing asset service and distinguishes known local receipts from remote account inventory. |
+| 5A-O6 | Interruption and uncertainty presentation | Cancel/interrupt actions call the shared execution service and display confirmed/unknown evidence honestly; the UI never converts local stop into remote-cancel confirmation. |
+| 5B-O1 | Queue model presentation | Stable queue/item identity, order, status and completed outputs are rendered from shared queue state. |
+| 5B-O2 | Queue controls | Pause/Resume/Cancel invoke the shared operations and reflect resulting state; Phase 3 remains authoritative for scheduler semantics. |
+| 5B-O3 | Concurrency control | Positive values map to the shared setting, invalid input is rejected before dispatch, and values above two receive the specified subtle color treatment. |
+| 5B-O4 | Restart/uncertainty surface | Restored paused queues and unresolved reservations are shown distinctly; explicit override is reachable and cannot silently mark or replay the uncertain item. |
+| 5B-O5 | Out-of-order updates | Controlled completion events update the correct rows/items without reordering or misattaching outputs. Do not rerun the full Phase 3 10/4 scheduler matrix through `pytest-qt`. |
+
+For the first desktop release, add small separately selected live desktop-composition workflows only where real inference proves something fixtures cannot:
+
+| ID | Planned live workflow | Evidence |
+| --- | --- | --- |
+| 5-LG1 | Local Draw Things desktop generation | Actual Qt → shared services → local adapter → real generation → durable result → UI result presentation for an advertised local configuration. |
+| 5-LG2 | Direct DT+ desktop generation | Actual Qt → shared services → direct-cloud adapter → real generation → durable result → UI result presentation for an advertised cloud configuration. |
+
+These live workflows prove desktop composition, not backend protocol correctness or scheduler semantics. Make them individually selectable through the live-workload mechanism when that mechanism exists; no new command spelling is specified here.
+
 ### Phase 6 — Queue planning and batch expansion
 
 Extend the Phase 3B durable queue with bounded pair/cross-product planning, dry-run inspection and resolved request expansion. Reuse the existing scheduler and reconciliation; basic queue execution is already required before Qt.
+
+Testing stays primarily pure and deterministic:
+
+| ID | Scenario group | New evidence |
+| --- | --- | --- |
+| 6-O1 | Pair expansion | Representative matched/mismatched inputs produce explicit stable ordered resolved requests and the intended mismatch diagnostic. |
+| 6-O2 | Cross-product expansion | Small controlled dimensions produce the exact cardinality/order without enumerating large combinatorial matrices. |
+| 6-O3 | Bounds and invalid inputs | Expansion limits, missing values and invalid combinations fail before enqueueing through cheap parametrized planner tests. |
+| 6-O4 | Planner-to-queue composition | One composition scenario proves resolved requests enter the existing Phase 3 queue unchanged; scheduler behavior is inherited rather than retested. |
+
+No live generation is required merely to validate batch planning. If Qt matrix controls are introduced, add one focused UI-to-planner wiring scenario rather than repeating planner mathematics through widgets.
 
 ### Phase 7 — Advanced scheduling
 
 Extend the Phase 3B rolling scheduler only where product needs justify priorities, fairness across queues or evidence-based adaptive concurrency/throttling. Preserve existing caps, unresolved reservations and no-replay semantics. This phase is not the introduction of concurrent execution.
 
+Testing is capability-driven rather than an upfront exhaustive matrix. Each advanced policy gets deterministic tests for the new policy while Phase 3 remains authoritative for slot accounting, uncertainty, restart and no-replay invariants. Priority tests prove only priority selection; fairness tests use deterministic multi-queue event sequences; adaptive concurrency injects explicit throttle/success signals instead of waiting for real throttling. Do not build a Cartesian priority × fairness × concurrency × cancellation × restart suite. Add separately authorized live observation only when a policy depends on a verified production signal unavailable to deterministic fixtures.
+
 ### Phase 8 — Gallery and presets
 
 Add output browsing, generation metadata inspection, reusable presets, and regeneration/reuse flows.
 
+Keep acceptance local and service-focused:
+
+| ID | Scenario group | New evidence |
+| --- | --- | --- |
+| 8-O1 | Preset round trip/versioning | Configuration → preset → configuration preserves effective semantics and schema/version behavior. |
+| 8-O2 | Gallery provenance/query | Saved artifacts expose their actual request/parent/backend metadata and preserve final/preview/diagnostic distinctions. |
+| 8-O3 | Reuse/regeneration | Reusing an existing result creates a new explicit request through existing generation services without mutating the original record. |
+| 8-O4 | Cache visibility/cleanup | Disposable cache can be measured/purged while durable outputs, queue records, credentials and model assets remain untouched. |
+| 8-O5 | Qt browsing wiring | Focused `pytest-qt` coverage proves browse/select/reuse actions call the shared query/configuration services; gallery fixtures replace needless real generation. |
+
+No live generation is required solely for gallery or preset acceptance.
+
 ### Phase 9 — Advanced image operations
 
 Deliver bounded slices: 9A verified image-to-image, 9B inpainting with existing mask files, and 9C interactive mask painting plus selected controls/reference combinations. Release useful slices independently; do not wait for every model/control combination.
+
+New image operations create genuinely new request/content paths, so test their operation-specific semantics while inheriting common authentication, TLS, generic streaming, output validation and persistence behavior when the same implementation path is reused.
+
+#### Phase 9A — Image-to-image
+
+| ID | Scenario group | New evidence |
+| --- | --- | --- |
+| 9A-O1 | Input preparation/fitting | Source dimensions, fit/pixel-budget policy, preprocessing and recorded effective metadata are deterministic and bounded. |
+| 9A-O2 | Operation-specific backend mapping | Verify only the new img2img content/fields and any operation-specific validation; do not repeat seed/sampler/TLS/token/stream matrices. |
+| 9A-O3 | Application composition | File input → preparation → resolved request → backend fixture → durable output/provenance uses the shared application path. |
+| 9A-LG1 | Selected live img2img | A small real workload establishes compatibility for each backend/model combination actually advertised, not a Cartesian model matrix. |
+
+#### Phase 9B — Inpainting with existing mask files
+
+| ID | Scenario group | New evidence |
+| --- | --- | --- |
+| 9B-O1 | Mask semantics | Polarity, alpha/threshold interpretation, source/mask fitting and deterministic binary-mask output are authoritative here. |
+| 9B-O2 | Operation-specific backend mapping | Verify only the new source/mask payload and inpainting-specific fields while reusing common backend coverage. |
+| 9B-O3 | Application composition | Source + mask → resolved request → backend fixture → durable result/provenance through shared services. |
+| 9B-LG1 | Selected live inpainting | One bounded supported backend/model combination per advertised scope establishes deployed compatibility. |
+
+#### Phase 9C — Interactive masks and selected controls/references
+
+Qt drawing tests own stroke/edit/clear and coordinate/scale correctness only; the resulting mask flows through the same 9B mask service. Conditioning/preflight services own supported control/reference types, weights and compatibility. Backend tests verify only new operation-specific fields, followed by one composition scenario and selective live evidence for combinations actually advertised. Maintain a supported-combination evidence table rather than automating model × control × weight × backend × size cross-products.
 
 ### Phase 10 — Workflows
 
 Build multi-step workflow composition/execution on top of the durable job and backend layers. Phase 10A delivers versioned workflow-file validation, plan inspection and execution for a bounded supported step set. Phase 10B adds visual authoring and richer verified semantics incrementally.
 
 Workflow execution should remain resumable and inspectable within documented remote recovery limits. File-based execution does not wait for the full visual editor.
+
+#### Phase 10A testing ownership
+
+Compiler/preflight owns versioned schema parsing, unsupported-instruction diagnostics, deterministic plan compilation, dependency/reference validation and loop bounds through pure/parametrized tests. The execution engine then needs only a small set of deterministic fake-backend workflows for semantics:
+
+| ID | Scenario group | New evidence |
+| --- | --- | --- |
+| 10A-O1 | Compiler/preflight | Supported files compile to an explicit stable plan; malformed/unsupported instructions fail clearly without silent material skips. |
+| 10A-O2 | Simple successful chain | A small multi-step workflow preserves dependencies, step identity, outputs and provenance. |
+| 10A-O3 | Failure/uncertainty propagation | A failed or uncertain step blocks/degrades dependent work according to the documented policy and never silently replays ambiguous generation. |
+| 10A-O4 | Restart/resume | Persisted workflow state resumes only documented eligible work and preserves completed/uncertain evidence. |
+| 10A-O5 | State isolation | Branch/scene state does not leak across independent scopes. |
+| 10A-O6 | Bounded loops | Small deterministic loops prove bound/termination behavior without large execution matrices. |
+| 10A-LG1 | Selected live workflow | One tiny real workflow proves application/backend composition when the released step set includes real generation; it does not own restart/loop/uncertainty semantics. |
+
+#### Phase 10B testing ownership
+
+The visual editor tests only authoring/presentation: construct/modify a graph, serialize to the authoritative workflow contract, load/display an existing workflow, and map compiler/preflight diagnostics to the correct visual item. It must not maintain an independent execution-semantics suite.
 
 ### Phase 11 — Broader DT+ capabilities and hardening
 
@@ -336,7 +445,11 @@ Phase 2 already requires expiry-aware token acquisition/refresh, secret handling
 
 ### Expansion of established foundations
 
-Phase 11 extends and revalidates those foundations for additional verified operations, credentials/account flows, entitlement cases and scheduling behavior. It does not postpone their initial implementation.
+Phase 11 inherits Phase 2C authentication, token, TLS, sanitization, uncertainty and HTTP behavior whenever the exact implementation path is reused. Each new capability tests only its new protocol fields, policy differences or application behavior; do not create a second Phase 2C matrix simply because cloud scope expands.
+
+For each new capability, prefer three layers: focused protocol/service tests for the genuinely new contract, one application-composition scenario, and an individually selectable live workflow only when deployed compatibility requires real remote execution. New account/credential flows test their selection/scope/token differences only. Video/audio capabilities test operation-specific request fields plus media metadata/artifact handling and a bounded real supported combination. If a future remote-status/reattachment API changes recovery semantics, that new recovery boundary receives dedicated deterministic tests.
+
+PAYG requires an especially explicit safety boundary before any live use: default disabled, explicit opt-in, amount/policy presentation, no silent fallback from subscription-only behavior, no automatic retry of an ambiguous paid submission, and no invented charging/refund conclusions in durable evidence. Any actual paid live workload must be separately named and selected; it must never run merely because generic `-gen` was requested without the intended workload selection.
 
 For broader cloud support:
 
@@ -348,25 +461,38 @@ For broader cloud support:
 - map progress, cancellation, retry, timeout, throttle, and remote error semantics into backend-neutral DTFlow states;
 - make jobs durable and recovery-safe across process restart where the remote protocol permits it;
 - establish a production concurrency policy from measured behavior and explicit server responses rather than assuming the diagnostic six-job result is a fixed entitlement or safe ceiling;
-- add mocked protocol coverage and separately gated live integration checks that cannot submit billable generation accidentally.
+- keep non-generative deployed checks under the live tier and potentially billable generation under explicit named generation workloads; do not repeat inherited protocol matrices.
 
 Keep MediaGenerationKit as a protocol/reference implementation. Introduce a Swift/MediaGenerationKit bridge only if a required future capability cannot be implemented reliably through the validated Python path.
 
 ## 8. Validation strategy
 
-Early validation should favor cheap, focused checks:
+Use one authoritative automated layer per behavior throughout the roadmap. A later phase tests only the behavior it introduces and necessary composition with already-tested layers. Reaching an existing service through a new CLI, Qt widget, planner, workflow or media surface does not create a requirement to rerun backend, persistence, scheduler, authentication, codec or generation matrices unless the later phase introduces a genuinely different implementation path.
 
-- syntax/import checks
-- configuration parsing
-- CLI/help checks where applicable
-- unit tests for backend-neutral logic using `pytest`
-- Qt-focused tests with `pytest-qt` when they provide useful coverage
-- local gRPC transport tests through the actual adapters, including terminal status, deadlines and cancellation/disconnects
-- DT+ HTTP authentication mocks plus cloud authorization metadata assertions on the local gRPC server
-- an offline network guard that fails on unexpected external connections
-- focused integration tests against Draw Things when required
+The existing source-run test tiers remain the common execution interface:
 
-Real generation should only be run when it validates behavior that cannot be established without inference. Ordinary unit/test-suite execution must never submit a real generation accidentally; live Draw Things integration tests must be explicit and separately gated.
+```text
+uv run dtflow test          offline deterministic suite (default)
+uv run dtflow test -live    explicitly selected non-generative deployed checks
+uv run dtflow test -gen     explicitly selected generation workflows
+```
+
+The generation group currently has no implemented workloads. When live generation workflows are introduced, make them individually selectable so one backend/capability does not implicitly require all endpoints, assets or paid workloads. Define and document the selector only when it is implemented; do not advertise a speculative command spelling.
+
+Early and routine validation should favor the cheapest authoritative layer:
+
+- syntax/import/configuration/help checks where applicable;
+- pure/parametrized tests for parsing, policies, planners and compilers;
+- fake backends plus controlled `asyncio.Event`s/futures and injected clocks for orchestration;
+- real SQLite only where transactional/restart behavior is the subject;
+- `pytest-qt` only for new Qt presentation, event-loop and interaction behavior rather than backend matrices;
+- HTTP/gRPC/TLS fixtures only for new adapter/protocol composition that cannot be proven more cheaply;
+- an offline network guard that fails on unexpected external connections;
+- subprocesses only for actual CLI/process ownership/crash boundaries.
+
+Live tests prove deployed compatibility and complete composition, not deterministic no-replay, slot accounting, migration/write failure, redaction, controlled cancellation, loops or scheduler policy. Real generation should run only when inference establishes compatibility that fixtures cannot. Potentially billable live work remains explicit, bounded and separately selected; ambiguous submissions are never automatically retried.
+
+Measure default offline wall-clock time and slowest tests before and after substantial phase implementations with `uv run pytest --durations=10`, recording the environment and added runtime in implementation PRs. Review dominating tests for a cheaper authoritative layer. Test counts and test/source line ratios are not quality gates. Before implementing each later phase, refine its scenario outline only as far as the selected architecture/capability requires; every added test should identify a distinct uncovered correctness boundary rather than an acceptance bullet that is already owned elsewhere.
 
 ## 9. Product decisions and remaining open questions
 
@@ -418,4 +544,3 @@ The first setup PR is intentionally small:
 - establish `uv` as the canonical Python project/environment/dependency workflow and add the initial `pyproject.toml`; generate and commit `uv.lock` when the environment is first resolved with `uv`
 
 The skeleton establishes ownership boundaries only; it does not add speculative runtime implementation.
-
