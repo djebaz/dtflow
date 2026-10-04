@@ -28,11 +28,27 @@ setup; documented exit codes. Defaults chosen where the plan left room: one seed
 slice), `-e HOST:PORT` for the local endpoint, `settings` as the concurrency command, mismatch blocks while unknown
 architecture proceeds with a diagnostic, and `-nc` accepted although no inventory disk cache exists yet.
 
+Offline gate (3A-O1 to 3A-O8): covered by `tests/unit/test_cli.py` (O1, O2 composition, O4 filtering, O3 selection),
+`tests/unit/test_config_preflight.py` (O2, O5, O6), `tests/unit/test_logging_setup.py` (O7, O8),
+`tests/integration/test_cli_local_composition.py` (O3/O6 smoke) and the wire test for LoRA serialization. Owner-reported
+Windows result on the PR head: `uv run dtflow test` 237 passed, 3 deselected.
+
+Owner-run live evidence (2026-10-04, Windows 10, Pentium E6500, reported by the owner, source-run unless noted):
+- 3-LG1 local Draw Things: `generate -b local -e 192.168.1.142:7859 -m z_image_turbo_1.0_q6p.ckpt -s 42 -w 256 -y 256 -i 4 -g 1`
+  reached terminal OK and saved a PNG plus `metadata.json` (attempt `1badda28…`).
+- 3-LG2 direct DT+: the same workload with `-b cloud` reached terminal OK and saved the result (attempt `01b676f8…`);
+  one small subscription generation.
+- `uv run dtflow test -gen -live` passed (3 tests: DT+ token/inventory, DT+ generation smoke, local connectivity).
+- Frozen PyInstaller CLI: fake workflow, settings, invalid input and per-user logs passed (needs
+  `--collect-data drawthings_py`); `check -b local` against the real server returned transport ok and 56 inventory
+  entries ([windows-packaging W20](../research/windows-packaging.md)).
+The output images were not inspected by the agent; the workload is a plain text-to-image run with no LoRA.
+
 Not done or unverified: the official base/refiner and Kandinsky/SD-v1 exception rules are not pinned, so no exception
-logic exists; raw inventory disk-cache read/write integration is still planned; the saved Windows credential provider
-is Phase 4, so cloud credentials are environment-only; no live workflow (3-LG1/3-LG2) was run, so the local and cloud
-CLI paths and LoRA application on real servers are verified only against the scripted fixture server. The Windows
-Pentium target, packaged execution and billing behavior remain unverified.
+logic exists; no LoRA generation, queue or cancellation behavior was run live, so LoRA application on a real server
+is unconfirmed; raw inventory disk-cache read/write integration is still planned; the saved Windows credential
+provider is Phase 4, so cloud credentials are environment-only; the frozen exe was not run against a generation or
+from a second machine. Billing behavior remains unverified.
 
 ## Release gates and schema compatibility
 

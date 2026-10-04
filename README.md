@@ -11,8 +11,8 @@ Draw Things gRPC adapter, scripted TLS/gRPC fixtures and an optional non-generat
 Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures and optional live token/inventory and
 complete generation smoke checks. The owner reports deployed token/inventory and one bounded generation passed at an
 earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`. This covers that workload only; final-head Windows validation,
-broad model/LoRA compatibility, production cancellation latency, charging/refunds and packaged execution remain unverified. Phase 3A exposes those adapters through the source-run CLI (offline-validated; owner-run live generation through the
-CLI is pending). Durable rolling queues, cloud LoRA upload/reuse and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+broad model/LoRA compatibility, production cancellation latency, charging/refunds and packaged execution remain unverified. Phase 3A exposes those adapters through the source-run CLI (offline-validated; the owner reports one successful local
+and one successful DT+ plain generation through it, with no LoRA run live). Durable rolling queues, cloud LoRA upload/reuse and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles
