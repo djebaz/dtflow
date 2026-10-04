@@ -2,7 +2,7 @@
 
 **Status:** Planned; this document introduces no runtime implementation.  
 **Baseline:** main commit `595abf9161a1d9672b055a66cb3e4c659617675f`.  
-**References:** [initial roadmap](initial.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [recorded gRPC proof](../research/drawthings-grpc-proof.md).
+**References:** [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md), [initial roadmap](initial.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [recorded gRPC proof](../research/drawthings-grpc-proof.md).
 
 ## Goal and boundaries
 
@@ -12,17 +12,39 @@ Start real adapters with controlled text-to-image requests. Define model/LoRA me
 
 Direct DT+ is the primary expected production backend; local gRPC is a supported runtime and the frequent development/smoke-test path. Local smoke success does not prove cloud readiness.
 
-Phase 3A adds durable attempts; Phase 3B adds durable queues and rolling orchestration before Qt. Phase 2 must expose enough outcome information to support both safely.
+Phase 3A adds durable attempts; Phase 3B adds durable queues, rolling orchestration and custom cloud LoRA upload/reuse before Qt. Phase 2 must expose enough outcome information to support both safely.
 
-## Implementation order
+## Implementation slices and parallel investigation
 
-1. Define immutable resolved requests, results/artifact descriptions, progress events, errors and capability information in core. Record explicit seeds, identifiers and effective parameters.
-2. Investigate portable packaging and distribution on the owner's Windows 10 / Intel Pentium E6500 machine, retaining an installer option if required: Python 3.13, pinned dependency stack, native codecs and TLS/certificate resources. Decide how the GPL-3.0-only dependency affects distribution; do not silently change licenses or replace dependencies.
-3. Implement the fake backend through the same contract.
-4. Wrap the recorded Draw Things gRPC path and exercise the actual adapter against a local gRPC test server, reusing existing serialization/codecs where appropriate.
-5. Implement direct DT+ authentication and transport behind its own adapter, with HTTP authentication mocks and cloud authorization checks on the shared local gRPC fixture.
-6. Define inventory/preflight and separate asset-storage contracts from inspected sources; audit custom-LoRA format, generation references and upload/deduplication responses under [LoRA compatibility and cloud asset plan](lora-assets.md).
-7. Add shared contract and mocked transport coverage; document limitations before the headless CLI consumes the adapters.
+### Phase 2A — Contract, fake and foundational fixtures
+
+Implement the [backend contract](../architecture/backend-contract.md): immutable request/result/artifact/event types, structured failures with independent submission evidence, capabilities, lifecycle/close, bounded connectivity and inventory operations. Use async-native services/backends; the CLI owns the top-level loop and Qt later hosts the same layer in a dedicated worker thread. Adapters never create loops. Implement the deterministic fake and shared contract scenarios first.
+
+Define timeout/resource policies and cancellation propagation now. Establish pytest-asyncio support, fixture endpoint registration, offline network guard and live-test gates before adapter tests. Follow the repository uv workflow for any implementation dependencies; this plan changes none.
+
+Phase 2A can start from these specifications. Its gate is core/fake contract acceptance without Qt/provider types, not target-Windows packaging.
+
+### Phase 2B — Local gRPC adapter and fixture server
+
+Wrap the recorded Python gRPC path inside the replaceable integration boundary. Implement open/close, non-generative connectivity, explicit inventory refresh with provenance and controlled txt2img. Keep shared-secret missing/wrong, empty inventory and connection failure distinct. Exercise the actual adapter with the installed generated service base and grpclib fixture server described below.
+
+Assert wire configuration, explicit seed zero, sampler/dimension mapping, final-output decoding, terminal status, limits, deadlines and cancellation/disconnect evidence. Preserve private-access workarounds in one pinned/tested module; do not spread the probe's subclass/wrapper into services. Gate 2B on its source/installed-interface evidence and offline fixtures.
+
+### Phase 2C — Direct cloud adapter and pinned auth fixtures
+
+Implement the [cloud protocol](../architecture/cloud-protocol.md), sharing provider serialization/codecs privately with 2B. Use the selected async HTTP client, expiry-aware concurrent token refresh, per-generation authorization, TLS and subscription-only fields. Implement non-generative token/transport/Echo health and inventory independently from generation entitlement.
+
+Exercise actual cloud adapter calls against HTTP mocks and the local gRPC fixture, capturing exact authorization metadata. Cover cancellation during auth, token expiry/scope changes, malformed responses and generation uncertainty. Gate 2C on the pinned source contract and fixtures; no deployed compatibility or billing claim follows from mocks.
+
+The model/LoRA preflight and separate storage audit are contract/investigation deliverables in this phase. Implement bounded LoRA selection in 3A and custom cloud upload/reuse in 3B under [the LoRA plan](lora-assets.md), not in 2C.
+
+### Phase 2D — Packaging, licensing and feature inventory
+
+Run this investigation alongside 2A–2C; it does not block starting 2A. Licensing findings inform deeper drawthings-py investment and any distribution decision. Portable packaging investigation requires the owner's Windows 10 / Intel Pentium E6500 machine; CI/Linux cannot establish that outcome. Retain an installer option if needed. Inspect Python 3.13, locked native codecs, TLS/certificate resources and eventual Qt resources.
+
+Deliver a version-pinned upstream feature inventory from TanqueStudio source/UI/docs into the parity matrix: feature, evidence, shared ownership, CLI/Qt exposure, backend limits, target milestone and acceptance. Mark gaps/exclusions explicitly; no full-parity claim while inventory remains incomplete.
+
+Record packaging and distribution findings or explicit pending/blocker status with the evidence required. Actual target-machine acceptance remains a packaged-release gate; no inferred Windows success is required to merge the core/fake slice. Do not silently change licenses or replace dependencies.
 
 ## Required semantics
 
@@ -54,7 +76,7 @@ Define a separate cloud asset service and durable receipt contract, sharing cred
 
 ### Direct-cloud authentication and billing
 
-Define injectable credential resolution behind a Qt-independent service. The initial headless path accepts an environment API key; the desktop milestone adds entry and secure Windows Credential Manager storage through that same service. Never silently save plaintext if secure storage fails. Keep credentials/tokens out of logs and ordinary persisted metadata. Implement expiry-aware short-term-token caching and concurrency-safe refresh using the inspected official token contract, plus per-generation authentication and normal TLS hostname validation.
+Phase 2 implements injectable credential resolution, the environment provider and an injected fake saved-credential provider behind a Qt-independent interface. The production saved provider is unavailable in this phase; real Windows Credential Manager entry/storage arrives in Phase 4 through the same interface. Never silently save plaintext if secure storage fails. Keep credentials/tokens out of logs and ordinary persisted metadata. Implement expiry-aware short-term-token caching and concurrency-safe refresh using the inspected official token contract, plus per-generation authentication and normal TLS hostname validation.
 
 Credential selection is deterministic: if `DRAWTHINGS_API_KEY` is present, select it; otherwise use the saved Windows Credential Manager key when available. An empty or invalid selected key fails clearly, without silently switching credential sources after validation or authentication failure. If neither source exists, report missing credentials. Expose only the selected source in sanitized diagnostics, never the key.
 
@@ -86,6 +108,20 @@ Keep simulators small and scenario-driven, returning defined protocol fixtures w
 
 Phase 2 covers the contract and adapters. Phase 3B extends fake and transport-fixture coverage through the CLI for durable queues, rolling dispatch and restart reconciliation; add Qt-specific coverage when the UI arrives.
 
+## Test infrastructure and live gating
+
+These are implementation requirements, not dependencies or fixtures shipped by this docs change.
+
+- Use asyncio and pytest-asyncio with explicit async test/fixture ownership. Add pytest-asyncio to the dev group through uv when implementing 2A; commit pyproject.toml and regenerated uv.lock together. Add the bounded HTTPX runtime dependency through uv in 2C. Do not add AnyIO as a separate service runtime merely because HTTPX uses it internally.
+- Installed inspection after an isolated uv sync --locked confirmed drawthings-py 0.4.0 exposes ImageGenerationServiceBase with Echo and server-streaming GenerateImage. Subclass that base and serve through grpclib.server.Server on a fixture-owned ephemeral loopback port. Use grpclib RecvRequest events to inspect authorization/deadline metadata; return scripted responses/errors without loading models. No duplicate protocol-generation toolchain is required.
+- Generate and track clearly test-only TLS certificate/key fixtures using developer OpenSSL, with subject alternative names for localhost, 127.0.0.1 and ::1. Record generation/renewal commands and validity; test setup fails clearly for an expired positive-path certificate. No OpenSSL or fixture key ships in the production executable. Inject test CA/SSLContext while preserving production trust/hostname validation; include bad-host/untrusted-certificate cases.
+- Install the network guard before test collection can trigger network work, and keep a per-test registry of exact fixture addresses/ports. Guard DNS resolution plus outbound socket connect/connect_ex and datagram sends; only registered destinations are allowed, not every loopback port. Register listeners after binding before client access and unregister on teardown. Block redirects/proxy bypass and outbound subprocess network use in ordinary tests; this is an accidental-call guard, not a general OS sandbox.
+- Use HTTPX MockTransport for deterministic token/auth schemas and a registered local HTTPS server where real HTTP/TLS behavior matters. Inject API/gRPC origins and time sources; a missing mock must fail at the guard, never reach production or an unrelated real local server.
+- Register planned pytest markers live and live_generation. Live tests require both explicit live-marker selection and DTFLOW_LIVE_TESTS=1; otherwise skip before creating network clients. Generation cases additionally require explicit live_generation selection, DTFLOW_LIVE_GENERATION=1 and separate task/operator authorization for the named workload. Neither marker/env alone nor a connectivity task authorizes generation.
+- Even live mode allowlists only the explicitly configured backend targets; do not disable the entire guard. Default test runs execute no live network calls. Cover incorrect/missing opt-ins and refusal before network setup.
+
+No pytest/ruff or live tests were run for this documentation amendment. Installed source/signature inspection is recorded in the backend contract, separately from fixture execution.
+
 ## Source-level gaps to validate
 
 - Verify supported sampler/enum values, requested-to-wire dimensions, defaults and effective parameters. Reject unsupported options clearly before submission; never silently ignore them.
@@ -98,13 +134,16 @@ Phase 2 covers the contract and adapters. Phase 3B extends fake and transport-fi
 
 ## Validation and exit criteria
 
-- All three adapters implement the same core contract; importing core does not require Qt or provider protocol types.
+- Phase 2A: specified immutable contract and async ownership implemented; fake supports lifecycle, connectivity, inventory and generation; core imports do not require Qt/provider types.
+- Phase 2B/2C: real adapters implement those same operations with bounded deadlines, distinct transport/auth/inventory status, refresh/provenance and fixture coverage.
 - Fake and protocol-fixture tests make no real generation requests and fail on unexpected external connections.
 - Real adapters are exercised through local gRPC transport, including terminal status, deadlines, cancellation/disconnects and cloud authorization metadata.
 - Request conversion tests cover seed fidelity, explicit parameters and output metadata.
 - Stream tests cover terminal failures, no final output, partial outputs and preview labeling.
 - Cloud tests cover credential precedence (including both sources, empty environment values and failed selected credentials), absence of silent fallback, token expiry, concurrent refresh, per-generation authentication, sanitized errors and disabled PAYG opt-in.
-- Document the actual target-Windows packaging outcome; unresolved distribution or packaging decisions stay explicit.
+- Phase 2D: record actual target-Windows packaging findings or explicit pending evidence/blocker status; unresolved distribution decisions stay explicit. CI/Linux results are not target-machine acceptance.
+- Complete the version-pinned upstream feature inventory in the parity matrix, with gaps/exclusions and acceptance milestones; no full-parity claim without that deliverable.
+- Test endpoint registration/external-network refusal, planned live opt-in gates and async/TLS fixture cleanup. Newly added implementation dependencies follow uv; documentation changes alone do not alter the lock.
 - Inventory/preflight fixtures cover structured model/LoRA versions, missing metadata, architecture matches/mismatches and applicable exception/refiner rules; keep metadata checks distinct from successful application.
 - Record the source-audited cloud upload contract and remaining converted-format/generation-reference questions before Phase 3B implementation.
 - Record unsupported/unverified cancellation, recovery and compatibility behavior rather than inventing it.
@@ -115,4 +154,4 @@ The [TanqueStudio parity matrix](tanquestudio-parity.md) tracks later feature mi
 
 ## Deferred work
 
-[Phase 3](phase-3-cli.md) delivers the headless CLI: 3A adds single-generation services, durable attempts and output saving; 3B adds durable queues, rolling dispatch and restart reconciliation before Qt. Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds batch planning; Phase 7 extends advanced scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
+[Phase 3](phase-3-cli.md) delivers the headless CLI: 3A adds single-generation services, durable attempts and output saving; 3B adds durable queues, rolling dispatch, restart reconciliation and custom cloud LoRA upload/reuse before Qt. Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds batch planning; Phase 7 extends advanced scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.

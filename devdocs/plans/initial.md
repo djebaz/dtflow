@@ -212,13 +212,17 @@ Keep prompts, seeds, dimensions, and parameters controlled when comparing behavi
 
 ### Phase 2 — Backend contract and initial adapters
 
-Follow [the Phase 2 implementation plan](phase-2-backends.md) and [the source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
+Follow [the Phase 2 implementation plan](phase-2-backends.md), [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md) and [source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
+
+Deliver coherent slices: 2A contract/async decisions, fake and foundational fixtures; 2B local gRPC adapter with connectivity/inventory and transport fixtures; 2C direct-cloud adapter against the pinned auth contract; 2D packaging/licensing and version-pinned upstream feature inventory alongside implementation. Phase 2D does not block starting 2A; licensing informs dependency investment and target-Windows verification remains a packaged-release gate.
 
 Introduce backend-neutral request, result, progress, error and capability types. Implement a deterministic fake backend, wrap the validated Draw Things gRPC path, and add narrow direct DT+ text-to-image support through native Python. Define structured model/LoRA metadata, shared compatibility preflight and a separate cloud asset contract for Phase 3; audit converted-format and generation-reference requirements.
 
 Define completion and uncertain-outcome semantics before wiring the UI. Preserve previews and incomplete outputs as explicitly labeled diagnostic/partial artifacts, never completed results. Ordinary tests must stay offline.
 
-Investigate portable Windows packaging and dependency distribution early on the owner's Windows 10 / Intel Pentium E6500 machine; keep an installer option if required. Source execution is recorded as working; a single-executable build is not yet verified. Basic durable queues and rolling orchestration are required in Phase 3B before Qt.
+Phase 2 implements the credential interface, environment provider and fake saved provider only; real Windows Credential Manager storage remains Phase 4. Async adapters/services own no event loops; CLI and later Qt worker own execution and bounded cancellation.
+
+Investigate portable Windows packaging and dependency distribution in the parallel Phase 2D track on the owner's Windows 10 / Intel Pentium E6500 machine; keep an installer option if required. Source execution is recorded as working; a single-executable build is not yet verified. Basic durable queues and rolling orchestration are required in Phase 3B before Qt.
 
 ### Phase 3 — Headless CLI and shared application services
 
