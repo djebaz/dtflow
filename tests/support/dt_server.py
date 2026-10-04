@@ -100,6 +100,7 @@ class EchoSpec:
     models: tuple[dict, ...] = ()
     loras: tuple[dict, ...] = ()
     control_nets: tuple[dict, ...] = ()
+    file_hashes: dict[str, bytes] = field(default_factory=dict)
     secret: str | None = None  # when set, a missing or different shared secret yields shared_secret_missing
     server_identifier: int = 7
 
@@ -108,6 +109,7 @@ class EchoSpec:
 class Observed:
     echo_requests: list = field(default_factory=list)
     generate_requests: list = field(default_factory=list)
+    files_exist_requests: list = field(default_factory=list)
     metadata: list = field(default_factory=list)
     deadlines: list = field(default_factory=list)
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
@@ -142,6 +144,22 @@ class ScriptedService(image_service.ImageGenerationServiceBase):
             files=list(spec.files),
             override=override,
             server_identifier=spec.server_identifier,
+        )
+
+    async def files_exist(self, request):
+        self.seen.files_exist_requests.append(request)
+        spec = self.echo_spec
+        if spec.secret is not None and request.shared_secret != spec.secret:
+            raise grpclib.GRPCError(Status.PERMISSION_DENIED)
+        known = set(spec.files) | set(spec.file_hashes)
+        hash_names = set(request.files_with_hash)
+        return image_service.FileExistenceResponse(
+            files=list(request.files),
+            existences=[name in known for name in request.files],
+            hashes=[
+                spec.file_hashes.get(name, b"") if name in hash_names and name in known else b""
+                for name in request.files
+            ],
         )
 
     def __mapping__(self):

@@ -15,6 +15,15 @@ from dtflow.core.models import ErrorCategory, InventoryEntry, InventorySnapshot
 LISTED = "listed_in_server_inventory"
 
 
+def _default_weight(item: dict) -> float | None:
+    value = item.get("weight")
+    if isinstance(value, dict):
+        value = value.get("value")
+    if type(value) in (int, float):
+        return float(value)
+    return None
+
+
 def build_snapshot(
     backend_id: str, reply: image_service.EchoReply, *, observed_at_utc: str, refreshed: bool, secret_sent: bool
 ) -> InventorySnapshot:
@@ -40,6 +49,8 @@ def build_snapshot(
                         str(item["version"]) if item.get("version") else None,
                         LISTED,
                         "echo.override",
+                        trigger_prefix=str(item["prefix"]) if item.get("prefix") else None,
+                        default_weight=_default_weight(item) if kind == "lora" else None,
                     ),
                 )
         files = [str(name) for name in info.files]

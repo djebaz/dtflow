@@ -217,6 +217,53 @@ class InventoryEntry:
     availability: str
     metadata_source: str
     source_revision: str | None = None
+    trigger_prefix: str | None = None
+    default_weight: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FileIdentity:
+    identifier: str
+    exists: bool
+    sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.identifier, str) or not self.identifier.strip():
+            raise ValidationError("File identity requires an identifier.")
+        if self.sha256 is not None:
+            digest = self.sha256.lower()
+            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                raise ValidationError("File SHA-256 must be 64 hexadecimal characters.")
+            object.__setattr__(self, "sha256", digest)
+
+
+@dataclass(frozen=True, slots=True)
+class LoRABackendAvailability:
+    availability: str
+    evidence_source: str
+    sha256: str | None = None
+    reference: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LoRAInventoryEntry:
+    identifier: str
+    display_name: str
+    architecture: str | None
+    trigger_prefix: str | None
+    default_weight: float | None
+    local_grpc: LoRABackendAvailability
+    dt_cloud: LoRABackendAvailability
+
+
+@dataclass(frozen=True, slots=True)
+class LoRAInventorySnapshot:
+    observed_at_utc: str
+    entries: tuple[LoRAInventoryEntry, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.entries, tuple) or any(not isinstance(x, LoRAInventoryEntry) for x in self.entries):
+            raise ValidationError("LoRA inventory entries must be immutable typed values.")
 
 
 @dataclass(frozen=True, slots=True)

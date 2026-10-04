@@ -3,10 +3,11 @@
 from dataclasses import replace
 
 from dtflow.backends.drawthings.backend import DrawThingsBackend, DrawThingsEndpoint, now
+from dtflow.backends.drawthings.cloud_assets import lookup_lora_assets
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.errors import diagnostics
 from dtflow.backends.drawthings.tls import TlsPolicy
-from dtflow.core.models import BackendError, ConnectionStatus, ValidationError
+from dtflow.core.models import BackendError, ConnectionStatus, FileIdentity, LoRABackendAvailability, ValidationError
 
 
 class DirectCloudBackend(DrawThingsBackend):
@@ -22,6 +23,12 @@ class DirectCloudBackend(DrawThingsBackend):
         self.max_concurrency = max_concurrency
         super().__init__(endpoint or DrawThingsEndpoint("compute.drawthings.ai", 443, TlsPolicy.system()), **kwargs)
         self._auth = auth
+
+    async def lookup_lora_assets(
+        self, identities: tuple[FileIdentity, ...]
+    ) -> dict[str, LoRABackendAvailability]:
+        """Resolve DT+ LoRA storage availability without uploading file bytes."""
+        return await lookup_lora_assets(self._auth, identities)
 
     async def _generation_metadata(self, message):
         return {"authorization": "bearer " + await self._auth.authorize(message)}

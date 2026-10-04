@@ -44,7 +44,15 @@ MODELS = (
     {"name": "Model A", "file": "a_q8p.ckpt", "version": "flux1"},
     {"name": "Model B", "file": "b.ckpt", "version": "some_future_architecture"},
 )
-LORAS = ({"name": "A LoRA", "file": "lora.ckpt", "version": "flux1"},)
+LORAS = (
+    {
+        "name": "A LoRA",
+        "file": "lora.ckpt",
+        "version": "flux1",
+        "prefix": "trigger phrase",
+        "weight": {"lower_bound": -1.0, "value": 0.75, "upper_bound": 2.0},
+    },
+)
 CONTROLS = ({"name": "A Control", "file": "control.ckpt", "version": "flux1"},)
 
 
@@ -168,6 +176,8 @@ async def test_inventory_mapping_provenance_and_cache():
                 "stray.bin": ("unknown", None),  # unclassified files get no fabricated kind or family
             }
             assert {entry.availability for entry in fresh.entries} == {"listed_in_server_inventory"}
+            lora = next(entry for entry in fresh.entries if entry.identifier == "lora.ckpt")
+            assert (lora.trigger_prefix, lora.default_weight) == ("trigger phrase", 0.75)
             assert adapter.capabilities.model_ids == ("a_q8p.ckpt", "b.ckpt")
             cached = await adapter.get_inventory()
             assert not cached.refreshed and len(server.seen.echo_requests) == 1
@@ -225,3 +235,22 @@ async def test_connectivity_failure_on_refresh_keeps_a_snapshot_marked_stale():
         assert not stale.refreshed and adapter.capabilities.model_ids == ("a_q8p.ckpt",)
     finally:
         await adapter.aclose()
+
+
+@pytest.mark.asyncio
+async def test_file_identity_returns_selected_hash_without_transferring_file_bytes():
+    digest = bytes.fromhex("ab" * 32)
+    echo = EchoSpec(files=("lora.ckpt", "other.ckpt"), file_hashes={"lora.ckpt": digest})
+    async with scripted_server(echo=echo) as server:
+        adapter = await opened(server.host, server.port)
+        try:
+            identities = await adapter.get_file_identities(
+                ("lora.ckpt", "other.ckpt"), with_sha256=("lora.ckpt",)
+            )
+            assert identities[0].exists and identities[0].sha256 == "ab" * 32
+            assert identities[1].exists and identities[1].sha256 is None
+            (request,) = server.seen.files_exist_requests
+            assert request.files == ["lora.ckpt", "other.ckpt"]
+            assert request.files_with_hash == ["lora.ckpt"]
+        finally:
+            await adapter.aclose()

@@ -9,8 +9,8 @@ from dataclasses import replace
 import httpx
 import pytest
 from support.dt_server import Drop, Image, Signpost, client_context, pixel_tensor, scripted_server
-from test_drawthings_connection import Secret
-from test_drawthings_generate import ECHO, SIZE, make_request
+from test_local_grpc_connection import Secret
+from test_local_grpc_generate import ECHO, SIZE, make_request
 
 from dtflow.backends.drawthings.backend import DrawThingsEndpoint
 from dtflow.backends.drawthings.cloud import DirectCloudBackend

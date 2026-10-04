@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Add production LoRA availability enrichment across local Draw Things gRPC and direct DT+: preserve Echo trigger prefix/default weight, selectively resolve converted SHA-256 with `FilesExist`, classify DT+ direct listing or metadata-only BYOM reuse/upload-required evidence, and atomically write the rebuildable `.dtflow/cache/inventory/lora_inventory.json`. The source path never follows signed upload URLs and no generation/upload is performed by offline tests. Rename local-only integration tests from `test_drawthings_*` to `test_local_grpc_*` while retaining `drawthings` for shared provider protocol modules.
+
 - Add `tools/drawthings/grpc_capabilities_probe.py`, a non-generative local Draw Things gRPC capability diagnostic covering the complete current read-only surface (`Echo`, `FilesExist`, `Pubkey`, and `Hours`) while explicitly excluding generation and upload. It preserves full Echo metadata fields, checks local registry-file visibility, requests SHA-256 only for small registry candidates plus explicit `--hash-file` values, and can retain a sanitized JSON report. Add focused offline parsing/alignment tests and source-backed capability documentation; no live RPC is run by the test suite.
 
 - Add `tools/drawthings/local_files_exist_probe.py`, a non-generative local Draw Things gRPC diagnostic that requests a named converted checkpoint through `FilesExist(filesWithHash=...)` and reports the server-computed SHA-256 when available. It uses the same bundled Draw Things CA policy as `drawthings-py`, supports an optional `DRAWTHINGS_SHARED_SECRET`, and transfers no checkpoint bytes.

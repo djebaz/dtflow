@@ -1,4 +1,4 @@
-"""Optional non-generative live check: local Draw Things connection and Echo inventory.
+"""Optional non-generative live check: local Draw Things gRPC connection and Echo inventory.
 
 Run explicitly:  DTFLOW_LIVE_TESTS=1 DTFLOW_LIVE_HOST=<ip> DTFLOW_LIVE_PORT=<port> uv run pytest -m live
 Optional: DTFLOW_LIVE_CA_FILE (explicit CA bundle), DTFLOW_LIVE_SERVER_NAME (verified TLS name when connecting by IP),

@@ -158,6 +158,18 @@ class CloudAuth:
             raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
         return parse_response(body, token_exchange=False)[0]
 
+    async def authenticated_json(self, path: str, payload: dict) -> dict:
+        """POST authenticated JSON and return a validated object without exposing response contents."""
+        token = await self.token()
+        body = await self._post(path, payload, token=token)
+        try:
+            decoded = json.loads(body)
+        except (ValueError, UnicodeError) as exc:
+            raise error(ErrorCategory.PROTOCOL, "cloud_response_invalid", "Cloud response is invalid.") from exc
+        if not isinstance(decoded, dict):
+            raise error(ErrorCategory.PROTOCOL, "cloud_response_invalid", "Cloud response is invalid.")
+        return decoded
+
     async def _post(self, path: str, payload: dict, *, token: str | None = None) -> bytes:
         if self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")

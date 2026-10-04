@@ -3,8 +3,8 @@
 import pytest
 from support.dt_server import Drop, Image, Signpost, pixel_tensor, scripted_server
 from support.network_guard import endpoint
-from test_drawthings_connection import UNREACHABLE_FAILURES, opened
-from test_drawthings_generate import ECHO, SIZE, make_request
+from test_local_grpc_connection import UNREACHABLE_FAILURES, opened
+from test_local_grpc_generate import ECHO, SIZE, make_request
 
 from dtflow.core.models import BackendError, TimeoutPolicy
 from dtflow.persistence.store import SQLiteAttempts

@@ -34,6 +34,7 @@ from dtflow.core.models import (
     ErrorCategory,
     EventSink,
     GenerationResult,
+    FileIdentity,
     ImageArtifact,
     InventorySnapshot,
     RemoteOutcome,
@@ -190,6 +191,51 @@ class DrawThingsBackend:
         )
         self._stale_reason = None
         return self._inventory
+
+    async def get_file_identities(
+        self, identifiers: tuple[str, ...], *, with_sha256: tuple[str, ...] = ()
+    ) -> tuple[FileIdentity, ...]:
+        """Return server-side existence and optional SHA-256 without transferring file bytes."""
+        if not isinstance(identifiers, tuple) or any(
+            not isinstance(name, str) or not name or "/" in name or "\\" in name for name in identifiers
+        ):
+            raise ValidationError("File identities require checkpoint basenames.")
+        hash_names = set(with_sha256)
+        if not hash_names.issubset(set(identifiers)):
+            raise ValidationError("SHA-256 may be requested only for listed file identifiers.")
+        if not identifiers:
+            return ()
+        await self._connect()
+        secret = await self._secret()
+        request = image_service.FileListRequest(files=list(identifiers), files_with_hash=list(with_sha256))
+        if secret:
+            request.shared_secret = secret
+        stub = image_service.ImageGenerationServiceStub(self._require_channel())
+        try:
+            response = await stub.files_exist(request, timeout=self.timeouts.inventory)
+        except Exception as exc:
+            raise BackendError(from_exception(exc, phase="inventory")) from exc
+        by_name: dict[str, FileIdentity] = {}
+        for index, name in enumerate(response.files):
+            exists = bool(response.existences[index]) if index < len(response.existences) else False
+            digest = response.hashes[index] if index < len(response.hashes) else b""
+            if digest and len(digest) != 32:
+                raise error(
+                    ErrorCategory.PROTOCOL,
+                    "file_hash_invalid",
+                    "Server returned an invalid file hash.",
+                    diagnostics=diagnostics(identifier=name),
+                )
+            by_name[str(name)] = FileIdentity(str(name), exists, digest.hex() if digest else None)
+        missing = [name for name in identifiers if name not in by_name]
+        if missing:
+            raise error(
+                ErrorCategory.PROTOCOL,
+                "file_identity_incomplete",
+                "Server omitted requested file identity results.",
+                diagnostics=diagnostics(missing=len(missing)),
+            )
+        return tuple(by_name[name] for name in identifiers)
 
     async def generate(self, request: ResolvedGenerationRequest, *, on_event: EventSink) -> GenerationResult:
         """Run one text-to-image generation; the total deadline covers prepare, lane wait, connect, auth, stream and decode.

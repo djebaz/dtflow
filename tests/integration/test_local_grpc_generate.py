@@ -18,7 +18,7 @@ from support.dt_server import (
     pixel_tensor,
     scripted_server,
 )
-from test_drawthings_connection import MODELS, opened
+from test_local_grpc_connection import MODELS, opened
 
 from dtflow.backends.drawthings import codec
 from dtflow.core.models import (

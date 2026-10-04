@@ -36,6 +36,7 @@ When introduced, use these paths, creating optional folders only on demand:
 | --- | --- |
 | `.dtflow/cache/inventory/local_<endpoint-id>.json` | Disposable local inventory cache |
 | `.dtflow/cache/inventory/cloud_<endpoint-id>.json` | Disposable cloud inventory cache |
+| `.dtflow/cache/inventory/lora_inventory.json` | Derived local-gRPC + DT+ LoRA availability cache; rebuildable from live evidence |
 | `.dtflow/cache/thumbnails/<artifact-id>.webp` | Regenerable thumbnail |
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
 | `logs/dtflow.log` | Rotating application diagnostics when shared logging is implemented |
