@@ -180,7 +180,7 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 - Use `uv sync` for environment setup/synchronization and `uv run` for project commands and tools.
 - Do not maintain a parallel hand-edited `requirements.txt`; add an exported compatibility file only if a concrete external integration requires it.
 - Development runtime state lives under repository-root `.dtflow/`, which is ignored by Git.
-- Development diagnostic logs live under repository-root `logs/`, already ignored; `tmp/` remains disposable scratch. Packaged Windows logs default to `%LOCALAPPDATA%\\DTFlow\\logs\\`, with an explicit location override when implemented.
+- Development diagnostic logs live under repository-root `logs/`, already ignored; `tmp/` remains disposable scratch. Packaged Windows logs default to `%LOCALAPPDATA%\DTFlow\logs\`, with an explicit location override when implemented.
 - Packaged Windows builds use the platform-local application data location by default rather than writing beside the executable; an explicit DTFlow home override may be added for development/portable use.
 - Cache is disposable and must remain separate from durable application state. Cache storage should be split into type-specific subdirectories so categories can be measured and purged independently.
 - Cache size visibility and manual/automatic cleanup should be implemented early because generated images and derived assets can become large.
@@ -217,7 +217,7 @@ Investigate portable Windows packaging and dependency distribution early on the 
 
 ### Phase 3 — Headless CLI and shared application services
 
-Deliver a usable command-line application before introducing Qt. Follow [the Phase 3 CLI plan](phase-3-cli.md).
+Deliver a usable source-run command-line application before introducing Qt. Packaging initially targets the Qt application; a separate packaged CLI is outside scope. Follow [the Phase 3 CLI plan](phase-3-cli.md).
 
 Introduce shared logging with rotating UTF-8 files, normal and explicit development detail levels, build/session/job correlation and secret sanitization. Development logs use repository-root `logs/`; packaged Windows builds use per-user application data. Logging is independent of cache bypass and durable execution records.
 
@@ -266,6 +266,14 @@ The direct DT+ diagnostic path is a separate result. It has completed six contro
 Use the shared configurable cloud maximum, default four, in both CLI and Qt scheduling. Values above two change the Qt number's color subtly, without a prominent warning or confirmation dialog. Preserve a separate app/Bridge policy. Test bounded dispatch and throttling without automatically retrying ambiguous submissions.
 
 Do not infer safe concurrency from client-side capability alone.
+
+### Uncertain attempts and slot accounting
+
+If submission definitely never occurred, release the scheduler slot. If a disconnect, local cancellation or other failure leaves remote execution possible, retain a durable unresolved reservation and pause new dispatch for that backend; already-running requests may finish. Release a reservation only on evidence that remote execution is no longer possible or an explicit user override.
+
+An explicit override may resume eligible never-submitted work after the user acknowledges the unresolved attempt; it must not resubmit that attempt or mark it resolved. Record the override and preserve its uncertainty. The configured maximum bounds DTFlow scheduling, not guaranteed remote execution after an override: no inspected remote status API can establish how much unknown work remains active.
+
+After restart, restore the queue paused with unresolved reservations intact. Ordinary Resume does not clear those reservations or bypass their dispatch block; the user must explicitly acknowledge and override that block. Test pre-submission slot release, post-submission disconnect/local cancellation, completion of other running requests, blocked replacement dispatch, explicit override and restart restoration in Phase 7. Phase 3 supplies durable attempt evidence, without adding a scheduler.
 
 ### Phase 8 — Gallery and presets
 
@@ -341,10 +349,10 @@ Apply the Windows packaging requirement during Phase 2/3 investigation and the r
 
 ### Additional confirmed product decisions
 
-- Cloud credentials: enter the API key in Qt and save it securely through Windows Credential Manager. Keep environment-supplied credentials available for CLI use. Credential resolution belongs in shared services and must not require Qt; keys/tokens never enter ordinary settings, output metadata or logs. Secure storage failure must not silently fall back to plaintext.
+- Cloud credentials: enter the API key in Qt and save it securely through Windows Credential Manager. When an environment key is present it takes precedence, including failure for an empty/invalid value; otherwise use the saved key. Never silently switch sources after authentication failure. Keep environment-supplied credentials available for CLI use. Credential resolution belongs in shared services and must not require Qt; keys/tokens never enter ordinary settings, output metadata or logs. Secure storage failure must not silently fall back to plaintext.
 - PAYG: unavailable in the first release; defer opt-in support to a later version. Initial requests remain explicitly subscription-only regardless of account PAYG settings.
 - Updates: manual downloads initially, with no integrated updater or Microsoft Store requirement. A future release-page check is optional later work.
-- Build identity: show the application version plus a short Git commit ID in CLI version output and a discreet Qt About/status area, and include both in distributed build filenames. Use one build-time identity across CLI version output, a discreet Qt About/status area and artifact filenames: application version plus a short Git commit ID. Bundle the full source commit and dirty-worktree status so the executable needs no Git installation at runtime. Release builds must come from a clean checkout; development builds disclose local modifications and missing revision metadata instead of inventing an ID. Persist version/full commit in generation metadata where available.
+- Build identity: show the application version plus a short Git commit ID in CLI version output and a discreet Qt About/status area, and include both in distributed build filenames. Bundle the full source commit and dirty-worktree status so the executable needs no Git installation at runtime. Release builds must come from a clean checkout; development builds disclose local modifications and missing revision metadata instead of inventing an ID. Persist version/full commit in generation metadata where available.
 
 Illustrative naming only (not an existing release): `dtflow-0.1.0-gabcdef1-windows-x64.exe`. Use the actual target architecture and source revision; an eventual installer follows the same identity convention.
 

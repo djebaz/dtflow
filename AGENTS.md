@@ -49,7 +49,7 @@ These instructions apply throughout `dtflow`.
 
 - Use one shared Python logging setup for CLI, Qt, services and backend adapters. Prefer the standard-library logging module; presentation layers must not maintain separate logging engines.
 - In repository development, write diagnostic files under repository-root `logs/`, which remains ignored by Git. Keep application state under `.dtflow/` and disposable scratch work under `tmp/`; logs do not change those conventions.
-- Packaged Windows builds default to `%LOCALAPPDATA%\\DTFlow\\logs\\`, never the repository, executable directory or current working directory. Allow an explicit log-location override when implemented.
+- Packaged Windows builds default to `%LOCALAPPDATA%\DTFlow\logs\`, never the repository, executable directory or current working directory. Allow an explicit log-location override when implemented.
 - Write readable UTF-8 text logs with timestamps, severity, component and session identity. Include version/source commit and backend identity; attach local job/attempt IDs when available to correlate concurrent work.
 - Normal mode records important lifecycle events and errors. Explicit development mode adds sanitized connection/auth-refresh events, request validation, state transitions, stream events, timings and exception tracebacks. It changes diagnostic detail only, never generation, retry or billing behavior.
 - Bound file size and retention through rotation. Avoid rotation collisions between simultaneous processes and keep log I/O from blocking Qt interaction.
@@ -59,6 +59,7 @@ These instructions apply throughout `dtflow`.
 
 ## CLI
 
+- The initial CLI runs from source for development and automation; packaging initially targets the Qt application, without a separate packaged CLI.
 - Provide a `dtflow` entry point for normal development/application launch rather than requiring long source paths.
 - For normal user-facing options, expose a canonical pair: a stable, unique lowercase short alias and a concise long form.
 - Reserve `-h` / `--help` for the standard help action. Do not use uppercase short aliases such as `-H` or `-P` as collision workarounds, and avoid repurposing widely expected flags when a clearer mnemonic is available.
@@ -81,6 +82,7 @@ These instructions apply throughout `dtflow`.
 - Keep prompts, seeds, dimensions, and other relevant parameters controlled in comparisons unless intentionally varied.
 - Do not run expensive or potentially billable training/inference merely to validate syntax, configuration, or application plumbing.
 - Never expose credentials, tokens, authorization headers, or sensitive payloads in logs.
+- Shared cloud credential resolution selects `DRAWTHINGS_API_KEY` when present, otherwise the saved Windows credential. Empty/invalid selected credentials fail clearly; never silently switch sources after validation or authentication failure.
 
 ## Tests
 

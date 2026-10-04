@@ -23,7 +23,7 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 | Interruption | Stop local waiting/transport as supported, preserve evidence and report remote uncertainty without automatic resubmission |
 | Cache policy | Support `-nc` / `--no-cache`; disable both cache reads and writes when selected |
 
-Use environment-supplied cloud credentials for the initial CLI path. Keep credential resolution Qt-independent so desktop-secured Windows Credential Manager credentials can also be consumed headlessly when that storage path is introduced. Never accept an API key in routine logged request metadata or display credentials/tokens. Keep PAYG opt-in disabled.
+Use environment-supplied cloud credentials for the initial CLI path. Keep credential resolution Qt-independent so desktop-secured Windows Credential Manager credentials can also be consumed headlessly when that storage path is introduced. Never accept an API key in routine logged request metadata or display credentials/tokens. Environment presence takes precedence over a saved key; an empty/invalid selected credential fails without silent fallback. Use the shared Phase 2 selection rule and log only its source. Keep PAYG opt-in disabled.
 
 ## CLI contract
 
@@ -32,6 +32,8 @@ Establish concise command names and stable lowercase short/long option pairs con
 Provide accurate help, parameter validation, useful nonzero exit codes and separation of machine-readable results from progress/diagnostic output. Define exit behavior for success, validation failure, remote rejection, interruption and unknown outcomes.
 
 Expose prompt, negative prompt, model, seed, dimensions, steps and guidance where actually supported, plus backend connection selection, output destination and configuration/preset input. Preserve canonical defaults and record the effective request rather than only the entered arguments.
+
+The CLI is initially a source-run development and automation interface; packaging targets the Qt application. A separate packaged CLI is outside the initial scope. Source-run CLI logs use repository-root `logs/`.
 
 The development entry point runs through `uv run dtflow` once implemented. It must not import or initialize Qt, and must remain usable after the desktop interface is added.
 
@@ -51,7 +53,7 @@ Qt exposes the same setting and uses a subtle color change above **2**, without 
 
 ## Shared logging and development mode
 
-Implement the repository logging contract through one shared standard-library Python logging configuration. Use repository-root `logs/` for development and `%LOCALAPPDATA%\\DTFlow\\logs\\` for packaged Windows builds; support an explicit destination override. Neither packaged path resolution nor logging setup may require Git or Qt.
+Implement the repository logging contract through one shared standard-library Python logging configuration. Use repository-root `logs/` for development and `%LOCALAPPDATA%\DTFlow\logs\` for packaged Windows builds; support an explicit destination override. Neither packaged path resolution nor logging setup may require Git or Qt.
 
 Normal mode logs important events/errors; explicit development mode adds sanitized diagnostic detail and tracebacks. Determine canonical CLI spellings during implementation and keep help accurate. Development mode changes logging only; no generation, retry, network or billing semantics change.
 

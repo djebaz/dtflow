@@ -33,6 +33,10 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Define deterministic environment-over-saved cloud credential precedence with no silent authentication fallback; plan fixture coverage for missing, empty and failed selected credentials.
+- Define Phase 7 unresolved concurrency reservations, backend dispatch pause, explicit user override and paused restart behavior without replaying uncertain attempts.
+- Clarify that the initial CLI runs from source while packaging targets Qt; correct Windows path rendering and remove repeated build-identity wording.
+
 - Resolve the remaining product choices: secure Qt API-key entry via Windows Credential Manager with headless/environment support; PAYG deferred beyond the first release; manual updates initially.
 - Plan consistent version plus short source-commit identity in CLI output, discreet Qt presentation and build filenames, with bundled full revision and honest development-build status. These remain documentation requirements, not shipped features.
 

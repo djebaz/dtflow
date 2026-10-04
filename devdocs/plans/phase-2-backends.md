@@ -47,6 +47,8 @@ Represent verified, unsupported and unknown capabilities distinctly. Keep model 
 
 Define injectable credential resolution behind a Qt-independent service. The initial headless path accepts an environment API key; the desktop milestone adds entry and secure Windows Credential Manager storage through that same service. Never silently save plaintext if secure storage fails. Keep credentials/tokens out of logs and ordinary persisted metadata. Implement expiry-aware short-term-token caching and concurrency-safe refresh using the inspected official token contract, plus per-generation authentication and normal TLS hostname validation.
 
+Credential selection is deterministic: if `DRAWTHINGS_API_KEY` is present, select it; otherwise use the saved Windows Credential Manager key when available. An empty or invalid selected key fails clearly, without silently switching credential sources after validation or authentication failure. If neither source exists, report missing credentials. Expose only the selected source in sanitized diagnostics, never the key.
+
 Keep subscription-only behavior explicit and PAYG opt-in disabled. Do not inherit account-enabled PAYG automatically. Classify quota/billing refusals only from verified response semantics; preserve sanitized generic rejection when the reason is unknown.
 
 Authentication retry policy must remain separate from generation resubmission.
@@ -92,7 +94,7 @@ Phase 2 covers the contract and adapters. Extend fake-backed UI, durable job, qu
 - Real adapters are exercised through local gRPC transport, including terminal status, deadlines, cancellation/disconnects and cloud authorization metadata.
 - Request conversion tests cover seed fidelity, explicit parameters and output metadata.
 - Stream tests cover terminal failures, no final output, partial outputs and preview labeling.
-- Cloud tests cover token expiry, concurrent refresh, per-generation authentication, sanitized errors and disabled PAYG opt-in.
+- Cloud tests cover credential precedence (including both sources, empty environment values and failed selected credentials), absence of silent fallback, token expiry, concurrent refresh, per-generation authentication, sanitized errors and disabled PAYG opt-in.
 - Document the actual target-Windows packaging outcome; unresolved distribution or packaging decisions stay explicit.
 - Record unsupported/unverified cancellation, recovery and compatibility behavior rather than inventing it.
 
