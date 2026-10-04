@@ -42,13 +42,21 @@ Owner-run live evidence (2026-10-04, Windows 10, Pentium E6500, reported by the 
 - Frozen PyInstaller CLI: fake workflow, settings, invalid input and per-user logs passed (needs
   `--collect-data drawthings_py`); `check -b local` against the real server returned transport ok and 56 inventory
   entries ([windows-packaging W20](../research/windows-packaging.md)).
-The output images were not inspected by the agent; the workload is a plain text-to-image run with no LoRA.
+- Frozen exe: invalid input exited 2 with no attempt recorded; a real DT+ generation passed (attempt `e9c09baa…`). The
+  owner also reports a frozen local generation and a clean-`PATH` rerun passed (output not pasted).
+- Local LoRA through the frozen exe (3A LoRA path): an unknown identifier was rejected by preflight with nothing
+  dispatched; `zimage_turbo_lora_rank64_512_000006000_lora_f16.ckpt:0.8` with `-r` (preflight `match`) generated
+  successfully on the second try (attempt `b61bfe9a…`). The first try lost its stream after one sampling step
+  (`connection_lost`, recorded as an unknown outcome, never retried automatically; cause not established). The owner
+  reports the LoRA result validated; whether the LoRA visibly changed the image was judged by the owner, not the agent.
+The agent did not inspect any output image.
 
 Not done or unverified: the official base/refiner and Kandinsky/SD-v1 exception rules are not pinned, so no exception
-logic exists; no LoRA generation, queue or cancellation behavior was run live, so LoRA application on a real server
-is unconfirmed; raw inventory disk-cache read/write integration is still planned; the saved Windows credential
-provider is Phase 4, so cloud credentials are environment-only; the frozen exe was not run against a generation or
-from a second machine. Billing behavior remains unverified.
+logic exists; LoRA application is still not confirmed by backend evidence; some server-reported LoRA architecture
+labels look wrong, and preflight blocks on a reported mismatch with no override yet; no queue, cancellation or cloud
+LoRA behavior was run live; raw inventory disk-cache read/write integration is still planned; the saved Windows
+credential provider is Phase 4, so cloud credentials are environment-only; the frozen exe was not tried on a second
+machine or stamped with a commit. Billing behavior remains unverified.
 
 ## Release gates and schema compatibility
 
