@@ -21,7 +21,8 @@ def unreachable_reason(code: str | None, kind: str | None, target: str) -> str |
     treated as "app not launched" and stay failures.
     """
     if code == "connect_failed" and kind == REFUSED:
-        return f"Draw Things is not running at {target}: connection refused. Launch it and enable its gRPC server."
+        return f"Nothing is listening at {target} (connection refused): Draw Things is not running or its API server is off. "
+            "Launch the app and enable its API server."
     if code == "connect_deadline":
         return (
             f"No Draw Things response from {target} before the connect deadline: app not launched, wrong IP/port "
