@@ -244,9 +244,7 @@ async def test_file_identity_returns_selected_hash_without_transferring_file_byt
     async with scripted_server(echo=echo) as server:
         adapter = await opened(server.host, server.port)
         try:
-            identities = await adapter.get_file_identities(
-                ("lora.ckpt", "other.ckpt"), with_sha256=("lora.ckpt",)
-            )
+            identities = await adapter.get_file_identities(("lora.ckpt", "other.ckpt"), with_sha256=("lora.ckpt",))
             assert identities[0].exists and identities[0].sha256 == "ab" * 32
             assert identities[1].exists and identities[1].sha256 is None
             (request,) = server.seen.files_exist_requests

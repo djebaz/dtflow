@@ -24,9 +24,7 @@ def sha256_and_size(path: Path) -> tuple[int, str]:
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line argument parser."""
-    parser = argparse.ArgumentParser(
-        description="Compute the exact size and SHA-256 of a .ckpt file."
-    )
+    parser = argparse.ArgumentParser(description="Compute the exact size and SHA-256 of a .ckpt file.")
     parser.add_argument(
         "checkpoint",
         type=Path,

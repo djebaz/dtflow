@@ -27,9 +27,7 @@ class LocalLoRABackend(Protocol):
 class CloudLoRABackend(Protocol):
     async def get_inventory(self, refresh: bool = False) -> InventorySnapshot: ...
 
-    async def lookup_lora_assets(
-        self, identities: tuple[FileIdentity, ...]
-    ) -> dict[str, LoRABackendAvailability]: ...
+    async def lookup_lora_assets(self, identities: tuple[FileIdentity, ...]) -> dict[str, LoRABackendAvailability]: ...
 
 
 async def resolve_lora_inventory(
@@ -54,11 +52,7 @@ async def resolve_lora_inventory(
     unresolved = tuple(entry.identifier for entry in local_loras if entry.identifier not in cloud_ids)
     selected = set(lookup_identifiers) if lookup_identifiers is not None else set(unresolved)
     needs_lookup = tuple(identifier for identifier in unresolved if identifier in selected)
-    identities = (
-        await local.get_file_identities(needs_lookup, with_sha256=needs_lookup)
-        if needs_lookup
-        else ()
-    )
+    identities = await local.get_file_identities(needs_lookup, with_sha256=needs_lookup) if needs_lookup else ()
     identity_by_id = {item.identifier: item for item in identities}
     byom = await cloud.lookup_lora_assets(identities) if identities else {}
 

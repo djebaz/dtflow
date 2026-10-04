@@ -10,10 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 DEFAULT_API_BASE = "https://api.drawthings.ai"
-DEFAULT_FILENAME = (
-    "the_body_version_m_zit_512_r16_adamw8bit_weighted_bf16_"
-    "womanonly_000008000_lora_f16.ckpt"
-)
+DEFAULT_FILENAME = "the_body_version_m_zit_512_r16_adamw8bit_weighted_bf16_womanonly_000008000_lora_f16.ckpt"
 DEFAULT_SIZE_BYTES = 86257664
 DEFAULT_SHA256 = "a069707aef7a69ec9dc867b9b5bcace2f560030030ad44cf1f15979622a6aec8"
 API_KEY_ENV = "DRAWTHINGS_API_KEY"

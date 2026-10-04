@@ -108,9 +108,7 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error("--port must be in 1..65535")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
-    args.hash_file = [
-        _validate_basename(value, parser, flag="--hash-file") for value in args.hash_file
-    ]
+    args.hash_file = [_validate_basename(value, parser, flag="--hash-file") for value in args.hash_file]
 
 
 def _drawthings_tls_context() -> ssl.SSLContext:
@@ -171,14 +169,7 @@ def _decode_override_blob(raw: bytes, *, category: str) -> dict[str, Any]:
         )
         return result
 
-    field_names = sorted(
-        {
-            str(key)
-            for item in value
-            if isinstance(item, dict)
-            for key in item
-        }
-    )
+    field_names = sorted({str(key) for item in value if isinstance(item, dict) for key in item})
     result.update(
         {
             "count": len(value),
@@ -203,9 +194,7 @@ def decode_metadata_override(
         "models": _decode_override_blob(override.models, category="models"),
         "loras": _decode_override_blob(override.loras, category="loras"),
         "control_nets": _decode_override_blob(override.control_nets, category="control_nets"),
-        "textual_inversions": _decode_override_blob(
-            override.textual_inversions, category="textual_inversions"
-        ),
+        "textual_inversions": _decode_override_blob(override.textual_inversions, category="textual_inversions"),
         "upscalers": _decode_override_blob(override.upscalers, category="upscalers"),
     }
 
@@ -311,10 +300,7 @@ async def _probe(args: argparse.Namespace) -> dict[str, Any]:
         try:
             files_response = await stub.files_exist(files_request, timeout=args.timeout)
             normalized_files = files_exist_results(files_response, hash_requested=hash_requested)
-            by_file = {
-                item["file"]: item
-                for item in normalized_files
-            }
+            by_file = {item["file"]: item for item in normalized_files}
             report["rpc"]["files_exist"] = {
                 "status": "ok",
                 "requested_file_count": len(requested_files),
@@ -337,18 +323,12 @@ async def _probe(args: argparse.Namespace) -> dict[str, Any]:
                     for name, role in METADATA_FILE_CANDIDATES
                 ],
                 "consistency": {
-                    "echo_files_missing_from_response": [
-                        name for name in echo_files if name not in by_file
-                    ],
+                    "echo_files_missing_from_response": [name for name in echo_files if name not in by_file],
                     "echo_files_reported_absent": [
-                        name
-                        for name in echo_files
-                        if name in by_file and by_file[name]["exists"] is False
+                        name for name in echo_files if name in by_file and by_file[name]["exists"] is False
                     ],
                     "structured_files_reported_absent": [
-                        name
-                        for name in structured_files
-                        if name in by_file and by_file[name]["exists"] is False
+                        name for name in structured_files if name in by_file and by_file[name]["exists"] is False
                     ],
                 },
             }
@@ -411,11 +391,7 @@ def _print_summary(report: dict[str, Any]) -> None:
     if isinstance(metadata, dict):
         print(
             "Structured metadata: "
-            + ", ".join(
-                f"{name}={value.get('count')}"
-                for name, value in metadata.items()
-                if isinstance(value, dict)
-            )
+            + ", ".join(f"{name}={value.get('count')}" for name, value in metadata.items() if isinstance(value, dict))
         )
 
     if files_exist.get("status") == "ok":

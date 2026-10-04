@@ -40,7 +40,5 @@ async def lookup_lora_assets(
                 "upload_required", "dt_cloud.get_byom_urls", sha256=item.sha256
             )
         else:
-            results[item.identifier] = LoRABackendAvailability(
-                "unknown", "dt_cloud.get_byom_urls", sha256=item.sha256
-            )
+            results[item.identifier] = LoRABackendAvailability("unknown", "dt_cloud.get_byom_urls", sha256=item.sha256)
     return results

@@ -24,9 +24,7 @@ class DirectCloudBackend(DrawThingsBackend):
         super().__init__(endpoint or DrawThingsEndpoint("compute.drawthings.ai", 443, TlsPolicy.system()), **kwargs)
         self._auth = auth
 
-    async def lookup_lora_assets(
-        self, identities: tuple[FileIdentity, ...]
-    ) -> dict[str, LoRABackendAvailability]:
+    async def lookup_lora_assets(self, identities: tuple[FileIdentity, ...]) -> dict[str, LoRABackendAvailability]:
         """Resolve DT+ LoRA storage availability without uploading file bytes."""
         return await lookup_lora_assets(self._auth, identities)
 

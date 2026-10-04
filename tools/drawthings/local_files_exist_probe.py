@@ -12,10 +12,7 @@ from drawthings_py.generated.dt_grpc import image_service
 from grpclib.client import Channel
 
 DEFAULT_GRPC_PORT = 7859
-DEFAULT_FILENAME = (
-    "the_body_version_m_zit_512_r16_adamw8bit_weighted_bf16_"
-    "womanonly_000008000_lora_f16.ckpt"
-)
+DEFAULT_FILENAME = "the_body_version_m_zit_512_r16_adamw8bit_weighted_bf16_womanonly_000008000_lora_f16.ckpt"
 DEFAULT_KNOWN_SHA256 = "a069707aef7a69ec9dc867b9b5bcace2f560030030ad44cf1f15979622a6aec8"
 SHARED_SECRET_ENV = "DRAWTHINGS_SHARED_SECRET"
 
