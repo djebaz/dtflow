@@ -1,22 +1,27 @@
 """Local live-check diagnosis: separate "app not running" and model-browsing hints from real failures."""
 
-import warnings
-
 import pytest
 
 REFUSED = "ConnectionRefusedError"
 
 
-def warn_live(request, message: str) -> None:
-    """Emit a pytest warning and retain it in this check's ``results.json`` entry."""
+UNREACHABLE_FIX = (
+    "Start Draw Things and enable its API server, or check DTFLOW_LIVE_HOST/DTFLOW_LIVE_PORT and the firewall."
+)
+BROWSING_FIX = "In the Draw Things app turn on 'Enable Model Browsing', then rerun the live checks."
+
+
+def warn_live(request, message: str, fix: str | None = None) -> None:
+    """Retain a warning (and how to resolve it) on this check; the terminal summary prints it in color."""
     request.node.user_properties.append(("warning", message))
-    warnings.warn(message, UserWarning, stacklevel=2)
+    if fix:
+        request.node.user_properties.append(("fix", fix))
 
 
 def unreachable_reason(code: str | None, kind: str | None, target: str) -> str | None:
     """Return a warning for "no local server answered", or None for any other failure.
 
-    A refused connection means nothing is listening (app closed or its API server disabled) A connect deadline is
+    A refused connection means nothing is listening (app closed or its API server disabled). A connect deadline is
     the same condition on some platforms, or a wrong IP/firewall. Other network errors (routing, DNS, reset) are not
     treated as "app not launched" and stay failures.
     """
@@ -36,7 +41,7 @@ def unreachable_reason(code: str | None, kind: str | None, target: str) -> str |
 def skip_if_local_unreachable(request, code: str | None, kind: str | None, target: str) -> None:
     reason = unreachable_reason(code, kind, target)
     if reason is not None:
-        warn_live(request, reason)
+        warn_live(request, reason, UNREACHABLE_FIX)
         pytest.skip(reason)
 
 
@@ -47,6 +52,7 @@ def warn_if_model_browsing_off(request, snapshot) -> None:
             request,
             "Echo returned no model files: 'Enable Model Browsing' is probably off in Draw Things, so local file "
             "visibility and LoRA SHA-256 checks may be incomplete.",
+            BROWSING_FIX,
         )
 
 

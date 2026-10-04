@@ -198,9 +198,9 @@ async def test_inventory_without_files_triggers_model_browsing_warning(request):
         adapter = await opened(server.host, server.port)
         try:
             snapshot = await adapter.get_inventory(refresh=True)
-            with pytest.warns(UserWarning, match="Enable Model Browsing"):
-                warn_if_model_browsing_off(request, snapshot)
-            assert [value for key, value in request.node.user_properties if key == "warning"]
+            warn_if_model_browsing_off(request, snapshot)
+            retained = dict(request.node.user_properties)
+            assert "Enable Model Browsing" in retained["warning"] and "Enable Model Browsing" in retained["fix"]
         finally:
             await adapter.aclose()
 

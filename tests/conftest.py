@@ -118,7 +118,11 @@ def pytest_runtest_makereport(item, call):
                 "phase": report.when,
                 "outcome": report.outcome,
                 "seconds": report.duration,
-                **({"warnings": notes} if (notes := [v for k, v in report.user_properties if k == "warning"]) else {}),
+                **{
+                    key + "s": values
+                    for key in ("warning", "fix")
+                    if (values := [v for k, v in report.user_properties if k == key])
+                },
             }
         )
 
@@ -133,3 +137,20 @@ def pytest_terminal_summary(terminalreporter):
         }
         (root / "results.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
         terminalreporter.write_line(f"Live-test evidence: {root}")
+        _write_live_warnings(terminalreporter, terminalreporter.config._dtflow_live_reports)
+
+
+def _write_live_warnings(terminalreporter, checks) -> None:
+    """Print each distinct live-check warning with how to resolve it, instead of raw pytest warning text."""
+    seen: dict[str, str | None] = {}
+    for check in checks:
+        fixes = check.get("fixes", [])
+        for index, message in enumerate(check.get("warnings", [])):
+            seen.setdefault(message, fixes[index] if index < len(fixes) else (fixes[-1] if fixes else None))
+    if not seen:
+        return
+    terminalreporter.write_sep("-", "DTFlow live-check warnings (not failures)", yellow=True, bold=True)
+    for message, fix in seen.items():
+        terminalreporter.write_line(f"WARNING: {message}", yellow=True, bold=True)
+        if fix:
+            terminalreporter.write_line(f"  To fix: {fix}", cyan=True)
