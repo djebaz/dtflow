@@ -74,7 +74,42 @@ For each built executable record: size, build time, startup time (`Measure-Comma
 
 ### P5 — Compare outputs
 
-The packaged output must agree with the source-run output on package versions, CPU features, fpzip, Pillow, SQLite and TLS checks. Record differences, especially `frozen: true` and any missing resource.
+The packaged output must agree with the source-run output on package versions, CPU features, fpzip, Pillow, SQLite and TLS checks. Record differences, especially `frozen: true` and any missing resource. A frozen build reports `imported; metadata unavailable` for packages whose metadata is not bundled; that is expected unless `--copy-metadata` is passed for them, and it is not a failure.
+
+### P6 — Source-run `dtflow` CLI, offline fake backend
+
+The `dtflow` entry point now exists with an explicit offline fake backend. These steps make no network connection, load no model and submit no generation request. They use a temporary state directory, so no repository files change. Option spellings are those printed by `uv run dtflow <command> --help`; check them if the CLI has changed.
+
+```powershell
+uv run dtflow --version
+uv run dtflow --help
+$state = Join-Path $env:TEMP "dtflow-pkg-state"
+uv run dtflow check --state $state --backend fake
+uv run dtflow models --state $state --backend fake --refresh
+uv run dtflow generate --state $state --backend fake --prompt "Offline fixture" --seed 0
+$LASTEXITCODE
+uv run dtflow attempts --state $state
+Get-ChildItem -Recurse $state | Select-Object FullName, Length
+Remove-Item -Recurse -Force $state
+```
+
+Record the version line, exit codes, the saved PNG and metadata file names and sizes, and that the PNG opens. The CLI refuses SQLite older than 3.51.3 (WAL-reset fix); the smoke result for W5 reported 3.53.1 on the target machine. On other machines a failure with that message is the runtime check working, not a packaging defect (observed on a Linux Python bundling SQLite 3.45.1).
+
+### P7 — Frozen `dtflow` CLI trial
+
+`tools/packaging/launch_dtflow.py` is a two-line launcher that exists only for this trial. `--copy-metadata dtflow` lets the version lookup find package metadata inside the executable; without it the version is reported as unknown. Source commit and dirty status are `unknown` until a later build step stamps them, so that is expected here.
+
+```powershell
+uv run --with pyinstaller pyinstaller --onefile --name dtflow-cli --paths src --copy-metadata dtflow tools/packaging/launch_dtflow.py
+.\dist\dtflow-cli.exe --version
+$state2 = Join-Path $env:TEMP "dtflow-pkg-state-frozen"
+.\dist\dtflow-cli.exe generate --state $state2 --backend fake --prompt "Offline fixture" --seed 0
+$LASTEXITCODE
+.\dist\dtflow-cli.exe attempts --state $state2
+Remove-Item -Recurse -Force $state2
+```
+
+Compare with P6: same exit codes, a readable PNG and metadata, and the same attempt record shape. Run the executable again from a folder with no Python or Git on `PATH`.
 
 ## Findings table
 
@@ -97,6 +132,10 @@ Statuses: **Not run** / **Pass** / **Fail** / **Blocked**. Fill one row per exec
 | W13 | Executable size, startup time, antivirus/SmartScreen behavior recorded | Not run | | | |
 | W14 | Qt plugins, Credential Manager | Blocked | | | Qt and the credential service do not exist yet |
 | W15 | Installer path (any tool) | Not run | | | Optional; see comparison below |
+| W16 | Source-run `dtflow --version` and `--help` (P6) | Not run | | | |
+| W17 | Source-run fake `check`, `models`, `generate` (seed 0) and `attempts` complete; PNG and metadata saved and readable (P6) | Not run | | | Requires SQLite 3.51.3 or newer |
+| W18 | PyInstaller `dtflow` launcher builds and `--version` runs (P7) | Not run | | | Commit and status are `unknown` until a build step stamps them |
+| W19 | Frozen fake `generate` and `attempts` match source-run behavior (P7) | Not run | | | |
 
 ### Recorded results
 
