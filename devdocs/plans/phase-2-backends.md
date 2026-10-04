@@ -146,7 +146,7 @@ Phase 2A implementation validation uses the canonical pytest/Ruff commands. Fake
 
 Phase 2A-2D are merged (PRs #5-#9) and the offline acceptance for each slice is in the suite. What remains is owner-side
 evidence, not missing implementation: final-head Windows validation, broad model/LoRA compatibility, production
-cancellation latency, charging/refunds and packaged execution on the target machine. The real-backend CLI exposure
+cancellation latency and charging/refunds (a frozen CLI trial has since run on the target machine; see the packaging findings). The real-backend CLI exposure
 that this plan deferred is Phase 3A, now implemented offline.
 
 ## Source-level gaps to validate
