@@ -97,7 +97,7 @@ Record the version line, exit codes, the saved PNG and metadata file names and s
 
 ### P7 — Frozen `dtflow` CLI trial
 
-`tools/packaging/launch_dtflow.py` is a two-line launcher that exists only for this trial. `--copy-metadata dtflow` lets the version lookup find package metadata inside the executable; without it the version is reported as unknown. `--collect-data drawthings_py` bundles the library's resource files; since Phase 3A the CLI imports the real adapters at startup, and without it every command fails with `No module named 'drawthings_py.resources'` (observed on the target machine, 2026-10-04). Source commit and dirty status are `unknown` until a later build step stamps them, so that is expected here.
+`tools/packaging/launch_dtflow.py` is a two-line launcher that exists only for this trial. `--copy-metadata dtflow` lets the version lookup find package metadata inside the executable; without it the version is reported as unknown. `--collect-data drawthings_py` bundles the library's resource files; since Phase 3A the CLI imports the real adapters at startup, and without it every command fails with `No module named 'drawthings_py.resources'` (observed on the target machine, 2026-10-04). Source commit and dirty status are `unknown` for this manual command; use the stamped build below for an identified executable.
 
 ```powershell
 uv run --with pyinstaller pyinstaller --onefile --name dtflow-cli --paths src --copy-metadata dtflow --collect-data drawthings_py tools/packaging/launch_dtflow.py
@@ -110,6 +110,19 @@ Remove-Item -Recurse -Force $state2
 ```
 
 Compare with P6: same exit codes, a readable PNG and metadata, and the same attempt record shape. Run the executable again from a folder with no Python or Git on `PATH`.
+
+### P8 — Stamped build
+
+`tools/packaging/build_exe.py` records the full source commit and clean/dirty status in the ignored `src/dtflow/_buildinfo.py`, runs the P7 PyInstaller command, removes the generated module and renames the result to `dtflow-<version>-g<short-sha>-<platform>-<arch>.exe`. Build public releases from a clean checkout; a modified tree reports `dirty` and warns.
+
+```powershell
+git checkout v0.1.0
+uv sync
+uv run --with pyinstaller python tools/packaging/build_exe.py
+.\dist\dtflow-0.1.0-g8c4e787-windows-x64.exe --version
+```
+
+The version line must show `g8c4e787` and `source status clean`. Only a Linux build in the agent sandbox was exercised so far (version line showed the commit with status `dirty`, as the tree had uncommitted changes); a Windows run is not yet recorded.
 
 ## Findings table
 

@@ -2,9 +2,14 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-# A later packaging step replaces these with its clean source identity.
+# Source runs have no stamped identity. tools/packaging/build_exe.py generates the ignored
+# dtflow/_buildinfo.py module (full commit, clean/dirty) so a frozen build needs no Git at runtime.
 SOURCE_COMMIT = "unknown"
 SOURCE_STATUS = "unknown"
+try:
+    from dtflow._buildinfo import SOURCE_COMMIT, SOURCE_STATUS  # type: ignore[import-not-found]  # noqa: F811
+except ImportError:
+    pass
 
 
 def identity() -> dict[str, str]:
