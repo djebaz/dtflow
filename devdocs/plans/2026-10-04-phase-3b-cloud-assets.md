@@ -251,7 +251,7 @@ Keep the phase reviewable rather than combining protocol, persistence, CLI, queu
    `assets` commands, prepared-reference request binding, pre-dispatch validation, and `3B-O9` composition evidence.
 4. **Gate — Final Phase 3B validation**  
    Full offline checks, optional separately authorized `3-LG4`, documentation/evidence closure, and explicit decision on whether custom cloud LoRA can be advertised.
-5. **Next phase — Phase 5A**  
+5. **Next phase — Phase 5A** (planned in [2026-10-04-phase-5a-desktop-generation.md](2026-10-04-phase-5a-desktop-generation.md))  
    Wire generation/configuration/LoRA presentation to the shared services, followed by Phase 5B queue presentation.
 
 Each PR starts from current `main`, opens as draft after its first coherent commit, updates this plan with decisions, and is squash-merged only after its owned checks and review evidence are complete.
