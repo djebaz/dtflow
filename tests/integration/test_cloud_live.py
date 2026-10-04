@@ -43,8 +43,9 @@ async def deployed_cloud():
 
 
 @pytest.mark.live
+@pytest.mark.cloud
 @pytest.mark.asyncio
-async def test_cloud_token_model_and_lora_inventory(live_run, request):
+async def test_cloud_token_model_and_lora_inventory(live_run, request, live_scope):
     async with deployed_cloud() as cloud:
         status = await cloud.check_connection()
         assert (status.transport, status.authentication, status.inventory) == ("ok", "ok", "ok"), status.diagnostics
@@ -52,6 +53,9 @@ async def test_cloud_token_model_and_lora_inventory(live_run, request):
         assert cloud_inventory.backend_id == "drawthings-cloud"
         save_inventory(live_run, "cloud", cloud.endpoint.label, cloud_inventory)
 
+        if live_scope == "cloud":
+            print("Cloud-only run: local LoRA inventory comparison omitted.")
+            return
         local, host, port = configured_local_adapter()
         await local.open()
         try:
@@ -120,6 +124,7 @@ async def test_cloud_token_model_and_lora_inventory(live_run, request):
 
 
 @pytest.mark.live_generation
+@pytest.mark.cloud
 @pytest.mark.asyncio
 async def test_cloud_authorized_generation_and_saved_result(live_run):
     model = os.environ.get("DTFLOW_LIVE_MODEL", "").strip()

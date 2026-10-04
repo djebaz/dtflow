@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- `dtflow test -local/--local` and `-cloud/--cloud` limit live connectivity checks to the local Draw Things server or DT+ (each implies `-live` when given alone); each scope needs only its own environment settings, a cloud-only run omits the local LoRA comparison, and `-local` with `-gen` is rejected. No live request was run for this change.
+
 - Resolve `platform.uname()` before the test network guard blocks subprocesses, so an intermittent Windows WMI fallback during collection no longer fails with "Subprocesses need explicit guarded-test registration".
 
 - Live local checks now separate "Draw Things not running" from real failures: a refused connection or connect deadline warns and skips (the cloud inventory check keeps its passed cloud evidence and omits only local LoRA enrichment), other local connect errors still fail the local check with a short message (a reset during connect hints to check TLS in the app) but only warn in the cloud check, and an Echo with no model files warns that "Enable Model Browsing" is probably off. Warnings and their fixes are retained per check in `results.json` and printed as a colored summary at the end of the run; `check_connection` diagnostics now include `transport_kind`. No live request or generation was run for this change.

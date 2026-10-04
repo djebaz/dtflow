@@ -47,9 +47,14 @@ uv run dtflow test -all -live      # Offline suite plus live connectivity
 uv run dtflow test -all -gen       # Offline suite plus live generation
 uv run dtflow test -live           # Live connectivity only
 uv run dtflow test -gen            # Live generation only
+uv run dtflow test -live -local    # Live connectivity, local Draw Things only
+uv run dtflow test -live -cloud    # Live connectivity, DT+ only
 ```
 
-Option pairs are `-all/--all`, `-live/--live`, and `-gen/--generate`; groups can be combined.
+Option pairs are `-all/--all`, `-live/--live`, `-gen/--generate`, `-local/--local` and `-cloud/--cloud`; groups can be
+combined. `-local` and `-cloud` limit the live checks to one side (and imply `-live` when given alone); `-local` cannot
+be combined with `-gen`, which is DT+ only. A cloud-only run omits the local LoRA inventory comparison, and each scope
+requires only its own settings.
 Live connectivity runs local Draw Things and DT+ checks. It requires `DRAWTHINGS_API_KEY` for DT+, plus
 `DTFLOW_LIVE_HOST` (the local server's IP) and `DTFLOW_LIVE_PORT` in the environment;
 `DTFLOW_LIVE_SHARED_SECRET` is optional. Local trust defaults to the bundled Draw Things CA, so no manual CA setup

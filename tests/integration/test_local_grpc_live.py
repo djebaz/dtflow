@@ -47,6 +47,7 @@ def configured_local_adapter():
 
 
 @pytest.mark.live
+@pytest.mark.local
 @pytest.mark.asyncio
 async def test_local_connection_and_inventory(live_run, request):
     adapter, host, port = configured_local_adapter()
