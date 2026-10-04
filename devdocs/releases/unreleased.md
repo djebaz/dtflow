@@ -4,6 +4,9 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Phase 2 backend architecture specification: async loop ownership, lifecycle/health/inventory/generation operations, immutable requests/artifacts/events/errors, independent submission evidence, concrete deadlines/resource limits, replaceable dependency integration and credential-provider scope.
+- Pinned direct-cloud protocol specification with official/probe sources, exact token/auth fields and blob construction, expiry/coalesced refresh, subscription-only policy, async HTTP/cancellation choices and required offline fixtures.
+
 - Source-backed LoRA compatibility/cloud asset plan: structured metadata, shared preflight diagnostics, official exception/refiner rules, separate availability/application evidence, custom upload negotiation/deduplication, durable receipts and honest remote-listing limitations.
 - Research follow-up with pinned TanqueStudio, DrawHeadlessThings, drawthings-py and official LoRA importer/store/engine sources. Findings are source inspection, not deployed upload/use verification.
 
@@ -38,6 +41,8 @@ Pending changes for the next DTFlow release.
 - Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in. User-reported live runs validate the path end to end from Python through cloud authentication, direct TLS gRPC generation, result decoding, and concurrent submissions without a MediaGenerationKit runtime dependency.
 
 ## Changed
+
+- Split Phase 2 into 2A contract/fake, 2B local gRPC, 2C direct cloud and parallel 2D packaging/licensing/upstream feature inventory. Add connectivity/inventory acceptance, installed-stub fixture design, planned asyncio/TLS/network/live-test infrastructure and explicit Phase 4 saved-credential storage. Documentation only; no runtime/dependency changes.
 
 - Move bounded LoRA selection/weights/preflight to Phase 3A and custom direct-cloud upload/reuse to Phase 3B, both exercised by the CLI before Qt. Update proposed 0.1/0.2/0.3 scope and Phase 5A presentation accordingly; broader conversion/editor and remote asset management remain later work.
 
