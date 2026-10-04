@@ -1,6 +1,6 @@
 # Plan: Phase 3B cloud asset completion
 
-**Status:** Ready for implementation after PR #17  
+**Status:** PR A–C scope implemented together in one branch and offline-validated (see [phase-3-cli.md](phase-3-cli.md#phase-3b-cloud-half-implemented-scope-and-limits)); live `3-LG4` pending. Originally: ready for implementation after PR #17  
 **Milestone:** Complete Phase 3B and unlock Phase 5A desktop generation wiring  
 **Authoritative acceptance:** `3B-O6` through `3B-O9` and separately authorized `3-LG4`  
 **Related plans:** [Phase 3 CLI](phase-3-cli.md), [LoRA assets](lora-assets.md), [release roadmap](releases.md), [initial roadmap](initial.md)

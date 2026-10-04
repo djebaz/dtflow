@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import Callable, Protocol
 
 
@@ -78,6 +79,104 @@ class LoRASelection:
             raise ValidationError("LoRA weight must be finite.")
 
 
+ASSET_KINDS = ("lora",)
+PREPARATION_STATES = ("intent", "transferring", "confirmed", "unknown", "failed")
+RECONCILIATION_STATUSES = ("confirmed", "upload_required", "unavailable", "unknown")
+
+
+def _asset_text(value: object, name: str) -> None:
+    if not isinstance(value, str) or not value.strip() or any(ord(char) < 32 for char in value):
+        raise ValidationError(f"{name} is required.")
+
+
+def _asset_reference(value: object, name: str) -> None:
+    _asset_text(value, name)
+    # A signed URL is a temporary credential; it can never be an identifier that is stored or reported.
+    if "://" in value or "?" in value or any(char.isspace() for char in value):
+        raise ValidationError(f"{name} must be an identifier, not a URL or credential.")
+
+
+def _asset_digest(value: object) -> None:
+    if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise ValidationError("Asset SHA-256 must be 64 lowercase hexadecimal characters.")
+
+
+def _asset_size(value: object) -> None:
+    if type(value) is not int or value < 1:
+        raise ValidationError("Asset size must be a positive integer.")
+
+
+@dataclass(frozen=True, slots=True)
+class AssetContent:
+    """Local content identity of one converted file: what was measured, never what a server said."""
+
+    kind: str
+    identifier: str
+    sha256: str
+    size: int
+    provenance: str = ""
+
+    def __post_init__(self) -> None:
+        if self.kind not in ASSET_KINDS:
+            raise ValidationError("Unsupported asset kind.")
+        _asset_reference(self.identifier, "Asset identifier")
+        _asset_digest(self.sha256)
+        _asset_size(self.size)
+        if not isinstance(self.provenance, str):
+            raise ValidationError("Asset provenance must be text.")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedAsset:
+    """A server-acknowledged reference to uploaded content, scoped to one backend origin and tied to a local receipt."""
+
+    backend_id: str
+    origin: str
+    identifier: str
+    remote_id: str
+    sha256: str
+    size: int
+    receipt_id: str
+    confirmed_at_utc: str
+
+    def __post_init__(self) -> None:
+        for name in ("backend_id", "origin", "receipt_id", "confirmed_at_utc"):
+            _asset_text(getattr(self, name), name)
+        _asset_reference(self.identifier, "Asset identifier")
+        _asset_reference(self.remote_id, "Remote asset identifier")
+        _asset_digest(self.sha256)
+        _asset_size(self.size)
+
+
+@dataclass(frozen=True, slots=True)
+class AssetNegotiation:
+    """Current storage state for one content identity; ``ticket`` is an opaque adapter-private upload handle."""
+
+    status: str  # "exists" or "upload_required"
+    reference: str | None = None
+    ticket: object | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.status == "exists":
+            _asset_reference(self.reference, "Remote asset identifier")
+        elif self.status != "upload_required" or self.reference is not None:
+            raise ValidationError("Unsupported asset negotiation.")
+
+
+@dataclass(frozen=True, slots=True)
+class AssetReconciliation:
+    """Outcome of a fresh metadata-only check; ``unavailable`` means the scope cannot answer, not that it is absent."""
+
+    status: str
+    evidence: str
+    reference: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in RECONCILIATION_STATUSES:
+            raise ValidationError("Unsupported reconciliation status.")
+        _asset_text(self.evidence, "Reconciliation evidence")
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedGenerationRequest:
     request_id: str
@@ -95,6 +194,7 @@ class ResolvedGenerationRequest:
     batch_count: int = 1
     loras: tuple[LoRASelection, ...] = ()
     resolution_evidence: Metadata = ()
+    prepared_assets: tuple[PreparedAsset, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("request_id", "model_id"):
@@ -123,6 +223,15 @@ class ResolvedGenerationRequest:
         if not isinstance(self.loras, tuple) or any(not isinstance(x, LoRASelection) for x in self.loras):
             raise ValidationError("LoRAs must be an immutable tuple.")
         validate_metadata(self.resolution_evidence)
+        if not isinstance(self.prepared_assets, tuple) or any(
+            not isinstance(x, PreparedAsset) for x in self.prepared_assets
+        ):
+            raise ValidationError("Prepared assets must be an immutable tuple.")
+        selected = {item.identifier for item in self.loras}
+        if len({x.identifier for x in self.prepared_assets}) != len(self.prepared_assets) or any(
+            x.identifier not in selected for x in self.prepared_assets
+        ):
+            raise ValidationError("Each prepared asset must match exactly one selected LoRA.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,6 +497,19 @@ class Backend(Protocol):
     async def get_inventory(self, refresh: bool = False) -> InventorySnapshot: ...
     async def generate(self, request: ResolvedGenerationRequest, *, on_event: EventSink) -> GenerationResult: ...
     async def aclose(self) -> None: ...
+
+
+class AssetBackend(Protocol):
+    """Storage-side asset operations; deliberately separate from generation and with no list or delete."""
+
+    @property
+    def backend_id(self) -> str: ...
+    @property
+    def origin(self) -> str: ...
+    @property
+    def scope(self) -> str: ...
+    async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation: ...
+    async def upload_asset(self, path: Path, content: AssetContent, negotiation: AssetNegotiation) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)

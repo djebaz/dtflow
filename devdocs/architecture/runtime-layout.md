@@ -5,6 +5,13 @@
 Development application state uses `.dtflow/attempts.sqlite3` and final outputs use
 `.dtflow/outputs/<attempt-id>/`. Output placement is backend-neutral; metadata and durable records identify the
 backend. Each attempt groups its image(s) and metadata. Outputs are durable artifacts, not disposable cache.
+The independent durable asset registry is `<state>/assets.sqlite3` (schema version 1, WAL, `synchronous=FULL`) with an
+exclusive `assets.lock` held only by `assets prepare` and `assets reconcile`; `assets list|show` read without a lock.
+It holds local receipts and unresolved/unknown preparation operations (checksum, size, backend, API origin, server
+reference, state, sanitized evidence code, timestamps) and never credentials, credential fingerprints, signed URLs or
+file contents. It is durable state, not cache: cache cleanup and `-nc` never touch it, newer schemas are refused
+without reset, and an interrupted `intent`/`transferring` operation becomes explicit `unknown` the next time a writer
+opens it. A receipt is only a local candidate; every new scope must pass a fresh metadata check before reuse.
 SQLite manages its WAL/SHM sidecars in the database directory. Since the queue schema (version 2) the same database
 also holds queues, items, posted controls and queue events; opening a release 0.1.0 (version 1) database writes a
 one-time `attempts.pre-v2.sqlite3` copy beside it before migrating.

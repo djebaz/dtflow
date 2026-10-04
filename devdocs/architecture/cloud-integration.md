@@ -30,7 +30,20 @@ inventory; it never requests generation entitlement. A successful token exchange
 
 The cloud backend supports a configurable client cap of 1–4 (default 4), using the shared semaphore; local remains
 one lane. This is client support and a product cap, not a server entitlement or the Phase 3B rolling scheduler.
-Only discovered model IDs are admitted. Generation scope remains txt2img, batch 1/1, the two existing samplers, no LoRA generation or uploads.
+Only discovered model IDs are admitted. Generation scope remains txt2img, batch 1/1 and the two existing samplers.
+Custom LoRA preparation (Phase 3B cloud half) is explicit and separate from generation: `DirectCloudBackend`
+implements the asset-side `AssetBackend` protocol (`negotiate_asset`, `upload_asset`; no list or delete). Negotiation
+posts `file`, lowercase SHA-256 and byte `size` to `/get_byom_urls` and accepts only a consistent `alreadyExists` or
+`signedUrls` branch for the measured checksum (both, neither, a mismatched hash, a non-HTTPS URL or a URL-shaped
+reference is a sanitized protocol failure). A required upload streams the file once in bounded chunks to the signed
+URL with no DT+ authorization header, explicit connect/write/read/total deadlines and no redirects, re-hashing as it
+streams. Failure evidence is the remote outcome: `not_started` (connect failed before any byte), `failed` (HTTP 4xx
+refusal, no quota meaning inferred) or `unknown` (timeout, disconnect, 5xx, changed file). Signed URLs live only in an
+opaque adapter ticket and a query-redacting `httpx` log filter; they never reach logs, errors, receipts or CLI output.
+After a successful PUT a fresh metadata check must return the server's reference before a receipt is `confirmed`;
+otherwise the record stays `unknown` and no second PUT is made. Generation still sends the LoRA's exact identifier;
+the receipt's remote reference is validated before dispatch but is not yet placed on the generation wire (unpinned until
+`3-LG4` evidence).
 Separate metadata-only LoRA availability enrichment uses local `FilesExist` identities and DT+ BYOM lookup. It
 validates returned checksum/entry structure and retains source observation times/freshness separately from resolution
 time in `lora_inventory.json`. Fresh negative file-existence evidence overrides older Echo availability.

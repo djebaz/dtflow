@@ -1,10 +1,48 @@
-"""Read-only DT+ LoRA storage resolution through the verified BYOM metadata endpoint."""
+"""DT+ LoRA storage through the verified BYOM endpoint: metadata lookup, negotiation and the signed storage PUT.
+
+Signed URLs are temporary credentials. They are parsed, held and used only here, behind an opaque ticket; they never
+reach logs, exceptions, receipts or any value that crosses the backend boundary.
+"""
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import logging
+import math
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import httpx
+
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
-from dtflow.backends.drawthings.errors import error
-from dtflow.core.models import ErrorCategory, FileIdentity, LoRABackendAvailability
+from dtflow.backends.drawthings.errors import diagnostics, error
+from dtflow.core.models import (
+    AssetContent,
+    AssetNegotiation,
+    ErrorCategory,
+    FileIdentity,
+    LoRABackendAvailability,
+    RemoteOutcome,
+    SubmissionStage,
+    ValidationError,
+)
+
+
+class _RedactQueries(logging.Filter):
+    """httpx logs full request URLs; a signed URL's query string must never reach any log sink."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if "?" in message:
+            record.msg, record.args = re.sub(r"\?\S*", "?<redacted>", message), ()
+        return True
+
+
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
+logging.getLogger("httpx").addFilter(_RedactQueries())
 
 
 async def lookup_lora_assets(
@@ -64,3 +102,163 @@ async def lookup_lora_assets(
         else:
             results[item.identifier] = LoRABackendAvailability("unknown", "dt_cloud.get_byom_urls", sha256=item.sha256)
     return results
+
+
+@dataclass(frozen=True, slots=True)
+class UploadTicket:
+    """Adapter-private handle for one signed destination; its text form never shows the URL."""
+
+    url: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class AssetUploadPolicy:
+    connect: float = 10.0
+    write: float = 60.0
+    read: float = 60.0
+    total: float = 3600.0
+    cleanup: float = 5.0
+    chunk: int = 1024 * 1024
+    response_bytes: int = 64 * 1024
+
+    def __post_init__(self):
+        if any(not math.isfinite(x) or x <= 0 for x in (self.connect, self.write, self.read, self.total, self.cleanup)):
+            raise ValidationError("Upload deadlines must be positive and finite.")
+        if type(self.chunk) is not int or self.chunk <= 0 or type(self.response_bytes) is not int:
+            raise ValidationError("Upload limits must be positive integers.")
+
+
+def _invalid(code: str = "cloud_byom_response_invalid"):
+    return error(ErrorCategory.PROTOCOL, code, "DT+ LoRA storage response is invalid.")
+
+
+def _signed_destination(value: object) -> UploadTicket:
+    url = httpx.URL(value) if isinstance(value, str) and value.strip() else None
+    if url is None or url.scheme != "https" or not url.host or url.userinfo or url.fragment:
+        raise _invalid()
+    return UploadTicket(str(url))
+
+
+async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetNegotiation:
+    """Ask DT+ for the current storage state of one content identity; transfers nothing.
+
+    Only the two verified branches are accepted, and only when consistent with the measured checksum. A response that
+    supplies both branches, neither, or a mismatched identity is a sanitized protocol failure.
+    """
+    response = await auth.authenticated_json(
+        "/get_byom_urls", {"files": [{"file": content.identifier, "sha256": content.sha256, "size": content.size}]}
+    )
+    data = response.get("data")
+    if not isinstance(data, dict):
+        raise _invalid()
+    already = data.get("alreadyExists") or {}
+    signed = data.get("signedUrls") or {}
+    if not isinstance(already, dict) or not isinstance(signed, dict):
+        raise _invalid()
+    urls = signed.get("urls") or {}
+    if not isinstance(urls, dict):
+        raise _invalid()
+    reference = already.get(content.sha256)
+    upload = urls.get(content.identifier)
+    if (content.sha256 in already) == (content.identifier in urls):
+        raise _invalid("cloud_byom_response_conflict" if content.sha256 in already else "cloud_byom_response_invalid")
+    if content.sha256 in already:
+        try:
+            return AssetNegotiation("exists", reference if isinstance(reference, str) else None)
+        except ValidationError:
+            raise _invalid() from None
+    if (
+        not isinstance(upload, dict)
+        or not isinstance(upload.get("sha256"), str)
+        or upload["sha256"].lower() != content.sha256
+    ):
+        raise _invalid()
+    return AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url")))
+
+
+def _transfer_error(code: str, outcome: RemoteOutcome, category=ErrorCategory.CONNECTIVITY, **items):
+    stage = (
+        SubmissionStage.NOT_SUBMITTED if outcome == RemoteOutcome.NOT_STARTED else SubmissionStage.POSSIBLY_SUBMITTED
+    )
+    return error(
+        category,
+        code,
+        "DT+ LoRA storage transfer did not complete.",
+        stage=stage,
+        outcome=outcome,
+        diagnostics=diagnostics(**items),
+    )
+
+
+async def upload_signed(
+    ticket: UploadTicket,
+    path: Path,
+    content: AssetContent,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+    policy: AssetUploadPolicy | None = None,
+) -> None:
+    """Stream the file once to the signed destination with no DT+ authorization and bounded memory.
+
+    ``remote_outcome`` on failures is the only evidence the service uses: ``NOT_STARTED`` means no bytes were sent,
+    ``FAILED`` a definite storage refusal, ``UNKNOWN`` anything that may have stored data. The file is re-hashed while
+    it streams; a changed file aborts the transfer and is reported as unknown because bytes were already sent.
+    """
+    policy = policy or AssetUploadPolicy()
+    started = False
+
+    async def body():
+        nonlocal started
+        digest, sent = hashlib.sha256(), 0
+        handle = await asyncio.to_thread(path.open, "rb")
+        try:
+            while chunk := await asyncio.to_thread(handle.read, policy.chunk):
+                started = True
+                digest.update(chunk)
+                sent += len(chunk)
+                if sent > content.size:
+                    raise _transfer_error("asset_changed", RemoteOutcome.UNKNOWN, ErrorCategory.VALIDATION)
+                yield chunk
+            if sent != content.size or digest.hexdigest() != content.sha256:
+                raise _transfer_error("asset_changed", RemoteOutcome.UNKNOWN, ErrorCategory.VALIDATION)
+        finally:
+            await asyncio.to_thread(handle.close)
+
+    headers = {"Content-Type": "application/octet-stream", "Content-Length": str(content.size)}
+    client = httpx.AsyncClient(
+        transport=transport,
+        trust_env=False,
+        follow_redirects=False,
+        timeout=httpx.Timeout(policy.read, connect=policy.connect, write=policy.write, pool=policy.connect),
+    )
+    try:
+        async with asyncio.timeout(policy.total):
+            async with client.stream("PUT", ticket.url, content=body(), headers=headers) as response:
+                status = response.status_code
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > policy.response_bytes:
+                        break
+        if 200 <= status < 300:
+            return
+        if 400 <= status < 500:
+            raise _transfer_error(
+                "asset_storage_refused", RemoteOutcome.FAILED, ErrorCategory.REMOTE_REJECTION, http_status=status
+            )
+        raise _transfer_error(
+            "asset_storage_error", RemoteOutcome.UNKNOWN, ErrorCategory.REMOTE_REJECTION, http_status=status
+        )
+    except (httpx.ConnectError, httpx.ConnectTimeout):
+        outcome = RemoteOutcome.UNKNOWN if started else RemoteOutcome.NOT_STARTED
+        raise _transfer_error("asset_storage_unreachable", outcome) from None
+    except (TimeoutError, httpx.TimeoutException):
+        raise _transfer_error("asset_transfer_deadline", RemoteOutcome.UNKNOWN, ErrorCategory.TIMEOUT) from None
+    except httpx.HTTPError:
+        raise _transfer_error("asset_transfer_failed", RemoteOutcome.UNKNOWN) from None
+    finally:
+        try:
+            async with asyncio.timeout(policy.cleanup):
+                await client.aclose()
+        except TimeoutError:
+            pass

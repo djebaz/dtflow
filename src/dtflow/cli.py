@@ -22,10 +22,12 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.logging_setup import LoggingSetupError, configure_logging
+from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.queues import MAX_ITEMS, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.artifacts import atomic_write
+from dtflow.services.assets import AssetService
 from dtflow.services.config import export_config, load_config, resolve_request
 from dtflow.services.generation import GenerationService
 from dtflow.services.preflight import apply_trigger_prefixes
@@ -115,6 +117,7 @@ def parser() -> argparse.ArgumentParser:
             add_scenario_option(child)
             child.add_argument("-t", "--timeout", type=float, default=600.0, help="Total backend deadline in seconds.")
     add_queue_commands(commands)
+    add_asset_commands(commands)
     return command
 
 
@@ -131,6 +134,46 @@ def add_request_options(child: argparse.ArgumentParser) -> None:
     child.add_argument("-a", "--sampler", choices=tuple(x.value for x in Sampler))
     child.add_argument(
         "-l", "--lora", action="append", metavar="ID:WEIGHT", help="Exact LoRA identifier and explicit weight."
+    )
+    child.add_argument(
+        "-z",
+        "--asset",
+        action="append",
+        metavar="ASSET_ID",
+        help="Bind a confirmed local cloud asset receipt (cloud only) to the --lora of the same identifier. "
+        "Never uploads; the reference is revalidated before dispatch.",
+    )
+
+
+def add_asset_commands(commands) -> None:
+    assets = commands.add_parser("assets", help=COMMAND_HELP["assets"])
+    actions = assets.add_subparsers(dest="asset_command", required=True)
+
+    def action(name: str, help_text: str, *, ident: bool = False) -> argparse.ArgumentParser:
+        child = actions.add_parser(name, help=help_text, description=help_text)
+        child.add_argument(
+            "-d",
+            "--state",
+            type=Path,
+            default=Path(".dtflow"),
+            help="Local execution state directory (default: .dtflow).",
+        )
+        if ident:
+            child.add_argument("asset", help="Local asset identifier from `assets prepare` or `assets list`.")
+        return child
+
+    prepare = action(
+        "prepare",
+        "Prepare one converted LoRA on DT+. May UPLOAD file bytes; the only command that does. Cloud only.",
+    )
+    prepare.add_argument("-f", "--file", type=Path, required=True, help="Already-converted Draw Things LoRA file.")
+    prepare.add_argument("-n", "--name", help="Identifier to use instead of the file name.")
+    action("list", "List locally known receipts and unresolved operations (local registry; no network).")
+    action("show", "Show one local record (no network).", ident=True)
+    action(
+        "reconcile",
+        "Metadata-only server check of one local record under the current credential. Never uploads.",
+        ident=True,
     )
 
 
@@ -201,6 +244,7 @@ COMMAND_HELP = {
     "models": "List backend inventory with provenance (models, LoRAs, controls, unknown entries).",
     "attempts": "Inspect durable attempts; unknown outcomes are never replayed.",
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
+    "assets": "Cloud LoRA assets: prepare (may upload), list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, override, cap.",
 }
 
@@ -244,6 +288,31 @@ def resolve_generation(args: argparse.Namespace) -> ResolvedGenerationRequest:
     return replace(request, resolution_evidence=(*request.resolution_evidence, ("source", "cli")))
 
 
+async def bind_assets(args: argparse.Namespace, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
+    """Attach confirmed local receipts to the request; reads only the local registry and never uploads."""
+    if not args.asset:
+        return request
+    if args.backend != "cloud":
+        raise ValidationError("--asset applies to the cloud backend only.")
+    registry = AssetRegistry(args.state)
+    await registry.open()
+    try:
+        prepared = tuple([await registry.prepared(asset_id) for asset_id in args.asset])
+    finally:
+        await registry.aclose()
+    selected = {item.identifier for item in request.loras}
+    for item in prepared:
+        if item.identifier not in selected:
+            raise ValidationError(f"--asset {item.receipt_id[:8]} needs a matching --lora {item.identifier}:WEIGHT.")
+    evidence = (*request.resolution_evidence, ("prepared_assets", ",".join(item.receipt_id for item in prepared)))
+    return replace(request, prepared_assets=prepared, resolution_evidence=evidence)
+
+
+def asset_validator(backend) -> AssetService | None:
+    """Metadata-only validation for dispatch, available only where the backend can negotiate cloud assets."""
+    return AssetService(backend) if hasattr(backend, "negotiate_asset") else None
+
+
 def write_export(path: Path, request: ResolvedGenerationRequest) -> None:
     atomic_write(Path(path), (json.dumps(export_config(request), indent=2) + "\n").encode("utf-8"))
 
@@ -269,12 +338,12 @@ def queue_exit_code(queue: dict) -> int:
     return EXIT_OK
 
 
-def queue_requests(args: argparse.Namespace) -> list[ResolvedGenerationRequest]:
+async def queue_requests(args: argparse.Namespace) -> list[ResolvedGenerationRequest]:
     if type(args.count) is not int or not 1 <= args.count <= MAX_ITEMS:
         raise ValidationError(f"--count must be an integer in 1..{MAX_ITEMS}.")
     if args.scenario != "success" and args.backend != "fake":
         raise ValidationError("--scenario applies to the fake backend only.")
-    base = resolve_generation(args)
+    base = await bind_assets(args, resolve_generation(args))
     if base.seed + args.count - 1 > 4294967295:
         raise ValidationError("Item seeds would exceed the 32-bit seed range.")
     return [
@@ -301,7 +370,7 @@ async def run_queue(args: argparse.Namespace) -> int:
         print(json.dumps({"queue": args.queue, "posted": command, "applied_by": "dispatcher poll or next start"}))
         return EXIT_OK
     if command == "add":
-        requests = queue_requests(args)
+        requests = await queue_requests(args)
         backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": args.scenario}
         if args.backend == "local" and not args.endpoint:
             raise ValidationError("The local backend requires --endpoint HOST:PORT.")
@@ -335,7 +404,9 @@ async def run_queue(args: argparse.Namespace) -> int:
         )
         async with asyncio.timeout(policy.connect):
             await backend.open()
-        service = GenerationService(backend, store, args.out or args.state / "outputs", timeouts=policy)
+        service = GenerationService(
+            backend, store, args.out or args.state / "outputs", timeouts=policy, assets=asset_validator(backend)
+        )
         # Real adapters accept only inventory-listed models, so refresh once before dispatching.
         await service.get_inventory(refresh=True)
         log.info("command=queue start backend=%s", selection["name"])
@@ -361,9 +432,85 @@ async def run_queue(args: argparse.Namespace) -> int:
             await store.aclose()
 
 
+ASSET_NOTE = (
+    "Local registry view of what this machine measured and a server once acknowledged; not remote account "
+    "inventory. Reuse is re-validated by a fresh metadata check."
+)
+
+
+def asset_view(record: dict) -> dict:
+    keys = (
+        "asset_id", "kind", "identifier", "state", "evidence", "source", "sha256", "size", "backend_id", "origin",
+        "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc",
+    )  # fmt: skip
+    view = {key: record.get(key) for key in keys}
+    if "operations" in record:
+        view["operations"] = record["operations"]
+    return view
+
+
+def asset_backend():
+    """The explicit cloud backend for asset commands; the key comes from the environment only."""
+    backend = create_backend(BackendSelection("cloud"), timeouts=TimeoutPolicy())
+    if not hasattr(backend, "negotiate_asset"):
+        raise ValidationError("The selected backend cannot prepare cloud assets.")
+    return backend
+
+
+async def run_assets(args: argparse.Namespace) -> int:
+    command = args.asset_command
+    if command in ("list", "show"):
+        registry = AssetRegistry(args.state)
+        await registry.open()
+        try:
+            if command == "list":
+                print(
+                    json.dumps({"note": ASSET_NOTE, "assets": [asset_view(x) for x in await registry.list()]}, indent=2)
+                )
+                return EXIT_OK
+            record = await registry.get(args.asset)
+            if record is None:
+                raise ValidationError("No local asset receipt has that identifier.")
+            print(json.dumps({"note": ASSET_NOTE, **asset_view(record)}, indent=2))
+            return EXIT_OK
+        finally:
+            await registry.aclose()
+    backend = asset_backend()
+    registry = AssetRegistry(args.state, writer=True)
+    try:
+        await registry.open()
+        service = AssetService(backend, registry)
+        if command == "prepare":
+            prepared = await service.prepare(args.file, args.name, provenance="cli")
+            record = await registry.get(prepared.receipt_id)
+            print(json.dumps({"note": ASSET_NOTE, **asset_view(record)}, indent=2))
+            return EXIT_OK
+        record, result = await service.reconcile(args.asset)
+        print(
+            json.dumps(
+                {
+                    "note": ASSET_NOTE,
+                    "reconciliation": result.status,
+                    "evidence": result.evidence,
+                    **asset_view(record),
+                },
+                indent=2,
+            )
+        )
+        return {"confirmed": EXIT_OK, "upload_required": EXIT_FAILED}.get(result.status, EXIT_UNKNOWN)
+    finally:
+        try:
+            async with asyncio.timeout(TimeoutPolicy().cleanup):
+                await backend.aclose()
+        finally:
+            await registry.aclose()
+
+
 async def run(args: argparse.Namespace) -> int:
     if args.command == "queue":
         return await run_queue(args)
+    if args.command == "assets":
+        return await run_assets(args)
     # Resolve invalid input before opening state or starting a backend.
     request = None
     policy = TimeoutPolicy()
@@ -375,7 +522,7 @@ async def run(args: argparse.Namespace) -> int:
     if args.command == "generate":
         if args.scenario != "success" and args.backend != "fake":
             raise ValidationError("--scenario applies to the fake backend only.")
-        request = resolve_generation(args)
+        request = await bind_assets(args, resolve_generation(args))
         policy = TimeoutPolicy(total=args.timeout)
         if args.export:
             write_export(args.export, request)
@@ -399,7 +546,11 @@ async def run(args: argparse.Namespace) -> int:
         async with asyncio.timeout(policy.connect):
             await backend.open()
         service = GenerationService(
-            backend, store, getattr(args, "out", None) or args.state / "outputs", timeouts=policy
+            backend,
+            store,
+            getattr(args, "out", None) or args.state / "outputs",
+            timeouts=policy,
+            assets=asset_validator(backend),
         )
         log.info("command=%s backend=%s", args.command, args.backend)
         if args.command == "check":

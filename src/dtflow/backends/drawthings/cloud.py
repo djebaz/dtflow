@@ -1,20 +1,44 @@
 """Direct DT+ backend: cloud authentication around the shared Draw Things transport path."""
 
 from dataclasses import replace
+from pathlib import Path
+
+import httpx
 
 from dtflow.backends.drawthings.backend import DrawThingsBackend, DrawThingsEndpoint, now
-from dtflow.backends.drawthings.cloud_assets import lookup_lora_assets
+from dtflow.backends.drawthings.cloud_assets import (
+    AssetUploadPolicy,
+    UploadTicket,
+    lookup_lora_assets,
+    negotiate_lora_asset,
+    upload_signed,
+)
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.errors import diagnostics
 from dtflow.backends.drawthings.tls import TlsPolicy
-from dtflow.core.models import BackendError, ConnectionStatus, FileIdentity, LoRABackendAvailability, ValidationError
+from dtflow.core.models import (
+    AssetContent,
+    AssetNegotiation,
+    BackendError,
+    ConnectionStatus,
+    FileIdentity,
+    LoRABackendAvailability,
+    ValidationError,
+)
 
 
 class DirectCloudBackend(DrawThingsBackend):
     backend_id = "drawthings-cloud"
 
     def __init__(
-        self, auth: CloudAuth, *, endpoint: DrawThingsEndpoint | None = None, max_concurrency: int = 4, **kwargs
+        self,
+        auth: CloudAuth,
+        *,
+        endpoint: DrawThingsEndpoint | None = None,
+        max_concurrency: int = 4,
+        upload_transport: httpx.AsyncBaseTransport | None = None,
+        upload_policy: AssetUploadPolicy | None = None,
+        **kwargs,
     ):
         if type(max_concurrency) is not int or not 1 <= max_concurrency <= 4:
             raise ValidationError("Cloud concurrency must be in 1..4.")
@@ -23,10 +47,31 @@ class DirectCloudBackend(DrawThingsBackend):
         self.max_concurrency = max_concurrency
         super().__init__(endpoint or DrawThingsEndpoint("compute.drawthings.ai", 443, TlsPolicy.system()), **kwargs)
         self._auth = auth
+        self._upload_transport, self._upload_policy = upload_transport, upload_policy
 
     async def lookup_lora_assets(self, identities: tuple[FileIdentity, ...]) -> dict[str, LoRABackendAvailability]:
         """Resolve DT+ LoRA storage availability without uploading file bytes."""
         return await lookup_lora_assets(self._auth, identities)
+
+    @property
+    def origin(self) -> str:
+        return self._auth.origin
+
+    @property
+    def scope(self) -> str:
+        return self._auth.scope
+
+    async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation:
+        """Metadata-only BYOM negotiation for one converted LoRA; never transfers bytes."""
+        return await negotiate_lora_asset(self._auth, content)
+
+    async def upload_asset(self, path: Path, content: AssetContent, negotiation: AssetNegotiation) -> None:
+        """Stream the file to the negotiated signed destination (explicit asset preparation only)."""
+        if not isinstance(negotiation.ticket, UploadTicket):
+            raise ValidationError("Upload needs a negotiated upload destination.")
+        await upload_signed(
+            negotiation.ticket, path, content, transport=self._upload_transport, policy=self._upload_policy
+        )
 
     async def _generation_metadata(self, message):
         return {"authorization": "bearer " + await self._auth.authorize(message)}
