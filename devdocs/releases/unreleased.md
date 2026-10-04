@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Add `tools/drawthings/get_byom_probe.py`, a standard-library DT+ `/get_byom_urls` metadata probe with the owner-observed iPhone checkpoint filename, exact size and SHA-256 as defaults. It acquires a short-term token, requests deduplication/upload metadata, redacts signed URLs, and never performs the returned PUT upload or any generation.
+
 - Add `tools/drawthings/ckpt_probe.py`, a standard-library checkpoint fingerprint helper that streams a local file and reports its exact byte size and SHA-256 without loading the whole checkpoint into memory. It performs no network request, model parsing, generation or upload.
 
 - Optional DT+ live token/inventory check and one complete generation smoke, selected by the existing `-live` and `-gen` test flags. Require environment credentials and an explicit model for generation; preserve saved output/attempt evidence and allow only the two cloud targets in the network guard. Ordinary tests skip these checks; no cloud live request was executed during implementation.
