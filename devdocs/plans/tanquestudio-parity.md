@@ -12,6 +12,8 @@ Evidence below refers to report Sections 5.1–5.7 or official backend sources i
 
 A row advances to accepted only with implementation references, actual validation evidence and any remaining limitations. Update this matrix in the PR implementing each feature. Do not silently drop a row because an upstream API is missing: retain a blocked/conditional status and the evidence needed.
 
+A version-pinned inventory of the TanqueStudio sources, with additional candidate rows and exclusions, is in the [pinned inventory](../research/tanquestudio-inventory.md). Rows it marks new are not merged into the table below yet; reconcile them in a separate change.
+
 ## Feature milestones
 
 | Feature | Upstream evidence | Shared service | CLI exposure | Qt interaction | Backend support | Target phase | Acceptance criteria |
