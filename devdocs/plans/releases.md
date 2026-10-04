@@ -35,23 +35,17 @@ Phase 7 advanced priorities, fairness or adaptive scheduling is not a mandatory 
 
 ### 0.1.0 — Single-generation CLI
 
-Pass Phase 3A offline acceptance through actual services/adapters: configuration validation, parameter/wire fidelity, token refresh, selected credential behavior, terminal errors, previews, final artifacts, atomic attempt records and logging. Startup/help/version output must work without Qt. Include structured local model/LoRA discovery, exact LoRA identifiers/weights, match/mismatch/unknown diagnostics and the bounded generation subset under [the LoRA asset plan](lora-assets.md).
+Consume the [Phase 3A authoritative scenario groups](phase-3-cli.md#phase-3a-scenario-groups) and applicable existing Phase 2 evidence. Do not define a second wire/token/codec/persistence matrix at release time. The implemented configuration, CLI, bounded LoRA/preflight and logging scope must pass its mapped acceptance.
 
-For each real backend advertised as usable, record a focused actual end-to-end smoke result separately from fixture coverage. Direct-cloud evidence must exercise the release implementation rather than rely solely on the diagnostic probe. Live generation remains small, separately gated and explicitly authorized; it is not part of ordinary tests.
-
-Retain version/source identity and limitations with the evidence. A working source CLI does not establish executable packaging.
+Record 3-LG1 and/or 3-LG2 through the actual release application for each real backend advertised as usable. Workflows are small, individually selectable when implemented and separately authorized; diagnostic-probe evidence alone does not validate the release adapter. Retain source/build identity, supported combinations and limits. Source CLI success does not establish executable packaging.
 
 ### 0.2.0 — Durable rolling queues
 
-Pass Phase 3B acceptance through CLI commands and shared services. With ten independent items and four slots, controllable out-of-order completion must prove rolling refill before all initial items finish, bounded reservation counts and stable item/result identity.
+Consume the [Phase 3B authoritative scenario groups](phase-3-cli.md#phase-3b-scenario-groups), including deterministic 10/4 rolling dispatch, controls, uncertainty/restart/override, actual dispatcher policies, ownership, asset preparation/receipts/reuse and applicable schema compatibility. No ambiguous attempt becomes eligible through Resume or an upgrade. Existing base attempt/backend evidence is reused only for the same implementation path.
 
-Cover paused restart, completed output preservation, pre-submission failures, uncertain remote outcomes, explicit override, pending cancellation, running interruption, maximum reduction and exclusive dispatch ownership. No ambiguous attempt may become eligible through queue Resume or an upgrade.
+Record separately authorized 3-LG3 small cloud-queue composition and 3-LG4 supported custom LoRA preparation/reuse/use. Live evidence does not replace deterministic reservation, failure, ownership or migration tests. No usable remote list API is established; inspect known receipts without claiming complete account inventory. Conversion/editor and broader asset management remain outside this gate.
 
-Record focused real-adapter/cloud smoke evidence for the advertised queue path separately from deterministic offline scheduling tests. Fixtures establish application scheduling behavior; they do not prove cloud entitlement, remote cancellation or billing behavior.
-
-Custom cloud LoRA upload/reuse is also a 0.2.0 gate before Qt. Pass source-backed metadata POST/signed PUT/already-existing fixtures, durable receipt/restart behavior, unknown-outcome handling and queued reference fidelity. Record separately authorized deployed upload plus generation evidence for the advertised converted-file subset. No usable remote list API is established; inspect locally known receipts without claiming complete cloud inventory. Conversion/editor and broader asset management are outside this gate.
-
-Introduce saved-state schema versioning and the compatibility contract below before declaring this durable release usable.
+Introduce saved-state versioning and the compatibility contract below before declaring the durable release usable. Historical migration fixtures are required only for real supported released schemas that need migration, not invented upgrade versions. Release acceptance consumes the mapped tests and recorded live evidence; it does not create a duplicate suite.
 
 ### 0.3.0 — Complete desktop path
 

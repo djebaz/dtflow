@@ -63,6 +63,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Replace overlapping Phase 3 acceptance checklists with authoritative-layer ownership, flexible single-generation/queue/asset scenario groups and separately selected live workflows. Align LoRA and release acceptance to consume the same evidence; retain behavioral requirements and deterministic failure/recovery coverage. Plan individual live-workload selection without claiming it exists. No runtime, dependency or test implementation changes are introduced by this amendment.
+
 - Specify lean Phase 2C acceptance through five cloud-specific scenario groups and focused parser/HTTP tests. Reuse shared/2B coverage only for the same implementation path; use the existing TLS/gRPC fixtures and measure added suite runtime. Authentication scope is immutable per client, with replacement rather than runtime scope switching. These are specification changes; no cloud adapter implementation, cloud test execution or dependency change is claimed.
 
 - Adopt GPL-3.0-only for DTFlow before its first public release, replacing the unreleased MIT declaration in `LICENSE` and `pyproject.toml`. No DTFlow version was previously published under MIT; update the decision, roadmap and packaging documentation to match. Runtime behavior and dependency versions are unchanged.
