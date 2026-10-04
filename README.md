@@ -9,7 +9,9 @@ It targets direct DT+ Cloud Compute and a local Draw Things gRPC server through 
 and a minimal headless command that saves a fixture PNG and reproducibility metadata. Phase 2B adds the local
 Draw Things gRPC adapter, scripted TLS/gRPC fixtures and an optional non-generative live connectivity/inventory check.
 Phase 2C adds the direct DT+ adapter, focused offline authentication fixtures and optional live token/inventory and
-complete generation smoke checks. Deployed-cloud validation remains unverified. Real-backend CLI generation selection,
+complete generation smoke checks. The owner reports deployed token/inventory and one bounded generation passed at an
+earlier checkpoint using `z_image_turbo_1.0_q6p.ckpt`. This covers that workload only; final-head Windows validation,
+broad model/LoRA compatibility, production cancellation latency, charging/refunds and packaged execution remain unverified. Real-backend CLI generation selection,
 durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
 [release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
@@ -55,6 +57,10 @@ is needed. Explicit `DTFLOW_LIVE_CA_FILE`/`DTFLOW_LIVE_SERVER_NAME` settings sel
 The flag supplies the live opt-in without a separate marker or opt-in environment variable. Requested live checks
 fail clearly if unconfigured. The DT+ generation smoke requires an exact discovered `DTFLOW_LIVE_MODEL`. It submits one 256×256, four-step
 image with seed 42 and guidance 1, without LoRA or PAYG fields, and may consume subscription credits.
+The live inventory check enriches local LoRA availability using a bounded metadata-only BYOM lookup. Without
+`DTFLOW_LIVE_LORA`, it records the selected LoRA's availability, including legitimate upload-required/unknown states;
+an empty local LoRA inventory omits enrichment. Set `DTFLOW_LIVE_LORA` only to a known already-available cloud fixture
+when you want to assert reuse. It retains `inventory/lora_inventory.json` when enrichment runs.
 `-live` never calls `/authenticate` or submits generation. The wrapper preserves pytest output/exit status
 and requires the checkout's development dependencies. Ordinary `uv run pytest` remains offline with live tests gated.
 
@@ -86,6 +92,10 @@ The diagnostic probes' help is available without submitting generation:
 uv run python tools/drawthings/drawthings_probe.py --help
 uv run python tools/drawthings/grpc_capabilities_probe.py --help
 ```
+
+Metadata probe option pairs are `-f/--filename`, `-s/--sha256`, `-z/--size`, `-a/--api-base` and `-m/--matrix`
+for `get_byom_probe.py`; the local fingerprint probe uses `-f/--filename` and `-s/--known-sha256`, alongside
+`-a/--host` and `-p/--port`. Existing long spellings remain supported.
 
 The gRPC capability probe is read-only/non-generative: it calls only Echo, FilesExist, Pubkey, and Hours and can save a sanitized JSON report. GenerateImage and UploadFile are deliberately excluded.
 

@@ -51,6 +51,10 @@ compatibility exception or gain additional TLS requirements. Failures remain pre
 | OK with the validated expected outputs | terminal_observed | succeeded (by the service) |
 | OK with no or too few images, corrupt/oversize/inconsistent tensor, `MORE_CHUNKS` | typed failure, never success | unknown |
 
+Wire-request validation errors are typed validation failures with pre-submission evidence, rather than generic
+provider protocol errors. The non-generative `get_file_identities()` operation exposes per-file existence and optional
+server-computed SHA-256 through backend-neutral `FileIdentity`, without transferring file bytes.
+
 A terminal error status alone does not prove the work failed or stopped.
 
 Once terminal OK and the expected valid finals are established, a failing terminal-event callback retains the
@@ -82,7 +86,7 @@ durable store does not persist their bytes.
 `tests/fixtures/tls/generate.sh` creates test-only EC certificates (IP/DNS SANs, DNS-only, wrong-name, untrusted CA)
 valid for about 100 years; the keys are committed and labelled test-only. The scripted server returns protocol
 fixtures only. One SQLite service path runs through the real adapter. The optional `live` test
-(`tests/integration/test_drawthings_live.py`) is a non-generative connection and Echo check using the bundled local
+(`tests/integration/test_local_grpc_live.py`) is a non-generative connection and Echo check using the bundled local
 policy by default; explicit CA/server-name settings select strict trust instead.
 
 Phase 2C now reuses this actual channel/stream/wire/codec implementation through a pre-submission authorization hook;

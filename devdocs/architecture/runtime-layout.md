@@ -59,12 +59,19 @@ endpoint or credential changes, and never reuse account-dependent BYOM evidence 
 There is no verified stable cloud account ID in the inspected API contract. Multiple saved connections may later
 use explicit application connection-profile IDs; do not infer permanent identity from IPs or server identifiers.
 
+Derived LoRA inventory stores `resolved_at_utc` separately from each source's original `observed_at_utc`,
+backend/server/endpoint observations, refreshed flag and stale diagnostics. Resolution does not make cached evidence
+fresh. A newer negative `FilesExist` observation reports local absence even if the older Echo snapshot listed it.
+The application cache writer uses a unique same-directory temporary file before atomic replacement, so simultaneous
+writers cannot share a staging filename.
+
 ## Cache format version
 
-Use an integer `CACHE_VERSION = 1`, written as `cache_version` in inventory JSON. Application inventory persistence
+Use an integer `CACHE_VERSION = 2`, written as `cache_version` in inventory JSON. Application inventory persistence
 owns this constant and the live evidence writer imports it rather than maintaining an independent copy.
 Increment it when that format changes incompatibly, not on every release or
-inventory refresh. It is independent of application version, run identity and SQLite schema version.
+inventory refresh. It is independent of application version, run identity and SQLite schema version. Version 2 adds raw endpoint
+metadata and replaces the derived inventory's single observation timestamp with resolution time plus source provenance.
 
 Future disposable-cache readers must treat a missing or mismatched version as a cache miss and fetch a fresh
 inventory. No conversion, legacy folder search or old-tree fallback is required. Retained live snapshots are historical

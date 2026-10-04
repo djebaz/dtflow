@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Expose non-generative backend `get_file_identities()` with backend-neutral `FileIdentity` existence/optional SHA-256, and direct DT+ client concurrency 1–4 (default 4). The cap is a client policy, not a service entitlement or rolling scheduler.
+
 - Add production LoRA availability enrichment across local Draw Things gRPC and direct DT+: preserve Echo trigger prefix/default weight, selectively resolve converted SHA-256 with `FilesExist`, classify DT+ direct listing or metadata-only BYOM reuse/upload-required evidence, and atomically write the rebuildable `.dtflow/cache/inventory/lora_inventory.json`. The source path never follows signed upload URLs and no generation/upload is performed by offline tests. The existing non-generative live inventory group now also retains `inventory/lora_inventory.json`; its DT+ BYOM lookup is bounded to `DTFLOW_LIVE_LORA` when provided, otherwise the longest local LoRA filename, while other non-cloud-listed LoRAs remain unresolved rather than being mass-hashed. Rename local-only integration tests from `test_drawthings_*` to `test_local_grpc_*` while retaining `drawthings` for shared provider protocol modules.
 
 - Add `tools/drawthings/grpc_capabilities_probe.py`, a non-generative local Draw Things gRPC capability diagnostic covering the complete current read-only surface (`Echo`, `FilesExist`, `Pubkey`, and `Hours`) while explicitly excluding generation and upload. It preserves full Echo metadata fields, checks local registry-file visibility, requests SHA-256 only for small registry candidates plus explicit `--hash-file` values, and can retain a sanitized JSON report. Add focused offline parsing/alignment tests and source-backed capability documentation; no live RPC is run by the test suite.
@@ -140,6 +142,10 @@ Pending changes for the next DTFlow release.
 - Reframe the DT+ roadmap around hardening the already-proven native Python direct-cloud path into a production backend. MediaGenerationKit remains a protocol/reference implementation, with a Swift bridge reserved as a fallback for future capabilities that cannot be reproduced reliably in Python.
 
 ## Fixed
+
+- Preserve wire validation as a typed pre-submission validation failure; close the cloud HTTP client even when shared-refresh cancellation exceeds its separate cleanup budget. Extend existing validation/shutdown scenarios without adding a new matrix.
+- Validate BYOM upload-entry/checksum consistency; preserve LoRA source endpoint/server observations, original timestamps and stale diagnostics separately from resolution time. Fresh negative file-existence evidence reports absence. Use unique temporary cache files; increment the disposable inventory format to version 2 without migration.
+- Treat automatic live LoRA selection as discovery, allowing upload-required/unknown evidence and empty local LoRA inventories. An explicitly configured `DTFLOW_LIVE_LORA` asserts known cloud reuse. Add missing lowercase short aliases to metadata probes and refresh deployed-evidence wording to distinguish owner-reported earlier-checkpoint success from pending final-head Windows acceptance.
 
 - Use an explicit local Draw Things bundled-CA TLS policy by default, matching the working probe's hostname behavior while retaining certificate-chain verification. Clear Python 3.13's strict X.509 flag only for this CA compatibility path; owner-reported live diagnostics found a missing key-usage extension and IP mismatch. The non-generative live check uses this policy without manual CA setup. System/custom-CA policies remain verified; planned direct DT+ TLS follows the probe baseline without added certificate requirements. The owner reported a successful Windows non-generative local connection/inventory check after this change; live generation and production cancellation behavior remain unverified.
 

@@ -1,6 +1,6 @@
 # Direct DT+ cloud protocol specification
 
-**Status:** Pinned source contract implemented in Phase 2C with offline fixtures; deployed adapter compatibility remains unverified. See [implementation and acceptance ownership](cloud-integration.md).  
+**Status:** Pinned source contract implemented in Phase 2C with offline fixtures; the owner reports deployed token/inventory and one bounded adapter generation passed at an earlier checkpoint for `z_image_turbo_1.0_q6p.ckpt`. Final-head Windows validation and broader compatibility remain pending. See [implementation and acceptance ownership](cloud-integration.md).  
 **Related:** [backend contract](backend-contract.md), [Phase 2](../plans/phase-2-backends.md), [recorded probe](../research/drawthings-grpc-proof.md), [LoRA assets](../plans/lora-assets.md).
 
 ## Evidence and scope
@@ -53,7 +53,7 @@ DTFlow choices:
 - Use monotonic expiry measured conservatively from HTTP request start plus expiresIn, not wall-clock expiry. A response already expired by that measure fails clearly.
 - Default refresh margin is 300 s, capped at half the advertised lifetime so short-lived tokens are not immediately refreshed forever. Cache reuse requires remaining lifetime strictly greater than that effective margin.
 - Authentication scope (selected credential, API origin and App Check configuration) is immutable for the lifetime of one client. Resolve the credential once; changing scope requires closing that client and creating a new one with an independent cache. Runtime scope switching and old-scope response reconciliation are not implemented.
-- Coalesce refresh within that client and its owning loop using one lock and an in-flight task. Shield that shared task from cancellation of one waiter; another waiter may still need it. Adapter shutdown cancels and awaits it. Never persist tokens. A refresh failure produces a typed sanitized failure, no generation submission.
+- Coalesce refresh within that client and its owning loop using one lock and an in-flight task. Shield that shared task from cancellation of one waiter; another waiter may still need it. Adapter shutdown requests cancellation and waits within a cleanup budget, then always attempts HTTP pool closure with a separate cleanup budget. A non-cooperative refresh may outlive that bounded wait; shutdown reports timeout and the closed-client guard prevents late token caching. Never persist tokens. A refresh failure produces a typed sanitized failure, no generation submission.
 - Use explicit expiry refresh and no automatic HTTP retries initially. No generation resubmission follows a token failure.
 
 The probe caches only the token string and does not consume expiresIn. It is not the production cache implementation or an expiry test.
@@ -95,7 +95,7 @@ Production cancellation latency, charging/refunds, throttle semantics, generatio
 
 DTFlow choice: use a scoped httpx.AsyncClient with injectable transport and origin; asyncio remains the service runtime. Use validated TLS, follow_redirects false and trust_env false initially so auth requests do not follow implicit redirects or environment proxy settings. Phase 2C adds HTTPX >=0.28.1,<0.29.0 through uv with a synchronized lock.
 
-Explicit HTTP limits: connect 10 s, read/write 30 s, pool wait 10 s, and outer total 30 s per token/auth operation. HTTPX inactivity limits do not implement a total deadline; use the remaining monotonic outer budget as well. Bound decoded auth response to 1 MiB via streaming/size checks; oversized responses are protocol/resource failures without body logging. Pool/client shutdown follows the backend cleanup deadline.
+Explicit HTTP limits: connect 10 s, read/write 30 s, pool wait 10 s, and outer total 30 s per token/auth operation. HTTPX inactivity limits do not implement a total deadline; use the remaining monotonic outer budget as well. Bound decoded auth response to 1 MiB via streaming/size checks; oversized responses are protocol/resource failures without body logging. Refresh shutdown and HTTP pool closure each have a separate cleanup budget (default 5 s each), so slow refresh cancellation cannot skip pool closure. Cleanup timeout is reported; no claim is made that Python can force a non-cooperative coroutine to finish.
 
 Cancel and close owned HTTP streams/tasks asynchronously; preserve asyncio cancellation. A cancelled request may already have reached the HTTP server. Do not start GenerateImage after cancellation, including when a mocked authorization response arrives late, or retry a cancelled authorization. Cancelling one token waiter leaves the shared refresh alive for other waiters; shutdown owns its final cleanup. A completed response does not revive a closed client or transfer credentials to its replacement.
 
