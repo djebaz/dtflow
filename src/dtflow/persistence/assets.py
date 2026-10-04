@@ -64,6 +64,10 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+class AssetsBusyError(PersistenceError):
+    """Another process holds the asset writer lock; nothing was prepared, uploaded or changed."""
+
+
 def _lock_file(path: Path):
     handle = path.open("a+b")
     try:
@@ -82,7 +86,7 @@ def _lock_file(path: Path):
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as exc:
         handle.close()
-        raise PersistenceError("Another process is preparing or reconciling assets in this state directory.") from exc
+        raise AssetsBusyError("Another process is preparing or reconciling assets in this state directory.") from exc
     return handle
 
 

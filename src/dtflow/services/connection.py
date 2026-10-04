@@ -4,7 +4,18 @@ import asyncio
 from dataclasses import dataclass
 
 from dtflow.composition import BackendSelection, create_backend
-from dtflow.core.models import BackendError, ConnectionStatus, CredentialProvider, TimeoutPolicy, ValidationError
+from dtflow.core.models import (
+    BackendError,
+    ConnectionStatus,
+    CredentialProvider,
+    ErrorCategory,
+    RemoteOutcome,
+    TimeoutPolicy,
+    ValidationError,
+)
+from dtflow.persistence.assets import AssetsBusyError
+from dtflow.persistence.store import PersistenceError, StateBusyError
+from dtflow.services.preflight import blocked
 
 
 async def check_connection(
@@ -27,7 +38,7 @@ async def check_connection(
 
 @dataclass(frozen=True, slots=True)
 class Presentation:
-    level: str  # ok | warning | error
+    level: str  # ok | warning | error | unknown
     headline: str
     detail: str = ""
 
@@ -55,3 +66,108 @@ def present_failure(exc: Exception) -> Presentation:
     if isinstance(exc, TimeoutError):
         return Presentation("error", "Timed out", "The check exceeded its deadline.")
     return Presentation("error", "Check failed", type(exc).__name__)
+
+
+def present_outcome(outcome) -> Presentation:
+    """A saved generation (``session.GenerationOutcome``); warnings such as the fake-fixture note stay visible."""
+    count = len(outcome.output_paths)
+    detail = f"Attempt {outcome.attempt_id[:8]} saved {count} output(s). Metadata: {outcome.metadata_path}"
+    if outcome.warnings:
+        detail += " " + " ".join(outcome.warnings)
+    return Presentation("ok", "Saved", detail)
+
+
+def present_generation_failure(exc: Exception) -> Presentation:
+    """A generation that raised: stable codes only; an unknown remote outcome is never shown as a plain failure."""
+    if isinstance(exc, ValidationError):
+        return Presentation("error", "Invalid request", str(exc))
+    if isinstance(exc, BackendError):
+        failure = exc.failure
+        if failure.remote_outcome == RemoteOutcome.UNKNOWN:
+            return Presentation(
+                "warning",
+                "Outcome unknown",
+                f"{failure.code}: the request may have reached the server and may still complete. "
+                "It is not replayed automatically; inspect the attempt before acting.",
+            )
+        if failure.category == ErrorCategory.VALIDATION:
+            codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics)
+            return Presentation(
+                "error",
+                "Request rejected",
+                f"{failure.code}{' (' + codes + ')' if codes else ''}. Nothing was dispatched.",
+            )
+        if failure.category in (ErrorCategory.CREDENTIALS, ErrorCategory.AUTHENTICATION):
+            return Presentation("error", "Credentials problem", failure.code)
+        return Presentation("error", "Generation failed", failure.code)
+    if isinstance(exc, StateBusyError):
+        return Presentation(
+            "warning", "State is busy", "Another DTFlow process owns the state directory. Nothing was dispatched."
+        )
+    if isinstance(exc, PersistenceError):
+        return Presentation("error", "Local state error", "Execution state could not be read or committed.")
+    if isinstance(exc, TimeoutError):
+        return Presentation("error", "Timed out", "The operation exceeded its deadline.")
+    return Presentation("error", "Generation failed", type(exc).__name__)
+
+
+def present_interruption(evidence) -> Presentation:
+    """Wording after a local stop comes from recorded evidence (``session.AttemptEvidence``), never from the click."""
+    if evidence is None:
+        return Presentation("warning", "Local stop requested", "No attempt had been recorded; nothing was dispatched.")
+    note = f"Attempt {evidence.attempt_id[:8]}."
+    if evidence.state == "succeeded":
+        return Presentation("ok", "Completed before the stop", f"{note} Output was already saved.")
+    if evidence.state == "save_failed":
+        return Presentation(
+            "error", "Local stop requested", f"{note} The server finished but saving did not; inspect the attempt."
+        )
+    if evidence.remote_outcome == RemoteOutcome.UNKNOWN or evidence.state == "unknown":
+        return Presentation(
+            "warning",
+            "Local stop requested",
+            f"{note} Outcome unknown: the request may have reached the server and may still complete. "
+            "Remote cancellation is not confirmed.",
+        )
+    return Presentation("warning", "Local stop requested", f"{note} Stopped before submission; nothing was sent.")
+
+
+def present_preflight(diagnostics) -> Presentation:
+    """Render shared preflight diagnostics as given; architecture, availability and application evidence stay separate."""
+    if not diagnostics:
+        return Presentation("unknown", "No LoRAs selected", "Compatibility is not checked.")
+    lines = [
+        f"{item.identifier}: architecture {item.architecture_match}, {item.availability} ({item.code}); "
+        f"application {item.generation_evidence.removeprefix('application_')}"
+        for item in diagnostics
+    ]
+    if blocked(diagnostics):
+        level, headline = "error", "Blocked before dispatch"
+    elif all(item.architecture_match == "match" for item in diagnostics):
+        level, headline = "ok", "Architecture matches"
+    else:
+        level, headline = "unknown", "Compatibility not confirmed"
+    return Presentation(level, headline, "\n".join(lines))
+
+
+def present_asset_failure(exc: Exception) -> Presentation:
+    """An asset action that raised; an interrupted or unconfirmed transfer is never shown as a plain failure."""
+    if isinstance(exc, AssetsBusyError):
+        return Presentation(
+            "warning", "Assets busy", "Another DTFlow process is preparing assets. Nothing was uploaded or changed."
+        )
+    if isinstance(exc, BackendError) and exc.failure.remote_outcome == RemoteOutcome.UNKNOWN:
+        return Presentation(
+            "warning",
+            "Outcome unknown",
+            f"{exc.failure.code}: the file may have been stored. It is not retried; reconcile the record to check.",
+        )
+    if isinstance(exc, BackendError):
+        return Presentation("error", "Asset action failed", f"{exc.failure.code}. {exc.failure.message}")
+    return present_generation_failure(exc)
+
+
+def present_reconciliation(result) -> Presentation:
+    """A fresh metadata-only server check (``AssetReconciliation``); it never uploads."""
+    level = {"confirmed": "ok", "upload_required": "warning"}.get(result.status, "warning")
+    return Presentation(level, "Reconciled: " + result.status.replace("_", " "), f"Evidence: {result.evidence}.")

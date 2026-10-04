@@ -315,9 +315,13 @@ Connect the desktop UI to the generation services already exercised by the headl
 
 The detailed, PR-sequenced plan is [Phase 5A desktop generation wiring](2026-10-04-phase-5a-desktop-generation.md); its first step extracts the CLI's orchestration into a Qt-independent session service.
 
+**Implementation status:** PR 1 and PR 2 are implemented and offline-validated in one pull request (5A-O1 to O6; no live desktop run): shared `services/session.py`, a wired Generate page with inventory refresh, configuration save/load, LoRA selection with preflight diagnostics and cloud asset actions. The phase gate (Windows visual review, live `5-LG1`/`5-LG2`, `3-LG4`) remains open.
+
 Expose the generation form, actual progress, outputs/errors, bounded LoRA selection/weights, compatibility diagnostics and cloud upload/known-receipt reuse through existing shared services. Save/load credential-free generation configurations through the versioned shared contract from Phase 3A; the full preset browser remains Phase 8.
 
 #### Phase 5B — Desktop queue controls
+
+The detailed, PR-sequenced plan is [Phase 5B desktop queue controls](2026-10-04-phase-5b-desktop-queue.md); its first step extracts the CLI's queue orchestration into shared Qt-independent functions, and it records the proposed decision that desktop dispatch is an exclusive activity because it holds the state ownership lock.
 
 Expose queue creation/inspection, stable item status, concurrency, Pause/Resume/Cancel, paused restart and explicit uncertainty handling through the existing Phase 3B services. The first desktop release requires both 5A and 5B; queue controls are not deferred to batch planning or advanced scheduling.
 

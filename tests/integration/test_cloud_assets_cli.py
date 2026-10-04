@@ -13,6 +13,7 @@ from dtflow.core.models import BackendError, LoRASelection, PreparedAsset, Resol
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.queues import read_queues, request_from_record
 from dtflow.persistence.store import SQLiteAttempts
+from dtflow.services import session
 from dtflow.services.assets import AssetService
 from dtflow.services.generation import GenerationService
 from dtflow.services.queue import QueueDispatcher
@@ -21,7 +22,8 @@ from dtflow.services.queue import QueueDispatcher
 @pytest.fixture
 def cloud(monkeypatch):
     fixture = DtPlus()
-    monkeypatch.setattr(cli, "create_backend", lambda *args, **kwargs: fixture.backend())
+    monkeypatch.setattr(cli, "create_backend", lambda *args, **kwargs: fixture.backend())  # queue start
+    monkeypatch.setattr(session, "create_backend", lambda *args, **kwargs: fixture.backend())  # assets and generation
     return fixture
 
 
