@@ -1,6 +1,6 @@
 # Plan: Phase 5B desktop queue controls
 
-**Status:** Planned; follows Phase 5A (this plan's entry condition is 5A merged, see [the 5A plan](2026-10-04-phase-5a-desktop-generation.md))
+**Status:** Implemented offline in one pull request (all steps; live and Windows review pending). Was: Planned; follows Phase 5A (this plan's entry condition is 5A merged, see [the 5A plan](2026-10-04-phase-5a-desktop-generation.md))
 **Milestone:** Completes the first usable Qt generation and queue paths (release 0.3.0 with Phase 5A)
 **Authoritative acceptance:** `5B-O1` to `5B-O5` from [the initial plan](initial.md#phase-5-testing-ownership); Phase 3B stays authoritative for scheduling, restart and no-replay semantics
 **Related plans:** [Phase 3 CLI and queues](phase-3-cli.md), [Phase 3B cloud assets](2026-10-04-phase-3b-cloud-assets.md), [Qt UX design](2026-10-04-qt-ux-design.md), [release roadmap](releases.md)
@@ -90,6 +90,10 @@ Owned checks: `5B-O2` (controls call the shared operations and reflect the resul
 - Windows visual review of every Queues state (empty, paused, running, blocked, finished, cancelled, unknown) and of closing during dispatch.
 - Exercise the exact portable executable per the 0.3.0 gate in the [release roadmap](releases.md); packaged-executable verification is not claimed by this plan.
 - No new live workflow is required: `5-LG1`/`5-LG2` cover desktop generation, Phase 3B `3-LG3` covers a cloud queue, and live runs need the owner's explicit authorization and are never run by agents.
+
+## Decisions taken (implemented)
+
+Defaults below were implemented as proposed. Additionally: the read view lists `pending_controls`, and Start is enabled for a `blocked` queue only while an override awaits an owner (the owner applies it on start); `services/queue_session.py` exposes `expand_items`, `default_cap`, `create_queue`, `dispatch_queue`, `read_queue_views`, `post_queue_control` and `set_concurrency`; `ui/activity.py` keeps Generate and dispatch mutually exclusive.
 
 ## Decisions to take in PR 1 (defaults proposed)
 

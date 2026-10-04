@@ -1,0 +1,375 @@
+"""Queues page controller: widgets in, shared queue services out. Owns no scheduling, reservation or persistence rules.
+
+Reads are read-only polls of the durable state; every control is posted through the same function ``dtflow queue``
+uses, so a window and a CLI process drive a queue identically. Only Start makes this window the dispatch owner, which
+holds the state ownership lock for the run (see ``Activity``). Wording after cancel or override comes from recorded
+evidence, and neither action claims remote cancellation or resolution.
+"""
+
+from collections.abc import Callable
+from pathlib import Path
+
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QListWidgetItem, QMessageBox, QWidget
+
+from dtflow.core.models import ValidationError
+from dtflow.persistence.settings import validate_concurrency
+from dtflow.persistence.store import StateBusyError
+from dtflow.services.connection import Presentation, present_generation_failure
+from dtflow.services.queue_session import (
+    create_queue,
+    dispatch_queue,
+    expand_items,
+    post_queue_control,
+    read_queue_views,
+    set_concurrency,
+)
+from dtflow.services.session import bind_prepared
+from dtflow.ui.activity import Activity
+from dtflow.ui.generation_presenter import FormError
+from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
+from dtflow.ui.queue_presenter import (
+    CANCEL_TEXT,
+    CONCURRENCY_HINT,
+    OVERRIDE_TEXT,
+    concurrency_level,
+    controls,
+    event_lines,
+    item_rows,
+    ownership_badge,
+    progress_text,
+    summarize,
+    uncertainty_text,
+)
+from dtflow.ui.runner import AsyncRunner
+
+POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
+WIRED_CONTROLS = (
+    "queueList",
+    "createQueueButton",
+    "refreshQueuesButton",
+    "queueCountSpinBox",
+    "concurrencySpinBox",
+    "startQueueButton",
+    "pauseQueueButton",
+    "resumeQueueButton",
+    "cancelQueueButton",
+    "queueItemsView",
+    "overrideReservationButton",
+)
+POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
+
+
+def _confirm(parent: QWidget, title: str, text: str) -> bool:
+    answer = QMessageBox.question(
+        parent,
+        title,
+        text,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return answer == QMessageBox.StandardButton.Yes
+
+
+class QueuePage:
+    def __init__(
+        self,
+        page: QWidget,
+        *,
+        runner: AsyncRunner,
+        backend_source: Callable[[], tuple[str, str | None]],
+        saved_source: Callable,
+        state_dir: Path,
+        request_source: Callable,
+        activity: Activity,
+    ):
+        self.page = page
+        self._runner, self._backend, self._saved = runner, backend_source, saved_source
+        self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
+        self.confirm = _confirm
+        self._views: dict[str, dict] = {}
+        self._selected: str | None = None
+        self._select_after: str | None = None
+        self._dispatching: str | None = None
+        self._future = None
+        self._reading = False
+        self._syncing = False
+        self._detail: dict | None = None
+        self.model = QueueItemModel(page)
+        page.queueItemsView.setModel(self.model)
+        for name in WIRED_CONTROLS:
+            getattr(page, name).setEnabled(True)
+        page.concurrencyHintLabel.setText(CONCURRENCY_HINT)
+        self._timer = QTimer(page)
+        self._timer.setInterval(POLL_MS)
+        self._timer.timeout.connect(self.refresh)
+        page.refreshQueuesButton.clicked.connect(self.refresh)
+        page.createQueueButton.clicked.connect(self.create)
+        page.startQueueButton.clicked.connect(self.start)
+        page.pauseQueueButton.clicked.connect(lambda: self._post("pause"))
+        page.resumeQueueButton.clicked.connect(lambda: self._post("resume"))
+        page.cancelQueueButton.clicked.connect(self.cancel)
+        page.overrideReservationButton.clicked.connect(self.override)
+        page.queueList.currentRowChanged.connect(self._select_row)
+        page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
+        page.concurrencySpinBox.valueChanged.connect(self._cap_changed)
+        activity.listen(self._sync)
+        self._render()
+        self.refresh()
+
+    # -- helpers ---------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _show(label, level: str, text: str) -> None:
+        label.setProperty("state", level)
+        label.style().unpolish(label)
+        label.style().polish(label)
+        label.setText(text)
+
+    def _message(self, presentation: Presentation) -> None:
+        self._show(
+            self.page.queueMessageLabel,
+            presentation.level,
+            f"{presentation.headline}. {presentation.detail}".strip(),
+        )
+
+    def _view(self) -> dict | None:
+        return self._views.get(self._selected or "")
+
+    @property
+    def dispatching_here(self) -> bool:
+        return self._dispatching is not None
+
+    def confirm_close(self) -> bool:
+        """Window close while this window dispatches needs an explicit yes: active attempts stop waiting locally."""
+        if not self.dispatching_here:
+            return True
+        return self.confirm(
+            self.page,
+            "Stop dispatching?",
+            "Closing stops dispatch. Active attempts stop waiting locally and may end as outcome unknown; remote "
+            "cancellation is not confirmed.",
+        )
+
+    # -- reading ---------------------------------------------------------------------------------------------------
+    def refresh(self) -> None:
+        if self._reading:
+            return
+        self._reading = True
+        self._runner.submit(self._read(self._selected), self._read_done)
+
+    async def _read(self, selected: str | None):
+        views = await read_queue_views(self._state)
+        detail = None
+        if selected and any(view["queue_id"] == selected for view in views):
+            detail = (await read_queue_views(self._state, selected))[0]
+        return views, detail
+
+    def _read_done(self, result, failure) -> None:
+        self._reading = False
+        if failure is not None:
+            self._message(present_generation_failure(failure))
+            return
+        views, self._detail = result
+        self._views = {view["queue_id"]: view for view in views}
+        if self._select_after in self._views:
+            self._selected, self._select_after = self._select_after, None
+        elif self._selected not in self._views:
+            self._selected = None
+        self._render()
+        busy = self.dispatching_here or any(view["status"] == "running" for view in views)
+        if busy:
+            self._timer.start()
+        else:
+            self._timer.stop()
+
+    # -- rendering -------------------------------------------------------------------------------------------------
+    def _render(self) -> None:
+        page = self.page
+        page.queueList.blockSignals(True)
+        page.queueList.clear()
+        for queue_id, view in self._views.items():
+            summary = summarize(view)
+            item = QListWidgetItem(
+                f"{queue_id[:8]} · {summary.backend} · {summary.status} · {summary.settled}/{summary.total}"
+            )
+            item.setData(ITEM_ID_ROLE, queue_id)
+            page.queueList.addItem(item)
+            if queue_id == self._selected:
+                page.queueList.setCurrentItem(item)
+        page.queueList.blockSignals(False)
+        view = self._view()
+        page.emptyStateCard.setVisible(view is None)
+        page.queueTableHost.setVisible(view is not None)
+        if view is None:
+            self.model.apply(())
+            self._show(page.queueStateLabel, "unknown", "No queue selected")
+            page.queueProgressBar.setRange(0, 1)
+            page.queueProgressBar.setValue(0)
+            page.queueProgressBar.setFormat("0 of 0 settled")
+            page.queueEventBrowser.clear()
+        else:
+            summary = summarize(view)
+            self.model.apply(item_rows(view))
+            self._show(page.queueStateLabel, summary.level, summary.headline)
+            page.queueProgressBar.setRange(0, max(summary.total, 1))
+            page.queueProgressBar.setValue(summary.settled)
+            page.queueProgressBar.setFormat(progress_text(summary))
+            events = event_lines(self._detail) if self._detail and self._detail["queue_id"] == view["queue_id"] else ""
+            page.queueEventBrowser.setPlainText(events)
+            self._syncing = True
+            page.concurrencySpinBox.setValue(view["cap"])
+            self._syncing = False
+            self._set_level(view["cap"])
+        page.ownershipBadgeLabel.setText(ownership_badge(view, dispatching_here=self.dispatching_here))
+        self._show_item()
+        self._sync()
+
+    def _set_level(self, value: int) -> None:
+        spin = self.page.concurrencySpinBox
+        spin.setProperty("level", concurrency_level(value))
+        spin.style().unpolish(spin)
+        spin.style().polish(spin)
+
+    def _sync(self) -> None:
+        page = self.page
+        available = controls(self._view(), dispatching_here=self.dispatching_here, generating=self._activity.generating)
+        page.startQueueButton.setEnabled(available.start)
+        page.pauseQueueButton.setEnabled(available.pause)
+        page.resumeQueueButton.setEnabled(available.resume)
+        page.cancelQueueButton.setEnabled(available.cancel)
+        page.overrideReservationButton.setEnabled(available.override)
+        page.createQueueButton.setEnabled(not self.dispatching_here and not self._activity.generating)
+
+    def _show_item(self) -> None:
+        page = self.page
+        row = self.model.row_at(page.queueItemsView.currentIndex().row())
+        view = self._view()
+        level, text = uncertainty_text(row)
+        self._show(page.uncertaintyLabel, level, text)
+        if row is None:
+            for name in ("itemIdLabel", "attemptIdLabel", "itemBackendLabel", "itemOutputsLabel"):
+                getattr(page, name).setText("—")
+            return
+        page.itemIdLabel.setText(row.item_id[:8])
+        page.itemIdLabel.setToolTip(row.item_id)
+        page.attemptIdLabel.setText(row.attempt_id or "—")
+        page.itemBackendLabel.setText(summarize(view).backend if view else "—")
+        outputs = [*row.outputs, *([row.metadata] if row.metadata else [])]
+        detail = "\n".join(outputs) if outputs else (row.failure_code or "—")
+        page.itemOutputsLabel.setText(detail)
+
+    def _select_row(self, row: int) -> None:
+        item = self.page.queueList.item(row) if row >= 0 else None
+        self._selected = item.data(ITEM_ID_ROLE) if item is not None else None
+        self._detail = None
+        self._render()
+        self.refresh()
+
+    # -- creation --------------------------------------------------------------------------------------------------
+    def create(self) -> None:
+        try:
+            request, name, endpoint, asset_ids = self._request_source()
+        except FormError as exc:
+            self._message(Presentation("error", "Queue not created", str(exc)))
+            return
+        count, cap = self.page.queueCountSpinBox.value(), self.page.concurrencySpinBox.value()
+        self._message(Presentation("warning", "Creating", "Persisting a paused queue; no backend is contacted."))
+        backend = {"name": name, "endpoint": endpoint, "scenario": "success"}
+        self._runner.submit(self._create(backend, request, asset_ids, count, cap), self._created)
+
+    async def _create(self, backend, request, asset_ids, count, cap):
+        request = await bind_prepared(self._state, backend["name"], request, asset_ids)
+        return await create_queue(self._state, backend, expand_items(request, count), cap)
+
+    def _created(self, result, failure) -> None:
+        if failure is not None:
+            self._message(present_generation_failure(failure))
+            return
+        queue_id, cap = result
+        self._select_after = queue_id
+        self._message(
+            Presentation("ok", "Queue created", f"{queue_id[:8]} is paused with a maximum of {cap}. Press Start.")
+        )
+        self.refresh()
+
+    # -- dispatch and controls -------------------------------------------------------------------------------------
+    def start(self) -> None:
+        view = self._view()
+        if view is None or self.dispatching_here or self._activity.generating:
+            return
+        self._dispatching = view["queue_id"]
+        self._activity.set(dispatching=True)
+        self._message(Presentation("ok", "Dispatching", "This window owns dispatch until the queue stops."))
+        self._render()
+        saved = self._saved()
+        self._future = self._runner.submit(dispatch_queue(self._state, view["queue_id"], saved=saved), self._dispatched)
+        self._timer.start()
+
+    def _dispatched(self, final, failure) -> None:
+        self._dispatching, self._future = None, None
+        self._activity.set(dispatching=False)
+        if isinstance(failure, StateBusyError):
+            self._message(
+                Presentation(
+                    "warning",
+                    "Dispatch is owned by another process",
+                    "Controls still work; Start is available when it stops. Nothing was dispatched.",
+                )
+            )
+        elif failure is not None:
+            self._message(present_generation_failure(failure))
+        else:
+            self._message(Presentation("ok", "Dispatch ended", "The queue finished, was cancelled or is blocked."))
+        self._render()
+        self.refresh()
+
+    def _post(self, action: str) -> None:
+        view = self._view()
+        if view is None:
+            return
+        self._runner.submit(post_queue_control(self._state, view["queue_id"], action), self._posted(action))
+
+    def _posted(self, action: str):
+        def done(_, failure) -> None:
+            if failure is not None:
+                self._message(present_generation_failure(failure))
+                return
+            text = f"{action.capitalize()} requested. " + (
+                "The dispatch owner applies it at its next poll." if self.dispatching_here else POSTED
+            )
+            self._message(Presentation("ok", "Control posted", text))
+            self.refresh()
+
+        return done
+
+    def cancel(self) -> None:
+        if self._view() is not None and self.confirm(self.page, "Cancel queue", CANCEL_TEXT):
+            self._post("cancel")
+
+    def override(self) -> None:
+        if self._view() is not None and self.confirm(self.page, "Acknowledge uncertain reservation", OVERRIDE_TEXT):
+            self._post("override")
+
+    # -- concurrency -----------------------------------------------------------------------------------------------
+    def _cap_changed(self, value: int) -> None:
+        if self._syncing:
+            return
+        try:
+            validate_concurrency(value)
+        except ValidationError as exc:
+            self._message(Presentation("error", "Concurrency not changed", str(exc)))
+            return
+        self._set_level(value)
+        view = self._view()
+        backend = view["backend"]["name"] if view else self._backend()[0]
+        queue_id = view["queue_id"] if view and view["status"] in ("paused", "running", "blocked") else None
+        self._runner.submit(
+            set_concurrency(self._state, value, queue_id=queue_id, save_shared=backend == "cloud"), self._cap_done
+        )
+
+    def _cap_done(self, value, failure) -> None:
+        if failure is not None:
+            self._message(present_generation_failure(failure))
+            return
+        self._message(Presentation("ok", "Concurrency set", f"Maximum {value} (a client policy; active work is kept)."))
+        self.refresh()

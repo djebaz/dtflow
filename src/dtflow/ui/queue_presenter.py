@@ -1,0 +1,190 @@
+"""Qt-free presentation of durable queue views: rows, status wording, control availability and uncertainty text.
+
+Everything here maps the shared ``read_queues`` view (scheduler, reservation and no-replay semantics are Phase 3B) to
+display data. The vocabularies below are the only ones the Queues page uses, so a state never gets two meanings.
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+ITEM_LEVELS = {
+    "pending": "secondary",
+    "running": "warning",
+    "succeeded": "ok",
+    "failed": "error",
+    "unknown": "unknown",  # distinct from failed: the request may have reached the server
+    "save_failed": "error",
+    "cancelled": "warning",
+}
+SETTLED = ("succeeded", "failed", "unknown", "save_failed", "cancelled")
+STATUS_LEVELS = {"paused": "warning", "running": "ok", "blocked": "unknown", "finished": "ok", "cancelled": "warning"}
+STATUS_TEXT = {
+    "paused": "Paused. Nothing dispatches until Start.",
+    "running": "Running.",
+    "blocked": "Blocked by an unresolved uncertain reservation. Resume cannot clear it.",
+    "finished": "Finished.",
+    "cancelled": "Cancelled. Pending items were cancelled; active ones stopped waiting locally.",
+}
+CONCURRENCY_HINT = (
+    "Local Draw Things remains one effective lane. This is a client policy, not entitlement, and the memory budget "
+    "currently admits about two real generations at once whatever the maximum."
+)
+UNRESOLVED_UNKNOWN = (
+    "Outcome unknown: the request may have reached the server and may still complete. It is never replayed, and "
+    "Resume does not clear it. Override only acknowledges it for scheduling."
+)
+CANCEL_TEXT = (
+    "Pending items will be cancelled and active attempts will stop waiting locally. DTFlow does not confirm "
+    "cancellation on the server, so an active item may end as outcome unknown."
+)
+OVERRIDE_TEXT = (
+    "This acknowledges every unresolved uncertain reservation on this backend so other work may continue. It is "
+    "recorded, does not resolve or replay any attempt, and means remote concurrency is no longer guaranteed."
+)
+OWNERS = ("here", "none")
+
+
+@dataclass(frozen=True, slots=True)
+class ItemRow:
+    item_id: str
+    position: int
+    state: str
+    overridden: bool
+    attempt_id: str | None
+    seed: int
+    outputs: tuple[str, ...]
+    metadata: str | None
+    failure_code: str | None
+
+    @property
+    def level(self) -> str:
+        return ITEM_LEVELS.get(self.state, "secondary")
+
+    @property
+    def state_text(self) -> str:
+        return self.state.replace("_", " ") + (" (overridden)" if self.overridden else "")
+
+
+@dataclass(frozen=True, slots=True)
+class QueueSummary:
+    queue_id: str
+    status: str
+    level: str
+    headline: str
+    settled: int
+    total: int
+    succeeded: int
+    backend: str
+
+
+@dataclass(frozen=True, slots=True)
+class Controls:
+    start: bool
+    pause: bool
+    resume: bool
+    cancel: bool
+    override: bool
+
+
+def item_rows(view: dict) -> tuple[ItemRow, ...]:
+    rows = []
+    for item in view["items"]:
+        artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
+        metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
+        failure = item.get("failure") or {}
+        rows.append(
+            ItemRow(
+                item["item_id"],
+                item["position"],
+                item["state"],
+                item["overridden"],
+                item["attempt_id"],
+                item["seed"],
+                tuple(path for path in artifacts if path != metadata),
+                metadata,
+                failure.get("code"),
+            )
+        )
+    return tuple(rows)
+
+
+def backend_label(view: dict) -> str:
+    backend = view["backend"]
+    return backend["name"] + (f" ({backend['endpoint']})" if backend.get("endpoint") else "")
+
+
+def summarize(view: dict) -> QueueSummary:
+    counts = view["summary"]
+    total = sum(counts.values())
+    settled = sum(counts[state] for state in SETTLED)
+    status = view["status"]
+    return QueueSummary(
+        view["queue_id"],
+        status,
+        STATUS_LEVELS.get(status, "unknown"),
+        STATUS_TEXT.get(status, status),
+        settled,
+        total,
+        counts["succeeded"],
+        backend_label(view),
+    )
+
+
+def progress_text(summary: QueueSummary) -> str:
+    return f"{summary.settled} of {summary.total} settled · {summary.succeeded} succeeded"
+
+
+def has_unresolved_unknown(view: dict) -> bool:
+    return any(item["state"] == "unknown" and not item["overridden"] for item in view["items"]) or bool(
+        view["blocked_by_uncertainty"]
+    )
+
+
+def controls(view: dict | None, *, dispatching_here: bool, generating: bool = False) -> Controls:
+    """Which actions make sense now. Start needs this window to own dispatch (nothing else generating); the rest only
+    post controls for whichever process owns dispatch, or for the next start."""
+    if view is None:
+        return Controls(False, False, False, False, False)
+    status = view["status"]
+    return Controls(
+        start=(
+            status in ("paused", "running") or (status == "blocked" and "override" in view.get("pending_controls", ()))
+        )
+        and not dispatching_here
+        and not generating,
+        pause=status == "running",
+        resume=status == "paused",
+        cancel=status in ("paused", "running", "blocked"),
+        override=has_unresolved_unknown(view),
+    )
+
+
+def ownership_badge(view: dict | None, *, dispatching_here: bool) -> str:
+    if dispatching_here:
+        return "THIS WINDOW DISPATCHES"
+    if view is not None and view["status"] == "running":
+        return "RUNNING · NOT DISPATCHED HERE"
+    return "NOT DISPATCHING"
+
+
+def uncertainty_text(row: ItemRow | None) -> tuple[str, str]:
+    """(level, text) for the selected item's reservation."""
+    if row is None:
+        return "unknown", "No unresolved reservation selected."
+    if row.state == "unknown":
+        if row.overridden:
+            return "warning", "Acknowledged by override (recorded). The attempt stays unknown and is never replayed."
+        return "unknown", UNRESOLVED_UNKNOWN
+    return "ok", "No unresolved reservation for this item."
+
+
+def concurrency_level(value: int) -> str:
+    return "elevated" if value > 2 else "normal"
+
+
+def event_lines(view: dict) -> str:
+    lines = []
+    for event in view.get("events", ()):
+        detail = ", ".join(f"{key}={value}" for key, value in event["detail"].items())
+        lines.append(f"{event['at_utc']}  {event['kind']}" + (f"  {detail}" if detail else ""))
+    return "\n".join(lines)
