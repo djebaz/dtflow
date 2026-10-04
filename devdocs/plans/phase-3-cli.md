@@ -1,6 +1,6 @@
 # Phase 3 — Headless CLI and shared application services
 
-**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B's durable queue and rolling dispatch half is implemented and offline-validated (see [implemented queue scope](#phase-3b-queue-half-implemented-scope-and-limits)); cloud asset upload/reuse is still planned in the [detailed Phase 3B completion plan](2026-10-04-phase-3b-cloud-assets.md).
+**Status:** Phase 3A is implemented and offline-validated in the source-run CLI (see [implemented scope](#phase-3a-implemented-scope-and-limits)); Phase 3B's durable queue and rolling dispatch half is implemented and offline-validated (see [implemented queue scope](#phase-3b-queue-half-implemented-scope-and-limits)); the cloud asset half (3B-O6 to O9) is implemented and offline-validated per the [detailed Phase 3B completion plan](2026-10-04-phase-3b-cloud-assets.md); live `3-LG4` is not run.
 **Prerequisite:** [Phase 2 backends and offline tests](phase-2-backends.md).  
 **Roadmap:** [initial plan](initial.md).
 
@@ -162,10 +162,34 @@ contacting a backend and does not support `--prefix`; a new queue starts paused 
 unresolved unknown reservation on the same backend and then stops counting them toward the cap; a reservation that crashed
 before its attempt row existed returns to pending, any other ambiguous attempt is never eligible again; an item whose
 attempt was interrupted before submission is `failed`, not retried, because attempt request identities are unique.
-Not done: cloud LoRA upload/receipts/reuse (3B-O6 to O9), a live queue run, and any answer to what the maximum means beyond
+Not done in the queue half: a live queue run, and any answer to what the maximum means beyond
 the client policy. Finding: `GenerationService` admits requests through a 256 MiB buffer budget while each real request
 reserves about 100 MiB (3 x the 32 MiB artifact limit plus previews), so real cloud or local runs currently admit about two
 concurrent generations whatever the queue maximum; the budget was left unchanged because it is a memory-safety decision.
+
+### Phase 3B cloud half: implemented scope and limits
+
+Implemented (3B-O6 to O9, in `tests/integration/test_cloud_assets.py` and `test_cloud_assets_cli.py`, in-memory DT+ and
+signed-storage fixtures): `dtflow assets prepare -f FILE [-n NAME]` (the only command that may upload), `assets list`,
+`assets show ID` (local registry views, no network) and `assets reconcile ID` (metadata-only, never uploads);
+`-z/--asset ID` on `generate` and `queue add` binds a *confirmed* local receipt to the `--lora` of the same identifier
+and fails before any attempt or queue exists otherwise; `GenerationService` (hence queue dispatch) revalidates each
+prepared reference with a metadata-only check and blocks a stale/inaccessible/unknown one before submission, with no
+upload. Prepared references are immutable values in the resolved request, attempt metadata and queue items, are never
+exported to portable configuration, and are rejected by local/fake backends. Identical concurrent prepares coalesce
+per API origin and auth client; a cancelled waiter does not cancel the shared operation.
+
+Decisions: a fifth registry state `failed` records a definitely-not-transferred outcome next to `intent`,
+`transferring`, `confirmed` and `unknown`; a confirmed receipt requires the server's own reference, obtained by a fresh
+metadata check after a successful PUT (a PUT success without that confirmation stays `unknown`, never re-uploaded);
+one writer per state directory holds `assets.lock` so an unresolved operation seen at open belongs to a dead process;
+the CLI option is `-z` because every nearer mnemonic is taken; the LoRA keeps its exact identifier on the generation
+wire and a prepared LoRA missing from the Echo inventory passes preflight as `prepared` with architecture `unknown`.
+
+Not done: live `3-LG4` (uploads and generation need explicit owner authorization), the exact remote identifier the
+generation wire expects for a custom LoRA, evidence-based size/refusal semantics and any non-secret content headers the
+signed endpoint requires beyond `Content-Type`/`Content-Length`, Windows-specific lock/durability runs, and the LoRA
+`--force` override (dropped by the owner).
 
 Persist queue identity, stable ordered item IDs, immutable resolved requests, item/attempt states, backend selection and concurrency configuration. Use one dispatch owner per application state directory so two CLI processes cannot independently dispatch the same queue or bypass its cap. The CLI presents queue control; shared services own persistence, eligibility, scheduling and reconciliation. Store control requests transactionally for the dispatcher to poll, so basic Pause/Resume/Cancel needs no separate IPC server. SQLite transactions alone do not establish dispatch ownership: implement and test exclusive ownership, stale-owner recovery and protection against an old owner continuing dispatch. Never hold a database transaction while generating.
 

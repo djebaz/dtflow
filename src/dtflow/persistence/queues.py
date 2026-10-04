@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
+from dtflow.core.models import LoRASelection, PreparedAsset, ResolvedGenerationRequest, Sampler, ValidationError
 
 QUEUE_STATES = ("paused", "running", "cancelled")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
@@ -88,6 +88,7 @@ def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
                 "sampler_id": Sampler(record["sampler_id"]),
                 "loras": tuple(LoRASelection(**item) for item in record["loras"]),
                 "resolution_evidence": tuple(tuple(pair) for pair in record["resolution_evidence"]),
+                "prepared_assets": tuple(PreparedAsset(**item) for item in record.get("prepared_assets", ())),
             }
         )
     except (KeyError, TypeError, ValueError) as exc:

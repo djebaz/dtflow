@@ -25,11 +25,20 @@ UNCONFIRMED = "application_unconfirmed"
 def preflight_loras(request: ResolvedGenerationRequest, snapshot: InventorySnapshot) -> tuple[PreflightDiagnostic, ...]:
     """Return one diagnostic per selected LoRA, in selection order."""
     by_id = {entry.identifier: entry for entry in snapshot.entries}
+    prepared = {item.identifier for item in request.prepared_assets}
     model = by_id.get(request.model_id)
     source = f"{snapshot.backend_id}:{snapshot.observed_at_utc}"
     diagnostics = []
     for selection in request.loras:
         entry = by_id.get(selection.identifier)
+        if (entry is None or entry.kind != "lora") and selection.identifier in prepared:
+            # A server-validated prepared reference is availability evidence; architecture stays unknown, never matched.
+            diagnostics.append(
+                PreflightDiagnostic(
+                    selection.identifier, "unknown", "prepared", UNCONFIRMED, "architecture_unknown", source
+                )
+            )
+            continue
         if entry is None or entry.kind != "lora":
             diagnostics.append(
                 PreflightDiagnostic(selection.identifier, "unknown", "absent", UNCONFIRMED, "not_available", source)

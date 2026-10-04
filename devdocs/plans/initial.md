@@ -313,6 +313,8 @@ Connect the desktop UI to the generation services already exercised by the headl
 
 #### Phase 5A — Generation and configuration reuse
 
+The detailed, PR-sequenced plan is [Phase 5A desktop generation wiring](2026-10-04-phase-5a-desktop-generation.md); its first step extracts the CLI's orchestration into a Qt-independent session service.
+
 Expose the generation form, actual progress, outputs/errors, bounded LoRA selection/weights, compatibility diagnostics and cloud upload/known-receipt reuse through existing shared services. Save/load credential-free generation configurations through the versioned shared contract from Phase 3A; the full preset browser remains Phase 8.
 
 #### Phase 5B — Desktop queue controls

@@ -1,6 +1,6 @@
 # Plan: Phase 3B cloud asset completion
 
-**Status:** Ready for implementation after PR #17  
+**Status:** PR A–C scope implemented together in one branch and offline-validated (see [phase-3-cli.md](phase-3-cli.md#phase-3b-cloud-half-implemented-scope-and-limits)); live `3-LG4` pending. Originally: ready for implementation after PR #17  
 **Milestone:** Complete Phase 3B and unlock Phase 5A desktop generation wiring  
 **Authoritative acceptance:** `3B-O6` through `3B-O9` and separately authorized `3-LG4`  
 **Related plans:** [Phase 3 CLI](phase-3-cli.md), [LoRA assets](lora-assets.md), [release roadmap](releases.md), [initial roadmap](initial.md)
@@ -251,7 +251,7 @@ Keep the phase reviewable rather than combining protocol, persistence, CLI, queu
    `assets` commands, prepared-reference request binding, pre-dispatch validation, and `3B-O9` composition evidence.
 4. **Gate — Final Phase 3B validation**  
    Full offline checks, optional separately authorized `3-LG4`, documentation/evidence closure, and explicit decision on whether custom cloud LoRA can be advertised.
-5. **Next phase — Phase 5A**  
+5. **Next phase — Phase 5A** (planned in [2026-10-04-phase-5a-desktop-generation.md](2026-10-04-phase-5a-desktop-generation.md))  
    Wire generation/configuration/LoRA presentation to the shared services, followed by Phase 5B queue presentation.
 
 Each PR starts from current `main`, opens as draft after its first coherent commit, updates this plan with decisions, and is squash-merged only after its owned checks and review evidence are complete.
