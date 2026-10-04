@@ -1,30 +1,51 @@
-"""Draw Things gRPC backend: connection, inventory and lifecycle (generation is added in the next change)."""
+"""Draw Things gRPC backend: connection, inventory, one-lane generation and lifecycle."""
 
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
+import betterproto
 from drawthings_py.generated.dt_grpc import image_service
 from grpclib.client import Channel
 from grpclib.config import Configuration
+from grpclib.const import Cardinality
 
-from dtflow.backends.drawthings.errors import diagnostics, error, from_exception
+from dtflow.backends.drawthings.codec import (
+    TensorRejected,
+    check_final,
+    decode_final,
+    decode_preview_artifact,
+)
+from dtflow.backends.drawthings.errors import diagnostics, error, failure, from_exception
 from dtflow.backends.drawthings.inventory import build_snapshot, eligible_model_ids
 from dtflow.backends.drawthings.tls import TlsPolicy
-from dtflow.backends.drawthings.wire import CLIENT_NAME
+from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
 from dtflow.core.models import (
     BackendError,
+    BackendEvent,
     Capabilities,
+    CompletionEvidence,
     ConnectionStatus,
     CredentialProvider,
+    Designation,
     ErrorCategory,
+    EventSink,
+    GenerationResult,
+    ImageArtifact,
     InventorySnapshot,
+    RemoteOutcome,
+    ResolvedGenerationRequest,
     ResourceLimits,
+    SubmissionStage,
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.core.tasks import settle
+
+GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 BACKEND_ID = "drawthings-grpc"
 
@@ -70,6 +91,7 @@ class DrawThingsBackend:
         self._closing = False
         self._closed = False
         self._active = 0
+        self._lane = asyncio.Lock()  # exactly one active generation per server
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
 
@@ -158,6 +180,147 @@ class DrawThingsBackend:
         )
         self._stale_reason = None
         return self._inventory
+
+    async def generate(self, request: ResolvedGenerationRequest, *, on_event: EventSink) -> GenerationResult:
+        """Run one text-to-image generation; the total deadline covers lane wait, connect, stream and decode.
+
+        ``submission_possible`` is emitted immediately before the request is sent. Decoded partial finals on a failure
+        are attached to the failure in memory only; the durable store does not persist their bytes.
+        """
+        if self._closing or self._closed:
+            raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.", request.request_id)
+        started = time.monotonic()
+        stage = SubmissionStage.NOT_SUBMITTED
+        sequence = 0
+        finals: list[ImageArtifact] = []
+        stream = None
+
+        def remaining() -> float:
+            return max(0.0, self.timeouts.total - (time.monotonic() - started))
+
+        def emit(kind: str, **payload) -> None:
+            nonlocal sequence
+            sequence += 1
+            try:
+                on_event(BackendEvent(request.request_id, sequence, kind, now(), **payload))
+            except Exception as exc:
+                raise BackendError(
+                    self._failure(request, ErrorCategory.PROTOCOL, "event_sink_failure", "Event sink failed.", stage)
+                ) from exc
+
+        if request.model_id not in self.capabilities.model_ids:
+            raise error(
+                ErrorCategory.VALIDATION,
+                "unknown_model",
+                "Model is not in the server inventory; refresh the inventory first.",
+                request.request_id,
+            )
+        wire = build_generation_message(request, await self._secret())
+        limits = self.limits
+        expected = request.batch_size * request.batch_count
+        self._active += 1
+        try:
+            emit("preparing", stage="wire_validated")
+            async with asyncio.timeout(remaining()):
+                async with self._lane:
+                    await self._connect()
+                    stage = SubmissionStage.POSSIBLY_SUBMITTED
+                    emit("submission_possible", stage="grpc_request")
+                    channel = self._require_channel()
+                    received = 0
+                    async with channel.request(
+                        GENERATE_METHOD,
+                        Cardinality.UNARY_STREAM,
+                        image_service.ImageGenerationRequest,
+                        image_service.ImageGenerationResponse,
+                        timeout=remaining(),
+                    ) as stream:
+                        await stream.send_message(wire.message, end=True)
+                        previews = 0
+                        async for response in stream:
+                            if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
+                                raise self._reject(request, "chunked_output_unsupported", stage, finals)
+                            for signpost in (response.current_signpost,) if response.current_signpost else ():
+                                self._signpost(signpost, request, emit)
+                            if response.preview_image:
+                                previews += 1
+                                preview = await settle(
+                                    asyncio.to_thread(decode_preview_artifact, response.preview_image, previews, limits)
+                                )
+                                if preview is not None:
+                                    emit("preview", artifact=preview)
+                            for data in response.generated_images:
+                                if len(finals) >= min(expected, limits.final_count):
+                                    raise self._reject(request, "unexpected_final_output", stage, finals)
+                                received += len(data)
+                                try:
+                                    width, height, channels = check_final(data, request, limits)
+                                    if received > limits.transport_bytes:
+                                        raise TensorRejected("tensor_transport_limit")
+                                    artifact = await settle(
+                                        asyncio.to_thread(
+                                            decode_final, data, width, height, channels, len(finals) + 1, limits
+                                        )
+                                    )
+                                except TensorRejected as exc:
+                                    raise self._reject(request, exc.code, stage, finals) from exc
+                                finals.append(artifact)
+                                emit("artifact_received", artifact=artifact)
+                    stage = SubmissionStage.TERMINAL_OBSERVED
+                    if len(finals) != expected:
+                        code = "no_final_output" if not finals else "incomplete_final_output"
+                        raise self._reject(request, code, stage, finals, terminal="OK")
+                    emit("terminal", stage="OK")
+        except BackendError:
+            raise
+        except Exception as exc:
+            trailers = stream is not None and getattr(stream, "trailing_metadata", None) is not None
+            problem = from_exception(
+                exc, phase="generation", request_id=request.request_id, stage=stage, trailers=trailers
+            )
+            raise BackendError(replace(problem, partial_artifacts=self._partials(finals))) from exc
+        finally:
+            self._active -= 1
+        server = self._inventory.server_identity if self._inventory is not None else "unknown"
+        return GenerationResult(
+            request.request_id,
+            BACKEND_ID,
+            server,
+            tuple(finals),
+            wire.effective_configuration,
+            CompletionEvidence("OK", True),
+        )
+
+    @staticmethod
+    def _partials(finals: list[ImageArtifact]) -> tuple[ImageArtifact, ...]:
+        return tuple(replace(x, designation=Designation.PARTIAL) for x in finals)
+
+    def _failure(self, request, category, code, message, stage, **extra):
+        outcome = RemoteOutcome.NOT_STARTED if stage == SubmissionStage.NOT_SUBMITTED else RemoteOutcome.UNKNOWN
+        return failure(category, code, message, request.request_id, stage, outcome, **extra)
+
+    def _reject(self, request, code, stage, finals, terminal: str | None = None) -> BackendError:
+        """A protocol-level rejection of received data: never success, and the remote outcome stays unknown."""
+        return BackendError(
+            self._failure(
+                request,
+                ErrorCategory.PROTOCOL,
+                code,
+                "Received output was rejected.",
+                stage,
+                terminal_status=terminal,
+                partial_artifacts=self._partials(finals),
+                diagnostics=diagnostics(phase="generation", reason=code),
+            )
+        )
+
+    @staticmethod
+    def _signpost(signpost, request: ResolvedGenerationRequest, emit) -> None:
+        name, value = betterproto.which_one_of(signpost, "signpost")
+        if name == "sampling":
+            emit("progress", stage="sampling", completed=int(value.step), total=request.steps)
+        elif name:
+            emit("progress", stage=name)
 
     async def aclose(self) -> None:
         """Stop admission, refuse to close under an active generation, then close the channel."""
