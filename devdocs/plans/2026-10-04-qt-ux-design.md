@@ -81,6 +81,7 @@ Selectors use stable semantic object names and dynamic properties such as `role`
 - 2026-10-04: keep `previewHost` as a future custom preview promotion point and `queueItemsView` as a model/view seam; neither form imports backend types.
 - 2026-10-04: first Windows screenshot review found an expanding header/badge and misleading red styling on disabled destructive controls; constrain the header to 78 px and make disabled styling override semantic action colors.
 - 2026-10-04: second Windows screenshot confirmed the corrected proportions and disabled states; make ordinary labels explicitly transparent to remove dark rectangular patches in form rows.
+- 2026-10-04: follow Splitvids' proven Windows title-bar path: call DWM immersive-dark attribute 20 with the Windows 10 1809 value 19 as fallback, before and immediately after showing the native window.
 
 ## Open questions
 

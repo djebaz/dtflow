@@ -13,6 +13,7 @@ from dtflow.paths import application_state_dir
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.theme import apply_native_dark_titlebar
 
 UI_FILE = Path(__file__).with_name("forms") / "main_window.ui"
 
@@ -52,7 +53,9 @@ class MainWindow:
         self.refresh_credentials()
 
     def show(self) -> None:
+        apply_native_dark_titlebar(self.form)
         self.form.show()
+        apply_native_dark_titlebar(self.form)
 
     def _backend_changed(self, name: str) -> None:
         self.form.endpointEdit.setEnabled(name == "local")
