@@ -1,0 +1,188 @@
+"""Generate page wiring against the fake backend: responsiveness, previews, uncertainty, interruption, configuration.
+
+Resolver and error-to-field rules are owned by the presenter tests; session lifetime by the session tests. These cover
+only the Qt composition: what the page shows for controlled service events and outcomes.
+"""
+
+import asyncio
+import json
+import os
+
+import pytest
+
+pytest.importorskip("pytestqt")
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from support.fake_vault import Vault  # noqa: E402
+
+from dtflow.backends.fake import FakeBackend  # noqa: E402
+from dtflow.core.models import BackendEvent, Designation, ImageArtifact  # noqa: E402
+from dtflow.core.png import fixture_png  # noqa: E402
+from dtflow.persistence.store import SQLiteAttempts  # noqa: E402
+from dtflow.services import session  # noqa: E402
+from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.ui.main_window import MainWindow  # noqa: E402
+from dtflow.ui.runner import EventRelay  # noqa: E402
+
+
+@pytest.fixture
+def window(qtbot, tmp_path):
+    shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=tmp_path / "state")
+    qtbot.addWidget(shell.form)
+    shell.form.backendCombo.setCurrentText("fake")
+    shell.generation_page.promptEdit.setPlainText("a cat")
+    yield shell
+    shell.runner.shutdown()
+
+
+@pytest.fixture
+def fake(monkeypatch):
+    """Route session backend creation to a controlled fake; returns the gate that holds the generation open."""
+    gate = asyncio.Event()
+
+    def use(**options):
+        monkeypatch.setattr(session, "create_backend", lambda selection, **_: FakeBackend(**options))
+        return gate
+
+    return use, gate
+
+
+def settled(page):
+    return lambda: page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
+
+
+def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(window, qtbot, fake):
+    use, gate = fake
+    use(gate=gate)
+    page = window.generation_page
+    page.generateButton.click()
+    assert not page.generateButton.isEnabled() and page.cancelButton.isEnabled()
+    qtbot.wait(50)  # the GUI thread keeps processing events while the generation is held open
+    assert not page.generateButton.isEnabled()
+    window.runner._loop.call_soon_threadsafe(gate.set)
+    qtbot.waitUntil(settled(page), timeout=5000)
+    assert page.generationStatusLabel.text().startswith("Saved")
+    assert page.resultList.count() == 2  # one output plus its metadata
+    assert page.resultPreviewLabel.property("designation") == "final"
+    assert "field.prompt: override" in page.effectiveRequestBrowser.toPlainText()
+    # The state lock is released between operations, so another owner can open the directory now.
+    other, opened = SQLiteAttempts(window.state_dir), []
+    window.runner.submit(other.open(), lambda result, failure: opened.append(failure))
+    qtbot.waitUntil(lambda: bool(opened), timeout=3000)
+    assert opened == [None]
+    window.runner.submit(other.aclose(), lambda *_: None)
+
+
+def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
+    use, gate = fake
+    use(gate=gate)
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(lambda: page.generationProgressBar.format() == "fake", timeout=5000)  # held at the gate
+    png = fixture_png(64, 64, 1)
+    preview = ImageArtifact("p", Designation.PREVIEW, "image/png", png, 64, 64)
+    window.generation._relay(BackendEvent("r", 99, "preview", "t", artifact=preview))
+    qtbot.waitUntil(lambda: page.resultPreviewLabel.property("designation") == "preview", timeout=3000)
+    assert page.resultList.count() == 0
+    assert "not the final image" in page.generationProgressBar.format()
+    window.runner._loop.call_soon_threadsafe(gate.set)
+    qtbot.waitUntil(settled(page), timeout=5000)
+
+
+def test_unknown_outcome_is_not_presented_as_a_plain_failure(window, qtbot, fake):
+    use, _ = fake
+    use(scenario="lost")
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    text = page.generationStatusLabel.text()
+    assert text.startswith("Outcome unknown") and "not replayed" in text
+    assert page.resultList.count() == 0
+
+
+def test_local_stop_reports_recorded_evidence_not_remote_cancellation(window, qtbot, fake):
+    use, gate = fake
+    use(gate=gate)
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(lambda: page.generationProgressBar.format() == "fake", timeout=5000)  # submission possible
+    page.cancelButton.click()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    text = page.generationStatusLabel.text()
+    assert text.startswith("Local stop requested") and "Outcome unknown" in text
+    assert "cancelled on" not in text.lower() and "Remote cancellation is not confirmed" in text
+
+
+def test_invalid_field_is_marked_and_nothing_is_submitted(window, qtbot):
+    page = window.generation_page
+    page.widthSpinBox.setValue(100)
+    page.generateButton.click()
+    assert page.generationStatusLabel.text().startswith("Invalid request")
+    assert page.widthSpinBox.property("invalid") is True
+    assert page.generateButton.isEnabled()
+    assert not (window.state_dir / "attempts.sqlite3").exists()  # no attempt, no state opened
+
+
+def test_state_busy_is_reported_without_dispatch(window, qtbot):
+    owner = SQLiteAttempts(window.state_dir)
+    window.runner.submit(owner.open(), lambda *_: None)
+    qtbot.wait(200)
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    assert page.generationStatusLabel.text().startswith("State is busy")
+    window.runner.submit(owner.aclose(), lambda *_: None)
+    qtbot.wait(100)
+
+
+def test_inventory_refresh_populates_models_with_observation_time(window, qtbot):
+    page = window.generation_page
+    page.refreshInventoryButton.click()
+    qtbot.waitUntil(lambda: page.refreshInventoryButton.isEnabled(), timeout=5000)
+    assert page.modelCombo.findText("fake-fixture") >= 0
+    assert "observed" in page.inventoryEvidenceLabel.text()
+
+
+def test_configuration_save_and_load_round_trip_and_loras_are_not_bound(window, qtbot, tmp_path):
+    page, controller = window.generation_page, window.generation
+    target = tmp_path / "saved.json"
+    controller._choose_save = lambda parent, directory: str(target)
+    page.seedEdit.setText("42")
+    page.saveConfigurationButton.click()
+    qtbot.waitUntil(target.exists, timeout=3000)
+    document = json.loads(target.read_text(encoding="utf-8"))
+    assert document["generation"]["seed"] == 42 and document["generation"]["prompt"] == "a cat"
+    document["generation"]["loras"] = [{"identifier": "style", "weight": 0.8}]
+    document["generation"]["seed"] = 9
+    target.write_text(json.dumps(document), encoding="utf-8")
+    page.seedEdit.setText("1")
+    controller._choose_open = lambda parent, directory: str(target)
+    page.loadConfigurationButton.click()
+    qtbot.waitUntil(lambda: page.seedEdit.text() == "9", timeout=3000)
+    assert page.generationStatusLabel.text().startswith("Configuration loaded")
+    assert "no cloud receipt is bound" in page.generationStatusLabel.text()
+    assert page.loraList.count() == 1
+    assert "config_file: saved.json" in page.effectiveRequestBrowser.toPlainText()
+
+
+def test_unsupported_configuration_is_reported_not_applied(window, qtbot, tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"schema": "dtflow.generation-config", "version": 99, "generation": {}}))
+    window.generation._choose_open = lambda parent, directory: str(bad)
+    window.generation_page.seedEdit.setText("5")
+    window.generation_page.loadConfigurationButton.click()
+    qtbot.waitUntil(lambda: window.generation_page.generationStatusLabel.text().startswith("Configuration not loaded"))
+    assert window.generation_page.seedEdit.text() == "5"
+
+
+def test_relay_coalesces_transient_events_and_keeps_critical_ones(qtbot):
+    seen = []
+    relay = EventRelay(seen.append)
+    for sequence in range(1, 501):
+        relay(BackendEvent("r", sequence, "progress", "t", completed=sequence, total=500))
+    relay(BackendEvent("r", 501, "submission_possible", "t"))
+    relay(BackendEvent("r", 502, "terminal", "t"))
+    qtbot.waitUntil(lambda: len(seen) >= 3, timeout=3000)
+    qtbot.wait(50)
+    assert [e.kind for e in seen] == ["progress", "submission_possible", "terminal"]
+    assert seen[0].completed == 500  # only the latest progress survives coalescing

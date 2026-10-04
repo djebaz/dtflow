@@ -25,6 +25,10 @@ class PersistenceError(RuntimeError):
     """A sanitized state failure; never grounds for remote resubmission."""
 
 
+class StateBusyError(PersistenceError):
+    """Another process holds the state directory's ownership lock; nothing was read, written or dispatched."""
+
+
 def patched_sqlite(version: str) -> bool:
     parts = tuple(int(x) for x in version.split(".")[:3])
     return parts >= (3, 51, 3) or (3, 50, 7) <= parts < (3, 51, 0) or (3, 44, 6) <= parts < (3, 45, 0)
@@ -78,7 +82,7 @@ class SQLiteAttempts(QueueMixin):
         except OSError as exc:
             self._lock.close()
             self._lock = None
-            raise PersistenceError("Another process owns this execution state directory.") from exc
+            raise StateBusyError("Another process owns this execution state directory.") from exc
         try:
             connection = sqlite3.connect(self.directory / "attempts.sqlite3", timeout=2.0)
             self._connection = connection

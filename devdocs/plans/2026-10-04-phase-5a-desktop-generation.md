@@ -1,6 +1,6 @@
 # Plan: Phase 5A desktop generation wiring
 
-**Status:** Planned; follows the merged Phase 3B cloud asset service (PR #18)
+**Status:** PR 1 and PR 2 implemented together in one draft pull request at the owner's request; the gate remains planned. Follows the merged Phase 3B cloud asset service (PR #18)
 **Milestone:** First usable Qt generation path (part of release 0.3.0 with Phase 5B)
 **Authoritative acceptance:** `5A-O1` to `5A-O6` from [the initial plan](initial.md#phase-5-testing-ownership); `5-LG1`/`5-LG2` stay separately authorized
 **Related plans:** [Qt UX design](2026-10-04-qt-ux-design.md), [workspace navigation](2026-10-04-qt-workspace-navigation.md), [Phase 3B cloud assets](2026-10-04-phase-3b-cloud-assets.md), [Phase 3 CLI](phase-3-cli.md), [release roadmap](releases.md)
@@ -96,12 +96,28 @@ Owned checks: `5A-O1`, `5A-O2`, `5A-O4`, `5A-O6` with a controlled fake session 
 - Separately authorized `5-LG1` (local) and `5-LG2` (DT+) workflows, only when the owner explicitly authorizes inference; never run by agents.
 - `3-LG4` (custom LoRA upload, reuse and use) must be recorded before the desktop advertises custom cloud LoRA support; it is not needed to start non-billable Qt composition.
 
-## Decisions to take in PR 1
+## Decisions taken in PR 1
 
-- Session service lifetime and state-lock scope (per operation versus per window).
-- The session service only exposes coroutines; the existing `AsyncRunner` stays in `ui/` (no new runner).
-- Event delivery: progress events cross from the background loop to the GUI thread through the runner's queued signal, coalesced so previews cannot flood the GUI.
-- Error-to-field table location (presenter, not widgets).
+- **Session lifetime and lock scope:** per operation. `services/session.py` exposes `open_session` (async context manager that builds the backend before touching state, opens it under the connect deadline, and closes backend then store in order), `run_generation`, `generate_once`, `refresh_inventory`, `read_attempt` and `bind_prepared`. Generation holds the ownership lock only while it runs; inventory refresh uses `durable=False` and takes no lock. A second owner raises `StateBusyError` (a `PersistenceError` subclass, so CLI exit codes are unchanged) and the page shows "State is busy".
+- **Runner:** no new runner. `AsyncRunner` now also reports a cancel requested through the returned future to its callback (not at shutdown). `EventRelay` coalesces progress and previews to the latest of each kind between GUI deliveries and delivers every other event, in sequence order.
+- **Cancel:** the button cancels the future; wording then comes from `read_attempt` evidence (`present_interruption`), never from the click.
+- **Error-to-field table:** `ui/generation_presenter.py` (`ERROR_FIELDS`, by the leading word of the resolver's message); unlisted messages become a general banner. The presenter is Qt-free; `ui/generation_page.py` is the widget controller.
+- **Configuration UX (ambiguity, default chosen):** Save and Load use file dialogs defaulting to `<state>/configs`; `configurationCombo` lists `*.json` found there and selecting an entry loads it. A loaded LoRA is displayed read-only and kept in the page state so it round-trips through save and generation; no receipt is bound.
+- **Small Designer additions:** `refreshInventoryButton`, `cancelButton` (labelled "Stop waiting"), `generationStatusLabel`, `resultList`, and an editable `modelCombo`; the preview notice now says only LoRA and cloud asset controls are preview-only.
+- **Form defaults:** the form's visible defaults (512x512, 20 steps, guidance 7) are passed as explicit overrides and shown as such in the evidence panel; the empty prompt is rejected by the shared resolver.
+
+## Decisions taken in PR 2 (same pull request)
+
+- **Layout:** `ui/lora_panel.py` owns LoRA selection and the asset list; `ui/generation_page.py` keeps request, progress and configuration. The preview badge is removed because every Generate control is now wired.
+- **Adding a LoRA:** a dialog with an editable list (inventory LoRAs after a refresh plus identifiers of known local receipts) and an explicit weight (the inventory default weight when known, else 1.0, only as the dialog's starting value). Dialog bounds are UI-only; the shared request model requires a finite weight.
+- **Diagnostics:** an explicit Check button calls `session.check_loras` (fresh inventory, no state lock) and `present_preflight` renders the shared diagnostics; a blank prompt gets a placeholder for the check only because nothing is dispatched. Generation also returns its diagnostics, and a blocked request shows the service's `(identifier: code)` pairs.
+- **Trigger prefixes:** an unchecked-by-default checkbox maps to the shared `prefix` option.
+- **Assets:** `session.open_assets/prepare_asset/reconcile_asset/list_assets` are shared with the CLI; actions are enabled only when the Connection page selects cloud; Use for LoRA binds by identifier (the LoRA must already be selected, the receipt confirmed) and the binding lives only in the page; `generate_once(asset_ids=...)` re-reads the confirmed receipt through `bind_prepared` and the server re-validates it at dispatch. The confirmation text states that upload may happen and that upload itself does not consume credits while a later generation may; no pricing is claimed.
+- **Contention:** `AssetsBusyError` (a `PersistenceError` subclass, same message) is shown as "Assets busy".
+
+## Decisions still open
+
+- None for Phase 5A code; the gate items below remain.
 
 ## Risks and mitigations
 

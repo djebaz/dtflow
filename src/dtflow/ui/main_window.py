@@ -22,6 +22,7 @@ from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
+from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
 
@@ -64,7 +65,14 @@ def load_form() -> QMainWindow:
 class MainWindow:
     """Owns the Designer form and an AsyncRunner; ``saved`` is injectable for tests."""
 
-    def __init__(self, *, saved: SavedCredentials | None = None, runner: AsyncRunner | None = None, environ=None):
+    def __init__(
+        self,
+        *,
+        saved: SavedCredentials | None = None,
+        runner: AsyncRunner | None = None,
+        environ=None,
+        state_dir: Path | None = None,
+    ):
         self.form = load_form()
         self.generation_page = load_ui(GENERATION_UI_FILE)
         self.queue_page = load_ui(QUEUE_UI_FILE)
@@ -76,10 +84,18 @@ class MainWindow:
         self._saved = saved or SavedCredentials()
         self._environ = environ
         self.runner = runner or AsyncRunner(self.form)
+        self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
         form = self.form
+        self.generation = GenerationPage(
+            self.generation_page,
+            runner=self.runner,
+            backend_source=lambda: (form.backendCombo.currentText(), form.endpointEdit.text() or None),
+            saved_source=lambda: self._saved if self._saved.available() else None,
+            state_dir=self.state_dir,
+        )
         form.backendCombo.addItems(BACKENDS)
-        form.statusBar().showMessage(display_identity() + f" | state: {application_state_dir()}")
+        form.statusBar().showMessage(display_identity() + f" | state: {self.state_dir}")
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
@@ -88,11 +104,11 @@ class MainWindow:
         form.connectionNavigationButton.clicked.connect(
             lambda: form.workspaceStack.setCurrentWidget(form.connectionPage)
         )
-        form.generationNavigationButton.clicked.connect(
-            lambda: form.workspaceStack.setCurrentWidget(self.generation_page)
-        )
+        form.generationNavigationButton.clicked.connect(self._show_generation)
+        form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.queue_page))
         self._backend_changed(form.backendCombo.currentText())
+        self.generation.sync_backend()
         self.refresh_credentials()
 
     @staticmethod
@@ -100,6 +116,10 @@ class MainWindow:
         for control_type in PREVIEW_CONTROL_TYPES:
             for control in page.findChildren(control_type):
                 control.setEnabled(False)
+
+    def _show_generation(self) -> None:
+        self.generation.sync_backend()
+        self.form.workspaceStack.setCurrentWidget(self.generation_page)
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
