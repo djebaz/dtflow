@@ -26,6 +26,12 @@ def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(description="DTFlow Phase 2A headless offline fixture application.")
     command.add_argument("-v", "--version", action="version", version=display_identity())
     commands = command.add_subparsers(dest="command", required=True)
+    testing = commands.add_parser("test", help="Run repository tests through pytest.")
+    testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
+    testing.add_argument("-live", "--live", action="store_true", help="Run non-generative live connectivity checks.")
+    testing.add_argument(
+        "-gen", "--generate", action="store_true", help="Run live generation smoke tests (may use credits)."
+    )
     for name in ("generate", "check", "models", "attempts"):
         child = commands.add_parser(name)
         child.add_argument(
@@ -143,6 +149,8 @@ async def run(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        if args.command == "test":
+            return run_tests(args)
         return asyncio.run(run(args))
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("Local waiting interrupted. Inspect durable attempts; do not replay unknown outcomes.", file=sys.stderr)
@@ -170,6 +178,43 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 5
+
+
+def run_tests(args: argparse.Namespace) -> int:
+    """Invoke the repository's pytest suite without creating an application loop or state."""
+    try:
+        import pytest
+    except ImportError:
+        print("Repository tests require development dependencies. Run uv sync.", file=sys.stderr)
+        return 2
+    root = Path(__file__).resolve().parents[2]
+    if not (root / "tests/conftest.py").is_file():
+        print("The test command requires a source checkout with its tests directory.", file=sys.stderr)
+        return 2
+    offline = args.all or not (args.live or args.generate)
+    groups = []
+    if offline:
+        groups.append("(not live and not live_generation)")
+    if args.live:
+        groups.append("(live and not live_generation)")
+    if args.generate:
+        groups.append("live_generation")
+    mode = (
+        "both" if args.live and args.generate else "generation" if args.generate else "live" if args.live else "offline"
+    )
+    return int(
+        pytest.main(
+            [
+                str(root / "tests"),
+                "-c",
+                str(root / "pyproject.toml"),
+                "-m",
+                " or ".join(groups),
+                "--dtflow-test-mode",
+                mode,
+            ]
+        )
+    )
 
 
 if __name__ == "__main__":

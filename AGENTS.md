@@ -90,6 +90,8 @@ These instructions apply throughout `dtflow`.
 - Separate unit tests from live integration tests.
 - Ordinary test execution must never submit a real Draw Things or cloud generation accidentally. Live generation tests must be explicit and separately gated.
 - Prefer extending an existing contract-focused test over accumulating one-off regression tests for every implementation change.
+- Test each behavior at one authoritative layer. Higher layers cover only new behavior or necessary composition of tested layers; reuse requires the same implementation path. Acceptance bullets do not require one test each.
+- Live checks may replace duplicated end-to-end fixture coverage, but retain deterministic tests for scheduling, persistence, uncertainty and controlled failure boundaries. Measure added runtime; test counts and test/source line ratios are not quality gates.
 - Report only checks actually run.
 
 ## Packaging

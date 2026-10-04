@@ -1,0 +1,381 @@
+"""Draw Things gRPC backend: connection, inventory, one-lane generation and lifecycle."""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+
+import betterproto
+from drawthings_py.generated.dt_grpc import image_service
+from grpclib.client import Channel
+from grpclib.config import Configuration
+from grpclib.const import Cardinality
+
+from dtflow.backends.drawthings.codec import (
+    TensorRejected,
+    check_final,
+    decode_final,
+    decode_preview_artifact,
+)
+from dtflow.backends.drawthings.errors import diagnostics, error, failure, from_exception
+from dtflow.backends.drawthings.inventory import build_snapshot, eligible_model_ids
+from dtflow.backends.drawthings.tls import TlsPolicy
+from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
+from dtflow.core.models import (
+    BackendError,
+    BackendEvent,
+    Capabilities,
+    CompletionEvidence,
+    ConnectionStatus,
+    CredentialProvider,
+    Designation,
+    ErrorCategory,
+    EventSink,
+    GenerationResult,
+    ImageArtifact,
+    InventorySnapshot,
+    RemoteOutcome,
+    ResolvedGenerationRequest,
+    ResourceLimits,
+    SubmissionStage,
+    TimeoutPolicy,
+    ValidationError,
+)
+from dtflow.core.tasks import settle
+
+GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
+
+BACKEND_ID = "drawthings-grpc"
+
+
+def now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+@dataclass(frozen=True, slots=True)
+class DrawThingsEndpoint:
+    host: str
+    port: int
+    tls: TlsPolicy = field(default_factory=TlsPolicy.drawthings_local)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.host, str) or not self.host.strip():
+            raise ValidationError("Endpoint host is required.")
+        if type(self.port) is not int or not 1 <= self.port <= 65535:
+            raise ValidationError("Endpoint port must be in 1..65535.")
+
+    @property
+    def label(self) -> str:
+        """Credential-free endpoint identity."""
+        return f"grpcs://{self.host}:{self.port}"
+
+
+class DrawThingsBackend:
+    """One channel to one Draw Things server; strict TLS, no silent fallback of any kind."""
+
+    def __init__(
+        self,
+        endpoint: DrawThingsEndpoint,
+        *,
+        timeouts: TimeoutPolicy | None = None,
+        limits: ResourceLimits | None = None,
+        shared_secret: CredentialProvider | None = None,
+    ):
+        self.endpoint = endpoint
+        self.timeouts = timeouts or TimeoutPolicy()
+        self.limits = limits or ResourceLimits()
+        self._shared_secret = shared_secret
+        self._channel: Channel | None = None
+        self._closing = False
+        self._closed = False
+        self._active = 0
+        self._lane = asyncio.Lock()  # exactly one active generation per server
+        self._inventory: InventorySnapshot | None = None
+        self._stale_reason: str | None = None
+
+    # -- contract ------------------------------------------------------------------------------------------------
+
+    @property
+    def capabilities(self) -> Capabilities:
+        """Model identifiers come from the last inventory; before any inventory no model is accepted."""
+        model_ids = eligible_model_ids(self._inventory) if self._inventory is not None else ()
+        return Capabilities(
+            BACKEND_ID, model_ids=model_ids, max_concurrency=1, batch_size=1, batch_count=1, limits=self.limits
+        )
+
+    async def open(self) -> None:
+        """Create the channel; the connection itself is established lazily and bounded by the connect deadline."""
+        if self._closing or self._closed:
+            raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.")
+        if self._channel is None:
+            tls = self.endpoint.tls
+            config = Configuration(ssl_target_name_override=tls.server_name) if tls.server_name else None
+            self._channel = Channel(self.endpoint.host, self.endpoint.port, ssl=tls.build_context(), config=config)
+
+    async def check_connection(self) -> ConnectionStatus:
+        """Non-generative evidence; transport, authentication and inventory stay distinct."""
+        checked = now()
+        base = {"endpoint": self.endpoint.label}
+
+        def status(transport, authentication, inventory, **diag):
+            return ConnectionStatus(
+                BACKEND_ID,
+                self.endpoint.label,
+                checked,
+                transport,
+                authentication,
+                inventory,
+                diagnostics(**diag),
+            )
+
+        try:
+            await self._connect()
+        except BackendError as exc:
+            return status("failed", "unknown", "unknown", transport_code=exc.failure.code)
+        try:
+            reply, secret_sent = await self._echo()
+        except BackendError as exc:
+            if exc.failure.category == ErrorCategory.AUTHENTICATION:
+                return status("ok", "failed", "unknown", authentication_code=exc.failure.code)
+            return status("failed", "unknown", "unknown", transport_code=exc.failure.code)
+        if reply.shared_secret_missing:
+            return status(
+                "ok",
+                "failed",
+                "unknown",
+                shared_secret="rejected_or_missing" if secret_sent else "required_not_configured",
+            )
+        snapshot = build_snapshot(BACKEND_ID, reply, observed_at_utc=checked, refreshed=True, secret_sent=secret_sent)
+        return status("ok", "ok" if secret_sent else "not_applicable", "ok", entries=len(snapshot.entries), **base)
+
+    async def get_inventory(self, refresh: bool = False) -> InventorySnapshot:
+        """Return the cached snapshot or fetch a fresh one.
+
+        A failed refresh raises and leaves the previous snapshot flagged stale (never presented as fresh); a failed
+        authentication clears it, because the server no longer accepts our identity.
+        """
+        if self._inventory is not None and not refresh:
+            return self._with_staleness(self._inventory)
+        try:
+            await self._connect()
+            reply, secret_sent = await self._echo()
+        except BackendError as exc:
+            if exc.failure.category == ErrorCategory.AUTHENTICATION:
+                self._inventory = self._stale_reason = None
+            elif self._inventory is not None:
+                self._stale_reason = exc.failure.code
+            raise
+        if reply.shared_secret_missing:
+            self._inventory = self._stale_reason = None
+            raise error(
+                ErrorCategory.AUTHENTICATION,
+                "shared_secret_rejected_or_missing",
+                "Server requires a shared secret that was not accepted.",
+                diagnostics=diagnostics(shared_secret="sent" if secret_sent else "not_configured"),
+            )
+        self._inventory = build_snapshot(
+            BACKEND_ID, reply, observed_at_utc=now(), refreshed=True, secret_sent=secret_sent
+        )
+        self._stale_reason = None
+        return self._inventory
+
+    async def generate(self, request: ResolvedGenerationRequest, *, on_event: EventSink) -> GenerationResult:
+        """Run one text-to-image generation; the total deadline covers lane wait, connect, stream and decode.
+
+        ``submission_possible`` is emitted immediately before the request is sent. Decoded partial finals on a failure
+        are attached to the failure in memory only; the durable store does not persist their bytes.
+        """
+        if self._closing or self._closed:
+            raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.", request.request_id)
+        started = time.monotonic()
+        stage = SubmissionStage.NOT_SUBMITTED
+        sequence = 0
+        finals: list[ImageArtifact] = []
+        warnings: tuple[str, ...] = ()
+        stream = None
+
+        def remaining() -> float:
+            return max(0.0, self.timeouts.total - (time.monotonic() - started))
+
+        def emit(kind: str, **payload) -> None:
+            nonlocal sequence
+            sequence += 1
+            try:
+                on_event(BackendEvent(request.request_id, sequence, kind, now(), **payload))
+            except Exception as exc:
+                raise BackendError(
+                    self._failure(request, ErrorCategory.PROTOCOL, "event_sink_failure", "Event sink failed.", stage)
+                ) from exc
+
+        if request.model_id not in self.capabilities.model_ids:
+            raise error(
+                ErrorCategory.VALIDATION,
+                "unknown_model",
+                "Model is not in the server inventory; refresh the inventory first.",
+                request.request_id,
+            )
+        wire = build_generation_message(request, await self._secret())
+        limits = self.limits
+        expected = request.batch_size * request.batch_count
+        self._active += 1
+        try:
+            emit("preparing", stage="wire_validated")
+            async with asyncio.timeout(remaining()):
+                async with self._lane:
+                    await self._connect()
+                    stage = SubmissionStage.POSSIBLY_SUBMITTED
+                    emit("submission_possible", stage="grpc_request")
+                    channel = self._require_channel()
+                    received = 0
+                    async with channel.request(
+                        GENERATE_METHOD,
+                        Cardinality.UNARY_STREAM,
+                        image_service.ImageGenerationRequest,
+                        image_service.ImageGenerationResponse,
+                        timeout=remaining(),
+                    ) as stream:
+                        await stream.send_message(wire.message, end=True)
+                        previews = 0
+                        async for response in stream:
+                            if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
+                                raise self._reject(request, "chunked_output_unsupported", stage, finals)
+                            for signpost in (response.current_signpost,) if response.current_signpost else ():
+                                self._signpost(signpost, request, emit)
+                            if response.preview_image:
+                                previews += 1
+                                preview = await settle(
+                                    asyncio.to_thread(decode_preview_artifact, response.preview_image, previews, limits)
+                                )
+                                if preview is not None:
+                                    emit("preview", artifact=preview)
+                            for data in response.generated_images:
+                                if len(finals) >= min(expected, limits.final_count):
+                                    raise self._reject(request, "unexpected_final_output", stage, finals)
+                                received += len(data)
+                                try:
+                                    width, height, channels = check_final(data, request, limits)
+                                    if received > limits.transport_bytes:
+                                        raise TensorRejected("tensor_transport_limit")
+                                    artifact = await settle(
+                                        asyncio.to_thread(
+                                            decode_final, data, width, height, channels, len(finals) + 1, limits
+                                        )
+                                    )
+                                except TensorRejected as exc:
+                                    raise self._reject(request, exc.code, stage, finals) from exc
+                                finals.append(artifact)
+                                emit("artifact_received", artifact=artifact)
+                    stage = SubmissionStage.TERMINAL_OBSERVED
+                    if len(finals) != expected:
+                        code = "no_final_output" if not finals else "incomplete_final_output"
+                        raise self._reject(request, code, stage, finals, terminal="OK")
+                    try:
+                        emit("terminal", stage="OK")
+                    except BackendError:
+                        # Notification failure cannot erase terminal OK and validated final artifacts.
+                        warnings = ("Terminal event delivery failed after validated backend completion.",)
+        except BackendError:
+            raise
+        except Exception as exc:
+            trailers = stream is not None and getattr(stream, "trailing_metadata", None) is not None
+            problem = from_exception(
+                exc, phase="generation", request_id=request.request_id, stage=stage, trailers=trailers
+            )
+            raise BackendError(replace(problem, partial_artifacts=self._partials(finals))) from exc
+        finally:
+            self._active -= 1
+        server = self._inventory.server_identity if self._inventory is not None else "unknown"
+        return GenerationResult(
+            request.request_id,
+            BACKEND_ID,
+            server,
+            tuple(finals),
+            wire.effective_configuration,
+            CompletionEvidence("OK", True),
+            warnings,
+        )
+
+    @staticmethod
+    def _partials(finals: list[ImageArtifact]) -> tuple[ImageArtifact, ...]:
+        return tuple(replace(x, designation=Designation.PARTIAL) for x in finals)
+
+    def _failure(self, request, category, code, message, stage, **extra):
+        outcome = RemoteOutcome.NOT_STARTED if stage == SubmissionStage.NOT_SUBMITTED else RemoteOutcome.UNKNOWN
+        return failure(category, code, message, request.request_id, stage, outcome, **extra)
+
+    def _reject(self, request, code, stage, finals, terminal: str | None = None) -> BackendError:
+        """A protocol-level rejection of received data: never success, and the remote outcome stays unknown."""
+        return BackendError(
+            self._failure(
+                request,
+                ErrorCategory.PROTOCOL,
+                code,
+                "Received output was rejected.",
+                stage,
+                terminal_status=terminal,
+                partial_artifacts=self._partials(finals),
+                diagnostics=diagnostics(phase="generation", reason=code),
+            )
+        )
+
+    @staticmethod
+    def _signpost(signpost, request: ResolvedGenerationRequest, emit) -> None:
+        name, value = betterproto.which_one_of(signpost, "signpost")
+        if name == "sampling":
+            emit("progress", stage="sampling", completed=int(value.step), total=request.steps)
+        elif name:
+            emit("progress", stage=name)
+
+    async def aclose(self) -> None:
+        """Stop admission, refuse to close under an active generation, then close the channel."""
+        self._closing = True
+        if self._active:
+            raise RuntimeError("Cancel and await owned generations before closing the backend.")
+        if self._channel is not None:
+            channel, self._channel = self._channel, None
+            channel.close()
+        self._closed = True
+
+    # -- internals -----------------------------------------------------------------------------------------------
+
+    def _with_staleness(self, snapshot: InventorySnapshot) -> InventorySnapshot:
+        refreshed = replace(snapshot, refreshed=False)
+        if self._stale_reason is None:
+            return refreshed
+        return replace(
+            refreshed, diagnostics=(*refreshed.diagnostics, ("stale", "true"), ("stale_reason", self._stale_reason))
+        )
+
+    def _require_channel(self) -> Channel:
+        if self._closing or self._closed or self._channel is None:
+            raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed or not open.")
+        return self._channel
+
+    async def _secret(self) -> str | None:
+        if self._shared_secret is None:
+            return None
+        credential = await self._shared_secret.get()
+        return credential.secret if credential is not None else None
+
+    async def _connect(self) -> None:
+        """Establish transport (including TLS) so failures here are provably before any request bytes."""
+        channel = self._require_channel()
+        try:
+            async with asyncio.timeout(self.timeouts.connect):
+                await channel.__connect__()
+        except Exception as exc:
+            raise BackendError(from_exception(exc, phase="connect")) from exc
+
+    async def _echo(self):
+        secret = await self._secret()
+        request = image_service.EchoRequest(name=CLIENT_NAME)
+        if secret:
+            request.shared_secret = secret
+        stub = image_service.ImageGenerationServiceStub(self._require_channel())
+        try:
+            reply = await stub.echo(request, timeout=self.timeouts.inventory)
+        except Exception as exc:
+            raise BackendError(from_exception(exc, phase="inventory")) from exc
+        return reply, bool(secret)

@@ -51,7 +51,7 @@ def test_timeout_policy_refuses_unbounded_values(value):
         TimeoutPolicy(total=value)
 
 
-def forbidden_imports(source: str, package: str) -> tuple[str, ...]:
+def forbidden_imports(source: str, package: str, *, backends: bool = True) -> tuple[str, ...]:
     """Resolve absolute, relative and function-local imports through AST traversal."""
     bad = []
     banned = ("PySide6", "PyQt", "drawthings_py", "grpclib", "numpy", "PIL", "betterproto", "flatbuffers")
@@ -69,7 +69,7 @@ def forbidden_imports(source: str, package: str) -> tuple[str, ...]:
         else:
             continue
         for module in modules:
-            if module.startswith(banned) or module.startswith("dtflow.backends"):
+            if module.startswith(banned) or (backends and module.startswith("dtflow.backends")):
                 bad.append(module)
     return tuple(bad)
 
@@ -80,6 +80,16 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
             assert not forbidden_imports(path.read_text(), f"dtflow.{directory}"), path
     importlib.import_module("dtflow.core.models")
     importlib.import_module("dtflow.services.generation")
+
+
+def test_only_the_draw_things_integration_imports_provider_libraries():
+    root = ROOT / "src/dtflow"
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root)
+        if relative.parts[:2] == ("backends", "drawthings"):
+            continue
+        package = ".".join(("dtflow", *relative.parts[:-1]))
+        assert not forbidden_imports(path.read_text(), package, backends=False), path
 
 
 def test_boundary_check_covers_relative_and_local_imports():
