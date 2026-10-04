@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Phase 2B narrow local Draw Things gRPC adapter (`dtflow.backends.drawthings`): strict TLS with optional explicit CA/server name, txt2img with seed-zero and wire-configuration fidelity, inventory with provenance, one-lane generation with shared deadline, received-tensor checks, honest failure evidence, and a scripted TLS/gRPC fixture server with test-only certificates. Adds the direct `grpclib` dependency. Verified offline only; real-server TLS, compatibility and cancellation remain unverified, and the CLI does not expose it yet.
+
 - Phase 2A async backend-neutral contracts and deterministic fake backend with lifecycle, connectivity, inventory,
   typed failures and explicit fixture provenance; environment/fake-saved credential providers preserve precedence.
 - Minimal `dtflow` CLI for explicit fake generation, connectivity, inventory and attempt inspection through shared

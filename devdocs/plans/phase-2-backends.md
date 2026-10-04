@@ -1,6 +1,6 @@
 # Phase 2 — Backend contract and initial adapters
 
-**Status:** Phase 2A core/fake and durable headless foundation implemented with offline acceptance tests; 2B/2C and parallel 2D remain pending.  
+**Status:** Phase 2A core/fake and durable headless foundation implemented with offline acceptance tests; 2B is implemented as a narrow adapter verified against strict-TLS fixtures only (see [integration notes](../architecture/drawthings-integration.md)); 2C remains pending and 2D evidence is recorded separately.  
 **Baseline:** main commit `595abf9161a1d9672b055a66cb3e4c659617675f`.  
 **References:** [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md), [initial roadmap](initial.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [recorded gRPC proof](../research/drawthings-grpc-proof.md).
 

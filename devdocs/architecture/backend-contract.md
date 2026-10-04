@@ -1,6 +1,6 @@
 # Backend contract and async execution
 
-**Status:** Core contracts, fake backend and the minimal durable service/CLI slice are implemented in Phase 2A. Real-adapter transport, TLS and cloud behavior below remain specified for 2B/2C; fake evidence does not verify them.  
+**Status:** Core contracts, fake backend and the minimal durable service/CLI slice are implemented in Phase 2A. The Phase 2B local gRPC adapter is implemented against scripted fixtures ([integration notes](drawthings-integration.md)); cloud behavior below remains specified for 2C, and fake evidence does not verify real transport.  
 **Scope:** Phase 2A core/fake, 2B local gRPC and 2C direct DT+; [Phase 2 plan](../plans/phase-2-backends.md), [cloud protocol](cloud-protocol.md), [LoRA scope](../plans/lora-assets.md).  
 **Decision basis:** drawthings-py 0.4.0 is async-native; preserve one service path for CLI and Qt.
 
@@ -28,7 +28,7 @@ In Phase 2A, add a small pytest import-boundary check using standard-library AST
 
 Installed drawthings-py 0.4.0 GrpcService.connect uses a module-level SSLContext loaded with its bundled CA; that context disables hostname checking and is not a constructor-injected trust path. Do not use or patch that process-global context for DTFlow production or fixture connections.
 
-The replaceable integration owns channel creation with an explicit per-instance SSLContext, using a narrow version-pinned connection override where the dependency requires it. Production contexts validate certificates and hostnames; explicitly configured local-server trust is separate from test trust. Fixtures inject their own CA/context and endpoint into the same channel-construction path. Preserve h2 negotiation, discovery and bounded cleanup; no provider/channel types cross into services. Phase 2B must verify this path with trusted, untrusted and hostname-mismatch fixtures before enabling the adapter. Phase 2C uses the same channel-ownership rule for direct cloud.
+The replaceable integration owns channel creation with an explicit per-instance SSLContext, using a narrow version-pinned connection override where the dependency requires it. Contexts always validate certificates and hostnames, with an optional explicit CA file and verified server name; the production Draw Things trust policy stays pending real-server evidence and there is no automatic fallback. Fixtures inject their own CA/context and endpoint into the same channel-construction path. Preserve h2 negotiation, discovery and bounded cleanup; no provider/channel types cross into services. Phase 2B must verify this path with trusted, untrusted and hostname-mismatch fixtures before enabling the adapter. Phase 2C uses the same channel-ownership rule for direct cloud.
 
 ## Specified operations
 
@@ -83,7 +83,7 @@ ImageArtifact contains artifact_id, designation (final / preview / partial), med
 
 GenerationResult contains request_id, backend/server identity, immutable final artifacts, effective wire configuration including seed, completion evidence (successful terminal status plus validated output) and warnings. Previews are events, never required final artifacts. Partial evidence on failure belongs to the typed failure/event path. Phase 3 reports application success only after durable artifact/metadata saving.
 
-Initial DTFlow safety budgets: at most four final artifacts, 32 MiB encoded per artifact and 64 MiB aggregate final bytes per request; 64 MiB maximum individual transport payload and 64 MiB decoded tensor buffer; one retained latest preview per attempt, at most 2 MiB encoded. Account for intermediate allocations and use a shared 256 MiB admission budget for decoding/encoding buffers. These are configurable internal limits subject to target-machine validation, not a peak-RSS guarantee. Do not submit an obviously oversized request; enforce payload/dimension/count limits during transport and before decoding. A limit breach after possible submission closes transport and retains remote uncertainty. Do not silently truncate output or label it complete. Chunking remains disabled until bounded assembly is implemented and tested.
+Initial DTFlow safety budgets: at most four final artifacts, 32 MiB encoded per artifact and 64 MiB aggregate final bytes per request; 64 MiB maximum individual transport payload and 64 MiB decoded tensor buffer; one retained latest preview per attempt, at most 2 MiB encoded. Account for intermediate allocations and use a shared 256 MiB admission budget for decoding/encoding buffers. These are configurable internal limits subject to target-machine validation, not a peak-RSS guarantee. Do not submit an obviously oversized request; enforce payload/dimension/count limits after receipt and before decoding (gRPC delivers whole messages, so limits during transport are not enforced; see the integration notes for the residual fpzip allocation risk). A limit breach after possible submission closes transport and retains remote uncertainty. Do not silently truncate output or label it complete. Chunking remains disabled until bounded assembly is implemented and tested.
 
 ## Events, errors and submission evidence
 
