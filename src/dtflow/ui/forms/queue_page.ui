@@ -11,7 +11,7 @@
     <layout class="QHBoxLayout" name="pageHeaderLayout">
      <item><layout class="QVBoxLayout" name="queueTitleLayout"><property name="spacing"><number>2</number></property><item><widget class="QLabel" name="pageTitleLabel"><property name="text"><string>Queues</string></property></widget></item><item><widget class="QLabel" name="pageSubtitleLabel"><property name="text"><string>Inspect durable work, control dispatch, and keep uncertain attempts visible without silent replay.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item></layout></item>
      <item><spacer name="headerSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>20</height></size></property></spacer></item>
-     <item><widget class="QLabel" name="ownershipBadgeLabel"><property name="text"><string>PREVIEW ONLY · CONTROLS NOT WIRED</string></property><property name="role" stdset="0"><string>badge</string></property></widget></item>
+     <item><widget class="QLabel" name="ownershipBadgeLabel"><property name="text"><string>NOT DISPATCHING</string></property><property name="role" stdset="0"><string>badge</string></property></widget></item>
     </layout>
    </item>
    <item>
@@ -23,7 +23,14 @@
        <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
        <item><widget class="QLabel" name="queueContextEyebrow"><property name="text"><string>DURABLE QUEUES</string></property><property name="role" stdset="0"><string>eyebrow</string></property></widget></item>
        <item><widget class="QListWidget" name="queueList"><property name="accessibleName"><string>Durable queues</string></property></widget></item>
-       <item><widget class="QPushButton" name="createQueueButton"><property name="text"><string>Create queue</string></property><property name="accessibleName"><string>Create a durable queue</string></property></widget></item>
+       <item>
+        <layout class="QHBoxLayout" name="queueCountLayout">
+         <item><widget class="QLabel" name="queueCountLabel"><property name="text"><string>Items</string></property></widget></item>
+         <item><widget class="QSpinBox" name="queueCountSpinBox"><property name="minimum"><number>1</number></property><property name="maximum"><number>1000</number></property><property name="value"><number>1</number></property><property name="toolTip"><string>Item N uses the form's seed + N - 1.</string></property><property name="accessibleName"><string>Number of queue items</string></property></widget></item>
+        </layout>
+       </item>
+       <item><widget class="QPushButton" name="createQueueButton"><property name="text"><string>Create queue</string></property><property name="toolTip"><string>Creates a paused queue from the Generate form. Contacts no backend and uploads nothing.</string></property><property name="accessibleName"><string>Create a durable queue</string></property></widget></item>
+       <item><widget class="QPushButton" name="refreshQueuesButton"><property name="text"><string>Refresh</string></property></widget></item>
        <item>
         <widget class="QGroupBox" name="concurrencyBox">
          <property name="title"><string>Dispatch policy</string></property>
@@ -49,6 +56,7 @@
          <item><widget class="QLabel" name="queueStateLabel"><property name="text"><string>Paused</string></property><property name="state" stdset="0"><string>warning</string></property></widget></item>
         </layout>
        </item>
+       <item><widget class="QLabel" name="queueMessageLabel"><property name="text"><string>Create a queue from the Generate form, then Start it here.</string></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>unknown</string></property><property name="accessibleName"><string>Queue action status</string></property></widget></item>
        <item>
         <widget class="QFrame" name="queueTableHost">
          <layout class="QVBoxLayout" name="queueTableHostLayout">
@@ -83,6 +91,8 @@
           <item row="1" column="1"><widget class="QLabel" name="attemptIdLabel"><property name="text"><string>—</string></property></widget></item>
           <item row="2" column="0"><widget class="QLabel" name="backendCaption"><property name="text"><string>Backend</string></property></widget></item>
           <item row="2" column="1"><widget class="QLabel" name="itemBackendLabel"><property name="text"><string>—</string></property></widget></item>
+          <item row="3" column="0"><widget class="QLabel" name="outputsCaption"><property name="text"><string>Outputs</string></property></widget></item>
+          <item row="3" column="1"><widget class="QLabel" name="itemOutputsLabel"><property name="text"><string>—</string></property><property name="wordWrap"><bool>true</bool></property><property name="textInteractionFlags"><set>Qt::TextSelectableByMouse</set></property></widget></item>
          </layout>
         </widget>
        </item>

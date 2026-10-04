@@ -7,10 +7,9 @@ import logging
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
-from uuid import uuid4
 
 from dtflow.build import display_identity, identity
-from dtflow.composition import BACKENDS, BackendSelection, create_backend
+from dtflow.composition import BACKENDS
 from dtflow.core.models import (
     BackendError,
     ErrorCategory,
@@ -23,16 +22,14 @@ from dtflow.core.models import (
 )
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 from dtflow.persistence.assets import AssetRegistry
-from dtflow.persistence.queues import MAX_ITEMS, post_control, read_queues
-from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
+from dtflow.persistence.queues import post_control, read_queues
+from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.config import export_config, load_config, resolve_request
-from dtflow.services.generation import GenerationService
-from dtflow.services.queue import QueueDispatcher
+from dtflow.services.queue_session import create_queue, dispatch_queue, expand_items
 from dtflow.services.session import (
     ASSET_NOTE,
-    asset_validator,
     asset_view,
     bind_prepared,
     open_session,
@@ -328,22 +325,9 @@ def queue_exit_code(queue: dict) -> int:
 
 
 async def queue_requests(args: argparse.Namespace) -> list[ResolvedGenerationRequest]:
-    if type(args.count) is not int or not 1 <= args.count <= MAX_ITEMS:
-        raise ValidationError(f"--count must be an integer in 1..{MAX_ITEMS}.")
     if args.scenario != "success" and args.backend != "fake":
         raise ValidationError("--scenario applies to the fake backend only.")
-    base = await bind_assets(args, resolve_generation(args))
-    if base.seed + args.count - 1 > 4294967295:
-        raise ValidationError("Item seeds would exceed the 32-bit seed range.")
-    return [
-        replace(
-            base,
-            request_id=uuid4().hex,
-            seed=base.seed + index,
-            resolution_evidence=(*base.resolution_evidence, ("queue_position", str(index + 1))),
-        )
-        for index in range(args.count)
-    ]
+    return expand_items(await bind_assets(args, resolve_generation(args)), args.count)
 
 
 async def run_queue(args: argparse.Namespace) -> int:
@@ -361,64 +345,25 @@ async def run_queue(args: argparse.Namespace) -> int:
     if command == "add":
         requests = await queue_requests(args)
         backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": args.scenario}
-        if args.backend == "local" and not args.endpoint:
-            raise ValidationError("The local backend requires --endpoint HOST:PORT.")
-        cap = validate_concurrency(args.jobs) if args.jobs is not None else None
-        if cap is None:
-            cap = load_cloud_concurrency(args.state) if args.backend == "cloud" else 4
-        store = SQLiteAttempts(args.state)
-        try:
-            await store.open()
-            queue_id = await store.create_queue(backend, cap, requests)
-        finally:
-            await store.aclose()
+        queue_id, cap = await create_queue(args.state, backend, requests, args.jobs)
         print(json.dumps({"queue_id": queue_id, "state": "paused", "items": len(requests), "cap": cap}))
         return EXIT_OK
     # start: this process becomes the single dispatch owner for the state directory.
-    policy = TimeoutPolicy(total=args.timeout)
-    store = SQLiteAttempts(args.state)
-    backend = None
-    try:
-        await store.open()
-        queue = await store.inspect_queue(args.queue)
-        selection = queue["backend"]
-        backend = create_backend(
-            BackendSelection(
-                selection["name"],
-                selection.get("endpoint"),
-                load_cloud_concurrency(args.state) if selection["name"] == "cloud" else 4,
-                selection.get("scenario", "success"),
-            ),
-            timeouts=policy,
-        )
-        async with asyncio.timeout(policy.connect):
-            await backend.open()
-        service = GenerationService(
-            backend, store, args.out or args.state / "outputs", timeouts=policy, assets=asset_validator(backend)
-        )
-        # Real adapters accept only inventory-listed models, so refresh once before dispatching.
-        await service.get_inventory(refresh=True)
-        log.info("command=queue start backend=%s", selection["name"])
 
-        def settled(item_id: str, state: str) -> None:
-            print(f"[queue] item {item_id[:8]}: {state}", file=sys.stderr)
+    def settled(item_id: str, state: str) -> None:
+        print(f"[queue] item {item_id[:8]}: {state}", file=sys.stderr)
 
-        final = await QueueDispatcher(store, service, on_settle=settled).run(args.queue)
-        print(json.dumps({k: v for k, v in final.items() if k != "events"}, indent=2))
-        if final["blocked_by_uncertainty"] and final["summary"]["pending"]:
-            print(
-                "Dispatch is blocked by an uncertain reservation. Inspect it, then `queue override` only if you accept "
-                "that remote concurrency is no longer guaranteed.",
-                file=sys.stderr,
-            )
-        return queue_exit_code(final)
-    finally:
-        try:
-            if backend is not None:
-                async with asyncio.timeout(policy.cleanup):
-                    await backend.aclose()
-        finally:
-            await store.aclose()
+    final = await dispatch_queue(
+        args.state, args.queue, timeouts=TimeoutPolicy(total=args.timeout), out=args.out, on_settle=settled
+    )
+    print(json.dumps({k: v for k, v in final.items() if k != "events"}, indent=2))
+    if final["blocked_by_uncertainty"] and final["summary"]["pending"]:
+        print(
+            "Dispatch is blocked by an uncertain reservation. Inspect it, then `queue override` only if you accept "
+            "that remote concurrency is no longer guaranteed.",
+            file=sys.stderr,
+        )
+    return queue_exit_code(final)
 
 
 async def run_assets(args: argparse.Namespace) -> int:

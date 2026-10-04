@@ -452,6 +452,13 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
         else:
             queue["status"] = row["state"]
         queue["items"] = items
+        queue["pending_controls"] = [
+            c["action"]
+            for c in connection.execute(
+                "SELECT action FROM queue_controls WHERE queue_id=? AND applied_at_utc IS NULL ORDER BY control_id",
+                (row["queue_id"],),
+            )
+        ]
         if queue_id:
             queue["events"] = [
                 {"at_utc": e["at_utc"], "kind": e["kind"], "detail": json.loads(e["detail_json"])}

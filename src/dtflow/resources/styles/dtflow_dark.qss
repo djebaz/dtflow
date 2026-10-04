@@ -409,3 +409,7 @@ QAbstractSpinBox[invalid="true"],
 QListWidget[invalid="true"] {
   border: 1px solid #ff8179;
 }
+
+QSpinBox[level="elevated"] {
+  color: #d9b36a;
+}

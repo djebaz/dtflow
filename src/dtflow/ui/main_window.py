@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QIODevice
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -22,7 +22,9 @@ from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
+from dtflow.ui.activity import Activity
 from dtflow.ui.generation_page import GenerationPage
+from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
 
@@ -62,6 +64,20 @@ def load_form() -> QMainWindow:
     return window
 
 
+class _CloseGuard(QObject):
+    """Ask before a window close that would stop an active queue dispatch."""
+
+    def __init__(self, confirm, parent: QObject):
+        super().__init__(parent)
+        self._confirm = confirm
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.Close and not self._confirm():
+            event.ignore()
+            return True
+        return False
+
+
 class MainWindow:
     """Owns the Designer form and an AsyncRunner; ``saved`` is injectable for tests."""
 
@@ -86,6 +102,7 @@ class MainWindow:
         self.runner = runner or AsyncRunner(self.form)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
+        self.activity = Activity()
         form = self.form
         self.generation = GenerationPage(
             self.generation_page,
@@ -93,6 +110,16 @@ class MainWindow:
             backend_source=lambda: (form.backendCombo.currentText(), form.endpointEdit.text() or None),
             saved_source=lambda: self._saved if self._saved.available() else None,
             state_dir=self.state_dir,
+            activity=self.activity,
+        )
+        self.queue = QueuePage(
+            self.queue_page,
+            runner=self.runner,
+            backend_source=lambda: (form.backendCombo.currentText(), form.endpointEdit.text() or None),
+            saved_source=lambda: self._saved if self._saved.available() else None,
+            state_dir=self.state_dir,
+            request_source=self.generation.request_for_queue,
+            activity=self.activity,
         )
         form.backendCombo.addItems(BACKENDS)
         form.statusBar().showMessage(display_identity() + f" | state: {self.state_dir}")
@@ -106,7 +133,8 @@ class MainWindow:
         )
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
-        form.queueNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.queue_page))
+        form.queueNavigationButton.clicked.connect(self._show_queue)
+        self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
         self.refresh_credentials()
@@ -116,6 +144,10 @@ class MainWindow:
         for control_type in PREVIEW_CONTROL_TYPES:
             for control in page.findChildren(control_type):
                 control.setEnabled(False)
+
+    def _show_queue(self) -> None:
+        self.form.workspaceStack.setCurrentWidget(self.queue_page)
+        self.queue.refresh()
 
     def _show_generation(self) -> None:
         self.generation.sync_backend()
