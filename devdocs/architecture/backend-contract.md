@@ -24,6 +24,12 @@ WAL state stays on a local filesystem. Use SQLite's backup API for a consistent 
 
 In Phase 2A, add a small pytest import-boundary check using standard-library AST inspection and headless import coverage: core imports no Qt, backend implementation or provider types; services depend on core contracts, not concrete provider classes; provider imports stay inside the integration boundary. Cover absolute/relative imports and local imports. This enforces the written rules without a new lint dependency.
 
+## TLS channel ownership
+
+Installed drawthings-py 0.4.0 GrpcService.connect uses a module-level SSLContext loaded with its bundled CA; that context disables hostname checking and is not a constructor-injected trust path. Do not use or patch that process-global context for DTFlow production or fixture connections.
+
+The replaceable integration owns channel creation with an explicit per-instance SSLContext, using a narrow version-pinned connection override where the dependency requires it. Production contexts validate certificates and hostnames; explicitly configured local-server trust is separate from test trust. Fixtures inject their own CA/context and endpoint into the same channel-construction path. Preserve h2 negotiation, discovery and bounded cleanup; no provider/channel types cross into services. Phase 2B must verify this path with trusted, untrusted and hostname-mismatch fixtures before enabling the adapter. Phase 2C uses the same channel-ownership rule for direct cloud.
+
 ## Specified operations
 
 Use typing.Protocol, frozen slotted standard-library dataclasses and enums in core. Validate inputs explicitly at configuration/import boundaries and preserve immutable nested values. Do not add pydantic-core or another compiled validation dependency for these types; any new native dependency needs evidence on the target Pentium E6500 before adoption. Method names below are the implementation contract, not existing CLI commands.
@@ -118,7 +124,7 @@ The probe's subclass and __getattr__ stub wrapper are diagnostic evidence, not a
 
 Keep an integration workaround ledger (version, source, reason, fixture, removal condition) with implementation. In 2D, size replacement work separately for generated gRPC/protobuf bindings, FlatBuffer configuration serialization and compressed tensor decoding/PNG encoding; identify source licenses, fixture coverage and target-machine constraints. This is a risk estimate, not authorization to rewrite or relicense the dependency. Dependency replacement/licensing evaluation must not alter the application contract. No licensing outcome is implied by module isolation.
 
-Phase 2 implements the credential-provider interface, environment provider and injected fake saved provider only. Real Windows Credential Manager entry/storage arrives in Phase 4. Preserve environment-presence precedence, including empty/invalid failure with no fallback. The Phase 2 default saved provider is unavailable; tests inject it to cover precedence. Credentials/tokens never enter connection records, requests, artifacts or logs.
+Phase 2 implements the credential-provider interface, environment provider and injected fake saved provider only. Real Windows Credential Manager entry/storage arrives in Phase 4. Preserve environment-presence precedence, including empty/invalid failure with no fallback. After stripping surrounding whitespace, a present empty/whitespace-only value is a selected-but-invalid credential and fails before network I/O; it never selects the saved provider. The diagnostic probe combines absent/empty values in its missing-key error and has no saved-provider fallback, so its fail-before-network behavior agrees with this policy without establishing the future error taxonomy. The Phase 2 default saved provider is unavailable; tests inject it to cover precedence. Credentials/tokens never enter connection records, requests, artifacts or logs.
 
 ## Evidence and implementation gates
 
