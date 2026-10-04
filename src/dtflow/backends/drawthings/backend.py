@@ -75,6 +75,9 @@ class DrawThingsEndpoint:
 class DrawThingsBackend:
     """One channel to one Draw Things server; strict TLS, no silent fallback of any kind."""
 
+    backend_id = BACKEND_ID
+    max_concurrency = 1
+
     def __init__(
         self,
         endpoint: DrawThingsEndpoint,
@@ -91,7 +94,7 @@ class DrawThingsBackend:
         self._closing = False
         self._closed = False
         self._active = 0
-        self._lane = asyncio.Lock()  # exactly one active generation per server
+        self._lane = asyncio.Semaphore(self.max_concurrency)
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
 
@@ -102,7 +105,12 @@ class DrawThingsBackend:
         """Model identifiers come from the last inventory; before any inventory no model is accepted."""
         model_ids = eligible_model_ids(self._inventory) if self._inventory is not None else ()
         return Capabilities(
-            BACKEND_ID, model_ids=model_ids, max_concurrency=1, batch_size=1, batch_count=1, limits=self.limits
+            self.backend_id,
+            model_ids=model_ids,
+            max_concurrency=self.max_concurrency,
+            batch_size=1,
+            batch_count=1,
+            limits=self.limits,
         )
 
     async def open(self) -> None:
@@ -121,7 +129,7 @@ class DrawThingsBackend:
 
         def status(transport, authentication, inventory, **diag):
             return ConnectionStatus(
-                BACKEND_ID,
+                self.backend_id,
                 self.endpoint.label,
                 checked,
                 transport,
@@ -147,7 +155,9 @@ class DrawThingsBackend:
                 "unknown",
                 shared_secret="rejected_or_missing" if secret_sent else "required_not_configured",
             )
-        snapshot = build_snapshot(BACKEND_ID, reply, observed_at_utc=checked, refreshed=True, secret_sent=secret_sent)
+        snapshot = build_snapshot(
+            self.backend_id, reply, observed_at_utc=checked, refreshed=True, secret_sent=secret_sent
+        )
         return status("ok", "ok" if secret_sent else "not_applicable", "ok", entries=len(snapshot.entries), **base)
 
     async def get_inventory(self, refresh: bool = False) -> InventorySnapshot:
@@ -176,7 +186,7 @@ class DrawThingsBackend:
                 diagnostics=diagnostics(shared_secret="sent" if secret_sent else "not_configured"),
             )
         self._inventory = build_snapshot(
-            BACKEND_ID, reply, observed_at_utc=now(), refreshed=True, secret_sent=secret_sent
+            self.backend_id, reply, observed_at_utc=now(), refreshed=True, secret_sent=secret_sent
         )
         self._stale_reason = None
         return self._inventory
@@ -216,15 +226,18 @@ class DrawThingsBackend:
                 "Model is not in the server inventory; refresh the inventory first.",
                 request.request_id,
             )
-        wire = build_generation_message(request, await self._secret())
         limits = self.limits
         expected = request.batch_size * request.batch_count
         self._active += 1
         try:
-            emit("preparing", stage="wire_validated")
             async with asyncio.timeout(remaining()):
+                wire = build_generation_message(request, await self._secret())
+                emit("preparing", stage="wire_validated")
                 async with self._lane:
                     await self._connect()
+                    metadata = await self._generation_metadata(wire.message)
+                    if asyncio.current_task().cancelling():
+                        raise asyncio.CancelledError
                     stage = SubmissionStage.POSSIBLY_SUBMITTED
                     emit("submission_possible", stage="grpc_request")
                     channel = self._require_channel()
@@ -235,6 +248,7 @@ class DrawThingsBackend:
                         image_service.ImageGenerationRequest,
                         image_service.ImageGenerationResponse,
                         timeout=remaining(),
+                        metadata=metadata,
                     ) as stream:
                         await stream.send_message(wire.message, end=True)
                         previews = 0
@@ -289,7 +303,7 @@ class DrawThingsBackend:
         server = self._inventory.server_identity if self._inventory is not None else "unknown"
         return GenerationResult(
             request.request_id,
-            BACKEND_ID,
+            self.backend_id,
             server,
             tuple(finals),
             wire.effective_configuration,
@@ -352,6 +366,10 @@ class DrawThingsBackend:
         if self._closing or self._closed or self._channel is None:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed or not open.")
         return self._channel
+
+    async def _generation_metadata(self, message):
+        """Authorize the exact wire message before any generation submission becomes possible."""
+        return None
 
     async def _secret(self) -> str | None:
         if self._shared_secret is None:
