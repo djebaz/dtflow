@@ -2,7 +2,7 @@
 
 **Status:** Planned inventory; no row claims an implemented DTFlow feature.  
 **Purpose:** Track the intended full port without making every feature a prerequisite for Qt.  
-**References:** [roadmap](initial.md), [Phase 2](phase-2-backends.md), [Phase 3](phase-3-cli.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md).
+**References:** [roadmap](initial.md), [Phase 2](phase-2-backends.md), [Phase 3](phase-3-cli.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [release roadmap](releases.md).
 
 ## Evidence and maintenance
 
@@ -24,11 +24,11 @@ A row advances to accepted only with implementation references, actual validatio
 | Interruption/cancellation | Reference server hooks; report 10.5 | Execution service | Interrupt/cancel as supported | Cancel action with honest status | Remote effect unverified | 2 contract; 3; 5 Qt | Local stop distinguished from remote confirmation; unknown outcome retained |
 | Durable request/attempt record | DTFlow safety requirements; report 10.6 | Attempt store | Saved record inspection | Later run details | Local durability for all; no remote reattach | 3 | Atomic record before submit; potential execution recorded first; crash tests; no automatic ambiguous retry |
 | Basic LoRA selection and weights | Tanque queue axes/parity; report 5.1/5.6 | Request/preflight services | Compatible identifiers and explicit weights | LoRA selector/weights | Combination-specific verification required | 5 | Exact identifiers/weights survive encoding and metadata; incompatible/unknown selections handled explicitly |
-| Saved presets and metadata reuse | Tanque config fidelity; report 5.6 | Preset service | Import/export/reuse | Preset browser and reuse | Backend constraints preserved | 8 | Versioned config; no hidden defaults or leaked prior state |
+| Saved presets and metadata reuse | Tanque config fidelity; report 5.6 | Configuration/preset service | Versioned config import/export/reuse | Basic save/load; later preset browser | Backend constraints preserved | 3A contract; 5A save/load; 8 library | Versioned config; no hidden defaults or leaked prior state |
 | Gallery, provenance and regeneration | Artifact design; report 4.5; full Tanque gallery inventory pending | Artifact/query services | Inspect/reuse/export | Visual gallery | Local saved artifacts | 8 | Parent/request metadata retained; previews distinguishable; safe regeneration |
-| Durable jobs and queue lifecycle | Tanque queue/engine; report 5.1/5.4 | Job/queue services | Submit/list/control | Queue panel | App one effective lane; cloud separately governed | 3B services/CLI; 4/5 Qt | Persisted transitions; restart paused; explicit Resume/Cancel; resume only definitely unsubmitted eligible jobs; ambiguous submissions never replayed |
+| Durable jobs and queue lifecycle | Tanque queue/engine; report 5.1/5.4 | Job/queue services | Submit/list/control | Queue panel | App one effective lane; cloud separately governed | 3B services/CLI; 5B Qt | Persisted transitions; restart paused; explicit Resume/Cancel; resume only definitely unsubmitted eligible jobs; ambiguous submissions never replayed |
 | Pair/cross-product batch expansion | RenderQueueExpander; report 5.1 | Pure queue planner | Plan/dry run then enqueue | Matrix controls | Resolved backend-compatible requests | 6 planner on 3B execution | Bounded expansion; stable ordering; pair mismatch warning; explicit resolved requests |
-| Backend-specific scheduling | DTFlow measured concurrency; report 3 | Scheduler service | Configure maximum and run/control rolling queues | Shared maximum; subtle color above two | App/cloud policies separate; cloud default four is user-selected | 3B scheduling/CLI; 4/5 Qt; 7 advanced | Positive-integer validation; effective execution mode honest; rolling refill and cap enforced; ten-item/four-slot out-of-order test; unresolved reservations block dispatch; no entitlement assumption; cancellation/restart tested |
+| Backend-specific scheduling | DTFlow measured concurrency; report 3 | Scheduler service | Configure maximum and run/control rolling queues | Shared maximum; subtle color above two | App/cloud policies separate; cloud default four is user-selected | 3B scheduling/CLI; 5B Qt; 7 advanced | Positive-integer validation; effective execution mode honest; rolling refill and cap enforced; ten-item/four-slot out-of-order test; unresolved reservations block dispatch; no entitlement assumption; cancellation/restart tested |
 | Img2img and canvas fitting | Expander pixel-budget fitting; client init image | Image/request services | File inputs and fit policy | Source preview/canvas | Client expressible; combinations unverified | 9 | Controlled input/model checks; dimensions and preprocessing recorded |
 | Inpainting and masks | SDK binary-mask builder; Apple engine behavior distinct | Mask/request services | Existing mask file, polarity/threshold | Interactive mask editing | Per-model/backend verification | 9 | Polarity and alpha semantics tested; drawing stays Qt; no assumed Apple Vision parity |
 | Controls and reference/moodboard inputs | SDK hints; Tanque reference state; report 5.2 | Conditioning/preflight services | File references and weights | Reference/control editor | Per-model/backend verification | 9 | Known control types/limits; weighting fidelity; unsupported combinations rejected |
@@ -42,6 +42,8 @@ A row advances to accepted only with implementation references, actual validatio
 | Agent automation/MCP | Ecosystem report 7 | Existing application services | CLI remains supported | Optional integration settings | Same underlying adapters | After 10; explicit demand | No separate execution engine; same validation, billing and persistence rules |
 
 ## Phase gates and dependencies
+
+Release gates in [the release roadmap](releases.md) require a complete Phase 5A generation/configuration path and Phase 5B queue surface for the first Qt executable. Image operations deliver in 9A/9B/9C slices; workflow files/execution in 10A precede optional richer visual authoring in 10B. These subdivisions preserve all feature rows; full parity remains tracked.
 
 Phase 2 completes the inventory and shared contracts while implementing only the narrow initial adapters and test fixtures. Phase 3A delivers the usable txt2img CLI and durable attempts; Phase 3B delivers durable queues and tested rolling dispatch, including paused restart and uncertain reservations, before Qt. Phase 4 starts Qt promptly; full port parity is not its entry gate.
 

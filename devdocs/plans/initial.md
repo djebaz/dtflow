@@ -187,6 +187,8 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 
 ## 7. Implementation phases
 
+Use the [release roadmap](releases.md) alongside these engineering phases. It defines usable version milestones, evidence gates and saved-state compatibility; proposed versions are not existing releases.
+
 Track the intended full TanqueStudio port in the [parity matrix](tanquestudio-parity.md). It assigns feature evidence, shared services, CLI/Qt exposure, backend support, milestones and acceptance. Complete the upstream feature inventory during Phase 2; unknown or deferred items remain explicitly tracked. Full parity is not a prerequisite for starting Qt.
 
 ### Phase 1 — gRPC connectivity proof
@@ -273,9 +275,17 @@ Add secure API-key entry and Windows Credential Manager storage through shared c
 
 Keep business logic and backend protocol code outside UI classes. Network and generation work must not block the Qt event loop. CLI execution must continue working without importing Qt.
 
-### Phase 5 — Single generation
+### Phase 5 — Desktop generation and queue controls
 
 Connect the desktop UI to the generation services already exercised by the headless CLI for a complete single-generation flow. Reuse request resolution, progress/error handling and output persistence rather than creating a second execution path. Add basic LoRA selection with explicit weights through shared services and CLI/Qt exposure, gated by verified backend/model compatibility.
+
+#### Phase 5A — Generation and configuration reuse
+
+Expose the generation form, actual progress, outputs/errors and a bounded verified LoRA scope. Save/load credential-free generation configurations through the versioned shared contract from Phase 3A; the full preset browser remains Phase 8.
+
+#### Phase 5B — Desktop queue controls
+
+Expose queue creation/inspection, stable item status, concurrency, Pause/Resume/Cancel, paused restart and explicit uncertainty handling through the existing Phase 3B services. The first desktop release requires both 5A and 5B; queue controls are not deferred to batch planning or advanced scheduling.
 
 Persist enough metadata to reproduce the request. Mark a job completed only after successful terminal RPC status, validated final artifacts and durable output/metadata persistence. Saved previews must remain labeled as previews or diagnostics when final generation fails.
 
@@ -293,13 +303,13 @@ Add output browsing, generation metadata inspection, reusable presets, and regen
 
 ### Phase 9 — Advanced image operations
 
-Add image-to-image, inpainting, masks, controls, and related Draw Things features after the basic request model is stable.
+Deliver bounded slices: 9A verified image-to-image, 9B inpainting with existing mask files, and 9C interactive mask painting plus selected controls/reference combinations. Release useful slices independently; do not wait for every model/control combination.
 
 ### Phase 10 — Workflows
 
-Build multi-step workflow composition/execution on top of the durable job and backend layers.
+Build multi-step workflow composition/execution on top of the durable job and backend layers. Phase 10A delivers versioned workflow-file validation, plan inspection and execution for a bounded supported step set. Phase 10B adds visual authoring and richer verified semantics incrementally.
 
-Workflow execution should remain resumable and inspectable.
+Workflow execution should remain resumable and inspectable within documented remote recovery limits. File-based execution does not wait for the full visual editor.
 
 ### Phase 11 — Broader DT+ capabilities and hardening
 

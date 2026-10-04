@@ -4,6 +4,9 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
+- Planned release roadmap with private source CLI milestones, the first complete Qt executable, incremental image/workflow releases, release evidence and a scoped 1.0 reliability gate. No release/tag/version bump is introduced.
+- Saved-state compatibility requirements from the durable queue release: independent schema versions, recoverable atomic migration, clear unsupported-schema rejection and no ambiguous replay.
+
 - Planned shared logging contract in `AGENTS.md` and Phase 3: repository-root ignored `logs/` in development, per-user packaged Windows logs, rotating UTF-8 diagnostics, explicit dev detail, build/job correlation and secret sanitization. Clarify the existing ignore rule without changing ignore behavior.
 
 - Repository-wide version/build identity rules in `AGENTS.md`: shared version/revision metadata, consistent CLI/Qt/build naming, bundled revision without runtime Git, honest development status and identifiable smoke-test reports.
@@ -32,6 +35,9 @@ Pending changes for the next DTFlow release.
 - Experimental direct DT+ Cloud Compute probe mode using `DRAWTHINGS_API_KEY`, official token/auth endpoints, independent gRPC clients, and no PAYG opt-in. User-reported live runs validate the path end to end from Python through cloud authentication, direct TLS gRPC generation, result decoding, and concurrent submissions without a MediaGenerationKit runtime dependency.
 
 ## Changed
+
+- Split Phase 5 into generation/configuration reuse (5A) and desktop queue controls (5B), both required for the first executable; plan basic configuration import/export in 3A and Qt save/load in 5A before the richer preset library.
+- Define incremental Phase 9 image and Phase 10 workflow delivery gates, and link release planning from README, AGENTS.md, roadmap and parity matrix.
 
 - Split Phase 3 into single-generation foundation (3A) and functional durable queues/rolling dispatch (3B), both tested through the CLI before Qt. Move essential queue/restart/concurrency work forward; reserve Phase 6 for batch planning and Phase 7 for advanced scheduling.
 

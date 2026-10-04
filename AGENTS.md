@@ -9,7 +9,7 @@ These instructions apply throughout `dtflow`.
 
 ## Before changing behavior
 
-- Read this file, `README.md`, `devdocs/plans/initial.md`, `devdocs/releases/unreleased.md`, relevant architecture/research documents, and the current canonical files before editing.
+- Read this file, `README.md`, `devdocs/plans/initial.md`, `devdocs/plans/releases.md`, `devdocs/releases/unreleased.md`, relevant architecture/research documents, and the current canonical files before editing.
 - Treat repository files and verified upstream interfaces as the source of truth. Do not invent runtime behavior, compatibility, benchmarks, test results, or verification.
 - Preserve unrelated working behavior.
 
@@ -113,6 +113,8 @@ These instructions apply throughout `dtflow`.
 ## Documentation and releases
 
 - Keep `README.md` focused on current usage, setup, repository layout, and validation rather than per-version history.
+- Follow [the release roadmap](devdocs/plans/releases.md) for usable version milestones and acceptance gates; planned numbers are not shipped releases.
+- Version durable state schemas separately from application versions. Preserve state and outputs on supported migrations; reject unsupported schemas clearly and never replay ambiguous attempts during an upgrade.
 - Track pending changes in `devdocs/releases/unreleased.md`.
 - When releasing a version, move the relevant entries into `devdocs/releases/v<version>.md` and reset `unreleased.md`.
 - Update the relevant plan, architecture, research, and release documentation when behavior changes.

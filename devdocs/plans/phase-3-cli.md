@@ -14,6 +14,12 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 
 Phase 3A establishes single-generation CLI/services, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling and restart reconciliation. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
 
+## Release gates and schema compatibility
+
+Follow [the release roadmap](releases.md): Phase 3A targets the private source release 0.1.0; Phase 3B targets 0.2.0. These are proposed versions, not existing releases. Support versioned credential-free generation configuration import/export and metadata reuse in 3A so Qt can add basic save/load without inventing another contract.
+
+Before the 0.2.0 durable release, version saved-state schemas separately from the application version. Preserve records/artifacts through supported atomic migrations, reject unsupported/newer schemas without destructive reset, restore queues paused and never make ambiguous attempts eligible during upgrade. Validate migration failure and previously released supported schemas as they become available.
+
 ## Required operations
 
 | Operation | Required behavior |
@@ -132,4 +138,4 @@ Track the intended port in the [TanqueStudio parity matrix](tanquestudio-parity.
 
 Model discovery is included now. Basic compatible LoRA selection and explicit weights are assigned to Phase 5 through shared services, with CLI and Qt exposure. Cloud LoRA upload is distinct from generation and must not be assumed to use the same endpoint, format or authorization contract.
 
-Phase 4 adds the minimal Qt shell and connection management after both the single-generation and rolling-queue CLI gates pass. Phase 5 adds GUI generation by calling these existing services. Later features should expose the same underlying services through the CLI wherever practical so Qt remains presentation rather than a second execution engine.
+Phase 4 adds the minimal Qt shell and connection management after both the single-generation and rolling-queue CLI gates pass. Phase 5A adds GUI generation/configuration reuse and Phase 5B exposes the existing queue controls, both through these services and both required for the first desktop release. Later features should expose the same underlying services through the CLI wherever practical so Qt remains presentation rather than a second execution engine.
