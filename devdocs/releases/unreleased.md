@@ -4,7 +4,7 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
-- Add `tools/drawthings/get_byom_probe.py`, a standard-library DT+ `/get_byom_urls` metadata probe with the owner-observed iPhone checkpoint filename, exact size and SHA-256 as defaults. It acquires a short-term token and compares four non-uploading request shapes: full metadata, omitted size, omitted SHA-256, and filename only. It records HTTP status plus sanitized JSON, redacts signed URLs, and never performs the returned PUT upload or any generation.
+- Add `tools/drawthings/get_byom_probe.py`, a non-uploading DT+ diagnostic that can resolve a named remote checkpoint SHA-256 through gRPC `FilesExist(filesWithHash=...)` and feed that server-computed hash directly into `/get_byom_urls` with no size field. The earlier full/omitted-size/omitted-SHA/filename-only request matrix remains available through `--matrix`. The probe records sanitized responses, redacts signed URLs, and never downloads checkpoint bytes, performs a PUT upload, or submits generation.
 
 - Add `tools/drawthings/ckpt_probe.py`, a standard-library checkpoint fingerprint helper that streams a local file and reports its exact byte size and SHA-256 without loading the whole checkpoint into memory. It performs no network request, model parsing, generation or upload.
 
