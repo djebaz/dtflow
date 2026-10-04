@@ -113,7 +113,7 @@ Compare with P6: same exit codes, a readable PNG and metadata, and the same atte
 
 ## Findings table
 
-Statuses: **Not run** / **Pass** / **Fail** / **Blocked**. Fill one row per executed check with date, environment (commit, Python, OS, CPU) and evidence (pasted output or its location). Never mark a row Pass without evidence.
+Statuses: **Not run** / **Pass** / **Partial** / **Fail** / **Blocked**. Partial means part of the row's evidence is still missing; the note says which part. Fill one row per executed check with date, environment (commit, Python, OS, CPU) and evidence (pasted output or its location). Never mark a row Pass without evidence.
 
 | ID | Check | Status | Date | Environment / build | Evidence / notes |
 | --- | --- | --- | --- | --- | --- |
@@ -125,17 +125,17 @@ Statuses: **Not run** / **Pass** / **Fail** / **Blocked**. Fill one row per exec
 | W6 | TLS: system trust resources and bundled CA present | Pass | 2026-10-04 | same as W1 | 84 system CA certificates; `drawthings-py` bundled CA file exists; OpenSSL 3.5.6; default verify file path `null` (Windows uses the system store) |
 | W7 | TLS handshake to cloud host with system trust (optional, P3) | Pass | 2026-10-04 | same as W1 | TLSv1.3 to `compute.drawthings.ai`; certificate subject `commonName=compute.drawthings.ai`. Tests Python `ssl` with the system store, not `drawthings-py`'s bundled-CA channel (hostname checking disabled there) |
 | W8 | `%LOCALAPPDATA%` writable | Pass | 2026-10-04 | same as W1 | Created and removed a file under the user's `AppData\Local` |
-| W9 | PyInstaller one-file executable builds | Not run | | | |
-| W10 | PyInstaller executable runs on a clean path without Python or Git | Not run | | | |
+| W9 | PyInstaller one-file executable builds | Pass | 2026-10-04 | PyInstaller via `uv run --with`; branch head inferred `1685c6c` | Both builds exited 0. `dtflow-smoke.exe` 36,711,047 bytes, 88 s build; `dtflow-cli.exe` 10,020,468 bytes, 28.2 s build |
+| W10 | PyInstaller executable runs on a clean path without Python or Git | Pass | 2026-10-04 | child `cmd` with `PATH` limited to `System32` and the Windows directory | Frozen smoke, `dtflow-cli --version` and fake `generate` all exited 0 from a copy outside the build directory. Limits: same machine and user, Python and Git still installed but off `PATH`; not a second machine or account |
 | W11 | Nuitka executable builds (compiler requirement noted) | Not run | | | |
-| W12 | Frozen output matches source-run output | Not run | | | |
-| W13 | Executable size, startup time, antivirus/SmartScreen behavior recorded | Not run | | | |
+| W12 | Frozen output matches source-run output | Partial | 2026-10-04 | as W9 | Frozen smoke exit 0 (all checks passed, since the script exits non-zero on any failure) and frozen vs source-run fake output files have identical sizes (PNG 404 bytes, `metadata.json` 1506 bytes). Missing: the frozen smoke JSON itself, so `frozen: true`, package versions and the metadata-unavailable markers are unconfirmed |
+| W13 | Executable size, startup time, antivirus/SmartScreen behavior recorded | Partial | 2026-10-04 | as W9 | Sizes and times recorded: smoke 36.7 MB, one run 7.1 s (includes one-file extraction and the checks); CLI 10.0 MB. Antivirus and SmartScreen behavior not reported |
 | W14 | Qt plugins, Credential Manager | Blocked | | | Qt and the credential service do not exist yet |
 | W15 | Installer path (any tool) | Not run | | | Optional; see comparison below |
-| W16 | Source-run `dtflow --version` and `--help` (P6) | Not run | | | |
-| W17 | Source-run fake `check`, `models`, `generate` (seed 0) and `attempts` complete; PNG and metadata saved and readable (P6) | Not run | | | Requires SQLite 3.51.3 or newer |
-| W18 | PyInstaller `dtflow` launcher builds and `--version` runs (P7) | Not run | | | Commit and status are `unknown` until a build step stamps them |
-| W19 | Frozen fake `generate` and `attempts` match source-run behavior (P7) | Not run | | | |
+| W16 | Source-run `dtflow --version` and `--help` (P6) | Partial | 2026-10-04 | as W9 | `--version` exit 0. `--help` exit code not echoed. Output text of both not captured |
+| W17 | Source-run fake `check`, `models`, `generate` (seed 0) and `attempts` complete; PNG and metadata saved and readable (P6) | Partial | 2026-10-04 | as W9 | All four commands exited 0. State directory contains `attempts.sqlite3` (16,384 bytes), `owner.lock`, and an attempt directory with `final-1.png` (404 bytes) and `metadata.json` (1506 bytes). Missing: command output text and confirmation that the PNG opens. SQLite 3.53.1 from W5 satisfies the 3.51.3 requirement |
+| W18 | PyInstaller `dtflow` launcher builds and `--version` runs (P7) | Partial | 2026-10-04 | as W9 | Build exit 0, `--version` exit 0; version text not captured, so whether package metadata was found (`--copy-metadata dtflow`) is unconfirmed |
+| W19 | Frozen fake `generate` and `attempts` match source-run behavior (P7) | Partial | 2026-10-04 | as W9 | Frozen `generate` and `attempts` exit 0; same file set and sizes as source-run (PNG 404, `metadata.json` 1506, `attempts.sqlite3` 16,384). The clean-path `generate` also exit 0. Missing: output text and content comparison |
 
 ### Recorded results
 
@@ -147,6 +147,17 @@ Owner-reported Windows output, pasted from PowerShell on 2026-10-04 and condense
 - TLS handshake (P3): `TLSv1.3`, certificate subject `commonName=compute.drawthings.ai`, validated by the system trust store.
 
 The source-run rows apply to the smoke script as of commit `7c0d7fc`. Later changes to the script, made so a frozen build can import every module, keep the source-run checks logically identical; the frozen rows (W9-W13) have not been run.
+
+### Recorded results: packaging trials (second run)
+
+Owner-reported PowerShell 7.6.6 transcript from 2026-10-04, saved under the ignored `tmp/packaging-2d/` directory; the Windows username in paths is redacted. Nothing here was run by the assistant.
+
+- The transcript captured every `exit=` and size/time line the script printed itself, but not the output of native commands (`git rev-parse HEAD`, `--version`, `--help`, the smoke JSON, `attempts`). Rows depending on that output are marked Partial.
+- The fast-forward `git pull` moved the branch from `7c0d7fc` to `1685c6c`, so the tree under test is inferred to be `1685c6c`; `git rev-parse HEAD` printed nothing in the transcript. `git status --short` printed nothing, both at the start and after all trials, so the repository stayed clean and no build output landed outside `tmp/`.
+- `uv sync --locked` succeeded; the Phase 2A dependencies (pytest-asyncio) were restored by the branch update.
+- Exit codes were 0 for: source-run `--version`, `check`, `models --refresh`, `generate --seed 0` and `attempts`; both PyInstaller builds; the frozen smoke run; the frozen CLI `--version`, `generate` and `attempts`; and the three clean-path runs.
+- Both the source-run and frozen fake generations produced the same files: `attempts.sqlite3` (16,384 bytes), `owner.lock` (1 byte), `outputs/<attempt>/final-1.png` (404 bytes) and `metadata.json` (1,506 bytes).
+- Nuitka was not run (W11) and no installer was tried (W15).
 
 ## Portable executable versus installer
 
