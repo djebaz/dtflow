@@ -1,4 +1,4 @@
-"""Offline checks for the Phase 1 diagnostic probe; no generation server."""
+"""Retires with the diagnostic probe."""
 
 import asyncio
 import importlib.util
@@ -11,7 +11,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-PROBE_PATH = Path(__file__).resolve().parents[2] / "tools/drawthings/drawthings_concurrency_test.py"
+PROBE_PATH = Path(__file__).resolve().parents[3] / "tools/drawthings/drawthings_probe.py"
 spec = importlib.util.spec_from_file_location("dtflow_phase1_probe", PROBE_PATH)
 assert spec is not None and spec.loader is not None
 probe = importlib.util.module_from_spec(spec)
