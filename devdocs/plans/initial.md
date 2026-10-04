@@ -213,7 +213,7 @@ Introduce backend-neutral request, result, progress, error and capability types.
 
 Define completion and uncertain-outcome semantics before wiring the UI. Preserve previews and incomplete outputs as explicitly labeled diagnostic/partial artifacts, never completed results. Ordinary tests must stay offline.
 
-Investigate portable Windows packaging and dependency distribution early on the owner's Windows 10 / Intel Pentium E6500 machine; keep an installer option if required. Source execution is recorded as working; a single-executable build is not yet verified. Durable orchestration remains Phase 6.
+Investigate portable Windows packaging and dependency distribution early on the owner's Windows 10 / Intel Pentium E6500 machine; keep an installer option if required. Source execution is recorded as working; a single-executable build is not yet verified. Basic durable queues and rolling orchestration are required in Phase 3B before Qt.
 
 ### Phase 3 — Headless CLI and shared application services
 
@@ -229,11 +229,43 @@ Handle interruption and uncertain outcomes honestly; do not automatically resubm
 
 Validate command parsing, help, exit behavior, saved metadata and end-to-end fixture-backed commands offline. Real generation remains explicit and separately authorized. A complete CLI means a usable path for the supported scope, not every advanced backend operation.
 
-Define the configurable cloud concurrency maximum in the CLI with a default of four; it is a user-selected cap, not a verified entitlement. Persist it for shared-service use; Phase 7 adds concurrent queue scheduling. Do not imply parallel execution before that scheduler exists.
+#### Phase 3A — Single-generation foundation
+
+Complete backend selection, connectivity, inventory, request resolution, durable attempts, output saving, logging and truthful interruption through the headless CLI.
+
+#### Phase 3B — Durable queue and rolling dispatch
+
+Extend the same services with persistent queue items and lifecycle state, queue inspection, Pause/Resume/Cancel, and rolling scheduling. Cloud concurrency defaults to four and is configurable; the tested app/Bridge path remains one effective lane. Restore queues paused after restart, never replay ambiguous attempts, and test the ten-item/four-slot scenario through CLI commands before Qt.
+
+Current Phase 1 evidence supports treating one tested Draw Things gRPC server as one effective generation lane: concurrent client RPCs can be in flight together, but the tested iPhone/Bridge path completes work in an effectively serialized staircase and is slower than the matching serial baseline.
+
+The direct DT+ diagnostic path is a separate result. It has completed six controlled cloud requests concurrently within one broad generation-time window, but that does not establish a fixed cloud concurrency limit or production scheduling policy. Do not transfer direct-cloud concurrency assumptions to the Draw Things backend.
+
+Use the shared configurable cloud maximum, default four, in both CLI and Qt scheduling. Values above two change the Qt number's color subtly, without a prominent warning or confirmation dialog. Preserve a separate app/Bridge policy. Test bounded dispatch and throttling without automatically retrying ambiguous submissions.
+
+Do not infer safe concurrency from client-side capability alone.
+
+#### Rolling queue dispatch
+
+Use a rolling scheduler rather than groups separated by a completion barrier. For ten independent eligible cloud items and a maximum of four, start items 1–4. As soon as any attempt reaches a known terminal outcome and releases its reservation, dispatch item 5 without waiting for the other three; refill each available slot with the next eligible item in queue order until the queue is drained.
+
+Completion order may differ from submission order. Keep outputs, errors and metadata attached to stable original item IDs and preserve queue order in presentation. Respect dependencies and queue pause/cancel state; a freed slot does not bypass eligibility or a backend dispatch block. Reserve slots before submission so simultaneous completions cannot oversubscribe the configured maximum.
+
+For normal cloud scheduling, active attempts plus unresolved reservations must not exceed the configured maximum. The tested local Draw Things/Bridge backend uses its separate one-generation policy, regardless of the cloud maximum. A disconnect or local cancellation with possible remote execution does not free a slot; apply the uncertainty rules below.
+
+Phase 3B fixture acceptance includes a ten-item/four-slot scenario with deliberately out-of-order completions: item 5 starts while other initial items remain active, rolling refill stays bounded, results retain item identity, and an uncertain attempt blocks replacement dispatch.
+
+#### Uncertain attempts and slot accounting
+
+If submission definitely never occurred, release the scheduler slot. If a disconnect, local cancellation or other failure leaves remote execution possible, retain a durable unresolved reservation and pause new dispatch for that backend; already-running requests may finish. Release a reservation only on evidence that remote execution is no longer possible or an explicit user override.
+
+An explicit override may resume eligible never-submitted work after the user acknowledges the unresolved attempt; it must not resubmit that attempt or mark it resolved. Record the override and preserve its uncertainty. The configured maximum bounds DTFlow scheduling, not guaranteed remote execution after an override: no inspected remote status API can establish how much unknown work remains active.
+
+After restart, restore the queue paused with unresolved reservations intact. Ordinary Resume does not clear those reservations or bypass their dispatch block; the user must explicitly acknowledge and override that block. Test pre-submission slot release, post-submission disconnect/local cancellation, completion of other running requests, blocked replacement dispatch, explicit override and restart restoration in Phase 3B. Phase 3A supplies durable attempt evidence; Phase 3B adds the scheduler before Qt.
 
 ### Phase 4 — Minimal Qt shell and connection management
 
-Create the PySide6 application shell and canonical Qt Designer sources after the Phase 3 CLI and services are usable.
+Create the PySide6 application shell and canonical Qt Designer sources after both Phase 3A and Phase 3B CLI/service acceptance gates pass.
 
 Wire startup, main window, UI/resources, background execution and clean shutdown. Add Draw Things/cloud connection selection and useful status/failure presentation through the same services exercised by the CLI.
 
@@ -247,43 +279,13 @@ Connect the desktop UI to the generation services already exercised by the headl
 
 Persist enough metadata to reproduce the request. Mark a job completed only after successful terminal RPC status, validated final artifacts and durable output/metadata persistence. Saved previews must remain labeled as previews or diagnostics when final generation fails.
 
-### Phase 6 — Durable jobs and queue
+### Phase 6 — Queue planning and batch expansion
 
-Extend Phase 3's durable request/attempt records with persistent jobs, queues and explicit lifecycle states.
+Extend the Phase 3B durable queue with bounded pair/cross-product planning, dry-run inspection and resolved request expansion. Reuse the existing scheduler and reconciliation; basic queue execution is already required before Qt.
 
-Design for recovery after application restart before adding advanced workflow behavior. The inspected remote protocol exposes no generation job lookup or stream reattachment; recover local queued/completed state and reconcile interrupted in-flight jobs to an unknown outcome without automatic resubmission.
+### Phase 7 — Advanced scheduling
 
-Restore the queue paused after restart. Require explicit Resume or Cancel; Resume selects only eligible work known never to have crossed the submission boundary. Interrupted ambiguous attempts remain unknown and are excluded from queue replay.
-
-### Phase 7 — Concurrency
-
-Add controlled concurrent generation after actual Draw Things concurrency behavior has been measured.
-
-Current Phase 1 evidence supports treating one tested Draw Things gRPC server as one effective generation lane: concurrent client RPCs can be in flight together, but the tested iPhone/Bridge path completes work in an effectively serialized staircase and is slower than the matching serial baseline.
-
-The direct DT+ diagnostic path is a separate result. It has completed six controlled cloud requests concurrently within one broad generation-time window, but that does not establish a fixed cloud concurrency limit or production scheduling policy. Do not transfer direct-cloud concurrency assumptions to the Draw Things backend.
-
-Use the shared configurable cloud maximum, default four, in both CLI and Qt scheduling. Values above two change the Qt number's color subtly, without a prominent warning or confirmation dialog. Preserve a separate app/Bridge policy. Test bounded dispatch and throttling without automatically retrying ambiguous submissions.
-
-Do not infer safe concurrency from client-side capability alone.
-
-### Rolling queue dispatch
-
-Use a rolling scheduler rather than groups separated by a completion barrier. For ten independent eligible cloud items and a maximum of four, start items 1–4. As soon as any attempt reaches a known terminal outcome and releases its reservation, dispatch item 5 without waiting for the other three; refill each available slot with the next eligible item in queue order until the queue is drained.
-
-Completion order may differ from submission order. Keep outputs, errors and metadata attached to stable original item IDs and preserve queue order in presentation. Respect dependencies and queue pause/cancel state; a freed slot does not bypass eligibility or a backend dispatch block. Reserve slots before submission so simultaneous completions cannot oversubscribe the configured maximum.
-
-For normal cloud scheduling, active attempts plus unresolved reservations must not exceed the configured maximum. The tested local Draw Things/Bridge backend uses its separate one-generation policy, regardless of the cloud maximum. A disconnect or local cancellation with possible remote execution does not free a slot; apply the uncertainty rules below.
-
-Phase 7 fixture acceptance includes a ten-item/four-slot scenario with deliberately out-of-order completions: item 5 starts while other initial items remain active, rolling refill stays bounded, results retain item identity, and an uncertain attempt blocks replacement dispatch.
-
-### Uncertain attempts and slot accounting
-
-If submission definitely never occurred, release the scheduler slot. If a disconnect, local cancellation or other failure leaves remote execution possible, retain a durable unresolved reservation and pause new dispatch for that backend; already-running requests may finish. Release a reservation only on evidence that remote execution is no longer possible or an explicit user override.
-
-An explicit override may resume eligible never-submitted work after the user acknowledges the unresolved attempt; it must not resubmit that attempt or mark it resolved. Record the override and preserve its uncertainty. The configured maximum bounds DTFlow scheduling, not guaranteed remote execution after an override: no inspected remote status API can establish how much unknown work remains active.
-
-After restart, restore the queue paused with unresolved reservations intact. Ordinary Resume does not clear those reservations or bypass their dispatch block; the user must explicitly acknowledge and override that block. Test pre-submission slot release, post-submission disconnect/local cancellation, completion of other running requests, blocked replacement dispatch, explicit override and restart restoration in Phase 7. Phase 3 supplies durable attempt evidence, without adding a scheduler.
+Extend the Phase 3B rolling scheduler only where product needs justify priorities, fairness across queues or evidence-based adaptive concurrency/throttling. Preserve existing caps, unresolved reservations and no-replay semantics. This phase is not the introduction of concurrent execution.
 
 ### Phase 8 — Gallery and presets
 
@@ -355,7 +357,7 @@ Real generation should only be run when it validates behavior that cannot be est
 - Cloud concurrency: expose a configurable maximum in the CLI and Qt, with a default of **4**. In Qt, values above **2** receive a subtle color change rather than a prominent warning or confirmation dialog. This is a user-selected scheduling policy, not a verified service entitlement or guaranteed capacity.
 - Backend priority: direct DT+ cloud is the primary expected production backend. Local Draw Things gRPC remains a supported runtime backend and the frequent development/smoke-test path. Local smoke tests do not establish cloud readiness.
 
-Apply the Windows packaging requirement during Phase 2/3 investigation and the restart policy in Phase 6. Define the cloud concurrency setting in Phase 3 and expose it in Qt; Phase 7 implements bounded concurrent queue scheduling. Before scheduling exists, accepting the setting must not imply parallel execution.
+Apply the Windows packaging requirement during Phase 2/3 investigation. Phase 3B implements paused restart and bounded rolling queue execution through the CLI; Qt exposes those same services. Phase 7 is optional advanced scheduling, not a prerequisite for basic concurrency.
 
 ### Additional confirmed product decisions
 

@@ -270,7 +270,7 @@ An MCP server can let a coding agent invoke generation and inspect outputs, but 
 
 ## 8. Revised recommended implementation sequence
 
-The checked repository roadmap places backend abstraction in Phase 2, the desktop shell in Phase 3, and production DT+ integration in Phase 11. The sequence below is a recommendation to bring a narrow DT+ implementation into Phase 2; it does not claim the repository plan has already been changed.
+At the original inspection, the roadmap placed the desktop shell in Phase 3 and production DT+ integration in Phase 11. Subsequent planning updates bring narrow direct DT+ into Phase 2 and require Phase 3A single-generation services plus Phase 3B durable rolling queues before Phase 4 Qt. The recommendations below reflect that revised plan; they do not claim runtime implementation.
 
 | Priority | Work | Scope and references |
 | --- | --- | --- |
@@ -280,14 +280,14 @@ The checked repository roadmap places backend abstraction in Phase 2, the deskto
 | 4 | Wrap the existing Draw Things app gRPC path | Preserve the validated Python dependency path; compare dts-utils only for gaps |
 | 5 | Implement narrow native Python direct DT+ support | Environment-supplied API key, expiry-aware authentication, TLS, subscription-only policy and truthful errors |
 | 6 | Deliver the headless CLI and shared services before Qt | Backend selection, connectivity, inventory, text-to-image, durable outputs/metadata and honest interruption |
-| 7 | Build the minimal PySide6 desktop shell | Reuse CLI-exercised services; canonical Designer sources and responsive execution |
-| 8 | Wire GUI generation through shared services | Successful stream termination and validated outputs precede completed job state |
-| 9 | Persist jobs, request snapshots and restart reconciliation | Recover local state; do not imply remote reattachment |
-| 10 | Add bounded queue planning and backend-specific scheduling | TanqueStudio pair/cross expansion; separate app/Bridge and cloud policies |
+| 7 | Deliver durable rolling queues through the CLI before Qt | Phase 3B: bounded refill, stable item identity, paused restart and uncertain reservations; no remote reattachment |
+| 8 | Build the minimal PySide6 desktop shell | Reuse CLI-exercised services; canonical Designer sources and responsive execution |
+| 9 | Wire GUI generation and queue controls through shared services | Successful stream termination and validated outputs precede completed job state |
+| 10 | Add bounded batch planning and advanced scheduling | TanqueStudio pair/cross expansion over the existing rolling scheduler |
 | 11 | Add presets, image inputs and compiled workflows | Capability preflight, verified combinations and provenance |
 | 12 | Broaden DT+ hardening and optional MCP automation | Additional inputs, billing opt-in if requested, verified cancellation and service-backed automation |
 
-Phase 3 should deliver a working headless CLI through shared application services before Phase 4 adds Qt. Include explicit backend selection, non-generative connectivity, advertised model inventory, supported txt2img generation, output/reproducibility metadata saving and honest interruption. Qt must call the same services; it must not introduce a parallel orchestration path. Full backend feature parity, cloud uploads, workflows and durable queues remain separately scoped work.
+Phase 3 should deliver a working headless CLI through shared application services before Phase 4 adds Qt. Include explicit backend selection, non-generative connectivity, advertised model inventory, supported txt2img generation, output/reproducibility metadata saving and honest interruption. Qt must call the same services; it must not introduce a parallel orchestration path. Phase 3B also requires functional durable queues and rolling dispatch tested through the CLI, including ten items at a cap of four, paused restart and uncertainty handling. Full backend feature parity, cloud uploads, workflows and advanced scheduling remain separately scoped work.
 
 MediaGenerationKit should remain a protocol/reference source. No Swift runtime is required by the recorded successful Python diagnostic path. A Swift bridge is a fallback only for a concrete capability that cannot be implemented reliably in Python.
 
@@ -316,7 +316,7 @@ Separate three kinds of validation:
 
 Cheap checks should cover enum/unit conversion, seed fidelity, queue ordering, paired-axis mismatches, incomplete chunks, missing final output, cache bypass and restart reconciliation. Qt tests should focus on responsiveness and lifecycle wiring. Ordinary tests must not submit real generation.
 
-Make test endpoints and TLS trust injectable without weakening production certificate/hostname verification. Ordinary tests must fail on unexpected external connections so missing mocks cannot reach production. Keep simulators small and scenario-driven, without models or a reimplementation of Draw Things internals. Extend fake-backed UI, jobs, queues and restart tests as those later features arrive.
+Make test endpoints and TLS trust injectable without weakening production certificate/hostname verification. Ordinary tests must fail on unexpected external connections so missing mocks cannot reach production. Keep simulators small and scenario-driven, without models or a reimplementation of Draw Things internals. Exercise durable queues and restart behavior in Phase 3B before Qt; extend UI-specific coverage when Qt arrives.
 
 A fake or local protocol simulator can reproduce a defined scenario; it cannot prove production compute stops, actual billing semantics, model compatibility or Windows packaging. Fabricated quota errors test application behavior only; production classifications require documented responses or sanitized captured fixtures.
 

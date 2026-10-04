@@ -33,10 +33,12 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
-- Specify Phase 7 rolling queue dispatch: refill each released slot with the next eligible item, preserve item/result identity across out-of-order completion, and retain unresolved reservations without replacing potentially running requests.
+- Split Phase 3 into single-generation foundation (3A) and functional durable queues/rolling dispatch (3B), both tested through the CLI before Qt. Move essential queue/restart/concurrency work forward; reserve Phase 6 for batch planning and Phase 7 for advanced scheduling.
+
+- Require Phase 3B rolling queue dispatch before Qt: refill each released slot with the next eligible item, preserve item/result identity across out-of-order completion, and retain unresolved reservations without replacing potentially running requests.
 
 - Define deterministic environment-over-saved cloud credential precedence with no silent authentication fallback; plan fixture coverage for missing, empty and failed selected credentials.
-- Define Phase 7 unresolved concurrency reservations, backend dispatch pause, explicit user override and paused restart behavior without replaying uncertain attempts.
+- Define Phase 3B unresolved concurrency reservations, backend dispatch pause, explicit user override and paused restart behavior without replaying uncertain attempts.
 - Clarify that the initial CLI runs from source while packaging targets Qt; correct Windows path rendering and remove repeated build-identity wording.
 
 - Resolve the remaining product choices: secure Qt API-key entry via Windows Credential Manager with headless/environment support; PAYG deferred beyond the first release; manual updates initially.
@@ -45,12 +47,12 @@ Pending changes for the next DTFlow release.
 - Record confirmed initial personal use, Windows 10 / Pentium E6500 support target, portable-first packaging and possible later public distribution.
 - Prioritize direct DT+ production use while retaining local gRPC development/smoke coverage; cloud readiness requires separate evidence.
 - Plan paused queue restoration with explicit Resume/Cancel and no replay of ambiguous attempts.
-- Plan cloud concurrency configuration from Phase 3, default four, shared with Qt; use a subtle color above two and introduce bounded concurrent queue execution in Phase 7. These are planned policies, not implemented runtime features.
+- Plan cloud concurrency configuration from Phase 3, default four, shared with Qt; use a subtle color above two and implement and test bounded concurrent queue execution in Phase 3B before Qt. These are planned policies, not implemented runtime features.
 
 - Require a minimal atomic request/attempt record before Phase 3 remote submission and prevent automatic retries of unfinished potentially submitted attempts.
 - Separate initial cloud safety/authentication foundations from Phase 11 expansion; clarify inventory refresh/provenance/classification, Phase 5 basic LoRA selection and request-fidelity validation.
 
-- Deliver a working CLI in Phase 3 before the Phase 4 Qt shell; GUI generation reuses CLI-exercised services. Durable jobs and advanced operations retain separate later phases.
+- Deliver a working CLI in Phase 3 before the Phase 4 Qt shell; GUI generation reuses CLI-exercised services. Phase 3B includes durable jobs/queues and rolling dispatch; batch expansion and advanced operations retain later phases.
 
 - Bring basic direct DT+ text-to-image support forward into Phase 2; retain broader cloud capabilities and hardening in Phase 11. This is a roadmap change, not a shipped runtime feature.
 - Make preview/diagnostic artifact labeling, uncertain remote outcomes, subscription-only defaults and offline test boundaries explicit in the implementation plan.

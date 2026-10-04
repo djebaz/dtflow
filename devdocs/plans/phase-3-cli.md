@@ -6,9 +6,13 @@
 
 ## Goal
 
-Deliver a working `dtflow` command-line application before Qt. The CLI must exercise the real Python backend adapters through application services and provide a complete usable text-to-image path for the supported scope.
+Deliver a working `dtflow` command-line application before Qt. The CLI must exercise the real Python backend adapters through application services and provide supported text-to-image generation plus functional, tested durable queues and rolling dispatch before Qt.
 
 Dependency direction: CLI and Qt call shared services; services call core/backend contracts; adapters own provider protocols. CLI parsing, terminal formatting and Qt widgets must not own generation orchestration.
+
+## Delivery sequence
+
+Phase 3A establishes single-generation CLI/services, durable attempts, artifacts, logging and diagnostics. Phase 3B extends those same services with durable queues, rolling scheduling and restart reconciliation. Both gates must pass before Phase 4; full TanqueStudio parity remains later work.
 
 ## Required operations
 
@@ -21,6 +25,8 @@ Dependency direction: CLI and Qt call shared services; services call core/backen
 | Generation | Submit supported text-to-image requests, expose actual progress and collect validated final outputs |
 | Output saving | Save all required final images plus reproducibility metadata without silently overwriting useful results |
 | Interruption | Stop local waiting/transport as supported, preserve evidence and report remote uncertainty without automatic resubmission |
+| Queue control | Persist independent resolved items; list/inspect/start, Pause/Resume/Cancel through shared services; restore paused after restart |
+| Rolling dispatch | Refill released slots in eligible queue order; enforce cloud maximum (default four) and separate local one-lane policy; retain uncertain reservations |
 | Cache policy | Support `-nc` / `--no-cache`; disable both cache reads and writes when selected |
 
 Use environment-supplied cloud credentials for the initial CLI path. Keep credential resolution Qt-independent so desktop-secured Windows Credential Manager credentials can also be consumed headlessly when that storage path is introduced. Never accept an API key in routine logged request metadata or display credentials/tokens. Environment presence takes precedence over a saved key; an empty/invalid selected credential fails without silent fallback. Use the shared Phase 2 selection rule and log only its source. Keep PAYG opt-in disabled.
@@ -47,7 +53,7 @@ Manual release downloads are the initial update strategy. Include version and sh
 
 Treat direct DT+ as the primary production acceptance path alongside the supported local gRPC path. Offline cloud authentication/transport coverage and separately authorized deployed-cloud checks remain distinct from frequent local gRPC smoke tests.
 
-Expose a validated positive-integer cloud concurrency maximum in the CLI from this phase, default **4**, and persist it in shared configuration for Qt. Select the actual option spelling during implementation and keep help accurate. This is a user-selected maximum, not verified cloud entitlement. Phase 7 adds concurrent queue scheduling; until then, report the effective execution mode honestly rather than implying the setting enables parallel generation. Keep local gRPC scheduling policy separate.
+Expose a validated positive-integer cloud concurrency maximum in the CLI from this phase, default **4**, and persist it in shared configuration for Qt. Select the actual option spelling during implementation and keep help accurate. This is a user-selected maximum, not verified cloud entitlement. Phase 3B must execute and test rolling concurrent queues through the CLI before Qt. Phase 7 adds optional advanced scheduling. Keep local gRPC scheduling policy separate.
 
 Qt exposes the same setting and uses a subtle color change above **2**, without a prominent warning or confirmation dialog.
 
@@ -81,7 +87,21 @@ On startup/record inspection, unfinished attempts that crossed the boundary rema
 
 Test crashes/failures before recording, after marking potential execution, during generation and between artifact saving and outcome commit. Previously saved artifacts remain evidence, not automatic proof of full completion.
 
-This phase adds a minimal durable execution record and artifact metadata, not a durable queue or full restartable scheduler. Phase 6 extends these records with transactional job/queue state and reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
+Phase 3A supplies these durable attempts and artifact metadata. Phase 3B extends them with transactional queue/job state, rolling scheduling and local restart reconciliation. Do not claim remote recovery: the inspected protocol has no generation status/reattachment operation.
+
+## Phase 3B — Durable queues and rolling execution
+
+Persist queue identity, stable ordered item IDs, immutable resolved requests, item/attempt states, backend selection and concurrency configuration. Use one dispatch owner per application state directory so two CLI processes cannot independently dispatch the same queue or bypass its cap. The CLI presents queue control; shared services own persistence, eligibility, scheduling and reconciliation.
+
+For ten independent eligible cloud items and a maximum of four, submit items 1–4. As any attempt reaches a known terminal outcome and releases its reservation, start the next eligible item immediately, without a group-completion barrier. Preserve original item identity and queue order in result presentation even when completion order differs. Reserve slots before remote submission and bound active attempts plus unresolved reservations. The tested local app/Bridge policy is one lane.
+
+Pause stops new dispatch and lets active attempts finish. Resume starts only eligible never-submitted items, subject to any backend uncertainty block. Cancel prevents submission of pending selected items; for running attempts it requests interruption only as supported and must not imply confirmed remote cancellation. Completed artifacts remain preserved.
+
+A definitely unsubmitted failure releases its slot. If remote execution remains possible after disconnect/local cancellation, retain an unresolved reservation and pause new dispatch for that backend while other active requests finish. An explicit acknowledged override may resume eligible work but cannot replay or mark the uncertain attempt resolved. Record the override; actual remote concurrency is no longer guaranteed after overriding unknown work.
+
+After restart, restore the queue paused, retain completed results and unresolved reservations, and exclude ambiguous attempts from replay. Ordinary Resume cannot silently clear an uncertainty block. Changing the maximum downward does not cancel active requests; withhold new dispatch until reservation count is below the new cap.
+
+Phase 6 adds pair/cross-product batch planning; Phase 7 adds advanced scheduling. Neither is required for this basic rolling execution path.
 
 ## Testing and acceptance
 
@@ -92,6 +112,10 @@ This phase adds a minimal durable execution record and artifact metadata, not a 
 - Tests assert saved output metadata, seed-zero fidelity, supported sampler/enum and pixel-to-wire dimension mappings, defaults and the effective encoded parameters; unsupported options fail validation before submission.
 - Tests assert multiple final outputs where supported, empty-output rejection and preview labeling.
 - Crash-boundary tests prove the request/attempt record precedes submission, failed persistence prevents submission and unfinished potentially submitted attempts cannot be automatically retried.
+- Phase 3B CLI acceptance covers durable queue creation/inspection and ten independent items with a four-slot cap: controllable out-of-order completion proves item 5 starts before all initial four finish, continuous refill stays bounded and results retain item identity.
+- Cover Pause/Resume, pending cancellation, running interruption, pre-submission rejection, uncertain post-submission loss, blocked replacement dispatch and explicit override through shared services/CLI.
+- Restart tests restore paused queues, completed outputs and unresolved reservations, never replay ambiguous attempts, and require explicit action before eligible work resumes.
+- Cover one local lane, changing concurrency downward and exclusive dispatch ownership. Use deterministic fake timing and focused real-adapter protocol fixtures, with no external generation.
 - Discovery tests cover explicit refresh, backend provenance, reliable model/LoRA/control classification and unclassified files.
 - An unexpected external connection fails ordinary tests; no subscription credits are consumed by fixture coverage.
 - Cloud subscription-only policy, token refresh and sanitized failures remain covered.
@@ -102,10 +126,10 @@ Explicitly authorized live checks can verify deployed behavior after offline cov
 
 ## Scope and later expansion
 
-“Complete CLI” means an end-to-end application for supported operations, not all TanqueStudio features in one phase. Queue matrix expansion, durable jobs, workflows, advanced image/control combinations, video and cloud asset/LoRA upload remain separate work until their contracts and compatibility are verified.
+“Complete CLI” means an end-to-end application for supported operations, not all TanqueStudio features in one phase. Pair/cross-product queue matrix expansion, advanced scheduling, workflows, advanced image/control combinations, video and cloud asset/LoRA upload remain separate work until their contracts and compatibility are verified.
 
 Track the intended port in the [TanqueStudio parity matrix](tanquestudio-parity.md); later work requires an explicit milestone rather than indefinite deferral. This matrix is not a requirement to expose every feature before Qt.
 
 Model discovery is included now. Basic compatible LoRA selection and explicit weights are assigned to Phase 5 through shared services, with CLI and Qt exposure. Cloud LoRA upload is distinct from generation and must not be assumed to use the same endpoint, format or authorization contract.
 
-Phase 4 adds the minimal Qt shell and connection management. Phase 5 adds GUI generation by calling these existing services. Later features should expose the same underlying services through the CLI wherever practical so Qt remains presentation rather than a second execution engine.
+Phase 4 adds the minimal Qt shell and connection management after both the single-generation and rolling-queue CLI gates pass. Phase 5 adds GUI generation by calling these existing services. Later features should expose the same underlying services through the CLI wherever practical so Qt remains presentation rather than a second execution engine.

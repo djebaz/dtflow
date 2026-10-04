@@ -12,7 +12,7 @@ Start real adapters with controlled text-to-image requests. Image-to-image, inpa
 
 Direct DT+ is the primary expected production backend; local gRPC is a supported runtime and the frequent development/smoke-test path. Local smoke success does not prove cloud readiness.
 
-Durable job orchestration belongs to Phase 6. Phase 2 must expose enough outcome information to support it safely later.
+Phase 3A adds durable attempts; Phase 3B adds durable queues and rolling orchestration before Qt. Phase 2 must expose enough outcome information to support both safely.
 
 ## Implementation order
 
@@ -27,7 +27,7 @@ Durable job orchestration belongs to Phase 6. Phase 2 must expose enough outcome
 
 ### Completion and artifacts
 
-Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. Phase 3 introduces a durable pre-submission request/attempt record plus output/metadata saving; those writes must finish before reporting application success. Phase 6 extends it with durable queue/job lifecycle state.
+Require successful terminal RPC status and complete, decodable required final output. Progress, previews and an artifact's last chunk are insufficient to establish request completion. Phase 3 introduces a durable pre-submission request/attempt record plus output/metadata saving; those writes must finish before reporting application success. Phase 3B extends it with durable queue/job lifecycle state and tested rolling scheduling.
 
 Preserve incomplete outputs as partial evidence. A preview saved after failed generation must remain labeled as a preview or diagnostic artifact in metadata and the UI; never promote it to a completed result or use it to imply success.
 
@@ -75,7 +75,7 @@ Make HTTP/gRPC endpoints and test TLS trust injectable so fixtures stay local wi
 
 Keep simulators small and scenario-driven, returning defined protocol fixtures without loading models or recreating Draw Things internals. Simulated cancellation verifies DTFlow's handling, not that production compute stops. Fabricated quota errors verify presentation/application behavior, not actual billing semantics; production classifications require documented responses or sanitized captured fixtures.
 
-Phase 2 covers the contract and adapters. Extend fake-backed UI, durable job, queue and restart-reconciliation tests as those features are introduced in later phases.
+Phase 2 covers the contract and adapters. Phase 3B extends fake and transport-fixture coverage through the CLI for durable queues, rolling dispatch and restart reconciliation; add Qt-specific coverage when the UI arrives.
 
 ## Source-level gaps to validate
 
@@ -104,4 +104,4 @@ The [TanqueStudio parity matrix](tanquestudio-parity.md) tracks later feature mi
 
 ## Deferred work
 
-[Phase 3](phase-3-cli.md) adds the headless CLI, shared application services, durable pre-submission attempt records and output/metadata saving; Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds durable jobs/reconciliation; Phase 7 establishes scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
+[Phase 3](phase-3-cli.md) delivers the headless CLI: 3A adds single-generation services, durable attempts and output saving; 3B adds durable queues, rolling dispatch and restart reconciliation before Qt. Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds batch planning; Phase 7 extends advanced scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
