@@ -18,7 +18,9 @@
     <property name="spacing"><number>12</number></property>
     <item>
      <widget class="QFrame" name="headerFrame">
-      <property name="minimumSize"><size><width>0</width><height>76</height></size></property>
+      <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+      <property name="minimumSize"><size><width>0</width><height>78</height></size></property>
+      <property name="maximumSize"><size><width>16777215</width><height>78</height></size></property>
       <layout class="QHBoxLayout" name="headerLayout">
        <property name="leftMargin"><number>14</number></property>
        <property name="topMargin"><number>10</number></property>
@@ -43,7 +45,7 @@
         </layout>
        </item>
        <item><spacer name="headerSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>40</width><height>20</height></size></property></spacer></item>
-       <item><widget class="QLabel" name="phaseBadgeLabel"><property name="text"><string>PHASE 4 · CONNECTION SHELL</string></property></widget></item>
+       <item><widget class="QLabel" name="phaseBadgeLabel"><property name="minimumSize"><size><width>184</width><height>30</height></size></property><property name="maximumSize"><size><width>184</width><height>30</height></size></property><property name="text"><string>PHASE 4 · CONNECTION SHELL</string></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
       </layout>
      </widget>
     </item>
@@ -120,8 +122,8 @@
          <widget class="QGroupBox" name="desktopPathBox">
           <property name="title"><string>Desktop path</string></property>
           <layout class="QVBoxLayout" name="desktopPathLayout">
-           <item><widget class="QLabel" name="generationPreviewLabel"><property name="text"><string>Generation workspace  ·  Phase 5A design source prepared separately</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
-           <item><widget class="QLabel" name="queuePreviewLabel"><property name="text"><string>Durable queue workspace  ·  Phase 5B design source prepared separately</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+           <item><widget class="QLabel" name="generationPreviewLabel"><property name="text"><string>Generation workspace  ·  Planned for Phase 5A</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+           <item><widget class="QLabel" name="queuePreviewLabel"><property name="text"><string>Durable queues  ·  Planned for Phase 5B</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
           </layout>
          </widget>
         </item>

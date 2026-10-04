@@ -79,6 +79,7 @@ Selectors use stable semantic object names and dynamic properties such as `role`
 - 2026-10-04: treat generation and queue forms as Phase 5 presentation contracts; adding the forms does not claim that those workflows are wired or usable.
 - 2026-10-04: PR #15 was squash-merged first; rebase this branch and integrate its existing shell rather than duplicating connection or credential behavior.
 - 2026-10-04: keep `previewHost` as a future custom preview promotion point and `queueItemsView` as a model/view seam; neither form imports backend types.
+- 2026-10-04: first Windows screenshot review found an expanding header/badge and misleading red styling on disabled destructive controls; constrain the header to 78 px and make disabled styling override semantic action colors.
 
 ## Open questions
 

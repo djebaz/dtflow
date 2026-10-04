@@ -72,6 +72,11 @@ QLabel[role="secondary"] {
   color: #a0a0a0;
 }
 
+QLabel:disabled,
+QLabel[role="secondary"]:disabled {
+  color: #777777;
+}
+
 QLabel#eyebrowLabel,
 QLabel#workspaceEyebrowLabel,
 QLabel#inspectorEyebrowLabel,
@@ -210,6 +215,19 @@ QPushButton[role="danger"]:hover {
   background-color: #432323;
   border-color: #c62828;
   color: #ffffff;
+}
+
+QPushButton#removeKeyButton:disabled,
+QPushButton#cancelQueueButton:disabled,
+QPushButton[role="danger"]:disabled {
+  background-color: #292929;
+  border-color: #2f2f2f;
+  color: #777777;
+}
+
+QGroupBox:disabled {
+  border-color: #303030;
+  color: #777777;
 }
 
 QFrame#statusCard,
