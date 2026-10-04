@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="windowTitle"><string>DTFlow</string></property>
+  <property name="geometry"><rect><x>0</x><y>0</y><width>560</width><height>420</height></rect></property>
+  <widget class="QWidget" name="central">
+   <layout class="QVBoxLayout" name="rootLayout">
+    <item>
+     <widget class="QGroupBox" name="connectionBox">
+      <property name="title"><string>Connection</string></property>
+      <layout class="QFormLayout" name="connectionForm">
+       <item row="0" column="0"><widget class="QLabel" name="backendLabel"><property name="text"><string>Backend</string></property></widget></item>
+       <item row="0" column="1"><widget class="QComboBox" name="backendCombo"/></item>
+       <item row="1" column="0"><widget class="QLabel" name="endpointLabel"><property name="text"><string>Endpoint</string></property></widget></item>
+       <item row="1" column="1"><widget class="QLineEdit" name="endpointEdit"><property name="placeholderText"><string>HOST:PORT (local Draw Things)</string></property></widget></item>
+       <item row="2" column="1"><widget class="QPushButton" name="checkButton"><property name="text"><string>Check connection</string></property></widget></item>
+       <item row="3" column="0" colspan="2"><widget class="QLabel" name="statusLabel"><property name="text"><string>Not checked.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QGroupBox" name="credentialBox">
+      <property name="title"><string>DT+ API key</string></property>
+      <layout class="QFormLayout" name="credentialForm">
+       <item row="0" column="0"><widget class="QLabel" name="keyLabel"><property name="text"><string>API key</string></property></widget></item>
+       <item row="0" column="1"><widget class="QLineEdit" name="keyEdit"><property name="echoMode"><enum>QLineEdit::Password</enum></property></widget></item>
+       <item row="1" column="1">
+        <layout class="QHBoxLayout" name="keyButtons">
+         <item><widget class="QPushButton" name="saveKeyButton"><property name="text"><string>Save</string></property></widget></item>
+         <item><widget class="QPushButton" name="removeKeyButton"><property name="text"><string>Remove saved key</string></property></widget></item>
+        </layout>
+       </item>
+       <item row="2" column="0" colspan="2"><widget class="QLabel" name="credentialStatusLabel"><property name="wordWrap"><bool>true</bool></property></widget></item>
+      </layout>
+     </widget>
+    </item>
+    <item><spacer name="verticalSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <widget class="QMenu" name="helpMenu"><property name="title"><string>Help</string></property><addaction name="aboutAction"/></widget>
+   <addaction name="helpMenu"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="aboutAction"><property name="text"><string>About DTFlow</string></property></action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

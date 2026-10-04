@@ -13,7 +13,7 @@ from dtflow.backends.drawthings.cloud import DirectCloudBackend
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.fake import FakeBackend
-from dtflow.core.models import Backend, Credential, TimeoutPolicy, ValidationError
+from dtflow.core.models import Backend, Credential, CredentialProvider, TimeoutPolicy, ValidationError
 from dtflow.services.credentials import KEY, EnvironmentCredentials, resolve_credentials
 
 BACKENDS = ("fake", "local", "cloud")
@@ -21,7 +21,7 @@ SHARED_SECRET = "DRAWTHINGS_SHARED_SECRET"
 
 
 class _NoSavedCredentials:
-    """No secure-storage provider exists yet (Phase 4); the environment is the only cloud source."""
+    """Used where no secure store exists; the environment is then the only cloud source."""
 
     async def get(self) -> Credential | None:
         return None
@@ -30,11 +30,12 @@ class _NoSavedCredentials:
 class _CloudCredentials:
     """Resolve at first use through the shared precedence rule; selection never changes after a failure."""
 
-    def __init__(self, environ: Mapping[str, str]):
+    def __init__(self, environ: Mapping[str, str], saved: CredentialProvider):
         self._environment = EnvironmentCredentials(environ)
+        self._saved = saved
 
     async def get(self) -> Credential:
-        return await resolve_credentials(self._environment, _NoSavedCredentials())
+        return await resolve_credentials(self._environment, self._saved)
 
 
 class _SharedSecret:
@@ -67,8 +68,13 @@ def create_backend(
     timeouts: TimeoutPolicy | None = None,
     environ: Mapping[str, str] | None = None,
     tls: TlsPolicy | None = None,
+    saved: CredentialProvider | None = None,
 ) -> Backend:
-    """Build the explicitly selected backend; ``tls`` is the injection point for fixture trust only."""
+    """Build the explicitly selected backend; ``tls`` is the injection point for fixture trust only.
+
+    ``saved`` is the secure saved-key provider (the Qt shell passes Credential Manager on Windows); the CLI passes none,
+    so headless runs stay environment-only.
+    """
     environ = os.environ if environ is None else environ
     if selection.name == "fake":
         return FakeBackend(scenario=selection.scenario)
@@ -80,9 +86,11 @@ def create_backend(
             endpoint = DrawThingsEndpoint(endpoint.host, endpoint.port, tls)
         return DrawThingsBackend(endpoint, timeouts=timeouts, shared_secret=_SharedSecret(environ))
     if selection.name == "cloud":
-        if KEY not in environ:
+        if saved is None:
+            saved = _NoSavedCredentials()
+        if KEY not in environ and isinstance(saved, _NoSavedCredentials):
             raise ValidationError(f"The cloud backend requires {KEY} in the environment.")
         return DirectCloudBackend(
-            CloudAuth(_CloudCredentials(environ)), max_concurrency=selection.cloud_concurrency, timeouts=timeouts
+            CloudAuth(_CloudCredentials(environ, saved)), max_concurrency=selection.cloud_concurrency, timeouts=timeouts
         )
     raise ValidationError("Unknown backend selection.")
