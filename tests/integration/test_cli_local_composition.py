@@ -20,16 +20,19 @@ from dtflow import cli
 from dtflow.backends.drawthings import TlsPolicy
 from dtflow.backends.drawthings.wire import float32
 from dtflow.composition import create_backend
+from dtflow.services import session
 
 ECHO = EchoSpec(files=("a_q8p.ckpt", "lora.ckpt"), models=MODELS[:1], loras=LORAS)
 
 
 @pytest.fixture
 def fixture_trust(monkeypatch):
-    monkeypatch.setattr(
-        cli,
+    monkeypatch.setattr(  # the shared session service owns backend creation for the CLI and the desktop
+        session,
         "create_backend",
-        lambda selection, timeouts=None: create_backend(selection, timeouts=timeouts, tls=TlsPolicy.custom_ca(CA)),
+        lambda selection, timeouts=None, saved=None: create_backend(
+            selection, timeouts=timeouts, saved=saved, tls=TlsPolicy.custom_ca(CA)
+        ),
     )
 
 

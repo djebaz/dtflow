@@ -1,6 +1,6 @@
 # Plan: Phase 5A desktop generation wiring
 
-**Status:** Planned; follows the merged Phase 3B cloud asset service (PR #18)
+**Status:** PR 1 implemented (draft); PR 2 and the gate remain planned. Follows the merged Phase 3B cloud asset service (PR #18)
 **Milestone:** First usable Qt generation path (part of release 0.3.0 with Phase 5B)
 **Authoritative acceptance:** `5A-O1` to `5A-O6` from [the initial plan](initial.md#phase-5-testing-ownership); `5-LG1`/`5-LG2` stay separately authorized
 **Related plans:** [Qt UX design](2026-10-04-qt-ux-design.md), [workspace navigation](2026-10-04-qt-workspace-navigation.md), [Phase 3B cloud assets](2026-10-04-phase-3b-cloud-assets.md), [Phase 3 CLI](phase-3-cli.md), [release roadmap](releases.md)
@@ -96,12 +96,19 @@ Owned checks: `5A-O1`, `5A-O2`, `5A-O4`, `5A-O6` with a controlled fake session 
 - Separately authorized `5-LG1` (local) and `5-LG2` (DT+) workflows, only when the owner explicitly authorizes inference; never run by agents.
 - `3-LG4` (custom LoRA upload, reuse and use) must be recorded before the desktop advertises custom cloud LoRA support; it is not needed to start non-billable Qt composition.
 
-## Decisions to take in PR 1
+## Decisions taken in PR 1
 
-- Session service lifetime and state-lock scope (per operation versus per window).
-- The session service only exposes coroutines; the existing `AsyncRunner` stays in `ui/` (no new runner).
-- Event delivery: progress events cross from the background loop to the GUI thread through the runner's queued signal, coalesced so previews cannot flood the GUI.
-- Error-to-field table location (presenter, not widgets).
+- **Session lifetime and lock scope:** per operation. `services/session.py` exposes `open_session` (async context manager that builds the backend before touching state, opens it under the connect deadline, and closes backend then store in order), `run_generation`, `generate_once`, `refresh_inventory`, `read_attempt` and `bind_prepared`. Generation holds the ownership lock only while it runs; inventory refresh uses `durable=False` and takes no lock. A second owner raises `StateBusyError` (a `PersistenceError` subclass, so CLI exit codes are unchanged) and the page shows "State is busy".
+- **Runner:** no new runner. `AsyncRunner` now also reports a cancel requested through the returned future to its callback (not at shutdown). `EventRelay` coalesces progress and previews to the latest of each kind between GUI deliveries and delivers every other event, in sequence order.
+- **Cancel:** the button cancels the future; wording then comes from `read_attempt` evidence (`present_interruption`), never from the click.
+- **Error-to-field table:** `ui/generation_presenter.py` (`ERROR_FIELDS`, by the leading word of the resolver's message); unlisted messages become a general banner. The presenter is Qt-free; `ui/generation_page.py` is the widget controller.
+- **Configuration UX (ambiguity, default chosen):** Save and Load use file dialogs defaulting to `<state>/configs`; `configurationCombo` lists `*.json` found there and selecting an entry loads it. A loaded LoRA is displayed read-only and kept in the page state so it round-trips through save and generation; no receipt is bound.
+- **Small Designer additions:** `refreshInventoryButton`, `cancelButton` (labelled "Stop waiting"), `generationStatusLabel`, `resultList`, and an editable `modelCombo`; the preview notice now says only LoRA and cloud asset controls are preview-only.
+- **Form defaults:** the form's visible defaults (512x512, 20 steps, guidance 7) are passed as explicit overrides and shown as such in the evidence panel; the empty prompt is rejected by the shared resolver.
+
+## Decisions still open for later PRs
+
+- How the page surfaces `assets.lock` contention and where the asset actions live in the Designer form (PR 2).
 
 ## Risks and mitigations
 

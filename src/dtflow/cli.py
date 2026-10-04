@@ -30,8 +30,8 @@ from dtflow.services.artifacts import atomic_write
 from dtflow.services.assets import AssetService
 from dtflow.services.config import export_config, load_config, resolve_request
 from dtflow.services.generation import GenerationService
-from dtflow.services.preflight import apply_trigger_prefixes
 from dtflow.services.queue import QueueDispatcher
+from dtflow.services.session import asset_validator, bind_prepared, open_session, run_generation, selection_for
 
 EXIT_OK = 0
 EXIT_INVALID = 2  # invalid input or missing credentials: nothing was dispatched
@@ -289,28 +289,8 @@ def resolve_generation(args: argparse.Namespace) -> ResolvedGenerationRequest:
 
 
 async def bind_assets(args: argparse.Namespace, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
-    """Attach confirmed local receipts to the request; reads only the local registry and never uploads."""
-    if not args.asset:
-        return request
-    if args.backend != "cloud":
-        raise ValidationError("--asset applies to the cloud backend only.")
-    registry = AssetRegistry(args.state)
-    await registry.open()
-    try:
-        prepared = tuple([await registry.prepared(asset_id) for asset_id in args.asset])
-    finally:
-        await registry.aclose()
-    selected = {item.identifier for item in request.loras}
-    for item in prepared:
-        if item.identifier not in selected:
-            raise ValidationError(f"--asset {item.receipt_id[:8]} needs a matching --lora {item.identifier}:WEIGHT.")
-    evidence = (*request.resolution_evidence, ("prepared_assets", ",".join(item.receipt_id for item in prepared)))
-    return replace(request, prepared_assets=prepared, resolution_evidence=evidence)
-
-
-def asset_validator(backend) -> AssetService | None:
-    """Metadata-only validation for dispatch, available only where the backend can negotiate cloud assets."""
-    return AssetService(backend) if hasattr(backend, "negotiate_asset") else None
+    """Attach confirmed local receipts to the request (shared session service; never uploads)."""
+    return await bind_prepared(args.state, args.backend, request, args.asset)
 
 
 def write_export(path: Path, request: ResolvedGenerationRequest) -> None:
@@ -526,32 +506,17 @@ async def run(args: argparse.Namespace) -> int:
         policy = TimeoutPolicy(total=args.timeout)
         if args.export:
             write_export(args.export, request)
-    selection = None
-    if args.command != "attempts":
-        selection = BackendSelection(
-            args.backend,
-            args.endpoint,
-            load_cloud_concurrency(args.state) if args.backend == "cloud" else 4,
-            getattr(args, "scenario", "success"),
-        )
-        backend = create_backend(selection, timeouts=policy)
-    else:
-        backend = None
-    store = SQLiteAttempts(args.state)
-    try:
-        await store.open()
-        if args.command == "attempts":
+    store = None
+    if args.command == "attempts":
+        store = SQLiteAttempts(args.state)
+        try:
+            await store.open()
             print(json.dumps(await store.inspect(args.attempt), indent=2))
             return EXIT_OK
-        async with asyncio.timeout(policy.connect):
-            await backend.open()
-        service = GenerationService(
-            backend,
-            store,
-            getattr(args, "out", None) or args.state / "outputs",
-            timeouts=policy,
-            assets=asset_validator(backend),
-        )
+        finally:
+            await store.aclose()
+    selection = selection_for(args.backend, args.endpoint, args.state, scenario=getattr(args, "scenario", "success"))
+    async with open_session(selection, args.state, output=getattr(args, "out", None), timeouts=policy) as service:
         log.info("command=%s backend=%s", args.command, args.backend)
         if args.command == "check":
             print(json.dumps(asdict(await service.check_connection()), indent=2))
@@ -559,39 +524,27 @@ async def run(args: argparse.Namespace) -> int:
             snapshot = await service.get_inventory(args.refresh or args.no_cache)
             print(json.dumps(filtered(snapshot, args.kind), indent=2))
         else:
-            # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
-            snapshot = await service.get_inventory(refresh=True)
-            if args.prefix:
-                request = apply_trigger_prefixes(request, snapshot)
-            diagnostics = await service.preflight(request) if request.loras else ()
             label = args.backend
 
             def progress(event):
                 if event.kind in ("preparing", "progress", "terminal"):
                     print(f"[{label}] {event.kind}: {event.stage}", file=sys.stderr)
 
-            result = await service.generate(request, on_event=progress)
+            outcome = await run_generation(service, request, prefix=args.prefix, on_event=progress)
             report = {
-                "attempt_id": result.attempt_id,
-                "backend": backend.capabilities.backend_id,
-                "outputs": result.output_paths,
-                "metadata": result.metadata_path,
+                "attempt_id": outcome.attempt_id,
+                "backend": outcome.backend_id,
+                "outputs": outcome.output_paths,
+                "metadata": outcome.metadata_path,
             }
-            if args.backend == "fake":
+            if outcome.fake:
                 report["fake"] = True
-            if diagnostics:
-                report["lora_preflight"] = [asdict(item) for item in diagnostics]
-            if result.backend_result.warnings:
-                report["warnings"] = list(result.backend_result.warnings)
+            if outcome.diagnostics:
+                report["lora_preflight"] = [asdict(item) for item in outcome.diagnostics]
+            if outcome.warnings:
+                report["warnings"] = list(outcome.warnings)
             print(json.dumps(report, indent=2))
-        return EXIT_OK
-    finally:
-        try:
-            if backend is not None:
-                async with asyncio.timeout(policy.cleanup):
-                    await backend.aclose()
-        finally:
-            await store.aclose()
+    return EXIT_OK
 
 
 def start_logging(args: argparse.Namespace):

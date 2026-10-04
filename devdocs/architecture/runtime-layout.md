@@ -12,6 +12,9 @@ reference, state, sanitized evidence code, timestamps) and never credentials, cr
 file contents. It is durable state, not cache: cache cleanup and `-nc` never touch it, newer schemas are refused
 without reset, and an interrupted `intent`/`transferring` operation becomes explicit `unknown` the next time a writer
 opens it. A receipt is only a local candidate; every new scope must pass a fresh metadata check before reuse.
+The state directory's `owner.lock` is held per operation by the shared session service (`services/session.py`): a
+generation takes it for its duration, inventory refresh and connection checks take none, and the desktop never holds it
+between operations. A second owner fails with an explicit "state is busy" outcome before anything is dispatched.
 SQLite manages its WAL/SHM sidecars in the database directory. Since the queue schema (version 2) the same database
 also holds queues, items, posted controls and queue events; opening a release 0.1.0 (version 1) database writes a
 one-time `attempts.pre-v2.sqlite3` copy beside it before migrating.
