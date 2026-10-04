@@ -30,6 +30,8 @@ The initial implementation covers API-key authentication and controlled txt2img.
 
 HTTP requests use Content-Type: application/json. Hostnames/certificates are verified. API origin and gRPC endpoint are independently injected for fixtures; changing one does not silently redirect the other. No signed-storage endpoint is contacted in Phase 2.
 
+Cloud TLS follows the working probe baseline: DirectCloudService creates ssl.create_default_context() and enables h2, so the cloud adapter explicitly selects system trust with its normal certificate/hostname checks. HTTP likewise uses normal verified HTTPS. Do not add certificate pinning, extra TLS identity checks or a separate security policy beyond that baseline without an evidenced requirement. The local Draw Things bundled-CA/hostname exception is not used for DT+.
+
 DTFlow choice: connection checks may acquire a short-term token and perform Echo, but never call /authenticate or GenerateImage merely to report health. Return separate API-key authentication, gRPC reachability and inventory status. Token acquisition proves that request was accepted; it does not establish generation entitlement or remaining quota.
 
 ## Short-term token exchange

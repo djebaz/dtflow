@@ -1,8 +1,9 @@
 # Draw Things local gRPC integration (Phase 2B)
 
-**Status:** narrow adapter implemented in `src/dtflow/backends/drawthings/` and verified only against the scripted
-strict-TLS fixture server in `tests/support/dt_server.py`. It has not been run against a real Draw Things server, and
-no generation or billable action was performed while building it.
+**Status:** narrow adapter implemented in `src/dtflow/backends/drawthings/` with offline scripted TLS/gRPC coverage.
+Owner-run non-generative checks exposed real-server TLS incompatibilities; the local bundled-CA policy below addresses
+them, but a successful live adapter check after that fix is still pending. No real generation or billable action was
+performed while building it.
 
 ## Scope
 
@@ -19,18 +20,26 @@ Not included: CLI exposure (3A), LoRA, img2img/inpaint/control, chunked output a
 | `Channel.__connect__` (private) | `backend.py` | Connects before any request bytes exist so connect/TLS failures are provably pre-submission. |
 | `ImageBuffer.from_tensor` | `codec.py` | Final-image decode in a worker thread. |
 | `_preview_decoders.decode_preview` (private) | `codec.py` | Best-effort previews; any failure drops the preview silently. |
+| `resources/root_ca.crt` | `tls.py` | Read bundled CA through importlib.resources; local policy verifies its chain with hostname checking off and VERIFY_X509_STRICT cleared. No process-global context is patched. |
 
 Only `dtflow.backends.drawthings` imports provider libraries (checked by `tests/unit/test_contract.py`).
 
 ## TLS policy
 
-Certificate and hostname verification are always on. A connection may use the system trust store or one explicit CA
-file, and may name an explicit verified TLS server name (connect by IP, verify a DNS name). There is no option to
-disable verification and no fallback after a TLS failure. Failures are classified (`tls_untrusted_certificate`,
-`tls_hostname_mismatch`, `tls_expired`, `tls_handshake_failed`) as pre-submission connectivity failures.
+Local endpoints default to the explicit TlsPolicy.drawthings_local() compatibility policy, matching the working
+probe: trust only the bundled Draw Things Root CA, verify the certificate chain, and disable hostname checking.
+Clear VERIFY_X509_STRICT only for this policy because the bundled CA lacks the key-usage extension required by
+Python 3.13's default strict validation. It neither accepts arbitrary self-signed certificates nor retries with
+weaker trust after a failure. Hostname checking is absent in this local mode, so it does not establish endpoint-name
+identity; callers deliberately choose their local server.
 
-**Pending:** which names/CA a real Draw Things server presents is unverified. A relaxed-hostname compatibility
-policy (chain still verified, clearly named) is added only if the optional live check shows it is required.
+Owner-reported non-generative diagnostics found code 92 (CA missing key-usage extension) with the bundled CA, then
+code 64 (IP mismatch) after clearing strict validation. These findings justify this compatibility path; a successful
+live connection/inventory check using the updated adapter remains pending.
+
+Explicit system/custom-CA policies retain chain and hostname verification, optionally with a configured verified
+server name. Direct DT+ remains on the probe's default system-trust context with h2; it does not inherit the local
+compatibility exception or gain additional TLS requirements. Failures remain pre-submission connectivity failures.
 
 ## Evidence mapping
 
@@ -73,4 +82,5 @@ durable store does not persist their bytes.
 `tests/fixtures/tls/generate.sh` creates test-only EC certificates (IP/DNS SANs, DNS-only, wrong-name, untrusted CA)
 valid for about 100 years; the keys are committed and labelled test-only. The scripted server returns protocol
 fixtures only. One SQLite service path runs through the real adapter. The optional `live` test
-(`tests/integration/test_drawthings_live.py`) is a non-generative strict connection and Echo check.
+(`tests/integration/test_drawthings_live.py`) is a non-generative connection and Echo check using the bundled local
+policy by default; explicit CA/server-name settings select strict trust instead.

@@ -87,6 +87,23 @@ def test_tls_policy_cannot_disable_verification():
         TlsPolicy(context=weak)
 
 
+def test_local_bundled_ca_policy_keeps_chain_verification_and_other_policies_strict():
+    import ssl
+    from importlib.resources import files
+
+    local = TlsPolicy.drawthings_local().build_context()
+    ca = files("drawthings_py").joinpath("resources/root_ca.crt").read_text(encoding="ascii")
+    assert local.verify_mode == ssl.CERT_REQUIRED and not local.check_hostname
+    assert not local.verify_flags & ssl.VERIFY_X509_STRICT
+    assert local.get_ca_certs(binary_form=True) == [ssl.PEM_cert_to_DER_cert(ca)]
+    for policy in (TlsPolicy.system(), TlsPolicy.custom_ca(CA)):
+        context = policy.build_context()
+        assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+        assert context.verify_flags & ssl.VERIFY_X509_STRICT
+    with pytest.raises(ValueError, match="without overrides"):
+        TlsPolicy(ca_file=CA, bundled_local=True)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "echo,secret,expected",

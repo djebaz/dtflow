@@ -4,7 +4,7 @@ Pending changes for the next DTFlow release.
 
 ## Added
 
-- Phase 2B narrow local Draw Things gRPC adapter (`dtflow.backends.drawthings`): strict TLS with optional explicit CA/server name, txt2img with seed-zero and wire-configuration fidelity, inventory with provenance, one-lane generation with shared deadline, received-tensor checks, honest failure evidence, and a scripted TLS/gRPC fixture server with test-only certificates. Adds the direct `grpclib` dependency. Verified offline only; real-server TLS, compatibility and cancellation remain unverified, and the CLI does not expose it yet.
+- Phase 2B narrow local Draw Things gRPC adapter (`dtflow.backends.drawthings`): bundled local-CA compatibility with optional strict system/custom trust, txt2img with seed-zero and wire-configuration fidelity, inventory with provenance, one-lane generation with shared deadline, received-tensor checks, honest failure evidence, and a scripted TLS/gRPC fixture server with test-only certificates. Adds the direct `grpclib` dependency. Verified offline only; real-server TLS, compatibility and cancellation remain unverified, and the CLI does not expose it yet.
 
 - Phase 2A async backend-neutral contracts and deterministic fake backend with lifecycle, connectivity, inventory,
   typed failures and explicit fixture provenance; environment/fake-saved credential providers preserve precedence.
@@ -116,6 +116,8 @@ Pending changes for the next DTFlow release.
 - Reframe the DT+ roadmap around hardening the already-proven native Python direct-cloud path into a production backend. MediaGenerationKit remains a protocol/reference implementation, with a Swift bridge reserved as a fallback for future capabilities that cannot be reproduced reliably in Python.
 
 ## Fixed
+
+- Use an explicit local Draw Things bundled-CA TLS policy by default, matching the working probe's hostname behavior while retaining certificate-chain verification. Clear Python 3.13's strict X.509 flag only for this CA compatibility path; owner-reported live diagnostics found a missing key-usage extension and IP mismatch. The non-generative live check uses this policy without manual CA setup. System/custom-CA policies remain verified; planned direct DT+ TLS follows the probe baseline without added certificate requirements. Successful live acceptance after this change remains pending.
 
 - Preserve validated local gRPC backend completion and final artifacts when terminal-event delivery fails; return a sanitized warning so the service can proceed with durable saving rather than recording the remote outcome as unknown.
 

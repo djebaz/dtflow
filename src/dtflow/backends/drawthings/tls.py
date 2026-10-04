@@ -1,14 +1,14 @@
-"""Strict TLS policy for Draw Things connections.
+"""TLS policies for local Draw Things compatibility and system/custom trust.
 
-Certificate chain AND hostname verification are always on. A policy can name an explicit CA file and an explicit TLS
-server name (connect by IP while verifying a DNS name in the certificate). There is deliberately no option that
-disables hostname verification and no automatic fallback after a TLS failure.
+All policies verify certificate chains. Local Draw Things trusts only its bundled CA, with hostname and strict X.509
+format checks disabled for compatibility. System/custom policies retain both checks. There is no automatic fallback.
 """
 
 from __future__ import annotations
 
 import ssl
 from dataclasses import dataclass
+from importlib.resources import files
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
@@ -20,13 +20,16 @@ _HOSTNAME_CODES = (62, 64)  # hostname / IP address mismatch
 
 @dataclass(frozen=True, slots=True)
 class TlsPolicy:
-    """Trust source plus optional explicit server name; always verifies chain and hostname."""
+    """Explicit trust source; the local bundled-CA exception never affects other policies."""
 
     ca_file: Path | None = None
     server_name: str | None = None
     context: ssl.SSLContext | None = None
+    bundled_local: bool = False
 
     def __post_init__(self) -> None:
+        if self.bundled_local and any(value is not None for value in (self.ca_file, self.server_name, self.context)):
+            raise ValidationError("Local Draw Things trust uses only the bundled CA, without overrides.")
         if self.server_name is not None and (not isinstance(self.server_name, str) or not self.server_name.strip()):
             raise ValidationError("TLS server name must be a non-empty string.")
         if self.context is not None:
@@ -34,6 +37,10 @@ class TlsPolicy:
                 raise ValidationError("Use either an injected TLS context or a CA file, not both.")
             if not self.context.check_hostname or self.context.verify_mode != ssl.CERT_REQUIRED:
                 raise ValidationError("An injected TLS context must verify certificates and hostnames.")
+
+    @classmethod
+    def drawthings_local(cls) -> TlsPolicy:
+        return cls(bundled_local=True)
 
     @classmethod
     def system(cls, server_name: str | None = None) -> TlsPolicy:
@@ -44,7 +51,12 @@ class TlsPolicy:
         return cls(Path(ca_file), server_name)
 
     def build_context(self) -> ssl.SSLContext:
-        if self.context is not None:
+        if self.bundled_local:
+            ca = files("drawthings_py").joinpath("resources/root_ca.crt").read_text(encoding="ascii")
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cadata=ca)
+            context.check_hostname = False
+            context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        elif self.context is not None:
             context = self.context
         else:
             if self.ca_file is not None and not Path(self.ca_file).is_file():

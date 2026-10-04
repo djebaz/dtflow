@@ -58,7 +58,7 @@ def now() -> str:
 class DrawThingsEndpoint:
     host: str
     port: int
-    tls: TlsPolicy = field(default_factory=TlsPolicy)
+    tls: TlsPolicy = field(default_factory=TlsPolicy.drawthings_local)
 
     def __post_init__(self) -> None:
         if not isinstance(self.host, str) or not self.host.strip():

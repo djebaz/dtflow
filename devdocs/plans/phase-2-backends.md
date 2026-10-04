@@ -1,6 +1,6 @@
 # Phase 2 — Backend contract and initial adapters
 
-**Status:** Phase 2A core/fake and durable headless foundation implemented with offline acceptance tests; 2B is implemented as a narrow adapter verified against strict-TLS fixtures only (see [integration notes](../architecture/drawthings-integration.md)); 2C remains pending and 2D evidence is recorded separately.  
+**Status:** Phase 2A core/fake and durable headless foundation implemented with offline acceptance tests; 2B has offline TLS/gRPC coverage and a local bundled-CA compatibility policy informed by owner-reported live TLS failures (see [integration notes](../architecture/drawthings-integration.md)); live acceptance after the fix is pending. 2C remains pending and 2D evidence is recorded separately.  
 **Baseline:** main commit `595abf9161a1d9672b055a66cb3e4c659617675f`.  
 **References:** [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md), [initial roadmap](initial.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [recorded gRPC proof](../research/drawthings-grpc-proof.md).
 
@@ -120,7 +120,7 @@ Implement the fake first, then add transport fixtures alongside each real adapte
 
 Reuse the local gRPC server for cloud generation where the inspected wire contract is shared. Assert cloud-specific authorization metadata on the gRPC side, in addition to checking HTTP token/authentication requests. Exercise the actual adapters, not only isolated payload decoders.
 
-Make HTTP/gRPC endpoints and test TLS trust injectable so fixtures stay local without weakening production TLS hostname/certificate validation. Ordinary tests must fail on unexpected external connections; a missing mock must never reach a real app/cloud endpoint.
+Make HTTP/gRPC endpoints and test TLS trust injectable so fixtures stay local without altering the chosen production policy. Local Draw Things uses the explicit bundled-CA compatibility policy; system/custom-CA and cloud trust retain normal certificate/hostname verification. Direct DT+ follows the probe's default TLS context and h2, with no additional certificate requirements. Ordinary tests must fail on unexpected external connections; a missing mock must never reach a real app/cloud endpoint.
 
 Keep simulators small and scenario-driven, returning defined protocol fixtures without loading models or recreating Draw Things internals. Simulated cancellation verifies DTFlow's handling, not that production compute stops. Fabricated quota errors verify presentation/application behavior, not actual billing semantics; production classifications require documented responses or sanitized captured fixtures.
 
