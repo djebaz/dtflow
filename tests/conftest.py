@@ -157,8 +157,6 @@ def _write_live_warnings(terminalreporter, checks) -> None:
         return
     terminalreporter.write_sep("-", "DTFlow live-check warnings (not failures)", yellow=True, bold=True)
     for message, fix in seen.items():
-        line = f"WARNING: {message}"
-        # Saturated orange (256-color 208); pytest's named markup has no orange and its yellow is too light.
-        terminalreporter.write_line(f"\x1b[1;38;5;208m{line}\x1b[0m" if terminalreporter.hasmarkup else line)
+        terminalreporter.write_line(f"WARNING: {message}", yellow=True)
         if fix:
             terminalreporter.write_line(f"  To fix: {fix}", cyan=True, bold=True)
