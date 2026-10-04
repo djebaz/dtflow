@@ -216,6 +216,8 @@ Keep prompts, seeds, dimensions, and parameters controlled when comparing behavi
 
 ### Phase 2 — Backend contract and initial adapters
 
+Phase 2A now implements the offline contract/fake/service/SQLite foundation and a minimal `dtflow` command. Real adapters (2B/2C), parallel investigations (2D), full CLI and queues remain pending. See the [implemented scope and limits](../architecture/backend-contract.md#phase-2a-implementation-evidence-and-limits).
+
 Follow [the Phase 2 implementation plan](phase-2-backends.md), [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md) and [source-backed ecosystem research](../research/dtflow-ecosystem-research-report.md).
 
 Deliver coherent slices: 2A contract/async decisions, fake, foundational fixtures and a thin headless service/SQLite-attempt/saved-image path; 2B local gRPC adapter with connectivity/inventory and transport fixtures; 2C direct-cloud adapter against the pinned auth contract; 2D packaging/licensing and version-pinned upstream feature inventory alongside implementation. Phase 2D does not block starting 2A; licensing informs dependency investment and target-Windows verification remains a packaged-release gate.
@@ -416,3 +418,4 @@ The first setup PR is intentionally small:
 - establish `uv` as the canonical Python project/environment/dependency workflow and add the initial `pyproject.toml`; generate and commit `uv.lock` when the environment is first resolved with `uv`
 
 The skeleton establishes ownership boundaries only; it does not add speculative runtime implementation.
+

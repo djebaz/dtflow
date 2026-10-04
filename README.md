@@ -5,10 +5,10 @@ Desktop workflows, generation and automation for [Draw Things](https://drawthing
 DTFlow (DTF) is a Windows-first project for reproducible generation, durable jobs and queues, and workflows.
 It targets direct DT+ Cloud Compute and a local Draw Things gRPC server through one backend-neutral contract.
 
-**Current status:** the repository contains diagnostic tooling, offline probe checks and development specifications.
-The application backends, durable service path, user-facing CLI and Qt interface are being developed; they are not
-shipped features. See the [implementation plan](devdocs/plans/initial.md), [release roadmap](devdocs/plans/releases.md)
-and [recorded evidence](devdocs/research/drawthings-grpc-proof.md) for scope and verification.
+**Current status:** Phase 2A provides an offline fake backend, shared async services, SQLite attempt records,
+and a minimal headless command that saves a fixture PNG and reproducibility metadata. Real local gRPC and direct
+cloud adapters, durable rolling queues and Qt remain planned. See the [implementation plan](devdocs/plans/initial.md),
+[release roadmap](devdocs/plans/releases.md) and [recorded evidence](devdocs/research/drawthings-grpc-proof.md).
 
 ## Design principles
 
@@ -50,12 +50,26 @@ generation, including through Bridge mode. Read `--help` and select the intended
 The direct-cloud probe reads `DRAWTHINGS_API_KEY` from the environment; it does not accept the key on the command line.
 Keep credentials and tokens out of logs and saved request metadata.
 
-A user-facing `uv run dtflow` entry point is planned; it is not available yet.
+The minimal Phase 2A entry point is offline and requires explicit fake selection:
+
+```sh
+uv run dtflow --help
+uv run dtflow check --backend fake
+uv run dtflow models --backend fake --refresh
+uv run dtflow generate --backend fake --prompt "Offline fixture" --seed 0
+uv run dtflow attempts
+```
+
+The fixture is a deterministic color swatch; no model inference occurs. State is stored in `.dtflow/attempts.sqlite3`
+and outputs under `.dtflow/outputs/<attempt-id>/`. Use `--state` to choose another local state directory and `--out`
+to choose the output root. `--scenario lost` exercises an uncertain outcome; inspection never resubmits it.
+The full real-backend CLI is Phase 3 work. Run state on a local filesystem, with a patched SQLite runtime as described
+in the [backend contract](devdocs/architecture/backend-contract.md#durable-state-and-layer-enforcement).
 
 ## Repository layout
 
 ```text
-src/dtflow/   application package and architectural skeleton
+src/dtflow/   application contracts, services, persistence and fake backend
 tests/        automated checks
 tools/        diagnostic and development tooling
 devdocs/      plans, research, architecture, decisions and release notes

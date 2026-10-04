@@ -1,6 +1,6 @@
 # Phase 2 — Backend contract and initial adapters
 
-**Status:** Planned; this document introduces no runtime implementation.  
+**Status:** Phase 2A core/fake and durable headless foundation implemented with offline acceptance tests; 2B/2C and parallel 2D remain pending.  
 **Baseline:** main commit `595abf9161a1d9672b055a66cb3e4c659617675f`.  
 **References:** [backend/async contract](../architecture/backend-contract.md), [pinned cloud protocol](../architecture/cloud-protocol.md), [initial roadmap](initial.md), [ecosystem research](../research/dtflow-ecosystem-research-report.md), [recorded gRPC proof](../research/drawthings-grpc-proof.md).
 
@@ -122,7 +122,7 @@ Phase 2 covers the contract and adapters. Phase 3B extends fake and transport-fi
 
 ## Test infrastructure and live gating
 
-These are implementation requirements, not dependencies or fixtures shipped by this docs change.
+Phase 2A ships pytest-asyncio, the exact-endpoint guard and live gates. gRPC/TLS and HTTP infrastructure below is implemented alongside 2B/2C.
 
 - Use asyncio and pytest-asyncio with explicit async test/fixture ownership. Add pytest-asyncio to the dev group through uv when implementing 2A; commit pyproject.toml and regenerated uv.lock together. Add the bounded HTTPX runtime dependency through uv in 2C. Do not add AnyIO as a separate service runtime merely because HTTPX uses it internally.
 - Installed inspection after an isolated uv sync --locked confirmed drawthings-py 0.4.0 exposes ImageGenerationServiceBase with Echo and server-streaming GenerateImage. Subclass that base and serve through grpclib.server.Server on a fixture-owned ephemeral loopback port. Use grpclib RecvRequest events to inspect authorization/deadline metadata; return scripted responses/errors without loading models. No duplicate protocol-generation toolchain is required.
@@ -132,7 +132,7 @@ These are implementation requirements, not dependencies or fixtures shipped by t
 - Register planned pytest markers live and live_generation. Live tests require both explicit live-marker selection and DTFLOW_LIVE_TESTS=1; otherwise skip before creating network clients. Generation cases additionally require explicit live_generation selection, DTFLOW_LIVE_GENERATION=1 and separate task/operator authorization for the named workload. Neither marker/env alone nor a connectivity task authorizes generation.
 - Even live mode allowlists only the explicitly configured backend targets; do not disable the entire guard. Default test runs execute no live network calls. Cover incorrect/missing opt-ins and refusal before network setup.
 
-No pytest/ruff or live tests were run for this documentation amendment. Installed source/signature inspection is recorded in the backend contract, separately from fixture execution.
+Phase 2A implementation validation uses the canonical pytest/Ruff commands. Fake service, fresh-process recovery and guard tests are exercised offline; no real adapter, live generation or billable action is part of this acceptance. Run-specific environments and results belong to the PR description.
 
 ## Source-level gaps to validate
 
@@ -167,10 +167,11 @@ The [TanqueStudio parity matrix](tanquestudio-parity.md) tracks later feature mi
 
 ## Handoff to the next implementation PR
 
-Keep PR #3 documentation-only. After it is merged, branch from updated main and open an early, separate Phase 2A implementation PR. Its first coherent deliverable is the thin fake/service/SQLite/artifact path above, with tests and an updated unreleased entry; use the existing uv workflow. Decide exact command spelling in code and keep help accurate. Report only checks actually run.
+PR #3 contains the merged specifications; Phase 1 is closed as a bounded feasibility proof. PR #5 implements the Phase 2A thin fake/service/SQLite/artifact path and offline acceptance infrastructure. See the [implemented scope and limits](../architecture/backend-contract.md#phase-2a-implementation-evidence-and-limits) and [source-run commands](../../README.md#getting-started). Phase 2A does not establish real transport, cloud, packaging or full CLI acceptance. Run-specific verification belongs to its PR description.
 
 Use separate PRs for 2A, 2B and 2C: 2A establishes the tested foundation; 2B adds the local gRPC adapter/server fixtures; 2C adds direct-cloud authentication/adapter fixtures. Split a slice further when needed for coherent review rather than combining all adapters into one PR. Run 2D alongside them and publish its packaging/licensing/replacement and feature-inventory findings in separate documentation PRs as evidence becomes available. Pending owner-machine or licensing evidence remains explicit. Real-adapter fixtures precede any separately authorized live checks. Prove the Qt worker-thread approach before Phase 4; functional Phase 3B rolling dispatch and the agreed LoRA delivery gates still precede Qt.
 
 ## Deferred work
 
 [Phase 3](phase-3-cli.md) delivers the headless CLI: 3A expands the 2A foundation into real-backend single-generation CLI/services, durable attempts and output saving; 3B adds durable queues, rolling dispatch, restart reconciliation and custom cloud LoRA upload/reuse before Qt. Phase 4 adds the Qt shell and connection management; Phase 5 wires GUI generation through those same services; Phase 6 adds batch planning; Phase 7 extends advanced scheduling; Phase 9 verifies advanced image operations; Phase 11 broadens direct-cloud capabilities. MediaGenerationKit remains a protocol reference, with a Swift bridge only if a concrete future capability requires it.
+
