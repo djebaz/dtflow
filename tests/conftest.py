@@ -159,6 +159,4 @@ def _write_live_warnings(terminalreporter, checks) -> None:
     for message, fix in seen.items():
         terminalreporter.write_line(f"WARNING: {message}", yellow=True, bold=True)
         if fix:
-            line = f"  To fix: {fix}"
-            # Saturated orange (256-color 208); pytest's named markup has no orange.
-            terminalreporter.write_line(f"\x1b[1;38;5;208m{line}\x1b[0m" if terminalreporter.hasmarkup else line)
+            terminalreporter.write_line(f"  To fix: {fix}", cyan=True, bold=True)
