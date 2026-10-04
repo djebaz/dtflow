@@ -358,6 +358,8 @@ These live workflows prove desktop composition, not backend protocol correctness
 
 ### Phase 6 — Queue planning and batch expansion
 
+The detailed, PR-sequenced plan is [Phase 6 queue planning](2026-10-04-phase-6-queue-planning.md); it proposes a pure planner (seed, pair and cross modes with arithmetic bounds and a dry run) reused by the CLI and the Queues page.
+
 Extend the Phase 3B durable queue with bounded pair/cross-product planning, dry-run inspection and resolved request expansion. Reuse the existing scheduler and reconciliation; basic queue execution is already required before Qt.
 
 Testing stays primarily pure and deterministic:

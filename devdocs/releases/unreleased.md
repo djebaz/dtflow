@@ -24,6 +24,8 @@ Pending changes for the next DTFlow release.
 
 - Desktop queue controls (Phase 5B): the queue orchestration moved out of the CLI into the Qt-independent `dtflow.services.queue_session` (`expand_items`, `create_queue`, `dispatch_queue`, `read_queue_views`, `post_queue_control`, `set_concurrency`) and `dtflow queue add|start` call it. The Queues page creates a paused queue from the Generate form, shows queues and items in stable order with in-place updates, and offers Start, Pause, Resume, Cancel and Override (controls always go through the shared posted-control path). Start makes the window the dispatch owner and holds the state lock for the run, so Generate is disabled meanwhile and the CLI reports a busy state; closing during dispatch asks first and the stop is recorded as unknown, never as a remote cancellation. Unknown reservations stay distinct, Resume cannot clear them, and Override is confirmed, recorded and never replays an attempt. One concurrency control sets the queue cap and, for cloud, the shared maximum (values above two are tinted; the hint states the memory-budget finding). The queue read view now lists pending controls so Start is offered when an override awaits an owner. Verified offline on Linux (offscreen Qt, fake backend; SQLite-backed tests used a sandbox-only override of the SQLite version guard). No live queue run, generation, upload or billable action was performed; Windows visual review and the packaged executable are unverified.
 
+- Phase 6 plan: [queue planning and batch expansion](../plans/2026-10-04-phase-6-queue-planning.md) sequences a pure planner (seed, pair and cross modes, bounds, dry run), CLI and desktop entry points and its decisions. Planning only; no planner behavior was added.
+
 ## Changed
 
 ## Fixed
