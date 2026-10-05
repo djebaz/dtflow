@@ -1,7 +1,7 @@
 # Current development status
 
 Snapshot: 2026-10-05, main baseline `c0d4bd3` (PR #28 merged), plus the GUI-build work in PR #29.
-This is coding orientation against [initial.md](plans/initial.md), not release acceptance or a test report. Source/plan inspection only for this snapshot; no tests or live operations were run to establish it.
+This is coding orientation against [initial.md](plans/initial.md), not a release declaration. Implementation scope comes from source/plan inspection; the bounded owner-run Windows evidence below is recorded separately. The agent ran no live operations.
 
 ## Implemented on main
 
@@ -14,7 +14,7 @@ This is coding orientation against [initial.md](plans/initial.md), not release a
 | 5 — Desktop execution | Generate, LoRA/cloud asset actions, configuration save/load and queue controls through shared services. |
 | 6 — Batch planning | Shared seed/pair/cross planner, bounded expansion and CLI/desktop dry runs. |
 
-Implemented does not mean universal compatibility or remote cancellation. On 2026-10-05 the owner reported the other 0.3.0 release checks complete, identifying the exact portable Qt executable smoke test as the remaining gate; this is owner-reported, not newly assistant-verified. Keep existing detailed source/live evidence rather than rerunning it without need. PR #29 changes the builder to a GUI-first windowed launcher, but compilation and target-Windows executable acceptance remain unverified. See [the build guide](guides/building.md), [unreleased notes](releases/unreleased.md) and [packaging evidence](research/windows-packaging.md).
+Implemented does not mean universal compatibility or remote cancellation. On 2026-10-05 the owner reported the other 0.3.0 release checks complete, identifying the exact portable Qt executable smoke test as the remaining gate; this is owner-reported, not newly assistant-verified. Keep existing detailed source/live evidence rather than rerunning it without need. PR #29 changes the builder to a GUI-first windowed launcher; the owner has now built and exercised its dirty 0.1.0 artifact, including key/form persistence and bounded local/cloud generation/queues. See [the identified GUI smoke](research/windows-gui-smoke-2026-10-05.md) for artifact identity, one unresolved cloud outcome and coverage limits. Final clean 0.3.0 artifact acceptance remains separate. See [the build guide](guides/building.md), [unreleased notes](releases/unreleased.md) and [packaging evidence](research/windows-packaging.md).
 
 ## Not yet implemented
 

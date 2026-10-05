@@ -22,11 +22,11 @@
 
 ## Open questions
 
-None blocking. The exact executable still needs owner acceptance on the target Windows machine.
+None blocking for PR #29. The owner exercised the identified dirty GUI development build on Windows; final clean 0.3.0 artifact acceptance belongs to release preparation.
 
 ## Validation
 
-Tests and smoke tests are not run in this implementation workflow. Use the locked environment for syntax, import, configuration/help, Ruff and whitespace checks. No packaging success or target-Windows acceptance is claimed until actually performed.
+The agent did not run tests or smoke tests in the implementation workflow. CI passed and the owner subsequently performed the Windows GUI smoke. Use the locked environment for syntax, import, configuration/help, Ruff and whitespace checks. No packaging success or target-Windows acceptance is claimed until actually performed.
 
 ## Implementation evidence
 
@@ -37,4 +37,9 @@ Tests and smoke tests are not run in this implementation workflow. Use the locke
 - Source desktop launcher help/version, builder help and unchanged source `dtflow gui --help`: passed.
 - Local Markdown destinations/anchors, JSON examples and whitespace checks: passed.
 - Tests and smoke tests were not run by the agent; final validation remains with the owner. No training/inference, uploads or billable generation were performed by the agent.
-- Separate owner-started PyInstaller processes were observed in the shared checkout during implementation. Their current artifact/stamp includes dirty WIP; no packaging success is claimed here and they were not stopped or cleaned by the agent. Rebuild the committed source revision for release acceptance.
+- Separate owner-started PyInstaller processes were observed in the shared checkout during implementation. Their current artifact/stamp includes dirty WIP; the owner subsequently reported build success and exercised the identified artifact; these processes were not stopped or cleaned by the agent. Rebuild the committed source revision for release acceptance.
+
+
+## Owner smoke and merge handoff
+
+Owner-run Windows evidence is recorded in [the GUI smoke report](../research/windows-gui-smoke-2026-10-05.md): direct launch/no console popups, API-key and per-provider form persistence, bounded local/cloud generation and queues, cache restore, existing cloud asset preparation and preflight rejection. The dirty 0.1.0 artifact is identified by full stamp, filename and checksum; one no-final-output/unknown attempt is retained, not resolved or retried automatically. The agent only inspected logs/artifact/file presence and updated documentation. Final clean 0.3.0 build/identity acceptance remains separate. PR #29 is approved by the owner for squash merge after the final documentation commit passes CI.

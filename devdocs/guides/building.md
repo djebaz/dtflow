@@ -55,4 +55,6 @@ A successful build is not proof that the executable runs. Record the **exact art
 
 This is a focused packaged-composition check, not a duplicate protocol/scheduler suite. Existing owner-reported source/live checks remain separate evidence. Any additional real generation/upload must be explicitly selected and authorized.
 
+The owner has exercised a dirty GUI development build; [its smoke report](../research/windows-gui-smoke-2026-10-05.md) identifies the artifact and bounded coverage. This is not a substitute for identifying the final clean release artifact.
+
 The [packaging findings](../research/windows-packaging.md) retain earlier console smoke/CLI trials as historical evidence. `launch_dtflow.py` and `dtflow-cli.spec` are not the current GUI build inputs.
