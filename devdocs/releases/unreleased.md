@@ -10,6 +10,8 @@
 
 - Draft PR #33 adds the canonical Detail Designer form, token-based shared QSS and an offline fixture preview for the compact header, filmstrip, metadata and inline additional/raw panels. No shipped gallery tab, query service or generation behaviour is added.
 
+- Draft PR #33 mounts the fixture-only Detail preview in Images, preserving the shared navigation and hiding the redundant right Inspector for this page. The standalone launcher and app reuse one presentation controller. No saved-output browsing service or live operations are added.
+
 ## Changed
 
 - Draft PR #33 compacts Connection navigation into a power-icon button with last-check status and accessible text, and reserves an Images button after Queues (disabled until mounted). No polling or extra connection requests; obsolete check completions do not recolor a changed selection.

@@ -28,6 +28,7 @@ from dtflow.services.connection import Presentation, check_connection, present_f
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
 from dtflow.ui.brand import connection_icon
+from dtflow.ui.gallery_detail_preview import DetailFixture
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
@@ -154,6 +155,13 @@ class MainWindow:
                 (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack), names, strict=True
             ):
                 stack.addWidget(getattr(page, name))
+        self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
+        self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
+        self.gallery_preview = DetailFixture(self.gallery_detail)
+        form.workspaceStack.addWidget(self.images_page)
+        self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
+        self.shell.centerStack.addWidget(self.gallery_detail)
+        self.shell.rightStack.addWidget(QWidget())
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
         # Preserve the connection controller's established chrome references.
@@ -165,6 +173,7 @@ class MainWindow:
             "connectionNavigationButton",
             "generationNavigationButton",
             "queueNavigationButton",
+            "imagesNavigationButton",
         ):
             setattr(form, name, getattr(self.shell, name))
         self.shell.productSubtitleLabel.hide()
@@ -225,6 +234,10 @@ class MainWindow:
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
+        form.imagesNavigationButton.setEnabled(True)
+        form.imagesNavigationButton.setToolTip("Show Images — offline layout preview, not saved outputs")
+        form.imagesNavigationButton.setAccessibleName("Show Images layout preview")
+        form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
         self.shell.inspectorToggle.toggled.connect(self._toggle_inspector)
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
@@ -262,8 +275,10 @@ class MainWindow:
             self.form.connectionNavigationButton,
             self.form.generationNavigationButton,
             self.form.queueNavigationButton,
+            self.form.imagesNavigationButton,
         )
         buttons[index].setChecked(True)
+        self._responsive_workspace()
 
     def _toggle_inspector(self, visible: bool) -> None:
         if not self._inspector_auto:
@@ -278,7 +293,9 @@ class MainWindow:
             self._inspector_auto = True
             shell.inspectorToggle.setChecked(self._inspector_wanted and not narrow)
             self._inspector_auto = False
-        shell.rightRail.setVisible(shell.inspectorToggle.isChecked())
+        images = self.form.workspaceStack.currentWidget() is self.images_page
+        shell.inspectorToggle.setEnabled(not images)
+        shell.rightRail.setVisible(not images and shell.inspectorToggle.isChecked())
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)

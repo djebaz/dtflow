@@ -113,7 +113,7 @@ Inputs use gently rounded 5 px corners, buttons 6 px, and panels 8 px. The reusa
 
 Neutral buttons have distinct rest, hover, pressed, focus and disabled states. Primary actions use the accent family and lose that accent when disabled. Destructive actions use warning red only while actionable; disabled destructive controls return to the neutral disabled treatment. Checkable navigation shares the navy selection language with item views. Maintain stable `role` properties and object names instead of adding inline widget styles.
 
-Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and remains disabled until mounted. Compact labels preserve the permanent left-rail navigation width.
+Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and opens the explicitly labelled offline Detail preview. Its inline metadata replaces the right Inspector while Images is active; other workspaces retain their Inspector preference. Compact labels preserve the permanent left-rail navigation width.
 
 ### Fields and selection
 

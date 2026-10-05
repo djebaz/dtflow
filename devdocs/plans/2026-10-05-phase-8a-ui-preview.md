@@ -1,6 +1,6 @@
 # Phase 8A — Preview-only Designer forms and shared styling
 
-**Status:** Detail form and offline preview implemented in draft PR #33; Grid/List, shell integration and gallery services remain unimplemented.
+**Status:** Detail form and offline preview implemented in draft PR #33; Grid/List and gallery services remain unimplemented; the fixture-only Detail preview is mounted in Images.
 
 **Base:** Phase 8 documentation PR #32 squash-merged on main (`5d9c476`).
 
@@ -80,3 +80,12 @@ The previous 52×40 control approximated rather than matched the supplied refere
 Supersedes the earlier 74×44 approximation: the supplied cropped design measures approximately 58×34. Connection now renders at 58×34, with a 16 px rounded power arc, 6 px dot and reference-like padding. Dedicated shared mint/teal Connection tokens reproduce the supplied visual identity without changing general success colors. Mouse focus no longer replaces the status border with a thick blue frame; Tab/Backtab/shortcut focus retains an explicit dashed focus cue. Guarded native fixture captures confirm 58×34 and show the connected design in the real shell. Unchecked status remains neutral rather than falsely green. No live checks, inference or automated tests ran.
 
 Owner follow-up: reduce only the power glyph to a 12 px arc with 1.6 px rounded stroke; retain the 58×34 button, status dot and layout.
+
+## Images shell integration — 2026-10-06
+
+- Images is enabled and opens the canonical Detail form inside the persistent center stack. A canonical `gallery_context.ui` supplies an explicit offline-preview explanation in the left rail.
+- Moved fixture presentation into `ui/gallery_detail_preview.py`; both the standalone launcher and real shell use the same controller. No application import from developer tools and no duplicate fixture implementation.
+- Images uses its own inline metadata, so the global right Inspector is hidden and its toggle disabled while Images is active. Returning to another workspace restores the existing toggle preference; page content remains mounted across switches.
+- No real output discovery, query/index, persistence or provider work added. Grid/List, filters/refresh, zoom/fullscreen and file actions stay disabled; fixture selection, Cover/Fit and inline panels remain usable.
+- Designer compilation, Python compilation, imports/help and Ruff passed. Guarded actual-shell fixture captures at 1182×792 and 800×680 were inspected; narrow header/metadata scrolling and cramped prompt/toolbar controls still need layout refinement. This is integration, not pixel-perfect or native-DPI acceptance.
+- No automated test suite, real connection checks, inference, uploads or billable actions ran. Owner navigation/panel review remains pending.
