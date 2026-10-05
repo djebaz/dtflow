@@ -187,6 +187,7 @@ class MainWindow:
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
             simulation_source=self.generation.simulation,
+            created_hook=self.generation.queue_created,
             activity=self.activity,
         )
         form.backendCombo.addItems(BACKENDS)

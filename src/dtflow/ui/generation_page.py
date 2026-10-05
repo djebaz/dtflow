@@ -377,11 +377,14 @@ class GenerationPage:
                 Presentation("warning", "Queue dispatch is running", "Single generation is unavailable until it stops.")
             )
 
+    def queue_created(self) -> None:
+        self._previewed_seed = None
+
     def request_for_queue(self, *, preview: bool = False):
         """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking.
 
-        A random seed (form seed 0) picked for a plan preview is kept for the next queue created, so the dry-run
-        table shows the seeds the queue will really use.
+        A random seed (form seed 0) picked for a plan preview is kept until a queue is created (``queue_created``),
+        so the dry-run table shows the seeds the queue will really use, even after a rejected attempt.
         """
         self._mark(None)
         self._snap_size()
@@ -396,7 +399,6 @@ class GenerationPage:
             self._previewed_seed = request.seed
         elif resolved and self._previewed_seed is not None:
             request = replace(request, seed=self._previewed_seed)
-            self._previewed_seed = None
         return request, name, endpoint, self.lora.receipt_ids()
 
     def _progress(self, text: str, completed: int | None = None, total: int | None = None) -> None:

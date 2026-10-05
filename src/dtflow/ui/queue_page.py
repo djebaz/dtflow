@@ -102,11 +102,12 @@ class QueuePage:
         request_source: Callable,
         activity: Activity,
         simulation_source: Callable[[], dict] = dict,
+        created_hook: Callable[[], None] = lambda: None,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
-        self._simulation = simulation_source
+        self._simulation, self._created_hook = simulation_source, created_hook
         self.confirm = ask_confirmation
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
@@ -464,6 +465,7 @@ class QueuePage:
             self._message(present_generation_failure(failure))
             return
         queue_id, cap = result
+        self._created_hook()
         self._select_after = queue_id
         self._message(
             Presentation("ok", "Queue created", f"{queue_id[:8]} is paused with a maximum of {cap}. Press Start.")
