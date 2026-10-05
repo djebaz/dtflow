@@ -38,3 +38,6 @@ def test_stamped_module_replaces_unknown_identity(monkeypatch, tmp_path):
         monkeypatch.delitem(sys.modules, "dtflow._buildinfo")
         importlib.reload(build)
     assert build.identity()["source_commit"] == "unknown"
+    # A source run is a "dev" build whose revision is the newest package file's modification time.
+    assert build.identity()["source_status"] == "dev" and build.identity()["source_modified"].endswith("Z")
+    assert "revision 20" in build.display_identity() and build.display_identity().endswith("source status dev)")
