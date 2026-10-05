@@ -9,6 +9,7 @@ COLUMNS = ("#", "Item", "Seed", "State", "Attempt", "Outputs")
 # The same palette as the shared stylesheet's state colors; "secondary" keeps the default text color.
 LEVEL_COLORS = {"ok": "#78c97c", "warning": "#ffbf59", "error": "#ff8179", "unknown": "#b7a4e5"}
 ITEM_ID_ROLE = Qt.ItemDataRole.UserRole
+NUMERIC_COLUMNS = (0, 2)  # "#" and "Seed"
 
 
 class QueueItemModel(QAbstractTableModel):
@@ -48,6 +49,8 @@ class QueueItemModel(QAbstractTableModel):
             return row.item_id
         if role == Qt.ItemDataRole.ForegroundRole and index.column() == 3 and row.level in LEVEL_COLORS:
             return QColor(LEVEL_COLORS[row.level])
+        if role == Qt.ItemDataRole.TextAlignmentRole and index.column() in NUMERIC_COLUMNS:
+            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.ToolTipRole:
             return row.item_id
         return None

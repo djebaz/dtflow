@@ -7,6 +7,8 @@ display data. The vocabularies below are the only ones the Queues page uses, so 
 from dataclasses import dataclass
 from pathlib import Path
 
+from dtflow.services.connection import local_time
+
 ITEM_LEVELS = {
     "pending": "secondary",
     "running": "warning",
@@ -140,9 +142,15 @@ def has_unresolved_unknown(view: dict) -> bool:
     )
 
 
-def controls(view: dict | None, *, dispatching_here: bool, generating: bool = False) -> Controls:
+def has_started(detail: dict | None) -> bool:
+    """Whether the queue's recorded events show it was ever started (a new queue has only ``created``)."""
+    return any(event["kind"] == "started" for event in (detail or {}).get("events", ()))
+
+
+def controls(view: dict | None, *, dispatching_here: bool, generating: bool = False, started: bool = False) -> Controls:
     """Which actions make sense now. Start needs this window to own dispatch (nothing else generating); the rest only
-    post controls for whichever process owns dispatch, or for the next start."""
+    post controls for whichever process owns dispatch, or for the next start. Resume is offered only for a queue that
+    has run before: a new queue is started, not resumed."""
     if view is None:
         return Controls(False, False, False, False, False)
     status = view["status"]
@@ -153,7 +161,7 @@ def controls(view: dict | None, *, dispatching_here: bool, generating: bool = Fa
         and not dispatching_here
         and not generating,
         pause=status == "running",
-        resume=status == "paused",
+        resume=status == "paused" and started,
         cancel=status in ("paused", "running", "blocked"),
         override=has_unresolved_unknown(view),
     )
@@ -183,8 +191,34 @@ def concurrency_level(value: int) -> str:
 
 
 def event_lines(view: dict) -> str:
+    """One line per recorded event, in local time to the second."""
     lines = []
     for event in view.get("events", ()):
-        detail = ", ".join(f"{key}={value}" for key, value in event["detail"].items())
-        lines.append(f"{event['at_utc']}  {event['kind']}" + (f"  {detail}" if detail else ""))
+        detail = ", ".join(f"{key.replace('_', ' ')} {value}" for key, value in event["detail"].items())
+        lines.append(
+            f"{local_time(event['at_utc'])}  {event['kind'].replace('_', ' ')}" + (f", {detail}" if detail else "")
+        )
     return "\n".join(lines)
+
+
+def outcome_text(view: dict) -> tuple[str, str, str]:
+    """(level, headline, detail) naming what actually ended a dispatch run, from the final queue view."""
+    counts, status = view["summary"], view["status"]
+    total = sum(counts.values())
+    if status == "finished":
+        problems = [
+            f"{counts[state]} {label}"
+            for state, label in (("failed", "failed"), ("save_failed", "not saved"), ("unknown", "outcome unknown"))
+            if counts[state]
+        ]
+        level = "unknown" if counts["unknown"] else "error" if problems else "ok"
+        return (
+            level,
+            "Finished",
+            f"{counts['succeeded']} of {total} succeeded" + (f"; {', '.join(problems)}." if problems else "."),
+        )
+    if status == "cancelled":
+        return "warning", "Cancelled", f"{counts['cancelled']} item(s) not run; {counts['succeeded']} succeeded."
+    if status == "blocked":
+        return "unknown", "Blocked", "An uncertain reservation holds this backend. Inspect the unknown item first."
+    return "warning", "Stopped", f"{counts['pending']} item(s) still pending; press Start to continue."

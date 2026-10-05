@@ -9,7 +9,7 @@ evidence, and neither action claims remote cancellation or resolution.
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QListWidgetItem, QMessageBox, QWidget
 
@@ -35,6 +35,7 @@ from dtflow.ui.planning_presenter import (
     build_plan,
     count_text,
     plan_error,
+    sentence,
     summary_text,
 )
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
@@ -45,7 +46,9 @@ from dtflow.ui.queue_presenter import (
     concurrency_level,
     controls,
     event_lines,
+    has_started,
     item_rows,
+    outcome_text,
     ownership_badge,
     progress_text,
     summarize,
@@ -112,6 +115,10 @@ class QueuePage:
         self._detail: dict | None = None
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
+        for view in (page.queueItemsView, page.planTableView):
+            view.verticalHeader().hide()  # the "#" column already numbers rows
+            view.horizontalHeader().setStretchLastSection(True)
+            view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.concurrencyHintLabel.setText(CONCURRENCY_HINT)
@@ -234,6 +241,7 @@ class QueuePage:
         else:
             summary = summarize(view)
             self.model.apply(item_rows(view))
+            self._select_default_item()
             self._show(page.queueStateLabel, summary.level, summary.headline)
             page.queueProgressBar.setRange(0, max(summary.total, 1))
             page.queueProgressBar.setValue(summary.settled)
@@ -256,13 +264,29 @@ class QueuePage:
 
     def _sync(self) -> None:
         page = self.page
-        available = controls(self._view(), dispatching_here=self.dispatching_here, generating=self._activity.generating)
+        view = self._view()
+        detail = self._detail if view and self._detail and self._detail["queue_id"] == view["queue_id"] else None
+        available = controls(
+            view,
+            dispatching_here=self.dispatching_here,
+            generating=self._activity.generating,
+            started=has_started(detail),
+        )
         page.startQueueButton.setEnabled(available.start)
         page.pauseQueueButton.setEnabled(available.pause)
         page.resumeQueueButton.setEnabled(available.resume)
         page.cancelQueueButton.setEnabled(available.cancel)
         page.overrideReservationButton.setEnabled(available.override)
         page.createQueueButton.setEnabled(not self.dispatching_here and not self._activity.generating)
+
+    def _select_default_item(self) -> None:
+        """Show evidence without a click: the first unknown or failed item, else the first item."""
+        table = self.page.queueItemsView
+        if table.currentIndex().isValid() or not self.model.rowCount():
+            return
+        rows = [self.model.row_at(index) for index in range(self.model.rowCount())]
+        preferred = next((i for i, row in enumerate(rows) if row.state in ("unknown", "failed", "save_failed")), 0)
+        table.setCurrentIndex(self.model.index(preferred, 0))
 
     def _show_item(self) -> None:
         page = self.page
@@ -341,7 +365,15 @@ class QueuePage:
 
     def _plan_changed(self, *_) -> None:
         level, text = count_text(self._plan_form())
-        self._show(self.page.planCountLabel, level, text)
+        self._show(self.page.planCountLabel, level, sentence(text))
+        planned = self.page.planBox.isChecked()
+        self.page.createQueueButton.setText(
+            f"Create queue from plan ({text})"
+            if planned and level == "ok"
+            else "Create queue from plan"
+            if planned
+            else "Create queue"
+        )
 
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
@@ -357,9 +389,10 @@ class QueuePage:
             plan = build_plan(self._plan_form())
             table = describe_plan(request, plan)
         except ValidationError as exc:
+            # One place for the error: beside the plan, with the owning field marked.
             error = plan_error(exc)
             self._mark_plan(error.widget)
-            self._message(Presentation("error", headline, str(error)))
+            self._show(self.page.planCountLabel, "error", sentence(str(error)))
             return None
         self._show_table(table)
         self._message(Presentation("ok", "Plan", summary_text(table)))
@@ -412,7 +445,7 @@ class QueuePage:
         elif failure is not None:
             self._message(present_generation_failure(failure))
         else:
-            self._message(Presentation("ok", "Dispatch ended", "The queue finished, was cancelled or is blocked."))
+            self._message(Presentation(*outcome_text(final)))
         self._render()
         self.refresh()
 

@@ -147,5 +147,10 @@ def count_text(form: PlanForm) -> tuple[str, str]:
     return "ok", f"{total} item{'s' if total != 1 else ''}"
 
 
+def sentence(text: str) -> str:
+    """Messages from shared validators start lowercase with a field name; shown alone they read as a sentence."""
+    return text[:1].upper() + text[1:]
+
+
 def summary_text(table: PlanTable) -> str:
     return f"{table.total} items · {table.mode} · {SEED_POLICY_TEXT[table.seed_policy]}. Nothing is persisted yet."

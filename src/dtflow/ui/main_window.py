@@ -122,12 +122,13 @@ class MainWindow:
             activity=self.activity,
         )
         form.backendCombo.addItems(BACKENDS)
-        form.statusBar().showMessage(display_identity() + f" | state: {self.state_dir}")
+        form.statusBar().showMessage(display_identity())
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
         form.aboutAction.triggered.connect(self.about)
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
+        form.endpointEdit.textChanged.connect(self._selection_changed)
         form.connectionNavigationButton.clicked.connect(
             lambda: form.workspaceStack.setCurrentWidget(form.connectionPage)
         )
@@ -164,6 +165,13 @@ class MainWindow:
     def _backend_changed(self, name: str) -> None:
         self.form.endpointEdit.setEnabled(name == "local")
         self.form.credentialBox.setEnabled(name == "cloud")
+        self._selection_changed()
+
+    def _selection_changed(self, *_) -> None:
+        """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
+        self._present(
+            Presentation("unknown", "Not checked", f"Check the {self.form.backendCombo.currentText()} connection.")
+        )
 
     def _present(self, presentation: Presentation) -> None:
         label = self.form.statusLabel
@@ -221,7 +229,7 @@ class MainWindow:
         self.refresh_credentials()
 
     def about(self) -> None:
-        QMessageBox.about(self.form, "About DTFlow", display_identity())
+        QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
 
     def close(self) -> None:
         self.runner.shutdown()
