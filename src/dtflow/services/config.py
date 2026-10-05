@@ -47,15 +47,15 @@ class ConfigError(ValidationError):
     """Unreadable, unsupported or credential-bearing configuration; nothing was dispatched."""
 
 
-def _reject_credentials(value: Any, path: str = "") -> None:
+def reject_credentials(value: Any, path: str = "") -> None:
     if isinstance(value, dict):
         for name, child in value.items():
             if any(word in str(name).lower() for word in CREDENTIAL_WORDS):
                 raise ConfigError(f"Configuration must not contain credentials ({path}{name}).")
-            _reject_credentials(child, f"{path}{name}.")
+            reject_credentials(child, f"{path}{name}.")
     elif isinstance(value, list):
         for child in value:
-            _reject_credentials(child, path)
+            reject_credentials(child, path)
 
 
 def _loras(value: Any) -> tuple[LoRASelection, ...]:
@@ -81,9 +81,9 @@ def parse_document(document: Any) -> dict[str, Any]:
         request = document["request"]
         if not isinstance(request, dict):
             raise ConfigError("Metadata request is malformed.")
-        _reject_credentials(request)
+        reject_credentials(request)
         return {METADATA_FIELDS[name]: value for name, value in request.items() if name in METADATA_FIELDS}
-    _reject_credentials(document)
+    reject_credentials(document)
     if document.get("schema") != SCHEMA:
         raise ConfigError(f"Unsupported configuration schema (expected {SCHEMA}).")
     version = document.get("version")
@@ -98,19 +98,23 @@ def parse_document(document: Any) -> dict[str, Any]:
     return dict(fields)
 
 
-def load_config(path: Path) -> dict[str, Any]:
+def read_json_file(path: Path, label: str = "Configuration") -> Any:
+    """Bounded UTF-8 JSON read shared by configuration and plan files; ``label`` words the errors."""
     try:
         with Path(path).open("rb") as stream:
             raw = stream.read(MAX_BYTES + 1)
     except OSError as exc:
-        raise ConfigError("Configuration file could not be read.") from exc
+        raise ConfigError(f"{label} file could not be read.") from exc
     if len(raw) > MAX_BYTES:
-        raise ConfigError("Configuration file is too large.")
+        raise ConfigError(f"{label} file is too large.")
     try:
-        document = json.loads(raw)
+        return json.loads(raw)
     except (ValueError, UnicodeError) as exc:
-        raise ConfigError("Configuration file is not valid UTF-8 JSON.") from exc
-    return parse_document(document)
+        raise ConfigError(f"{label} file is not valid UTF-8 JSON.") from exc
+
+
+def load_config(path: Path) -> dict[str, Any]:
+    return parse_document(read_json_file(path))
 
 
 def resolve_request(

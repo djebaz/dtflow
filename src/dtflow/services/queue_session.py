@@ -7,39 +7,31 @@ duration (the store's ownership lock); controls and reads need no ownership. Not
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from dtflow.composition import BackendSelection
 from dtflow.core.models import CredentialProvider, ResolvedGenerationRequest, TimeoutPolicy, ValidationError
-from dtflow.persistence.queues import MAX_ITEMS, post_control, read_queues
+from dtflow.persistence.queues import post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
+from dtflow.services.planning import Plan, PlanError, expand_plan
 from dtflow.services.queue import QueueDispatcher
 
 log = logging.getLogger(__name__)
-SEED_LIMIT = 4294967295
 
 
 def expand_items(base: ResolvedGenerationRequest, count: int) -> list[ResolvedGenerationRequest]:
-    """Independent queue items: item N uses seed + N - 1 and a fresh request identity, in queue order."""
-    if type(count) is not int or not 1 <= count <= MAX_ITEMS:
-        raise ValidationError(f"count must be an integer in 1..{MAX_ITEMS}.")
-    if base.seed + count - 1 > SEED_LIMIT:
-        raise ValidationError("Item seeds would exceed the 32-bit seed range.")
-    return [
-        replace(
-            base,
-            request_id=uuid4().hex,
-            seed=base.seed + index,
-            resolution_evidence=(*base.resolution_evidence, ("queue_position", str(index + 1))),
-        )
-        for index in range(count)
-    ]
+    """Independent queue items: item N uses seed + N - 1 and a fresh request identity, in queue order.
+
+    This is the planner's ``seed`` mode, so count-based and planned queues share one expansion path.
+    """
+    try:
+        return expand_plan(base, Plan("seed", count=count))
+    except PlanError as exc:
+        raise ValidationError(str(exc)) from exc
 
 
 def default_cap(state: Path, backend_name: str) -> int:

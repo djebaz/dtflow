@@ -9,8 +9,10 @@ import sqlite3
 import pytest
 
 from dtflow.core.models import ResolvedGenerationRequest, ValidationError
+from dtflow.persistence.queues import request_from_record
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError
+from dtflow.services.planning import Plan, expand_plan
 from dtflow.services.queue_session import (
     create_queue,
     default_cap,
@@ -87,3 +89,21 @@ async def test_a_second_dispatch_owner_is_refused_before_dispatching(tmp_path):
     finally:
         await owner.aclose()
     assert (await read_queue_views(tmp_path))[0]["summary"]["pending"] == 1
+
+
+@pytest.mark.asyncio
+async def test_planned_requests_enter_the_queue_unchanged_and_are_restored_from_storage(tmp_path):
+    """6-O4: the persisted items equal the planner output; scheduling is inherited, not retested."""
+    spec = Plan("cross", (("prompt", ("a", "b")), ("steps", (4, 8))), seed_policy="increment")
+    requests = expand_plan(base(), spec)
+    queue_id, _ = await create_queue(tmp_path, BACKEND, requests)
+    with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
+        stored = [
+            request_from_record(json.loads(row[0]))
+            for row in db.execute(
+                "SELECT request_json FROM queue_items WHERE queue_id=? ORDER BY position", (queue_id,)
+            )
+        ]
+    assert stored == requests and [item.seed for item in stored] == [5, 6, 7, 8]
+    final = await dispatch_queue(tmp_path, queue_id)
+    assert final["summary"]["succeeded"] == 4

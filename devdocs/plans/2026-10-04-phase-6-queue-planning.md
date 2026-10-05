@@ -1,6 +1,6 @@
 # Plan: Phase 6 queue planning and batch expansion
 
-**Status:** Planned; entry condition is Phase 5B merged (see [the 5B plan](2026-10-04-phase-5b-desktop-queue.md))
+**Status:** Implemented offline in one pull request (planner and CLI, then the Queues page Plan area); Windows visual review and packaged-executable checks pending. Entry condition was Phase 5B merged (see [the 5B plan](2026-10-04-phase-5b-desktop-queue.md))
 **Milestone:** First half of the 0.4.0 daily-use refinement (Phase 6 plus Phase 8, see [the release roadmap](releases.md))
 **Authoritative acceptance:** `6-O1` to `6-O4` from [the initial plan](initial.md#phase-6--queue-planning-and-batch-expansion); Phase 3B stays authoritative for scheduling, restart and no-replay semantics, Phase 5B for the Queues page
 **Related plans:** [Phase 3 CLI and queues](phase-3-cli.md), [Phase 5B desktop queue](2026-10-04-phase-5b-desktop-queue.md), [LoRA assets](lora-assets.md)
@@ -93,6 +93,15 @@ Owned checks: `6-O1`, `6-O2`, `6-O3` as parametrized pure tests on `planning.py`
 - **Size as one dimension**: width and height vary together as listed pairs, never as independent axes, to avoid unintended aspect-ratio matrices.
 - **Item ceiling**: reuse `MAX_ITEMS` (1000); no separate planner limit.
 - **Plan file location**: user-supplied path, never copied into state; the queue records the resolved requests and evidence, so no plan file is needed to understand or restore a queue.
+
+### Decisions taken in the pull request
+
+- **Flags**: the proposed `-l/--plan` clashed with the existing `queue add -l/--lora`, so the canonical pair is `-r/--plan` (as `-r` already means something different on other commands, short aliases are per command); the dry run is `-u/--dry`. `--help` and the README show only these. Names stay `seed`, `pair`, `cross`; no `queue plan` subcommand.
+- **Seed policy**: confirmed default; pair and cross keep the base seed unless a seed dimension is listed or `"seed": "increment"` is stated (never both). Repeated values are allowed only when each item gets its own seed, since otherwise items would be identical.
+- **Evidence**: seed-mode items keep exactly the old `queue_position` evidence; pair/cross items carry `plan.index`, `plan.mode`, `plan.seed` and `plan.dimension.<name>`.
+- **Plan file**: `dtflow.queue-plan` version 1; seed ranges are `{"start", "count"}`; LoRA weights are `lora_weight: [{identifier, weights}]` entries (identifiers are values, not keys, so the credential-word scan cannot misfire); a varied LoRA must already be in the base request.
+- **Dry run output**: JSON like every other command (`mode`, `seed_policy`, `total`, `columns`, `rows`). Shared constants `MAX_QUEUE_ITEMS` and `SEED_LIMIT` moved to `core/models.py` so the planner imports no SQLite code; `persistence.queues.MAX_ITEMS` is unchanged.
+- **Desktop**: a checkable "Plan batch" group on the Queues page (Cross or Pair, one text field per dimension, live count readout, Dry run table). Create validates and shows the table first, refuses oversize or invalid plans with the owning field marked, and runs the planner on the GUI thread because it is pure and bounded. The count spin box stays the seed-sweep shortcut and is disabled while a plan is active. No LoRA override control was built.
 
 ## Risks and mitigations
 
