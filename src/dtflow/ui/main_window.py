@@ -195,6 +195,8 @@ class MainWindow:
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
+        self._gallery_chrome_active = False
+        self._gallery_previous_sizes = None
         self._narrow = None
         self._inspector_wanted, self._inspector_auto = True, False
         self.generation = GenerationPage(
@@ -268,7 +270,7 @@ class MainWindow:
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
 
     def _workspace_changed(self, index: int) -> None:
-        """Change only content; shell widgets and splitter geometry stay mounted."""
+        """Switch content and use the compact full-width chrome for Images only."""
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         buttons = (
@@ -294,6 +296,25 @@ class MainWindow:
             shell.inspectorToggle.setChecked(self._inspector_wanted and not narrow)
             self._inspector_auto = False
         images = self.form.workspaceStack.currentWidget() is self.images_page
+        if images != self._gallery_chrome_active:
+            self._gallery_chrome_active = images
+            shell.setProperty("galleryMode", images)
+            shell.style().unpolish(shell)
+            shell.style().polish(shell)
+            if images:
+                self._gallery_previous_sizes = shell.workspaceSplitter.sizes()
+                shell.galleryBrandSlotLayout.addWidget(shell.brandFrame)
+                shell.galleryNavigationSlotLayout.addWidget(shell.navigationFrame)
+            else:
+                shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+                shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+            shell.brandFrame.show()
+            shell.navigationFrame.show()
+            shell.galleryChrome.setVisible(images)
+            shell.leftRail.setVisible(not images)
+            if not images and self._gallery_previous_sizes:
+                shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        shell.inspectorToggle.setVisible(not images)
         shell.inspectorToggle.setEnabled(not images)
         shell.rightRail.setVisible(not images and shell.inspectorToggle.isChecked())
 

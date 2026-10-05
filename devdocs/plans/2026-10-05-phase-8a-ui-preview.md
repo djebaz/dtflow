@@ -89,3 +89,30 @@ Owner follow-up: reduce only the power glyph to a 12 px arc with 1.6 px rounded 
 - No real output discovery, query/index, persistence or provider work added. Grid/List, filters/refresh, zoom/fullscreen and file actions stay disabled; fixture selection, Cover/Fit and inline panels remain usable.
 - Designer compilation, Python compilation, imports/help and Ruff passed. Guarded actual-shell fixture captures at 1182×792 and 800×680 were inspected; narrow header/metadata scrolling and cramped prompt/toolbar controls still need layout refinement. This is integration, not pixel-perfect or native-DPI acceptance.
 - No automated test suite, real connection checks, inference, uploads or billable actions ran. Owner navigation/panel review remains pending.
+
+
+
+## Approved reference replacement — 2026-10-06
+
+Supersedes the earlier lighthouse/charcoal presentation checkpoints. The owner
+approved the adapted Qt code and requested its replacement directly in PR #33,
+then requested removal of the Images left content column while retaining logo
+and tabs. Images now uses the canonical compact top chrome and the full-width
+Detail form; other tabs restore their existing chrome/rails and splitter widths.
+
+The existing shared stylesheet contains the reference gallery rules and scoped
+`gallery.*` tokens; the global palette remains unchanged. The shell and standalone
+preview share the same fixture controller, generated illustrative portrait,
+reference thumbnail crops and icons. Fixture designation remains visible and
+compatibility remains Unknown. Presentation-only zoom/pan/100%, navigation and
+fullscreen are enabled; filters, refresh, Grid/List and saved-file actions remain
+unwired. No gallery services, inference or billable provider operations were added.
+
+Validation before the owner's stop request: locked `uv sync`, Ruff checks/format,
+actual Qt standalone render, and focused shell/theme checks (9 passed, one logo
+resource lifecycle check excluded because the connector could not retrieve the
+existing binary logo into this local workspace). Existing repository logo assets
+are preserved on the branch. A newly drafted test was removed at the owner's
+request; no new tests are included. No further tests are run after the request to
+commit immediately. Windows/native-DPI and packaged visual acceptance remain
+unverified; exact pixel equality is not claimed.

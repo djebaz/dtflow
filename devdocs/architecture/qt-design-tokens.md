@@ -37,3 +37,15 @@ Primary, secondary and placeholder text contrast is checked against all four sur
 `uv run python tools/ui/render_states.py --out tmp/ui-renders` renders the actual Qt forms and shared QSS, with the existing network guard enabled. It exercises empty, portrait 1:2, landscape 16:9, zoom, hover, pressed, selected, narrow-window, invalid/focus, incompatible/unknown LoRAs, busy/disabled, unknown outcome and confirmed/unknown cloud receipts. Receipt actions use the asset tests' in-memory API and transport; they do not contact DT+ or upload real model files.
 
 The regular fake backend now lists `fake-fixture`, `fake-grid`, `fake-soft`, `fake-mismatch` and `fake-unknown`. These are explicit fixture identifiers, not real models or weights. Architecture diagnostics test the common preflight path; even a match stays application-unconfirmed. Fake cloud receipts belong only to the development renderer/tests, not the production fake backend.
+
+
+
+## Images-only full-width composition
+
+Images hides both content rails and retains logo/navigation in the canonical
+`galleryChrome` strip; leaving Images restores the existing rail chrome and
+splitter widths. The existing stylesheet resolves gallery SVG URLs relative to
+its own tracked resource path, supporting source and packaged execution.
+`gallery.*` tokens scope the approved teal/blue reference to this page; global
+palette tokens remain unchanged. Sample presentation is shared by the shell and
+standalone launcher, with no provider or persistence ownership.

@@ -8,9 +8,9 @@
 
 - Recorded the Phase 8 delivery sequence and selected read-only viewer scope, with a sample-derived Draw Things preset interchange contract and an anonymised representative configuration. Planning only; no gallery or preset runtime support is added.
 
-- Draft PR #33 adds the canonical Detail Designer form, token-based shared QSS and an offline fixture preview for the compact header, filmstrip, metadata and inline additional/raw panels. No shipped gallery tab, query service or generation behaviour is added.
+- Draft PR #33 adds the canonical Detail Designer form, token-based shared QSS and an offline fixture preview for the compact header, filmstrip, metadata and inline additional/raw panels. This is a fixture-only Images tab; no saved-output query service or generation behaviour is added.
 
-- Draft PR #33 mounts the fixture-only Detail preview in Images, preserving the shared navigation and hiding the redundant right Inspector for this page. The standalone launcher and app reuse one presentation controller. No saved-output browsing service or live operations are added.
+- Draft PR #33 mounts the fixture-only Detail preview in Images, preserving the shared logo/navigation in a compact strip and hiding both content rails for this page. The standalone launcher and app reuse one presentation controller. No saved-output browsing service or live operations are added.
 
 ## Changed
 
@@ -24,3 +24,9 @@
 
 - PRs: #31.
 - Scope: Since v0.3.0, opt-in cached Windows build and draft-release automation, artifact provenance/checksums and owner acceptance workflow documentation.
+
+
+- PR #33 replaces the lighthouse Detail presentation with the approved reference
+  layout, scoped gallery palette, illustrative portrait/filmstrip assets and
+  presentation-only cover/fit/100%, zoom/pan, navigation and fullscreen controls.
+  Leaving Images restores the other workspaces' rails and splitter widths.
