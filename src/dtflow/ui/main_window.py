@@ -24,7 +24,7 @@ from dtflow.services.connection import Presentation, check_connection, present_f
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
 from dtflow.ui.generation_page import GenerationPage
-from dtflow.ui.queue_page import QueuePage
+from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
 
@@ -69,10 +69,10 @@ class _CloseGuard(QObject):
 
     def __init__(self, confirm, parent: QObject):
         super().__init__(parent)
-        self._confirm = confirm
+        self.ask_confirmation = confirm
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.Close and not self._confirm():
+        if event.type() == QEvent.Type.Close and not self.ask_confirmation():
             event.ignore()
             return True
         return False
@@ -102,6 +102,7 @@ class MainWindow:
         self.runner = runner or AsyncRunner(self.form)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
+        self.confirm = ask_confirmation
         self.activity = Activity()
         form = self.form
         self.generation = GenerationPage(
@@ -122,12 +123,13 @@ class MainWindow:
             activity=self.activity,
         )
         form.backendCombo.addItems(BACKENDS)
-        form.statusBar().showMessage(display_identity() + f" | state: {self.state_dir}")
+        form.statusBar().showMessage(display_identity())
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
         form.aboutAction.triggered.connect(self.about)
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
+        form.endpointEdit.textChanged.connect(self._selection_changed)
         form.connectionNavigationButton.clicked.connect(
             lambda: form.workspaceStack.setCurrentWidget(form.connectionPage)
         )
@@ -143,7 +145,10 @@ class MainWindow:
     def _disable_preview_controls(page: QWidget) -> None:
         for control_type in PREVIEW_CONTROL_TYPES:
             for control in page.findChildren(control_type):
-                control.setEnabled(False)
+                # A spin box's or combo box's own editor follows its owner; disabling it separately would leave the
+                # value greyed out and untypeable after the owner is re-enabled.
+                if not isinstance(control.parent(), (QAbstractSpinBox, QComboBox)):
+                    control.setEnabled(False)
 
     def _show_queue(self) -> None:
         self.form.workspaceStack.setCurrentWidget(self.queue_page)
@@ -161,6 +166,13 @@ class MainWindow:
     def _backend_changed(self, name: str) -> None:
         self.form.endpointEdit.setEnabled(name == "local")
         self.form.credentialBox.setEnabled(name == "cloud")
+        self._selection_changed()
+
+    def _selection_changed(self, *_) -> None:
+        """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
+        self._present(
+            Presentation("unknown", "Not checked", f"Check the {self.form.backendCombo.currentText()} connection.")
+        )
 
     def _present(self, presentation: Presentation) -> None:
         label = self.form.statusLabel
@@ -180,6 +192,8 @@ class MainWindow:
         }[status["selected"]]
         self.form.credentialStatusLabel.setText(text)
         self.form.keyEdit.clear()
+        # Remove is offered only when there may be a saved key to remove (the environment hides that answer).
+        self.form.removeKeyButton.setEnabled(status["saved"] in ("present", "not consulted"))
 
     def check(self) -> None:
         if self._busy:
@@ -210,6 +224,13 @@ class MainWindow:
         self.refresh_credentials()
 
     def remove_key(self) -> None:
+        if not self.confirm(
+            self.form,
+            "Remove saved key",
+            "Remove the DT+ API key saved in Windows Credential Manager? Cloud checks and generations will need a key "
+            "again.",
+        ):
+            return
         try:
             self._saved.remove()
         except BackendError as exc:
@@ -218,7 +239,7 @@ class MainWindow:
         self.refresh_credentials()
 
     def about(self) -> None:
-        QMessageBox.about(self.form, "About DTFlow", display_identity())
+        QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
 
     def close(self) -> None:
         self.runner.shutdown()

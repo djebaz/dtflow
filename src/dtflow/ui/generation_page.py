@@ -10,8 +10,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QWidget
 
 from dtflow.composition import BACKENDS
@@ -25,6 +25,7 @@ from dtflow.services.connection import (
 from dtflow.services.session import generate_once, read_attempt, refresh_inventory, selection_for
 from dtflow.ui.activity import Activity
 from dtflow.ui.generation_presenter import (
+    FAKE_MODEL,
     SAMPLERS,
     FormError,
     FormValues,
@@ -38,6 +39,7 @@ from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
 PREVIEW_BOX = 360  # bounded display size; the saved file is never resized
+RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 WIRED_CONTROLS = (
     "promptEdit",
     "negativePromptEdit",
@@ -131,6 +133,8 @@ class GenerationPage:
         page.saveConfigurationButton.clicked.connect(self.save)
         page.loadConfigurationButton.clicked.connect(self.load)
         page.configurationCombo.activated.connect(self._config_chosen)
+        page.openOutputFolderButton.clicked.connect(self.open_output_folder)
+        page.copyOutputPathButton.clicked.connect(self.copy_output_path)
         self.sync_backend()
         self._scan_configs()
 
@@ -139,6 +143,9 @@ class GenerationPage:
         """Mirror the Connection page's backend; it is read-only here so there is one selector."""
         name, _ = self._backend()
         self.page.generationBackendCombo.setCurrentText(name)
+        self.page.modelCombo.lineEdit().setPlaceholderText(
+            f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
+        )
         self.lora.sync_backend()
 
     def _values(self) -> FormValues:
@@ -257,6 +264,7 @@ class GenerationPage:
         self._request = request
         self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
         self.page.resultList.clear()
+        self._set_result_actions(False)
         self.page.attemptIdentityLabel.setText("No durable attempt yet.")
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
@@ -317,11 +325,34 @@ class GenerationPage:
         self.page.effectiveRequestBrowser.setPlainText(
             describe_request(outcome.request, outcome.backend_id, self._backend()[1])
         )
-        for path in outcome.output_paths:
-            self.page.resultList.addItem(QListWidgetItem(f"Output: {path}"))
-        self.page.resultList.addItem(QListWidgetItem(f"Metadata: {outcome.metadata_path}"))
+        for label, path in (*(("Output", p) for p in outcome.output_paths), ("Metadata", outcome.metadata_path)):
+            item = QListWidgetItem(f"{label}: {path}")
+            item.setData(RESULT_PATH_ROLE, str(path))
+            self.page.resultList.addItem(item)
+        self._set_result_actions(True)
         if outcome.final_image:
             self._show_image(outcome.final_image, "final")
+
+    # -- saved results ---------------------------------------------------------------------------------------------
+    def _set_result_actions(self, available: bool) -> None:
+        self.page.openOutputFolderButton.setEnabled(available)
+        self.page.copyOutputPathButton.setEnabled(available)
+
+    def _result_path(self) -> str | None:
+        """The selected saved path, else the first one (the first output)."""
+        results = self.page.resultList
+        item = results.currentItem() or (results.item(0) if results.count() else None)
+        return item.data(RESULT_PATH_ROLE) if item is not None else None
+
+    def open_output_folder(self) -> None:
+        path = self._result_path()
+        if path:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+
+    def copy_output_path(self) -> None:
+        path = self._result_path()
+        if path:
+            QGuiApplication.clipboard().setText(path)
 
     def cancel(self) -> None:
         """Stop waiting locally through the shared interruption path; the server is never claimed cancelled."""

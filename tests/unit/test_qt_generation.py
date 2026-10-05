@@ -13,6 +13,7 @@ import pytest
 pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtGui import QGuiApplication  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
@@ -63,6 +64,9 @@ def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(wind
     qtbot.waitUntil(settled(page), timeout=5000)
     assert page.generationStatusLabel.text().startswith("Saved")
     assert page.resultList.count() == 2  # one output plus its metadata
+    page.copyOutputPathButton.click()  # with nothing selected, the first output is copied
+    assert QGuiApplication.clipboard().text() == page.resultList.item(0).text().removeprefix("Output: ")
+    assert page.openOutputFolderButton.isEnabled()
     assert page.resultPreviewLabel.property("designation") == "final"
     assert "field.prompt: override" in page.effectiveRequestBrowser.toPlainText()
     # The state lock is released between operations, so another owner can open the directory now.
