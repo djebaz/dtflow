@@ -1,5 +1,14 @@
 name: CI
 
+# What the run list shows: which event and target the run is about, instead of just "CI".
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch' && format('CI manual · {0}',
+  (inputs.sha != '' && format('commit {0}', inputs.sha))
+  || (inputs.pr != '' && format('PR {0}', inputs.pr))
+  || format('branch {0}', inputs.branch != '' && inputs.branch || github.event.repository.default_branch))
+  || github.event_name == 'pull_request' && format('CI · PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title)
+  || format('CI · push to {0}', github.ref_name) }}
+
 # Offline checks only: lock consistency, lint, format and the offline pytest suite.
 # Live Draw Things / DT+ tests and any generation are never run here, and no secrets are used.
 # Runs on pushes to main (this seeds the uv cache: pull request caches are only readable by their own PR,
