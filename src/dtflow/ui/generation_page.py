@@ -56,6 +56,16 @@ from dtflow.ui.runner import AsyncRunner, EventRelay
 
 log = logging.getLogger(__name__)
 
+
+def failure_reason(failure: BaseException) -> str:
+    """Short log text for a failure: the backend's own code and category when it has them, else the type name."""
+    detail = getattr(failure, "failure", None)
+    code, category = getattr(detail, "code", None), getattr(detail, "category", None)
+    if code:
+        return f"{type(failure).__name__} code={code} category={getattr(category, 'value', category)}"
+    return type(failure).__name__
+
+
 PREVIEW_BOX = 360  # bounded display size; the saved file is never resized
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 WIRED_CONTROLS = (
@@ -363,7 +373,7 @@ class GenerationPage:
         self._set_busy(False)
         if failure is not None:
             self._progress("Failed")
-            log.warning("generate failed reason=%s", type(failure).__name__)
+            log.warning("generate failed reason=%s", failure_reason(failure))
             self._status(present_generation_failure(failure))
             return
         log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
@@ -460,7 +470,7 @@ class GenerationPage:
         label = self.page.inventoryEvidenceLabel
         if failure is not None:
             shown = present_generation_failure(failure)
-            log.warning("inventory refresh failed reason=%s", type(failure).__name__)
+            log.warning("inventory refresh failed reason=%s", failure_reason(failure))
             label.setText(f"Inventory refresh failed. {shown.headline}: {shown.detail}")
             return
         self._show_inventory(snapshot, "refreshed" if snapshot.refreshed else "as reported")

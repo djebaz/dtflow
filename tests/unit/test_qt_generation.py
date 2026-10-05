@@ -267,3 +267,15 @@ def test_gui_logs_actions_and_results_without_prompts_or_inventory(window, qtbot
     assert "PROMPT-SENTINEL" not in text and "Offline fixture swatch" not in text
     assert ("generate request model=" in text) is dev
     assert max(len(line) for line in text.splitlines()) < 300
+
+
+def test_a_failed_generation_logs_the_backend_code_not_just_the_exception_type(window, qtbot, tmp_path, fake):
+    use, _ = fake
+    use(scenario="reject")
+    logs = configure_logging(directory=tmp_path / "logs", session="fail")
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    logs.close()
+    line = next(x for x in logs.path.read_text(encoding="utf-8").splitlines() if "generate failed" in x)
+    assert "BackendError code=" in line and "category=" in line
