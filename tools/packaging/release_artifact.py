@@ -50,6 +50,8 @@ def verify(commit: str, tag: str) -> dict:
         "pyinstaller": version("pyinstaller"),
         "uv": subprocess.check_output(["uv", "--version"], text=True).strip(),
         "release_tag": tag or None,
+        "source_pr": os.environ.get("DTFLOW_SOURCE_PR") or None,
+        "source_ref": os.environ.get("DTFLOW_SOURCE_REF") or None,
         "workflow_ref": os.environ.get("GITHUB_WORKFLOW_REF"),
         "run_url": (
             f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"

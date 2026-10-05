@@ -104,6 +104,7 @@ These instructions apply throughout `dtflow`.
 - Target a Windows single-executable distribution initially, while keeping source execution supported for development.
 - The canonical `tools/packaging/build_exe.py` build targets `launch_gui.py`: open the desktop directly, use Windows windowed mode, and preserve shared logging/build identity, canonical forms/resources and secure credential dependencies. Keep source CLI execution separate. Follow [the build guide](devdocs/guides/building.md); compilation alone does not establish Windows executable acceptance.
 - Treat `build/` and `dist/` as generated artifacts.
+- The manual Actions `pr` input builds a same-repository PR head commit to an artifact only. Never combine PR source with release actions; reject `pr` plus `release_tag`, skip the release job for PR builds and keep their dependency-cache namespace separate.
 - Do not commit model/checkpoint artifacts or duplicate large model files.
 - Keep build inputs and version metadata reproducible.
 

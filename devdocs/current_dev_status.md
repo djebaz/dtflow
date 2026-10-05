@@ -33,7 +33,7 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 - PR #28 added usage guides, a GUI-first README and this short coding snapshot.
 - PR #29 adds the desktop-first stamped builder and no-console startup/log diagnostics, with source CLI and generation policies unchanged.
 
-- PR #31 adds an opt-in cached Windows build and draft-only release workflow; not yet runner-verified. Owner executable smoke/publication remain explicit.
+- PR #31 adds an opt-in cached Windows build and draft-only release workflow, including artifact-only same-repository PR-head builds; not yet runner-verified. Owner executable smoke/publication remain explicit.
 
 ## Next coding direction
 

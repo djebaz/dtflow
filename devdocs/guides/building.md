@@ -7,12 +7,15 @@ The canonical build produces a stamped, single-file **GUI application**. Double-
 After the workflow PR is merged, open **Actions > Build Windows EXE and draft release > Run workflow**:
 
 - Select the workflow ref to build. Leave **release_tag** empty for a build-only Actions artifact.
+- To build a PR, select the trusted workflow (normally main), enter its number in **pr** and leave **release_tag** empty. The workflow resolves the same-repository PR branch to its exact head SHA before checkout; it does not build GitHub's synthetic merge commit. The manifest records the PR number and selected source. PR mode is artifact-only: no tag, release creation, attachment or publication. Combining both inputs fails before checkout. Fork PRs are not supported.
 - For a future release, supply an existing stable `vX.Y.Z` tag from merged main. Its source version and versioned notes must match. This creates/attaches only to a **draft release**; it never creates a tag or publishes.
 - Download the run artifact containing the stamped EXE, `SHA256SUMS.txt` and `build-manifest.json`. The manifest records full clean source identity, checksum, size, toolchain and workflow provenance. Smoke-test the exact download on the target Windows machine before publication.
 
 The build uses Windows 2022 x64, managed Python 3.13.13, uv 0.11.19 and PyInstaller 6.22.3 through the same canonical builder. No dev dependencies, GUI execution, application credentials, live generation or DT+ upload run in this workflow. Actions runner minutes/storage may be charged under the repository's plan.
 
 **Caching:** uv's dependency and managed-Python caches are isolated by OS/architecture/Python and a build-tool suffix. A generated scratch fingerprint hashes the entire `uv.lock` with only DTFlow's own version normalized, allowing version-only bumps to reuse dependencies; the real lockfile is never rewritten and sync remains locked. Cached wheels are retained. `.venv`, PyInstaller analysis, `build/`, `dist/` and stamps are **not** cached; every executable is freshly built with `--clean`. Upload ZIP compression is disabled for the already compressed EXE. This is dependency-cache optimization, not measured PyInstaller speedup. Cold/warm timings and target-machine compatibility remain owner verification.
+
+PR builds have a PR-number cache suffix separate from the normal/release cache, so they cannot populate the dependency namespace used by release builds. Run only reviewed same-repository code; manual builds still execute the selected source's build scripts. Older PRs without the canonical builder/verifier are not supported by this workflow. A clean PR build stamp means an unmodified checkout, not merged/released or runtime-accepted code.
 
 The artifact is retained for 14 days. Draft attachment rechecks the remote tag, refuses published releases or existing asset names, and downloads the three uploaded assets to compare their hashes. A partial upload is an explicit failure requiring manual draft inspection; no clobber, deletion or silent retry is performed. Follow [the release guide](releasing.md).
 

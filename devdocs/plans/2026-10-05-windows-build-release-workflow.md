@@ -9,6 +9,7 @@ Adapt the manual build/release pattern from Splitvids into one DTFlow workflow w
 ## Decisions and design changes
 
 - Windows 2022 x64, managed Python 3.13.13, uv 0.11.19 and PyInstaller 6.22.3; no Python 3.14 migration, FFmpeg, UPX or Drive upload.
+- Optional positive PR number resolves same-repository PR head to a fixed commit before checkout. PR and release_tag are mutually exclusive; PR builds are artifact-only, skip the release job and use a PR-specific cache namespace. Fork PRs are refused in this first scope.
 - Empty release tag builds the selected workflow ref to an Actions artifact. A supplied stable vX.Y.Z tag must exist, point into merged main and equal the source application version; no source override or tag creation.
 - Release mode creates/attaches only to a draft. Refuse published releases and asset replacement; no automatic publication or latest change.
 - Cache uv dependencies/managed Python, not .venv, build/, dist/ or stamps. Hash the complete lockfile with only DTFlow's own version normalized in an ignored fingerprint file: version-only releases share caches, actual dependency changes invalidate them. The real uv.lock is never edited by this step and sync remains locked.
@@ -30,3 +31,9 @@ No tests or smoke tests will be run under the fast implementation workflow; no b
 PR #31 implements the single manual workflow and shared artifact verifier. Static checks passed: actionlint 1.7.12; YAML parse; PowerShell syntax-only parse of all six run blocks (none executed); Python compile/import/help; Ruff lint and format (168 files); documentation links/fences/JSON examples; git diff --check. No tests or smoke tests were run, no Windows build was dispatched, and runner/cache performance is unverified. Owner validation remains required.
 
 The Splitvids reference caches pip dependencies, not PyInstaller analysis. DTFlow uses the uv equivalent and keeps the existing --clean builder; no additional incremental PyInstaller optimization is introduced.
+
+## PR-source follow-up
+
+Added the requested pr input in the same PR: positive number, same-repository head SHA resolved before checkout, exact-commit verification and manifest provenance. Reject pr plus release_tag up front; the draft job also explicitly excludes PR input and rejects PR-marked manifests. PR cache suffixes are separated from normal/release cache keys.
+
+Repeated static checks passed after this change: actionlint; YAML and six PowerShell run-block syntax parses; Ruff lint/format; helper compile/import/help; documentation links/fences/JSON examples; git diff --check. Tests, hosted builds and smoke tests were not run; final validation remains with the owner.

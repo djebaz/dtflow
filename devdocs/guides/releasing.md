@@ -58,7 +58,7 @@ Match filename, Qt/version display, full bundled commit and clean source status.
 
 Instead of building locally, use **Build Windows EXE and draft release**; see [building](building.md) for downloads, caches and toolchain.
 
-1. Merge the version/release PR and check CI, notes, clean main and source version. For an exploratory build, dispatch from the intended workflow ref with an empty tag: no release is touched.
+1. Merge the version/release PR and check CI, notes, clean main and source version. For an exploratory build, dispatch from the intended workflow ref with an empty tag: no release is touched. To inspect unmerged PR code, use the **pr** input with an empty tag; this resolves its exact same-repository head SHA and skips every release action. PR and release_tag are mutually exclusive.
 2. For a release candidate, explicitly create/push `v<version>` on the approved merged commit. Dispatch the workflow from main with that existing **release_tag**. Code comes from the exact tag, workflow YAML from the selected dispatch ref; both identities are reported. The tag must be part of main and match the application version/notes.
 3. The workflow builds once, verifies bundled identity and stages the same EXE/checksum/manifest in a draft. It refuses published releases and existing asset names, never replaces assets and never publishes. Existing draft prose is retained; review it and add bounded owner acceptance evidence before publication.
 4. Download and verify the exact draft asset; the owner smoke-tests it on target Windows. After approval, explicitly publish that draft (GitHub UI or release command) and verify tag, notes and assets. No rebuild is needed after smoke unless source/toolchain changes.

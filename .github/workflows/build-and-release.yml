@@ -1,9 +1,15 @@
 name: Build Windows EXE and draft release
-run-name: Windows build · ${{ inputs.release_tag || github.ref_name }}
+run-name: >-
+  Windows build · ${{ inputs.pr && format('PR #{0}', inputs.pr) || inputs.release_tag || github.ref_name }}
 
 on:
   workflow_dispatch:
     inputs:
+      pr:
+        description: "Optional same-repository PR number: build its exact head commit, artifact only."
+        type: string
+        required: false
+        default: ""
       release_tag:
         description: "Optional existing vX.Y.Z tag: attach to a draft release. Empty: build only."
         type: string
@@ -12,9 +18,10 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: windows-build-${{ inputs.release_tag || github.ref }}
+  group: windows-build-${{ inputs.pr && format('pr-{0}', inputs.pr) || inputs.release_tag || github.ref }}
   cancel-in-progress: false
 
 env:
@@ -34,17 +41,41 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - name: Validate requested tag
+      - name: Validate inputs and resolve exact source
+        id: select
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_PR: ${{ inputs.pr }}
+          WORKFLOW_SOURCE: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          if ($env:SOURCE_PR -and $env:RELEASE_TAG) {
+            throw "PR builds are artifact-only: pr and release_tag cannot be combined."
+          }
           if ($env:RELEASE_TAG -and $env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
             throw "Expected an existing stable vX.Y.Z tag, or empty for build-only."
           }
+          $source = $env:WORKFLOW_SOURCE
+          if ($env:SOURCE_PR) {
+            if ($env:SOURCE_PR -notmatch '^[1-9][0-9]*$') { throw "PR must be a positive number." }
+            $json = gh api "repos/$env:GITHUB_REPOSITORY/pulls/$env:SOURCE_PR"
+            if ($LASTEXITCODE) { throw "Cannot resolve the requested PR." }
+            $pr = $json | ConvertFrom-Json
+            if ($pr.head.repo.full_name -ne $env:GITHUB_REPOSITORY) {
+              throw "Only same-repository PR branches are supported; fork/deleted repositories are refused."
+            }
+            if ($pr.head.sha -notmatch '^[0-9a-f]{40}$') { throw "Invalid PR head commit." }
+            $source = $pr.head.sha
+            "PR #$env:SOURCE_PR branch: $($pr.head.ref); resolved head: $source; artifact only." |
+              Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          } elseif ($env:RELEASE_TAG) {
+            $source = "refs/tags/$env:RELEASE_TAG"
+          }
+          "source_ref=$source" | Add-Content $env:GITHUB_OUTPUT -Encoding utf8
 
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+          ref: ${{ steps.select.outputs.source_ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -54,10 +85,13 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
+          SOURCE_PR: ${{ inputs.pr }}
+          SELECTED_SOURCE: ${{ steps.select.outputs.source_ref }}
         run: |
           $commit = git rev-parse HEAD
           if ($LASTEXITCODE) { throw "Cannot identify checkout." }
           if (git status --porcelain --untracked-files=no) { throw "Build requires a clean checkout." }
+          if ($env:SOURCE_PR -and $commit -ne $env:SELECTED_SOURCE) { throw "Checkout differs from resolved PR head." }
           if ($env:RELEASE_TAG) {
             $tagCommit = git rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
             if ($LASTEXITCODE -or $tagCommit -ne $commit) { throw "Checkout must match the exact tag." }
@@ -93,7 +127,7 @@ jobs:
           cache-python: true
           prune-cache: false
           cache-dependency-glob: tmp/build-dependency-cache.txt
-          cache-suffix: dtflow-build-uv01119-py31313-pyinstaller6223
+          cache-suffix: dtflow-build-uv01119-py31313-pyinstaller6223-${{ inputs.pr && format('pr-{0}', inputs.pr) || 'trusted' }}
 
       - name: Synchronize locked runtime dependencies
         env:
@@ -121,6 +155,8 @@ jobs:
         id: verify
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          DTFLOW_SOURCE_PR: ${{ inputs.pr }}
+          DTFLOW_SOURCE_REF: ${{ steps.select.outputs.source_ref }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           uv run --no-dev --with pyinstaller==6.22.3 python tools/packaging/release_artifact.py --commit $env:SOURCE_COMMIT --tag "$env:RELEASE_TAG"
@@ -150,7 +186,7 @@ jobs:
 
   draft:
     name: Attach verified build to draft only
-    if: inputs.release_tag != ''
+    if: inputs.release_tag != '' && inputs.pr == ''
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -179,6 +215,7 @@ jobs:
           EXPECTED_VERSION: ${{ needs.build.outputs.version }}
         run: |
           $m = Get-Content release-artifact/build-manifest.json -Raw | ConvertFrom-Json
+          if ($m.source_pr) { throw "PR artifacts must never be attached to a release." }
           if ($m.artifact -ne $env:EXPECTED_ARTIFACT -or $m.source_commit -ne $env:SOURCE_COMMIT -or
               $m.source_status -ne 'clean' -or $m.version -ne $env:EXPECTED_VERSION -or
               $env:RELEASE_TAG -ne "v$($m.version)") { throw "Artifact provenance mismatch." }
