@@ -122,7 +122,7 @@ uv run --with pyinstaller python tools/packaging/build_exe.py
 .\dist\dtflow-0.1.0-g<short-sha>-windows-x64.exe --version
 ```
 
-The version line must show the same `g<short-sha>` as the filename and `source status clean`. The script only exists from the commit that added it, so the `v0.1.0` tag cannot be built stamped. See W21 for the first Windows result.
+The version line must show the same `g<short-sha>` as the filename and `source: clean` (current format `DTFlow <version> | revision <g-sha or date> | source: <status>`; the W16, W20 and W21 rows record the earlier parenthesised wording). The script only exists from the commit that added it, so the `v0.1.0` tag cannot be built stamped. See W21 for the first Windows result.
 
 ## Findings table
 

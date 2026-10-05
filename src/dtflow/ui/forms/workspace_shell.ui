@@ -310,7 +310,7 @@
           <enum>QFrame::NoFrame</enum>
          </property>
          <property name="horizontalScrollBarPolicy">
-          <enum>Qt::ScrollBarAlwaysOff</enum>
+          <enum>Qt::ScrollBarAsNeeded</enum>
          </property>
          <widget class="QStackedWidget" name="rightStack" />
         </widget>
@@ -318,13 +318,13 @@
       </layout>
       <property name="minimumSize">
        <size>
-        <width>248</width>
+        <width>288</width>
         <height>0</height>
        </size>
       </property>
       <property name="maximumSize">
        <size>
-        <width>300</width>
+        <width>360</width>
         <height>16777215</height>
        </size>
       </property>

@@ -158,7 +158,7 @@ class MainWindow:
         self.shell.workspaceSplitter.setStretchFactor(0, 0)
         self.shell.workspaceSplitter.setStretchFactor(1, 1)
         self.shell.workspaceSplitter.setStretchFactor(2, 0)
-        self.shell.workspaceSplitter.setSizes([260, 700, 260])
+        self.shell.workspaceSplitter.setSizes([260, 700, 300])
         from dtflow.ui.brand import APP_ICON, app_icon, panel_icon
 
         form.setWindowIcon(app_icon())
@@ -169,6 +169,7 @@ class MainWindow:
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
         self._narrow = None
+        self._inspector_wanted, self._inspector_auto = True, False
         self.generation = GenerationPage(
             self.generation_page,
             runner=self.runner,
@@ -185,6 +186,8 @@ class MainWindow:
             saved_source=lambda: self._saved if self._saved.available() else None,
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
+            simulation_source=self.generation.simulation,
+            created_hook=self.generation.queue_created,
             activity=self.activity,
         )
         form.backendCombo.addItems(BACKENDS)
@@ -245,6 +248,8 @@ class MainWindow:
         buttons[index].setChecked(True)
 
     def _toggle_inspector(self, visible: bool) -> None:
+        if not self._inspector_auto:
+            self._inspector_wanted = visible  # the user's own choice survives crossing the narrow breakpoint
         self._responsive_workspace()
 
     def _responsive_workspace(self) -> None:
@@ -252,7 +257,9 @@ class MainWindow:
         narrow = self.form.width() < 1100
         if narrow != self._narrow:
             self._narrow = narrow
-            shell.inspectorToggle.setChecked(not narrow)
+            self._inspector_auto = True
+            shell.inspectorToggle.setChecked(self._inspector_wanted and not narrow)
+            self._inspector_auto = False
         shell.rightRail.setVisible(shell.inspectorToggle.isChecked())
 
     def show(self) -> None:
@@ -271,7 +278,7 @@ class MainWindow:
             self.form.backendCombo.setCurrentText(provider)
         if isinstance(endpoint, str):
             self.form.endpointEdit.setText(endpoint)
-        self.generation.restore(document.get("form"))
+        self.generation.restore(document.get("form"), document.get("forms"))
         log.info("last session restored provider=%s", provider if provider in BACKENDS else "-")
 
     def _session_document(self) -> dict:
@@ -279,6 +286,7 @@ class MainWindow:
             "provider": self.form.backendCombo.currentText(),
             "endpoint": self.form.endpointEdit.text().strip(),
             "form": self.generation.form_document(),
+            "forms": self.generation.forms_document(),
         }
 
     def remember(self, *_, background: bool = True) -> None:

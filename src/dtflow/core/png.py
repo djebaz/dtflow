@@ -17,23 +17,35 @@ def fixture_png(width: int, height: int, seed: int, *, grid: bool = False) -> by
     compressor = zlib.compressobj()
     if grid:
         # Edge marks and nonuniform cells make clipping, stretching and panning observable.
-        def grid_row(y):
-            pixels = bytearray(width * 3)
+        light = bytes((225, 233, 245))
+        blue = 105 + seed % 50
+        # Per 64-px band parity: red/blue columns are fixed, green is the y gradient plus an x-dependent offset
+        # that bytes.translate resolves per row at C speed (255 marks the light edge/line pixels).
+        templates = []
+        for parity in (0, 1):
+            base, offsets = bytearray(width * 3), bytearray(width)
             for x in range(width):
-                edge = x < 8 or y < 8 or x >= width - 8 or y >= height - 8
-                line = x % 64 < 2 or y % 64 < 2
-                shade = 22 if (x // 64 + y // 64) % 2 else 0
-                rgb = (
-                    (225, 233, 245)
-                    if edge or line
-                    else (
-                        28 + x * 64 // width + shade,
-                        60 + y * 80 // height + shade,
-                        105 + seed % 50 + shade,
-                    )
-                )
-                pixels[x * 3 : x * 3 + 3] = bytes(rgb)
-            return b"\0" + pixels
+                if x < 8 or x >= width - 8 or x % 64 < 2:
+                    base[x * 3 : x * 3 + 3] = light
+                    offsets[x] = 255
+                else:
+                    shade = 22 if (x // 64 + parity) % 2 else 0
+                    base[x * 3] = 28 + x * 64 // width + shade
+                    base[x * 3 + 2] = blue + shade
+                    offsets[x] = shade
+            templates.append((base, bytes(offsets)))
+        light_row = b"\0" + light * width
+
+        def grid_row(y):
+            if y < 8 or y >= height - 8 or y % 64 < 2:
+                return light_row
+            base, offsets = templates[(y // 64) % 2]
+            green = 60 + y * 80 // height
+            table = bytearray(range(256))
+            table[0], table[22], table[255] = green, green + 22, light[1]
+            row = bytearray(base)
+            row[1::3] = offsets.translate(bytes(table))
+            return b"\0" + row
 
         compressed = b"".join(compressor.compress(grid_row(y)) for y in range(height)) + compressor.flush()
     else:

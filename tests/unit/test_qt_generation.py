@@ -63,21 +63,17 @@ def settled(page):
     return lambda: page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
 
 
-def test_illustrative_sample_is_clearly_labeled_and_has_no_saved_actions(window):
+def test_simulation_controls_exist_only_for_the_fake_provider(window):
     page = window.generation_page
-    preview = page.resultPreviewLabel
-    preview.sampleButton.click()
-    assert preview.property("designation") == "illustrative_sample"
-    assert "no inference" in preview._badge.text()
-    assert preview.pixmap().height() > preview.pixmap().width()
-    assert page.resultList.count() == 0
-    assert not page.openOutputFolderButton.isEnabled()
-    assert not page.copyOutputPathButton.isEnabled()
-    assert not window.generation.openFileButton.isEnabled()
-    assert not window.generation.metadataButton.isEnabled()
-    preview.clear()
-    assert preview.pixmap().isNull()
-    assert preview.sampleButton.isHidden() is False
+    assert not page.simulationBox.isHidden()
+    assert [page.simulationScenarioCombo.itemData(i) for i in range(page.simulationScenarioCombo.count())][
+        0
+    ] == "success"
+    page.simulationScenarioCombo.setCurrentIndex(2)
+    page.simulationDelaySpinBox.setValue(2.5)
+    assert window.generation.simulation() == {"scenario": "lost", "delay": 2.5, "previews": False}
+    window.form.backendCombo.setCurrentText("local")
+    assert page.simulationBox.isHidden() and window.generation.simulation() == {}
 
 
 def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(window, qtbot, fake):
@@ -398,3 +394,48 @@ def test_saved_actions_use_attempt_identity_and_metadata_file(window, qtbot, fak
     assert json.loads(shown[0])["backend_id"] == "fake"
     window.generation._show_image(fixture_png(64, 64, 0), "final", "cloud")
     assert "Fixture" not in page.resultPreviewLabel._badge.text()
+
+
+def test_form_fields_are_remembered_per_provider_but_prompts_are_shared(window, tmp_path):
+    page = window.generation_page
+    page.modelCombo.setCurrentText("fake-grid")
+    page.stepsSpinBox.setValue(7)
+    page.widthSpinBox.setValue(256)
+    window.form.backendCombo.setCurrentText("cloud")
+    assert page.promptEdit.toPlainText() == "a cat"  # prompts stay
+    assert (page.modelCombo.currentText(), page.stepsSpinBox.value(), page.widthSpinBox.value()) != (
+        "fake-grid",
+        7,
+        256,
+    )
+    page.modelCombo.setCurrentText("cloud-model.ckpt")
+    page.stepsSpinBox.setValue(20)
+    window.generation.lora.set_loras([LoRASelection("cloud-lora", 0.5)])
+    window.form.backendCombo.setCurrentText("fake")
+    assert (page.modelCombo.currentText(), page.stepsSpinBox.value(), page.widthSpinBox.value()) == (
+        "fake-grid",
+        7,
+        256,
+    )
+    assert window.generation.lora.loras == ()
+    window.form.backendCombo.setCurrentText("cloud")
+    assert (page.modelCombo.currentText(), page.stepsSpinBox.value()) == ("cloud-model.ckpt", 20)
+    assert [item.identifier for item in window.generation.lora.loras] == ["cloud-lora"]
+    document = window.generation.forms_document()
+    assert set(document) == {"fake", "cloud"} and document["fake"]["model"] == "fake-grid"
+
+
+def test_per_provider_fields_survive_a_restart(window, qtbot, tmp_path):
+    page = window.generation_page
+    page.stepsSpinBox.setValue(9)
+    window.form.backendCombo.setCurrentText("cloud")
+    page.stepsSpinBox.setValue(30)
+    window.remember(background=False)
+    again = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=tmp_path / "state")
+    qtbot.addWidget(again.form)
+    try:
+        assert again.form.backendCombo.currentText() == "cloud" and again.generation_page.stepsSpinBox.value() == 30
+        again.form.backendCombo.setCurrentText("fake")
+        assert again.generation_page.stepsSpinBox.value() == 9
+    finally:
+        again.runner.shutdown()

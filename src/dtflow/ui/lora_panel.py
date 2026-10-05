@@ -115,9 +115,15 @@ class LoraAssetPanel:
         self._candidates = [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"]
 
     # -- selection -------------------------------------------------------------------------------------------------
-    def set_loras(self, loras, *, loaded: bool = False) -> None:
+    def receipts(self) -> dict[str, str]:
+        """The selected LoRA identifier -> receipt id bindings, for remembering the form per provider."""
+        return dict(self._receipts)
+
+    def set_loras(self, loras, *, loaded: bool = False, receipts: dict[str, str] | None = None) -> None:
         self.loras = tuple(loras)
         selected = {item.identifier for item in self.loras}
+        if receipts is not None:
+            self._receipts = dict(receipts)
         self._receipts = {name: asset for name, asset in self._receipts.items() if name in selected}
         self._render_loras()
         text = (

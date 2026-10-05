@@ -71,9 +71,22 @@ class AttemptEvidence:
     failure_code: str | None = None
 
 
-def selection_for(name: str, endpoint: str | None, state: Path, *, scenario: str = "success") -> BackendSelection:
-    """The explicit backend selection, with the persisted cloud concurrency maximum applied for cloud."""
-    return BackendSelection(name, endpoint, load_cloud_concurrency(state) if name == "cloud" else 4, scenario)
+def selection_for(
+    name: str,
+    endpoint: str | None,
+    state: Path,
+    *,
+    scenario: str = "success",
+    delay: float = 0.0,
+    previews: bool = False,
+) -> BackendSelection:
+    """The explicit backend selection, with the persisted cloud concurrency maximum applied for cloud.
+
+    ``scenario``, ``delay`` and ``previews`` configure the fake backend's simulation and mean nothing elsewhere.
+    """
+    return BackendSelection(
+        name, endpoint, load_cloud_concurrency(state) if name == "cloud" else 4, scenario, delay, previews
+    )
 
 
 def asset_validator(backend) -> AssetService | None:

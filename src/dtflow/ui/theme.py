@@ -23,9 +23,16 @@ def load_theme() -> str:
     try:
         source = THEME_FILE.read_text(encoding="utf-8")
         tokens = load_tokens()
-        return re.sub(r"\$\{([\w.]+)\}", lambda match: tokens[match.group(1)], source)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         raise OSError("The DTFlow Qt stylesheet could not be loaded.") from exc
+
+    def token(match: re.Match) -> str:
+        try:
+            return tokens[match.group(1)]
+        except KeyError:
+            raise OSError(f"The DTFlow Qt stylesheet uses an unknown token: {match.group(1)}.") from None
+
+    return re.sub(r"\$\{([\w.]+)\}", token, source)
 
 
 def apply_theme(application: QApplication) -> None:

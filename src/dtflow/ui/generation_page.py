@@ -71,6 +71,7 @@ def failure_reason(failure: BaseException) -> str:
 
 PREVIEW_MIN_HEIGHT = 180
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
+METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
     "promptEdit",
     "negativePromptEdit",
@@ -90,6 +91,16 @@ WIRED_CONTROLS = (
     "loraList",
     "triggerPrefixCheck",
     "assetList",
+    "simulationScenarioCombo",
+    "simulationDelaySpinBox",
+    "simulationPreviewsCheck",
+)
+SIMULATED_OUTCOMES = (
+    ("Succeeds", "success"),
+    ("Rejected before submission", "reject"),
+    ("Connection lost (outcome unknown)", "lost"),
+    ("Terminal error", "terminal_error"),
+    ("Finishes with no image", "empty"),
 )
 FIELD_WIDGETS = (
     "promptEdit",
@@ -136,6 +147,9 @@ class GenerationPage:
         self._activity = activity or Activity()
         self._no_cache = no_cache
         self._listed_backend: str | None = None
+        self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
+        self._provider: str | None = None
+        self._previewed_seed: int | None = None
         self._activity.listen(self._sync_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
@@ -165,6 +179,8 @@ class GenerationPage:
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.samplerCombo.addItems(SAMPLERS)
+        for label, scenario in SIMULATED_OUTCOMES:
+            page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
         page.cancelButton.setEnabled(False)
@@ -190,6 +206,9 @@ class GenerationPage:
         self._set_result_actions(False)
         page.modelCombo.lineEdit().setPlaceholderText("Select or enter a model")
         page.promptEdit.setTabChangesFocus(True)
+        page.seedEdit.setToolTip(
+            "0 picks a random seed for each submission; the seed used is recorded with the output."
+        )
         for control in (page.expandPromptButton, page.detailsToggle):
             control.setEnabled(True)
         page.attemptDetails.hide()
@@ -209,7 +228,10 @@ class GenerationPage:
         if self._listed_backend is not None and self._listed_backend != name:
             self._fill_models(())  # a list from another provider is not offered for this one
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
+            self.page.inventoryEvidenceLabel.setToolTip("")
             self._listed_backend = None
+        self._switch_provider(name)
+        self.page.simulationBox.setVisible(name == "fake")
         self.page.modelCombo.lineEdit().setPlaceholderText(
             f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
         )
@@ -242,15 +264,62 @@ class GenerationPage:
         page.guidanceSpinBox.setValue(values.guidance)
         page.samplerCombo.setCurrentText(values.sampler)
 
+    PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
+
+    def _provider_form(self) -> dict:
+        """The fields that belong to the provider in use: everything but the prompts, plus bound receipts."""
+        document = form_to_document(self._values())
+        form = {name: document[name] for name in self.PROVIDER_FIELDS}
+        form["receipts"] = self.lora.receipts()
+        return form
+
+    def _apply_provider_form(self, document: object) -> None:
+        """Show a provider's remembered fields (defaults for one never used); prompts stay as typed."""
+        current = self._values()
+        values = replace(form_from_document(document), prompt=current.prompt, negative_prompt=current.negative_prompt)
+        self._apply(values)
+        receipts = document.get("receipts") if isinstance(document, dict) else None
+        valid = (
+            {k: v for k, v in receipts.items() if type(k) is str and type(v) is str}
+            if isinstance(receipts, dict)
+            else {}
+        )
+        self.lora.set_loras(values.loras, receipts=valid)
+
+    def _switch_provider(self, name: str) -> None:
+        """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
+        if not name:
+            return
+        if self._provider is None:
+            self._provider = name
+        elif name != self._provider:
+            self._forms[self._provider] = self._provider_form()
+            self._provider = name
+            self._apply_provider_form(self._forms.get(name, {}))
+            log.info("form fields switched provider=%s remembered=%s", name, name in self._forms)
+
     def form_document(self) -> dict:
         """The remembered form values (credential-free, unvalidated)."""
         return form_to_document(self._values())
 
-    def restore(self, document: object) -> None:
-        """Apply a remembered form document; bad fields fall back to defaults."""
+    def forms_document(self) -> dict:
+        """Every provider's remembered fields, the one in use included."""
+        forms = dict(self._forms)
+        if self._provider is not None:
+            forms[self._provider] = self._provider_form()
+        return forms
+
+    def restore(self, document: object, forms: object = None) -> None:
+        """Apply a remembered form document and per-provider fields; bad fields fall back to defaults."""
         values = form_from_document(document)
         self._apply(values)
         self.lora.set_loras(values.loras)
+        self._forms = {k: v for k, v in forms.items() if isinstance(v, dict)} if isinstance(forms, dict) else {}
+        self._provider = self._backend()[0] or None
+        if self._provider in self._forms:
+            self._apply_provider_form(self._forms[self._provider])
+        elif forms is None and self._provider is not None:
+            self._forms[self._provider] = self._provider_form()  # a pre-per-provider file belongs to its provider
 
     def _snap_size(self) -> str | None:
         """Show the nearest multiple of 64 in the size boxes; returns a note when a value was adjusted."""
@@ -308,16 +377,28 @@ class GenerationPage:
                 Presentation("warning", "Queue dispatch is running", "Single generation is unavailable until it stops.")
             )
 
-    def request_for_queue(self):
-        """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking."""
+    def queue_created(self) -> None:
+        self._previewed_seed = None
+
+    def request_for_queue(self, *, preview: bool = False):
+        """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking.
+
+        A random seed (form seed 0) picked for a plan preview is kept until a queue is created (``queue_created``),
+        so the dry-run table shows the seeds the queue will really use, even after a rejected attempt.
+        """
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()
         try:
-            request = build_request(self._values(), backend=name, config_name=self._config_name)
+            request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
         except FormError as exc:
             self._mark(exc.widget)
             raise
+        resolved = any(key == "seed.resolved" for key, _ in request.resolution_evidence)
+        if preview and resolved:
+            self._previewed_seed = request.seed
+        elif resolved and self._previewed_seed is not None:
+            request = replace(request, seed=self._previewed_seed)
         return request, name, endpoint, self.lora.receipt_ids()
 
     def _progress(self, text: str, completed: int | None = None, total: int | None = None) -> None:
@@ -348,7 +429,7 @@ class GenerationPage:
         name, endpoint = self._backend()
         self._submitted_backend = name
         try:
-            request = build_request(self._values(), backend=name, config_name=self._config_name)
+            request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
         except FormError as exc:
             self._mark(exc.widget)
             log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
@@ -371,6 +452,7 @@ class GenerationPage:
         self.page.resultList.clear()
         self._set_result_actions(False)
         self.page.attemptIdentityLabel.setText("No durable attempt yet.")
+        self.page.attemptIdentityLabel.setToolTip("")
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
@@ -387,12 +469,24 @@ class GenerationPage:
                 self._saved(),
                 self.lora.receipt_ids(),
                 self.page.triggerPrefixCheck.isChecked(),
+                self.simulation(),
             ),
             self._generated,
         )
 
-    async def _generate(self, name, endpoint, request, saved, asset_ids, prefix):
-        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
+    def simulation(self) -> dict:
+        """The fake provider's simulation settings from the form; empty for every other provider."""
+        page = self.page
+        if self._backend()[0] != "fake":
+            return {}
+        return {
+            "scenario": page.simulationScenarioCombo.currentData(),
+            "delay": page.simulationDelaySpinBox.value(),
+            "previews": page.simulationPreviewsCheck.isChecked(),
+        }
+
+    async def _generate(self, name, endpoint, request, saved, asset_ids, prefix, simulation):
+        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
         return await generate_once(
             selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
         )
@@ -429,7 +523,8 @@ class GenerationPage:
         bar.setFormat("Saved")
         self._status(present_outcome(outcome))
         self.lora.show_diagnostics(outcome.diagnostics)
-        self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id} on {outcome.backend_id}.")
+        self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
+        self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
         self.page.effectiveRequestBrowser.setPlainText(
             describe_request(outcome.request, outcome.backend_id, self._backend()[1])
         )
@@ -439,6 +534,8 @@ class GenerationPage:
             self.page.resultList.addItem(item)
         self._set_result_actions(True)
         self._metadata_path = Path(outcome.metadata_path)
+        if len(outcome.output_paths) > 1:
+            self.page.detailsToggle.setChecked(True)  # the output chooser lives in the details
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
 
@@ -463,10 +560,12 @@ class GenerationPage:
         # Explicit inspection of a local artifact, not a provider call.
         try:
             with self._metadata_path.open(encoding="utf-8") as handle:
-                content = handle.read(256_000)
+                content = handle.read(METADATA_LIMIT + 1)
         except (OSError, UnicodeError):
             QMessageBox.warning(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
             return
+        if len(content) > METADATA_LIMIT:
+            content = content[:METADATA_LIMIT] + "\n… (truncated: the saved file is longer)"
         dialog = QMessageBox(self.page)
         dialog.setWindowTitle("Saved generation metadata")
         dialog.setText("Reproducibility metadata from the saved attempt.")
@@ -505,7 +604,10 @@ class GenerationPage:
             return
         self._status(present_interruption(evidence))
         if evidence is not None:
-            self.page.attemptIdentityLabel.setText(f"Attempt {evidence.attempt_id}: recorded state {evidence.state}.")
+            self.page.attemptIdentityLabel.setText(
+                f"Attempt {evidence.attempt_id[:8]}: recorded state {evidence.state}."
+            )
+            self.page.attemptIdentityLabel.setToolTip(f"Attempt {evidence.attempt_id}")
 
     # -- inventory -------------------------------------------------------------------------------------------------
     def refresh(self) -> None:
@@ -540,7 +642,7 @@ class GenerationPage:
             observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
         except ValueError:
             observed = snapshot.observed_at_utc
-        label.setText(f"{len(ids)} model(s) · {how.split(' ')[0]}\nobserved {observed}")
+        label.setText(f"{len(ids)} model(s) · {how.split(' (')[0]}\nobserved {observed}")
 
     def _refreshed(self, snapshot, failure) -> None:
         self._set_busy(False)
@@ -549,6 +651,7 @@ class GenerationPage:
             shown = present_generation_failure(failure)
             log.warning("inventory refresh failed reason=%s", failure_reason(failure))
             label.setText(f"Inventory refresh failed. {shown.headline}: {shown.detail}")
+            label.setToolTip("")
             return
         self._show_inventory(snapshot, "refreshed" if snapshot.refreshed else "as reported")
 

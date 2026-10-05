@@ -87,6 +87,15 @@ def present_outcome(outcome) -> Presentation:
     return Presentation("ok", "Saved", detail)
 
 
+UNSUPPORTED_NAMES = (
+    ("operation", "this operation"),
+    ("sampler", "this sampler"),
+    ("model", "the chosen model"),
+    ("lora", "LoRA selection"),
+    ("batch", "this batch size"),
+)
+
+
 def present_generation_failure(exc: Exception) -> Presentation:
     """A generation that raised: stable codes only; an unknown remote outcome is never shown as a plain failure."""
     if isinstance(exc, ValidationError):
@@ -99,6 +108,17 @@ def present_generation_failure(exc: Exception) -> Presentation:
                 "Outcome unknown",
                 f"{failure.code}: the request may have reached the server and may still complete. "
                 "It is not replayed automatically; inspect the attempt before acting.",
+            )
+        if failure.code == "unsupported_request" and failure.diagnostics:
+            wanted = dict(UNSUPPORTED_NAMES)
+            names = " or ".join(wanted.get(name, name) for name, _ in failure.diagnostics)
+            hint = (
+                " Refresh inventory to see the models this provider offers."
+                if failure.diagnostics[0][0] == "model"
+                else ""
+            )
+            return Presentation(
+                "error", "Request rejected", f"This provider does not offer {names}.{hint} Nothing was dispatched."
             )
         if failure.category == ErrorCategory.VALIDATION:
             codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics)

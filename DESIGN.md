@@ -116,7 +116,7 @@ Editable fields use the input surface and border, with a lighter hover border, v
 
 ### Image preview
 
-The `ImagePreview` widget keeps original pixels and handles Fit, 100%, zoom, pan, scrollbars and expand. Zoom controls float top left; Expand floats top right; saved-output file actions float at the bottom. The designation badge identifies a saved final image, an interim preview, a fixture or an illustrative sample as appropriate. The empty canvas carries the DTFlow mark and a “View sample” action; the portrait artwork is explicitly labeled illustrative and never presented as inference or a saved output. Open file, Open folder, Metadata and Copy path stay disabled until a saved artifact exists. Keep this distinction when reusing the viewer elsewhere.
+The `ImagePreview` widget keeps original pixels and handles Fit, 100%, zoom, pan, scrollbars and expand. Zoom controls float top left; Expand floats top right; saved-output file actions float at the bottom. The designation badge identifies a saved final image, an interim preview, a fixture or an illustrative sample as appropriate. The empty canvas carries the DTFlow mark and a short prompt to generate. The portrait artwork is the fake provider's generated result, labeled as a fixture and never presented as inference. Open file, Open folder, Metadata and Copy path stay disabled until a saved artifact exists. Keep this distinction when reusing the viewer elsewhere.
 
 ### Status and progress
 
