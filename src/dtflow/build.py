@@ -57,7 +57,7 @@ def display_identity() -> str:
         revision = "g" + build["source_commit"][:7]
     elif "source_modified" in build:
         local = datetime.fromisoformat(build["source_modified"].replace("Z", "+00:00")).astimezone()
-        revision = "revision " + local.strftime("%Y-%m-%d %H:%M")
+        revision = local.strftime("%Y-%m-%d %H:%M")
     else:
-        revision = "revision unknown"
-    return f"DTFlow {build['version']} ({revision}; source status {build['source_status']})"
+        revision = "unknown"
+    return f"DTFlow {build['version']} | revision {revision} | source: {build['source_status']}"
