@@ -20,7 +20,9 @@
    </property>
    <item>
     <widget class="QSplitter" name="workspaceSplitter">
-     <property name="handleWidth"><number>8</number></property>
+     <property name="handleWidth">
+      <number>8</number>
+     </property>
      <property name="childrenCollapsible">
       <bool>false</bool>
      </property>
@@ -117,89 +119,40 @@
             </item>
            </layout>
           </item>
+          <item>
+           <widget class="QPushButton" name="inspectorToggle">
+            <property name="text">
+             <string />
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+            <property name="toolTip">
+             <string>Show or hide the right details panel</string>
+            </property>
+            <property name="accessibleName">
+             <string>Toggle right details panel</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>30</width>
+              <height>30</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>30</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>
-       <item>
-        <widget class="QScrollArea" name="leftScroll">
-         <property name="widgetResizable">
-          <bool>true</bool>
-         </property>
-         <property name="frameShape">
-          <enum>QFrame::NoFrame</enum>
-         </property>
-         <property name="horizontalScrollBarPolicy">
-          <enum>Qt::ScrollBarAlwaysOff</enum>
-         </property>
-         <widget class="QStackedWidget" name="leftStack" />
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="inspectorToggle">
-         <property name="text">
-          <string>Inspector</string>
-         </property>
-         <property name="checkable">
-          <bool>true</bool>
-         </property>
-         <property name="checked">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-      </layout>
-      <property name="minimumSize">
-       <size>
-        <width>248</width>
-        <height>0</height>
-       </size>
-      </property>
-      <property name="maximumSize">
-       <size>
-        <width>300</width>
-        <height>16777215</height>
-       </size>
-      </property>
-     </widget>
-     <widget class="QWidget" name="centerRail">
-      <layout class="QVBoxLayout" name="centerRailLayout">
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <property name="spacing">
-        <number>8</number>
-       </property>
-       <item>
-        <widget class="QStackedWidget" name="centerStack" />
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="rightRail">
-      <layout class="QVBoxLayout" name="rightRailLayout">
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <property name="spacing">
-        <number>8</number>
-       </property>
        <item>
         <widget class="QFrame" name="navigationFrame">
          <layout class="QHBoxLayout" name="navigationLayout">
@@ -281,6 +234,73 @@
          </layout>
         </widget>
        </item>
+       <item>
+        <widget class="QScrollArea" name="leftScroll">
+         <property name="widgetResizable">
+          <bool>true</bool>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::NoFrame</enum>
+         </property>
+         <property name="horizontalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOff</enum>
+         </property>
+         <widget class="QStackedWidget" name="leftStack" />
+        </widget>
+       </item>
+      </layout>
+      <property name="minimumSize">
+       <size>
+        <width>248</width>
+        <height>0</height>
+       </size>
+      </property>
+      <property name="maximumSize">
+       <size>
+        <width>300</width>
+        <height>16777215</height>
+       </size>
+      </property>
+     </widget>
+     <widget class="QWidget" name="centerRail">
+      <layout class="QVBoxLayout" name="centerRailLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <property name="spacing">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QStackedWidget" name="centerStack" />
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="rightRail">
+      <layout class="QVBoxLayout" name="rightRailLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <property name="spacing">
+        <number>8</number>
+       </property>
        <item>
         <widget class="QScrollArea" name="rightScroll">
          <property name="widgetResizable">

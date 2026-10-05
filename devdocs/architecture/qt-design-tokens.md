@@ -27,7 +27,7 @@ Primary, secondary and placeholder text contrast is checked against all four sur
 - Buttons have hover, pressed, selected, disabled and keyboard-focus rules.
 - Inputs expose placeholders, focus, hover, disabled and invalid states.
 - Lists expose empty hints, hover and selected rows. Scrollbars and sliders have idle/hover/pressed/disabled states. Status colors preserve warning, unknown, error and success distinctions.
-- At widths below 1100px the inspector initially collapses and navigation moves to the left rail. It can be reopened explicitly. Hiding Inspector at any width never hides Connection/Generate/Queues.
+- At widths below 1100px the inspector initially collapses and navigation stays permanently in the left rail. It can be reopened explicitly. Hiding the right details panel at any width never hides Connection/Generate/Queues.
 - Fit shows complete portrait/landscape output; Control-wheel zoom is cursor anchored, drag pans, overflow adds scrollbars. `F`, `+`, `-` and Escape support keyboard inspection. Idle toolbars hide; focusing the canvas restores them.
 - Expand restores on Escape, close, or owner-window close. Saved-output actions are disabled for empty/interim previews; no watermark is written to artifacts.
 - The empty canvas offers an illustrative portrait sample. Its badge explicitly says it is a sample with no inference; file and metadata actions remain disabled because there is no saved output. The sample button must be enabled when the Generate page leaves the shell's preview-only control state.

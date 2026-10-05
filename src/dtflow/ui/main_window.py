@@ -159,9 +159,10 @@ class MainWindow:
         self.shell.workspaceSplitter.setStretchFactor(1, 1)
         self.shell.workspaceSplitter.setStretchFactor(2, 0)
         self.shell.workspaceSplitter.setSizes([260, 700, 260])
-        from dtflow.ui.brand import APP_ICON, app_icon
+        from dtflow.ui.brand import APP_ICON, app_icon, panel_icon
 
         form.setWindowIcon(app_icon())
+        self.shell.inspectorToggle.setIcon(panel_icon())
         logo = QPixmap(str(APP_ICON))
         if not logo.isNull():
             form.productMarkLabel.setPixmap(
@@ -252,11 +253,6 @@ class MainWindow:
         if narrow != self._narrow:
             self._narrow = narrow
             shell.inspectorToggle.setChecked(not narrow)
-        if narrow or not shell.inspectorToggle.isChecked():
-            shell.leftRail.layout().insertWidget(1, shell.navigationFrame)
-        else:
-            shell.rightRail.layout().insertWidget(0, shell.navigationFrame)
-        shell.navigationFrame.show()
         shell.rightRail.setVisible(shell.inspectorToggle.isChecked())
 
     def show(self) -> None:

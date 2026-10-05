@@ -19,3 +19,7 @@ User requested no added or further tests during implementation. No test files ar
 ## User screenshot follow-up
 
 Add a shared 8 px splitter gutter using `size.workspaceGutter` and the existing background/border palette. Keep internal padding and the Inspector toggle unchanged. No tests or captures run for this follow-up; final visual acceptance remains pending.
+
+## Approved navigation refinement
+
+Keep tabs permanently below the left-rail brand at all widths. Replace the full-width bottom Inspector button with a compact palette-backed panel icon beside the brand, with tooltip/accessibility text. Narrow-window automatic collapse remains; tab switching never relocates navigation. No tests added or run for this refinement.
