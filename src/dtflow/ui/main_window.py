@@ -195,6 +195,9 @@ class MainWindow:
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
+        policy = self.shell.inspectorToggle.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.shell.inspectorToggle.setSizePolicy(policy)
         self._gallery_chrome_active = False
         self._gallery_previous_sizes = None
         self._narrow = None
@@ -303,6 +306,13 @@ class MainWindow:
             shell.style().polish(shell)
             if images:
                 self._gallery_previous_sizes = shell.workspaceSplitter.sizes()
+                # Match the mounted shell chrome before moving it into the gallery rows.
+                for slot, frame in (
+                    (self.gallery_detail.galleryBrandSlot, shell.brandFrame),
+                    (self.gallery_detail.galleryNavigationSlot, shell.navigationFrame),
+                ):
+                    slot.setFixedSize(shell.leftRail.width(), frame.height())
+                self.gallery_detail.galleryHeaderScroll.setFixedHeight(shell.brandFrame.height())
                 self.gallery_detail.galleryBrandSlotLayout.addWidget(shell.brandFrame)
                 self.gallery_detail.galleryNavigationSlotLayout.addWidget(shell.navigationFrame)
             else:

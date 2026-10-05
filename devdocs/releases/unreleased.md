@@ -49,3 +49,8 @@
   across Detail, Grid and List, including common sliders and scrollbars.
   Removes duplicate gallery color tokens while preserving the current compact
   header, full-width lower panels and presentation behavior. No tests added or run.
+
+- Images removes extra outer/header padding and anchors shared logo/navigation
+  slots outside the scrolling controls with shell dimensions and row spacing.
+  Tightens image, filmstrip and metadata gutters while retaining the current
+  full-width gallery composition. No tests added or run.

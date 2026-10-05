@@ -10,30 +10,339 @@
   </property>
   <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,1">
    <item>
-    <widget class="QScrollArea" name="galleryHeaderScroll">
-     <property name="accessibleName">
-      <string>HeaderScroll</string>
-     </property>
-     <property name="role" stdset="0">
-      <string>galleryScroll</string>
-     </property>
-     <property name="widgetResizable">
-      <bool>true</bool>
-     </property>
-     <property name="frameShape">
-      <enum>QFrame::NoFrame</enum>
-     </property>
-     <widget class="QWidget" name="galleryHeaderScrollContents">
-      <property name="accessibleName">
-       <string>HeaderScrollContents</string>
+    <widget class="QWidget" name="galleryBrandRow">
+     <layout class="QHBoxLayout" name="galleryBrandRowLayout" stretch="0,1">
+      <property name="leftMargin">
+       <number>0</number>
       </property>
-      <property name="role" stdset="0">
-       <string>galleryScrollContents</string>
+      <property name="topMargin">
+       <number>0</number>
       </property>
-      <layout class="QHBoxLayout" name="galleryHeaderLayout" stretch="0,0,0,0,0,1,0,0,0,0">
-       <item>
-        <widget class="QWidget" name="galleryBrandSlot">
-         <layout class="QVBoxLayout" name="galleryBrandSlotLayout">
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <item alignment="Qt::AlignTop">
+       <widget class="QWidget" name="galleryBrandSlot">
+        <layout class="QVBoxLayout" name="galleryBrandSlotLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+        </layout>
+        <property name="minimumSize">
+         <size>
+          <width>248</width>
+          <height>50</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>248</width>
+          <height>50</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QScrollArea" name="galleryHeaderScroll">
+        <property name="accessibleName">
+         <string>HeaderScroll</string>
+        </property>
+        <property name="role" stdset="0">
+         <string>galleryScroll</string>
+        </property>
+        <property name="widgetResizable">
+         <bool>true</bool>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::NoFrame</enum>
+        </property>
+        <widget class="QWidget" name="galleryHeaderScrollContents">
+         <property name="accessibleName">
+          <string>HeaderScrollContents</string>
+         </property>
+         <property name="role" stdset="0">
+          <string>galleryScrollContents</string>
+         </property>
+         <layout class="QHBoxLayout" name="galleryHeaderLayout" stretch="0,0,0,0,1,0,0,0,0">
+          <item>
+           <widget class="QPushButton" name="galleryGridButton">
+            <property name="accessibleName">
+             <string>Grid</string>
+            </property>
+            <property name="text">
+             <string>Grid</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>galleryMode</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>80</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>80</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="enabled">
+             <bool>true</bool>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="galleryListButton">
+            <property name="accessibleName">
+             <string>List</string>
+            </property>
+            <property name="text">
+             <string>List</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>galleryMode</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>80</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>80</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="enabled">
+             <bool>true</bool>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="galleryDetailButton">
+            <property name="accessibleName">
+             <string>Detail</string>
+            </property>
+            <property name="text">
+             <string>Detail</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>galleryMode</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>112</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>112</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="enabled">
+             <bool>true</bool>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="galleryThumbnailSizeLabel">
+            <property name="accessibleName">
+             <string>ThumbnailSizeLabel</string>
+            </property>
+            <property name="text">
+             <string>Thumbnail size</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>90</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>90</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSlider" name="galleryThumbnailSizeSlider">
+            <property name="accessibleName">
+             <string>ThumbnailSizeSlider</string>
+            </property>
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="minimum">
+             <number>96</number>
+            </property>
+            <property name="maximum">
+             <number>240</number>
+            </property>
+            <property name="value">
+             <number>160</number>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>20</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="galleryThumbnailSizeValue">
+            <property name="accessibleName">
+             <string>ThumbnailSizeValue</string>
+            </property>
+            <property name="text">
+             <string>160 px</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>54</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>54</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="galleryAutoRefreshButton">
+            <property name="accessibleName">
+             <string>AutoRefresh</string>
+            </property>
+            <property name="text">
+             <string>Auto-refresh: Off</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>Preview only: this application action is not wired.</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>156</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>156</width>
+              <height>36</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="galleryRefreshButton">
+            <property name="accessibleName">
+             <string>Refresh</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>Preview only: this application action is not wired.</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>44</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>44</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>↻</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="galleryResultCount">
+            <property name="accessibleName">
+             <string>ResultCount</string>
+            </property>
+            <property name="text">
+             <string>Offline fixture</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>secondary</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>116</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>116</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
           <property name="leftMargin">
            <number>0</number>
           </property>
@@ -46,347 +355,290 @@
           <property name="bottomMargin">
            <number>0</number>
           </property>
+          <property name="spacing">
+           <number>6</number>
+          </property>
          </layout>
-         <property name="minimumSize">
-          <size>
-           <width>248</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>248</width>
-           <height>16777215</height>
-          </size>
-         </property>
         </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="galleryGridButton">
-         <property name="accessibleName">
-          <string>Grid</string>
-         </property>
-         <property name="text">
-          <string>Grid</string>
-         </property>
-         <property name="role" stdset="0">
-          <string>galleryMode</string>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>80</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>80</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="enabled">
-          <bool>true</bool>
-         </property>
-         <property name="checkable">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="galleryListButton">
-         <property name="accessibleName">
-          <string>List</string>
-         </property>
-         <property name="text">
-          <string>List</string>
-         </property>
-         <property name="role" stdset="0">
-          <string>galleryMode</string>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>80</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>80</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="enabled">
-          <bool>true</bool>
-         </property>
-         <property name="checkable">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="galleryDetailButton">
-         <property name="accessibleName">
-          <string>Detail</string>
-         </property>
-         <property name="text">
-          <string>Detail</string>
-         </property>
-         <property name="role" stdset="0">
-          <string>galleryMode</string>
-         </property>
-         <property name="checked">
-          <bool>true</bool>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>112</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>112</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="enabled">
-          <bool>true</bool>
-         </property>
-         <property name="checkable">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryThumbnailSizeLabel">
-         <property name="accessibleName">
-          <string>ThumbnailSizeLabel</string>
-         </property>
-         <property name="text">
-          <string>Thumbnail size</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>90</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>90</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QSlider" name="galleryThumbnailSizeSlider">
-         <property name="accessibleName">
-          <string>ThumbnailSizeSlider</string>
-         </property>
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="minimum">
-          <number>96</number>
-         </property>
-         <property name="maximum">
-          <number>240</number>
-         </property>
-         <property name="value">
-          <number>160</number>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>140</width>
-           <height>20</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryThumbnailSizeValue">
-         <property name="accessibleName">
-          <string>ThumbnailSizeValue</string>
-         </property>
-         <property name="text">
-          <string>160 px</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>54</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>54</width>
-           <height>34</height>
-          </size>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="galleryAutoRefreshButton">
-         <property name="accessibleName">
-          <string>AutoRefresh</string>
-         </property>
-         <property name="text">
-          <string>Auto-refresh: Off</string>
-         </property>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="toolTip">
-          <string>Preview only: this application action is not wired.</string>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>156</width>
-           <height>36</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>156</width>
-           <height>36</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPushButton" name="galleryRefreshButton">
-         <property name="accessibleName">
-          <string>Refresh</string>
-         </property>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="toolTip">
-          <string>Preview only: this application action is not wired.</string>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>44</width>
-           <height>36</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>44</width>
-           <height>36</height>
-          </size>
-         </property>
-         <property name="text">
-          <string>↻</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryResultCount">
-         <property name="accessibleName">
-          <string>ResultCount</string>
-         </property>
-         <property name="text">
-          <string>Offline fixture</string>
-         </property>
-         <property name="role" stdset="0">
-          <string>secondary</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>116</width>
-           <height>36</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>116</width>
-           <height>36</height>
-          </size>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <property name="leftMargin">
-        <number>12</number>
-       </property>
-       <property name="rightMargin">
-        <number>12</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <property name="spacing">
-        <number>6</number>
-       </property>
-      </layout>
-     </widget>
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>56</height>
-      </size>
-     </property>
-     <property name="maximumSize">
-      <size>
-       <width>16777215</width>
-       <height>56</height>
-      </size>
-     </property>
-     <property name="verticalScrollBarPolicy">
-      <enum>Qt::ScrollBarAlwaysOff</enum>
-     </property>
-     <property name="horizontalScrollBarPolicy">
-      <enum>Qt::ScrollBarAsNeeded</enum>
-     </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>50</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>50</height>
+         </size>
+        </property>
+        <property name="verticalScrollBarPolicy">
+         <enum>Qt::ScrollBarAlwaysOff</enum>
+        </property>
+        <property name="horizontalScrollBarPolicy">
+         <enum>Qt::ScrollBarAsNeeded</enum>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </item>
    <item>
-    <widget class="QScrollArea" name="galleryFilterScroll">
-     <property name="accessibleName">
-      <string>FilterScroll</string>
-     </property>
-     <property name="role" stdset="0">
-      <string>galleryScroll</string>
-     </property>
-     <property name="widgetResizable">
-      <bool>true</bool>
-     </property>
-     <property name="frameShape">
-      <enum>QFrame::NoFrame</enum>
-     </property>
-     <widget class="QWidget" name="galleryFilterScrollContents">
-      <property name="accessibleName">
-       <string>FilterScrollContents</string>
+    <widget class="QWidget" name="galleryNavigationRow">
+     <layout class="QHBoxLayout" name="galleryNavigationRowLayout" stretch="0,1">
+      <property name="leftMargin">
+       <number>0</number>
       </property>
-      <property name="role" stdset="0">
-       <string>galleryScrollContents</string>
+      <property name="topMargin">
+       <number>0</number>
       </property>
-      <layout class="QHBoxLayout" name="galleryFilterLayout">
-       <item>
-        <widget class="QWidget" name="galleryNavigationSlot">
-         <layout class="QVBoxLayout" name="galleryNavigationSlotLayout">
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <item alignment="Qt::AlignTop">
+       <widget class="QWidget" name="galleryNavigationSlot">
+        <layout class="QVBoxLayout" name="galleryNavigationSlotLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+        </layout>
+        <property name="minimumSize">
+         <size>
+          <width>248</width>
+          <height>34</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>248</width>
+          <height>34</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QScrollArea" name="galleryFilterScroll">
+        <property name="accessibleName">
+         <string>FilterScroll</string>
+        </property>
+        <property name="role" stdset="0">
+         <string>galleryScroll</string>
+        </property>
+        <property name="widgetResizable">
+         <bool>true</bool>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::NoFrame</enum>
+        </property>
+        <widget class="QWidget" name="galleryFilterScrollContents">
+         <property name="accessibleName">
+          <string>FilterScrollContents</string>
+         </property>
+         <property name="role" stdset="0">
+          <string>galleryScrollContents</string>
+         </property>
+         <layout class="QHBoxLayout" name="galleryFilterLayout">
+          <item>
+           <widget class="QLabel" name="galleryPromptSearchLabel">
+            <property name="accessibleName">
+             <string>PromptSearchLabel</string>
+            </property>
+            <property name="text">
+             <string>Positive prompt</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="galleryPromptSearch">
+            <property name="accessibleName">
+             <string>PromptSearch</string>
+            </property>
+            <property name="placeholderText">
+             <string>Search positive prompts…</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>Preview only: search is not wired.</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>200</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="galleryModelFilterLabel">
+            <property name="accessibleName">
+             <string>ModelFilterLabel</string>
+            </property>
+            <property name="text">
+             <string>Model</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="galleryModelFilter">
+            <property name="accessibleName">
+             <string>ModelFilter</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>All models</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>132</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="galleryLoRAFilterLabel">
+            <property name="accessibleName">
+             <string>LoRAFilterLabel</string>
+            </property>
+            <property name="text">
+             <string>LoRA</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="galleryLoRAFilter">
+            <property name="accessibleName">
+             <string>LoRAFilter</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>All LoRAs</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>128</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="galleryDateFilterLabel">
+            <property name="accessibleName">
+             <string>DateFilterLabel</string>
+            </property>
+            <property name="text">
+             <string>Date range</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="galleryDateFilter">
+            <property name="accessibleName">
+             <string>DateFilter</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>All time</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>144</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="galleryRatioFilterLabel">
+            <property name="accessibleName">
+             <string>RatioFilterLabel</string>
+            </property>
+            <property name="text">
+             <string>Aspect ratio</string>
+            </property>
+            <property name="textInteractionFlags">
+             <set>Qt::TextSelectableByMouse</set>
+            </property>
+            <property name="wordWrap">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="galleryRatioFilter">
+            <property name="accessibleName">
+             <string>RatioFilter</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>Any ratio</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>124</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
           <property name="leftMargin">
            <number>0</number>
           </property>
@@ -399,258 +651,48 @@
           <property name="bottomMargin">
            <number>0</number>
           </property>
+          <property name="spacing">
+           <number>10</number>
+          </property>
          </layout>
-         <property name="minimumSize">
-          <size>
-           <width>248</width>
-           <height>0</height>
-          </size>
-         </property>
-         <property name="maximumSize">
-          <size>
-           <width>248</width>
-           <height>16777215</height>
-          </size>
-         </property>
         </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryPromptSearchLabel">
-         <property name="accessibleName">
-          <string>PromptSearchLabel</string>
-         </property>
-         <property name="text">
-          <string>Positive prompt</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLineEdit" name="galleryPromptSearch">
-         <property name="accessibleName">
-          <string>PromptSearch</string>
-         </property>
-         <property name="placeholderText">
-          <string>Search positive prompts…</string>
-         </property>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="toolTip">
-          <string>Preview only: search is not wired.</string>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>200</width>
-           <height>30</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryModelFilterLabel">
-         <property name="accessibleName">
-          <string>ModelFilterLabel</string>
-         </property>
-         <property name="text">
-          <string>Model</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="galleryModelFilter">
-         <property name="accessibleName">
-          <string>ModelFilter</string>
-         </property>
-         <item>
-          <property name="text">
-           <string>All models</string>
-          </property>
-         </item>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>132</width>
-           <height>30</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryLoRAFilterLabel">
-         <property name="accessibleName">
-          <string>LoRAFilterLabel</string>
-         </property>
-         <property name="text">
-          <string>LoRA</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="galleryLoRAFilter">
-         <property name="accessibleName">
-          <string>LoRAFilter</string>
-         </property>
-         <item>
-          <property name="text">
-           <string>All LoRAs</string>
-          </property>
-         </item>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>128</width>
-           <height>30</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryDateFilterLabel">
-         <property name="accessibleName">
-          <string>DateFilterLabel</string>
-         </property>
-         <property name="text">
-          <string>Date range</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="galleryDateFilter">
-         <property name="accessibleName">
-          <string>DateFilter</string>
-         </property>
-         <item>
-          <property name="text">
-           <string>All time</string>
-          </property>
-         </item>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>144</width>
-           <height>30</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="galleryRatioFilterLabel">
-         <property name="accessibleName">
-          <string>RatioFilterLabel</string>
-         </property>
-         <property name="text">
-          <string>Aspect ratio</string>
-         </property>
-         <property name="textInteractionFlags">
-          <set>Qt::TextSelectableByMouse</set>
-         </property>
-         <property name="wordWrap">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="galleryRatioFilter">
-         <property name="accessibleName">
-          <string>RatioFilter</string>
-         </property>
-         <item>
-          <property name="text">
-           <string>Any ratio</string>
-          </property>
-         </item>
-         <property name="enabled">
-          <bool>false</bool>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>124</width>
-           <height>30</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <property name="leftMargin">
-        <number>12</number>
-       </property>
-       <property name="rightMargin">
-        <number>12</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <property name="spacing">
-        <number>10</number>
-       </property>
-      </layout>
-     </widget>
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>44</height>
-      </size>
-     </property>
-     <property name="maximumSize">
-      <size>
-       <width>16777215</width>
-       <height>44</height>
-      </size>
-     </property>
-     <property name="verticalScrollBarPolicy">
-      <enum>Qt::ScrollBarAlwaysOff</enum>
-     </property>
-     <property name="horizontalScrollBarPolicy">
-      <enum>Qt::ScrollBarAsNeeded</enum>
-     </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>44</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16777215</width>
+          <height>44</height>
+         </size>
+        </property>
+        <property name="verticalScrollBarPolicy">
+         <enum>Qt::ScrollBarAlwaysOff</enum>
+        </property>
+        <property name="horizontalScrollBarPolicy">
+         <enum>Qt::ScrollBarAsNeeded</enum>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </item>
    <property name="leftMargin">
-    <number>10</number>
+    <number>0</number>
    </property>
    <property name="rightMargin">
-    <number>10</number>
+    <number>0</number>
    </property>
    <property name="topMargin">
-    <number>12</number>
+    <number>0</number>
    </property>
    <property name="bottomMargin">
-    <number>12</number>
+    <number>0</number>
    </property>
    <property name="spacing">
-    <number>10</number>
+    <number>8</number>
    </property>
    <item>
     <widget class="QStackedWidget" name="galleryContentStack">
@@ -669,7 +711,7 @@
         <number>0</number>
        </property>
        <property name="spacing">
-        <number>10</number>
+        <number>8</number>
        </property>
        <item>
         <layout class="QHBoxLayout" name="galleryBodyLayout" stretch="1,0">
@@ -1052,16 +1094,16 @@ No generation or saved output</string>
                 </widget>
                </item>
                <property name="leftMargin">
-                <number>12</number>
+                <number>4</number>
                </property>
                <property name="rightMargin">
-                <number>12</number>
+                <number>4</number>
                </property>
                <property name="topMargin">
-                <number>12</number>
+                <number>4</number>
                </property>
                <property name="bottomMargin">
-                <number>12</number>
+                <number>4</number>
                </property>
                <property name="spacing">
                 <number>0</number>
@@ -1101,10 +1143,10 @@ No generation or saved output</string>
             </property>
             <layout class="QVBoxLayout" name="galleryFilmstripLayout">
              <property name="topMargin">
-              <number>4</number>
+              <number>0</number>
              </property>
              <property name="bottomMargin">
-              <number>4</number>
+              <number>0</number>
              </property>
              <item>
               <widget class="QPushButton" name="galleryThumbnail1">
@@ -1330,13 +1372,13 @@ No generation or saved output</string>
               </spacer>
              </item>
              <property name="spacing">
-              <number>10</number>
+              <number>8</number>
              </property>
              <property name="leftMargin">
-              <number>4</number>
+              <number>0</number>
              </property>
              <property name="rightMargin">
-              <number>4</number>
+              <number>0</number>
              </property>
             </layout>
            </widget>
@@ -1355,7 +1397,7 @@ No generation or saved output</string>
           </widget>
          </item>
          <property name="spacing">
-          <number>14</number>
+          <number>8</number>
          </property>
         </layout>
        </item>
@@ -1445,16 +1487,16 @@ fixture-model.ckpt</string>
                <number>4</number>
               </property>
               <property name="leftMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="topMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="rightMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
              </layout>
             </widget>
@@ -1511,16 +1553,16 @@ fixture-film · 0.4 · Unknown</string>
                <number>4</number>
               </property>
               <property name="leftMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="topMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="rightMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
              </layout>
             </widget>
@@ -1573,16 +1615,16 @@ fixture-film · 0.4 · Unknown</string>
                <number>4</number>
               </property>
               <property name="leftMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="topMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="rightMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
              </layout>
             </widget>
@@ -1635,16 +1677,16 @@ fixture-film · 0.4 · Unknown</string>
                <number>4</number>
               </property>
               <property name="leftMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="topMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="rightMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
              </layout>
             </widget>
@@ -1697,16 +1739,16 @@ fixture-film · 0.4 · Unknown</string>
                <number>4</number>
               </property>
               <property name="leftMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="topMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="rightMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
              </layout>
             </widget>
@@ -1759,16 +1801,16 @@ fixture-film · 0.4 · Unknown</string>
                <number>4</number>
               </property>
               <property name="leftMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="topMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="rightMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
               <property name="bottomMargin">
-               <number>6</number>
+               <number>0</number>
               </property>
              </layout>
             </widget>
@@ -2314,7 +2356,7 @@ fixture-film · 0.4 · Unknown</string>
         <number>0</number>
        </property>
        <property name="spacing">
-        <number>10</number>
+        <number>8</number>
        </property>
        <item>
         <widget class="QScrollArea" name="galleryGridScroll">
@@ -2342,7 +2384,7 @@ fixture-film · 0.4 · Unknown</string>
             <number>0</number>
            </property>
            <property name="spacing">
-            <number>10</number>
+            <number>8</number>
            </property>
           </layout>
          </widget>
@@ -2365,7 +2407,7 @@ fixture-film · 0.4 · Unknown</string>
         <number>0</number>
        </property>
        <property name="spacing">
-        <number>10</number>
+        <number>8</number>
        </property>
        <item>
         <widget class="QTableWidget" name="galleryListTable">

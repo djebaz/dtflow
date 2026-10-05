@@ -160,3 +160,15 @@ Sliders and scrollbars inherit the shared application rules. Current Designer
 geometry, compact typography, two header rows, full-width lower panels, mounted
 Grid/List/Detail views and all presentation behavior remain in place. No tests
 added or run; native Windows visual acceptance remains unverified.
+
+
+## Gallery spacing and chrome alignment (2026-10-06)
+
+Removed the gallery's extra outer and header insets. Brand/navigation slots now
+sit beside, rather than inside, scrolling header controls. The shell controller
+preserves their mounted dimensions before reparenting; the hidden Inspector
+toggle retains its layout space. Header rows use the shared 8 px gap, keeping
+logo/title/navigation aligned with the other tabs. Tightened gallery gaps, canvas
+inset, filmstrip gutter and nested metadata padding. Shared Grid/List/Detail
+header, full-width lower panels, palette and presentation behavior remain.
+No tests added or run; Windows coordinate parity awaits owner review.

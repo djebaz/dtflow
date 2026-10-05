@@ -184,3 +184,10 @@ retains the mounted widgets and their scroll positions. The shared slider contro
 Grid thumbnail size, List row density or Detail filmstrip size for the active view.
 The fixture controller keeps all three presentations offline; a populated preview
 does not establish saved-output discovery, query, filtering or provenance services.
+
+
+Images header rows have no additional outer inset. The shared brand/navigation
+slots sit outside the scrolling controls and retain the shell's chrome width and
+height, with the same 8 px row gap. Hidden Inspector controls reserve their space
+to keep the logo/title geometry stable. Gallery panel gaps are 8 px; the canvas
+has a compact 4 px inset and metadata avoids nested padding.

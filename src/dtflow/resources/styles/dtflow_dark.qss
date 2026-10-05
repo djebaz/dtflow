@@ -756,7 +756,8 @@ QWidget#GalleryDetailPage QComboBox { min-width: 0; }
 QWidget#GalleryDetailPage QComboBox::down-arrow { image: url(../images/gallery/chevron.svg); width: 12px; height: 12px; }
 QWidget#GalleryDetailPage QLabel#galleryModelValue { font-size: 13px; }
 
-QFrame#galleryChrome, QWidget#galleryBrandSlot, QWidget#galleryNavigationSlot {
+QFrame#galleryChrome, QWidget#galleryBrandSlot, QWidget#galleryNavigationSlot,
+QWidget#galleryBrandRow, QWidget#galleryNavigationRow {
   background: transparent; border: 0;
 }
 
@@ -779,10 +780,10 @@ QWidget#galleryFilterScrollContents QComboBox {
 QWidget#galleryHeaderScrollContents QPushButton {
   padding: 0 6px;
 }
-QWidget#galleryHeaderScrollContents QLabel#productTitleLabel {
+QWidget#galleryBrandSlot QLabel#productTitleLabel {
   font-size: ${type.title};
 }
-QWidget#galleryHeaderScrollContents QLabel#productMarkLabel {
+QWidget#galleryBrandSlot QLabel#productMarkLabel {
   font-size: 15pt;
 }
 QWidget#galleryHeaderScrollContents QPushButton#galleryRefreshButton {

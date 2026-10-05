@@ -49,3 +49,10 @@ its own tracked resource path, supporting source and packaged execution.
 Gallery QSS and custom painting consume the shared `color.*` tokens, matching
 the other tabs' charcoal surfaces, muted navy selection and blue accent. Sample presentation is shared by the shell and
 standalone launcher, with no provider or persistence ownership.
+
+
+Images header rows have no additional outer inset. The shared brand/navigation
+slots sit outside the scrolling controls and retain the shell's chrome width and
+height, with the same 8 px row gap. Hidden Inspector controls reserve their space
+to keep the logo/title geometry stable. Gallery panel gaps are 8 px; the canvas
+has a compact 4 px inset and metadata avoids nested padding.

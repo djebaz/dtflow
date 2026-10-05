@@ -167,7 +167,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
 
     def resize_strip(value):
         get("galleryThumbnailSizeValue").setText(f"{value} px")
-        get("galleryFilmstripScroll").setFixedWidth(value + 28)
+        get("galleryFilmstripScroll").setFixedWidth(value + 20)
         for i in range(1, 7):
             button = get(f"galleryThumbnail{i}")
             width, height = value + 8, round((value + 8) * 0.63)
