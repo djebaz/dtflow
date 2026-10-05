@@ -27,6 +27,7 @@ from dtflow.services.connection import Presentation, check_connection, present_f
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
 from dtflow.ui.generation_page import GenerationPage
+from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
@@ -53,7 +54,9 @@ def load_ui(path: Path) -> QWidget:
     if not file.open(QIODevice.OpenModeFlag.ReadOnly):
         raise OSError(f"{path.name} could not be opened.")
     try:
-        widget = QUiLoader().load(file)
+        loader = QUiLoader()
+        loader.registerCustomWidget(ImagePreview)
+        widget = loader.load(file)
     finally:
         file.close()
     if widget is None:
@@ -146,6 +149,7 @@ class MainWindow:
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
+        form.workspaceStack.currentChanged.connect(self._workspace_header)
         self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
@@ -169,6 +173,21 @@ class MainWindow:
     def _show_generation(self) -> None:
         self.generation.sync_backend()
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
+
+    def _workspace_header(self, _index: int) -> None:
+        """Generate uses rail-local branding/navigation, leaving the center full-height."""
+        form, page = self.form, self.generation_page
+        generating = form.workspaceStack.currentWidget() is page
+        if generating:
+            page.generationBrandSlot.layout().addWidget(form.brandFrame)
+            page.generationNavigationSlot.layout().addWidget(form.navigationFrame)
+        else:
+            form.headerLayout.insertWidget(0, form.brandFrame)
+            form.headerLayout.addWidget(form.navigationFrame)
+        form.brandFrame.show()
+        form.navigationFrame.show()
+        form.productSubtitleLabel.setVisible(not generating)
+        form.headerFrame.setVisible(not generating)
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)

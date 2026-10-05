@@ -306,7 +306,18 @@ def test_a_portrait_preview_gets_a_frame_tall_enough_to_show_all_of_it(window, q
     image.save(buffer, "PNG")
     page = window.generation_page
     window.generation._show_image(bytes(data), "final")
-    shown = page.resultPreviewLabel.pixmap().height()
-    assert shown == 360 and page.previewHost.minimumHeight() >= shown  # 360 is the bounded preview edge
+    window.form.generationNavigationButton.click()
+    window.show()
+    qtbot.wait(20)
+    viewer = page.resultPreviewLabel
+    assert viewer.pixmap().height() == 512  # original pixels stay available for inspection
+    rect = viewer.image_rect()
+    assert rect.width() / rect.height() == pytest.approx(320 / 512)
+    assert viewer.viewport().rect().contains(rect.toAlignedRect())
+    assert viewer.horizontalScrollBar().maximum() == viewer.verticalScrollBar().maximum() == 0
+    viewer.zoom(4)
+    assert viewer.verticalScrollBar().maximum() > 0
+    viewer.fit()
+    assert viewer.verticalScrollBar().maximum() == 0
     page.generateButton.click()  # a new run clears the preview and the frame returns to its resting height
-    assert page.previewHost.minimumHeight() == 210
+    assert page.previewHost.minimumHeight() == 180
