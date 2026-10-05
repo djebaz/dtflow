@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 
 from dtflow.composition import BackendSelection, create_backend
 from dtflow.core.models import (
@@ -43,6 +44,14 @@ class Presentation:
     detail: str = ""
 
 
+def local_time(at_utc: str) -> str:
+    """A recorded UTC instant as local wall-clock time to the second; unparseable values are shown as recorded."""
+    try:
+        return datetime.fromisoformat(at_utc).astimezone().strftime("%H:%M:%S")
+    except (TypeError, ValueError):
+        return str(at_utc)
+
+
 def present_status(status: ConnectionStatus) -> Presentation:
     """Map supplied connection evidence to a status line; the network behavior that produced it is tested elsewhere."""
     if status.transport == "failed":
@@ -50,7 +59,7 @@ def present_status(status: ConnectionStatus) -> Presentation:
     if status.authentication == "failed":
         return Presentation("error", "Authentication failed", f"{status.endpoint} rejected the credentials.")
     if status.transport == "ok" and status.authentication in ("ok", "not_applicable"):
-        return Presentation("ok", "Connected", f"{status.endpoint} (checked {status.checked_at_utc}).")
+        return Presentation("ok", "Connected", f"{status.endpoint}, checked at {local_time(status.checked_at_utc)}.")
     return Presentation("warning", "Status unknown", f"{status.endpoint} gave inconclusive evidence.")
 
 
@@ -71,7 +80,8 @@ def present_failure(exc: Exception) -> Presentation:
 def present_outcome(outcome) -> Presentation:
     """A saved generation (``session.GenerationOutcome``); warnings such as the fake-fixture note stay visible."""
     count = len(outcome.output_paths)
-    detail = f"Attempt {outcome.attempt_id[:8]} saved {count} output(s). Metadata: {outcome.metadata_path}"
+    # Paths and the attempt id are listed once, in the result list; the line itself says what happened.
+    detail = f"{count} image{'s' if count != 1 else ''} with reproducibility metadata."
     if outcome.warnings:
         detail += " " + " ".join(outcome.warnings)
     return Presentation("ok", "Saved", detail)

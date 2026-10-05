@@ -297,7 +297,7 @@ def test_plan_area_dry_run_and_create_use_the_shared_planner(window, qtbot):
     assert table[0] == ["1", "a cat", "4", "0"] and table[3] == ["4", "b dog", "8", "0"]
     page.planStepsEdit.setText("4; 500")
     page.createQueueButton.click()
-    assert page.planStepsEdit.property("invalid") is True and "steps" in page.queueMessageLabel.text()
+    assert page.planStepsEdit.property("invalid") is True and page.planCountLabel.text().startswith("Item 2: steps")
     assert page.queueList.count() == 0  # a rejected plan creates nothing
     page.planStepsEdit.setText("4; 8")
     page.createQueueButton.click()

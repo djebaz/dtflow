@@ -5,7 +5,9 @@ import pytest
 from dtflow.ui.queue_presenter import (
     concurrency_level,
     controls,
+    has_started,
     item_rows,
+    outcome_text,
     ownership_badge,
     summarize,
     uncertainty_text,
@@ -41,7 +43,7 @@ def item(state="pending", overridden=False, artifacts=(), failure=None):
 @pytest.mark.parametrize(
     "status,start,pause,resume,cancel",
     [
-        ("paused", True, False, True, True),
+        ("paused", True, False, False, True),  # a never-started queue is started, not resumed
         ("running", True, True, False, True),
         ("blocked", False, False, False, True),
         ("finished", False, False, False, False),
@@ -55,6 +57,7 @@ def test_control_matrix_by_status(status, start, pause, resume, cancel):
     assert not controls(view(status), dispatching_here=True).start  # this window already dispatches
     assert not controls(view(status), dispatching_here=False, generating=True).start  # the lock is in use
     assert controls(None, dispatching_here=False) == controls(None, dispatching_here=True)
+    assert controls(view(status), dispatching_here=False, started=True).resume == (status == "paused")
 
 
 def test_override_needs_an_unresolved_unknown_and_unknown_stays_distinct_from_failed():
@@ -82,3 +85,15 @@ def test_badge_and_concurrency_threshold():
     assert ownership_badge(view("running"), dispatching_here=False).startswith("RUNNING")
     assert ownership_badge(view("paused"), dispatching_here=False) == "NOT DISPATCHING"
     assert [concurrency_level(v) for v in (1, 2, 3, 4)] == ["normal", "normal", "elevated", "elevated"]
+
+
+def test_a_dispatch_run_ends_with_the_outcome_that_happened():
+    assert outcome_text(view("finished", succeeded=3)) == ("ok", "Finished", "3 of 3 succeeded.")
+    level, _, detail = outcome_text(view("finished", succeeded=1, failed=1, unknown=1))
+    assert level == "unknown" and detail == "1 of 3 succeeded; 1 failed, 1 outcome unknown."
+    assert outcome_text(view("cancelled", succeeded=1, cancelled=2))[1:] == (
+        "Cancelled",
+        "2 item(s) not run; 1 succeeded.",
+    )
+    assert outcome_text(view("blocked", pending=2))[1] == "Blocked"
+    assert not has_started({"events": [{"kind": "created"}]}) and has_started({"events": [{"kind": "started"}]})
