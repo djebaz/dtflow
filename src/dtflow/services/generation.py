@@ -85,20 +85,29 @@ class GenerationService:
         self, request: ResolvedGenerationRequest, *, on_event: EventSink | None = None
     ) -> SavedGeneration:
         caps = self.backend.capabilities
-        if (
-            request.operation not in caps.operations
-            or request.sampler_id not in caps.samplers
-            or request.model_id not in caps.model_ids
-            or (request.loras and caps.lora_support == "unsupported")
-            or request.batch_size != caps.batch_size
-            or request.batch_count != caps.batch_count
-        ):
+        unsupported = tuple(
+            (name, code)
+            for name, code, failed in (
+                ("operation", "not_offered", request.operation not in caps.operations),
+                ("sampler", "not_offered", request.sampler_id not in caps.samplers),
+                ("model", "not_offered", request.model_id not in caps.model_ids),
+                ("lora", "not_supported", bool(request.loras) and caps.lora_support == "unsupported"),
+                (
+                    "batch",
+                    "unsupported",
+                    (request.batch_size, request.batch_count) != (caps.batch_size, caps.batch_count),
+                ),
+            )
+            if failed
+        )
+        if unsupported:
             raise BackendError(
                 BackendFailure(
                     ErrorCategory.VALIDATION,
                     "unsupported_request",
                     "Request is unsupported by the selected backend.",
                     request.request_id,
+                    diagnostics=unsupported,
                 )
             )
         if request.prepared_assets:
