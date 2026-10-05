@@ -2,39 +2,27 @@ name: CI
 
 # Offline checks only: lock consistency, lint, format and the offline pytest suite.
 # Live Draw Things / DT+ tests and any generation are never run here, and no secrets are used.
+# Runs on pull requests and manual dispatch only, to limit runner minutes; plain branch pushes
+# without a pull request are not checked.
 on:
   workflow_dispatch:
-  push:
+  pull_request:
 
-# Push runs are debounced: each waits DEBOUNCE_SECONDS, and a newer push to the same ref cancels
-# the older run (including one still waiting), so only the latest commit of a burst is checked.
-# GitHub has no native throttle; manual runs use a unique group and are never cancelled.
+# A newer push to the same pull request cancels the run in progress. Manual runs are never cancelled.
 concurrency:
-  group: ci-${{ github.event_name == 'push' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 env:
-  DEBOUNCE_SECONDS: 300
   UV_LOCKED: "1"
   QT_QPA_PLATFORM: offscreen
 
 jobs:
-  debounce:
-    name: Debounce
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - run: sleep "$DEBOUNCE_SECONDS"
-
   checks:
     name: Lock, lint, test
-    needs: debounce
-    # Run after a skipped debounce (manual dispatch) but not after a failed or cancelled one.
-    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
