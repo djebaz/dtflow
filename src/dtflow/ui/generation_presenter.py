@@ -51,6 +51,11 @@ class FormValues:
     loras: tuple[LoRASelection, ...] = ()
 
 
+def snap_dimension(value: int) -> int:
+    """The nearest multiple of 64 (halves round up) within the request limits 128..2048."""
+    return min(2048, max(128, (value + 32) // 64 * 64))
+
+
 class FormError(ValidationError):
     """A request problem with the widget (Designer object name) that owns it, or ``None`` for a general problem."""
 
@@ -77,8 +82,8 @@ def build_request(
         "negative_prompt": values.negative_prompt,
         "model": values.model.strip() or None,
         "seed": seed,
-        "width": values.width,
-        "height": values.height,
+        "width": snap_dimension(values.width),
+        "height": snap_dimension(values.height),
         "steps": values.steps,
         "guidance": values.guidance,
         "sampler": values.sampler,
@@ -108,6 +113,55 @@ def values_from_request(request: ResolvedGenerationRequest) -> FormValues:
         request.guidance,
         request.sampler_id.value,
         request.loras,
+    )
+
+
+def form_to_document(values: FormValues) -> dict:
+    """Plain JSON-safe form values for the remembered last session (credential-free, never validated here)."""
+    return {
+        "prompt": values.prompt,
+        "negative_prompt": values.negative_prompt,
+        "model": values.model,
+        "seed": values.seed,
+        "width": values.width,
+        "height": values.height,
+        "steps": values.steps,
+        "guidance": values.guidance,
+        "sampler": values.sampler,
+        "loras": [{"identifier": item.identifier, "weight": item.weight} for item in values.loras],
+    }
+
+
+def form_from_document(document: object) -> FormValues:
+    """Tolerant reverse of ``form_to_document``: a field of the wrong type or an invalid LoRA falls back to its default."""
+    base = FormValues()
+    if not isinstance(document, dict):
+        return base
+
+    def pick(name: str, kind: type, default):
+        value = document.get(name, default)
+        if kind is float and type(value) is int:
+            value = float(value)
+        return value if type(value) is kind else default
+
+    loras = []
+    for item in document.get("loras", ()) if isinstance(document.get("loras"), list) else ():
+        try:
+            loras.append(LoRASelection(item["identifier"], float(item["weight"])))
+        except (KeyError, TypeError, ValueError, ValidationError):
+            continue
+    sampler = pick("sampler", str, base.sampler)
+    return FormValues(
+        pick("prompt", str, base.prompt),
+        pick("negative_prompt", str, base.negative_prompt),
+        pick("model", str, base.model),
+        pick("seed", str, base.seed),
+        pick("width", int, base.width),
+        pick("height", int, base.height),
+        pick("steps", int, base.steps),
+        pick("guidance", float, base.guidance),
+        sampler if sampler in SAMPLERS else base.sampler,
+        tuple(loras),
     )
 
 

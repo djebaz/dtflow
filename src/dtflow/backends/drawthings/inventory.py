@@ -81,17 +81,3 @@ def build_snapshot(
         ),
         endpoint=endpoint,
     )
-
-
-def eligible_model_ids(snapshot: InventorySnapshot) -> tuple[str, ...]:
-    """Identifiers the service may accept as base models.
-
-    Unclassified files qualify only when the server supplied no model metadata at all; otherwise a classified
-    inventory excludes LoRAs, controls and other files from the base-model gate.
-    """
-    metadata = dict(snapshot.diagnostics).get("model_metadata") == "present"
-    return tuple(
-        entry.identifier
-        for entry in snapshot.entries
-        if entry.kind == "model" or (entry.kind == "unknown" and not metadata)
-    )

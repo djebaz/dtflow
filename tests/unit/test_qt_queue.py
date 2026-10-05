@@ -162,6 +162,9 @@ def test_cancel_stops_waiting_locally_and_leaves_unknown_not_a_remote_claim(wind
     qtbot.waitUntil(
         lambda: state_text(window).startswith("Cancelled") and not window.queue.dispatching_here, timeout=10000
     )
+    # The outcome text is set before the follow-up read lands (a poll already in flight can still show "running"),
+    # so wait for the table to settle before asserting on it.
+    qtbot.waitUntil(lambda: states(window) == ["unknown", "cancelled", "cancelled"], timeout=10000)
     assert states(window) == ["unknown", "cancelled", "cancelled"]  # the active attempt may have reached the server
     page.queueItemsView.selectRow(0)
     assert page.uncertaintyLabel.text().startswith("Outcome unknown")

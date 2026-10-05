@@ -21,8 +21,8 @@ from dtflow.ui.runner import AsyncRunner  # noqa: E402
 
 
 @pytest.fixture
-def window(qtbot):
-    shell = MainWindow(saved=SavedCredentials(Vault()), environ={})
+def window(qtbot, tmp_path):
+    shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=tmp_path / "state")
     qtbot.addWidget(shell.form)
     yield shell
     shell.runner.shutdown()

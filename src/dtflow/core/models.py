@@ -410,6 +410,20 @@ class InventorySnapshot:
             raise ValidationError("Inventory entries must be immutable typed values.")
 
 
+def eligible_model_ids(snapshot: InventorySnapshot) -> tuple[str, ...]:
+    """Identifiers accepted as base models, shared by the request gate and the desktop model list.
+
+    Unclassified files qualify only when the server supplied no model metadata at all; otherwise a classified
+    inventory excludes LoRAs, controls and other files.
+    """
+    metadata = dict(snapshot.diagnostics).get("model_metadata") == "present"
+    return tuple(
+        entry.identifier
+        for entry in snapshot.entries
+        if entry.kind == "model" or (entry.kind == "unknown" and not metadata)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class PreflightDiagnostic:
     identifier: str

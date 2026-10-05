@@ -109,10 +109,10 @@ def test_invalid_selection_is_reported_where_it_belongs(window, qtbot):
     page = window.generation_page
     page.generationBackendCombo.setCurrentText("fake")
     add_lora(window, qtbot, "x", 0.5)
-    page.widthSpinBox.setValue(100)
+    page.seedEdit.setText("not-a-seed")
     page.checkLorasButton.click()
     assert page.compatibilityStatusLabel.text().startswith("Cannot check")
-    assert page.widthSpinBox.property("invalid") is True
+    assert page.seedEdit.property("invalid") is True
 
 
 @pytest.fixture
