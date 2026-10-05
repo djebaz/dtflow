@@ -91,6 +91,16 @@ WIRED_CONTROLS = (
     "loraList",
     "triggerPrefixCheck",
     "assetList",
+    "simulationScenarioCombo",
+    "simulationDelaySpinBox",
+    "simulationPreviewsCheck",
+)
+SIMULATED_OUTCOMES = (
+    ("Succeeds", "success"),
+    ("Rejected before submission", "reject"),
+    ("Connection lost (outcome unknown)", "lost"),
+    ("Terminal error", "terminal_error"),
+    ("Finishes with no image", "empty"),
 )
 FIELD_WIDGETS = (
     "promptEdit",
@@ -166,6 +176,8 @@ class GenerationPage:
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.samplerCombo.addItems(SAMPLERS)
+        for label, scenario in SIMULATED_OUTCOMES:
+            page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
         page.cancelButton.setEnabled(False)
@@ -215,7 +227,7 @@ class GenerationPage:
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
             self.page.inventoryEvidenceLabel.setToolTip("")
             self._listed_backend = None
-        self.page.resultPreviewLabel.set_sample_available(name == "fake")
+        self.page.simulationBox.setVisible(name == "fake")
         self.page.modelCombo.lineEdit().setPlaceholderText(
             f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
         )
@@ -394,12 +406,24 @@ class GenerationPage:
                 self._saved(),
                 self.lora.receipt_ids(),
                 self.page.triggerPrefixCheck.isChecked(),
+                self.simulation(),
             ),
             self._generated,
         )
 
-    async def _generate(self, name, endpoint, request, saved, asset_ids, prefix):
-        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
+    def simulation(self) -> dict:
+        """The fake provider's simulation settings from the form; empty for every other provider."""
+        page = self.page
+        if self._backend()[0] != "fake":
+            return {}
+        return {
+            "scenario": page.simulationScenarioCombo.currentData(),
+            "delay": page.simulationDelaySpinBox.value(),
+            "previews": page.simulationPreviewsCheck.isChecked(),
+        }
+
+    async def _generate(self, name, endpoint, request, saved, asset_ids, prefix, simulation):
+        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
         return await generate_once(
             selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
         )

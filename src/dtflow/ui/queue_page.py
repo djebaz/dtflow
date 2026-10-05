@@ -101,10 +101,12 @@ class QueuePage:
         state_dir: Path,
         request_source: Callable,
         activity: Activity,
+        simulation_source: Callable[[], dict] = dict,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
+        self._simulation = simulation_source
         self.confirm = ask_confirmation
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
@@ -377,7 +379,7 @@ class QueuePage:
                 return
         count, cap = self.page.queueCountSpinBox.value(), self.page.concurrencySpinBox.value()
         self._message(Presentation("warning", "Creating", "Persisting a paused queue; no backend is contacted."))
-        backend = {"name": name, "endpoint": endpoint, "scenario": "success"}
+        backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan), self._created)
 
     async def _create(self, backend, request, asset_ids, count, cap, plan: Plan | None = None):

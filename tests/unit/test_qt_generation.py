@@ -63,21 +63,17 @@ def settled(page):
     return lambda: page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
 
 
-def test_illustrative_sample_is_clearly_labeled_and_has_no_saved_actions(window):
+def test_simulation_controls_exist_only_for_the_fake_provider(window):
     page = window.generation_page
-    preview = page.resultPreviewLabel
-    preview.sampleButton.click()
-    assert preview.property("designation") == "illustrative_sample"
-    assert "no inference" in preview._badge.text()
-    assert preview.pixmap().height() > preview.pixmap().width()
-    assert page.resultList.count() == 0
-    assert not page.openOutputFolderButton.isEnabled()
-    assert not page.copyOutputPathButton.isEnabled()
-    assert not window.generation.openFileButton.isEnabled()
-    assert not window.generation.metadataButton.isEnabled()
-    preview.clear()
-    assert preview.pixmap().isNull()
-    assert preview.sampleButton.isHidden() is False
+    assert not page.simulationBox.isHidden()
+    assert [page.simulationScenarioCombo.itemData(i) for i in range(page.simulationScenarioCombo.count())][
+        0
+    ] == "success"
+    page.simulationScenarioCombo.setCurrentIndex(2)
+    page.simulationDelaySpinBox.setValue(2.5)
+    assert window.generation.simulation() == {"scenario": "lost", "delay": 2.5, "previews": False}
+    window.form.backendCombo.setCurrentText("local")
+    assert page.simulationBox.isHidden() and window.generation.simulation() == {}
 
 
 def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(window, qtbot, fake):

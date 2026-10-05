@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QSlider,
 )
 
-from dtflow.ui.brand import APP_ICON, ILLUSTRATIVE_SAMPLE
+from dtflow.ui.brand import APP_ICON
 from dtflow.ui.theme import load_tokens
 
 
@@ -30,9 +30,8 @@ class ImagePreview(QAbstractScrollArea):
         self._scale = 1.0
         self._fit = True
         self._drag = None
-        self._text = "Your next image starts here\nSet a prompt or view a sample."
+        self._text = "Your next image starts here\nSet a prompt and press Generate."
         self._brand_mark = QPixmap(str(APP_ICON))
-        self._sample_allowed = True
         self._expanded = False
         self._restore = None
         tokens = load_tokens()
@@ -59,10 +58,6 @@ class ImagePreview(QAbstractScrollArea):
         self._expand.clicked.connect(self.toggle_expanded)
         self._badge = QLabel(self.viewport())
         self._badge.setObjectName("previewDesignation")
-        self.sampleButton = QPushButton("View sample", self.viewport())
-        self.sampleButton.setObjectName("previewSampleButton")
-        self.sampleButton.setToolTip("Illustrative artwork only. No model inference or saved file.")
-        self.sampleButton.clicked.connect(self.show_sample)
         self._files = QFrame(self.viewport())
         self._files.setObjectName("previewFileToolbar")
         self._file_row = QGridLayout(self._files)
@@ -93,7 +88,6 @@ class ImagePreview(QAbstractScrollArea):
 
     def enable_inspection(self):
         self._expand.setEnabled(True)
-        self.sampleButton.setEnabled(True)
 
     def setText(self, text):  # Designer/controller presentation seam
         self._text = text
@@ -111,22 +105,6 @@ class ImagePreview(QAbstractScrollArea):
     def setPixmap(self, pixmap):
         self._pixmap = pixmap
         self.fit()
-
-    def set_sample_available(self, allowed):
-        """The illustrative sample is a development aid: offered for the fake provider only."""
-        self._sample_allowed = allowed
-        if not allowed and self.property("designation") == "illustrative_sample":
-            self.clear()
-        self._sync()
-
-    def show_sample(self):
-        sample = QPixmap(str(ILLUSTRATIVE_SAMPLE))
-        if sample.isNull():
-            return
-        self.setPixmap(sample)
-        self.setProperty("designation", "illustrative_sample")
-        self._badge.setText(f"{sample.width()} × {sample.height()}  ·  Illustrative sample · no inference")
-        self._position_controls()
 
     def set_designation(self, designation, *, fixture=False):
         self.setProperty("designation", designation)
@@ -191,7 +169,6 @@ class ImagePreview(QAbstractScrollArea):
         for control in (self.fitButton, self.actualButton, self.minusButton, self.plusButton, self.zoomSlider):
             control.setEnabled(available)
         self._badge.setVisible(available)
-        self.sampleButton.setVisible(not available and self._sample_allowed)
         self._show_controls()
         self._position_controls()
         self.viewport().update()
@@ -203,9 +180,7 @@ class ImagePreview(QAbstractScrollArea):
         self._files.adjustSize()
         self._badge.adjustSize()
         self._expand.adjustSize()
-        self.sampleButton.adjustSize()
         width, height = self.viewport().width(), self.viewport().height()
-        self.sampleButton.move(max(0, (width - self.sampleButton.width()) // 2), height // 2 + 55)
         self.zoomSlider.setVisible(width >= 460)
         columns = 4 if width >= 500 else 2
         if (len(self._file_buttons), columns) != self._file_layout:

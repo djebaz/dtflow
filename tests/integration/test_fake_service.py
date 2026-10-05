@@ -333,3 +333,30 @@ async def test_connectivity_and_inventory_deadlines_are_typed(state, operation):
         await getattr(service, operation)()
     assert exc.value.failure.category == ErrorCategory.TIMEOUT
     assert exc.value.failure.remote_outcome == RemoteOutcome.NOT_STARTED
+
+
+@pytest.mark.asyncio
+async def test_fake_result_is_the_illustration_fitted_to_the_request_and_simulation_is_stepped():
+    slept, events = [], []
+
+    async def sleep(seconds):
+        slept.append(seconds)
+
+    backend = FakeBackend(delay=3, simulate=True, previews=True, sleep=sleep)
+    await backend.open()
+    sized = replace(request(), width_px=448, height_px=640)
+    result = await backend.generate(sized, on_event=events.append)
+    final = result.artifacts[0]
+    assert (final.width_px, final.height_px) == (448, 640) and len(final.encoded) > 100_000  # not the tiny swatch
+    assert sum(slept) == pytest.approx(3) and len(slept) == 6
+    kinds = [event.kind for event in events]
+    assert kinds.count("preview") == 2 and kinds.count("progress") == 7  # six simulated steps plus completion
+    await backend.aclose()
+    # Without the simulation the wait is one plain sleep and no stepped events or previews are emitted.
+    quiet = FakeBackend(delay=1, sleep=sleep)
+    await quiet.open()
+    events.clear()
+    slept.clear()
+    await quiet.generate(request(), on_event=events.append)
+    assert slept == [1] and [e.kind for e in events].count("preview") == 0
+    await quiet.aclose()

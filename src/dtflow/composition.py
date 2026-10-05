@@ -53,6 +53,8 @@ class BackendSelection:
     endpoint: str | None = None
     cloud_concurrency: int = 4
     scenario: str = "success"
+    delay: float = 0.0  # fake only: simulated generation seconds
+    previews: bool = False  # fake only: emit preview images while the simulated wait runs
 
 
 def parse_endpoint(text: str) -> DrawThingsEndpoint:
@@ -84,7 +86,12 @@ def create_backend(
     """
     environ = os.environ if environ is None else environ
     if selection.name == "fake":
-        return FakeBackend(scenario=selection.scenario)
+        return FakeBackend(
+            scenario=selection.scenario,
+            delay=selection.delay,
+            simulate=selection.delay > 0,
+            previews=selection.previews,
+        )
     if selection.name == "local":
         if not selection.endpoint:
             raise ValidationError("The local backend requires --endpoint HOST:PORT.")

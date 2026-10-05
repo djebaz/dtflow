@@ -186,6 +186,7 @@ class MainWindow:
             saved_source=lambda: self._saved if self._saved.available() else None,
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
+            simulation_source=self.generation.simulation,
             activity=self.activity,
         )
         form.backendCombo.addItems(BACKENDS)
