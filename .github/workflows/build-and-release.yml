@@ -1,0 +1,251 @@
+name: Build Windows EXE and draft release
+run-name: Windows build · ${{ inputs.release_tag || github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Optional existing vX.Y.Z tag: attach to a draft release. Empty: build only."
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ inputs.release_tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_LOCKED: "1"
+  UV_PYTHON_PREFERENCE: only-managed
+
+jobs:
+  build:
+    name: Build clean Windows x64 GUI
+    runs-on: windows-2022
+    timeout-minutes: 30
+    outputs:
+      artifact: ${{ steps.verify.outputs.artifact }}
+      version: ${{ steps.verify.outputs.version }}
+      commit: ${{ steps.source.outputs.commit }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Validate requested tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if ($env:RELEASE_TAG -and $env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "Expected an existing stable vX.Y.Z tag, or empty for build-only."
+          }
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard source and release; prepare dependency cache fingerprint
+        id: source
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE) { throw "Cannot identify checkout." }
+          if (git status --porcelain --untracked-files=no) { throw "Build requires a clean checkout." }
+          if ($env:RELEASE_TAG) {
+            $tagCommit = git rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
+            if ($LASTEXITCODE -or $tagCommit -ne $commit) { throw "Checkout must match the exact tag." }
+            git merge-base --is-ancestor $commit origin/main
+            if ($LASTEXITCODE) { throw "Release commit must be merged into main." }
+            $json = gh api "repos/$env:GITHUB_REPOSITORY/releases" --paginate --slurp
+            if ($LASTEXITCODE) { throw "Cannot inspect existing releases." }
+            foreach ($page in ($json | ConvertFrom-Json)) {
+              foreach ($release in $page) {
+                if ($release.tag_name -eq $env:RELEASE_TAG -and -not $release.draft) {
+                  throw "Refusing to rebuild/replace an already published release."
+                }
+              }
+            }
+          }
+          "commit=$commit" | Add-Content $env:GITHUB_OUTPUT -Encoding utf8
+          "Workflow: $env:WORKFLOW_REF; source: $commit" | Add-Content $env:GITHUB_STEP_SUMMARY
+          New-Item -ItemType Directory -Path tmp -Force | Out-Null
+          $lock = Get-Content uv.lock -Raw
+          # Normalize ONLY our version in a scratch fingerprint, never edit uv.lock.
+          $pattern = '(?m)(^name = "dtflow"\r?\nversion = ")[^"]+(")'
+          if ([regex]::Matches($lock, $pattern).Count -ne 1) { throw "Cannot identify project lock entry." }
+          $fingerprint = [regex]::Replace($lock, $pattern, '${1}<app-version>${2}')
+          Set-Content tmp/build-dependency-cache.txt $fingerprint -NoNewline -Encoding utf8
+
+      - name: Set up cached uv and managed Python
+        id: uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.11.19"
+          python-version: "3.13.13"
+          enable-cache: true
+          cache-python: true
+          prune-cache: false
+          cache-dependency-glob: tmp/build-dependency-cache.txt
+          cache-suffix: dtflow-build-uv01119-py31313-pyinstaller6223
+
+      - name: Synchronize locked runtime dependencies
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          uv sync --locked --no-dev
+          if ($LASTEXITCODE) { throw "Locked sync failed." }
+          uv lock --check
+          if ($LASTEXITCODE) { throw "Lock consistency failed." }
+          $version = uv version --short
+          if ($LASTEXITCODE) { throw "Cannot read application version." }
+          if ($env:RELEASE_TAG -and $env:RELEASE_TAG -ne "v$version") {
+            throw "Source version and release tag disagree."
+          }
+          if ($env:RELEASE_TAG -and -not (Test-Path "devdocs/releases/$($env:RELEASE_TAG).md")) {
+            throw "Versioned release notes are missing."
+          }
+
+      - name: Build through the canonical GUI builder
+        run: |
+          uv run --no-dev --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
+          if ($LASTEXITCODE) { throw "GUI build failed." }
+
+      - name: Verify bundled identity and write checksums/manifest
+        id: verify
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          uv run --no-dev --with pyinstaller==6.22.3 python tools/packaging/release_artifact.py --commit $env:SOURCE_COMMIT --tag "$env:RELEASE_TAG"
+          if ($LASTEXITCODE) { throw "Artifact verification failed." }
+          if (git status --porcelain --untracked-files=no) { throw "Build changed tracked files." }
+          $manifest = Get-Content dist/build-manifest.json -Raw | ConvertFrom-Json
+          @(
+            "Artifact: $($manifest.artifact)"
+            "SHA256: $($manifest.sha256)"
+            "Size: $($manifest.size_bytes) bytes"
+            "uv dependency cache hit: ${{ steps.uv.outputs.cache-hit }}"
+            "Python cache hit: ${{ steps.uv.outputs.python-cache-hit }}"
+            "Owner Windows smoke: pending. Build success is not runtime acceptance."
+          ) | Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+      - name: Upload download-ready build
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ steps.verify.outputs.artifact }}
+          path: |
+            dist/${{ steps.verify.outputs.artifact }}
+            dist/SHA256SUMS.txt
+            dist/build-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  draft:
+    name: Attach verified build to draft only
+    if: inputs.release_tag != ''
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: release-artifact
+
+      - name: Verify and attach without replacing or publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_COMMIT: ${{ needs.build.outputs.commit }}
+          EXPECTED_ARTIFACT: ${{ needs.build.outputs.artifact }}
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          $m = Get-Content release-artifact/build-manifest.json -Raw | ConvertFrom-Json
+          if ($m.artifact -ne $env:EXPECTED_ARTIFACT -or $m.source_commit -ne $env:SOURCE_COMMIT -or
+              $m.source_status -ne 'clean' -or $m.version -ne $env:EXPECTED_VERSION -or
+              $env:RELEASE_TAG -ne "v$($m.version)") { throw "Artifact provenance mismatch." }
+          $exe = "release-artifact/$env:EXPECTED_ARTIFACT"
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $m.sha256 -or (Get-Item $exe).Length -ne $m.size_bytes) {
+            throw "Artifact checksum/size mismatch."
+          }
+          $sums = (Get-Content release-artifact/SHA256SUMS.txt -Raw).Trim()
+          if ($sums -ne "$hash  $env:EXPECTED_ARTIFACT") { throw "Checksum file mismatch." }
+          # Recheck the remote tag and release immediately before any writes.
+          $ref = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          if ($LASTEXITCODE) { throw "Cannot inspect remote tag." }
+          $object = $ref.object
+          while ($object.type -eq 'tag') {
+            $tag = gh api "repos/$env:GITHUB_REPOSITORY/git/tags/$($object.sha)" | ConvertFrom-Json
+            if ($LASTEXITCODE) { throw "Cannot dereference remote tag." }
+            $object = $tag.object
+          }
+          if ($object.type -ne 'commit' -or $object.sha -ne $env:SOURCE_COMMIT) {
+            throw "Remote tag moved after the build."
+          }
+          $json = gh api "repos/$env:GITHUB_REPOSITORY/releases" --paginate --slurp
+          if ($LASTEXITCODE) { throw "Cannot inspect releases." }
+          $existing = @(
+            foreach ($page in ($json | ConvertFrom-Json)) {
+              foreach ($release in $page) {
+                if ($release.tag_name -eq $env:RELEASE_TAG) { $release }
+              }
+            }
+          )
+          $files = @($exe, 'release-artifact/SHA256SUMS.txt', 'release-artifact/build-manifest.json')
+          if ($existing.Count -gt 1) { throw "Unexpected duplicate release." }
+          if ($existing.Count -eq 1) {
+            if (-not $existing[0].draft) { throw "Refusing to modify a published release." }
+            foreach ($file in $files) {
+              if ([IO.Path]::GetFileName($file) -in $existing[0].assets.name) {
+                throw "Asset already exists; refusing replacement. Review the existing draft manually."
+              }
+            }
+            gh release upload $env:RELEASE_TAG @files
+          } else {
+            $notes = Get-Content "devdocs/releases/$env:RELEASE_TAG.md" -Raw
+            $base = [Uri]"https://github.com/$env:GITHUB_REPOSITORY/blob/$env:RELEASE_TAG/devdocs/releases/"
+            $notes = [regex]::Replace($notes, '\[([^\]]+)\]\(([^)]+)\)', {
+              param($match)
+              $target = $match.Groups[2].Value
+              if ($target -match '^[a-zA-Z][a-zA-Z0-9+.-]*:' -or $target.StartsWith('#')) { return $match.Value }
+              return "[$($match.Groups[1].Value)]($([Uri]::new($base, $target).AbsoluteUri))"
+            })
+            $notes += "`n`n## CI build awaiting owner acceptance`nSource: $env:SOURCE_COMMIT (clean).`nArtifact: $env:EXPECTED_ARTIFACT`nSHA256: $hash`n`nDownload and smoke-test this exact executable before publishing. See build-manifest.json for toolchain and run provenance.`n"
+            New-Item -ItemType Directory -Path tmp -Force | Out-Null
+            Set-Content tmp/draft-release-notes.md $notes -NoNewline -Encoding utf8
+            gh release create $env:RELEASE_TAG @files --verify-tag --draft --title "DTFlow $($m.version)" --notes-file tmp/draft-release-notes.md
+          }
+          if ($LASTEXITCODE) { throw "Draft attachment failed; inspect partial upload before retrying." }
+          $uploaded = gh release view $env:RELEASE_TAG --json isDraft,assets,url | ConvertFrom-Json
+          if ($LASTEXITCODE -or -not $uploaded.isDraft) { throw "Release must remain a draft." }
+          New-Item -ItemType Directory -Path tmp/download-check -Force | Out-Null
+          gh release download $env:RELEASE_TAG --pattern $env:EXPECTED_ARTIFACT --pattern SHA256SUMS.txt --pattern build-manifest.json --dir tmp/download-check
+          if ($LASTEXITCODE) { throw "Uploaded assets are not downloadable." }
+          foreach ($file in $files) {
+            $downloaded = Join-Path tmp/download-check ([IO.Path]::GetFileName($file))
+            if ((Get-FileHash $file).Hash -ne (Get-FileHash $downloaded).Hash) {
+              throw "Uploaded/downloaded asset mismatch."
+            }
+          }
+          @("Draft prepared: $($uploaded.url)", "All three downloaded assets verified.",
+            "Owner smoke and explicit publication remain pending. No release was published.") |
+            Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8

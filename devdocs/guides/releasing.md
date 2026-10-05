@@ -42,9 +42,9 @@ uv run dtflow --help
 
 Record actual results and check documentation links. Source version output establishes the application version, not packaged commit identity. Mark the PR ready and wait for passing CI on its final head. Squash merge, then switch to main, pull with `--ff-only` and verify a clean worktree.
 
-## Owner builds and smoke-tests Windows
+## Owner requests the build and smoke-tests Windows
 
-**The owner runs the Windows executable build and manual smoke test. The agent prepares/checks/merges the release PR, then tells the owner when clean main is ready, with the exact command and expected filename. Wait for their build result and acceptance before tagging or publishing.**
+**The owner builds locally or requests the manual Actions build, then smoke-tests the exact executable. The agent prepares/checks/merges the release PR and provides the command/workflow and expected identity. Wait for owner acceptance before publication. The local-build path tags after acceptance; the CI draft path freezes a candidate tag first, without publishing.**
 
 Use the [build guide](building.md), including its pinned PyInstaller recipe and focused acceptance checklist. Build from the merged release commit, not the PR head or a dirty checkout. Identify the exact artifact:
 
@@ -54,8 +54,19 @@ dist/dtflow-<version>-g<short-sha>-windows-x64.exe
 
 Match filename, Qt/version display, full bundled commit and clean source status. Record SHA256, size and owner smoke results. Reuse applicable existing live evidence without claiming it was rerun or repeating credit-consuming workloads merely because the version changed. A dirty development smoke is separate from acceptance of the final clean artifact.
 
+## Optional CI draft path
+
+Instead of building locally, use **Build Windows EXE and draft release**; see [building](building.md) for downloads, caches and toolchain.
+
+1. Merge the version/release PR and check CI, notes, clean main and source version. For an exploratory build, dispatch from the intended workflow ref with an empty tag: no release is touched.
+2. For a release candidate, explicitly create/push `v<version>` on the approved merged commit. Dispatch the workflow from main with that existing **release_tag**. Code comes from the exact tag, workflow YAML from the selected dispatch ref; both identities are reported. The tag must be part of main and match the application version/notes.
+3. The workflow builds once, verifies bundled identity and stages the same EXE/checksum/manifest in a draft. It refuses published releases and existing asset names, never replaces assets and never publishes. Existing draft prose is retained; review it and add bounded owner acceptance evidence before publication.
+4. Download and verify the exact draft asset; the owner smoke-tests it on target Windows. After approval, explicitly publish that draft (GitHub UI or release command) and verify tag, notes and assets. No rebuild is needed after smoke unless source/toolchain changes.
+
+A tag and draft are not a shipped release. Do not move an existing published tag. If a candidate fails, review/fix through a PR and choose a new candidate identity rather than silently replacing tested files. GitHub upload failures can leave a partial draft; inspect it manually before retrying.
+
 ## Publish only after artifact acceptance
 
-Tag the verified merged commit as `v<version>`; publish a GitHub release using the versioned notes and the exact accepted executable. Include artifact identity/checksum in the release description or an attached checksum file. Verify tag target, rendered notes, release visibility and downloadable assets.
+For a local build, tag the verified merged commit as `v<version>`; publish a GitHub release using the versioned notes and the exact accepted executable. Include artifact identity/checksum in the release description or an attached checksum file. Verify tag target, rendered notes, release visibility and downloadable assets.
 
 If code changes after building, merge the fix and ask the owner to rebuild before publishing. Do not silently move a published tag or reuse an old executable. Release completion requires the accepted asset, not just a successful PR.

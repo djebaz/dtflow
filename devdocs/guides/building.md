@@ -2,6 +2,20 @@
 
 The canonical build produces a stamped, single-file **GUI application**. Double-clicking it opens DTFlow directly; no terminal or `gui` subcommand is needed. Source CLI automation remains available through `uv run dtflow` and is not a separate distributed executable.
 
+## Manual GitHub Actions build
+
+After the workflow PR is merged, open **Actions > Build Windows EXE and draft release > Run workflow**:
+
+- Select the workflow ref to build. Leave **release_tag** empty for a build-only Actions artifact.
+- For a future release, supply an existing stable `vX.Y.Z` tag from merged main. Its source version and versioned notes must match. This creates/attaches only to a **draft release**; it never creates a tag or publishes.
+- Download the run artifact containing the stamped EXE, `SHA256SUMS.txt` and `build-manifest.json`. The manifest records full clean source identity, checksum, size, toolchain and workflow provenance. Smoke-test the exact download on the target Windows machine before publication.
+
+The build uses Windows 2022 x64, managed Python 3.13.13, uv 0.11.19 and PyInstaller 6.22.3 through the same canonical builder. No dev dependencies, GUI execution, application credentials, live generation or DT+ upload run in this workflow. Actions runner minutes/storage may be charged under the repository's plan.
+
+**Caching:** uv's dependency and managed-Python caches are isolated by OS/architecture/Python and a build-tool suffix. A generated scratch fingerprint hashes the entire `uv.lock` with only DTFlow's own version normalized, allowing version-only bumps to reuse dependencies; the real lockfile is never rewritten and sync remains locked. Cached wheels are retained. `.venv`, PyInstaller analysis, `build/`, `dist/` and stamps are **not** cached; every executable is freshly built with `--clean`. Upload ZIP compression is disabled for the already compressed EXE. This is dependency-cache optimization, not measured PyInstaller speedup. Cold/warm timings and target-machine compatibility remain owner verification.
+
+The artifact is retained for 14 days. Draft attachment rechecks the remote tag, refuses published releases or existing asset names, and downloads the three uploaded assets to compare their hashes. A partial upload is an explicit failure requiring manual draft inspection; no clobber, deletion or silent retry is performed. Follow [the release guide](releasing.md).
+
 ## Build from PowerShell
 
 Run in the repository root on the target Windows architecture:
@@ -20,7 +34,7 @@ The script prints the output path and source identity only after a successful bu
 dist/dtflow-<version>-g<short-sha>-windows-<arch>.exe
 ```
 
-The version comes from the project metadata, not the proposed roadmap number. Follow [version bump and release](releasing.md) before building the final release; the owner runs the build after the release PR is squash-merged. The builder records the full source commit and clean/dirty status, bundles it, then removes the generated identity module. The runtime does not need Git or a source checkout.
+The version comes from the project metadata, not the proposed roadmap number. Follow [version bump and release](releasing.md) before building the final release; the owner runs the local build or requests the Actions build after the release PR is squash-merged. The builder records the full source commit and clean/dirty status, bundles it, then removes the generated identity module. The runtime does not need Git or a source checkout.
 
 ## Launch the exact build
 
