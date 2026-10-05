@@ -13,6 +13,7 @@ import os
 import queue
 import re
 import sys
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,11 +67,16 @@ class _SafeFileHandler(logging.handlers.RotatingFileHandler):
     """Report a write failure once, in one sanitized line, never raising into the caller."""
 
     reported = False
+    report_error: Callable[[str], None] | None = None
 
     def handleError(self, record: logging.LogRecord) -> None:
         if not type(self).reported:
             type(self).reported = True
-            print("Log file could not be written; continuing without it.", file=sys.stderr)
+            message = "Log file could not be written; continuing without it."
+            if self.report_error is not None:
+                self.report_error(message)
+            else:
+                print(message, file=sys.stderr)
 
 
 def default_directory() -> Path:
@@ -117,6 +123,7 @@ def configure_logging(
     build: dict[str, str] | None = None,
     backend: str = "-",
     session: str | None = None,
+    report_error: Callable[[str], None] | None = None,
 ) -> LogSession:
     """Start file logging for this process. Normal mode logs lifecycle/errors; ``dev`` adds debug detail only."""
     session = session or uuid4().hex[:12]
@@ -125,6 +132,7 @@ def configure_logging(
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"dtflow-{session}.log"
         handler = _SafeFileHandler(path, maxBytes=MAX_BYTES, backupCount=BACKUPS, encoding="utf-8")
+        handler.report_error = report_error
         _prune(directory, session)
     except OSError as exc:
         raise LoggingSetupError("Log destination could not be prepared.") from exc

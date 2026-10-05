@@ -1,8 +1,9 @@
-"""Build a stamped one-file dtflow executable named dtflow-<version>-g<short-sha>-<platform>-<arch>.exe.
+"""Build a stamped one-file DTFlow desktop executable named dtflow-<version>-g<short-sha>-<platform>-<arch>.exe.
 
 Run from the repository root: ``uv run --with pyinstaller python tools/packaging/build_exe.py``.
 It records the full source commit and clean/dirty status in the ignored ``src/dtflow/_buildinfo.py``,
 runs PyInstaller, renames the result in ``dist/`` and always removes the generated module afterwards.
+Windows builds open Qt directly without a console; source CLI execution stays supported.
 It builds only; it does not run the executable, generate images or touch the network.
 """
 
@@ -49,17 +50,25 @@ def main(argv: list[str] | None = None) -> int:
     BUILDINFO.write_text(f'SOURCE_COMMIT = "{commit}"\nSOURCE_STATUS = "{status}"\n', encoding="utf-8")
     try:
         command = [
-            sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--name", "dtflow-cli",
+            sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--name", "dtflow",
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
-            "--collect-data", "dtflow", "--distpath", str(out),
+            "--collect-data", "dtflow", "--copy-metadata", "keyring", "--distpath", str(out),
         ]  # fmt: skip
         if platform.system() == "Windows":
-            command.extend(["--icon", str(ROOT / "src/dtflow/resources/images/dtflow.ico")])
-        command.append("tools/packaging/launch_dtflow.py")
+            command.extend(
+                [
+                    "--windowed",
+                    "--icon",
+                    str(ROOT / "src/dtflow/resources/images/dtflow.ico"),
+                    "--hidden-import",
+                    "keyring.backends.Windows",
+                ]
+            )
+        command.append("tools/packaging/launch_gui.py")
         subprocess.run(command, cwd=ROOT, check=True)
     finally:
         BUILDINFO.unlink(missing_ok=True)
-    built = out / ("dtflow-cli.exe" if platform.system() == "Windows" else "dtflow-cli")
+    built = out / ("dtflow.exe" if platform.system() == "Windows" else "dtflow")
     target = out / name
     shutil.move(built, target)
     print(f"built {target}\ncommit {commit} ({status})")

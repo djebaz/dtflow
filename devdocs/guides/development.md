@@ -35,7 +35,7 @@ Diagnostic tools can contact a real Draw Things server or direct DT+ Cloud Compu
 
 Read [DESIGN.md](../../DESIGN.md) before adding or changing a desktop tab. Canonical Designer forms are under `src/dtflow/ui/forms/`; shared QSS is under `src/dtflow/resources/styles/`. Business rules and backend protocols belong behind shared services, not in UI or generated Designer Python.
 
-See [Windows packaging findings](../research/windows-packaging.md) for build commands and recorded target-machine evidence. Source execution does not establish packaged compatibility. The initial distribution target is the Qt application, not a separate packaged CLI.
+Use the [Windows desktop build guide](building.md) for the canonical GUI build and owner acceptance steps. [Windows packaging findings](../research/windows-packaging.md) retain historical console trials and target-machine evidence. Source execution does not establish packaged compatibility. The initial distribution target is the Qt application, not a separate packaged CLI.
 
 ## Working directories
 

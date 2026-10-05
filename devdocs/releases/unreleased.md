@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- GUI executable build (PR #29): the stamped one-file builder now targets the desktop launcher and Windows windowed mode, opening Qt directly without a console or `gui` subcommand. Canonical forms/styles/images and backend trust resources remain bundled; keyring metadata/Windows backend are explicit inputs. The desktop bootstrap uses shared build identity and rotating logs, canonical dev/log/cache options, native help/version/startup diagnostics and a shared log-write failure callback. Source CLI, backend and billing behavior are unchanged; no version bump or release. Syntax/import/help and lint checks are recorded in the plan; CI passed; the owner built and smoke-tested the identified dirty 0.1.0 GUI artifact (direct/no-console launch, key/form persistence and bounded local/cloud generation/queues). See [recorded evidence](../research/windows-gui-smoke-2026-10-05.md) for the retained unknown cloud attempt, LoRA preflight rejections and existing-asset-only preparation path. No new cloud upload, universal LoRA application or clean final-release acceptance is claimed.
+
 - GUI-first README now presents the application, implemented features, design principles, setup/desktop launch and repository navigation. Detailed desktop, CLI, queues/batch plans, testing and diagnostics move into linked `devdocs/guides/`; `devdocs/current_dev_status.md` provides a short initial-plan-aligned coding snapshot, separating implementation from acceptance. Repository instructions maintain this boundary. No runtime behavior or dependency changes.
 
 - Connection, Generate and Queues share one persistent Designer shell, coordinated content stacks, scrolling rails, navigation and global responsive Inspector behavior. Existing workflow controllers and shared QSS are reused; no provider or dispatch policies change. Windows interactive and packaged acceptance remain unverified.
@@ -53,5 +55,5 @@ Pending changes for the next DTFlow release.
 
 ## Release audit
 
-- PRs: #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28.
-- Scope: Since v0.1.0, stamped builds and Windows identity evidence, queues/cloud assets, Qt shell and generation/queue/batch surfaces, shared-shell and UX refinements, inventory/session persistence, offline CI (including subsequent main-cache/manual-target changes), and GUI-first documentation/current development orientation. These notes describe pending changes, not completed release acceptance.
+- PRs: #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29.
+- Scope: Since v0.1.0, stamped builds and Windows identity evidence, queues/cloud assets, Qt shell and generation/queue/batch surfaces, shared-shell and UX refinements, inventory/session persistence, offline CI (including subsequent main-cache/manual-target changes), GUI-first documentation/current development orientation, and the windowed desktop build/diagnostic bootstrap. These notes describe pending changes, not completed release acceptance.
