@@ -1,6 +1,6 @@
 # DTFlow release roadmap
 
-**Status:** Planned milestones; no release is created by this document. 0.1.0 is prepared in [its release notes](../releases/v0.1.0.md); the tag is created by the owner.  
+**Status:** Planned milestones; no release is created by this document. 0.1.0 is tagged; 0.3.0 is being prepared in [its release notes](../releases/v0.3.0.md), pending the owner-built clean Windows artifact and publication. Follow [the release guide](../guides/releasing.md).  
 **Audience:** Personal use initially; public distribution is a separate later decision.  
 **References:** [implementation phases](initial.md), [CLI plan](phase-3-cli.md), [TanqueStudio parity](tanquestudio-parity.md), [pending release notes](../releases/unreleased.md).
 

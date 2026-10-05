@@ -125,6 +125,7 @@ These instructions apply throughout `dtflow`.
 - Follow [the release roadmap](devdocs/plans/releases.md) for usable version milestones and acceptance gates; planned numbers are not shipped releases.
 - Version durable state schemas separately from application versions. Preserve state and outputs on supported migrations; reject unsupported schemas clearly and never replay ambiguous attempts during an upgrade.
 - Track pending changes in `devdocs/releases/unreleased.md`.
+- Follow [the version-bump and release guide](devdocs/guides/releasing.md) for uv metadata/lock updates and release sequencing. The owner builds and smoke-tests the final Windows executable after the release PR is squash-merged; wait for owner acceptance before tagging/publishing.
 - When releasing a version, move the relevant entries into `devdocs/releases/v<version>.md` and reset `unreleased.md`.
 - Update the relevant plan, architecture, research, and release documentation when behavior changes.
 
