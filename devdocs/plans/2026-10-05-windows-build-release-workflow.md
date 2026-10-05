@@ -17,10 +17,16 @@ Adapt the manual build/release pattern from Splitvids into one DTFlow workflow w
 
 ## Tasks
 
-- [ ] Implement workflow and focused artifact verification helper.
-- [ ] Synchronize building/releasing guides, repository contract, current status and pending release notes.
-- [ ] Static workflow/Python/documentation checks, coherent commits and PR.
+- [x] Implement workflow and focused artifact verification helper.
+- [x] Synchronize building/releasing guides, repository contract, current status and pending release notes.
+- [x] Static workflow/Python/documentation checks, coherent commits and PR.
 
 ## Validation and handoff
 
 No tests or smoke tests will be run under the fast implementation workflow; no build workflow will be dispatched during implementation. Final Windows runner execution/cache-hit timings and downloaded executable smoke remain with the owner. Cold/warm cache speed is not yet measured. Existing released 0.3.0 assets will not be replaced. No training/inference or potentially billable cloud workload is needed.
+
+## Implementation outcome
+
+PR #31 implements the single manual workflow and shared artifact verifier. Static checks passed: actionlint 1.7.12; YAML parse; PowerShell syntax-only parse of all six run blocks (none executed); Python compile/import/help; Ruff lint and format (168 files); documentation links/fences/JSON examples; git diff --check. No tests or smoke tests were run, no Windows build was dispatched, and runner/cache performance is unverified. Owner validation remains required.
+
+The Splitvids reference caches pip dependencies, not PyInstaller analysis. DTFlow uses the uv equivalent and keeps the existing --clean builder; no additional incremental PyInstaller optimization is introduced.
