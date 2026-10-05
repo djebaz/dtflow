@@ -7,13 +7,9 @@
 
 ## Context
 
-DTFlow had not been publicly released under MIT. Before the first release, the owner chose **GPL-3.0-only** for DTFlow.
-The Draw Things Python client DTFlow depends on, `drawthings-py` (pinned `>=0.4.0,<0.5.0`), also declares
-**GPL-3.0-only** and ships the full GPL-3.0 text.
+DTFlow had not been publicly released under MIT. Before the first release, the owner chose **GPL-3.0-only** for DTFlow. The Draw Things Python client DTFlow depends on, `drawthings-py` (pinned `>=0.4.0,<0.5.0`), also declares **GPL-3.0-only** and ships the full GPL-3.0 text.
 
-MIT code is generally GPL-compatible; the earlier concern was not that MIT and GPL could never coexist. The practical
-distribution question was whether a combined build containing GPL-covered code could remain presented as an MIT-only
-application. Adopting GPL-3.0-only for DTFlow removes that top-level mismatch before any public DTFlow release.
+MIT code is generally GPL-compatible; the earlier concern was not that MIT and GPL could never coexist. The practical distribution question was whether a combined build containing GPL-covered code could remain presented as an MIT-only application. Adopting GPL-3.0-only for DTFlow removes that top-level mismatch before any public DTFlow release.
 
 ## Facts and evidence
 

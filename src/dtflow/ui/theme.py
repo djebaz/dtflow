@@ -1,6 +1,8 @@
 """Shared application theme loading for the Qt presentation layer."""
 
 import ctypes
+import json
+import re
 import sys
 from ctypes import wintypes
 from pathlib import Path
@@ -8,12 +10,20 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 THEME_FILE = Path(__file__).parents[1] / "resources" / "styles" / "dtflow_dark.qss"
+TOKENS_FILE = THEME_FILE.with_name("tokens.json")
+
+
+def load_tokens() -> dict[str, str]:
+    """One tracked palette/scale for the stylesheet and custom painted presentation."""
+    return json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
 
 
 def load_theme() -> str:
     """Read the tracked QSS source used by source and packaged Qt execution."""
     try:
-        return THEME_FILE.read_text(encoding="utf-8")
+        source = THEME_FILE.read_text(encoding="utf-8")
+        tokens = load_tokens()
+        return re.sub(r"\$\{([\w.]+)\}", lambda match: tokens[match.group(1)], source)
     except OSError as exc:
         raise OSError("The DTFlow Qt stylesheet could not be loaded.") from exc
 

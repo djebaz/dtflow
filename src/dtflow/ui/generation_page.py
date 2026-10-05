@@ -9,11 +9,12 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
-from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QWidget
+from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QMessageBox, QPushButton, QWidget
 
 from dtflow.composition import BACKENDS
 from dtflow.core.models import (
@@ -38,6 +39,7 @@ from dtflow.services.session import (
     selection_for,
 )
 from dtflow.ui.activity import Activity
+from dtflow.ui.empty_hint import EmptyListHint
 from dtflow.ui.generation_presenter import (
     FAKE_MODEL,
     SAMPLERS,
@@ -67,8 +69,7 @@ def failure_reason(failure: BaseException) -> str:
     return type(failure).__name__
 
 
-PREVIEW_BOX = 360  # bounded display size; the saved file is never resized
-PREVIEW_MIN_HEIGHT = 210  # the empty preview frame, as in the Designer form
+PREVIEW_MIN_HEIGHT = 180
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 WIRED_CONTROLS = (
     "promptEdit",
@@ -144,6 +145,13 @@ class GenerationPage:
         self._request = None
         self._busy = False
         self._config_name: str | None = None
+        self._metadata_path: Path | None = None
+        self._submitted_backend: str | None = None
+        self._empty_hints = (
+            EmptyListHint(page.loraList, "No LoRAs selected\nAdd an adapter to this request."),
+            EmptyListHint(page.assetList, "No local receipts\nPrepare a cloud asset to begin."),
+            EmptyListHint(page.resultList, "No saved outputs yet"),
+        )
         self.lora = LoraAssetPanel(
             page,
             runner=runner,
@@ -168,6 +176,30 @@ class GenerationPage:
         page.configurationCombo.activated.connect(self._config_chosen)
         page.openOutputFolderButton.clicked.connect(self.open_output_folder)
         page.copyOutputPathButton.clicked.connect(self.copy_output_path)
+        self.openFileButton = QPushButton("Open file", page)
+        self.metadataButton = QPushButton("Metadata", page)
+        self.openFileButton.clicked.connect(self.open_output_file)
+        self.metadataButton.clicked.connect(self.show_metadata)
+        for button in (
+            self.openFileButton,
+            page.openOutputFolderButton,
+            self.metadataButton,
+            page.copyOutputPathButton,
+        ):
+            page.resultPreviewLabel.add_file_button(button)
+        self._set_result_actions(False)
+        page.generationSplitter.setStretchFactor(1, 1)
+        page.generationSplitter.setSizes([270, 900, 300])
+        page.modelCombo.lineEdit().setPlaceholderText("Select or enter a model")
+        page.promptEdit.setTabChangesFocus(True)
+        for control in (page.expandPromptButton, page.inspectorToggle, page.detailsToggle):
+            control.setEnabled(True)
+        page.attemptDetails.hide()
+        page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)
+        page.expandPromptButton.toggled.connect(
+            lambda expanded: page.promptEdit.setFixedHeight(180 if expanded else 76)
+        )
+        page.resultPreviewLabel.enable_inspection()
         self.sync_backend()
         self._scan_configs()
 
@@ -299,20 +331,14 @@ class GenerationPage:
             bar.setRange(0, 0)  # indeterminate: no server percentage is known
         bar.setFormat(text)
 
-    def _show_image(self, encoded: bytes, designation: str) -> None:
+    def _show_image(self, encoded: bytes, designation: str, backend_id: str | None = None) -> None:
         pixmap = QPixmap()
         if not pixmap.loadFromData(encoded):
             return
         label = self.page.resultPreviewLabel
-        scaled = pixmap.scaled(
-            PREVIEW_BOX, PREVIEW_BOX, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-        )
-        label.setPixmap(scaled)
-        label.setProperty("designation", designation)
-        # The frame must be as tall as the scaled image, or a portrait picture is clipped top and bottom.
-        margins = self.page.previewHost.layout().contentsMargins()
-        self.page.previewHost.setMinimumHeight(
-            max(PREVIEW_MIN_HEIGHT, scaled.height() + margins.top() + margins.bottom())
+        label.setPixmap(pixmap)
+        label.set_designation(
+            designation, fixture=(backend_id or self._submitted_backend or self._backend()[0]) == "fake"
         )
 
     # -- generation ------------------------------------------------------------------------------------------------
@@ -322,6 +348,7 @@ class GenerationPage:
         self._mark(None)
         note = self._snap_size()
         name, endpoint = self._backend()
+        self._submitted_backend = name
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name)
         except FormError as exc:
@@ -413,13 +440,40 @@ class GenerationPage:
             item.setData(RESULT_PATH_ROLE, str(path))
             self.page.resultList.addItem(item)
         self._set_result_actions(True)
+        self._metadata_path = Path(outcome.metadata_path)
         if outcome.final_image:
-            self._show_image(outcome.final_image, "final")
+            self._show_image(outcome.final_image, "final", outcome.backend_id)
 
     # -- saved results ---------------------------------------------------------------------------------------------
     def _set_result_actions(self, available: bool) -> None:
         self.page.openOutputFolderButton.setEnabled(available)
         self.page.copyOutputPathButton.setEnabled(available)
+        self.page.resultList.setEnabled(available)
+        self.openFileButton.setEnabled(available)
+        self.metadataButton.setEnabled(available)
+        if not available:
+            self._metadata_path = None
+
+    def open_output_file(self) -> None:
+        path = self._result_path()
+        if path:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def show_metadata(self) -> None:
+        if self._metadata_path is None:
+            return
+        # Explicit inspection of a local artifact, not a provider call.
+        try:
+            with self._metadata_path.open(encoding="utf-8") as handle:
+                content = handle.read(256_000)
+        except (OSError, UnicodeError):
+            QMessageBox.warning(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
+            return
+        dialog = QMessageBox(self.page)
+        dialog.setWindowTitle("Saved generation metadata")
+        dialog.setText("Reproducibility metadata from the saved attempt.")
+        dialog.setDetailedText(content)
+        dialog.exec()
 
     def _result_path(self) -> str | None:
         """The selected saved path, else the first one (the first output)."""
@@ -482,9 +536,13 @@ class GenerationPage:
         ids = eligible_model_ids(snapshot)
         self._fill_models(ids)
         self._listed_backend = self._backend()[0]
-        self.page.inventoryEvidenceLabel.setText(
-            f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}. {len(ids)} model(s) listed."
-        )
+        label = self.page.inventoryEvidenceLabel
+        label.setToolTip(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
+        try:
+            observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
+        except ValueError:
+            observed = snapshot.observed_at_utc
+        label.setText(f"{len(ids)} model(s) · {how.split(' ')[0]}\nobserved {observed}")
 
     def _refreshed(self, snapshot, failure) -> None:
         self._set_busy(False)

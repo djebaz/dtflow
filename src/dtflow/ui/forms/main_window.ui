@@ -11,10 +11,10 @@
   <property name="windowTitle"><string>DTFlow</string></property>
   <widget class="QWidget" name="central">
    <layout class="QVBoxLayout" name="rootLayout">
-    <property name="leftMargin"><number>18</number></property>
-    <property name="topMargin"><number>14</number></property>
-    <property name="rightMargin"><number>18</number></property>
-    <property name="bottomMargin"><number>14</number></property>
+    <property name="leftMargin"><number>8</number></property>
+    <property name="topMargin"><number>8</number></property>
+    <property name="rightMargin"><number>8</number></property>
+    <property name="bottomMargin"><number>8</number></property>
     <property name="spacing"><number>12</number></property>
     <item>
      <widget class="QFrame" name="headerFrame">
@@ -27,7 +27,7 @@
        <property name="rightMargin"><number>14</number></property>
        <property name="bottomMargin"><number>10</number></property>
        <property name="spacing"><number>12</number></property>
-       <item>
+<item><widget class="QFrame" name="brandFrame"><layout class="QHBoxLayout" name="brandLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>       <item>
         <widget class="QFrame" name="productMark">
          <property name="minimumSize"><size><width>50</width><height>50</height></size></property>
          <property name="maximumSize"><size><width>50</width><height>50</height></size></property>
@@ -44,6 +44,7 @@
          <item><widget class="QLabel" name="productSubtitleLabel"><property name="text"><string>Reproducible Draw Things generation and automation</string></property></widget></item>
         </layout>
        </item>
+</layout></widget></item>
        <item><spacer name="headerSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
        <item>
         <widget class="QFrame" name="navigationFrame">

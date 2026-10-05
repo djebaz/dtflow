@@ -32,7 +32,7 @@ def now() -> str:
 
 
 class FakeBackend:
-    """Scenario-controlled fake; successful output is a fixture swatch."""
+    """Scenario-controlled fake; output is a swatch/grid, never model inference."""
 
     def __init__(
         self,
@@ -50,7 +50,9 @@ class FakeBackend:
         if type(delay) not in (int, float) or not 0 <= delay <= 600:
             raise ValidationError("Fake delay must be in 0..600 seconds.")
         self.scenario, self.delay, self.sleep, self.gate = scenario, delay, sleep, gate
-        self._capabilities = Capabilities("fake", model_ids=("fake-fixture",), max_concurrency=max_concurrency)
+        self._capabilities = Capabilities(
+            "fake", model_ids=("fake-fixture", "fake-grid"), max_concurrency=max_concurrency, lora_support="selection"
+        )
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._opened = False
         self.active = 0
@@ -75,12 +77,38 @@ class FakeBackend:
         self._require_open()
         return InventorySnapshot(
             "fake",
-            "fixture-v1",
+            "fixture-v2",
             now(),
             refresh,
             (
                 InventoryEntry(
                     "fake-fixture", "model", "Offline fixture swatch", "fixture", "present", "bundled-fixture", "1"
+                ),
+                InventoryEntry(
+                    "fake-grid", "model", "Offline calibration grid", "fixture", "present", "bundled-fixture", "2"
+                ),
+                InventoryEntry(
+                    "fake-soft",
+                    "lora",
+                    "Fixture matching architecture",
+                    "fixture",
+                    "present",
+                    "bundled-fixture",
+                    "2",
+                    default_weight=0.8,
+                    trigger_prefix="fixture-style",
+                ),
+                InventoryEntry(
+                    "fake-mismatch",
+                    "lora",
+                    "Fixture mismatched architecture",
+                    "other-fixture",
+                    "present",
+                    "bundled-fixture",
+                    "2",
+                ),
+                InventoryEntry(
+                    "fake-unknown", "lora", "Fixture unknown architecture", None, "present", "bundled-fixture", "2"
                 ),
             ),
             (("fake", "true"),),
@@ -121,7 +149,12 @@ class FakeBackend:
                 )
             )
 
-        if request.model_id != "fake-fixture" or request.loras or (request.batch_size, request.batch_count) != (1, 1):
+        if (
+            request.model_id not in self.capabilities.model_ids
+            or any(item.identifier not in ("fake-soft", "fake-unknown") for item in request.loras)
+            or request.prepared_assets
+            or (request.batch_size, request.batch_count) != (1, 1)
+        ):
             fail("unsupported_request", ErrorCategory.VALIDATION, RemoteOutcome.NOT_STARTED)
         emit("preparing", stage="fixture")
         if self.scenario == "reject":
@@ -145,7 +178,13 @@ class FakeBackend:
                 artifacts = ()
                 if self.scenario != "empty":
                     encoded = await settle(
-                        asyncio.to_thread(fixture_png, request.width_px, request.height_px, request.seed)
+                        asyncio.to_thread(
+                            fixture_png,
+                            request.width_px,
+                            request.height_px,
+                            request.seed,
+                            grid=request.model_id == "fake-grid",
+                        )
                     )
                     artifact = ImageArtifact(
                         "fixture",

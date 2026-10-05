@@ -131,7 +131,9 @@ def test_unsupported_config_exits_2(invoke, tmp_path):
 def test_models_filter_keeps_provenance_and_unknown_entries(invoke):
     code, out, _ = invoke("models", "-b", "fake", "-r", "-k", "lora")
     data = json.loads(out)
-    assert code == 0 and data["entries"] == [] and data["entries_total"] == 1 and data["kind"] == "lora"
+    assert code == 0 and data["entries_total"] == 5 and data["kind"] == "lora"
+    assert {entry["identifier"] for entry in data["entries"]} == {"fake-soft", "fake-mismatch", "fake-unknown"}
+    assert all(entry["kind"] == "lora" and entry["metadata_source"] == "bundled-fixture" for entry in data["entries"])
     assert data["backend_id"] == "fake" and data["observed_at_utc"]
     assert json.loads(invoke("models", "-b", "fake")[1])["entries"][0]["kind"] == "model"
 
