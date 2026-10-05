@@ -10,8 +10,8 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QListWidgetItem, QMessageBox, QWidget
 
 from dtflow.core.models import ValidationError
@@ -115,6 +115,7 @@ class QueuePage:
         self._syncing = False
         self._detail: dict | None = None
         self._shared_cap: int | None = None
+        self._output_folder: Path | None = None
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
         for view in (page.queueItemsView, page.planTableView):
@@ -136,6 +137,7 @@ class QueuePage:
         page.overrideReservationButton.clicked.connect(self.override)
         page.queueList.currentRowChanged.connect(self._select_row)
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
+        page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
         page.concurrencySpinBox.valueChanged.connect(self._cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
@@ -332,14 +334,26 @@ class QueuePage:
         if row is None:
             for name in ("itemIdLabel", "attemptIdLabel", "itemBackendLabel", "itemOutputsLabel"):
                 getattr(page, name).setText("—")
+            page.itemOutputsLabel.setToolTip("")
+            self._output_folder = None
+            page.itemOpenFolderButton.setEnabled(False)
             return
         page.itemIdLabel.setText(row.item_id[:8])
         page.itemIdLabel.setToolTip(row.item_id)
         page.attemptIdLabel.setText(row.attempt_id or "—")
         page.itemBackendLabel.setText(summarize(view).backend if view else "—")
         outputs = [*row.outputs, *([row.metadata] if row.metadata else [])]
-        detail = "\n".join(outputs) if outputs else (row.failure_code or "—")
+        # Full paths stay in the tooltip; the panel shows a summary and a button to the attempt's folder.
+        parts = [f"{len(row.outputs)} image(s)"] if row.outputs else []
+        detail = ", ".join([*parts, *(["metadata"] if row.metadata else [])]) or (row.failure_code or "—")
         page.itemOutputsLabel.setText(detail)
+        page.itemOutputsLabel.setToolTip("\n".join(outputs))
+        self._output_folder = Path(outputs[0]).parent if outputs else None
+        page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
+
+    def open_output_folder(self) -> None:
+        if self._output_folder is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._output_folder)))
 
     def _select_row(self, row: int) -> None:
         item = self.page.queueList.item(row) if row >= 0 else None

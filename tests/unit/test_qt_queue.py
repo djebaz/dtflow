@@ -111,7 +111,8 @@ def test_create_start_and_complete_a_queue_with_stable_rows_and_outputs(window, 
     assert state_text(window).startswith("Finished") and page.ownershipBadgeLabel.text() == "NOT DISPATCHING"
     assert window.generation_page.generateButton.isEnabled()
     page.queueItemsView.selectRow(1)
-    assert "metadata.json" in page.itemOutputsLabel.text() and page.itemIdLabel.text()
+    assert "metadata" in page.itemOutputsLabel.text() and "metadata.json" in page.itemOutputsLabel.toolTip()
+    assert page.itemOpenFolderButton.isEnabled() and page.itemIdLabel.text()
     assert page.queueEventBrowser.toPlainText().count("\n") >= 1
 
 
