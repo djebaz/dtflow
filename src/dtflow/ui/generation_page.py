@@ -149,6 +149,7 @@ class GenerationPage:
         self._listed_backend: str | None = None
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         self._provider: str | None = None
+        self._previewed_seed: int | None = None
         self._activity.listen(self._sync_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
@@ -376,8 +377,12 @@ class GenerationPage:
                 Presentation("warning", "Queue dispatch is running", "Single generation is unavailable until it stops.")
             )
 
-    def request_for_queue(self):
-        """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking."""
+    def request_for_queue(self, *, preview: bool = False):
+        """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking.
+
+        A random seed (form seed 0) picked for a plan preview is kept for the next queue created, so the dry-run
+        table shows the seeds the queue will really use.
+        """
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()
@@ -386,6 +391,12 @@ class GenerationPage:
         except FormError as exc:
             self._mark(exc.widget)
             raise
+        resolved = any(key == "seed.resolved" for key, _ in request.resolution_evidence)
+        if preview and resolved:
+            self._previewed_seed = request.seed
+        elif resolved and self._previewed_seed is not None:
+            request = replace(request, seed=self._previewed_seed)
+            self._previewed_seed = None
         return request, name, endpoint, self.lora.receipt_ids()
 
     def _progress(self, text: str, completed: int | None = None, total: int | None = None) -> None:

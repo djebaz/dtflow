@@ -298,7 +298,8 @@ def test_plan_area_dry_run_and_create_use_the_shared_planner(window, qtbot):
     page.planDryRunButton.click()
     model = page.planTableView.model()
     table = [[model.data(model.index(r, c)) for c in range(model.columnCount())] for r in range(model.rowCount())]
-    assert table[0] == ["1", "a cat", "4", "0"] and table[3] == ["4", "b dog", "8", "0"]
+    assert table[0][:3] == ["1", "a cat", "4"] and table[3][:3] == ["4", "b dog", "8"]
+    assert table[0][3] != "0"  # the form seed 0 is a random seed, shown here and kept for the created queue
     page.planStepsEdit.setText("4; 500")
     page.createQueueButton.click()
     assert page.planStepsEdit.property("invalid") is True and page.planCountLabel.text().startswith("Item 2: steps")

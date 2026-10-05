@@ -453,7 +453,7 @@ class QueuePage:
     def dry_run(self) -> None:
         """Show the exact items the plan would create; persists nothing and contacts no backend."""
         try:
-            request, *_ = self._request_source()
+            request, *_ = self._request_source(preview=True)
         except FormError as exc:
             self._message(Presentation("error", "Dry run unavailable", str(exc)))
             return
