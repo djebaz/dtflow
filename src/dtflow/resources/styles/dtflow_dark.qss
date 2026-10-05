@@ -468,7 +468,7 @@ QGroupBox::indicator:disabled {
 
 /* Workspace states: keep the shared tokens authoritative; no per-widget inline QSS. */
 QFrame#generationWorkspace, QFrame#brandFrame, QWidget#generationLeftRail,
-QWidget#generationRightRail, QWidget#generationBrandSlot, QWidget#generationNavigationSlot {
+QWidget#generationRightRail, QWidget#leftRail, QWidget#rightRail, QWidget#centerRail, QWidget#WorkspaceShell, QWidget#generationBrandSlot, QWidget#generationNavigationSlot {
   background: transparent; border: 0;
 }
 QFrame#previewHost, ImagePreview { background: ${color.canvas}; border: 1px solid #353535; }
@@ -532,3 +532,12 @@ QScrollBar:horizontal { background: ${color.background}; border: 0; margin: 0; h
 QScrollBar::handle:horizontal { background: #4a4a4a; border-radius: 5px; min-width: 28px; margin: 2px; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; border: 0; }
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
+
+/* Persistent workspace gutters double as the drag targets between panels. */
+QSplitter#workspaceSplitter::handle:horizontal {
+    width: ${size.workspaceGutter};
+    background: ${color.background};
+}
+QSplitter#workspaceSplitter::handle:horizontal:hover {
+    background: ${color.border};
+}

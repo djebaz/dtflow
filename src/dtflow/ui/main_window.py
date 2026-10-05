@@ -126,9 +126,43 @@ class MainWindow:
         self.confirm = ask_confirmation
         self.activity = Activity()
         form = self.form
-        from dtflow.ui.brand import APP_ICON, app_icon
+        self.shell = load_ui(FORMS_DIR / "workspace_shell.ui")
+        # Mount presentation regions once; page controllers retain their widget references.
+        for page, names in (
+            (form, ("contextRail", "workspaceFrame", "inspectorPanel")),
+            (self.generation_page, ("generationContextPanel", "generationWorkspace", "generationInspector")),
+            (self.queue_page, ("queueContextPanel", "queueWorkspace", "queueInspector")),
+        ):
+            for stack, name in zip(
+                (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack), names, strict=True
+            ):
+                stack.addWidget(getattr(page, name))
+        form.workspaceStack.hide()
+        form.rootLayout.addWidget(self.shell)
+        # Preserve the connection controller's established chrome references.
+        for name in (
+            "brandFrame",
+            "navigationFrame",
+            "productMarkLabel",
+            "productSubtitleLabel",
+            "connectionNavigationButton",
+            "generationNavigationButton",
+            "queueNavigationButton",
+        ):
+            setattr(form, name, getattr(self.shell, name))
+        self.shell.productSubtitleLabel.hide()
+        # Existing inspection integrations can refer to the same persistent shell controls.
+        self.generation_page.inspectorToggle = self.shell.inspectorToggle
+        self.generation_page.generationLeftRail = self.shell.leftRail
+        self.generation_page.generationRightRail = self.shell.rightRail
+        self.shell.workspaceSplitter.setStretchFactor(0, 0)
+        self.shell.workspaceSplitter.setStretchFactor(1, 1)
+        self.shell.workspaceSplitter.setStretchFactor(2, 0)
+        self.shell.workspaceSplitter.setSizes([260, 700, 260])
+        from dtflow.ui.brand import APP_ICON, app_icon, panel_icon
 
         form.setWindowIcon(app_icon())
+        self.shell.inspectorToggle.setIcon(panel_icon())
         logo = QPixmap(str(APP_ICON))
         if not logo.isNull():
             form.productMarkLabel.setPixmap(
@@ -170,8 +204,8 @@ class MainWindow:
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
-        form.workspaceStack.currentChanged.connect(self._workspace_header)
-        self.generation_page.inspectorToggle.toggled.connect(self._toggle_inspector)
+        form.workspaceStack.currentChanged.connect(self._workspace_changed)
+        self.shell.inspectorToggle.toggled.connect(self._toggle_inspector)
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
@@ -179,6 +213,8 @@ class MainWindow:
         self.generation.sync_backend()
         self.generation.request_cached()
         self.refresh_credentials()
+        self._workspace_changed(0)
+        self._responsive_workspace()
 
     @staticmethod
     def _disable_preview_controls(page: QWidget) -> None:
@@ -197,41 +233,27 @@ class MainWindow:
         self.generation.sync_backend()
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
 
-    def _workspace_header(self, _index: int) -> None:
-        """Generate uses rail-local branding/navigation, leaving the center full-height."""
-        form, page = self.form, self.generation_page
-        generating = form.workspaceStack.currentWidget() is page
-        if generating:
-            page.generationBrandSlot.layout().addWidget(form.brandFrame)
-            page.generationNavigationSlot.layout().addWidget(form.navigationFrame)
-        else:
-            form.headerLayout.insertWidget(0, form.brandFrame)
-            form.headerLayout.addWidget(form.navigationFrame)
-        form.brandFrame.show()
-        form.navigationFrame.show()
-        form.productSubtitleLabel.setVisible(not generating)
-        form.headerFrame.setVisible(not generating)
-        self._responsive_workspace()
+    def _workspace_changed(self, index: int) -> None:
+        """Change only content; shell widgets and splitter geometry stay mounted."""
+        for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
+            stack.setCurrentIndex(index)
+        buttons = (
+            self.form.connectionNavigationButton,
+            self.form.generationNavigationButton,
+            self.form.queueNavigationButton,
+        )
+        buttons[index].setChecked(True)
 
     def _toggle_inspector(self, visible: bool) -> None:
-        self.generation_page.generationRightRail.setVisible(visible)
         self._responsive_workspace()
 
     def _responsive_workspace(self) -> None:
-        form, page = self.form, self.generation_page
-        if form.workspaceStack.currentWidget() is not page:
-            return
-        narrow = form.width() < 1100
+        shell = self.shell
+        narrow = self.form.width() < 1100
         if narrow != self._narrow:
             self._narrow = narrow
-            page.inspectorToggle.setChecked(not narrow)
-        if narrow or not page.inspectorToggle.isChecked():
-            # Keep all navigation reachable even when the inspector is collapsed.
-            page.generationLeftRail.layout().insertWidget(1, form.navigationFrame)
-        else:
-            page.generationNavigationSlot.layout().addWidget(form.navigationFrame)
-        form.navigationFrame.show()
-        page.generationRightRail.setVisible(page.inspectorToggle.isChecked())
+            shell.inspectorToggle.setChecked(not narrow)
+        shell.rightRail.setVisible(shell.inspectorToggle.isChecked())
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)

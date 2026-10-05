@@ -37,6 +37,7 @@ rounded:
   panel: "8px"
 spacing:
   rail-gap: "8px"
+  workspace-gutter: "8px"
   panel-padding: "12px"
   canvas-overlay-inset: "10px"
 ---
@@ -57,6 +58,7 @@ The canonical files and responsibilities are:
 | Shared palette, type and reusable sizes | [`tokens.json`](src/dtflow/resources/styles/tokens.json) |
 | Widget appearance and interaction states | [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) |
 | Token expansion and one-time stylesheet application | [`ui/theme.py`](src/dtflow/ui/theme.py) |
+| Persistent geometry | [`ui/forms/workspace_shell.ui`](src/dtflow/ui/forms/workspace_shell.ui) |
 | Shared shell, navigation and responsive placement | [`ui/main_window.py`](src/dtflow/ui/main_window.py) |
 | Aspect-fit image inspection and floating controls | [`ui/image_preview.py`](src/dtflow/ui/image_preview.py) |
 | Offline state capture | [`tools/ui/render_states.py`](tools/ui/render_states.py) |
@@ -82,9 +84,13 @@ Use short labels and specific status text. Keep long paths, model identifiers, t
 
 ## Layout
 
-Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a collapsible right inspector for LoRAs, assets and evidence. Branding lives at the top of the left rail; navigation sits at the top right on a wide window. There is no full-width Generate title band or slogan. The center uses the space that band once consumed.
+All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. Branding, navigation, rail scroll areas and splitter remain mounted across tab switches. Only context, primary workspace and evidence content change. The shell owns the global Inspector toggle and responsive state; page controllers retain their content references and service wiring.
 
-The left and right Generate rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. At a window width below 1100, the inspector initially collapses and navigation moves into the left rail. An explicit Inspector toggle can reopen it. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
+Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a collapsible right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays permanently below the brand in the shared left rail at every width. A compact panel-outline toggle beside the brand shows or hides right-side details; its tooltip and accessible name explain the action. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Queues uses durable queue selection/policy, items and dispatch in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
+
+The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral drag gutter between panels, with a subtle border-colored hover affordance. Internal panel padding is unchanged.
+
+The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. At a window width below 1100, the inspector initially collapses and navigation remains in the left rail. The panel icon can reopen it. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
 
 The prompt starts at 76 px and expands to 180 px on request. The negative prompt stays compact. The canvas takes the remaining center height and fits the whole image, whether portrait 1:2 or landscape 16:9, without crop or distortion. Its 12 px fit inset and 10 px floating-control inset are implemented in the preview widget. At 100% or manual zoom, overflow gets scrollbars; drag pans and Control-wheel zoom anchors at the pointer. Expand temporarily gives the preview its own window and restores its original parent on Escape or close.
 
@@ -118,7 +124,7 @@ Use a short outcome heading plus concrete evidence. A progress bar reflects only
 
 ### Page implementation checklist
 
-1. Edit the tracked Designer `.ui` file for the new page, including accessible names, stable `objectName` values, layout margins, stretch, size policy and scroll containers. Do not hand-edit generated `Ui_*` Python.
+1. Keep global geometry in `workspace_shell.ui`; register the page's context/work/evidence regions with the existing three stacks. Edit the tracked Designer `.ui` file for the new page, including accessible names, stable `objectName` values, layout margins, stretch, size policy and scroll containers. Do not hand-edit generated `Ui_*` Python.
 2. Use the existing stack and shell navigation in `main_window.py`. Keep its navigation reachable when a rail collapses. Introduce page-specific responsiveness only where the page's content requires it.
 3. Add shared appearance in `tokens.json` and QSS selectors keyed by semantic object names or dynamic properties. Load tokens in custom painting. Do not call `setStyleSheet()` on individual widgets for ordinary states.
 4. Wire presentation through a page/controller and the existing background service boundary. Do not put backend protocols, network waits or durable state decisions in a Designer file or custom visual widget.

@@ -4,6 +4,8 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
+- Connection, Generate and Queues share one persistent Designer shell, coordinated content stacks, scrolling rails, navigation and global responsive Inspector behavior. Existing workflow controllers and shared QSS are reused; no provider or dispatch policies change. Windows interactive and packaged acceptance remain unverified.
+
 - Generate image-first workspace: rail-local header, parameters on the left, full-resolution fit/zoom/pan preview and canvas-local saved-output inspection. Shared theme tokens, native interaction states, expandable prompts, collapsible details, retained navigation on narrow windows and deterministic fake grid/model/ LoRA fixtures accompany a network-guarded twelve-state Qt renderer. See [the refinement plan](../plans/2026-10-05-preview-workspace.md) and the [design system](../../DESIGN.md) for extending this style to other tabs. The DTFlow monogram is the window and Windows build icon; the empty canvas can show a labeled illustrative portrait without enabling saved-output actions. No provider compatibility, Windows packaging or live inference acceptance is claimed.
 
 ## Added
