@@ -228,9 +228,17 @@ class ImagePreview(QAbstractScrollArea):
         if self._pixmap.isNull():
             if not self._brand_mark.isNull():
                 painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                painter.drawPixmap(QRectF((self.viewport().width() - 56) / 2, self.viewport().height() / 2 - 110, 56, 56), self._brand_mark, QRectF(self._brand_mark.rect()))
+                painter.drawPixmap(
+                    QRectF((self.viewport().width() - 56) / 2, self.viewport().height() / 2 - 110, 56, 56),
+                    self._brand_mark,
+                    QRectF(self._brand_mark.rect()),
+                )
             painter.setPen(self._secondary_color)
-            painter.drawText(QRectF(0, self.viewport().height() / 2 - 40, self.viewport().width(), 80), Qt.AlignmentFlag.AlignCenter, self._text)
+            painter.drawText(
+                QRectF(0, self.viewport().height() / 2 - 40, self.viewport().width(), 80),
+                Qt.AlignmentFlag.AlignCenter,
+                self._text,
+            )
         else:
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawPixmap(self.image_rect(), self._pixmap, QRectF(self._pixmap.rect()))
