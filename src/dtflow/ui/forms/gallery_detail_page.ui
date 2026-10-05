@@ -1,0 +1,1882 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>GalleryDetailPage</class>
+ <widget class="QWidget" name="GalleryDetailPage">
+  <property name="accessibleName">
+   <string>GalleryDetailPage</string>
+  </property>
+  <property name="windowTitle">
+   <string>DTFlow — Detail layout preview (offline fixture)</string>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1280</width>
+    <height>1000</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,1">
+   <property name="leftMargin">
+    <number>8</number>
+   </property>
+   <property name="topMargin">
+    <number>8</number>
+   </property>
+   <property name="rightMargin">
+    <number>8</number>
+   </property>
+   <property name="bottomMargin">
+    <number>8</number>
+   </property>
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <item>
+    <widget class="QScrollArea" name="galleryHeaderScroll">
+     <property name="accessibleName">
+      <string>HeaderScroll</string>
+     </property>
+     <property name="role" stdset="0">
+      <string>galleryScroll</string>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>68</height>
+      </size>
+     </property>
+     <widget class="QWidget" name="galleryHeaderScrollContents">
+      <property name="accessibleName">
+       <string>HeaderScrollContents</string>
+      </property>
+      <property name="role" stdset="0">
+       <string>galleryScrollContents</string>
+      </property>
+      <layout class="QHBoxLayout" name="galleryHeaderLayout">
+       <property name="leftMargin">
+        <number>8</number>
+       </property>
+       <property name="topMargin">
+        <number>8</number>
+       </property>
+       <property name="rightMargin">
+        <number>8</number>
+       </property>
+       <property name="bottomMargin">
+        <number>8</number>
+       </property>
+       <property name="spacing">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QPushButton" name="galleryGridButton">
+         <property name="accessibleName">
+          <string>Grid</string>
+         </property>
+         <property name="text">
+          <string>Grid</string>
+         </property>
+         <property name="role" stdset="0">
+          <string>galleryMode</string>
+         </property>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="toolTip">
+          <string>Preview only: this application action is not wired.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="galleryListButton">
+         <property name="accessibleName">
+          <string>List</string>
+         </property>
+         <property name="text">
+          <string>List</string>
+         </property>
+         <property name="role" stdset="0">
+          <string>galleryMode</string>
+         </property>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="toolTip">
+          <string>Preview only: this application action is not wired.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="galleryDetailButton">
+         <property name="accessibleName">
+          <string>Detail</string>
+         </property>
+         <property name="text">
+          <string>Detail</string>
+         </property>
+         <property name="role" stdset="0">
+          <string>galleryMode</string>
+         </property>
+         <property name="enabled">
+          <bool>true</bool>
+         </property>
+         <property name="checkable">
+          <bool>true</bool>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="galleryThumbnailSizeLabel">
+         <property name="accessibleName">
+          <string>ThumbnailSizeLabel</string>
+         </property>
+         <property name="text">
+          <string>Thumbnail size</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSlider" name="galleryThumbnailSizeSlider">
+         <property name="accessibleName">
+          <string>ThumbnailSizeSlider</string>
+         </property>
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="minimum">
+          <number>96</number>
+         </property>
+         <property name="maximum">
+          <number>240</number>
+         </property>
+         <property name="value">
+          <number>160</number>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>100</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="galleryThumbnailSizeValue">
+         <property name="accessibleName">
+          <string>ThumbnailSizeValue</string>
+         </property>
+         <property name="text">
+          <string>160 px</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="galleryAutoRefreshButton">
+         <property name="accessibleName">
+          <string>AutoRefresh</string>
+         </property>
+         <property name="text">
+          <string>Auto-refresh: Off</string>
+         </property>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="toolTip">
+          <string>Preview only: this application action is not wired.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="galleryRefreshButton">
+         <property name="accessibleName">
+          <string>Refresh</string>
+         </property>
+         <property name="text">
+          <string>Refresh</string>
+         </property>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="toolTip">
+          <string>Preview only: this application action is not wired.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="galleryResultCount">
+         <property name="accessibleName">
+          <string>ResultCount</string>
+         </property>
+         <property name="text">
+          <string>Offline fixture</string>
+         </property>
+         <property name="role" stdset="0">
+          <string>secondary</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QScrollArea" name="galleryFilterScroll">
+     <property name="accessibleName">
+      <string>FilterScroll</string>
+     </property>
+     <property name="role" stdset="0">
+      <string>galleryScroll</string>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>16777215</width>
+       <height>68</height>
+      </size>
+     </property>
+     <widget class="QWidget" name="galleryFilterScrollContents">
+      <property name="accessibleName">
+       <string>FilterScrollContents</string>
+      </property>
+      <property name="role" stdset="0">
+       <string>galleryScrollContents</string>
+      </property>
+      <layout class="QHBoxLayout" name="galleryFilterLayout">
+       <property name="leftMargin">
+        <number>8</number>
+       </property>
+       <property name="topMargin">
+        <number>8</number>
+       </property>
+       <property name="rightMargin">
+        <number>8</number>
+       </property>
+       <property name="bottomMargin">
+        <number>8</number>
+       </property>
+       <property name="spacing">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QLabel" name="galleryPromptSearchLabel">
+         <property name="accessibleName">
+          <string>PromptSearchLabel</string>
+         </property>
+         <property name="text">
+          <string>Positive prompt</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="galleryPromptSearch">
+         <property name="accessibleName">
+          <string>PromptSearch</string>
+         </property>
+         <property name="placeholderText">
+          <string>Search positive prompts…</string>
+         </property>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="toolTip">
+          <string>Preview only: search is not wired.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="galleryModelFilterLabel">
+         <property name="accessibleName">
+          <string>ModelFilterLabel</string>
+         </property>
+         <property name="text">
+          <string>Model</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="galleryModelFilter">
+         <property name="accessibleName">
+          <string>ModelFilter</string>
+         </property>
+         <item>
+          <property name="text">
+           <string>All models</string>
+          </property>
+         </item>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="galleryLoRAFilterLabel">
+         <property name="accessibleName">
+          <string>LoRAFilterLabel</string>
+         </property>
+         <property name="text">
+          <string>LoRA</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="galleryLoRAFilter">
+         <property name="accessibleName">
+          <string>LoRAFilter</string>
+         </property>
+         <item>
+          <property name="text">
+           <string>All LoRAs</string>
+          </property>
+         </item>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="galleryDateFilterLabel">
+         <property name="accessibleName">
+          <string>DateFilterLabel</string>
+         </property>
+         <property name="text">
+          <string>Date range</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="galleryDateFilter">
+         <property name="accessibleName">
+          <string>DateFilter</string>
+         </property>
+         <item>
+          <property name="text">
+           <string>All time</string>
+          </property>
+         </item>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="galleryRatioFilterLabel">
+         <property name="accessibleName">
+          <string>RatioFilterLabel</string>
+         </property>
+         <property name="text">
+          <string>Aspect ratio</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="textInteractionFlags">
+          <set>Qt::TextSelectableByMouse</set>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="galleryRatioFilter">
+         <property name="accessibleName">
+          <string>RatioFilter</string>
+         </property>
+         <item>
+          <property name="text">
+           <string>Any ratio</string>
+          </property>
+         </item>
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="galleryBodyLayout" stretch="1,0">
+     <property name="spacing">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="QWidget" name="galleryMainColumn">
+       <property name="accessibleName">
+        <string>MainColumn</string>
+       </property>
+       <layout class="QVBoxLayout" name="galleryMainLayout" stretch="1,0,0,0,0">
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <property name="spacing">
+         <number>8</number>
+        </property>
+        <item>
+         <widget class="QFrame" name="galleryPreviewHost">
+          <property name="accessibleName">
+           <string>PreviewHost</string>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>240</width>
+            <height>240</height>
+           </size>
+          </property>
+          <layout class="QGridLayout" name="galleryPreviewLayout" rowstretch="0,1,0">
+           <property name="leftMargin">
+            <number>10</number>
+           </property>
+           <property name="topMargin">
+            <number>10</number>
+           </property>
+           <property name="rightMargin">
+            <number>10</number>
+           </property>
+           <property name="bottomMargin">
+            <number>10</number>
+           </property>
+           <property name="spacing">
+            <number>8</number>
+           </property>
+           <item row="0" column="0" rowspan="3" colspan="3">
+            <widget class="QLabel" name="galleryImageSurface">
+             <property name="accessibleName">
+              <string>ImageSurface</string>
+             </property>
+             <property name="text">
+              <string>Illustrative fixture
+No generation or saved output</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Ignored">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="0" colspan="3" alignment="Qt::AlignLeft|Qt::AlignTop">
+            <layout class="QHBoxLayout" name="galleryOverlayLayout">
+             <item>
+              <widget class="QLabel" name="galleryPositionOverlay">
+               <property name="accessibleName">
+                <string>PositionOverlay</string>
+               </property>
+               <property name="text">
+                <string>1 / 6</string>
+               </property>
+               <property name="role" stdset="0">
+                <string>galleryOverlay</string>
+               </property>
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+               <property name="textInteractionFlags">
+                <set>Qt::TextSelectableByMouse</set>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>80</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="galleryDimensionsOverlay">
+               <property name="accessibleName">
+                <string>DimensionsOverlay</string>
+               </property>
+               <property name="text">
+                <string>Not recorded</string>
+               </property>
+               <property name="role" stdset="0">
+                <string>galleryOverlay</string>
+               </property>
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+               <property name="textInteractionFlags">
+                <set>Qt::TextSelectableByMouse</set>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>230</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="galleryFixtureOverlay">
+               <property name="accessibleName">
+                <string>FixtureOverlay</string>
+               </property>
+               <property name="text">
+                <string>Illustrative fixture</string>
+               </property>
+               <property name="role" stdset="0">
+                <string>galleryOverlay</string>
+               </property>
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+               <property name="textInteractionFlags">
+                <set>Qt::TextSelectableByMouse</set>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>140</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="galleryOverlaySpacer">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeType">
+                <enum>QSizePolicy::Expanding</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>0</width>
+                 <height>0</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </item>
+           <item row="1" column="0" alignment="Qt::AlignLeft|Qt::AlignVCenter">
+            <widget class="QPushButton" name="galleryPreviousButton">
+             <property name="accessibleName">
+              <string>Previous</string>
+             </property>
+             <property name="text">
+              <string>‹</string>
+             </property>
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+             <property name="toolTip">
+              <string>Preview only: this application action is not wired.</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="2" alignment="Qt::AlignRight|Qt::AlignVCenter">
+            <widget class="QPushButton" name="galleryNextButton">
+             <property name="accessibleName">
+              <string>Next</string>
+             </property>
+             <property name="text">
+              <string>›</string>
+             </property>
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+             <property name="toolTip">
+              <string>Preview only: this application action is not wired.</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0" colspan="3" alignment="Qt::AlignHCenter|Qt::AlignBottom">
+            <widget class="QFrame" name="galleryImageToolbar">
+             <property name="accessibleName">
+              <string>ImageToolbar</string>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>50</height>
+              </size>
+             </property>
+             <layout class="QHBoxLayout" name="galleryImageToolbarLayout">
+              <property name="leftMargin">
+               <number>4</number>
+              </property>
+              <property name="topMargin">
+               <number>4</number>
+              </property>
+              <property name="rightMargin">
+               <number>4</number>
+              </property>
+              <property name="bottomMargin">
+               <number>4</number>
+              </property>
+              <property name="spacing">
+               <number>8</number>
+              </property>
+              <item>
+               <widget class="QComboBox" name="galleryViewMode">
+                <property name="accessibleName">
+                 <string>ViewMode</string>
+                </property>
+                <item>
+                 <property name="text">
+                  <string>Cover</string>
+                 </property>
+                </item>
+                <item>
+                 <property name="text">
+                  <string>Fit</string>
+                 </property>
+                </item>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="galleryZoomOutButton">
+                <property name="accessibleName">
+                 <string>ZoomOut</string>
+                </property>
+                <property name="text">
+                 <string>−</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Preview only: this application action is not wired.</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="galleryActualSizeButton">
+                <property name="accessibleName">
+                 <string>ActualSize</string>
+                </property>
+                <property name="text">
+                 <string>100%</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Preview only: this application action is not wired.</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="galleryZoomInButton">
+                <property name="accessibleName">
+                 <string>ZoomIn</string>
+                </property>
+                <property name="text">
+                 <string>+</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Preview only: this application action is not wired.</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="galleryFullscreenButton">
+                <property name="accessibleName">
+                 <string>Fullscreen</string>
+                </property>
+                <property name="text">
+                 <string>Fullscreen</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Preview only: this application action is not wired.</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QScrollArea" name="galleryMetadataScroll">
+          <property name="accessibleName">
+           <string>MetadataScroll</string>
+          </property>
+          <property name="role" stdset="0">
+           <string>galleryScroll</string>
+          </property>
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::NoFrame</enum>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>128</height>
+           </size>
+          </property>
+          <widget class="QWidget" name="galleryMetadataScrollContents">
+           <property name="accessibleName">
+            <string>MetadataScrollContents</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryScrollContents</string>
+           </property>
+           <layout class="QHBoxLayout" name="galleryMetadataLayout">
+            <property name="leftMargin">
+             <number>8</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>8</number>
+            </property>
+            <property name="bottomMargin">
+             <number>8</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QFrame" name="galleryModelBlock">
+              <property name="accessibleName">
+               <string>ModelBlock</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>galleryMetadataBlock</string>
+              </property>
+              <layout class="QVBoxLayout" name="galleryModelLayout">
+               <property name="leftMargin">
+                <number>4</number>
+               </property>
+               <property name="topMargin">
+                <number>4</number>
+               </property>
+               <property name="rightMargin">
+                <number>4</number>
+               </property>
+               <property name="bottomMargin">
+                <number>4</number>
+               </property>
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="galleryModelLabel">
+                 <property name="accessibleName">
+                  <string>ModelLabel</string>
+                 </property>
+                 <property name="text">
+                  <string>Model / checkpoint</string>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>secondary</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="galleryModelValue">
+                 <property name="accessibleName">
+                  <string>ModelValue</string>
+                 </property>
+                 <property name="text">
+                  <string>Illustrative model
+fixture-model.ckpt</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QFrame" name="galleryLoRABlock">
+              <property name="accessibleName">
+               <string>LoRABlock</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>galleryMetadataBlock</string>
+              </property>
+              <layout class="QVBoxLayout" name="galleryLoRALayout">
+               <property name="leftMargin">
+                <number>4</number>
+               </property>
+               <property name="topMargin">
+                <number>4</number>
+               </property>
+               <property name="rightMargin">
+                <number>4</number>
+               </property>
+               <property name="bottomMargin">
+                <number>4</number>
+               </property>
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="galleryLoRALabel">
+                 <property name="accessibleName">
+                  <string>LoRALabel</string>
+                 </property>
+                 <property name="text">
+                  <string>LoRAs</string>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>secondary</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="galleryLoRAValue">
+                 <property name="accessibleName">
+                  <string>LoRAValue</string>
+                 </property>
+                 <property name="text">
+                  <string>fixture-portrait · 0.8 · Unknown
+fixture-film · 0.4 · Unknown</string>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>unknown</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QFrame" name="galleryStepsBlock">
+              <property name="accessibleName">
+               <string>StepsBlock</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>galleryMetadataBlock</string>
+              </property>
+              <layout class="QVBoxLayout" name="galleryStepsLayout">
+               <property name="leftMargin">
+                <number>4</number>
+               </property>
+               <property name="topMargin">
+                <number>4</number>
+               </property>
+               <property name="rightMargin">
+                <number>4</number>
+               </property>
+               <property name="bottomMargin">
+                <number>4</number>
+               </property>
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="galleryStepsLabel">
+                 <property name="accessibleName">
+                  <string>StepsLabel</string>
+                 </property>
+                 <property name="text">
+                  <string>Steps</string>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>secondary</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="galleryStepsValue">
+                 <property name="accessibleName">
+                  <string>StepsValue</string>
+                 </property>
+                 <property name="text">
+                  <string>30</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QFrame" name="galleryGuidanceBlock">
+              <property name="accessibleName">
+               <string>GuidanceBlock</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>galleryMetadataBlock</string>
+              </property>
+              <layout class="QVBoxLayout" name="galleryGuidanceLayout">
+               <property name="leftMargin">
+                <number>4</number>
+               </property>
+               <property name="topMargin">
+                <number>4</number>
+               </property>
+               <property name="rightMargin">
+                <number>4</number>
+               </property>
+               <property name="bottomMargin">
+                <number>4</number>
+               </property>
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="galleryGuidanceLabel">
+                 <property name="accessibleName">
+                  <string>GuidanceLabel</string>
+                 </property>
+                 <property name="text">
+                  <string>CFG</string>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>secondary</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="galleryGuidanceValue">
+                 <property name="accessibleName">
+                  <string>GuidanceValue</string>
+                 </property>
+                 <property name="text">
+                  <string>7.0</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QFrame" name="gallerySamplerBlock">
+              <property name="accessibleName">
+               <string>SamplerBlock</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>galleryMetadataBlock</string>
+              </property>
+              <layout class="QVBoxLayout" name="gallerySamplerLayout">
+               <property name="leftMargin">
+                <number>4</number>
+               </property>
+               <property name="topMargin">
+                <number>4</number>
+               </property>
+               <property name="rightMargin">
+                <number>4</number>
+               </property>
+               <property name="bottomMargin">
+                <number>4</number>
+               </property>
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="gallerySamplerLabel">
+                 <property name="accessibleName">
+                  <string>SamplerLabel</string>
+                 </property>
+                 <property name="text">
+                  <string>Sampler</string>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>secondary</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="gallerySamplerValue">
+                 <property name="accessibleName">
+                  <string>SamplerValue</string>
+                 </property>
+                 <property name="text">
+                  <string>Not recorded</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QFrame" name="galleryDateBlock">
+              <property name="accessibleName">
+               <string>DateBlock</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>galleryMetadataBlock</string>
+              </property>
+              <layout class="QVBoxLayout" name="galleryDateLayout">
+               <property name="leftMargin">
+                <number>4</number>
+               </property>
+               <property name="topMargin">
+                <number>4</number>
+               </property>
+               <property name="rightMargin">
+                <number>4</number>
+               </property>
+               <property name="bottomMargin">
+                <number>4</number>
+               </property>
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="galleryDateLabel">
+                 <property name="accessibleName">
+                  <string>DateLabel</string>
+                 </property>
+                 <property name="text">
+                  <string>Generation date/time</string>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>secondary</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="galleryDateValue">
+                 <property name="accessibleName">
+                  <string>DateValue</string>
+                 </property>
+                 <property name="text">
+                  <string>Not recorded</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="textInteractionFlags">
+                  <set>Qt::TextSelectableByMouse</set>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QFrame" name="galleryPromptPanel">
+          <property name="accessibleName">
+           <string>PromptPanel</string>
+          </property>
+          <property name="role" stdset="0">
+           <string>galleryPanel</string>
+          </property>
+          <layout class="QHBoxLayout" name="galleryPromptLayout">
+           <property name="leftMargin">
+            <number>8</number>
+           </property>
+           <property name="topMargin">
+            <number>8</number>
+           </property>
+           <property name="rightMargin">
+            <number>8</number>
+           </property>
+           <property name="bottomMargin">
+            <number>8</number>
+           </property>
+           <property name="spacing">
+            <number>8</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="galleryPositivePromptLabel">
+             <property name="accessibleName">
+              <string>PositivePromptLabel</string>
+             </property>
+             <property name="text">
+              <string>Positive prompt</string>
+             </property>
+             <property name="role" stdset="0">
+              <string>secondary</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="textInteractionFlags">
+              <set>Qt::TextSelectableByMouse</set>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPlainTextEdit" name="galleryPositivePrompt">
+             <property name="accessibleName">
+              <string>PositivePrompt</string>
+             </property>
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+             <property name="plainText">
+              <string>Illustrative lighthouse at dusk, coastal landscape. Offline layout fixture, not generation evidence.</string>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>80</width>
+               <height>70</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>16777215</width>
+               <height>92</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="galleryAdditionalButton">
+             <property name="accessibleName">
+              <string>Additional</string>
+             </property>
+             <property name="text">
+              <string>Additional details</string>
+             </property>
+             <property name="role" stdset="0">
+              <string>galleryDisclosure</string>
+             </property>
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="galleryRawButton">
+             <property name="accessibleName">
+              <string>Raw</string>
+             </property>
+             <property name="text">
+              <string>Raw metadata JSON</string>
+             </property>
+             <property name="role" stdset="0">
+              <string>galleryDisclosure</string>
+             </property>
+             <property name="enabled">
+              <bool>true</bool>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+        <item>
+         <widget class="QScrollArea" name="galleryAdditionalScroll">
+          <property name="accessibleName">
+           <string>AdditionalScroll</string>
+          </property>
+          <property name="role" stdset="0">
+           <string>galleryScroll</string>
+          </property>
+          <property name="widgetResizable">
+           <bool>true</bool>
+          </property>
+          <property name="frameShape">
+           <enum>QFrame::NoFrame</enum>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>208</height>
+           </size>
+          </property>
+          <widget class="QWidget" name="galleryAdditionalScrollContents">
+           <property name="accessibleName">
+            <string>AdditionalScrollContents</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryScrollContents</string>
+           </property>
+           <layout class="QGridLayout" name="galleryAdditionalLayout">
+            <property name="leftMargin">
+             <number>8</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>8</number>
+            </property>
+            <property name="bottomMargin">
+             <number>8</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item row="0" column="0">
+             <widget class="QLabel" name="galleryAdditionalNegativePromptLabel">
+              <property name="accessibleName">
+               <string>AdditionalNegativePromptLabel</string>
+              </property>
+              <property name="text">
+               <string>Negative prompt</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLabel" name="galleryAdditionalNegativePromptValue">
+              <property name="accessibleName">
+               <string>AdditionalNegativePromptValue</string>
+              </property>
+              <property name="text">
+               <string>Not recorded</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textInteractionFlags">
+               <set>Qt::TextSelectableByMouse</set>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="2">
+             <widget class="QLabel" name="galleryAdditionalSeedLabel">
+              <property name="accessibleName">
+               <string>AdditionalSeedLabel</string>
+              </property>
+              <property name="text">
+               <string>Actual resolved seed</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="3">
+             <widget class="QLabel" name="galleryAdditionalSeedValue">
+              <property name="accessibleName">
+               <string>AdditionalSeedValue</string>
+              </property>
+              <property name="text">
+               <string>Not recorded</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textInteractionFlags">
+               <set>Qt::TextSelectableByMouse</set>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="galleryAdditionalFilenameLabel">
+              <property name="accessibleName">
+               <string>AdditionalFilenameLabel</string>
+              </property>
+              <property name="text">
+               <string>Filename</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QLabel" name="galleryAdditionalFilenameValue">
+              <property name="accessibleName">
+               <string>AdditionalFilenameValue</string>
+              </property>
+              <property name="text">
+               <string>illustrative-lighthouse.png (fixture)</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textInteractionFlags">
+               <set>Qt::TextSelectableByMouse</set>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="2">
+             <widget class="QLabel" name="galleryAdditionalProviderLabel">
+              <property name="accessibleName">
+               <string>AdditionalProviderLabel</string>
+              </property>
+              <property name="text">
+               <string>Provider</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="3">
+             <widget class="QLabel" name="galleryAdditionalProviderValue">
+              <property name="accessibleName">
+               <string>AdditionalProviderValue</string>
+              </property>
+              <property name="text">
+               <string>None — offline fixture</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textInteractionFlags">
+               <set>Qt::TextSelectableByMouse</set>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="galleryAdditionalFileSizeLabel">
+              <property name="accessibleName">
+               <string>AdditionalFileSizeLabel</string>
+              </property>
+              <property name="text">
+               <string>File size</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QLabel" name="galleryAdditionalFileSizeValue">
+              <property name="accessibleName">
+               <string>AdditionalFileSizeValue</string>
+              </property>
+              <property name="text">
+               <string>Not recorded</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textInteractionFlags">
+               <set>Qt::TextSelectableByMouse</set>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="2">
+             <widget class="QLabel" name="galleryAdditionalDurationLabel">
+              <property name="accessibleName">
+               <string>AdditionalDurationLabel</string>
+              </property>
+              <property name="text">
+               <string>Recorded duration</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="3">
+             <widget class="QLabel" name="galleryAdditionalDurationValue">
+              <property name="accessibleName">
+               <string>AdditionalDurationValue</string>
+              </property>
+              <property name="text">
+               <string>Not recorded</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textInteractionFlags">
+               <set>Qt::TextSelectableByMouse</set>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="galleryAdditionalPathLabel">
+              <property name="accessibleName">
+               <string>AdditionalPathLabel</string>
+              </property>
+              <property name="text">
+               <string>Image path</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QLabel" name="galleryAdditionalPathValue">
+              <property name="accessibleName">
+               <string>AdditionalPathValue</string>
+              </property>
+              <property name="text">
+               <string>Bundled illustrative artwork — not a saved output</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textInteractionFlags">
+               <set>Qt::TextSelectableByMouse</set>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0" colspan="4">
+             <layout class="QHBoxLayout" name="galleryPathActionsLayout">
+              <item>
+               <widget class="QPushButton" name="galleryCopyPathButton">
+                <property name="accessibleName">
+                 <string>CopyPath</string>
+                </property>
+                <property name="text">
+                 <string>Copy path</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Preview only: this application action is not wired.</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="galleryOpenFolderButton">
+                <property name="accessibleName">
+                 <string>OpenFolder</string>
+                </property>
+                <property name="text">
+                 <string>Open folder</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Preview only: this application action is not wired.</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="galleryExternalViewerButton">
+                <property name="accessibleName">
+                 <string>ExternalViewer</string>
+                </property>
+                <property name="text">
+                 <string>Open in external viewer</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="toolTip">
+                 <string>Preview only: this application action is not wired.</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPlainTextEdit" name="galleryRawMetadata">
+          <property name="accessibleName">
+           <string>RawMetadata</string>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+          <property name="plainText">
+           <string>{
+  "designation": "illustrative_fixture",
+  "saved_output": false
+}</string>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>150</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>16777215</width>
+            <height>260</height>
+           </size>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="QScrollArea" name="galleryFilmstripScroll">
+       <property name="accessibleName">
+        <string>FilmstripScroll</string>
+       </property>
+       <property name="role" stdset="0">
+        <string>galleryScroll</string>
+       </property>
+       <property name="widgetResizable">
+        <bool>true</bool>
+       </property>
+       <property name="frameShape">
+        <enum>QFrame::NoFrame</enum>
+       </property>
+       <widget class="QWidget" name="galleryFilmstripScrollContents">
+        <property name="accessibleName">
+         <string>FilmstripScrollContents</string>
+        </property>
+        <property name="role" stdset="0">
+         <string>galleryScrollContents</string>
+        </property>
+        <layout class="QVBoxLayout" name="galleryFilmstripLayout">
+         <property name="leftMargin">
+          <number>4</number>
+         </property>
+         <property name="topMargin">
+          <number>4</number>
+         </property>
+         <property name="rightMargin">
+          <number>4</number>
+         </property>
+         <property name="bottomMargin">
+          <number>4</number>
+         </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QPushButton" name="galleryThumbnail1">
+           <property name="accessibleName">
+            <string>Thumbnail1</string>
+           </property>
+           <property name="text">
+            <string>Illustrative fixture 1</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryThumbnail</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="autoExclusive">
+            <bool>true</bool>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>160</width>
+             <height>116</height>
+            </size>
+           </property>
+           <property name="checked">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="galleryThumbnail2">
+           <property name="accessibleName">
+            <string>Thumbnail2</string>
+           </property>
+           <property name="text">
+            <string>Illustrative fixture 2</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryThumbnail</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="autoExclusive">
+            <bool>true</bool>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>160</width>
+             <height>116</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="galleryThumbnail3">
+           <property name="accessibleName">
+            <string>Thumbnail3</string>
+           </property>
+           <property name="text">
+            <string>Illustrative fixture 3</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryThumbnail</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="autoExclusive">
+            <bool>true</bool>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>160</width>
+             <height>116</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="galleryThumbnail4">
+           <property name="accessibleName">
+            <string>Thumbnail4</string>
+           </property>
+           <property name="text">
+            <string>Illustrative fixture 4</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryThumbnail</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="autoExclusive">
+            <bool>true</bool>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>160</width>
+             <height>116</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="galleryThumbnail5">
+           <property name="accessibleName">
+            <string>Thumbnail5</string>
+           </property>
+           <property name="text">
+            <string>Illustrative fixture 5</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryThumbnail</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="autoExclusive">
+            <bool>true</bool>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>160</width>
+             <height>116</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="galleryThumbnail6">
+           <property name="accessibleName">
+            <string>Thumbnail6</string>
+           </property>
+           <property name="text">
+            <string>Illustrative fixture 6</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>galleryThumbnail</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="autoExclusive">
+            <bool>true</bool>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>160</width>
+             <height>116</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="galleryFilmstripSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeType">
+            <enum>QSizePolicy::Expanding</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>0</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </widget>
+       <property name="minimumSize">
+        <size>
+         <width>176</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>260</width>
+         <height>16777215</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+  <property name="toolTip">
+   <string>Offline layout preview; no application gallery services are connected.</string>
+  </property>
+ </widget>
+ <resources />
+ <connections />
+</ui>

@@ -51,7 +51,7 @@ Owner Grid, List and Detail mockups define the current layout direction. The [te
 - **Raw inspection:** full safe metadata JSON, request/attempt IDs, DTFlow version/commit, detailed recorded timings and resolution/preflight provenance; closed until requested. Never expose credentials or tokens.
 - **Reference:** latest owner-approved `DTFlow Portrait Gallery Viewer_proc.png`; see the linked text wireframes for the schematic. Desktop mockup paths are discussion references, not repository assets.
 
-Exact button expansion mechanics, initial Cover/Fit policy, long-content limits and smaller-window handling remain to be resolved. A draggable preview/metadata divider was a suggestion, not an approved requirement. Sorting and dimension filtering remain in scope despite their placement being unresolved.
+The additional/raw reference mockups resolve the buttons to inline sections beneath the prompt. Initial Cover/Fit policy, long-content limits and smaller-window handling remain to be resolved. A draggable preview/metadata divider was a suggestion, not an approved requirement. Sorting and dimension filtering remain in scope despite their placement being unresolved.
 
 ## Ordered implementation checkpoints
 
@@ -81,3 +81,6 @@ Saved originals and durable state remain unchanged by browsing; disposable cache
 No presets, reuse/regeneration, organisation, destructive file actions or cache-management controls are introduced by 8A.
 No live inference, training or potentially billable action is needed for viewer acceptance.
 Then proceed to [8B preset interchange](2026-10-05-phase-8-gallery-presets.md#8b--draw-things-compatible-presets).
+
+
+Preview-only Detail forms and styling are tracked separately in [the PR #33 implementation plan](2026-10-05-phase-8a-ui-preview.md). They do not mark gallery services or Phase 8A acceptance complete.

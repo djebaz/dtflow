@@ -8,6 +8,8 @@
 
 - Recorded the Phase 8 delivery sequence and selected read-only viewer scope, with a sample-derived Draw Things preset interchange contract and an anonymised representative configuration. Planning only; no gallery or preset runtime support is added.
 
+- Draft PR #33 adds the canonical Detail Designer form, token-based shared QSS and an offline fixture preview for the compact header, filmstrip, metadata and inline additional/raw panels. No shipped gallery tab, query service or generation behaviour is added.
+
 ## Changed
 
 ## Fixed

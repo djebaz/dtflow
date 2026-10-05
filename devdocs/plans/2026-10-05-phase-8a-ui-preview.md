@@ -1,6 +1,6 @@
 # Phase 8A — Preview-only Designer forms and shared styling
 
-**Status:** PR opened for planning; forms/QSS implementation not started.
+**Status:** Detail form and offline preview implemented in draft PR #33; Grid/List, shell integration and gallery services remain unimplemented.
 
 **Base:** Phase 8 documentation PR #32 squash-merged on main (`5d9c476`).
 
@@ -25,10 +25,29 @@ No gallery query/index implementation, application navigation integration, backe
 ## Open decisions
 
 - Form composition inside the established context/work/evidence shell versus a standalone preview host; canonical form ownership must stay clear.
-- Additional-details/raw-data button presentation and bounded long-content handling.
+- Additional-details/raw-data buttons now reveal mutually exclusive inline sections beneath the prompt, following the supplied `add_detail.png` and `raw_meta.png`. Long-content ergonomics still require owner review.
 - Placement of sorting/dimension filters, optional negative-prompt search and new-result semantics.
 - Initial Cover/Fit policy and minimum useful preview size.
 
 ## Validation boundary
 
 Compile/load canonical `.ui` files and check necessary imports/help/syntax for the preview harness. Reuse existing tokens, logging and network-guard conventions. Use offline visual fixtures; no live inference or uploads. Windows DPI, keyboard ergonomics and final layout acceptance remain owner checks. Runtime service acceptance remains a later implementation PR.
+
+## Detail checkpoint — 2026-10-06
+
+- Canonical `src/dtflow/ui/forms/gallery_detail_page.ui` defines the compact header, preview host/overlays, right-hand filmstrip, metadata band, prompt and inline additional/raw panels.
+- Shared `dtflow_dark.qss` uses existing token references and scoped gallery selectors; no palette/token values or Generate preview behaviour changed. The teal mockup is translated to DTFlow's existing charcoal/blue identity.
+- `tools/ui/preview_gallery_detail.py` loads the canonical form with QUiLoader and applies the shared theme once. Uses only bundled illustrative lighthouse artwork and synthetic metadata; no owner photo/model data was copied into the repository.
+- Preview enables Cover/Fit, thumbnail-size changes, fixture selection and mutually exclusive inline panels. Grid/List, real filters/refresh, zoom/fullscreen and saved-file actions are visibly unwired/disabled. This is not a working gallery.
+- Reference layouts: `DTFlow Portrait Gallery Viewer_proc.png`, `add_detail.png`, `raw_meta.png`. Raw JSON is a read-only fixed-width text region, not yet a syntax-highlighted/folding tree.
+- Checks: Designer compilation, Python compilation/help, Ruff and shared-token resolution. Actual closed/additional/raw and 800×680 layout captures were made; offscreen Windows font rendering produced missing glyphs, so readable captures used the native platform. This is bounded fixture inspection, not owner DPI/accessibility acceptance or service testing.
+- Owner should review narrow-header scrolling, metadata scroll limits and overlay/navigation positioning. Final tests/smoke and native-DPI interaction acceptance remain pending. No inference, uploads, training or billable operations ran.
+
+### Preview commands
+
+```bash
+uv run python tools/ui/preview_gallery_detail.py
+uv run python tools/ui/preview_gallery_detail.py --state details
+uv run python tools/ui/preview_gallery_detail.py --state raw
+uv run python tools/ui/preview_gallery_detail.py --size 800x680
+```

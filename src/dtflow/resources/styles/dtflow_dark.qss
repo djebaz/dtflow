@@ -534,3 +534,63 @@ QSplitter#workspaceSplitter::handle:horizontal {
 QSplitter#workspaceSplitter::handle:horizontal:hover {
     background: ${color.border};
 }
+
+/* Phase 8A Detail presentation seams. Preview only; no alternate palette. */
+QScrollArea[role="galleryScroll"], QWidget[role="galleryScrollContents"] {
+  background: ${color.surface};
+  border: 0;
+}
+QFrame[role="galleryPanel"] {
+  background: ${color.surface};
+  border: 1px solid ${color.border};
+  border-radius: ${size.radius};
+}
+QFrame#galleryPreviewHost, QLabel#galleryImageSurface {
+  background: ${color.canvas};
+  border: 0;
+  border-radius: ${size.radius};
+}
+QFrame#galleryImageToolbar {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: ${size.radius};
+}
+QLabel[role="galleryOverlay"] {
+  background: ${color.canvas};
+  color: ${color.text};
+  border-radius: ${size.radius};
+  padding: 5px 8px;
+  font-size: ${type.small};
+}
+QFrame[role="galleryMetadataBlock"] {
+  background: transparent;
+  border: 0;
+  border-right: 1px solid ${color.border};
+}
+QLabel[role="unknown"] { color: ${color.unknown}; }
+QPushButton[role="galleryMode"]:checked {
+  background: ${color.selection};
+  border-color: ${color.focus};
+  color: ${color.selectionText};
+}
+QPushButton[role="galleryDisclosure"]:checked {
+  background: ${color.selection};
+  border-color: ${color.focus};
+  color: ${color.selectionText};
+}
+QPushButton[role="galleryThumbnail"] {
+  background: ${color.canvas};
+  border: 2px solid ${color.border};
+  padding: 4px;
+  font-size: ${type.small};
+}
+QPushButton[role="galleryThumbnail"]:hover { border-color: ${color.accentHover}; }
+QPushButton[role="galleryThumbnail"]:checked { border-color: ${color.accent}; }
+QPushButton[role="galleryThumbnail"]:focus { border-color: ${color.focus}; }
+QPlainTextEdit#galleryPositivePrompt {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+QPlainTextEdit#galleryPositivePrompt:focus { border: 1px solid ${color.focus}; }
+QPlainTextEdit#galleryRawMetadata { background: ${color.canvas}; }
