@@ -46,6 +46,6 @@ Images hides both content rails and retains the logo in the view-controls row an
 navigation in the filters row of the canonical gallery form; leaving Images restores the existing rail chrome and
 splitter widths. The existing stylesheet resolves gallery SVG URLs relative to
 its own tracked resource path, supporting source and packaged execution.
-`gallery.*` tokens scope the approved teal/blue reference to this page; global
-palette tokens remain unchanged. Sample presentation is shared by the shell and
+Gallery QSS and custom painting consume the shared `color.*` tokens, matching
+the other tabs' charcoal surfaces, muted navy selection and blue accent. Sample presentation is shared by the shell and
 standalone launcher, with no provider or persistence ownership.

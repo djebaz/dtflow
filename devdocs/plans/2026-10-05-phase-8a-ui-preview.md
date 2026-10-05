@@ -148,3 +148,15 @@ filmstrip size in Detail. The standalone launcher accepts `--view grid` or
 illustrative, with actual bundled file sizes/dimensions and no recorded generation
 date. Filters, refresh, file actions and real saved-output query services remain
 unimplemented. No tests added or run, per owner instruction.
+
+
+## Shared gallery styling refinement (2026-10-06)
+
+Supersedes the scoped teal/blue palette above. Removed duplicate `gallery.*`
+tokens; gallery QSS and custom painting now use the existing `color.*` palette.
+Headers, panels, inputs, buttons, selected modes, overlays and browsing views
+match the charcoal surfaces and muted blue state language of the other tabs.
+Sliders and scrollbars inherit the shared application rules. Current Designer
+geometry, compact typography, two header rows, full-width lower panels, mounted
+Grid/List/Detail views and all presentation behavior remain in place. No tests
+added or run; native Windows visual acceptance remains unverified.

@@ -44,3 +44,8 @@
   QTableWidget. Cache viewport identities, ignore unrelated teardown events,
   guard deleted Qt objects and own deferred layout timers under the controller.
   No tests added or run; Windows close behavior awaits owner confirmation.
+
+- Images restores the shared charcoal palette and muted blue selection states
+  across Detail, Grid and List, including common sliders and scrollbars.
+  Removes duplicate gallery color tokens while preserving the current compact
+  header, full-width lower panels and presentation behavior. No tests added or run.

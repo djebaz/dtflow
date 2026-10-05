@@ -54,7 +54,7 @@ class CoverPainter(QObject):
             clip = QPainterPath()
             clip.addRoundedRect(rect, 10, 10)
             painter.setClipPath(clip)
-            painter.fillRect(rect, QColor(self.tokens["gallery.canvas"]))
+            painter.fillRect(rect, QColor(self.tokens["color.canvas"]))
             if not self.pixmap.isNull():
                 sx, sy = rect.width() / self.pixmap.width(), rect.height() / self.pixmap.height()
                 scale = (min(sx, sy) if self.mode == "Fit" else max(sx, sy)) * self.zoom
@@ -65,23 +65,23 @@ class CoverPainter(QObject):
                 painter.drawPixmap(dest, self.pixmap, QRectF(self.pixmap.rect()))
             if obj.property("role") == "galleryCardImage" and (obj.underMouse() or obj.hasFocus()):
                 painter.setBrush(Qt.NoBrush)
-                painter.setPen(QColor(self.tokens["gallery.focus"]))
+                painter.setPen(QColor(self.tokens["color.focus"]))
                 painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 9, 9)
             if self.badges:
                 painter.setFont(QFont("Segoe UI", 9))
                 for x, text in [(6, self.badges[0]), (rect.width() - 58, self.badges[1])]:
                     width = painter.fontMetrics().horizontalAdvance(text) + 12
                     badge = QRectF(x, rect.height() - 28, width, 22)
-                    painter.setBrush(QColor(self.tokens["gallery.overlay"]))
+                    painter.setBrush(QColor(self.tokens["color.canvas"]))
                     painter.setPen(Qt.NoPen)
                     painter.drawRoundedRect(badge, 6, 6)
-                    painter.setPen(QColor(self.tokens["gallery.text"]))
+                    painter.setPen(QColor(self.tokens["color.text"]))
                     painter.drawText(badge, Qt.AlignCenter, text)
                 if obj.isChecked():
                     painter.setBrush(Qt.NoBrush)
-                    painter.setPen(QColor(self.tokens["gallery.focus"]))
+                    painter.setPen(QColor(self.tokens["color.focus" if obj.hasFocus() else "color.accent"]))
                     painter.drawRoundedRect(rect.adjusted(1.5, 1.5, -1.5, -1.5), 9, 9)
-                    painter.setPen(QColor(self.tokens["gallery.focus"]))
+                    painter.setPen(QColor(self.tokens["color.focus" if obj.hasFocus() else "color.accent"]))
                     painter.drawRoundedRect(rect.adjusted(2.5, 2.5, -2.5, -2.5), 8, 8)
             painter.end()
             return True

@@ -24,31 +24,6 @@ colors:
   warning: "#ffbf59"
   error: "#ff8179"
   unknown: "#b7a4e5"
-gallery-colors:
-  background: "#06151c"
-  surface: "#081d26"
-  input: "#05171f"
-  canvas: "#031015"
-  text: "#f2f6f8"
-  secondary: "#a5bdcc"
-  placeholder: "#81959f"
-  disabled: "#777777"
-  border: "#13303e"
-  accent: "#0050ff"
-  accentHover: "#1767ff"
-  accentPressed: "#003bc6"
-  focus: "#56c4ff"
-  selection: "#0050ff"
-  selectionText: "#ffffff"
-  success: "#00d8b0"
-  connectionAccent: "#00d8b0"
-  connectionSurface: "#123e36"
-  connectionGlyph: "#d9f7ef"
-  warning: "#ffbf59"
-  error: "#ff8179"
-  unknown: "#b7a4e5"
-  overlay: "#000000"
-  line: "#11303c"
 typography:
   title:
     fontFamily: "Segoe UI, sans-serif"
@@ -184,9 +159,10 @@ in the Designer-defined `galleryBrandSlot` and `galleryNavigationSlot` header sl
 Inspector toggle are hidden. Leaving Images restores the rails, chrome and
 splitter widths; the Inspector preference remains independent of this page.
 
-The approved mockup uses the scoped `gallery.*` dark teal, saturated blue and
-aqua palette in the existing token file and shared QSS. Other pages retain the
-existing charcoal palette. Its Detail form has two compact header rows, an
+Images uses the same charcoal surfaces, blue accent, muted navy selection and
+control states as the other tabs, through shared `color.*` tokens and QSS.
+The reference guides its composition rather than introducing a separate palette.
+Its Detail form has two compact header rows, an
 aspect-preserving Cover image, right vertical filmstrip, full-width bottom metadata row and
 three-line positive prompt with small inline disclosure buttons. Additional
 and raw panels are mutually exclusive.
