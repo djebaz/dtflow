@@ -20,7 +20,7 @@ from dtflow.backends.drawthings.codec import (
     decode_preview_artifact,
 )
 from dtflow.backends.drawthings.errors import diagnostics, error, failure, from_exception
-from dtflow.backends.drawthings.inventory import build_snapshot, eligible_model_ids
+from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
 from dtflow.core.models import (
@@ -43,6 +43,7 @@ from dtflow.core.models import (
     SubmissionStage,
     TimeoutPolicy,
     ValidationError,
+    eligible_model_ids,
 )
 from dtflow.core.tasks import settle
 

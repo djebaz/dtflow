@@ -62,6 +62,13 @@ def parse_endpoint(text: str) -> DrawThingsEndpoint:
     return DrawThingsEndpoint(host.strip("[]"), int(port))
 
 
+def endpoint_label(selection: BackendSelection) -> str | None:
+    """The credential-free identity a local backend reports for this selection, for cache matching."""
+    if selection.name != "local" or not selection.endpoint:
+        return None
+    return parse_endpoint(selection.endpoint).label
+
+
 def create_backend(
     selection: BackendSelection,
     *,

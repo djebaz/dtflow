@@ -14,9 +14,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from dtflow.composition import BackendSelection, create_backend
+from dtflow.composition import BackendSelection, create_backend, endpoint_label
 from dtflow.core.models import (
     AssetReconciliation,
+    BackendError,
     CredentialProvider,
     Designation,
     EventSink,
@@ -27,9 +28,11 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.assets import AssetService
+from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.preflight import apply_trigger_prefixes
 
@@ -186,16 +189,84 @@ async def generate_once(
         return await run_generation(service, request, prefix=prefix, on_event=on_event)
 
 
+class _NoSaved:
+    async def get(self):
+        return None
+
+
+async def _cache_identity(
+    selection: BackendSelection, saved: CredentialProvider | None
+) -> tuple[str, str | None, tuple[str, str] | None] | None:
+    """Cache kind, expected endpoint and credential for a selection, or ``None`` where nothing is cached."""
+    if selection.name == "local":
+        return "local", endpoint_label(selection), None
+    if selection.name == "cloud":
+        credential = await resolve_credentials(EnvironmentCredentials(), saved or _NoSaved())
+        return "cloud", None, (credential.source, credential.secret)
+    return None
+
+
+async def cached_inventory(
+    selection: BackendSelection,
+    state: Path,
+    *,
+    saved: CredentialProvider | None = None,
+    no_cache: bool = False,
+) -> InventorySnapshot | None:
+    """The disposable startup-prefill snapshot, or ``None`` on any miss; never used to gate a generation."""
+    if no_cache:
+        return None
+    try:
+        identity = await _cache_identity(selection, saved)
+    except (BackendError, ValidationError):
+        log.info("inventory cache miss backend=%s reason=identity", selection.name)
+        return None
+    if identity is None:
+        return None
+    kind, endpoint, credential = identity
+    snapshot = await asyncio.to_thread(load_inventory, state, kind, endpoint=endpoint, credential=credential)
+    log.info("inventory cache %s backend=%s", "hit" if snapshot is not None else "miss reason=absent_or_mismatch", kind)
+    return snapshot
+
+
 async def refresh_inventory(
     selection: BackendSelection,
     state: Path,
     *,
     timeouts: TimeoutPolicy | None = None,
     saved: CredentialProvider | None = None,
+    no_cache: bool = False,
 ) -> InventorySnapshot:
-    """Explicit inventory refresh; takes no state lock because it records nothing durable."""
+    """Explicit inventory refresh; takes no state lock because it records nothing durable.
+
+    A successful refresh also rewrites the disposable cache unless ``no_cache``; a failed refresh leaves it untouched.
+    """
     async with open_session(selection, state, timeouts=timeouts, saved=saved, durable=False) as service:
-        return await service.get_inventory(refresh=True)
+        snapshot = await service.get_inventory(refresh=True)
+    log.info(
+        "inventory refresh ok backend=%s entries=%d metadata=%s",
+        selection.name,
+        len(snapshot.entries),
+        dict(snapshot.diagnostics).get("model_metadata", "unknown"),
+    )
+    if not no_cache:
+        await remember_inventory(selection, state, snapshot, saved)
+    return snapshot
+
+
+async def remember_inventory(
+    selection: BackendSelection, state: Path, snapshot: InventorySnapshot, saved: CredentialProvider | None = None
+) -> None:
+    """Best-effort write of the disposable cache; a failure is logged and never raised."""
+    try:
+        identity = await _cache_identity(selection, saved)
+        if identity is None:
+            return
+        kind, _, credential = identity
+        await asyncio.to_thread(save_inventory, state, kind, snapshot, credential=credential)
+        log.info("inventory cache write backend=%s", kind)
+    except (BackendError, ValidationError, OSError) as exc:
+        log.warning("inventory cache not written backend=%s reason=%s", selection.name, type(exc).__name__)
 
 
 async def read_attempt(state: Path, request_id: str) -> AttemptEvidence | None:
