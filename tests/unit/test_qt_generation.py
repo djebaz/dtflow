@@ -292,3 +292,21 @@ def test_a_size_that_is_not_a_multiple_of_64_is_adjusted_and_shown(window, qtbot
     assert "Size adjusted from 700x500 to 704x512" in page.generationStatusLabel.text()
     qtbot.waitUntil(settled(page), timeout=5000)
     assert "size: 704x512" in page.effectiveRequestBrowser.toPlainText()
+
+
+def test_a_portrait_preview_gets_a_frame_tall_enough_to_show_all_of_it(window, qtbot):
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+    from PySide6.QtGui import QColor, QImage
+
+    image = QImage(320, 512, QImage.Format.Format_RGB32)
+    image.fill(QColor("steelblue"))
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    page = window.generation_page
+    window.generation._show_image(bytes(data), "final")
+    shown = page.resultPreviewLabel.pixmap().height()
+    assert shown == 360 and page.previewHost.minimumHeight() >= shown  # 360 is the bounded preview edge
+    page.generateButton.click()  # a new run clears the preview and the frame returns to its resting height
+    assert page.previewHost.minimumHeight() == 210

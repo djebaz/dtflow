@@ -68,6 +68,7 @@ def failure_reason(failure: BaseException) -> str:
 
 
 PREVIEW_BOX = 360  # bounded display size; the saved file is never resized
+PREVIEW_MIN_HEIGHT = 210  # the empty preview frame, as in the Designer form
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 WIRED_CONTROLS = (
     "promptEdit",
@@ -303,12 +304,16 @@ class GenerationPage:
         if not pixmap.loadFromData(encoded):
             return
         label = self.page.resultPreviewLabel
-        label.setPixmap(
-            pixmap.scaled(
-                PREVIEW_BOX, PREVIEW_BOX, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-            )
+        scaled = pixmap.scaled(
+            PREVIEW_BOX, PREVIEW_BOX, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
+        label.setPixmap(scaled)
         label.setProperty("designation", designation)
+        # The frame must be as tall as the scaled image, or a portrait picture is clipped top and bottom.
+        margins = self.page.previewHost.layout().contentsMargins()
+        self.page.previewHost.setMinimumHeight(
+            max(PREVIEW_MIN_HEIGHT, scaled.height() + margins.top() + margins.bottom())
+        )
 
     # -- generation ------------------------------------------------------------------------------------------------
     def generate(self) -> None:
@@ -343,6 +348,7 @@ class GenerationPage:
         self.page.attemptIdentityLabel.setText("No durable attempt yet.")
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
+        self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
         self._progress("Preparing")
         self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
         self._generating = True
