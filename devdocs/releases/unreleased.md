@@ -39,3 +39,8 @@
   with uniform aspect-fit tiles, metadata columns, row hover, density control and
   click-to-Detail navigation. No checkboxes, multi-selection or real gallery
   service integration is added. No tests added or run for this follow-up.
+
+- Fix the Images controller's shutdown event filter accessing an already-deleted
+  QTableWidget. Cache viewport identities, ignore unrelated teardown events,
+  guard deleted Qt objects and own deferred layout timers under the controller.
+  No tests added or run; Windows close behavior awaits owner confirmation.

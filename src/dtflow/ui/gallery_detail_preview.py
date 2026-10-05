@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from shiboken6 import isValid
+
 from dtflow.ui.theme import load_tokens
 
 ASSETS = Path(__file__).parents[1] / "resources/images/gallery"
@@ -290,6 +292,15 @@ class DetailFixture(QObject):
         self.grid_cards = self.page.findChild(QWidget, "galleryGridCards")
         self.cards_layout = self.grid_cards.layout()
         self.table = self.page.findChild(QWidget, "galleryListTable")
+        # Keep viewport identity without calling deleted parent widgets during teardown.
+        self.table_viewport = self.table.viewport()
+        self.grid_viewport = self.grid_scroll.viewport()
+        self.reflow_timer = QTimer(self)
+        self.reflow_timer.setSingleShot(True)
+        self.reflow_timer.timeout.connect(self.layout_cards)
+        self.initial_density_timer = QTimer(self)
+        self.initial_density_timer.setSingleShot(True)
+        self.initial_density_timer.timeout.connect(self.update_density)
         self.slider = self.page.findChild(QWidget, "galleryThumbnailSizeSlider")
         self.mode_buttons = QButtonGroup(self)
         self.mode_buttons.setExclusive(True)
@@ -354,8 +365,8 @@ class DetailFixture(QObject):
         self.table.verticalHeader().hide()
         self.table.setProperty("hoverRow", -1)
         self.table.setItemDelegate(RowHoverDelegate(self.table))
-        self.table.viewport().setMouseTracking(True)
-        self.table.viewport().installEventFilter(self)
+        self.table_viewport.setMouseTracking(True)
+        self.table_viewport.installEventFilter(self)
         self.table.setIconSize(QSize(64, 48))
         for row, record in enumerate(self.records):
             icon = QTableWidgetItem()
@@ -381,10 +392,10 @@ class DetailFixture(QObject):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.itemClicked.connect(lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)))
         self.table.itemActivated.connect(lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)))
-        self.grid_scroll.viewport().installEventFilter(self)
+        self.grid_viewport.installEventFilter(self)
         self.slider.valueChanged.connect(self.update_density)
         self.show_view("Detail")
-        QTimer.singleShot(0, self.update_density)
+        self.initial_density_timer.start(0)
 
     def show_view(self, mode):
         """Switch mounted content only; header widgets and scroll positions persist."""
@@ -403,8 +414,12 @@ class DetailFixture(QObject):
 
     def update_density(self, *_):
         """Use uniform aspect-fit tiles, or compact list row height, from the shared slider."""
+        if not all(isValid(widget) for widget in (self, self.page, self.slider, self.table)):
+            return
         size = self.slider.value()
         for card, button in self.cards:
+            if not isValid(card) or not isValid(button):
+                continue
             card.setFixedWidth(size + 16)
             button.setFixedSize(size + 16, size + 16)
             placeholder = QPixmap(size, size)
@@ -423,8 +438,10 @@ class DetailFixture(QObject):
 
     def layout_cards(self):
         """Reflow a regular grid without masonry or ratio-dependent card heights."""
+        if not all(isValid(widget) for widget in (self, self.slider, self.grid_viewport, self.cards_layout)):
+            return
         width = self.slider.value() + 16
-        columns = max(1, (self.grid_scroll.viewport().width() + 10) // (width + 10))
+        columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
         for card, _ in self.cards:
             self.cards_layout.removeWidget(card)
         for index, (card, _) in enumerate(self.cards):
@@ -432,15 +449,23 @@ class DetailFixture(QObject):
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
 
     def eventFilter(self, watched, event):
-        if watched is self.table.viewport():
+        # Qt delivers destruction events after sibling/parent C++ objects are gone.
+        # Ignore those before accessing a widget, and guard the remaining callbacks.
+        kind = event.type()
+        if kind not in (QEvent.Type.MouseMove, QEvent.Type.Leave, QEvent.Type.Resize):
+            return False
+        if watched is self.table_viewport:
+            if not isValid(self.table) or not isValid(self.table_viewport):
+                return False
             if event.type() == QEvent.Type.MouseMove:
                 row = self.table.indexAt(event.position().toPoint()).row()
                 if row != self.table.property("hoverRow"):
                     self.table.setProperty("hoverRow", row)
-                    self.table.viewport().update()
+                    self.table_viewport.update()
             elif event.type() == QEvent.Type.Leave:
                 self.table.setProperty("hoverRow", -1)
-                self.table.viewport().update()
-        if watched is self.grid_scroll.viewport() and event.type() == QEvent.Type.Resize:
-            QTimer.singleShot(0, self.layout_cards)
+                self.table_viewport.update()
+        if watched is self.grid_viewport and kind == QEvent.Type.Resize:
+            if isValid(self.grid_viewport) and isValid(self.reflow_timer):
+                self.reflow_timer.start(0)
         return False
