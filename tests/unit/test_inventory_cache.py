@@ -62,7 +62,8 @@ def test_cache_round_trip_misses_and_never_stores_the_key(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_service_reads_only_a_matching_cache_and_honours_no_cache(tmp_path):
+async def test_service_reads_only_a_matching_cache_and_honours_no_cache(tmp_path, monkeypatch):
+    monkeypatch.delenv("DRAWTHINGS_API_KEY", raising=False)  # the environment key would otherwise take precedence
     local = BackendSelection("local", "127.0.0.1:7859")
     cached = snapshot()
     assert await session.cached_inventory(local, tmp_path) is None
@@ -77,6 +78,10 @@ async def test_service_reads_only_a_matching_cache_and_honours_no_cache(tmp_path
     assert await session.cached_inventory(cloud, tmp_path, saved=FakeSavedCredentials("saved-key")) is not None
     assert await session.cached_inventory(cloud, tmp_path, saved=FakeSavedCredentials("another-key")) is None
     assert await session.cached_inventory(cloud, tmp_path) is None  # no credential at all is a miss, not an error
+    monkeypatch.setenv("DRAWTHINGS_API_KEY", "env-key")  # the environment wins over a saved key, as for generation
+    assert await session.cached_inventory(cloud, tmp_path, saved=FakeSavedCredentials("saved-key")) is None
+    await session.remember_inventory(cloud, tmp_path, snapshot(endpoint=None))
+    assert await session.cached_inventory(cloud, tmp_path, saved=FakeSavedCredentials("another-key")) is not None
 
 
 def test_last_session_round_trip_and_unusable_files_remember_nothing(tmp_path):
