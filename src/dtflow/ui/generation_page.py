@@ -71,6 +71,7 @@ def failure_reason(failure: BaseException) -> str:
 
 PREVIEW_MIN_HEIGHT = 180
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
+METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
     "promptEdit",
     "negativePromptEdit",
@@ -209,6 +210,7 @@ class GenerationPage:
         if self._listed_backend is not None and self._listed_backend != name:
             self._fill_models(())  # a list from another provider is not offered for this one
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
+            self.page.inventoryEvidenceLabel.setToolTip("")
             self._listed_backend = None
         self.page.modelCombo.lineEdit().setPlaceholderText(
             f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
@@ -439,6 +441,8 @@ class GenerationPage:
             self.page.resultList.addItem(item)
         self._set_result_actions(True)
         self._metadata_path = Path(outcome.metadata_path)
+        if len(outcome.output_paths) > 1:
+            self.page.detailsToggle.setChecked(True)  # the output chooser lives in the details
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
 
@@ -463,10 +467,12 @@ class GenerationPage:
         # Explicit inspection of a local artifact, not a provider call.
         try:
             with self._metadata_path.open(encoding="utf-8") as handle:
-                content = handle.read(256_000)
+                content = handle.read(METADATA_LIMIT + 1)
         except (OSError, UnicodeError):
             QMessageBox.warning(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
             return
+        if len(content) > METADATA_LIMIT:
+            content = content[:METADATA_LIMIT] + "\n… (truncated: the saved file is longer)"
         dialog = QMessageBox(self.page)
         dialog.setWindowTitle("Saved generation metadata")
         dialog.setText("Reproducibility metadata from the saved attempt.")
@@ -540,7 +546,7 @@ class GenerationPage:
             observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
         except ValueError:
             observed = snapshot.observed_at_utc
-        label.setText(f"{len(ids)} model(s) · {how.split(' ')[0]}\nobserved {observed}")
+        label.setText(f"{len(ids)} model(s) · {how.split(' (')[0]}\nobserved {observed}")
 
     def _refreshed(self, snapshot, failure) -> None:
         self._set_busy(False)
@@ -549,6 +555,7 @@ class GenerationPage:
             shown = present_generation_failure(failure)
             log.warning("inventory refresh failed reason=%s", failure_reason(failure))
             label.setText(f"Inventory refresh failed. {shown.headline}: {shown.detail}")
+            label.setToolTip("")
             return
         self._show_inventory(snapshot, "refreshed" if snapshot.refreshed else "as reported")
 

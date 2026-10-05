@@ -6,6 +6,7 @@ holds the state ownership lock for the run (see ``Activity``). Wording after can
 evidence, and neither action claims remote cancellation or resolution.
 """
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QListWidgetItem, QMessageBox, QWidget
 
 from dtflow.core.models import ValidationError
-from dtflow.persistence.settings import validate_concurrency
+from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan
@@ -113,6 +114,7 @@ class QueuePage:
         self._reading = False
         self._syncing = False
         self._detail: dict | None = None
+        self._shared_cap: int | None = None
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
         for view in (page.queueItemsView, page.planTableView):
@@ -193,14 +195,18 @@ class QueuePage:
         detail = None
         if selected and any(view["queue_id"] == selected for view in views):
             detail = (await read_queue_views(self._state, selected))[0]
-        return views, detail
+        try:
+            shared = await asyncio.to_thread(load_cloud_concurrency, self._state)
+        except SettingsError:
+            shared = None  # an unreadable settings file leaves the box as it is; saving reports the reason
+        return views, detail, shared
 
     def _read_done(self, result, failure) -> None:
         self._reading = False
         if failure is not None:
             self._message(present_generation_failure(failure))
             return
-        views, self._detail = result
+        views, self._detail, self._shared_cap = result
         self._views = {view["queue_id"]: view for view in views}
         if self._select_after in self._views:
             self._selected, self._select_after = self._select_after, None
@@ -232,6 +238,7 @@ class QueuePage:
         page.emptyStateCard.setVisible(view is None)
         page.queueTableHost.setVisible(view is not None)
         if view is None:
+            self._show_cap(None)
             self.model.apply(())
             self._show(page.queueStateLabel, "unknown", "No queue selected")
             page.queueProgressBar.setRange(0, 1)
@@ -248,13 +255,41 @@ class QueuePage:
             page.queueProgressBar.setFormat(progress_text(summary))
             events = event_lines(self._detail) if self._detail and self._detail["queue_id"] == view["queue_id"] else ""
             page.queueEventBrowser.setPlainText(events)
-            self._syncing = True
-            page.concurrencySpinBox.setValue(view["cap"])
-            self._syncing = False
-            self._set_level(view["cap"])
+            self._show_cap(view)
         page.ownershipBadgeLabel.setText(ownership_badge(view, dispatching_here=self.dispatching_here))
         self._show_item()
         self._sync()
+
+    @staticmethod
+    def _editable(view: dict | None) -> bool:
+        return view is not None and view["status"] in ("paused", "running", "blocked")
+
+    def _show_cap(self, view: dict | None) -> None:
+        """An editable queue shows its own maximum; with the cloud provider chosen and no editable queue the box edits
+        the shared cloud default for new queues. Other providers never write that default."""
+        spin = self.page.concurrencySpinBox
+        cloud = self._backend()[0] == "cloud"
+        if self._editable(view):
+            value, tip = view["cap"], "Maximum for this queue and, on cloud, for new queues."
+        elif cloud:
+            value, tip = (
+                self._shared_cap,
+                "Default maximum for new cloud queues. A finished queue's own maximum is fixed.",
+            )
+        elif view is not None:
+            value, tip = (
+                view["cap"],
+                "This queue is finished, so its maximum is fixed. Choose cloud to edit the default.",
+            )
+        else:
+            value, tip = None, "Choose cloud to edit the default maximum for new cloud queues."
+        spin.setToolTip(tip)
+        if value is None:
+            return
+        self._syncing = True
+        spin.setValue(value)
+        self._syncing = False
+        self._set_level(value)
 
     def _set_level(self, value: int) -> None:
         spin = self.page.concurrencySpinBox
@@ -488,9 +523,11 @@ class QueuePage:
         self._set_level(value)
         view = self._view()
         backend = view["backend"]["name"] if view else self._backend()[0]
-        queue_id = view["queue_id"] if view and view["status"] in ("paused", "running", "blocked") else None
+        queue_id = view["queue_id"] if self._editable(view) else None
+        # Without an editable queue the box edits the shared cloud default, which only the cloud provider writes.
+        save_shared = (backend if queue_id is not None else self._backend()[0]) == "cloud"
         self._runner.submit(
-            set_concurrency(self._state, value, queue_id=queue_id, save_shared=backend == "cloud"), self._cap_done
+            set_concurrency(self._state, value, queue_id=queue_id, save_shared=save_shared), self._cap_done
         )
 
     def _cap_done(self, value, failure) -> None:
