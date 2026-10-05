@@ -109,8 +109,12 @@ def test_credential_entry_wiring_never_echoes_secret(window):
     assert form.keyEdit.text() == ""
     assert "saved" in form.credentialStatusLabel.text().lower()
     assert "private-key" not in form.credentialStatusLabel.text()
+    window.confirm = lambda *_: False  # declining keeps the key
     form.removeKeyButton.click()
-    assert form.credentialStatusLabel.text().startswith("No API key")
+    assert "saved" in form.credentialStatusLabel.text().lower() and form.removeKeyButton.isEnabled()
+    window.confirm = lambda *_: True
+    form.removeKeyButton.click()
+    assert form.credentialStatusLabel.text().startswith("No API key") and not form.removeKeyButton.isEnabled()
     form.saveKeyButton.click()  # empty entry is refused
     assert "not saved" in form.credentialStatusLabel.text()
 

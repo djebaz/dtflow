@@ -24,7 +24,7 @@ from dtflow.services.connection import Presentation, check_connection, present_f
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
 from dtflow.ui.generation_page import GenerationPage
-from dtflow.ui.queue_page import QueuePage
+from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
 
@@ -69,10 +69,10 @@ class _CloseGuard(QObject):
 
     def __init__(self, confirm, parent: QObject):
         super().__init__(parent)
-        self._confirm = confirm
+        self.ask_confirmation = confirm
 
     def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.Close and not self._confirm():
+        if event.type() == QEvent.Type.Close and not self.ask_confirmation():
             event.ignore()
             return True
         return False
@@ -102,6 +102,7 @@ class MainWindow:
         self.runner = runner or AsyncRunner(self.form)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
+        self.confirm = ask_confirmation
         self.activity = Activity()
         form = self.form
         self.generation = GenerationPage(
@@ -191,6 +192,8 @@ class MainWindow:
         }[status["selected"]]
         self.form.credentialStatusLabel.setText(text)
         self.form.keyEdit.clear()
+        # Remove is offered only when there may be a saved key to remove (the environment hides that answer).
+        self.form.removeKeyButton.setEnabled(status["saved"] in ("present", "not consulted"))
 
     def check(self) -> None:
         if self._busy:
@@ -221,6 +224,13 @@ class MainWindow:
         self.refresh_credentials()
 
     def remove_key(self) -> None:
+        if not self.confirm(
+            self.form,
+            "Remove saved key",
+            "Remove the DT+ API key saved in Windows Credential Manager? Cloud checks and generations will need a key "
+            "again.",
+        ):
+            return
         try:
             self._saved.remove()
         except BackendError as exc:

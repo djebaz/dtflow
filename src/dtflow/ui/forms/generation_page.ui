@@ -67,20 +67,21 @@
            <item>
             <widget class="QGroupBox" name="parametersBox">
              <property name="title"><string>Parameters</string></property>
-             <layout class="QGridLayout" name="parametersGrid">
+             <layout class="QGridLayout" name="parametersGrid" columnstretch="0,0,0,0,1">
               <property name="horizontalSpacing"><number>8</number></property><property name="verticalSpacing"><number>8</number></property>
               <item row="0" column="0"><widget class="QLabel" name="seedLabel"><property name="text"><string>Seed</string></property></widget></item>
-              <item row="0" column="1"><widget class="QLineEdit" name="seedEdit"><property name="text"><string>0</string></property><property name="accessibleName"><string>Generation seed</string></property></widget></item>
+              <item row="0" column="1"><widget class="QLineEdit" name="seedEdit"><property name="minimumSize"><size><width>160</width><height>0</height></size></property><property name="maximumSize"><size><width>180</width><height>16777215</height></size></property><property name="text"><string>0</string></property><property name="accessibleName"><string>Generation seed</string></property></widget></item>
               <item row="0" column="2"><widget class="QLabel" name="stepsLabel"><property name="text"><string>Steps</string></property></widget></item>
-              <item row="0" column="3"><widget class="QSpinBox" name="stepsSpinBox"><property name="minimum"><number>1</number></property><property name="maximum"><number>150</number></property><property name="value"><number>20</number></property></widget></item>
+              <item row="0" column="3"><widget class="QSpinBox" name="stepsSpinBox"><property name="minimumSize"><size><width>110</width><height>0</height></size></property><property name="maximumSize"><size><width>110</width><height>16777215</height></size></property><property name="minimum"><number>1</number></property><property name="maximum"><number>150</number></property><property name="value"><number>20</number></property></widget></item>
               <item row="1" column="0"><widget class="QLabel" name="widthLabel"><property name="text"><string>Width</string></property></widget></item>
-              <item row="1" column="1"><widget class="QSpinBox" name="widthSpinBox"><property name="minimum"><number>64</number></property><property name="maximum"><number>4096</number></property><property name="singleStep"><number>64</number></property><property name="value"><number>512</number></property></widget></item>
+              <item row="1" column="1"><widget class="QSpinBox" name="widthSpinBox"><property name="minimumSize"><size><width>110</width><height>0</height></size></property><property name="maximumSize"><size><width>110</width><height>16777215</height></size></property><property name="minimum"><number>64</number></property><property name="maximum"><number>4096</number></property><property name="singleStep"><number>64</number></property><property name="value"><number>512</number></property></widget></item>
               <item row="1" column="2"><widget class="QLabel" name="heightLabel"><property name="text"><string>Height</string></property></widget></item>
-              <item row="1" column="3"><widget class="QSpinBox" name="heightSpinBox"><property name="minimum"><number>64</number></property><property name="maximum"><number>4096</number></property><property name="singleStep"><number>64</number></property><property name="value"><number>512</number></property></widget></item>
+              <item row="1" column="3"><widget class="QSpinBox" name="heightSpinBox"><property name="minimumSize"><size><width>110</width><height>0</height></size></property><property name="maximumSize"><size><width>110</width><height>16777215</height></size></property><property name="minimum"><number>64</number></property><property name="maximum"><number>4096</number></property><property name="singleStep"><number>64</number></property><property name="value"><number>512</number></property></widget></item>
               <item row="2" column="0"><widget class="QLabel" name="guidanceLabel"><property name="text"><string>Guidance</string></property></widget></item>
-              <item row="2" column="1"><widget class="QDoubleSpinBox" name="guidanceSpinBox"><property name="decimals"><number>2</number></property><property name="minimum"><double>0.000000000000000</double></property><property name="maximum"><double>50.000000000000000</double></property><property name="singleStep"><double>0.500000000000000</double></property><property name="value"><double>7.000000000000000</double></property></widget></item>
+              <item row="2" column="1"><widget class="QDoubleSpinBox" name="guidanceSpinBox"><property name="minimumSize"><size><width>110</width><height>0</height></size></property><property name="maximumSize"><size><width>110</width><height>16777215</height></size></property><property name="decimals"><number>2</number></property><property name="minimum"><double>0.000000000000000</double></property><property name="maximum"><double>50.000000000000000</double></property><property name="singleStep"><double>0.500000000000000</double></property><property name="value"><double>7.000000000000000</double></property></widget></item>
               <item row="2" column="2"><widget class="QLabel" name="samplerLabel"><property name="text"><string>Sampler</string></property></widget></item>
-              <item row="2" column="3"><widget class="QComboBox" name="samplerCombo"/></item>
+              <item row="2" column="3"><widget class="QComboBox" name="samplerCombo"><property name="minimumSize"><size><width>160</width><height>0</height></size></property></widget></item>
+              <item row="0" column="4"><spacer name="parametersSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>0</width><height>0</height></size></property></spacer></item>
              </layout>
             </widget>
            </item>
@@ -89,15 +90,14 @@
             <widget class="QFrame" name="previewHost">
              <property name="minimumSize"><size><width>0</width><height>210</height></size></property>
              <layout class="QVBoxLayout" name="previewHostLayout">
-              <item><widget class="QLabel" name="resultPreviewLabel"><property name="text"><string>Result preview host
-
-    Promote or replace this frame with the bounded image preview widget.</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+              <item><widget class="QLabel" name="resultPreviewLabel"><property name="text"><string>The generated image appears here.</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
              </layout>
             </widget>
            </item>
            <item><widget class="QProgressBar" name="generationProgressBar"><property name="value"><number>0</number></property><property name="format"><string>Idle</string></property></widget></item>
            <item><widget class="QLabel" name="generationStatusLabel"><property name="text"><string>No generation yet.</string></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>unknown</string></property><property name="accessibleName"><string>Generation status</string></property></widget></item>
            <item><widget class="QListWidget" name="resultList"><property name="maximumSize"><size><width>16777215</width><height>90</height></size></property><property name="accessibleName"><string>Saved outputs</string></property></widget></item>
+           <item><layout class="QHBoxLayout" name="resultButtons"><item><widget class="QPushButton" name="openOutputFolderButton"><property name="text"><string>Open folder</string></property><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>Open the folder that holds the saved output and its metadata.</string></property></widget></item><item><widget class="QPushButton" name="copyOutputPathButton"><property name="text"><string>Copy path</string></property><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>Copy the selected path (or the first output) to the clipboard.</string></property></widget></item><item><spacer name="resultButtonsSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>0</width><height>0</height></size></property></spacer></item></layout></item>
           </layout>
          </widget>
          <widget class="QFrame" name="generationInspector">
@@ -105,7 +105,7 @@
           <layout class="QVBoxLayout" name="generationInspectorLayout">
            <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>12</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>10</number></property>
            <item><widget class="QLabel" name="generationInspectorEyebrow"><property name="text"><string>LORA &amp; EVIDENCE</string></property><property name="role" stdset="0"><string>eyebrow</string></property></widget></item>
-           <item><widget class="QListWidget" name="loraList"><property name="accessibleName"><string>Selected LoRAs and weights</string></property></widget></item>
+           <item><widget class="QListWidget" name="loraList"><property name="maximumSize"><size><width>16777215</width><height>110</height></size></property><property name="toolTip"><string>Add LoRAs by exact identifier with an explicit weight.</string></property><property name="accessibleName"><string>Selected LoRAs and weights</string></property></widget></item>
            <item><layout class="QHBoxLayout" name="loraButtons"><item><widget class="QPushButton" name="addLoraButton"><property name="text"><string>Add LoRA</string></property></widget></item><item><widget class="QPushButton" name="removeLoraButton"><property name="text"><string>Remove</string></property></widget></item><item><widget class="QPushButton" name="checkLorasButton"><property name="text"><string>Check LoRAs</string></property><property name="toolTip"><string>Refresh inventory and check the selected LoRAs. Nothing is generated.</string></property></widget></item></layout></item>
            <item><widget class="QCheckBox" name="triggerPrefixCheck"><property name="text"><string>Prepend trigger prefixes to the prompt</string></property><property name="toolTip"><string>Explicit option: adds each selected LoRA's server trigger prefix to the prompt for this generation.</string></property></widget></item>
            <item><widget class="QLabel" name="compatibilityStatusLabel"><property name="text"><string>Compatibility not checked.</string></property><property name="state" stdset="0"><string>unknown</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
@@ -120,8 +120,8 @@
              </layout>
             </widget>
            </item>
-           <item><widget class="QTextBrowser" name="effectiveRequestBrowser"><property name="placeholderText"><string>Effective request and resolution evidence</string></property><property name="accessibleName"><string>Effective generation request evidence</string></property></widget></item>
            <item><widget class="QLabel" name="attemptIdentityLabel"><property name="text"><string>No durable attempt yet.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+           <item><widget class="QTextBrowser" name="effectiveRequestBrowser"><property name="minimumSize"><size><width>0</width><height>140</height></size></property><property name="placeholderText"><string>Effective request and resolution evidence</string></property><property name="accessibleName"><string>Effective generation request evidence</string></property></widget></item>
           </layout>
          </widget>
         </widget>

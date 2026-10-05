@@ -78,7 +78,7 @@ WIRED_CONTROLS = (
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
 
-def _confirm(parent: QWidget, title: str, text: str) -> bool:
+def ask_confirmation(parent: QWidget, title: str, text: str) -> bool:
     answer = QMessageBox.question(
         parent,
         title,
@@ -104,7 +104,7 @@ class QueuePage:
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
-        self.confirm = _confirm
+        self.confirm = ask_confirmation
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
         self._select_after: str | None = None
