@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Planned sequence; no implementation or UI design started.
+**Status:** Planned sequence; owner view templates under review; implementation not started.
 
 **Target:** Proposed 0.4.0 daily-use refinement, subject to the [release roadmap](releases.md).
 

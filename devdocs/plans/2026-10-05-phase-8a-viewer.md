@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Selected scope recorded; implementation and UI design not started.
+**Status:** Selected scope recorded; owner mockups and text wireframes under review; implementation not started.
 
 **Position:** First delivery phase within Phase 8, not initial-plan Phase 1.
 
@@ -14,7 +14,7 @@
 
 Make saved outputs easy to browse, find and inspect without generating, modifying or deleting them.
 This plan preserves all selected viewer features; implementation slices are checkpoints, not a reduced feature list.
-Screen layouts, mockups and widget choices are deliberately deferred. Follow [DESIGN.md](../../DESIGN.md) when design begins.
+Owner Grid, List and Detail mockups define the current layout direction. The [text wireframes](examples/phase-8a-viewer-wireframes.txt) record the latest compact header, navigation and metadata-panel discussion, distinguishing agreed choices from review proposals. Masonry is explicitly removed from scope. Detail contains the right-hand filmstrip; widget choices and unresolved interactions remain open. Follow [DESIGN.md](../../DESIGN.md) for desktop implementation.
 
 ## Approved viewer scope
 
@@ -22,7 +22,7 @@ Screen layouts, mockups and widget choices are deliberately deferred. Follow [DE
 
 | Area | Selected scope |
 | --- | --- |
-| Browsing | **A1** uniform thumbnail grid; **A2** masonry preserving proportions; **A3** compact list with metadata columns; **A4** filmstrip beside a large selected-image preview; **A5** adjustable thumbnail size/density; **A6** keyboard navigation/selection; **A7** remember scroll position, selection and view settings; **A8** refresh when new outputs are saved; **A9** pagination or progressively loaded scrolling. |
+| Browsing | **A1** uniform thumbnail grid; **A3** compact list with metadata columns; **A4** Detail view with a right-hand filmstrip beside a large selected-image preview; **A5** adjustable thumbnail size/density; **A6** keyboard navigation/selection; **A7** remember scroll position, selection and view settings; **A8** refresh when new outputs are saved; **A9** pagination or progressively loaded scrolling. |
 | Search/filter | **B1** positive prompts; **B2** negative prompts; **B3** model; **B5** LoRA; **B6** date/date range; **B7** dimensions/aspect ratio. |
 | Sorting | **C1** newest/oldest first; **C2** model, size and LoRAs. Define size and multi-LoRA ordering before implementation. |
 | Viewing | **D1** large selected-image preview; **D2** fullscreen; **D3** fit/zoom/pan; **D4** true 100% pixel viewing; **D5** previous/next through filtered results; **D7** external image viewer; **D10** dimensions and file size beside the image. |
@@ -38,11 +38,26 @@ Screen layouts, mockups and widget choices are deliberately deferred. Follow [DE
 - Keep presets, reuse, regeneration, deletion and organisation actions out of this first viewer phase.
 - Validate query/provenance at the service layer (`8-O2`) and focused browsing wiring (`8-O5`), followed by owner Windows interaction checks. No live generation is needed.
 
+## Current view-template decisions
+
+- **Modes:** Grid · List · Detail. A2 Masonry is withdrawn; the original feature IDs remain unchanged for traceability.
+- **Shared header:** two compact rows; no title/subtitle or filename/tag/note search. View buttons, thumbnail-size control, auto-refresh, refresh and result count above positive-prompt search, model, LoRA, date and aspect-ratio filters. Negative-prompt search is absent from the visible header; its optional-filter versus removal policy remains open.
+- **Grid activation:** hover outline and distinct keyboard focus; click or Enter opens that image in Detail. Return restores Grid scroll position and originating thumbnail focus. No persistent Grid selection or per-thumbnail action buttons.
+- **Detail geometry:** large near-square canvas at the reference window size, right-hand filmstrip, metadata below. Keep this arrangement stable across image proportions; no automatic portrait-specific sidebar relocation.
+- **Image overlays:** position in filtered results and source dimensions. Cover fills proportionally with cropping; Fit shows the whole image. Keep pan/zoom, true 100% and fullscreen available. Near-square canvas does not mean square images.
+- **Visible metadata band:** model/checkpoint and LoRAs with weights/recorded compatibility first, followed by steps, guidance, sampler and generation date/time. Compact, with wrapping or bounded scrolling for longer content.
+- **Prompt band:** positive prompt visible and wrapping. Buttons for Additional details and Raw metadata JSON alongside it replace the earlier two permanently stacked accordion rows.
+- **Additional details:** negative prompt, filename, file size, actual resolved seed, provider, recorded duration, image path and copy/open-folder actions; closed until requested.
+- **Raw inspection:** full safe metadata JSON, request/attempt IDs, DTFlow version/commit, detailed recorded timings and resolution/preflight provenance; closed until requested. Never expose credentials or tokens.
+- **Reference:** latest owner-approved `DTFlow Portrait Gallery Viewer_proc.png`; see the linked text wireframes for the schematic. Desktop mockup paths are discussion references, not repository assets.
+
+Exact button expansion mechanics, initial Cover/Fit policy, long-content limits and smaller-window handling remain to be resolved. A draggable preview/metadata divider was a suggestion, not an approved requirement. Sorting and dimension filtering remain in scope despite their placement being unresolved.
+
 ## Ordered implementation checkpoints
 
 1. **Inspect existing output/provenance contracts.** Identify saved final artifacts, recorded request metadata and available timestamps. Reuse existing persistence and preview paths where appropriate; do not treat logs as output truth.
 2. **Add the shared gallery query foundation.** Define stable artifact identity, ordering, search/filter composition and bounded loading. Establish missing/corrupt-file handling and rebuildable thumbnail/index ownership.
-3. **Deliver browsing modes and state.** Implement the selected grid, masonry, compact list and filmstrip capabilities, density, keyboard navigation and remembered view/selection/position. Refresh saved-output results without unnecessarily resetting the user's position.
+3. **Deliver browsing modes and state.** Implement the selected Grid, compact List and Detail-with-filmstrip capabilities, density, keyboard navigation and remembered view/selection/position. Refresh saved-output results without unnecessarily resetting the user's position.
 4. **Deliver search/filter/sort.** Apply the selected prompt, model, LoRA, date and geometry queries through shared services. Keep result order deterministic and selection/previous-next navigation consistent with filtered results.
 5. **Deliver image inspection.** Add selected-image/fullscreen viewing, fit/zoom/pan, true 100% viewing, external viewer action and dimensions/file size. Reuse shared image-viewing behaviour rather than fork it unnecessarily.
 6. **Deliver metadata inspection.** Show the selected recorded provenance and raw JSON. Represent unavailable fields explicitly; preserve original metadata.

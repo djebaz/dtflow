@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Scope recorded; implementation and gallery UI design not started.
+**Status:** Scope recorded; owner view templates under review; implementation not started.
 
 **Target:** Proposed 0.4.0, not a shipped version.
 
@@ -17,7 +17,7 @@ Organisation is a later extension, not automatically a prerequisite for 0.4.0.
 
 ## 8A — Read-only output viewer
 
-The [dedicated viewer plan](2026-10-05-phase-8a-viewer.md) owns all selected capabilities, implementation checkpoints, open semantics and viewer acceptance. No viewer UI design or implementation is started.
+The [dedicated viewer plan](2026-10-05-phase-8a-viewer.md) owns all selected capabilities, implementation checkpoints, open semantics and viewer acceptance. Owner view-template decisions are recorded there; implementation is not started.
 
 ## 8B — Draw Things-compatible presets
 
