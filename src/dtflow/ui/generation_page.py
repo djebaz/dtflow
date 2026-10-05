@@ -215,6 +215,7 @@ class GenerationPage:
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
             self.page.inventoryEvidenceLabel.setToolTip("")
             self._listed_backend = None
+        self.page.resultPreviewLabel.set_sample_available(name == "fake")
         self.page.modelCombo.lineEdit().setPlaceholderText(
             f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
         )

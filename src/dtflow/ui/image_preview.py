@@ -32,6 +32,7 @@ class ImagePreview(QAbstractScrollArea):
         self._drag = None
         self._text = "Your next image starts here\nSet a prompt or view a sample."
         self._brand_mark = QPixmap(str(APP_ICON))
+        self._sample_allowed = True
         self._expanded = False
         self._restore = None
         tokens = load_tokens()
@@ -111,6 +112,13 @@ class ImagePreview(QAbstractScrollArea):
         self._pixmap = pixmap
         self.fit()
 
+    def set_sample_available(self, allowed):
+        """The illustrative sample is a development aid: offered for the fake provider only."""
+        self._sample_allowed = allowed
+        if not allowed and self.property("designation") == "illustrative_sample":
+            self.clear()
+        self._sync()
+
     def show_sample(self):
         sample = QPixmap(str(ILLUSTRATIVE_SAMPLE))
         if sample.isNull():
@@ -183,7 +191,7 @@ class ImagePreview(QAbstractScrollArea):
         for control in (self.fitButton, self.actualButton, self.minusButton, self.plusButton, self.zoomSlider):
             control.setEnabled(available)
         self._badge.setVisible(available)
-        self.sampleButton.setVisible(not available)
+        self.sampleButton.setVisible(not available and self._sample_allowed)
         self._show_controls()
         self._position_controls()
         self.viewport().update()
