@@ -78,3 +78,5 @@ The previous 52×40 control approximated rather than matched the supplied refere
 ### Latest cropped-reference match
 
 Supersedes the earlier 74×44 approximation: the supplied cropped design measures approximately 58×34. Connection now renders at 58×34, with a 16 px rounded power arc, 6 px dot and reference-like padding. Dedicated shared mint/teal Connection tokens reproduce the supplied visual identity without changing general success colors. Mouse focus no longer replaces the status border with a thick blue frame; Tab/Backtab/shortcut focus retains an explicit dashed focus cue. Guarded native fixture captures confirm 58×34 and show the connected design in the real shell. Unchecked status remains neutral rather than falsely green. No live checks, inference or automated tests ran.
+
+Owner follow-up: reduce only the power glyph to a 12 px arc with 1.6 px rounded stroke; retain the 58×34 button, status dot and layout.
