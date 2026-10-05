@@ -383,6 +383,8 @@ Testing is capability-driven rather than an upfront exhaustive matrix. Each adva
 
 Add output browsing, generation metadata inspection, reusable presets, and regeneration/reuse flows.
 
+Follow the [Phase 8 delivery plan](2026-10-05-phase-8-sequencing.md): read-only viewer, Draw Things-compatible presets, reuse/regeneration, cache management, then separately scoped organisation. Native preset interchange uses the observed `custom_configs.json` envelope; enum mappings and upstream round-trip acceptance must be verified before claiming compatibility.
+
 Keep acceptance local and service-focused:
 
 | ID | Scenario group | New evidence |

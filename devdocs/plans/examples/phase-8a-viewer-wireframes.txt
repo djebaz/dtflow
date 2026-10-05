@@ -1,0 +1,161 @@
+DTFLOW - PHASE 8A VIEWER TEXT WIREFRAMES
+=======================================
+Date: 2026-10-05
+Status: Discussion snapshot, not implemented UI or final pixel specification.
+The existing DTFlow application shell surrounds these page-content layouts.
+Labels, sample values and spacing below are illustrative.
+
+SHARED COMPACT HEADER
+---------------------
+No page title/subtitle. No filename/tag/note search.
+Positive-prompt search only in the permanently visible header.
+
++--------------------------------------------------------------------------------------------------+
+| [Grid] [List] [Detail] | Thumbnail size [---o---] | Auto-refresh: On | [Refresh] | 248   |
++--------------------------------------------------------------------------------------------------+
+| Positive prompt [Search...] | Model [All v] | LoRA [All v] | Date [All time v] | Ratio [Any v]      |
++--------------------------------------------------------------------------------------------------+
+
+The header is shared; active mode is indicated consistently.
+Thumbnail size controls grid/strip thumbnails. List row density is a review proposal.
+Sort-by and exact-dimension filters remain planned capabilities; their compact-header placement
+is unresolved, not silently removed. Negative-prompt search is removed from the visible header;
+whether it remains in optional filters or is removed from scope needs confirmation.
+Auto-refresh must not unexpectedly move the current image or browsing position.
+"12 new images" semantics and pagination/progressive loading remain to be defined.
+
+1. GRID
+-------
+[Shared header: Grid active]
+
++----------------+ +----------------+ +----------------+ +----------------+
+|                | |                | |                | |                |
+|   thumbnail    | |   thumbnail    | |   thumbnail    | |   thumbnail    |
+|                | |                | |                | |                |
+| 1024x1184 2MB  | | 1536x1024 3MB  | | 1024x1024 2MB  | | 1024x1536 3MB  |
++----------------+ +----------------+ +----------------+ +----------------+
++----------------+ +----------------+ +----------------+ +----------------+
+|   thumbnail    | |   thumbnail    | |   thumbnail    | |   thumbnail    |
++----------------+ +----------------+ +----------------+ +----------------+
+
+[Loaded range / total results]                                      [Last refreshed]
+
+- Uniform tiles; thumbnails can crop for the tile, never stretch the image.
+- Hover: subtle outline. Keyboard focus: distinct visible outline.
+- Click or Enter opens that image in Detail.
+- Return to Grid restores scroll position and keyboard focus to the originating thumbnail.
+- No persistent selected-thumbnail state and no per-thumbnail action buttons.
+- Dimensions/file-size badges reflect the supplied mockup; optional badges are a review suggestion.
+
+2. LIST
+-------
+[Shared header: List active]
+
++--------------------------------------------------------------------------------------------------+
+| Image | Filename | Prompt | Model | LoRAs / weights | Dimensions | Seed | Date | File size | Duration |
++--------------------------------------------------------------------------------------------------+
+| thumb | final... | ...    | SDXL  | portrait... 0.8 | 1024x1184  | ...  | ...  | 2.4 MB    | 22.4 s   |
+| thumb | final... | ...    | ...   | ...             | 1536x1024  | ...  | ...  | 3.2 MB    | 28.1 s   |
+| thumb | final... | ...    | ...   | ...             | 1024x1024  | ...  | ...  | 1.9 MB    | Unknown  |
++--------------------------------------------------------------------------------------------------+
+
+[Loaded range / total results]                                      [Last refreshed]
+
+Review proposals to refine, not all explicitly approved:
+- Keep dimensions in one place rather than repeat beneath filenames.
+- Use "Generation time" / "Duration" rather than ambiguous "Time".
+- Resizable columns and access to full truncated text.
+- Row activation opens the image in Detail; return restores list position/focus.
+- Column sorting and any Sort-by control must agree.
+- List density control should describe the actual row/thumbnail size.
+Use "Not recorded" for absent timings in the real UI, not an inferred value.
+
+3. DETAIL (WITH RIGHT-HAND FILMSTRIP)
+-----------------------------------
+[Shared header: Detail active]
+
++----------------------------------------------------------------------------+ +------------------+
+| [12 / 248] [1024 x 1184]                                                    | | selected image   |
+|                                                                            | | thumbnail        |
+|                                                                            | +------------------+
+|                                                                            | | next thumbnail   |
+| [Previous]          LARGE, NEAR-SQUARE IMAGE CANVAS                [Next]   | +------------------+
+|                                                                            | | next thumbnail   |
+|                 stable geometry for portrait/landscape images               | +------------------+
+|                                                                            | | ... scroll ...   |
+|                                                                            | |                  |
+|              [Cover / Fit v] [-] [current zoom / 100%] [+] [Fullscreen]      | |                  |
++----------------------------------------------------------------------------+ |                  |
+| Model/checkpoint | LoRAs + weights + evidence | Steps | CFG | Sampler | Date  | |                  |
++----------------------------------------------------------------------------+ |                  |
+| Positive prompt: full text, wrapping        [Additional details] [Raw JSON] | |                  |
++----------------------------------------------------------------------------+ +------------------+
+
+REFERENCE AND STABLE LAYOUT
+- Latest owner-approved reference: DTFlow Portrait Gallery Viewer_proc.png (Desktop mockup).
+  This path identifies the discussed image; the image is not bundled in the repository.
+- Grid, List and Detail are the only view modes. Masonry is removed from 8A scope.
+- Detail contains the right-hand thumbnail filmstrip; Filmstrip is not a separate mode label.
+- Give the image canvas most of the height, with a near-square preview at the reference size.
+  Near-square describes the canvas, not a constraint to crop or reshape the source image.
+- Keep metadata below and filmstrip right for all image proportions. Do not automatically
+  move metadata to a side panel or rearrange the page when a portrait is selected.
+- Keep one compact metadata band and a wrapping positive-prompt band beneath the preview.
+- Additional details and Raw metadata JSON are buttons beside the prompt, not two permanent
+  full-width accordion rows. Their contents stay closed until explicitly requested.
+- Popup/drawer/dialog mechanics for those buttons remain unresolved; do not assume a modal.
+- Long prompts and multiple/long LoRAs must remain accessible through wrapping or bounded
+  scrolling, without uncontrolled preview shrinkage or automatic structural rearrangement.
+- A user-adjustable preview/metadata divider was suggested, not explicitly approved.
+
+METADATA PRIORITY / LAYOUT
+- Dimensions belong on the image overlay, not in the metadata settings row.
+- Position in filtered results also belongs on the image overlay.
+- Model/checkpoint and LoRAs lead the first metadata row.
+- Steps, guidance, sampler and generation date/time are secondary on that row.
+- Aim for one compact row when it fits; wrap when names or LoRA lists are long.
+  Any wrapping is a space-dependent fallback, not two mandatory metadata rows.
+- Keep exact model/LoRA identifiers accessible; do not replace them with guessed labels.
+- Show weights and recorded compatibility evidence; use Unknown without evidence.
+- Positive prompt is visible by default. No green status dot is required for prompt text.
+- Negative prompt is in Additional details, not the default visible prompt band.
+
+ADDITIONAL DETAILS (button; contents closed by default)
+  Negative prompt: full text
+  Filename
+  File size
+  Actual resolved seed
+  Provider
+  Recorded generation duration
+  Image path                         [Copy path] [Open folder]
+
+RAW METADATA JSON (button; contents closed by default)
+  Full saved metadata, with credentials/sensitive fields never exposed
+  Request and attempt IDs
+  DTFlow version and source commit
+  Detailed recorded timing breakdowns
+  Resolution/preflight evidence and other recorded technical provenance
+
+NOT SHOWN
+  Credentials, API keys, tokens
+  Internal cache/index bookkeeping
+  Invented settings/timings or inferred compatibility claims
+  Future tags, ratings and notes (outside 8A)
+
+VIEWING / NAVIGATION NOTES
+- Cover fills the canvas proportionally and can crop the image; label this mode honestly.
+- Fit shows the entire selected image without cropping, with unused canvas when necessary.
+- Cover appears in the reference mockup; initial-mode and per-image mode persistence policy remain open.
+- True 100% and current zoom percentage are distinct concepts; pan when zoomed.
+- Previous/next and position counter follow current filtered/sorted results.
+- The strip can scroll without changing the main image accidentally.
+- An external-viewer action is required; its placement remains to be decided.
+- A separate Inspector button on every browsing view is not required: open Detail
+  from Grid/List, then use its visible metadata and detail buttons.
+
+STILL TO DESIGN
+---------------
+Empty library, no matching results, missing/corrupt images and incomplete metadata.
+Smaller-window layout, minimum preview height and long-metadata scrolling.
+Exact sort/filter placement, refresh/new-results semantics, and loading mechanics.
+This document records discussion only; no application behaviour or validation is claimed.
