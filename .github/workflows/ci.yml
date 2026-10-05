@@ -6,6 +6,17 @@ name: CI
 # without a pull request are not checked.
 on:
   workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number, or 'latest' for the highest-numbered open PR (empty: use the branch field)"
+        required: false
+        default: ""
+        type: string
+      branch:
+        description: "Branch to check when no PR is given (empty: the default branch, main)"
+        required: false
+        default: ""
+        type: string
   pull_request:
 
 # A newer push to the same pull request cancels the run in progress. Manual runs are never cancelled.
@@ -15,6 +26,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   UV_LOCKED: "1"
@@ -26,7 +38,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Resolve manual target
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PR: ${{ inputs.pr }}
+          INPUT_BRANCH: ${{ inputs.branch }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Pull request events check out the default merge ref; only manual runs pick a target.
+          ref=""
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$INPUT_PR" = "latest" ]; then
+              INPUT_PR=$(gh pr list -R "$GITHUB_REPOSITORY" --state open --limit 100 --json number --jq 'map(.number) | max // empty')
+              [ -n "$INPUT_PR" ] || { echo "No open pull request found." >&2; exit 1; }
+            fi
+            if [ -n "$INPUT_PR" ]; then
+              [[ "$INPUT_PR" =~ ^[0-9]+$ ]] || { echo "pr must be a number or 'latest'." >&2; exit 1; }
+              ref="refs/pull/$INPUT_PR/head"
+              echo "Checking pull request #$INPUT_PR" >> "$GITHUB_STEP_SUMMARY"
+            else
+              ref="${INPUT_BRANCH:-$DEFAULT_BRANCH}"
+              echo "Checking branch $ref" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.ref }}
 
       - name: Install Qt runtime libraries
         run: |

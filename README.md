@@ -39,7 +39,7 @@ uv run ruff format --check .
 uv run pytest
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) runs these four offline checks on pull requests and on manual dispatch. A
+GitHub Actions (`.github/workflows/ci.yml`) runs these four offline checks on pull requests and on manual dispatch. A manual run takes an optional `pr` (a number, or `latest` for the highest-numbered open PR) and `branch` (default `main`); `pr` wins when both are set. A
 newer push to the same pull request cancels the run in progress. CI never runs live tests or generation and uses no
 secrets.
 
