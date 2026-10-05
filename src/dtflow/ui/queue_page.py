@@ -340,7 +340,8 @@ class QueuePage:
             return
         page.itemIdLabel.setText(row.item_id[:8])
         page.itemIdLabel.setToolTip(row.item_id)
-        page.attemptIdLabel.setText(row.attempt_id or "—")
+        page.attemptIdLabel.setText(row.attempt_id[:8] if row.attempt_id else "—")  # the full id is in the tooltip
+        page.attemptIdLabel.setToolTip(row.attempt_id or "")
         page.itemBackendLabel.setText(summarize(view).backend if view else "—")
         outputs = [*row.outputs, *([row.metadata] if row.metadata else [])]
         # Full paths stay in the tooltip; the panel shows a summary and a button to the attempt's folder.

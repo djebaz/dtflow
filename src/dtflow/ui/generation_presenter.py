@@ -167,7 +167,8 @@ def form_from_document(document: object) -> FormValues:
 
 def describe_request(request: ResolvedGenerationRequest, backend: str, endpoint: str | None) -> str:
     """Effective values plus where each came from, exactly as resolved; no UI-only defaults are added."""
-    lines = [f"backend: {backend}" + (f" ({endpoint})" if endpoint else ""), f"model: {request.model_id}"]
+    shown = endpoint if backend == "local" else None  # only a local server has a host:port; cloud is not an address
+    lines = [f"backend: {backend}" + (f" ({shown})" if shown else ""), f"model: {request.model_id}"]
     lines += [f"seed: {request.seed}", f"size: {request.width_px}x{request.height_px}", f"steps: {request.steps}"]
     lines += [f"guidance: {request.guidance}", f"sampler: {request.sampler_id.value}"]
     receipts = {item.identifier: item.receipt_id[:8] for item in request.prepared_assets}

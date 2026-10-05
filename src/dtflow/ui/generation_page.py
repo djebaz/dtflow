@@ -373,6 +373,7 @@ class GenerationPage:
         self.page.resultList.clear()
         self._set_result_actions(False)
         self.page.attemptIdentityLabel.setText("No durable attempt yet.")
+        self.page.attemptIdentityLabel.setToolTip("")
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
@@ -431,7 +432,8 @@ class GenerationPage:
         bar.setFormat("Saved")
         self._status(present_outcome(outcome))
         self.lora.show_diagnostics(outcome.diagnostics)
-        self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id} on {outcome.backend_id}.")
+        self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
+        self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
         self.page.effectiveRequestBrowser.setPlainText(
             describe_request(outcome.request, outcome.backend_id, self._backend()[1])
         )
@@ -511,7 +513,10 @@ class GenerationPage:
             return
         self._status(present_interruption(evidence))
         if evidence is not None:
-            self.page.attemptIdentityLabel.setText(f"Attempt {evidence.attempt_id}: recorded state {evidence.state}.")
+            self.page.attemptIdentityLabel.setText(
+                f"Attempt {evidence.attempt_id[:8]}: recorded state {evidence.state}."
+            )
+            self.page.attemptIdentityLabel.setToolTip(f"Attempt {evidence.attempt_id}")
 
     # -- inventory -------------------------------------------------------------------------------------------------
     def refresh(self) -> None:
