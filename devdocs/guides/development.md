@@ -1,6 +1,6 @@
 # Development tools and conventions
 
-See [AGENTS.md](../../AGENTS.md) for repository rules, [current development status](../current_dev_status.md) for implementation orientation, and [testing](testing.md) for validation commands.
+See [AGENTS.md](../../AGENTS.md) for repository rules, [current development status](../current_dev_status.md) for implementation orientation, and [testing](testing.md) for validation commands, and [version bump and release](releasing.md) for the uv recipe and owner build handoff.
 
 ## Design principles
 
