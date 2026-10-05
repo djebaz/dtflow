@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>WorkspaceShell</class>
  <widget class="QWidget" name="WorkspaceShell">
@@ -174,7 +174,7 @@
           <item>
            <widget class="QPushButton" name="connectionNavigationButton">
             <property name="text">
-             <string>Connection</string>
+             <string />
             </property>
             <property name="checkable">
              <bool>true</bool>
@@ -186,10 +186,34 @@
              <bool>true</bool>
             </property>
             <property name="role" stdset="0">
-             <string>navigation</string>
+             <string>connectionNavigation</string>
             </property>
             <property name="accessibleName">
              <string>Show connection workspace</string>
+            </property>
+            <property name="toolTip">
+             <string>Show connection workspace — not checked</string>
+            </property>
+            <property name="focusPolicy">
+             <enum>Qt::StrongFocus</enum>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>48</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>48</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="iconSize">
+             <size>
+              <width>32</width>
+              <height>26</height>
+             </size>
             </property>
            </widget>
           </item>
@@ -228,6 +252,31 @@
             </property>
             <property name="accessibleName">
              <string>Show queue workspace</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="imagesNavigationButton">
+            <property name="text">
+             <string>Images</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+            <property name="autoExclusive">
+             <bool>true</bool>
+            </property>
+            <property name="toolTip">
+             <string>Images preview is not mounted yet</string>
+            </property>
+            <property name="accessibleName">
+             <string>Images workspace — not available yet</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>navigation</string>
             </property>
            </widget>
           </item>

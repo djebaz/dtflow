@@ -10,7 +10,7 @@
 
 Build an offline presentation preview of Grid, List and Detail, following the agreed compact header and stable Detail layout. Canonical Designer forms belong in `src/dtflow/ui/forms/`; necessary styling belongs in the existing shared QSS. Reuse shared tokens and handwritten preview widgets at presentation seams, not generated-Python business logic.
 
-No gallery query/index implementation, application navigation integration, backend access, generation, preset/reuse, cache-management controls, durable mutations or billable operations in this PR. Fixture labels must not be mistaken for real saved outputs or compatibility evidence. Unwired application actions remain visibly disabled.
+No gallery query/index implementation, new backend access, generation, preset/reuse, cache-management controls, durable mutations or billable operations in this PR. The owner subsequently approved compact Connection navigation and an Images placeholder as the first shell-integration step. Fixture labels must not be mistaken for real saved outputs or compatibility evidence. Unwired application actions remain visibly disabled.
 
 ## Ordered work
 
@@ -51,3 +51,14 @@ uv run python tools/ui/preview_gallery_detail.py --state details
 uv run python tools/ui/preview_gallery_detail.py --state raw
 uv run python tools/ui/preview_gallery_detail.py --size 800x680
 ```
+
+## Shell navigation checkpoint — 2026-10-06 (approved scope extension)
+
+- Compact power-icon Connection tab before Generate; its dot reflects the selected provider's last explicit check. Status remains distinct from active-tab selection.
+- Token-based unknown/checking/connected/warning/error states; tooltip and accessible name include textual status. No polling or extra backend requests.
+- Add Images at the end of Connection / Generate / Queues / Images. Images is a disabled placeholder until the preview is mounted; no extra empty workspace.
+- Preserve the existing Connection workspace and click/keyboard navigation path. Compact navigation widths keep all four controls within the permanent left rail.
+- Invalidate status on provider/endpoint changes; ignore older check completion after a selection change. This is connection-evidence presentation safety, not generation/retry policy.
+- Owner Windows navigation and native-DPI validation remain pending. No tests or live connection checks are authorized by the layout request.
+
+Implemented canonical compact navigation and shared-token power/status icon. Images remains disabled. Syntax/import, Designer compilation and Ruff checks recorded; owner visual/interaction acceptance remains pending.

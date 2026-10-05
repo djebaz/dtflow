@@ -12,6 +12,8 @@
 
 ## Changed
 
+- Draft PR #33 compacts Connection navigation into a power-icon button with last-check status and accessible text, and reserves an Images button after Queues (disabled until mounted). No polling or extra connection requests; obsolete check completions do not recolor a changed selection.
+
 ## Fixed
 
 ## Release audit

@@ -27,6 +27,7 @@ from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
+from dtflow.ui.brand import connection_icon
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
@@ -322,6 +323,7 @@ class MainWindow:
 
     def _selection_changed(self, *_) -> None:
         """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
+        self._selection_revision = getattr(self, "_selection_revision", 0) + 1
         self._present(
             Presentation("unknown", "Not checked", f"Check the {self.form.backendCombo.currentText()} connection.")
         )
@@ -333,6 +335,14 @@ class MainWindow:
             widget.style().unpolish(widget)
             widget.style().polish(widget)
         label.setText(f"{presentation.headline}. {presentation.detail}".strip())
+        button = self.form.connectionNavigationButton
+        button.setProperty("state", presentation.level)
+        button.setIcon(connection_icon(presentation.level))
+        status = f"Connection ({self.form.backendCombo.currentText()}): {label.text()}"
+        button.setToolTip(f"Show connection workspace. Last explicit check: {status}")
+        button.setAccessibleName(status)
+        button.style().unpolish(button)
+        button.style().polish(button)
 
     def refresh_credentials(self) -> None:
         status = credential_status(self._environ, self._saved)
@@ -356,14 +366,19 @@ class MainWindow:
         self._present(Presentation("warning", "Checking", ""))
         log.info("connection check started backend=%s", selection.name)
         saved: CredentialProvider | None = self._saved if self._saved.available() else None
-        self.runner.submit(self._check(selection, saved), self._checked)
+        revision = self._selection_revision
+        self.runner.submit(
+            self._check(selection, saved), lambda status, failure: self._checked(status, failure, revision)
+        )
 
     async def _check(self, selection, saved):
         return await check_connection(selection, saved=saved)
 
-    def _checked(self, status, failure) -> None:
+    def _checked(self, status, failure, revision=None) -> None:
         self._busy = False
         self.form.checkButton.setEnabled(True)
+        if revision is not None and revision != self._selection_revision:
+            return  # The provider/endpoint changed while the old check was running.
         shown = present_failure(failure) if failure else present_status(status)
         log.info("connection check result level=%s headline=%s", shown.level, shown.headline)
         self._present(shown)

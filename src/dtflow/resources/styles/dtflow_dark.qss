@@ -594,3 +594,24 @@ QPlainTextEdit#galleryPositivePrompt {
 }
 QPlainTextEdit#galleryPositivePrompt:focus { border: 1px solid ${color.focus}; }
 QPlainTextEdit#galleryRawMetadata { background: ${color.canvas}; }
+
+/* Compact permanent navigation: reserve room for Images without widening the rail. */
+QFrame#navigationFrame QPushButton[role="navigation"] {
+  min-width: 0;
+  padding: 6px 5px;
+}
+QPushButton#connectionNavigationButton {
+  min-width: 0;
+  padding: 4px;
+  background: ${color.input};
+  border: 1px solid ${color.border};
+  border-radius: ${size.radius};
+}
+QPushButton#connectionNavigationButton:checked { background: ${color.selection}; }
+QPushButton#connectionNavigationButton[state="ok"] { border-color: ${color.success}; }
+QPushButton#connectionNavigationButton[state="warning"] { border-color: ${color.warning}; }
+QPushButton#connectionNavigationButton[state="error"] { border-color: ${color.error}; }
+QPushButton#connectionNavigationButton:hover { background: ${color.surface}; }
+QPushButton#connectionNavigationButton:pressed { background: ${color.canvas}; }
+QPushButton#connectionNavigationButton:focus { border: 2px solid ${color.focus}; }
+QPushButton#connectionNavigationButton:disabled { border-color: ${color.border}; background: ${color.surface}; }

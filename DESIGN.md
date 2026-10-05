@@ -110,6 +110,8 @@ Inputs use gently rounded 5 px corners, buttons 6 px, and panels 8 px. The reusa
 
 Neutral buttons have distinct rest, hover, pressed, focus and disabled states. Primary actions use the accent family and lose that accent when disabled. Destructive actions use warning red only while actionable; disabled destructive controls return to the neutral disabled treatment. Checkable navigation shares the navy selection language with item views. Maintain stable `role` properties and object names instead of adding inline widget styles.
 
+Connection navigation is a compact 48 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and remains disabled until mounted. Compact labels preserve the permanent left-rail navigation width.
+
 ### Fields and selection
 
 Editable fields use the input surface and border, with a lighter hover border, visible focus border, readable placeholder, disabled treatment and an `invalid` property for validation. Lists and tables use the same selected-row colors and an explicit empty-state hint. An empty LoRA or asset list is informative rather than an unexplained blank rectangle. Preserve textual diagnostics for mismatch, unknown and upload-required states; visual color does not imply compatibility.
