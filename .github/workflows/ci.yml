@@ -2,8 +2,9 @@ name: CI
 
 # Offline checks only: lock consistency, lint, format and the offline pytest suite.
 # Live Draw Things / DT+ tests and any generation are never run here, and no secrets are used.
-# Runs on non-draft pull requests (including when one is marked ready for review) and manual dispatch only, to limit runner minutes; plain branch pushes
-# without a pull request are not checked.
+# Runs on pushes to main (this seeds the uv cache: pull request caches are only readable by their own PR,
+# while main's are shared with every PR), on non-draft pull requests (including when one is marked ready for
+# review) and on manual dispatch, to limit runner minutes. Pushes to other branches are not checked.
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +18,8 @@ on:
         required: false
         default: ""
         type: string
+  push:
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
@@ -80,14 +83,6 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-
-      - name: Ruff cache
-        uses: actions/cache@v6
-        with:
-          path: .ruff_cache
-          key: ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}-${{ github.sha }}
-          restore-keys: |
-            ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}-
 
       - name: Sync environment
         run: uv sync --locked
