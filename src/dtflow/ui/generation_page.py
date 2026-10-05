@@ -191,6 +191,9 @@ class GenerationPage:
         self._set_result_actions(False)
         page.modelCombo.lineEdit().setPlaceholderText("Select or enter a model")
         page.promptEdit.setTabChangesFocus(True)
+        page.seedEdit.setToolTip(
+            "0 picks a random seed for each submission; the seed used is recorded with the output."
+        )
         for control in (page.expandPromptButton, page.detailsToggle):
             control.setEnabled(True)
         page.attemptDetails.hide()
@@ -316,7 +319,7 @@ class GenerationPage:
         self._snap_size()
         name, endpoint = self._backend()
         try:
-            request = build_request(self._values(), backend=name, config_name=self._config_name)
+            request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
         except FormError as exc:
             self._mark(exc.widget)
             raise
@@ -350,7 +353,7 @@ class GenerationPage:
         name, endpoint = self._backend()
         self._submitted_backend = name
         try:
-            request = build_request(self._values(), backend=name, config_name=self._config_name)
+            request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
         except FormError as exc:
             self._mark(exc.widget)
             log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
