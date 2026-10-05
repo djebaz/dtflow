@@ -10,12 +10,34 @@ def _chunk(kind: bytes, payload: bytes) -> bytes:
     return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload))
 
 
-def fixture_png(width: int, height: int, seed: int) -> bytes:
-    """Encode a solid fixture swatch, explicitly unrelated to model inference."""
+def fixture_png(width: int, height: int, seed: int, *, grid: bool = False) -> bytes:
+    """Encode a fixture swatch or calibration grid, explicitly unrelated to model inference."""
     color = bytes((seed % 256, (seed // 256) % 256, 192))
     row = b"\0" + color * width
     compressor = zlib.compressobj()
-    compressed = b"".join(compressor.compress(row) for _ in range(height)) + compressor.flush()
+    if grid:
+        # Edge marks and nonuniform cells make clipping, stretching and panning observable.
+        def grid_row(y):
+            pixels = bytearray(width * 3)
+            for x in range(width):
+                edge = x < 8 or y < 8 or x >= width - 8 or y >= height - 8
+                line = x % 64 < 2 or y % 64 < 2
+                shade = 22 if (x // 64 + y // 64) % 2 else 0
+                rgb = (
+                    (225, 233, 245)
+                    if edge or line
+                    else (
+                        28 + x * 64 // width + shade,
+                        60 + y * 80 // height + shade,
+                        105 + seed % 50 + shade,
+                    )
+                )
+                pixels[x * 3 : x * 3 + 3] = bytes(rgb)
+            return b"\0" + pixels
+
+        compressed = b"".join(compressor.compress(grid_row(y)) for y in range(height)) + compressor.flush()
+    else:
+        compressed = b"".join(compressor.compress(row) for _ in range(height)) + compressor.flush()
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     return SIGNATURE + _chunk(b"IHDR", header) + _chunk(b"IDAT", compressed) + _chunk(b"IEND", b"")
 

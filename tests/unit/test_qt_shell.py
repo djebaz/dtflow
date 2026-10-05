@@ -30,6 +30,7 @@ def window(qtbot, tmp_path):
 
 def test_lifecycle_from_designer_file_and_clean_shutdown(window):
     assert window.form.objectName() == "MainWindow"
+    assert not window.form.windowIcon().isNull()
     window.show()
     assert window.runner._thread.is_alive()
     window.runner.shutdown()

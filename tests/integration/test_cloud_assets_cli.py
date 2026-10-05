@@ -222,7 +222,8 @@ async def test_prepared_references_are_rejected_by_backends_without_cloud_assets
     try:
         with pytest.raises(BackendError) as caught:
             await GenerationService(backend, store, tmp_path / "out").generate(request)
-        assert caught.value.failure.code == "unsupported_request"
+        assert caught.value.failure.code == "prepared_asset_unsupported"
+        assert await store.inspect() == ()  # explicit fake LoRAs never imply cloud-asset support
     finally:
         await backend.aclose()
         await store.aclose()

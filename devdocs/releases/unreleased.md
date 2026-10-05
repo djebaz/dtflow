@@ -2,6 +2,10 @@
 
 Pending changes for the next DTFlow release.
 
+## Changed
+
+- Generate image-first workspace: rail-local header, parameters on the left, full-resolution fit/zoom/pan preview and canvas-local saved-output inspection. Shared theme tokens, native interaction states, expandable prompts, collapsible details, retained navigation on narrow windows and deterministic fake grid/model/ LoRA fixtures accompany a network-guarded twelve-state Qt renderer. See [the refinement plan](../plans/2026-10-05-preview-workspace.md) and the [design system](../../DESIGN.md) for extending this style to other tabs. The DTFlow monogram is the window and Windows build icon; the empty canvas can show a labeled illustrative portrait without enabling saved-output actions. No provider compatibility, Windows packaging or live inference acceptance is claimed.
+
 ## Added
 
 - `tools/packaging/build_exe.py` stamped one-file build: records the full source commit and clean/dirty status in an ignored generated `dtflow/_buildinfo.py`, so a frozen executable reports its identity without Git, and names the artifact `dtflow-<version>-g<short-sha>-<platform>-<arch>.exe`. Source runs still report `unknown`. Verified offline by unit tests and one Linux PyInstaller build in the agent sandbox; no Windows build, generation or billable action was run.

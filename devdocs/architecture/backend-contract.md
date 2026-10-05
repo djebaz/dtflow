@@ -140,51 +140,18 @@ Sources: [0.4.0 builder](https://github.com/kcjerrell/drawthings-py/blob/v0.4.0/
 
 ## Phase 2A implementation evidence and limits
 
-The source-run `dtflow` entry point owns one loop. `generate --backend fake` calls `GenerationService` with
-`FakeBackend` and an injected `AttemptStore`; the CLI composes `SQLiteAttempts`. Provider imports are absent from
-core/services and checked by AST tests. Requests use frozen slotted dataclasses; nested request/result metadata and
-artifact payloads reject mutable values. Inventory/preflight types define the future adapter boundary; no real LoRA
-compatibility rule or cloud upload is implemented here.
+The source-run `dtflow` entry point owns one loop. `generate --backend fake` calls `GenerationService` with `FakeBackend` and an injected `AttemptStore`; the CLI composes `SQLiteAttempts`. Provider imports are absent from core/services and checked by AST tests. Requests use frozen slotted dataclasses; nested request/result metadata and artifact payloads reject mutable values. Inventory/preflight types define the future adapter boundary; no real LoRA compatibility rule or cloud upload is implemented here.
 
-The deterministic fixture swatch records every requested parameter and explicit seed zero. It does not exercise
-sampler algorithms or diffusion steps. Fake scenarios include pre-submission refusal, lost connection, empty output,
-terminal failure, controlled delay and concurrent calls. The empty scenario deliberately violates successful-output
-expectations to exercise defensive service validation. Fake events are explicitly fixture events. Authentication is
-not applicable; no credential is read by fake generation.
+The deterministic fixture swatch records every requested parameter and explicit seed zero. It does not exercise sampler algorithms or diffusion steps. Fake scenarios include pre-submission refusal, lost connection, empty output, terminal failure, controlled delay and concurrent calls. The empty scenario deliberately violates successful-output expectations to exercise defensive service validation. Fake events are explicitly fixture events. Authentication is not applicable; no credential is read by fake generation.
 
-Attempt schema version 1 has unique request identities and transactional state changes. The service commits
-`prepared` before admission and `possibly_submitted` before calling the backend. Terminal OK plus validated PNG moves
-an attempt to `saving`; only completed file/metadata writes and a final commit produce `succeeded`. Reopening an owned
-store reconciles `prepared` to `interrupted_before_submission`, `possibly_submitted` to `unknown`, and `saving` to
-`save_failed` while preserving known backend success. No path automatically submits these records again. The current
-`attempts` command inspects; retry, acknowledgement and queue controls belong to Phase 3.
+Attempt schema version 1 has unique request identities and transactional state changes. The service commits `prepared` before admission and `possibly_submitted` before calling the backend. Terminal OK plus validated PNG moves an attempt to `saving`; only completed file/metadata writes and a final commit produce `succeeded`. Reopening an owned store reconciles `prepared` to `interrupted_before_submission`, `possibly_submitted` to `unknown`, and `saving` to `save_failed` while preserving known backend success. No path automatically submits these records again. The current `attempts` command inspects; retry, acknowledgement and queue controls belong to Phase 3.
 
-One OS advisory owner lock covers the state directory. SQLite uses its owned worker, WAL, FULL, foreign keys and a
-bounded busy timeout; backup uses the SQLite API. Unsupported schema/runtime versions fail without reset. Local
-filesystem placement is an operator requirement; UNC paths are rejected, but mounted network filesystems are not
-reliably detected. Windows process-crash, locking and file-durability acceptance still needs target-machine evidence.
-Individual files use same-directory replacement with file fsync and directory fsync where supported. Files and the
-database are not jointly atomic. Failed/interrupted saves retain the attempt directory as diagnostic evidence; they
-are never presented as application success or automatically promoted on restart.
+One OS advisory owner lock covers the state directory. SQLite uses its owned worker, WAL, FULL, foreign keys and a bounded busy timeout; backup uses the SQLite API. Unsupported schema/runtime versions fail without reset. Local filesystem placement is an operator requirement; UNC paths are rejected, but mounted network filesystems are not reliably detected. Windows process-crash, locking and file-durability acceptance still needs target-machine evidence. Individual files use same-directory replacement with file fsync and directory fsync where supported. Files and the database are not jointly atomic. Failed/interrupted saves retain the attempt directory as diagnostic evidence; they are never presented as application success or automatically promoted on restart.
 
-Admission reserves the requested RGBA-sized buffer plus three encoded-artifact allowances and a preview allowance
-against the shared service budget before backend submission. Codec validation and saving are serialized per service;
-callers composing multiple services must inject the same budget for aggregate admission. Returned results and external
-consumer retention are outside that budget; it is not an RSS guarantee. Event buffering coalesces transient updates
-and does not retain final artifact payloads. Backend-total deadlines exclude admission and durable saving. Already
-started worker operations finish before cancellation propagates; Python cannot kill a blocked worker, so the cleanup
-deadline does not bound disk/codec worker completion. Do not destroy their loop or release state ownership early.
+Admission reserves the requested RGBA-sized buffer plus three encoded-artifact allowances and a preview allowance against the shared service budget before backend submission. Codec validation and saving are serialized per service; callers composing multiple services must inject the same budget for aggregate admission. Returned results and external consumer retention are outside that budget; it is not an RSS guarantee. Event buffering coalesces transient updates and does not retain final artifact payloads. Backend-total deadlines exclude admission and durable saving. Already started worker operations finish before cancellation propagates; Python cannot kill a blocked worker, so the cleanup deadline does not bound disk/codec worker completion. Do not destroy their loop or release state ownership early.
 
-Phase 2A tests cover fake lifecycle/inventory, failure boundaries, PNG validation, bounded event/memory admission,
-owned-worker cancellation, fresh-process restart and CLI inspection without replay. The root test guard installs
-before collection, permits exact registered numeric IP/port fixtures, and guards DNS, socket and asyncio transport
-sends. Only explicitly registered Python children bootstrap that same guard. This is an accidental-call guard,
-not an OS sandbox. Phase 2B adds the scripted TLS/gRPC fixture, and Phase 2C composes it with HTTP mocks.
+Phase 2A tests cover fake lifecycle/inventory, failure boundaries, PNG validation, bounded event/memory admission, owned-worker cancellation, fresh-process restart and CLI inspection without replay. The root test guard installs before collection, permits exact registered numeric IP/port fixtures, and guards DNS, socket and asyncio transport sends. Only explicitly registered Python children bootstrap that same guard. This is an accidental-call guard, not an OS sandbox. Phase 2B adds the scripted TLS/gRPC fixture, and Phase 2C composes it with HTTP mocks.
 
-Build metadata currently reports the package version and explicitly unknown source revision/status, without runtime
-Git. Bundled revision generation, production logging, secure saved credentials and packaged per-user paths remain
-later milestones. Fake CLI progress goes to stderr and result/inspection JSON to stdout. No release tag is created.
+Build metadata currently reports the package version and explicitly unknown source revision/status, without runtime Git. Bundled revision generation, production logging, secure saved credentials and packaged per-user paths remain later milestones. Fake CLI progress goes to stderr and result/inspection JSON to stdout. No release tag is created.
 
-Phase 2C implements [direct-cloud composition](cloud-integration.md) by inheriting the local adapter's actual channel,
-stream, serialization and codec path. Only authorization/health hooks, backend identity and client concurrency differ;
-shared behavior remains authoritative in 2B tests. Cloud-specific auth/parser/HTTP tests cover the new boundaries.
+Phase 2C implements [direct-cloud composition](cloud-integration.md) by inheriting the local adapter's actual channel, stream, serialization and codec path. Only authorization/health hooks, backend identity and client concurrency differ; shared behavior remains authoritative in 2B tests. Cloud-specific auth/parser/HTTP tests cover the new boundaries.

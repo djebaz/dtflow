@@ -13,6 +13,7 @@ from dtflow.core.models import (
     CompletionEvidence,
     Designation,
     ErrorCategory,
+    LoRASelection,
     RemoteOutcome,
     ResolvedGenerationRequest,
     TimeoutPolicy,
@@ -53,6 +54,12 @@ async def test_connect_inventory_and_saved_success(state):
         assert (record["state"], record["remote_outcome"]) == ("succeeded", "succeeded")
         assert Path(result.output_paths[0]).read_bytes().startswith(b"\x89PNG")
         assert record["artifacts"] == [*result.output_paths, result.metadata_path]
+        grid_request = replace(request("grid"), model_id="fake-grid", loras=(LoRASelection("fake-soft", 0.8),))
+        diagnostics = await service.preflight(grid_request)
+        assert diagnostics[0].architecture_match == "match"
+        assert diagnostics[0].generation_evidence == "application_unconfirmed"
+        grid = await service.generate(grid_request)
+        assert Path(grid.output_paths[0]).read_bytes() != Path(result.output_paths[0]).read_bytes()
         with pytest.raises(PersistenceError):
             await service.generate(request())  # A repeated identity is never silently retried.
     finally:
