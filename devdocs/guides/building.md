@@ -20,7 +20,7 @@ The script prints the output path and source identity only after a successful bu
 dist/dtflow-<version>-g<short-sha>-windows-<arch>.exe
 ```
 
-The version comes from the project metadata, not the proposed roadmap number. Preparing a 0.3.0 release is a separate version/release change. The builder records the full source commit and clean/dirty status, bundles it, then removes the generated identity module. The runtime does not need Git or a source checkout.
+The version comes from the project metadata, not the proposed roadmap number. Follow [version bump and release](releasing.md) before building the final release; the owner runs the build after the release PR is squash-merged. The builder records the full source commit and clean/dirty status, bundles it, then removes the generated identity module. The runtime does not need Git or a source checkout.
 
 ## Launch the exact build
 
