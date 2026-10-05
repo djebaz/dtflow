@@ -6,6 +6,7 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 """
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -15,14 +16,27 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QWidget
 
 from dtflow.composition import BACKENDS
-from dtflow.core.models import BackendEvent, CredentialProvider, Designation, ValidationError
+from dtflow.core.models import (
+    BackendEvent,
+    CredentialProvider,
+    Designation,
+    InventorySnapshot,
+    ValidationError,
+    eligible_model_ids,
+)
 from dtflow.services.connection import (
     Presentation,
     present_generation_failure,
     present_interruption,
     present_outcome,
 )
-from dtflow.services.session import generate_once, read_attempt, refresh_inventory, selection_for
+from dtflow.services.session import (
+    cached_inventory,
+    generate_once,
+    read_attempt,
+    refresh_inventory,
+    selection_for,
+)
 from dtflow.ui.activity import Activity
 from dtflow.ui.generation_presenter import (
     FAKE_MODEL,
@@ -31,14 +45,30 @@ from dtflow.ui.generation_presenter import (
     FormValues,
     build_request,
     describe_request,
+    form_from_document,
+    form_to_document,
     read_configuration,
     save_configuration,
+    snap_dimension,
     values_from_request,
 )
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
+log = logging.getLogger(__name__)
+
+
+def failure_reason(failure: BaseException) -> str:
+    """Short log text for a failure: the backend's own code and category when it has them, else the type name."""
+    detail = getattr(failure, "failure", None)
+    code, category = getattr(detail, "code", None), getattr(detail, "category", None)
+    if code:
+        return f"{type(failure).__name__} code={code} category={getattr(category, 'value', category)}"
+    return type(failure).__name__
+
+
 PREVIEW_BOX = 360  # bounded display size; the saved file is never resized
+PREVIEW_MIN_HEIGHT = 210  # the empty preview frame, as in the Designer form
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 WIRED_CONTROLS = (
     "promptEdit",
@@ -93,6 +123,7 @@ class GenerationPage:
         saved_source: Callable[[], CredentialProvider | None],
         state_dir: Path,
         activity: Activity | None = None,
+        no_cache: bool = False,
         choose_save: Callable[[QWidget, Path], str] = _choose_save,
         choose_open: Callable[[QWidget, Path], str] = _choose_open,
     ):
@@ -102,6 +133,8 @@ class GenerationPage:
         self._saved = saved_source
         self._state = Path(state_dir)
         self._activity = activity or Activity()
+        self._no_cache = no_cache
+        self._listed_backend: str | None = None
         self._activity.listen(self._sync_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
@@ -143,6 +176,10 @@ class GenerationPage:
         """Mirror the Connection page's backend; it is read-only here so there is one selector."""
         name, _ = self._backend()
         self.page.generationBackendCombo.setCurrentText(name)
+        if self._listed_backend is not None and self._listed_backend != name:
+            self._fill_models(())  # a list from another provider is not offered for this one
+            self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
+            self._listed_backend = None
         self.page.modelCombo.lineEdit().setPlaceholderText(
             f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
         )
@@ -175,6 +212,28 @@ class GenerationPage:
         page.guidanceSpinBox.setValue(values.guidance)
         page.samplerCombo.setCurrentText(values.sampler)
 
+    def form_document(self) -> dict:
+        """The remembered form values (credential-free, unvalidated)."""
+        return form_to_document(self._values())
+
+    def restore(self, document: object) -> None:
+        """Apply a remembered form document; bad fields fall back to defaults."""
+        values = form_from_document(document)
+        self._apply(values)
+        self.lora.set_loras(values.loras)
+
+    def _snap_size(self) -> str | None:
+        """Show the nearest multiple of 64 in the size boxes; returns a note when a value was adjusted."""
+        page = self.page
+        old = (page.widthSpinBox.value(), page.heightSpinBox.value())
+        new = tuple(snap_dimension(value) for value in old)
+        if new == old:
+            return None
+        page.widthSpinBox.setValue(new[0])
+        page.heightSpinBox.setValue(new[1])
+        log.info("size adjusted from %dx%d to %dx%d", *old, *new)
+        return f"Size adjusted from {old[0]}x{old[1]} to {new[0]}x{new[1]} (multiples of 64)."
+
     def _request_for_check(self):
         """A request for LoRA preflight only: a blank prompt gets a placeholder because nothing is dispatched."""
         self._mark(None)
@@ -203,6 +262,8 @@ class GenerationPage:
             widget.style().polish(widget)
 
     def _set_busy(self, busy: bool) -> None:
+        if busy != self._busy:
+            log.debug("generate page busy=%s", busy)
         self._busy = busy
         self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
@@ -220,6 +281,7 @@ class GenerationPage:
     def request_for_queue(self):
         """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking."""
         self._mark(None)
+        self._snap_size()
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name)
@@ -242,34 +304,53 @@ class GenerationPage:
         if not pixmap.loadFromData(encoded):
             return
         label = self.page.resultPreviewLabel
-        label.setPixmap(
-            pixmap.scaled(
-                PREVIEW_BOX, PREVIEW_BOX, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-            )
+        scaled = pixmap.scaled(
+            PREVIEW_BOX, PREVIEW_BOX, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
         )
+        label.setPixmap(scaled)
         label.setProperty("designation", designation)
+        # The frame must be as tall as the scaled image, or a portrait picture is clipped top and bottom.
+        margins = self.page.previewHost.layout().contentsMargins()
+        self.page.previewHost.setMinimumHeight(
+            max(PREVIEW_MIN_HEIGHT, scaled.height() + margins.top() + margins.bottom())
+        )
 
     # -- generation ------------------------------------------------------------------------------------------------
     def generate(self) -> None:
         if self._busy:
             return
         self._mark(None)
+        note = self._snap_size()
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name)
         except FormError as exc:
             self._mark(exc.widget)
+            log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
+            log.debug("generate validation message=%s", exc)
             self._status(Presentation("error", "Invalid request", str(exc)))
             return
         self._request = request
+        log.info("generate submitted backend=%s", name)
+        log.debug(
+            "generate request model=%s size=%dx%d steps=%d sampler=%s seed=%s loras=%s",
+            request.model_id,
+            request.width_px,
+            request.height_px,
+            request.steps,
+            request.sampler_id.value,
+            request.seed,
+            [f"{item.identifier}@{item.weight}" for item in request.loras],
+        )
         self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
         self.page.resultList.clear()
         self._set_result_actions(False)
         self.page.attemptIdentityLabel.setText("No durable attempt yet.")
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
+        self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
         self._progress("Preparing")
-        self._status(Presentation("warning", "Generating", "Waiting on the selected backend."))
+        self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
         self._generating = True
         self._activity.set(generating=True)
         self._set_busy(True)
@@ -313,8 +394,10 @@ class GenerationPage:
         self._set_busy(False)
         if failure is not None:
             self._progress("Failed")
+            log.warning("generate failed reason=%s", failure_reason(failure))
             self._status(present_generation_failure(failure))
             return
+        log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
         bar = self.page.generationProgressBar
         bar.setRange(0, 1)
         bar.setValue(1)
@@ -379,31 +462,62 @@ class GenerationPage:
         name, endpoint = self._backend()
         self._set_busy(True)
         self.page.inventoryEvidenceLabel.setText("Refreshing inventory…")
+        log.info("inventory refresh requested backend=%s", name)
         self._runner.submit(self._refresh(name, endpoint, self._saved()), self._refreshed)
 
     async def _refresh(self, name, endpoint, saved):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
-        return await refresh_inventory(selection, self._state, saved=saved)
+        return await refresh_inventory(selection, self._state, saved=saved, no_cache=self._no_cache)
+
+    def _fill_models(self, ids) -> None:
+        """Replace the drop-down entries, keeping whatever is typed (the box stays editable for unlisted models)."""
+        combo = self.page.modelCombo
+        current = combo.currentText()
+        combo.clear()
+        combo.addItems(ids)
+        combo.setCurrentText(current)
+
+    def _show_inventory(self, snapshot: InventorySnapshot, how: str) -> None:
+        self.lora.set_inventory(snapshot)
+        ids = eligible_model_ids(snapshot)
+        self._fill_models(ids)
+        self._listed_backend = self._backend()[0]
+        self.page.inventoryEvidenceLabel.setText(
+            f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}. {len(ids)} model(s) listed."
+        )
 
     def _refreshed(self, snapshot, failure) -> None:
         self._set_busy(False)
         label = self.page.inventoryEvidenceLabel
         if failure is not None:
             shown = present_generation_failure(failure)
+            log.warning("inventory refresh failed reason=%s", failure_reason(failure))
             label.setText(f"Inventory refresh failed. {shown.headline}: {shown.detail}")
             return
-        self.lora.set_inventory(snapshot)
-        combo = self.page.modelCombo
-        current = combo.currentText()
-        combo.clear()
-        combo.addItems([entry.identifier for entry in snapshot.entries if entry.kind == "model"])
-        combo.setCurrentText(current)
-        how = "refreshed" if snapshot.refreshed else "as reported"
-        label.setText(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
+        self._show_inventory(snapshot, "refreshed" if snapshot.refreshed else "as reported")
+
+    def request_cached(self) -> None:
+        """Prefill the lists from the disposable cache; a miss, a bypass or a stale answer changes nothing."""
+        if self._no_cache:
+            return
+        name, endpoint = self._backend()
+        self._runner.submit(
+            self._cached(name, endpoint, self._saved()), lambda snapshot, failure: self._cached_loaded(name, snapshot)
+        )
+
+    async def _cached(self, name, endpoint, saved):
+        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
+        return await cached_inventory(selection, self._state, saved=saved)
+
+    def _cached_loaded(self, name: str, snapshot) -> None:
+        if snapshot is None or self._backend()[0] != name or self._listed_backend == name:
+            return
+        self._show_inventory(snapshot, "cached (press Refresh inventory for live)")
 
     # -- configuration ---------------------------------------------------------------------------------------------
     def save(self) -> None:
         self._mark(None)
+        self._snap_size()
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name)

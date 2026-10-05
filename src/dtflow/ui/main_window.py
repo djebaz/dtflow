@@ -1,5 +1,7 @@
 """Main window: presentation and wiring only. Backend access and credentials live in the shared services."""
 
+import asyncio
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject
@@ -20,6 +22,7 @@ from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
+from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
@@ -27,6 +30,8 @@ from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
+
+log = logging.getLogger(__name__)
 
 FORMS_DIR = Path(__file__).with_name("forms")
 UI_FILE = FORMS_DIR / "main_window.ui"
@@ -88,6 +93,7 @@ class MainWindow:
         runner: AsyncRunner | None = None,
         environ=None,
         state_dir: Path | None = None,
+        no_cache: bool = False,
     ):
         self.form = load_form()
         self.generation_page = load_ui(GENERATION_UI_FILE)
@@ -112,6 +118,7 @@ class MainWindow:
             saved_source=lambda: self._saved if self._saved.available() else None,
             state_dir=self.state_dir,
             activity=self.activity,
+            no_cache=no_cache,
         )
         self.queue = QueuePage(
             self.queue_page,
@@ -123,6 +130,7 @@ class MainWindow:
             activity=self.activity,
         )
         form.backendCombo.addItems(BACKENDS)
+        self._restore_session()
         form.statusBar().showMessage(display_identity())
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
@@ -130,6 +138,8 @@ class MainWindow:
         form.aboutAction.triggered.connect(self.about)
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
         form.endpointEdit.textChanged.connect(self._selection_changed)
+        form.endpointEdit.editingFinished.connect(self._endpoint_entered)
+        self.generation_page.generateButton.clicked.connect(self.remember)
         form.connectionNavigationButton.clicked.connect(
             lambda: form.workspaceStack.setCurrentWidget(form.connectionPage)
         )
@@ -137,8 +147,10 @@ class MainWindow:
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
         self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
+        log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
+        self.generation.request_cached()
         self.refresh_credentials()
 
     @staticmethod
@@ -163,7 +175,54 @@ class MainWindow:
         self.form.show()
         apply_native_dark_titlebar(self.form)
 
+    # -- remembered session -----------------------------------------------------------------------------------------
+    def _restore_session(self) -> None:
+        """Bring back the last provider, endpoint and Generate form; anything unusable leaves the defaults."""
+        document = load_last_session(self.state_dir)
+        if document is None:
+            return
+        provider, endpoint = document.get("provider"), document.get("endpoint")
+        if provider in BACKENDS:
+            self.form.backendCombo.setCurrentText(provider)
+        if isinstance(endpoint, str):
+            self.form.endpointEdit.setText(endpoint)
+        self.generation.restore(document.get("form"))
+        log.info("last session restored provider=%s", provider if provider in BACKENDS else "-")
+
+    def _session_document(self) -> dict:
+        return {
+            "provider": self.form.backendCombo.currentText(),
+            "endpoint": self.form.endpointEdit.text().strip(),
+            "form": self.generation.form_document(),
+        }
+
+    def remember(self, *_, background: bool = True) -> None:
+        """Save the current session; small, but off the GUI thread unless the window is closing."""
+        document = self._session_document()
+        if not background:
+            self._write_session(document)
+            return
+
+        async def write():
+            await asyncio.to_thread(self._write_session, document)
+
+        try:
+            self.runner.submit(write(), lambda *_: None)
+        except RuntimeError:
+            self._write_session(document)
+
+    def _write_session(self, document: dict) -> None:
+        try:
+            save_last_session(self.state_dir, document)
+            log.info("last session saved")
+        except OSError as exc:
+            log.warning("last session not saved reason=%s", type(exc).__name__)
+
+    def _endpoint_entered(self) -> None:
+        log.info("endpoint changed backend=%s", self.form.backendCombo.currentText())
+
     def _backend_changed(self, name: str) -> None:
+        log.info("provider changed backend=%s", name)
         self.form.endpointEdit.setEnabled(name == "local")
         self.form.credentialBox.setEnabled(name == "cloud")
         self._selection_changed()
@@ -202,6 +261,7 @@ class MainWindow:
         self._busy = True
         self.form.checkButton.setEnabled(False)
         self._present(Presentation("warning", "Checking", ""))
+        log.info("connection check started backend=%s", selection.name)
         saved: CredentialProvider | None = self._saved if self._saved.available() else None
         self.runner.submit(self._check(selection, saved), self._checked)
 
@@ -211,16 +271,22 @@ class MainWindow:
     def _checked(self, status, failure) -> None:
         self._busy = False
         self.form.checkButton.setEnabled(True)
-        self._present(present_failure(failure) if failure else present_status(status))
+        shown = present_failure(failure) if failure else present_status(status)
+        log.info("connection check result level=%s headline=%s", shown.level, shown.headline)
+        self._present(shown)
+        if failure is None and shown.level == "ok":
+            self.remember()
 
     def save_key(self) -> None:
         try:
             self._saved.save(self.form.keyEdit.text())
         except (BackendError, ValidationError, SecureStorageUnavailable) as exc:
             code = exc.failure.code if isinstance(exc, BackendError) else str(exc)
+            log.warning("api key not saved reason=%s", type(exc).__name__)
             self.form.credentialStatusLabel.setText(f"Key not saved: {code}")
             self.form.keyEdit.clear()
             return
+        log.info("api key saved")
         self.refresh_credentials()
 
     def remove_key(self) -> None:
@@ -234,13 +300,17 @@ class MainWindow:
         try:
             self._saved.remove()
         except BackendError as exc:
+            log.warning("api key not removed code=%s", exc.failure.code)
             self.form.credentialStatusLabel.setText(f"Key not removed: {exc.failure.code}")
             return
+        log.info("api key removed")
         self.refresh_credentials()
 
     def about(self) -> None:
         QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
 
     def close(self) -> None:
+        self.remember(background=False)
+        log.info("window closed")
         self.runner.shutdown()
         self.form.close()

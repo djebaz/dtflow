@@ -43,8 +43,12 @@ No API keys, tokens or authentication blobs are written. A forced process termin
 
 ## Planned application cache, logs and packaged paths
 
-The derived LoRA cache writer is implemented. Raw local/cloud inventories remain in memory during application
-execution; their disk-cache integration is planned. Retained live checks already write all three inventory files.
+The derived LoRA cache writer is implemented. A successful `dtflow models` or desktop Refresh inventory also writes the
+raw local or cloud snapshot (`persistence/inventory_cache.py`); the desktop reads it once per provider selection as a
+prefill of the model and LoRA lists, marked cached, and generation always refreshes live. A read is a miss, never an
+error, when the file is missing, unreadable, another `cache_version`, another endpoint or, for cloud, another credential
+source or key (the file holds the source and a salted SHA-256 of the key, never the key). `-nc/--no-cache` (also on
+`dtflow gui`) disables reads and writes. Retained live checks write all three inventory files under `test-runs/`.
 Use the same filenames in development application cache, packaged application cache and test/scratch roots when
 inventory snapshots are saved. Create optional folders only on demand:
 
@@ -57,6 +61,7 @@ inventory snapshots are saved. Create optional folders only on demand:
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
 | `logs/dtflow-<session>.log` | Rotating application diagnostics, one file set per process; the newest 20 sessions are kept |
 | `.dtflow/settings.json` | Versioned, credential-free shared settings (currently the cloud concurrency maximum); durable, not cache |
+| `.dtflow/last_session.json` | Versioned, credential-free last desktop session (provider, local endpoint, Generate form incl. prompt); durable, written on submit, successful connection check and quit; ignored if unreadable or a newer schema; `-nc` and cache cleanup never touch it |
 | `logs/tests/<run-id>.log` | Optional live-run diagnostics when implemented |
 | `tmp/<operation-id>/` | Disposable operation scratch; no predetermined backend categories |
 

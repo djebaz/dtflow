@@ -54,7 +54,7 @@ The agent did not inspect any output image.
 Not done or unverified: the official base/refiner and Kandinsky/SD-v1 exception rules are not pinned, so no exception
 logic exists; LoRA application is still not confirmed by backend evidence; some server-reported LoRA architecture
 labels look wrong, and preflight blocks on a reported mismatch with no override yet; no queue, cancellation or cloud
-LoRA behavior was run live; raw inventory disk-cache read/write integration is still planned; the saved Windows
+LoRA behavior was run live; raw inventory disk-cache read/write integration was planned here and landed afterwards with the desktop (see the runtime layout); the saved Windows
 credential provider is Phase 4, so cloud credentials are environment-only; the frozen exe was not tried on a second
 machine or stamped with a commit. Billing behavior remains unverified.
 
@@ -111,7 +111,7 @@ Qt exposes the same setting and uses a subtle color change above **2**, without 
 
 ## Runtime paths
 
-Use the [shared runtime layout](../architecture/runtime-layout.md): backend-neutral outputs grouped by attempt, durable state separate from disposable cache, and flat `cache/inventory/local_inventory.json` / `cloud_inventory.json` names, alongside `lora_inventory.json`. Keep endpoint/server observations inside JSON, not filenames; invalidate account-dependent evidence when credentials change. The derived LoRA cache writer exists; raw inventory disk-cache integration remains planned. When persistent inventory caching is introduced, use an integer `CACHE_VERSION` and rebuild missing/mismatched formats; do not confuse cache format with durable-state schema. Live evidence stays under `test-runs/<run-id>/`, outside the application root. Create optional directories on demand.
+Use the [shared runtime layout](../architecture/runtime-layout.md): backend-neutral outputs grouped by attempt, durable state separate from disposable cache, and flat `cache/inventory/local_inventory.json` / `cloud_inventory.json` names, alongside `lora_inventory.json`. Keep endpoint/server observations inside JSON, not filenames; invalidate account-dependent evidence when credentials change. The derived LoRA cache writer exists and the raw inventory cache is written by `dtflow models` and the desktop refresh and read only as a desktop startup prefill. When persistent inventory caching is introduced, use an integer `CACHE_VERSION` and rebuild missing/mismatched formats; do not confuse cache format with durable-state schema. Live evidence stays under `test-runs/<run-id>/`, outside the application root. Create optional directories on demand.
 
 ## Shared logging and development mode
 

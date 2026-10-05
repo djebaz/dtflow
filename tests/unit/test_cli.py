@@ -46,6 +46,7 @@ def test_help_version_and_documented_options(capsys):
     for pair in ("-b, --backend", "-e, --endpoint", "-c, --config", "-u, --export", "-l, --lora", "-r, --prefix"):
         assert pair in generate
     assert "-j, --jobs" in choices["settings"].format_help()
+    assert "-nc, --no-cache" in choices["gui"].format_help() and cli.parser().parse_args(["gui", "-nc"]).no_cache
 
 
 @pytest.mark.parametrize(

@@ -17,13 +17,24 @@ from PySide6.QtGui import QGuiApplication  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
-from dtflow.core.models import BackendEvent, Designation, ImageArtifact  # noqa: E402
+from dtflow.core.models import (  # noqa: E402
+    BackendEvent,
+    Designation,
+    ImageArtifact,
+    InventoryEntry,
+    InventorySnapshot,
+    LoRASelection,
+)
 from dtflow.core.png import fixture_png  # noqa: E402
+from dtflow.logging_setup import configure_logging  # noqa: E402
+from dtflow.persistence.inventory_cache import save_inventory  # noqa: E402
 from dtflow.persistence.store import SQLiteAttempts  # noqa: E402
 from dtflow.services import session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.runner import EventRelay  # noqa: E402
+
+ENDPOINT = "grpcs://127.0.0.1:7859"
 
 
 @pytest.fixture
@@ -119,10 +130,10 @@ def test_local_stop_reports_recorded_evidence_not_remote_cancellation(window, qt
 
 def test_invalid_field_is_marked_and_nothing_is_submitted(window, qtbot):
     page = window.generation_page
-    page.widthSpinBox.setValue(100)
+    page.seedEdit.setText("not-a-seed")
     page.generateButton.click()
     assert page.generationStatusLabel.text().startswith("Invalid request")
-    assert page.widthSpinBox.property("invalid") is True
+    assert page.seedEdit.property("invalid") is True
     assert page.generateButton.isEnabled()
     assert not (window.state_dir / "attempts.sqlite3").exists()  # no attempt, no state opened
 
@@ -190,3 +201,112 @@ def test_relay_coalesces_transient_events_and_keeps_critical_ones(qtbot):
     qtbot.wait(50)
     assert [e.kind for e in seen] == ["progress", "submission_possible", "terminal"]
     assert seen[0].completed == 500  # only the latest progress survives coalescing
+
+
+def local_snapshot(metadata="absent"):
+    entries = tuple(InventoryEntry(f"m{n}.ckpt", "unknown", f"M{n}", None, "listed", "echo.files") for n in range(2))
+    return InventorySnapshot(
+        "drawthings-local", "s", "2026-10-05T10:00:00+00:00", True, entries, (("model_metadata", metadata),), ENDPOINT
+    )
+
+
+def test_cache_prefills_the_model_list_and_a_bypass_ignores_it(window, qtbot, tmp_path):
+    page = window.generation_page
+    save_inventory(window.state_dir, "local", local_snapshot())
+    window.form.backendCombo.setCurrentText("local")
+    window.form.endpointEdit.setText("127.0.0.1:7859")
+    window.generation.request_cached()
+    qtbot.waitUntil(lambda: page.modelCombo.findText("m0.ckpt") >= 0, timeout=3000)
+    assert "cached" in page.inventoryEvidenceLabel.text() and "2 model(s)" in page.inventoryEvidenceLabel.text()
+    window.form.backendCombo.setCurrentText("fake")  # another provider never shows this provider's list
+    assert page.modelCombo.findText("m0.ckpt") < 0
+    bypass = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=window.state_dir, no_cache=True)
+    qtbot.addWidget(bypass.form)
+    bypass.form.backendCombo.setCurrentText("local")
+    bypass.form.endpointEdit.setText("127.0.0.1:7859")
+    bypass.generation.request_cached()
+    qtbot.wait(200)
+    assert bypass.generation_page.modelCombo.count() == 0
+    bypass.runner.shutdown()
+
+
+def test_last_session_is_restored_by_the_next_window(window, qtbot):
+    page = window.generation_page
+    window.form.backendCombo.setCurrentText("local")
+    window.form.endpointEdit.setText("10.0.0.2:7859")
+    page.promptEdit.setPlainText("a red fox")
+    page.modelCombo.setCurrentText("m1.ckpt")
+    page.seedEdit.setText("77")
+    page.widthSpinBox.setValue(640)
+    window.generation.lora.set_loras((LoRASelection("style", 0.7),))
+    window.remember(background=False)
+    again = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=window.state_dir)
+    qtbot.addWidget(again.form)
+    assert again.form.backendCombo.currentText() == "local"
+    assert again.form.endpointEdit.text() == "10.0.0.2:7859"
+    restored = again.generation_page
+    assert restored.promptEdit.toPlainText() == "a red fox" and restored.modelCombo.currentText() == "m1.ckpt"
+    assert restored.seedEdit.text() == "77" and restored.widthSpinBox.value() == 640
+    assert again.generation.lora.loras == (LoRASelection("style", 0.7),)
+    again.runner.shutdown()
+
+
+@pytest.mark.parametrize("dev", [False, True])
+def test_gui_logs_actions_and_results_without_prompts_or_inventory(window, qtbot, tmp_path, dev):
+    logs = configure_logging(directory=tmp_path / "logs", session="gui", dev=dev)
+    page = window.generation_page
+    page.promptEdit.setPlainText("PROMPT-SENTINEL")
+    page.refreshInventoryButton.click()
+    qtbot.waitUntil(lambda: page.refreshInventoryButton.isEnabled(), timeout=5000)
+    page.generateButton.click()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    logs.close()
+    text = logs.path.read_text(encoding="utf-8")
+    assert "inventory refresh ok backend=fake" in text and "generate submitted backend=fake" in text
+    assert "generate saved backend=fake" in text
+    assert "PROMPT-SENTINEL" not in text and "Offline fixture swatch" not in text
+    assert ("generate request model=" in text) is dev
+    assert max(len(line) for line in text.splitlines()) < 300
+
+
+def test_a_failed_generation_logs_the_backend_code_not_just_the_exception_type(window, qtbot, tmp_path, fake):
+    use, _ = fake
+    use(scenario="reject")
+    logs = configure_logging(directory=tmp_path / "logs", session="fail")
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    logs.close()
+    line = next(x for x in logs.path.read_text(encoding="utf-8").splitlines() if "generate failed" in x)
+    assert "BackendError code=" in line and "category=" in line
+
+
+def test_a_size_that_is_not_a_multiple_of_64_is_adjusted_and_shown(window, qtbot, fake):
+    use, _ = fake
+    use()
+    page = window.generation_page
+    page.widthSpinBox.setValue(700)
+    page.heightSpinBox.setValue(500)
+    page.generateButton.click()
+    assert (page.widthSpinBox.value(), page.heightSpinBox.value()) == (704, 512)
+    assert "Size adjusted from 700x500 to 704x512" in page.generationStatusLabel.text()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    assert "size: 704x512" in page.effectiveRequestBrowser.toPlainText()
+
+
+def test_a_portrait_preview_gets_a_frame_tall_enough_to_show_all_of_it(window, qtbot):
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+    from PySide6.QtGui import QColor, QImage
+
+    image = QImage(320, 512, QImage.Format.Format_RGB32)
+    image.fill(QColor("steelblue"))
+    data = QByteArray()
+    buffer = QBuffer(data)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    page = window.generation_page
+    window.generation._show_image(bytes(data), "final")
+    shown = page.resultPreviewLabel.pixmap().height()
+    assert shown == 360 and page.previewHost.minimumHeight() >= shown  # 360 is the bounded preview edge
+    page.generateButton.click()  # a new run clears the preview and the frame returns to its resting height
+    assert page.previewHost.minimumHeight() == 210

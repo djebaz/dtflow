@@ -140,8 +140,7 @@ Local/cloud generation requires an exact `-m/--model` listed by the server's inv
 - **Options.** Generation: `-p/--prompt`, `-n/--negative`, `-m/--model`, `-s/--seed`, `-w/--width`, `-y/--height`,
   `-i/--steps`, `-g/--guidance`, `-a/--sampler`, `-l/--lora ID:WEIGHT` (repeatable, explicit weight required),
   `-r/--prefix`, `-o/--out`, `-t/--timeout`. Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local),
-  `-d/--state`, `-nc/--no-cache` (the CLI keeps no inventory cache yet, so the flag currently only guarantees none is
-  read or written). Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`. Fake-only: `-f/--scenario`.
+  `-d/--state`, `-nc/--no-cache` (bypasses inventory cache reads and writes; also on `dtflow gui`). Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`. Fake-only: `-f/--scenario`.
 - **Configuration.** `-c/--config` reads a versioned, credential-free generation config (`dtflow.generation-config`,
   version 1) or a previous run's `metadata.json`; `-u/--export` writes the effective config of the current request
   before dispatch. Precedence is default < file < explicit flag, and the metadata records where each field came from.
@@ -205,7 +204,14 @@ patched SQLite runtime as described in the
 
 ```powershell
 uv run dtflow gui    # backend selection, connection check/status, DT+ API-key save/remove, version/commit in the status bar
+uv run dtflow -x gui # same, with extra diagnostic detail in logs/ (-nc / --no-cache bypasses the inventory cache)
 ```
+
+The window remembers the last provider, local endpoint and Generate form (prompts, model, LoRAs and weights, seed,
+size, steps, guidance, sampler) in `.dtflow/last_session.json`, written on submit, after a successful connection
+check and on quit; it is durable state, not cache. Refresh inventory also saves the raw local/cloud inventory under
+`.dtflow/cache/inventory/`, which prefills the model and LoRA lists at the next start (marked cached; generation always
+refreshes live). Without model metadata from the server, listed files are offered as models, as the request gate does. The Generate page snaps width and height to the nearest multiple of 64 and says so; the CLI still rejects other values.
 
 The shell uses the same services as the CLI; connection checks run on a background thread and never generate. On
 Windows the API key is saved in Credential Manager (`DRAWTHINGS_API_KEY` in the environment still takes precedence); on

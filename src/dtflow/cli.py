@@ -36,6 +36,7 @@ from dtflow.services.session import (
     open_session,
     prepare_asset,
     reconcile_asset,
+    remember_inventory,
     run_generation,
     selection_for,
 )
@@ -59,7 +60,10 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Log directory (default: repository logs/ or per-user data).")
     commands = command.add_subparsers(dest="command", required=True)
-    commands.add_parser("gui", help=COMMAND_HELP["gui"])
+    gui = commands.add_parser("gui", help=COMMAND_HELP["gui"])
+    gui.add_argument(
+        "-nc", "--no-cache", action="store_true", help="Bypass inventory cache reads and writes for this run."
+    )
     testing = commands.add_parser("test", help="Run repository tests through pytest.")
     testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
     testing.add_argument("-live", "--live", action="store_true", help="Run non-generative live connectivity checks.")
@@ -96,7 +100,7 @@ def parser() -> argparse.ArgumentParser:
                 "-nc",
                 "--no-cache",
                 action="store_true",
-                help="Bypass inventory cache reads and writes (the CLI currently keeps none).",
+                help="Bypass inventory cache reads and writes for this run.",
             )
         if name == "models":
             child.add_argument("-r", "--refresh", action="store_true", help="Refresh the inventory.")
@@ -459,6 +463,8 @@ async def run(args: argparse.Namespace) -> int:
             print(json.dumps(asdict(await service.check_connection()), indent=2))
         elif args.command == "models":
             snapshot = await service.get_inventory(args.refresh or args.no_cache)
+            if not args.no_cache:
+                await remember_inventory(selection, args.state, snapshot)
             print(json.dumps(filtered(snapshot, args.kind), indent=2))
         else:
             label = args.backend
@@ -500,7 +506,7 @@ def main(argv: list[str] | None = None) -> int:
     logging_session = None if args.command == "test" else start_logging(args)
     try:
         if args.command == "gui":
-            return run_gui_command()
+            return run_gui_command(no_cache=args.no_cache)
         if args.command == "test":
             return run_tests(args)
         return asyncio.run(run(args))
@@ -544,14 +550,14 @@ def main(argv: list[str] | None = None) -> int:
             logging_session.close()
 
 
-def run_gui_command() -> int:
+def run_gui_command(*, no_cache: bool = False) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
         from dtflow.ui.app import run_gui
     except ImportError:
         print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
         return EXIT_INVALID
-    return run_gui()
+    return run_gui(no_cache=no_cache)
 
 
 def run_tests(args: argparse.Namespace) -> int:
