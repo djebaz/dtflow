@@ -9,6 +9,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
@@ -38,6 +39,7 @@ from dtflow.services.session import (
     selection_for,
 )
 from dtflow.ui.activity import Activity
+from dtflow.ui.empty_hint import EmptyListHint
 from dtflow.ui.generation_presenter import (
     FAKE_MODEL,
     SAMPLERS,
@@ -145,6 +147,11 @@ class GenerationPage:
         self._config_name: str | None = None
         self._metadata_path: Path | None = None
         self._submitted_backend: str | None = None
+        self._empty_hints = (
+            EmptyListHint(page.loraList, "No LoRAs selected\nAdd an adapter to this request."),
+            EmptyListHint(page.assetList, "No local receipts\nPrepare a cloud asset to begin."),
+            EmptyListHint(page.resultList, "No saved outputs yet"),
+        )
         self.lora = LoraAssetPanel(
             page,
             runner=runner,
@@ -185,6 +192,13 @@ class GenerationPage:
         page.generationSplitter.setSizes([270, 900, 300])
         page.modelCombo.lineEdit().setPlaceholderText("Select or enter a model")
         page.promptEdit.setTabChangesFocus(True)
+        for control in (page.expandPromptButton, page.inspectorToggle, page.detailsToggle):
+            control.setEnabled(True)
+        page.attemptDetails.hide()
+        page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)
+        page.expandPromptButton.toggled.connect(
+            lambda expanded: page.promptEdit.setFixedHeight(180 if expanded else 76)
+        )
         page.resultPreviewLabel.enable_inspection()
         self.sync_backend()
         self._scan_configs()
@@ -426,7 +440,7 @@ class GenerationPage:
             item.setData(RESULT_PATH_ROLE, str(path))
             self.page.resultList.addItem(item)
         self._set_result_actions(True)
-        self._metadata_path = outcome.metadata_path
+        self._metadata_path = Path(outcome.metadata_path)
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
 
@@ -522,9 +536,13 @@ class GenerationPage:
         ids = eligible_model_ids(snapshot)
         self._fill_models(ids)
         self._listed_backend = self._backend()[0]
-        self.page.inventoryEvidenceLabel.setText(
-            f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}. {len(ids)} model(s) listed."
-        )
+        label = self.page.inventoryEvidenceLabel
+        label.setToolTip(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
+        try:
+            observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
+        except ValueError:
+            observed = snapshot.observed_at_utc
+        label.setText(f"{len(ids)} model(s) · {how.split(' ')[0]}\nobserved {observed}")
 
     def _refreshed(self, snapshot, failure) -> None:
         self._set_busy(False)

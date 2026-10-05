@@ -294,11 +294,12 @@ def test_a_size_that_is_not_a_multiple_of_64_is_adjusted_and_shown(window, qtbot
     assert "size: 704x512" in page.effectiveRequestBrowser.toPlainText()
 
 
-def test_a_portrait_preview_gets_a_frame_tall_enough_to_show_all_of_it(window, qtbot):
+@pytest.mark.parametrize("size", [(512, 1024), (1024, 576)])
+def test_preview_fits_entire_original_image_and_zoom_adds_overflow(window, qtbot, size):
     from PySide6.QtCore import QBuffer, QByteArray, QIODevice
     from PySide6.QtGui import QColor, QImage
 
-    image = QImage(320, 512, QImage.Format.Format_RGB32)
+    image = QImage(*size, QImage.Format.Format_RGB32)
     image.fill(QColor("steelblue"))
     data = QByteArray()
     buffer = QBuffer(data)
@@ -310,9 +311,9 @@ def test_a_portrait_preview_gets_a_frame_tall_enough_to_show_all_of_it(window, q
     window.show()
     qtbot.wait(20)
     viewer = page.resultPreviewLabel
-    assert viewer.pixmap().height() == 512  # original pixels stay available for inspection
+    assert viewer.pixmap().height() == size[1]  # original pixels stay available for inspection
     rect = viewer.image_rect()
-    assert rect.width() / rect.height() == pytest.approx(320 / 512)
+    assert rect.width() / rect.height() == pytest.approx(size[0] / size[1])
     assert viewer.viewport().rect().contains(rect.toAlignedRect())
     assert viewer.horizontalScrollBar().maximum() == viewer.verticalScrollBar().maximum() == 0
     viewer.zoom(4)
@@ -321,3 +322,62 @@ def test_a_portrait_preview_gets_a_frame_tall_enough_to_show_all_of_it(window, q
     assert viewer.verticalScrollBar().maximum() == 0
     page.generateButton.click()  # a new run clears the preview and the frame returns to its resting height
     assert page.previewHost.minimumHeight() == 180
+
+
+def test_canvas_zoom_anchor_expand_lifecycle_and_narrow_navigation(window, qtbot):
+    from PySide6.QtCore import QPoint
+
+    window.form.generationNavigationButton.click()
+    window.show()
+    window.form.resize(800, 680)
+    qtbot.wait(30)
+    page, form = window.generation_page, window.form
+    assert not page.generationRightRail.isVisible()
+    assert form.navigationFrame.isVisible()
+    assert form.navigationFrame.parent() is page.generationLeftRail
+    assert page.width() <= form.centralWidget().width()
+    form.resize(1600, 1000)
+    qtbot.wait(20)
+    page.inspectorToggle.setChecked(False)
+    assert form.navigationFrame.isVisible()
+    assert form.navigationFrame.parent() is page.generationLeftRail
+    form.resize(800, 680)
+    qtbot.wait(20)
+    viewer = page.resultPreviewLabel
+    window.generation._show_image(fixture_png(1024, 576, 0), "final", "fake")
+    viewer.zoom(2)
+    viewer.horizontalScrollBar().setValue(200)
+    viewer.verticalScrollBar().setValue(100)
+    anchor = QPoint(100, 100)
+    before = viewer.image_rect()
+    source = ((anchor.x() - before.x()) / viewer._scale, (anchor.y() - before.y()) / viewer._scale)
+    viewer.zoom(3, anchor)
+    after = viewer.image_rect()
+    assert (anchor.x() - after.x()) / viewer._scale == pytest.approx(source[0], abs=1)
+    assert (anchor.y() - after.y()) / viewer._scale == pytest.approx(source[1], abs=1)
+    host = viewer.parentWidget()
+    viewer.toggle_expanded()
+    assert viewer.isWindow() and viewer._expanded
+    viewer.close()
+    assert not viewer._expanded and viewer.parentWidget() is host
+    viewer.toggle_expanded()
+    form.close()
+    assert not viewer._expanded and viewer.parentWidget() is host
+
+
+def test_saved_actions_use_attempt_identity_and_metadata_file(window, qtbot, fake, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    use, _ = fake
+    use()
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    window.form.backendCombo.setCurrentText("cloud")
+    assert "Fixture" in page.resultPreviewLabel._badge.text()
+    shown = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda dialog: shown.append(dialog.detailedText()))
+    window.generation.metadataButton.click()
+    assert json.loads(shown[0])["backend_id"] == "fake"
+    window.generation._show_image(fixture_png(64, 64, 0), "final", "cloud")
+    assert "Fixture" not in page.resultPreviewLabel._badge.text()

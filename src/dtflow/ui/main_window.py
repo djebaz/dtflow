@@ -4,7 +4,8 @@ import asyncio
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
+from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -86,6 +87,17 @@ class _CloseGuard(QObject):
         return False
 
 
+class _LayoutGuard(QObject):
+    def __init__(self, callback, parent):
+        super().__init__(parent)
+        self.callback = callback
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Resize:
+            self.callback()
+        return False
+
+
 class MainWindow:
     """Owns the Designer form and an AsyncRunner; ``saved`` is injectable for tests."""
 
@@ -114,6 +126,12 @@ class MainWindow:
         self.confirm = ask_confirmation
         self.activity = Activity()
         form = self.form
+        logo = QPixmap(str(Path(__file__).parents[1] / "resources" / "images" / "dtflow-app.png"))
+        if not logo.isNull():
+            form.productMarkLabel.setPixmap(
+                logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            )
+        self._narrow = None
         self.generation = GenerationPage(
             self.generation_page,
             runner=self.runner,
@@ -150,6 +168,8 @@ class MainWindow:
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
         form.workspaceStack.currentChanged.connect(self._workspace_header)
+        self.generation_page.inspectorToggle.toggled.connect(self._toggle_inspector)
+        form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
@@ -188,6 +208,27 @@ class MainWindow:
         form.navigationFrame.show()
         form.productSubtitleLabel.setVisible(not generating)
         form.headerFrame.setVisible(not generating)
+        self._responsive_workspace()
+
+    def _toggle_inspector(self, visible: bool) -> None:
+        self.generation_page.generationRightRail.setVisible(visible)
+        self._responsive_workspace()
+
+    def _responsive_workspace(self) -> None:
+        form, page = self.form, self.generation_page
+        if form.workspaceStack.currentWidget() is not page:
+            return
+        narrow = form.width() < 1100
+        if narrow != self._narrow:
+            self._narrow = narrow
+            page.inspectorToggle.setChecked(not narrow)
+        if narrow or not page.inspectorToggle.isChecked():
+            # Keep all navigation reachable even when the inspector is collapsed.
+            page.generationLeftRail.layout().insertWidget(1, form.navigationFrame)
+        else:
+            page.generationNavigationSlot.layout().addWidget(form.navigationFrame)
+        form.navigationFrame.show()
+        page.generationRightRail.setVisible(page.inspectorToggle.isChecked())
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)

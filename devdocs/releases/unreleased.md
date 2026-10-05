@@ -2,11 +2,13 @@
 
 Pending changes for the next DTFlow release.
 
-## In progress
+## Changed
 
 - Generate image-first workspace: rail-local header, parameters on the left,
   full-resolution fit/zoom/pan preview and canvas-local saved-output inspection.
-  Styling, offline state fixtures and final visual review are tracked in
+  Shared theme tokens, native interaction states, expandable prompts, collapsible
+  details, retained navigation on narrow windows and deterministic fake grid/model/
+  LoRA fixtures accompany a network-guarded twelve-state Qt renderer. See
   [the refinement plan](../plans/2026-10-05-preview-workspace.md). No provider
   compatibility, Windows packaging or live inference acceptance is claimed.
 

@@ -5,11 +5,14 @@ from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QSlider,
 )
+
+from dtflow.ui.theme import load_tokens
 
 
 class ImagePreview(QAbstractScrollArea):
@@ -29,6 +32,9 @@ class ImagePreview(QAbstractScrollArea):
         self._text = "Your image appears here\nGenerate an image to begin."
         self._expanded = False
         self._restore = None
+        tokens = load_tokens()
+        self._canvas_color = QColor(tokens["color.canvas"])
+        self._secondary_color = QColor(tokens["color.secondary"])
         self._top = QFrame(self.viewport())
         self._top.setObjectName("previewToolbar")
         row = QHBoxLayout(self._top)
@@ -52,7 +58,8 @@ class ImagePreview(QAbstractScrollArea):
         self._badge.setObjectName("previewDesignation")
         self._files = QFrame(self.viewport())
         self._files.setObjectName("previewFileToolbar")
-        self._file_row = QHBoxLayout(self._files)
+        self._file_row = QGridLayout(self._files)
+        self._file_buttons = []
         self._file_row.setContentsMargins(4, 4, 4, 4)
         self._file_row.setSpacing(4)
         self._idle = QTimer(self)
@@ -72,7 +79,7 @@ class ImagePreview(QAbstractScrollArea):
         return button
 
     def add_file_button(self, button):
-        self._file_row.addWidget(button)
+        self._file_buttons.append(button)
         button.show()
         self._position_controls()
 
@@ -166,6 +173,12 @@ class ImagePreview(QAbstractScrollArea):
         self._badge.adjustSize()
         self._expand.adjustSize()
         width, height = self.viewport().width(), self.viewport().height()
+        self.zoomSlider.setVisible(width >= 460)
+        columns = 4 if width >= 500 else 2
+        for index, button in enumerate(self._file_buttons):
+            self._file_row.addWidget(button, index // columns, index % columns)
+        self._top.adjustSize()
+        self._files.adjustSize()
         self._top.move(10, 10)
         # On narrow canvases Expand gets its own row, rather than overlapping zoom.
         expand_y = 10 if width > self._top.width() + self._expand.width() + 30 else self._top.height() + 16
@@ -193,9 +206,9 @@ class ImagePreview(QAbstractScrollArea):
 
     def paintEvent(self, event):
         painter = QPainter(self.viewport())
-        painter.fillRect(self.viewport().rect(), QColor("#151515"))
+        painter.fillRect(self.viewport().rect(), self._canvas_color)
         if self._pixmap.isNull():
-            painter.setPen(QColor("#b2b2b2"))
+            painter.setPen(self._secondary_color)
             painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, self._text)
         else:
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
