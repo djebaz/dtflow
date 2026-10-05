@@ -303,14 +303,15 @@ class MainWindow:
             shell.style().polish(shell)
             if images:
                 self._gallery_previous_sizes = shell.workspaceSplitter.sizes()
-                shell.galleryBrandSlotLayout.addWidget(shell.brandFrame)
-                shell.galleryNavigationSlotLayout.addWidget(shell.navigationFrame)
+                self.gallery_detail.galleryBrandSlotLayout.addWidget(shell.brandFrame)
+                self.gallery_detail.galleryNavigationSlotLayout.addWidget(shell.navigationFrame)
             else:
                 shell.leftRailLayout.insertWidget(0, shell.brandFrame)
                 shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
             shell.brandFrame.show()
             shell.navigationFrame.show()
-            shell.galleryChrome.setVisible(images)
+            self.gallery_detail.galleryBrandSlot.setVisible(images)
+            self.gallery_detail.galleryNavigationSlot.setVisible(images)
             shell.leftRail.setVisible(not images)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)

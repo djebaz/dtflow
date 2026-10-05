@@ -42,8 +42,8 @@ The regular fake backend now lists `fake-fixture`, `fake-grid`, `fake-soft`, `fa
 
 ## Images-only full-width composition
 
-Images hides both content rails and retains logo/navigation in the canonical
-`galleryChrome` strip; leaving Images restores the existing rail chrome and
+Images hides both content rails and retains the logo in the view-controls row and
+navigation in the filters row of the canonical gallery form; leaving Images restores the existing rail chrome and
 splitter widths. The existing stylesheet resolves gallery SVG URLs relative to
 its own tracked resource path, supporting source and packaged execution.
 `gallery.*` tokens scope the approved teal/blue reference to this page; global

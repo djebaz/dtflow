@@ -97,6 +97,8 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     def get(name):
         return page.findChild(QWidget, name)
 
+    get("galleryBrandSlot").hide()
+    get("galleryNavigationSlot").hide()
     painters = []
     for name, icon in [
         ("galleryGridButton", "grid"),

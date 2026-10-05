@@ -754,3 +754,28 @@ QFrame#galleryChrome, QWidget#galleryBrandSlot, QWidget#galleryNavigationSlot {
 QWidget#WorkspaceShell[galleryMode="true"], QFrame#galleryChrome {
   background: ${gallery.background};
 }
+
+/* Compact gallery header follows the shared design-system density. */
+QWidget#galleryHeaderScrollContents QLabel,
+QWidget#galleryHeaderScrollContents QPushButton,
+QWidget#galleryFilterScrollContents QLabel,
+QWidget#galleryFilterScrollContents QLineEdit,
+QWidget#galleryFilterScrollContents QComboBox {
+  font-size: 9pt;
+}
+QWidget#galleryFilterScrollContents QLineEdit,
+QWidget#galleryFilterScrollContents QComboBox {
+  min-height: 28px; padding: 0 8px;
+}
+QWidget#galleryHeaderScrollContents QPushButton {
+  padding: 0 6px;
+}
+QWidget#galleryHeaderScrollContents QLabel#productTitleLabel {
+  font-size: ${type.title};
+}
+QWidget#galleryHeaderScrollContents QLabel#productMarkLabel {
+  font-size: 15pt;
+}
+QWidget#galleryHeaderScrollContents QPushButton#galleryRefreshButton {
+  font-size: 14pt;
+}

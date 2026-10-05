@@ -116,3 +116,18 @@ are preserved on the branch. A newly drafted test was removed at the owner's
 request; no new tests are included. No further tests are run after the request to
 commit immediately. Windows/native-DPI and packaged visual acceptance remain
 unverified; exact pixel equality is not claimed.
+
+
+### Header row alignment and full-width footer — 2026-10-06
+
+Owner follow-up: retain the logo on the view-controls row and the navigation tabs
+on the filters row, matching the supplied crops. Chrome slots now live directly
+in those canonical gallery header rows instead of a separate strip. Metadata,
+positive prompt and expandable Additional/Raw panels span the full content width
+beneath the image and filmstrip. Other tabs retain their restored left-column
+chrome. No tests added or run for this follow-up, per the owner's instruction.
+
+Header density follow-up: view controls are 34 px high, utility controls 36 px,
+filter fields 30 px, with shared 9pt small text. Logo/title retain their established
+identity scale. Header widths are reduced so aligned branding and navigation do
+not crowd the controls. No tests added or run.

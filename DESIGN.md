@@ -177,16 +177,17 @@ The compact Connection control follows the supplied mint/teal reference using de
 
 ## Images reference presentation
 
-Images uses a full-width gallery below a compact logo-and-navigation strip. The
+Images uses a full-width gallery with its logo aligned to the view-controls row
+and navigation tabs aligned to the filter row. The
 shared brand and tabs remain the same widgets; only in Images are they mounted
-in the Designer-defined `galleryChrome` slots. Both content rails and the global
+in the Designer-defined `galleryBrandSlot` and `galleryNavigationSlot` header slots. Both content rails and the global
 Inspector toggle are hidden. Leaving Images restores the rails, chrome and
 splitter widths; the Inspector preference remains independent of this page.
 
 The approved mockup uses the scoped `gallery.*` dark teal, saturated blue and
 aqua palette in the existing token file and shared QSS. Other pages retain the
 existing charcoal palette. Its Detail form has two compact header rows, an
-aspect-preserving Cover image, right vertical filmstrip, bottom metadata row and
+aspect-preserving Cover image, right vertical filmstrip, full-width bottom metadata row and
 three-line positive prompt with small inline disclosure buttons. Additional
 and raw panels are mutually exclusive.
 

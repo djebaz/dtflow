@@ -30,3 +30,7 @@
   layout, scoped gallery palette, illustrative portrait/filmstrip assets and
   presentation-only cover/fit/100%, zoom/pan, navigation and fullscreen controls.
   Leaving Images restores the other workspaces' rails and splitter widths.
+
+- Images aligns logo/view controls and navigation/filters on the same two header
+  rows. Its bottom metadata, prompt and additional/raw panels span the full width
+  beneath the image and filmstrip. No tests added or run for this layout follow-up.
