@@ -16,47 +16,19 @@ Phase 2A supplies the minimal fake/service/SQLite/artifact slice. Phase 3A expan
 
 ## Phase 3A implemented scope and limits
 
-Implemented: explicit `fake`/`local`/`cloud` selection through a composition root (no fallback; cloud credentials from
-`DRAWTHINGS_API_KEY`, local shared secret from `DRAWTHINGS_SHARED_SECRET`); bounded `check`, `models` (kind filter, provenance
-and unknown entries preserved) and `generate`; versioned credential-free configuration/metadata import and export with
-default < file < override precedence and per-field resolution evidence; exact LoRA selection with explicit weights,
-serialized by the Draw Things adapter as whole-model (`All`) LoRAs and verified against the decoded wire configuration;
-shared LoRA preflight (match/mismatch/unknown architecture, availability, fixed `application_unconfirmed` evidence)
-that blocks confirmed mismatches and absent LoRAs before any attempt exists; explicit `--prefix` trigger-prefix
-application; persisted cloud concurrency setting (`settings -j`, 1-4, default 4, not entitlement); the shared logging
-setup; documented exit codes. Defaults chosen where the plan left room: one seed default (`0`, matching the 2A
-slice), `-e HOST:PORT` for the local endpoint, `settings` as the concurrency command, mismatch blocks while unknown
-architecture proceeds with a diagnostic, and `-nc` accepted although no inventory disk cache exists yet.
+Implemented: explicit `fake`/`local`/`cloud` selection through a composition root (no fallback; cloud credentials from `DRAWTHINGS_API_KEY`, local shared secret from `DRAWTHINGS_SHARED_SECRET`); bounded `check`, `models` (kind filter, provenance and unknown entries preserved) and `generate`; versioned credential-free configuration/metadata import and export with default < file < override precedence and per-field resolution evidence; exact LoRA selection with explicit weights, serialized by the Draw Things adapter as whole-model (`All`) LoRAs and verified against the decoded wire configuration; shared LoRA preflight (match/mismatch/unknown architecture, availability, fixed `application_unconfirmed` evidence) that blocks confirmed mismatches and absent LoRAs before any attempt exists; explicit `--prefix` trigger-prefix application; persisted cloud concurrency setting (`settings -j`, 1-4, default 4, not entitlement); the shared logging setup; documented exit codes. Defaults chosen where the plan left room: one seed default (`0`, matching the 2A slice), `-e HOST:PORT` for the local endpoint, `settings` as the concurrency command, mismatch blocks while unknown architecture proceeds with a diagnostic, and `-nc` accepted although no inventory disk cache exists yet.
 
-Offline gate (3A-O1 to 3A-O8): covered by `tests/unit/test_cli.py` (O1, O2 composition, O4 filtering, O3 selection),
-`tests/unit/test_config_preflight.py` (O2, O5, O6), `tests/unit/test_logging_setup.py` (O7, O8),
-`tests/integration/test_cli_local_composition.py` (O3/O6 smoke) and the wire test for LoRA serialization. Owner-reported
-Windows result on the PR head: `uv run dtflow test` 237 passed, 3 deselected.
+Offline gate (3A-O1 to 3A-O8): covered by `tests/unit/test_cli.py` (O1, O2 composition, O4 filtering, O3 selection), `tests/unit/test_config_preflight.py` (O2, O5, O6), `tests/unit/test_logging_setup.py` (O7, O8), `tests/integration/test_cli_local_composition.py` (O3/O6 smoke) and the wire test for LoRA serialization. Owner-reported Windows result on the PR head: `uv run dtflow test` 237 passed, 3 deselected.
 
 Owner-run live evidence (2026-10-04, Windows 10, Pentium E6500, reported by the owner, source-run unless noted):
-- 3-LG1 local Draw Things: `generate -b local -e 192.168.1.142:7859 -m z_image_turbo_1.0_q6p.ckpt -s 42 -w 256 -y 256 -i 4 -g 1`
-  reached terminal OK and saved a PNG plus `metadata.json` (attempt `1badda28…`).
-- 3-LG2 direct DT+: the same workload with `-b cloud` reached terminal OK and saved the result (attempt `01b676f8…`);
-  one small subscription generation.
+- 3-LG1 local Draw Things: `generate -b local -e 192.168.1.142:7859 -m z_image_turbo_1.0_q6p.ckpt -s 42 -w 256 -y 256 -i 4 -g 1` reached terminal OK and saved a PNG plus `metadata.json` (attempt `1badda28…`).
+- 3-LG2 direct DT+: the same workload with `-b cloud` reached terminal OK and saved the result (attempt `01b676f8…`); one small subscription generation.
 - `uv run dtflow test -gen -live` passed (3 tests: DT+ token/inventory, DT+ generation smoke, local connectivity).
-- Frozen PyInstaller CLI: fake workflow, settings, invalid input and per-user logs passed (needs
-  `--collect-data drawthings_py`); `check -b local` against the real server returned transport ok and 56 inventory
-  entries ([windows-packaging W20](../research/windows-packaging.md)).
-- Frozen exe: invalid input exited 2 with no attempt recorded; a real DT+ generation passed (attempt `e9c09baa…`). The
-  owner also reports a frozen local generation and a clean-`PATH` rerun passed (output not pasted).
-- Local LoRA through the frozen exe (3A LoRA path): an unknown identifier was rejected by preflight with nothing
-  dispatched; `zimage_turbo_lora_rank64_512_000006000_lora_f16.ckpt:0.8` with `-r` (preflight `match`) generated
-  successfully on the second try (attempt `b61bfe9a…`). The first try lost its stream after one sampling step
-  (`connection_lost`, recorded as an unknown outcome, never retried automatically; the owner reports the cause was a freeze of the Draw Things iOS app). The owner
-  reports the LoRA result validated; whether the LoRA visibly changed the image was judged by the owner, not the agent.
-The agent did not inspect any output image.
+- Frozen PyInstaller CLI: fake workflow, settings, invalid input and per-user logs passed (needs `--collect-data drawthings_py`); `check -b local` against the real server returned transport ok and 56 inventory entries ([windows-packaging W20](../research/windows-packaging.md)).
+- Frozen exe: invalid input exited 2 with no attempt recorded; a real DT+ generation passed (attempt `e9c09baa…`). The owner also reports a frozen local generation and a clean-`PATH` rerun passed (output not pasted).
+- Local LoRA through the frozen exe (3A LoRA path): an unknown identifier was rejected by preflight with nothing dispatched; `zimage_turbo_lora_rank64_512_000006000_lora_f16.ckpt:0.8` with `-r` (preflight `match`) generated successfully on the second try (attempt `b61bfe9a…`). The first try lost its stream after one sampling step (`connection_lost`, recorded as an unknown outcome, never retried automatically; the owner reports the cause was a freeze of the Draw Things iOS app). The owner reports the LoRA result validated; whether the LoRA visibly changed the image was judged by the owner, not the agent. The agent did not inspect any output image.
 
-Not done or unverified: the official base/refiner and Kandinsky/SD-v1 exception rules are not pinned, so no exception
-logic exists; LoRA application is still not confirmed by backend evidence; some server-reported LoRA architecture
-labels look wrong, and preflight blocks on a reported mismatch with no override yet; no queue, cancellation or cloud
-LoRA behavior was run live; raw inventory disk-cache read/write integration was planned here and landed afterwards with the desktop (see the runtime layout); the saved Windows
-credential provider is Phase 4, so cloud credentials are environment-only; the frozen exe was not tried on a second
-machine or stamped with a commit. Billing behavior remains unverified.
+Not done or unverified: the official base/refiner and Kandinsky/SD-v1 exception rules are not pinned, so no exception logic exists; LoRA application is still not confirmed by backend evidence; some server-reported LoRA architecture labels look wrong, and preflight blocks on a reported mismatch with no override yet; no queue, cancellation or cloud LoRA behavior was run live; raw inventory disk-cache read/write integration was planned here and landed afterwards with the desktop (see the runtime layout); the saved Windows credential provider is Phase 4, so cloud credentials are environment-only; the frozen exe was not tried on a second machine or stamped with a commit. Billing behavior remains unverified.
 
 ## Release gates and schema compatibility
 
@@ -149,47 +121,15 @@ Phase 3A completes the initial Phase 2A durable attempt/artifact foundation for 
 
 ### Phase 3B queue half: implemented scope and limits
 
-Implemented (3B-O1 to O5, O10, in `tests/integration/test_queue.py`): `dtflow queue add|list|show|start|pause|resume|cancel|override|cap`;
-queue/item/control/event tables in `attempts.sqlite3` (user_version 2; a version 1 database migrates in one transaction after
-a `attempts.pre-v2.sqlite3` copy, newer versions are refused unchanged); exclusive dispatch through the existing 2A ownership
-lock (the OS lock dies with its process, so stale-owner recovery is the next open and a closed owner cannot dispatch; no
-lease was added); controls posted over a short separate connection and polled by the owner; reservation before attempt
-creation; rolling refill without a group barrier; accounting by backend across queues; restart reconciliation inside the
-open transaction; `unknown` blocking and recorded override. Defaults chosen where the plan left room:
-`queue add` takes the generation options of `generate` plus `-k/--count` (seeds increment) and `-j/--jobs`, resolves items without
-contacting a backend and does not support `--prefix`; a new queue starts paused and `queue start` is the explicit resume;
-`start` runs until finished, cancelled or blocked and keeps polling while paused and idle; an override acknowledges every
-unresolved unknown reservation on the same backend and then stops counting them toward the cap; a reservation that crashed
-before its attempt row existed returns to pending, any other ambiguous attempt is never eligible again; an item whose
-attempt was interrupted before submission is `failed`, not retried, because attempt request identities are unique.
-Not done in the queue half: a live queue run, and any answer to what the maximum means beyond
-the client policy. Finding: `GenerationService` admits requests through a 256 MiB buffer budget while each real request
-reserves about 100 MiB (3 x the 32 MiB artifact limit plus previews), so real cloud or local runs currently admit about two
-concurrent generations whatever the queue maximum; the budget was left unchanged because it is a memory-safety decision.
+Implemented (3B-O1 to O5, O10, in `tests/integration/test_queue.py`): `dtflow queue add|list|show|start|pause|resume|cancel|override|cap`; queue/item/control/event tables in `attempts.sqlite3` (user_version 2; a version 1 database migrates in one transaction after a `attempts.pre-v2.sqlite3` copy, newer versions are refused unchanged); exclusive dispatch through the existing 2A ownership lock (the OS lock dies with its process, so stale-owner recovery is the next open and a closed owner cannot dispatch; no lease was added); controls posted over a short separate connection and polled by the owner; reservation before attempt creation; rolling refill without a group barrier; accounting by backend across queues; restart reconciliation inside the open transaction; `unknown` blocking and recorded override. Defaults chosen where the plan left room: `queue add` takes the generation options of `generate` plus `-k/--count` (seeds increment) and `-j/--jobs`, resolves items without contacting a backend and does not support `--prefix`; a new queue starts paused and `queue start` is the explicit resume; `start` runs until finished, cancelled or blocked and keeps polling while paused and idle; an override acknowledges every unresolved unknown reservation on the same backend and then stops counting them toward the cap; a reservation that crashed before its attempt row existed returns to pending, any other ambiguous attempt is never eligible again; an item whose attempt was interrupted before submission is `failed`, not retried, because attempt request identities are unique. Not done in the queue half: a live queue run, and any answer to what the maximum means beyond the client policy. Finding: `GenerationService` admits requests through a 256 MiB buffer budget while each real request reserves about 100 MiB (3 x the 32 MiB artifact limit plus previews), so real cloud or local runs currently admit about two concurrent generations whatever the queue maximum; the budget was left unchanged because it is a memory-safety decision.
 
 ### Phase 3B cloud half: implemented scope and limits
 
-Implemented (3B-O6 to O9, in `tests/integration/test_cloud_assets.py` and `test_cloud_assets_cli.py`, in-memory DT+ and
-signed-storage fixtures): `dtflow assets prepare -f FILE [-n NAME]` (the only command that may upload), `assets list`,
-`assets show ID` (local registry views, no network) and `assets reconcile ID` (metadata-only, never uploads);
-`-z/--asset ID` on `generate` and `queue add` binds a *confirmed* local receipt to the `--lora` of the same identifier
-and fails before any attempt or queue exists otherwise; `GenerationService` (hence queue dispatch) revalidates each
-prepared reference with a metadata-only check and blocks a stale/inaccessible/unknown one before submission, with no
-upload. Prepared references are immutable values in the resolved request, attempt metadata and queue items, are never
-exported to portable configuration, and are rejected by local/fake backends. Identical concurrent prepares coalesce
-per API origin and auth client; a cancelled waiter does not cancel the shared operation.
+Implemented (3B-O6 to O9, in `tests/integration/test_cloud_assets.py` and `test_cloud_assets_cli.py`, in-memory DT+ and signed-storage fixtures): `dtflow assets prepare -f FILE [-n NAME]` (the only command that may upload), `assets list`, `assets show ID` (local registry views, no network) and `assets reconcile ID` (metadata-only, never uploads); `-z/--asset ID` on `generate` and `queue add` binds a *confirmed* local receipt to the `--lora` of the same identifier and fails before any attempt or queue exists otherwise; `GenerationService` (hence queue dispatch) revalidates each prepared reference with a metadata-only check and blocks a stale/inaccessible/unknown one before submission, with no upload. Prepared references are immutable values in the resolved request, attempt metadata and queue items, are never exported to portable configuration, and are rejected by local/fake backends. Identical concurrent prepares coalesce per API origin and auth client; a cancelled waiter does not cancel the shared operation.
 
-Decisions: a fifth registry state `failed` records a definitely-not-transferred outcome next to `intent`,
-`transferring`, `confirmed` and `unknown`; a confirmed receipt requires the server's own reference, obtained by a fresh
-metadata check after a successful PUT (a PUT success without that confirmation stays `unknown`, never re-uploaded);
-one writer per state directory holds `assets.lock` so an unresolved operation seen at open belongs to a dead process;
-the CLI option is `-z` because every nearer mnemonic is taken; the LoRA keeps its exact identifier on the generation
-wire and a prepared LoRA missing from the Echo inventory passes preflight as `prepared` with architecture `unknown`.
+Decisions: a fifth registry state `failed` records a definitely-not-transferred outcome next to `intent`, `transferring`, `confirmed` and `unknown`; a confirmed receipt requires the server's own reference, obtained by a fresh metadata check after a successful PUT (a PUT success without that confirmation stays `unknown`, never re-uploaded); one writer per state directory holds `assets.lock` so an unresolved operation seen at open belongs to a dead process; the CLI option is `-z` because every nearer mnemonic is taken; the LoRA keeps its exact identifier on the generation wire and a prepared LoRA missing from the Echo inventory passes preflight as `prepared` with architecture `unknown`.
 
-Not done: live `3-LG4` (uploads and generation need explicit owner authorization), the exact remote identifier the
-generation wire expects for a custom LoRA, evidence-based size/refusal semantics and any non-secret content headers the
-signed endpoint requires beyond `Content-Type`/`Content-Length`, Windows-specific lock/durability runs, and the LoRA
-`--force` override (dropped by the owner).
+Not done: live `3-LG4` (uploads and generation need explicit owner authorization), the exact remote identifier the generation wire expects for a custom LoRA, evidence-based size/refusal semantics and any non-secret content headers the signed endpoint requires beyond `Content-Type`/`Content-Length`, Windows-specific lock/durability runs, and the LoRA `--force` override (dropped by the owner).
 
 Persist queue identity, stable ordered item IDs, immutable resolved requests, item/attempt states, backend selection and concurrency configuration. Use one dispatch owner per application state directory so two CLI processes cannot independently dispatch the same queue or bypass its cap. The CLI presents queue control; shared services own persistence, eligibility, scheduling and reconciliation. Store control requests transactionally for the dispatcher to poll, so basic Pause/Resume/Cancel needs no separate IPC server. SQLite transactions alone do not establish dispatch ownership: implement and test exclusive ownership, stale-owner recovery and protection against an old owner continuing dispatch. Never hold a database transaction while generating.
 
