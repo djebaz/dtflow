@@ -1,6 +1,6 @@
 # Windows packaging investigation
 
-**Status:** Source-run checks (W1-W8), PyInstaller builds, the frozen smoke and CLI trials, a restricted-`PATH` run and the offline fake CLI passed on the target machine (owner-reported, 2026-10-04); nothing flagged the executables. Nuitka (W11) and an installer (W15) are not run, and Qt rows (W14) are blocked. A row is a finding only when it cites evidence.  
+**Status:** Source-run checks (W1-W8), PyInstaller builds, the frozen smoke and CLI trials, a restricted-`PATH` run and the offline fake CLI passed on the target machine (owner-reported, 2026-10-04); nothing flagged the executables. Nuitka (W11) and an installer (W15) are not run, and acceptance of the current portable Qt executable remains pending. Earlier console/CLI trials below remain historical evidence. A row is a finding only when it cites evidence.
 **Target:** The owner's Windows 10 / Intel Pentium E6500 machine. Linux or cloud results are not acceptance for this machine.  
 **Scope:** Phase 2D investigation (see [Phase 2](../plans/phase-2-backends.md#phase-2d--packaging-licensing-and-feature-inventory)). It decides nothing about the final packaging tool or installer.  
 **Safety:** Every check here is non-generative and non-billable. No credentials are needed or printed. No generation request, model download or authenticated cloud call is made.
@@ -14,7 +14,7 @@
 5. Are per-user paths writable (`%LOCALAPPDATA%`)?
 6. What are the practical differences between a portable executable and an installer?
 
-Qt resources, native Qt plugins and Credential Manager storage are out of scope until Qt and the credential service exist; they stay in the findings table as Blocked.
+Qt and the Windows credential service now exist. The owner reports the source-desktop and other release checks complete (2026-10-05), with portable Qt executable acceptance still outstanding; this is owner-reported, not a new assistant-run check. Use the [GUI build guide](../guides/building.md) for the current build and focused acceptance steps; no inference needs to be repeated just to establish packaging.
 
 ## Preconditions
 
@@ -111,7 +111,9 @@ Remove-Item -Recurse -Force $state2
 
 Compare with P6: same exit codes, a readable PNG and metadata, and the same attempt record shape. Run the executable again from a folder with no Python or Git on `PATH`.
 
-### P8 — Stamped build
+### P8 — Stamped build (historical console procedure)
+
+The current builder targets the GUI launcher in Windows windowed mode. Follow [the desktop build guide](../guides/building.md) for current launch/acceptance instructions; the W21 result below belongs to the earlier console build.
 
 `tools/packaging/build_exe.py` records the full source commit and clean/dirty status in the ignored `src/dtflow/_buildinfo.py`, runs the P7 PyInstaller command, removes the generated module and renames the result to `dtflow-<version>-g<short-sha>-<platform>-<arch>.exe`. Build public releases from a clean checkout; a modified tree reports `dirty` and warns.
 
@@ -143,7 +145,7 @@ Statuses: **Not run** / **Pass** / **Partial** / **Fail** / **Blocked**. Partial
 | W11 | Nuitka executable builds (compiler requirement noted) | Not run | | | |
 | W12 | Frozen output matches source-run output | Pass | 2026-10-04 | as W9 | All 8 checks `ok` in both runs; identical CPU features, fpzip and Pillow results, SQLite 3.53.1 in WAL mode, 84 system CAs and bundled CA present (so `--collect-data drawthings_py` worked); frozen run reports `frozen: true`. Accepted differences in `package_versions`: `pillow`, `fpzip`, `flatbuffers`, `grpclib` and `drawthings-py` report `imported; metadata unavailable` (metadata not bundled), while numpy, betterproto and tqdm report versions. `strictyaml`'s module `__version__` reads 1.6.2 although its distribution metadata reads 1.7.3 in the source run, so a module `__version__` is not reliable version evidence |
 | W13 | Executable size, startup time, antivirus/SmartScreen behavior recorded | Pass | 2026-10-04 | as W9 | Smoke 36.7 MB, one run 7.1 s (one-file extraction plus the checks); CLI 10.0 MB. Owner reported that nothing (antivirus or SmartScreen) flagged either executable. The CLI's own startup time was not timed separately |
-| W14 | Qt plugins, Credential Manager | Blocked | | | Qt and the credential service do not exist yet |
+| W14 | Qt plugins, Credential Manager | Partial | 2026-10-05 | Owner-reported source-desktop checks | Source checks reported complete; exact portable Qt executable, including frozen plugins/storage, still needs owner acceptance. Not assistant-run. |
 | W15 | Installer path (any tool) | Not run | | | Optional; see comparison below |
 | W16 | Source-run `dtflow --version` and `--help` (P6) | Pass | 2026-10-04 | as W9 | `--version` printed `DTFlow 0.0.0 (revision unknown; source status unknown)`, exit 0; `--help` printed usage for `generate`, `check`, `models`, `attempts`. The `--help` exit code was not echoed |
 | W17 | Source-run fake `check`, `models`, `generate` (seed 0) and `attempts` complete; PNG and metadata saved and readable (P6) | Pass | 2026-10-04 | as W9 | All four commands exited 0 with the expected JSON. The attempt record shows `state: succeeded`, `submission_stage: terminal_observed`, seed 0, 128 x 128, 4 steps, `euler_a`. State directory: `attempts.sqlite3` (16,384 bytes), `owner.lock`, `final-1.png` (404 bytes), `metadata.json` (1,506 bytes). The owner confirmed the saved PNG opens. SQLite 3.53.1 satisfies the 3.51.3 requirement |

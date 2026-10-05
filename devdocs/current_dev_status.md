@@ -1,6 +1,6 @@
 # Current development status
 
-Snapshot: 2026-10-05, compared with `main` at `ada7dfe` (PR #27 merged).
+Snapshot: 2026-10-05, main baseline `c0d4bd3` (PR #28 merged), plus the GUI-build work in PR #29.
 This is coding orientation against [initial.md](plans/initial.md), not release acceptance or a test report. Source/plan inspection only for this snapshot; no tests or live operations were run to establish it.
 
 ## Implemented on main
@@ -14,7 +14,7 @@ This is coding orientation against [initial.md](plans/initial.md), not release a
 | 5 — Desktop execution | Generate, LoRA/cloud asset actions, configuration save/load and queue controls through shared services. |
 | 6 — Batch planning | Shared seed/pair/cross planner, bounded expansion and CLI/desktop dry runs. |
 
-Implemented does not mean all phase acceptance gates are closed. The plans and evidence still distinguish offline fixtures, owner-reported live workloads and target-Windows/packaged acceptance. Broad model/LoRA compatibility, remote cancellation, charging/refunds, live queue/upload and desktop acceptance must not be inferred from code presence. A stamped Windows build's identity was owner-verified at an earlier revision; that is not current-head desktop acceptance. See [unreleased notes](releases/unreleased.md), [gRPC evidence](research/drawthings-grpc-proof.md) and [packaging evidence](research/windows-packaging.md).
+Implemented does not mean universal compatibility or remote cancellation. On 2026-10-05 the owner reported the other 0.3.0 release checks complete, identifying the exact portable Qt executable smoke test as the remaining gate; this is owner-reported, not newly assistant-verified. Keep existing detailed source/live evidence rather than rerunning it without need. PR #29 changes the builder to a GUI-first windowed launcher, but compilation and target-Windows executable acceptance remain unverified. See [the build guide](guides/building.md), [unreleased notes](releases/unreleased.md) and [packaging evidence](research/windows-packaging.md).
 
 ## Not yet implemented
 
@@ -30,7 +30,8 @@ Implemented does not mean all phase acceptance gates are closed. The plans and e
 
 - Shared persistent Connection/Generate/Queues shell, image-first fit/zoom/pan preview, centralized design tokens and monogram: PRs #25/#26.
 - Offline simulation, per-provider form memory, desktop random seed 0 and output/Inspector/concurrency refinements: PR #27, already merged (not an open draft).
-- This documentation PR adds usage guides and a GUI-first README; it changes no application behavior.
+- PR #28 added usage guides, a GUI-first README and this short coding snapshot.
+- PR #29 adds the desktop-first stamped builder and no-console startup/log diagnostics, with source CLI and generation policies unchanged.
 
 ## Next coding direction
 
