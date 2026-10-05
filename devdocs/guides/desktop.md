@@ -14,6 +14,8 @@ uv run dtflow gui -nc
 
 `-x/--dev` adds sanitized diagnostic detail only; `-nc/--no-cache` disables inventory cache reads and writes for that run. Logs use repository `logs/` in development. See [development tools](development.md) and [runtime layout](../architecture/runtime-layout.md).
 
+For a portable Windows executable that launches the GUI directly, see [the build guide](building.md).
+
 ## Connect
 
 Select the fake, local Draw Things or DT+ cloud provider on Connection. The local provider needs its server endpoint. Connection checks run in the background and never generate. The Generate page uses the selected provider and endpoint; switching provider resets connection results.

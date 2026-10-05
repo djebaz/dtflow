@@ -102,6 +102,7 @@ These instructions apply throughout `dtflow`.
 ## Packaging
 
 - Target a Windows single-executable distribution initially, while keeping source execution supported for development.
+- The canonical `tools/packaging/build_exe.py` build targets `launch_gui.py`: open the desktop directly, use Windows windowed mode, and preserve shared logging/build identity, canonical forms/resources and secure credential dependencies. Keep source CLI execution separate. Follow [the build guide](devdocs/guides/building.md); compilation alone does not establish Windows executable acceptance.
 - Treat `build/` and `dist/` as generated artifacts.
 - Do not commit model/checkpoint artifacts or duplicate large model files.
 - Keep build inputs and version metadata reproducible.
