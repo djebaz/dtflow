@@ -28,6 +28,12 @@ or compatibility policy is changed by this UI slice.
 
 The [token and interaction contract](../architecture/qt-design-tokens.md) records
 the palette, scale, responsive rules and reproducible offline render command.
+The root [design system](../../DESIGN.md) is the implementation guide for agents
+adapting Connection, Queues and later tabs to the Generate workspace language.
+The DTFlow icon is used in the Qt window and Windows build resources; an
+illustrative portrait is available from the empty canvas and is labeled as a
+sample without saved-output actions. This branding addition has not had a
+packaged Windows smoke test.
 
 Verification is recorded in the PR as each checkpoint passes. Linux offscreen
 renders do not establish Windows executable, DWM or deployed-backend readiness.

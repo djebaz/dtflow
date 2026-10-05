@@ -202,6 +202,9 @@ patched SQLite runtime as described in the
 
 ## Qt shell (Phase 4, source-run)
 
+For desktop UI changes, follow the [Qt design system](DESIGN.md) with the
+canonical Designer forms, shared tokens and QSS.
+
 ```powershell
 uv run dtflow gui    # backend selection, connection check/status, DT+ API-key save/remove, version/commit in the status bar
 uv run dtflow -x gui # same, with extra diagnostic detail in logs/ (-nc / --no-cache bypasses the inventory cache)

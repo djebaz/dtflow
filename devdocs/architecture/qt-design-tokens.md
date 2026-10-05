@@ -1,5 +1,11 @@
 # Qt workspace design tokens
 
+For the design rules and a page-building checklist, start with the root
+[`DESIGN.md`](../../DESIGN.md). This document records the implementation-specific
+interaction and offline fixture contract. The tracked `tokens.json` remains the
+runtime source for shared values; the `DESIGN.md` frontmatter is kept in sync as
+an agent-readable snapshot.
+
 The native Windows-oriented charcoal/blue identity is preserved. `tokens.json`
 beside `dtflow_dark.qss` owns the shared palette and scale. `load_theme()` resolves
 `${token.name}` references once at startup; the custom canvas reads that same
@@ -42,6 +48,10 @@ needs target-machine verification; Linux offscreen pixels do not prove it.
   keyboard inspection. Idle toolbars hide; focusing the canvas restores them.
 - Expand restores on Escape, close, or owner-window close. Saved-output actions
   are disabled for empty/interim previews; no watermark is written to artifacts.
+- The empty canvas offers an illustrative portrait sample. Its badge explicitly
+  says it is a sample with no inference; file and metadata actions remain
+  disabled because there is no saved output. The sample button must be enabled
+  when the Generate page leaves the shell's preview-only control state.
 
 ## Offline visual checks
 
