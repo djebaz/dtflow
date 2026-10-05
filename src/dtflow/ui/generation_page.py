@@ -49,6 +49,7 @@ from dtflow.ui.generation_presenter import (
     form_to_document,
     read_configuration,
     save_configuration,
+    snap_dimension,
     values_from_request,
 )
 from dtflow.ui.lora_panel import LoraAssetPanel
@@ -220,6 +221,18 @@ class GenerationPage:
         self._apply(values)
         self.lora.set_loras(values.loras)
 
+    def _snap_size(self) -> str | None:
+        """Show the nearest multiple of 64 in the size boxes; returns a note when a value was adjusted."""
+        page = self.page
+        old = (page.widthSpinBox.value(), page.heightSpinBox.value())
+        new = tuple(snap_dimension(value) for value in old)
+        if new == old:
+            return None
+        page.widthSpinBox.setValue(new[0])
+        page.heightSpinBox.setValue(new[1])
+        log.info("size adjusted from %dx%d to %dx%d", *old, *new)
+        return f"Size adjusted from {old[0]}x{old[1]} to {new[0]}x{new[1]} (multiples of 64)."
+
     def _request_for_check(self):
         """A request for LoRA preflight only: a blank prompt gets a placeholder because nothing is dispatched."""
         self._mark(None)
@@ -267,6 +280,7 @@ class GenerationPage:
     def request_for_queue(self):
         """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking."""
         self._mark(None)
+        self._snap_size()
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name)
@@ -301,6 +315,7 @@ class GenerationPage:
         if self._busy:
             return
         self._mark(None)
+        note = self._snap_size()
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name)
@@ -329,7 +344,7 @@ class GenerationPage:
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self._progress("Preparing")
-        self._status(Presentation("warning", "Generating", "Waiting on the selected backend."))
+        self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
         self._generating = True
         self._activity.set(generating=True)
         self._set_busy(True)
@@ -496,6 +511,7 @@ class GenerationPage:
     # -- configuration ---------------------------------------------------------------------------------------------
     def save(self) -> None:
         self._mark(None)
+        self._snap_size()
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name)

@@ -51,6 +51,11 @@ class FormValues:
     loras: tuple[LoRASelection, ...] = ()
 
 
+def snap_dimension(value: int) -> int:
+    """The nearest multiple of 64 (halves round up) within the request limits 128..2048."""
+    return min(2048, max(128, (value + 32) // 64 * 64))
+
+
 class FormError(ValidationError):
     """A request problem with the widget (Designer object name) that owns it, or ``None`` for a general problem."""
 
@@ -77,8 +82,8 @@ def build_request(
         "negative_prompt": values.negative_prompt,
         "model": values.model.strip() or None,
         "seed": seed,
-        "width": values.width,
-        "height": values.height,
+        "width": snap_dimension(values.width),
+        "height": snap_dimension(values.height),
         "steps": values.steps,
         "guidance": values.guidance,
         "sampler": values.sampler,

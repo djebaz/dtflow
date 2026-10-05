@@ -130,10 +130,10 @@ def test_local_stop_reports_recorded_evidence_not_remote_cancellation(window, qt
 
 def test_invalid_field_is_marked_and_nothing_is_submitted(window, qtbot):
     page = window.generation_page
-    page.widthSpinBox.setValue(100)
+    page.seedEdit.setText("not-a-seed")
     page.generateButton.click()
     assert page.generationStatusLabel.text().startswith("Invalid request")
-    assert page.widthSpinBox.property("invalid") is True
+    assert page.seedEdit.property("invalid") is True
     assert page.generateButton.isEnabled()
     assert not (window.state_dir / "attempts.sqlite3").exists()  # no attempt, no state opened
 
@@ -279,3 +279,16 @@ def test_a_failed_generation_logs_the_backend_code_not_just_the_exception_type(w
     logs.close()
     line = next(x for x in logs.path.read_text(encoding="utf-8").splitlines() if "generate failed" in x)
     assert "BackendError code=" in line and "category=" in line
+
+
+def test_a_size_that_is_not_a_multiple_of_64_is_adjusted_and_shown(window, qtbot, fake):
+    use, _ = fake
+    use()
+    page = window.generation_page
+    page.widthSpinBox.setValue(700)
+    page.heightSpinBox.setValue(500)
+    page.generateButton.click()
+    assert (page.widthSpinBox.value(), page.heightSpinBox.value()) == (704, 512)
+    assert "Size adjusted from 700x500 to 704x512" in page.generationStatusLabel.text()
+    qtbot.waitUntil(settled(page), timeout=5000)
+    assert "size: 704x512" in page.effectiveRequestBrowser.toPlainText()

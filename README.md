@@ -211,7 +211,7 @@ The window remembers the last provider, local endpoint and Generate form (prompt
 size, steps, guidance, sampler) in `.dtflow/last_session.json`, written on submit, after a successful connection
 check and on quit; it is durable state, not cache. Refresh inventory also saves the raw local/cloud inventory under
 `.dtflow/cache/inventory/`, which prefills the model and LoRA lists at the next start (marked cached; generation always
-refreshes live). Without model metadata from the server, listed files are offered as models, as the request gate does.
+refreshes live). Without model metadata from the server, listed files are offered as models, as the request gate does. The Generate page snaps width and height to the nearest multiple of 64 and says so; the CLI still rejects other values.
 
 The shell uses the same services as the CLI; connection checks run on a background thread and never generate. On
 Windows the API key is saved in Credential Manager (`DRAWTHINGS_API_KEY` in the environment still takes precedence); on

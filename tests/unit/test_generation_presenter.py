@@ -24,8 +24,6 @@ VALID = FormValues(prompt="a cat", seed="7", width=128, height=128, steps=4, gui
         ({"prompt": "  "}, "promptEdit"),
         ({"seed": "abc"}, "seedEdit"),
         ({"seed": "-1"}, "seedEdit"),
-        ({"width": 100}, "widthSpinBox"),
-        ({"height": 4096}, "heightSpinBox"),
         ({"steps": 500}, "stepsSpinBox"),
         ({"guidance": 99.0}, "guidanceSpinBox"),
         ({"sampler": "nope"}, "samplerCombo"),
@@ -63,3 +61,18 @@ async def test_configuration_round_trip_is_credential_free_and_keeps_loras(tmp_p
     loaded = await read_configuration(path, backend="fake")
     assert values_from_request(loaded) == values_from_request(request)
     assert dict(loaded.resolution_evidence)["config_file"] == "config.json"
+
+
+def test_size_errors_still_map_to_their_boxes_for_loaded_configurations():
+    from dtflow.ui.generation_presenter import field_for
+
+    assert field_for("width_px must be a multiple of 64.") == "widthSpinBox"
+    assert field_for("height_px must be an integer in 128..2048.") == "heightSpinBox"
+
+
+def test_dimensions_snap_to_the_nearest_multiple_of_64_within_the_limits():
+    from dtflow.ui.generation_presenter import snap_dimension
+
+    assert [snap_dimension(v) for v in (64, 100, 160, 191, 192, 700, 5000)] == [128, 128, 192, 192, 192, 704, 2048]
+    request = build_request(FormValues(prompt="x", width=700, height=500), backend="fake")
+    assert (request.width_px, request.height_px) == (704, 512)
