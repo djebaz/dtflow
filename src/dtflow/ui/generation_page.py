@@ -188,11 +188,9 @@ class GenerationPage:
         ):
             page.resultPreviewLabel.add_file_button(button)
         self._set_result_actions(False)
-        page.generationSplitter.setStretchFactor(1, 1)
-        page.generationSplitter.setSizes([270, 900, 300])
         page.modelCombo.lineEdit().setPlaceholderText("Select or enter a model")
         page.promptEdit.setTabChangesFocus(True)
-        for control in (page.expandPromptButton, page.inspectorToggle, page.detailsToggle):
+        for control in (page.expandPromptButton, page.detailsToggle):
             control.setEnabled(True)
         page.attemptDetails.hide()
         page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)

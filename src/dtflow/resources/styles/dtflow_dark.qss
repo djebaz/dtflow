@@ -468,7 +468,7 @@ QGroupBox::indicator:disabled {
 
 /* Workspace states: keep the shared tokens authoritative; no per-widget inline QSS. */
 QFrame#generationWorkspace, QFrame#brandFrame, QWidget#generationLeftRail,
-QWidget#generationRightRail, QWidget#generationBrandSlot, QWidget#generationNavigationSlot {
+QWidget#generationRightRail, QWidget#leftRail, QWidget#rightRail, QWidget#centerRail, QWidget#WorkspaceShell, QWidget#generationBrandSlot, QWidget#generationNavigationSlot {
   background: transparent; border: 0;
 }
 QFrame#previewHost, ImagePreview { background: ${color.canvas}; border: 1px solid #353535; }

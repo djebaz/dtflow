@@ -2,7 +2,7 @@
 
 For the design rules and a page-building checklist, start with the root [`DESIGN.md`](../../DESIGN.md). This document records the implementation-specific interaction and offline fixture contract. The tracked `tokens.json` remains the runtime source for shared values; the `DESIGN.md` frontmatter is kept in sync as an agent-readable snapshot.
 
-The native Windows-oriented charcoal/blue identity is preserved. `tokens.json` beside `dtflow_dark.qss` owns the shared palette and scale. `load_theme()` resolves `${token.name}` references once at startup; the custom canvas reads that same palette. Designer `.ui` files remain canonical for geometry and layout. QSS is not generated Python and there is no separate web implementation.
+The native Windows-oriented charcoal/blue identity is preserved. `tokens.json` beside `dtflow_dark.qss` owns the shared palette and scale. `load_theme()` resolves `${token.name}` references once at startup; the custom canvas reads that same palette. Designer `.ui` files remain canonical for geometry and layout. `workspace_shell.ui` owns the single persistent splitter, rails, scroll containers, branding and navigation. Page forms supply only context, work and evidence content; switching tabs changes three coordinated stacks without moving chrome or resetting splitter sizes. QSS is not generated Python and there is no separate web implementation.
 
 ## Palette and geometry
 
