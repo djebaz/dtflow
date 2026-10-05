@@ -53,6 +53,8 @@ class ValidationError(ValueError):
 
 
 Metadata = tuple[tuple[str, str], ...]
+MAX_QUEUE_ITEMS = 1000  # one queue's item ceiling; the planner checks it before enumerating
+SEED_LIMIT = 4294967295
 
 
 def validate_metadata(value: Metadata) -> None:
@@ -205,7 +207,7 @@ class ResolvedGenerationRequest:
             raise ValidationError("Prompts must be strings.")
         if self.operation != "txt2img":
             raise ValidationError("Only txt2img is supported in Phase 2A.")
-        integer(self.seed, 0, 4294967295, "seed")
+        integer(self.seed, 0, SEED_LIMIT, "seed")
         for name in ("width_px", "height_px"):
             value = getattr(self, name)
             integer(value, 128, 2048, name)

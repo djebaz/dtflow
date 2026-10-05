@@ -21,12 +21,19 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import LoRASelection, PreparedAsset, ResolvedGenerationRequest, Sampler, ValidationError
+from dtflow.core.models import (
+    MAX_QUEUE_ITEMS,
+    LoRASelection,
+    PreparedAsset,
+    ResolvedGenerationRequest,
+    Sampler,
+    ValidationError,
+)
 
 QUEUE_STATES = ("paused", "running", "cancelled")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
 ACTIONS = ("pause", "resume", "cancel", "override", "cap")
-MAX_ITEMS = 1000
+MAX_ITEMS = MAX_QUEUE_ITEMS
 
 QUEUE_SCHEMA = (
     """CREATE TABLE IF NOT EXISTS queues (

@@ -10,12 +10,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QListWidgetItem, QMessageBox, QWidget
 
 from dtflow.core.models import ValidationError
 from dtflow.persistence.settings import validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
+from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan
 from dtflow.services.queue_session import (
     create_queue,
     dispatch_queue,
@@ -27,6 +29,14 @@ from dtflow.services.queue_session import (
 from dtflow.services.session import bind_prepared
 from dtflow.ui.activity import Activity
 from dtflow.ui.generation_presenter import FormError
+from dtflow.ui.planning_presenter import (
+    ERROR_FIELDS,
+    PlanForm,
+    build_plan,
+    count_text,
+    plan_error,
+    summary_text,
+)
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CANCEL_TEXT,
@@ -44,6 +54,8 @@ from dtflow.ui.queue_presenter import (
 from dtflow.ui.runner import AsyncRunner
 
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
+PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
+PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck")
 WIRED_CONTROLS = (
     "queueList",
     "createQueueButton",
@@ -56,6 +68,9 @@ WIRED_CONTROLS = (
     "cancelQueueButton",
     "queueItemsView",
     "overrideReservationButton",
+    "planBox",
+    "planDryRunButton",
+    *PLAN_INPUTS,
 )
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
@@ -113,6 +128,15 @@ class QueuePage:
         page.queueList.currentRowChanged.connect(self._select_row)
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.concurrencySpinBox.valueChanged.connect(self._cap_changed)
+        self.plan_model = QStandardItemModel(page)
+        page.planTableView.setModel(self.plan_model)
+        page.planBox.toggled.connect(self._plan_toggled)
+        page.planDryRunButton.clicked.connect(self.dry_run)
+        for name in PLAN_WIDGETS:
+            getattr(page, name).textChanged.connect(self._plan_changed)
+        page.planModeCombo.currentTextChanged.connect(self._plan_changed)
+        page.planIncrementCheck.toggled.connect(self._plan_changed)
+        self._plan_toggled(page.planBox.isChecked())
         activity.listen(self._sync)
         self._render()
         self.refresh()
@@ -272,14 +296,83 @@ class QueuePage:
         except FormError as exc:
             self._message(Presentation("error", "Queue not created", str(exc)))
             return
+        plan = None
+        if self.page.planBox.isChecked():
+            plan = self._plan_for(request, "Queue not created")
+            if plan is None:
+                return
         count, cap = self.page.queueCountSpinBox.value(), self.page.concurrencySpinBox.value()
         self._message(Presentation("warning", "Creating", "Persisting a paused queue; no backend is contacted."))
         backend = {"name": name, "endpoint": endpoint, "scenario": "success"}
-        self._runner.submit(self._create(backend, request, asset_ids, count, cap), self._created)
+        self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan), self._created)
 
-    async def _create(self, backend, request, asset_ids, count, cap):
+    async def _create(self, backend, request, asset_ids, count, cap, plan: Plan | None = None):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
-        return await create_queue(self._state, backend, expand_items(request, count), cap)
+        items = expand_plan(request, plan) if plan is not None else expand_items(request, count)
+        return await create_queue(self._state, backend, items, cap)
+
+    # -- planning --------------------------------------------------------------------------------------------------
+    def _plan_form(self) -> PlanForm:
+        page = self.page
+        return PlanForm(
+            page.planModeCombo.currentText(),
+            page.planPromptsEdit.toPlainText(),
+            page.planModelsEdit.text(),
+            page.planSeedsEdit.text(),
+            page.planStepsEdit.text(),
+            page.planGuidanceEdit.text(),
+            page.planSamplersEdit.text(),
+            page.planSizesEdit.text(),
+            page.planLorasEdit.toPlainText(),
+            page.planIncrementCheck.isChecked(),
+        )
+
+    def _mark_plan(self, widget_name: str | None) -> None:
+        for name in PLAN_WIDGETS:
+            widget = getattr(self.page, name)
+            widget.setProperty("invalid", name == widget_name)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
+    def _plan_toggled(self, enabled: bool) -> None:
+        self.page.planBody.setVisible(enabled)
+        self.page.queueCountSpinBox.setEnabled(not enabled)  # the count box is the seed-sweep shortcut
+        self._plan_changed()
+
+    def _plan_changed(self, *_) -> None:
+        level, text = count_text(self._plan_form())
+        self._show(self.page.planCountLabel, level, text)
+
+    def _show_table(self, table: PlanTable) -> None:
+        self.plan_model.clear()
+        self.plan_model.setHorizontalHeaderLabels(list(table.columns))
+        for row in table.rows:
+            self.plan_model.appendRow([QStandardItem(cell) for cell in row])
+        self.page.planTableView.resizeColumnsToContents()
+
+    def _plan_for(self, request, headline: str) -> Plan | None:
+        """Build and fully validate the plan against the form's request (pure, no I/O); shows the dry-run table."""
+        self._mark_plan(None)
+        try:
+            plan = build_plan(self._plan_form())
+            table = describe_plan(request, plan)
+        except ValidationError as exc:
+            error = plan_error(exc)
+            self._mark_plan(error.widget)
+            self._message(Presentation("error", headline, str(error)))
+            return None
+        self._show_table(table)
+        self._message(Presentation("ok", "Plan", summary_text(table)))
+        return plan
+
+    def dry_run(self) -> None:
+        """Show the exact items the plan would create; persists nothing and contacts no backend."""
+        try:
+            request, *_ = self._request_source()
+        except FormError as exc:
+            self._message(Presentation("error", "Dry run unavailable", str(exc)))
+            return
+        self._plan_for(request, "Plan not valid")
 
     def _created(self, result, failure) -> None:
         if failure is not None:
