@@ -99,6 +99,22 @@ class _LayoutGuard(QObject):
         return False
 
 
+class _NavigationFocusGuard(QObject):
+    """Keep mouse focus from disguising status; preserve a visible keyboard focus cue."""
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            keyboard = event.type() == QEvent.Type.FocusIn and event.reason() in (
+                Qt.FocusReason.TabFocusReason,
+                Qt.FocusReason.BacktabFocusReason,
+                Qt.FocusReason.ShortcutFocusReason,
+            )
+            watched.setProperty("keyboardFocus", keyboard)
+            watched.style().unpolish(watched)
+            watched.style().polish(watched)
+        return False
+
+
 class MainWindow:
     """Owns the Designer form and an AsyncRunner; ``saved`` is injectable for tests."""
 
@@ -152,6 +168,7 @@ class MainWindow:
         ):
             setattr(form, name, getattr(self.shell, name))
         self.shell.productSubtitleLabel.hide()
+        form.connectionNavigationButton.installEventFilter(_NavigationFocusGuard(form.connectionNavigationButton))
         # Existing inspection integrations can refer to the same persistent shell controls.
         self.generation_page.inspectorToggle = self.shell.inspectorToggle
         self.generation_page.generationLeftRail = self.shell.leftRail

@@ -74,3 +74,7 @@ Implemented canonical compact navigation and shared-token power/status icon. Ima
 ### Reference-proportion correction
 
 The previous 52×40 control approximated rather than matched the supplied reference. Connection is now 74×44 logical pixels with a 48×30 icon box, a 22 px open power arc with rounded 2.6 px stroke, and an 8 px dot separated to the upper right. Removed the QSS minimum-width override that defeated Designer sizing. Native guarded fixture capture confirms the actual 74×44 target; the three text tabs remain in the left-rail row. Palette remains DTFlow's shared success/text tokens, not the reference's teal. No live requests or test suite run.
+
+### Latest cropped-reference match
+
+Supersedes the earlier 74×44 approximation: the supplied cropped design measures approximately 58×34. Connection now renders at 58×34, with a 16 px rounded power arc, 6 px dot and reference-like padding. Dedicated shared mint/teal Connection tokens reproduce the supplied visual identity without changing general success colors. Mouse focus no longer replaces the status border with a thick blue frame; Tab/Backtab/shortcut focus retains an explicit dashed focus cue. Guarded native fixture captures confirm 58×34 and show the connected design in the real shell. Unchecked status remains neutral rather than falsely green. No live checks, inference or automated tests ran.

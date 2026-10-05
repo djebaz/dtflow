@@ -18,7 +18,9 @@ colors:
   selection: "#173852"
   selection-text: "#d5ecff"
   success: "#78c97c"
-  success-surface: "#203b2b"
+  connection-accent: "#00d8b0"
+  connection-surface: "#123e36"
+  connection-glyph: "#d9f7ef"
   warning: "#ffbf59"
   error: "#ff8179"
   unknown: "#b7a4e5"
@@ -111,7 +113,7 @@ Inputs use gently rounded 5 px corners, buttons 6 px, and panels 8 px. The reusa
 
 Neutral buttons have distinct rest, hover, pressed, focus and disabled states. Primary actions use the accent family and lose that accent when disabled. Destructive actions use warning red only while actionable; disabled destructive controls return to the neutral disabled treatment. Checkable navigation shares the navy selection language with item views. Maintain stable `role` properties and object names instead of adding inline widget styles.
 
-Connection navigation is a compact 74×44 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and remains disabled until mounted. Compact labels preserve the permanent left-rail navigation width.
+Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and remains disabled until mounted. Compact labels preserve the permanent left-rail navigation width.
 
 ### Fields and selection
 
@@ -142,3 +144,6 @@ Use a short outcome heading plus concrete evidence. A progress bar reflects only
 - **Don't** apply the image-preview composition to a queue or connection page merely for visual parity; reuse color, type, density, controls and states.
 - **Don't** add a full-width decorative page header that reduces the primary workspace, or hide navigation with an optional inspector.
 - **Don't** claim Linux offscreen screenshots prove packaged Windows behavior.
+
+
+The compact Connection control follows the supplied mint/teal reference using dedicated shared connection tokens (accent, surface, glyph), without changing global success semantics. Keyboard-only focus uses the standard focus token; mouse focus does not replace the thin status outline.

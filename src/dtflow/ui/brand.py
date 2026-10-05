@@ -31,21 +31,21 @@ def panel_icon() -> QIcon:
 def connection_icon(level: str = "unknown") -> QIcon:
     """Power glyph with last-check dot, painted from the shared palette."""
     tokens = load_tokens()
-    state_color = {"ok": "color.success", "warning": "color.warning", "error": "color.error"}.get(
+    state_color = {"ok": "color.connectionAccent", "warning": "color.warning", "error": "color.error"}.get(
         level, "color.secondary"
     )
-    pixmap = QPixmap(96, 60)
+    pixmap = QPixmap(80, 48)
     pixmap.setDevicePixelRatio(2)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(QColor(tokens["color.text"]), 2.6)
+    pen = QPen(QColor(tokens["color.connectionGlyph"]), 1.8)
     pen.setCapStyle(Qt.PenCapStyle.RoundCap)
     painter.setPen(pen)
-    painter.drawArc(12, 6, 22, 22, 135 * 16, 270 * 16)
-    painter.drawLine(23, 2, 23, 15)
+    painter.drawArc(10, 4, 16, 16, 135 * 16, 270 * 16)
+    painter.drawLine(18, 1, 18, 11)
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(QColor(tokens[state_color]))
-    painter.drawEllipse(40, 2, 8, 8)
+    painter.drawEllipse(34, 1, 6, 6)
     painter.end()
     return QIcon(pixmap)
