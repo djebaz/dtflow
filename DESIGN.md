@@ -37,6 +37,7 @@ rounded:
   panel: "8px"
 spacing:
   rail-gap: "8px"
+  workspace-gutter: "8px"
   panel-padding: "12px"
   canvas-overlay-inset: "10px"
 ---
@@ -86,6 +87,8 @@ Use short labels and specific status text. Keep long paths, model identifiers, t
 All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. Branding, navigation, rail scroll areas and splitter remain mounted across tab switches. Only context, primary workspace and evidence content change. The shell owns the global Inspector toggle and responsive state; page controllers retain their content references and service wiring.
 
 Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a collapsible right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation sits at the top of the shared right rail on a wide window. The global Inspector toggle stays reachable in the left rail. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Queues uses durable queue selection/policy, items and dispatch in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
+
+The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral drag gutter between panels, with a subtle border-colored hover affordance. Internal panel padding is unchanged.
 
 The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. At a window width below 1100, the inspector initially collapses and navigation moves into the left rail. An explicit Inspector toggle can reopen it. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
 
