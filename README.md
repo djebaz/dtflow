@@ -7,6 +7,60 @@ local Draw Things and direct DT+ Cloud Compute. Its Qt interface brings connecti
 generation parameters, LoRA selection, saved outputs and durable queues into one workspace.
 Batch planning lets you compare prompts, seeds and other parameters while keeping each request inspectable.
 
+## Features
+
+### A connected desktop workspace
+
+Connection, Generate and Queues share one interface, with persistent navigation and an
+Inspector for request details and output evidence. Choose local Draw Things or direct DT+
+Cloud Compute, check the connection, and refresh model and LoRA inventory without generating.
+Windows Credential Manager stores a saved cloud API key outside ordinary configuration files.
+
+### Image generation and inspection
+
+Compose prompts and control the model, seed, dimensions, steps, guidance and sampler.
+Select LoRAs with explicit weights and an optional trigger-prefix action; compatibility
+feedback distinguishes confirmed mismatches from unknown metadata rather than guessing.
+
+Follow progress and previews in an image-first workspace, then inspect saved results with
+fit, zoom and pan. Output details link images to their generation metadata and provide
+folder/path actions. Save and load generation configurations to reuse a setup.
+
+### Durable queues and controlled comparisons
+
+Create a paused queue from the generation form, then start, pause, resume or cancel it.
+Queue items retain their resolved requests, attempts and saved outputs, so execution remains
+inspectable after restart. Concurrency controls respect backend and shared resource limits.
+
+Build seed sweeps or Pair/Cross batches over prompts, models, seeds, dimensions and other
+parameters. Review the item count and dry-run table before creating a batch; vary only the
+parameters you intend to compare.
+
+### Explicit cloud assets and offline exploration
+
+Prepare converted cloud LoRA files through a separate, confirmed upload action and inspect
+local asset receipts for reuse. Generation never hides an upload inside an ordinary request.
+
+The fake provider lets you explore the same forms, progress, outputs and queue controls
+offline. Fixture images and configurable simulation outcomes require no model inference.
+
+## Design principles
+
+- **Desktop-first.** Keep the main workflow in a responsive graphical workspace, with
+  details available when needed instead of forcing every action through a terminal.
+- **Reproducible by design.** Record resolved prompts, seeds, model and LoRA identifiers,
+  effective parameters and output references so each result has an inspectable origin.
+- **Durable, not disposable.** Preserve attempts, queue state and saved outputs separately
+  from rebuildable cache. A restart must not silently discard results or replay uncertain work.
+- **Honest outcomes.** Previews are not finished images. Report success only after terminal
+  success, output validation and durable saving; stopping local waiting is not remote cancellation.
+- **Explicit choices.** Do not silently switch backend or credential, modify prompts, upload
+  assets or enable PAYG after a failure. Real generation may still consume subscription credits.
+- **Shared foundations.** Keep presentation, orchestration, persistence and provider protocols
+  separate. The GUI and automation interface use the same generation and queue services.
+- **Safe exploration.** Make offline fixtures useful for development and interaction checks,
+  without submitting real generation just to exercise application plumbing.
+
 ## Getting started
 
 Requirements: Python 3.13 and [uv](https://docs.astral.sh/uv/).
@@ -24,9 +78,9 @@ Connection page. See the [desktop guide](devdocs/guides/desktop.md) for connecti
 
 ```text
 src/dtflow/   application code: core, services, persistence, backends, CLI and Qt UI
-tests/       automated checks
-tools/       diagnostic, development and packaging tools
-devdocs/     usage guides, plans, architecture, research, decisions and release notes
+tests/        automated checks
+tools/        diagnostic, development and packaging tools
+devdocs/      usage guides, plans, architecture, research, decisions and release notes
 ```
 
 Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources live under

@@ -17,8 +17,12 @@ The README presents DTFlow as a desktop application and guides readers through t
 
 Check local Markdown destinations and anchors, preserved guidance, canonical CLI help and diff whitespace. Do not run live checks, generation, uploads, builds or billable actions for this documentation change.
 
+## Follow-up refinement
+
+The owner requested a fuller presentation, roughly double the initial 54-line rewrite. Add readable implemented-feature descriptions and design principles, keeping the GUI-first structure and leaving status, CLI details and testing instructions in linked documents. No planned gallery, image-editing or workflow-engine features are advertised as implemented.
+
 ## Completion
 
-Implemented: 54-line GUI-first README; desktop, CLI, queues, testing and development guides; initial-plan-aligned current development snapshot; AGENTS.md maintenance rules; corrected source-run documentation link and unreleased notes.
+Implemented: GUI-first README with feature descriptions and design principles; desktop, CLI, queues, testing and development guides; initial-plan-aligned current development snapshot; AGENTS.md maintenance rules; corrected source-run documentation link and unreleased notes.
 
 Verified: local Markdown destinations/anchors and JSON example; canonical help for top-level, gui, generate, queue add, test and assets prepare; whitespace checks. Testing guide accepted by the owner. No tests, UI launch, live checks, inference, upload or packaging were run. PR #28 carries this documentation-only change.

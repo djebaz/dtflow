@@ -4,7 +4,7 @@ Pending changes for the next DTFlow release.
 
 ## Changed
 
-- GUI-first README now presents the application, setup/desktop launch and repository navigation. Detailed desktop, CLI, queues/batch plans, testing and diagnostics move into linked `devdocs/guides/`; `devdocs/current_dev_status.md` provides a short initial-plan-aligned coding snapshot, separating implementation from acceptance. Repository instructions maintain this boundary. No runtime behavior or dependency changes.
+- GUI-first README now presents the application, implemented features, design principles, setup/desktop launch and repository navigation. Detailed desktop, CLI, queues/batch plans, testing and diagnostics move into linked `devdocs/guides/`; `devdocs/current_dev_status.md` provides a short initial-plan-aligned coding snapshot, separating implementation from acceptance. Repository instructions maintain this boundary. No runtime behavior or dependency changes.
 
 - Connection, Generate and Queues share one persistent Designer shell, coordinated content stacks, scrolling rails, navigation and global responsive Inspector behavior. Existing workflow controllers and shared QSS are reused; no provider or dispatch policies change. Windows interactive and packaged acceptance remain unverified.
 

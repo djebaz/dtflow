@@ -119,7 +119,7 @@ These instructions apply throughout `dtflow`.
 
 ## Documentation and releases
 
-- Keep `README.md` GUI-first: product presentation, minimal setup/desktop launch, repository layout and documentation navigation. Link the CLI only as an automation/development reference; put detailed usage, testing, diagnostics and safety instructions in `devdocs/guides/`, not README status sections or implementation history.
+- Keep `README.md` GUI-first: product presentation, implemented feature descriptions and design principles, minimal setup/desktop launch, repository layout and documentation navigation. Link the CLI only as an automation/development reference; put detailed usage, testing, diagnostics and safety instructions in `devdocs/guides/`, not README status sections or implementation history.
 - Keep `devdocs/current_dev_status.md` short and dated, mapping implemented, remaining and added scope to `devdocs/plans/initial.md`. Update it when scope changes; distinguish code presence from acceptance and link detailed evidence rather than duplicating it. Repository source and verified evidence remain authoritative.
 - Follow [the release roadmap](devdocs/plans/releases.md) for usable version milestones and acceptance gates; planned numbers are not shipped releases.
 - Version durable state schemas separately from application versions. Preserve state and outputs on supported migrations; reject unsupported schemas clearly and never replay ambiguous attempts during an upgrade.
