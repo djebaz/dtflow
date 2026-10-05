@@ -277,7 +277,7 @@ class MainWindow:
             self.form.backendCombo.setCurrentText(provider)
         if isinstance(endpoint, str):
             self.form.endpointEdit.setText(endpoint)
-        self.generation.restore(document.get("form"))
+        self.generation.restore(document.get("form"), document.get("forms"))
         log.info("last session restored provider=%s", provider if provider in BACKENDS else "-")
 
     def _session_document(self) -> dict:
@@ -285,6 +285,7 @@ class MainWindow:
             "provider": self.form.backendCombo.currentText(),
             "endpoint": self.form.endpointEdit.text().strip(),
             "form": self.generation.form_document(),
+            "forms": self.generation.forms_document(),
         }
 
     def remember(self, *_, background: bool = True) -> None:

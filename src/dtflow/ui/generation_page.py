@@ -147,6 +147,8 @@ class GenerationPage:
         self._activity = activity or Activity()
         self._no_cache = no_cache
         self._listed_backend: str | None = None
+        self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
+        self._provider: str | None = None
         self._activity.listen(self._sync_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
@@ -227,6 +229,7 @@ class GenerationPage:
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
             self.page.inventoryEvidenceLabel.setToolTip("")
             self._listed_backend = None
+        self._switch_provider(name)
         self.page.simulationBox.setVisible(name == "fake")
         self.page.modelCombo.lineEdit().setPlaceholderText(
             f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
@@ -260,15 +263,62 @@ class GenerationPage:
         page.guidanceSpinBox.setValue(values.guidance)
         page.samplerCombo.setCurrentText(values.sampler)
 
+    PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
+
+    def _provider_form(self) -> dict:
+        """The fields that belong to the provider in use: everything but the prompts, plus bound receipts."""
+        document = form_to_document(self._values())
+        form = {name: document[name] for name in self.PROVIDER_FIELDS}
+        form["receipts"] = self.lora.receipts()
+        return form
+
+    def _apply_provider_form(self, document: object) -> None:
+        """Show a provider's remembered fields (defaults for one never used); prompts stay as typed."""
+        current = self._values()
+        values = replace(form_from_document(document), prompt=current.prompt, negative_prompt=current.negative_prompt)
+        self._apply(values)
+        receipts = document.get("receipts") if isinstance(document, dict) else None
+        valid = (
+            {k: v for k, v in receipts.items() if type(k) is str and type(v) is str}
+            if isinstance(receipts, dict)
+            else {}
+        )
+        self.lora.set_loras(values.loras, receipts=valid)
+
+    def _switch_provider(self, name: str) -> None:
+        """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
+        if not name:
+            return
+        if self._provider is None:
+            self._provider = name
+        elif name != self._provider:
+            self._forms[self._provider] = self._provider_form()
+            self._provider = name
+            self._apply_provider_form(self._forms.get(name, {}))
+            log.info("form fields switched provider=%s remembered=%s", name, name in self._forms)
+
     def form_document(self) -> dict:
         """The remembered form values (credential-free, unvalidated)."""
         return form_to_document(self._values())
 
-    def restore(self, document: object) -> None:
-        """Apply a remembered form document; bad fields fall back to defaults."""
+    def forms_document(self) -> dict:
+        """Every provider's remembered fields, the one in use included."""
+        forms = dict(self._forms)
+        if self._provider is not None:
+            forms[self._provider] = self._provider_form()
+        return forms
+
+    def restore(self, document: object, forms: object = None) -> None:
+        """Apply a remembered form document and per-provider fields; bad fields fall back to defaults."""
         values = form_from_document(document)
         self._apply(values)
         self.lora.set_loras(values.loras)
+        self._forms = {k: v for k, v in forms.items() if isinstance(v, dict)} if isinstance(forms, dict) else {}
+        self._provider = self._backend()[0] or None
+        if self._provider in self._forms:
+            self._apply_provider_form(self._forms[self._provider])
+        elif forms is None and self._provider is not None:
+            self._forms[self._provider] = self._provider_form()  # a pre-per-provider file belongs to its provider
 
     def _snap_size(self) -> str | None:
         """Show the nearest multiple of 64 in the size boxes; returns a note when a value was adjusted."""
