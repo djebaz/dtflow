@@ -91,6 +91,7 @@ class ImagePreview(QAbstractScrollArea):
 
     def enable_inspection(self):
         self._expand.setEnabled(True)
+        self.sampleButton.setEnabled(True)
 
     def setText(self, text):  # Designer/controller presentation seam
         self._text = text
