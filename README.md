@@ -39,6 +39,10 @@ uv run ruff format --check .
 uv run pytest
 ```
 
+GitHub Actions (`.github/workflows/ci.yml`) runs these four offline checks on pushes and on manual dispatch. A push
+run waits five minutes and is cancelled by a newer push to the same ref, so a burst of commits is checked once. CI
+never runs live tests or generation and uses no secrets.
+
 The source checkout also provides a thin pytest wrapper with explicit test groups:
 
 ```powershell

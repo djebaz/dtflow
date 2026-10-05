@@ -1,0 +1,78 @@
+name: CI
+
+# Offline checks only: lock consistency, lint, format and the offline pytest suite.
+# Live Draw Things / DT+ tests and any generation are never run here, and no secrets are used.
+on:
+  workflow_dispatch:
+  push:
+
+# Push runs are debounced: each waits DEBOUNCE_SECONDS, and a newer push to the same ref cancels
+# the older run (including one still waiting), so only the latest commit of a burst is checked.
+# GitHub has no native throttle; manual runs use a unique group and are never cancelled.
+concurrency:
+  group: ci-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+permissions:
+  contents: read
+
+env:
+  DEBOUNCE_SECONDS: 300
+  UV_LOCKED: "1"
+  QT_QPA_PLATFORM: offscreen
+
+jobs:
+  debounce:
+    name: Debounce
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - run: sleep "$DEBOUNCE_SECONDS"
+
+  checks:
+    name: Lock, lint, test
+    needs: debounce
+    # Run after a skipped debounce (manual dispatch) but not after a failed or cancelled one.
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version-file: .python-version
+
+      - name: Ruff cache
+        uses: actions/cache@v4
+        with:
+          path: .ruff_cache
+          key: ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}-
+
+      - name: Sync environment
+        run: uv sync --locked
+
+      - name: Lock file is current
+        run: uv lock --check
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: SQLite version
+        run: uv run python -c "import sqlite3; print(sqlite3.sqlite_version)"
+
+      - name: Pytest (offline)
+        run: uv run pytest
