@@ -70,3 +70,7 @@ Implemented canonical compact navigation and shared-token power/status icon. Ima
 - Explicit vertical scrollbar page backgrounds remove the native checkerboard track seen in the owner's screenshot.
 - Captured the actual shell with temporary state and network guard installed at 1182×792 and 800×680, plus fixture unknown/checking/error states. No real connection checks/generation or state writes to the user's application folder. Reviewed connected and narrow Generate captures; all four navigation targets remain available within the row (Images intentionally disabled).
 - Ruff, Designer compilation and whitespace checks passed. Native DPI, hover/focus ergonomics and owner final acceptance remain pending; no automated test suite was run.
+
+### Reference-proportion correction
+
+The previous 52×40 control approximated rather than matched the supplied reference. Connection is now 74×44 logical pixels with a 48×30 icon box, a 22 px open power arc with rounded 2.6 px stroke, and an 8 px dot separated to the upper right. Removed the QSS minimum-width override that defeated Designer sizing. Native guarded fixture capture confirms the actual 74×44 target; the three text tabs remain in the left-rail row. Palette remains DTFlow's shared success/text tokens, not the reference's teal. No live requests or test suite run.

@@ -599,7 +599,7 @@ QPlainTextEdit#galleryRawMetadata { background: ${color.canvas}; }
 QFrame#navigationFrame { background: transparent; border: 0; }
 QFrame#navigationFrame QPushButton[role="navigation"] {
   min-width: 0;
-  min-height: 26px;
+  min-height: 30px;
   padding: 6px 5px;
   background: transparent;
   border: 1px solid transparent;
@@ -623,12 +623,11 @@ QFrame#navigationFrame QPushButton[role="navigation"]:disabled {
   color: ${color.disabled};
 }
 QPushButton#connectionNavigationButton {
-  min-width: 0;
   min-height: 0;
-  padding: 4px;
+  padding: 0;
   background: ${color.input};
   border: 1px solid ${color.border};
-  border-radius: 8px;
+  border-radius: 10px;
 }
 QPushButton#connectionNavigationButton:checked { background: ${color.selection}; }
 QPushButton#connectionNavigationButton[state="ok"] {
