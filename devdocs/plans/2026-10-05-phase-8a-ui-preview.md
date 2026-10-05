@@ -1,6 +1,6 @@
 # Phase 8A — Preview-only Designer forms and shared styling
 
-**Status:** Detail form and offline preview implemented in draft PR #33; Grid/List and gallery services remain unimplemented; the fixture-only Detail preview is mounted in Images.
+**Status:** Grid/List/Detail presentations and offline preview implemented in draft PR #33; gallery services remain unimplemented; the fixture-only Detail preview is mounted in Images.
 
 **Base:** Phase 8 documentation PR #32 squash-merged on main (`5d9c476`).
 
@@ -131,3 +131,20 @@ Header density follow-up: view controls are 34 px high, utility controls 36 px,
 filter fields 30 px, with shared 9pt small text. Logo/title retain their established
 identity scale. Header widths are reduced so aligned branding and navigation do
 not crowd the controls. No tests added or run.
+
+
+## Shared-header Grid and List integration — 2026-10-06
+
+The canonical gallery form now contains a content stack beneath the unchanged
+two-row header. Detail retains its image/filmstrip and full-width bottom panels;
+Grid uses responsive uniform tiles with aspect-fit artwork; List uses compact
+metadata columns, row-wide hover and no selection or bulk controls. Clicking a
+tile or row opens its fixture in Detail. Header widgets and mounted browse views
+remain the same objects, preserving scroll positions across view switches.
+
+The shared slider becomes row density in List, thumbnail size in Grid and
+filmstrip size in Detail. The standalone launcher accepts `--view grid` or
+`--view list`; disclosure states always show Detail. All data remains explicitly
+illustrative, with actual bundled file sizes/dimensions and no recorded generation
+date. Filters, refresh, file actions and real saved-output query services remain
+unimplemented. No tests added or run, per owner instruction.

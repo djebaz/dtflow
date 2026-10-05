@@ -193,8 +193,18 @@ and raw panels are mutually exclusive.
 
 The shared fixture controller provides Cover/Fit, 100%, zoom, pan, previous/next,
 keyboard navigation, fullscreen/Escape and thumbnail sizing. Artwork and metadata
-remain explicit samples; LoRA compatibility stays Unknown. Filters, Grid/List,
-auto-refresh and file actions are disabled until services exist. The source
+remain explicit samples; LoRA compatibility stays Unknown. Filters, auto-refresh and file actions are disabled until services exist. The source
 assets include a generated portrait and crops from the approved reference,
 identified as fixtures rather than generation evidence. No saved-output query,
 gallery persistence or provider execution is implemented by this presentation.
+
+
+Grid, List and Detail share one header instance above `galleryContentStack`.
+Grid has uniform, aspect-fit thumbnail tiles with the same height at every ratio;
+List has metadata columns and a compact row-density control. Neither browsing
+view exposes checkboxes, selection state or bulk actions. List hover spans the
+row. Clicking a tile or row opens that fixture in Detail; returning to browsing
+retains the mounted widgets and their scroll positions. The shared slider controls
+Grid thumbnail size, List row density or Detail filmstrip size for the active view.
+The fixture controller keeps all three presentations offline; a populated preview
+does not establish saved-output discovery, query, filtering or provenance services.

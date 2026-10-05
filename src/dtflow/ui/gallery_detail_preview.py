@@ -6,9 +6,22 @@ metadata here are explicitly illustrative fixtures.
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
-from PySide6.QtWidgets import QPlainTextEdit, QPushButton, QWidget
+from PySide6.QtWidgets import (
+    QStyle,
+    QButtonGroup,
+    QFrame,
+    QHeaderView,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dtflow.ui.theme import load_tokens
 
@@ -48,6 +61,10 @@ class CoverPainter(QObject):
                 w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
                 dest = QRectF((rect.width() - w) / 2 + self.offset[0], (rect.height() - h) / 2 + self.offset[1], w, h)
                 painter.drawPixmap(dest, self.pixmap, QRectF(self.pixmap.rect()))
+            if obj.property("role") == "galleryCardImage" and (obj.underMouse() or obj.hasFocus()):
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QColor(self.tokens["gallery.focus"]))
+                painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 9, 9)
             if self.badges:
                 painter.setFont(QFont("Segoe UI", 9))
                 for x, text in [(6, self.badges[0]), (rect.width() - 58, self.badges[1])]:
@@ -84,6 +101,18 @@ class CoverPainter(QObject):
                 obj.update()
                 return True
         return False
+
+
+class RowHoverDelegate(QStyledItemDelegate):
+    """Apply the light hover state across one row without selecting records."""
+
+    def paint(self, painter, option, index):
+        style = QStyleOptionViewItem(option)
+        if index.row() == self.parent().property("hoverRow"):
+            style.state |= QStyle.StateFlag.State_MouseOver
+        else:
+            style.state &= ~QStyle.StateFlag.State_MouseOver
+        super().paint(painter, style, index)
 
 
 def apply_gallery(page, assets=ASSETS, sample=False):
@@ -192,6 +221,11 @@ def apply_gallery(page, assets=ASSETS, sample=False):
         paint.pixmap = QPixmap(str(assets / "portrait.jpg" if index == 1 else paths[index - 1]))
         get("galleryPositionOverlay").setText(f"{index} / 6")
         get("galleryDimensionsOverlay").setText(f"{paint.pixmap.width()} × {paint.pixmap.height()}")
+        paint.zoom = 1
+        paint.offset = [0, 0]
+        filename = assets / "portrait.jpg" if index == 1 else paths[index - 1]
+        get("galleryAdditionalFilenameValue").setText(f"{filename.name} (illustrative fixture)")
+        get("galleryAdditionalFileSizeValue").setText(f"{filename.stat().st_size / 1024:.0f} KB (fixture file)")
         surface.update()
 
     if sample:
@@ -241,9 +275,172 @@ class DetailFixture(QObject):
         self.raw_button = page.findChild(QPushButton, "galleryRawButton")
         self.additional = page.findChild(QWidget, "galleryAdditionalScroll")
         self.raw = page.findChild(QPlainTextEdit, "galleryRawMetadata")
+        self.setup_browsing()
         for key, name in [("Left", "galleryPreviousButton"), ("Right", "galleryNextButton")]:
             shortcut = QShortcut(QKeySequence(key), page)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(page.findChild(QPushButton, name).click)
         escape = QShortcut(QKeySequence("Escape"), page)
         escape.activated.connect(lambda: page.window().showNormal() if page.window().isFullScreen() else None)
+
+    def setup_browsing(self):
+        """Mount fixture Grid/List below the same persistent two-row header."""
+        self.stack = self.page.findChild(QWidget, "galleryContentStack")
+        self.grid_scroll = self.page.findChild(QWidget, "galleryGridScroll")
+        self.grid_cards = self.page.findChild(QWidget, "galleryGridCards")
+        self.cards_layout = self.grid_cards.layout()
+        self.table = self.page.findChild(QWidget, "galleryListTable")
+        self.slider = self.page.findChild(QWidget, "galleryThumbnailSizeSlider")
+        self.mode_buttons = QButtonGroup(self)
+        self.mode_buttons.setExclusive(True)
+        self.modes = {}
+        for mode in ("Grid", "List", "Detail"):
+            button = self.page.findChild(QPushButton, f"gallery{mode}Button")
+            self.mode_buttons.addButton(button)
+            button.clicked.connect(lambda checked=False, name=mode: self.show_view(name))
+            self.modes[mode] = self.page.findChild(QWidget, f"gallery{mode}Content")
+        self.records = []
+        self.cards = []
+        paths = [ASSETS / "portrait.jpg"] + [ASSETS / f"thumb{i}.png" for i in range(2, 7)]
+        for index, path in enumerate(paths, 1):
+            image = QPixmap(str(path))
+            record = {
+                "index": index,
+                "path": path,
+                "pixmap": image,
+                "dimensions": f"{image.width()} × {image.height()}",
+                "size": f"{path.stat().st_size / 1024:.0f} KB",
+                "model": "SDXL 1.0 (sample)",
+                "loras": "portrait_enhancer_v2 · 0.8 · Unknown; film_photography_xl · 0.4 · Unknown",
+                "prompt": "Illustrative sample artwork; no recorded generation request.",
+            }
+            self.records.append(record)
+            card = QFrame(self.grid_cards)
+            card.setProperty("role", "galleryCard")
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(0, 0, 0, 8)
+            layout.setSpacing(5)
+            button = QPushButton(card)
+            button.setProperty("role", "galleryCardImage")
+            button.setAccessibleName(f"Open {path.name} in Detail; illustrative sample")
+            button.setToolTip("Illustrative artwork; no saved-output generation evidence")
+            painter = CoverPainter(button, path, (record["dimensions"], "Sample"))
+            painter.mode = "Fit"
+            self.painters.append(painter)
+            button.clicked.connect(lambda checked=False, item=index: self.open_detail(item))
+            layout.addWidget(button)
+            caption = QLabel(f"{path.name}  ·  {record['size']}", card)
+            caption.setProperty("role", "galleryCardCaption")
+            caption.setToolTip(str(path.name))
+            layout.addWidget(caption)
+            model = QLabel(record["model"], card)
+            model.setProperty("role", "secondary")
+            layout.addWidget(model)
+            self.cards.append((card, button))
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Image",
+                "Filename",
+                "Model",
+                "LoRAs / weights / status",
+                "Dimensions",
+                "File size",
+                "Date / time",
+                "Positive prompt",
+            ]
+        )
+        self.table.setRowCount(len(self.records))
+        self.table.verticalHeader().hide()
+        self.table.setProperty("hoverRow", -1)
+        self.table.setItemDelegate(RowHoverDelegate(self.table))
+        self.table.viewport().setMouseTracking(True)
+        self.table.viewport().installEventFilter(self)
+        self.table.setIconSize(QSize(64, 48))
+        for row, record in enumerate(self.records):
+            icon = QTableWidgetItem()
+            icon.setIcon(QIcon(record["pixmap"]))
+            fields = [
+                icon,
+                record["path"].name,
+                record["model"],
+                record["loras"],
+                record["dimensions"],
+                record["size"],
+                "Not recorded",
+                record["prompt"],
+            ]
+            for column, value in enumerate(fields):
+                item = value if isinstance(value, QTableWidgetItem) else QTableWidgetItem(value)
+                item.setData(Qt.ItemDataRole.UserRole, record["index"])
+                item.setToolTip("Illustrative sample. " + (item.text() or record["path"].name))
+                self.table.setItem(row, column, item)
+        for column, width in enumerate((80, 150, 150, 270, 120, 85, 130, 320)):
+            self.table.setColumnWidth(column, width)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.itemClicked.connect(lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)))
+        self.table.itemActivated.connect(lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)))
+        self.grid_scroll.viewport().installEventFilter(self)
+        self.slider.valueChanged.connect(self.update_density)
+        self.show_view("Detail")
+        QTimer.singleShot(0, self.update_density)
+
+    def show_view(self, mode):
+        """Switch mounted content only; header widgets and scroll positions persist."""
+        self.mode = mode
+        self.stack.setCurrentWidget(self.modes[mode])
+        self.page.findChild(QPushButton, f"gallery{mode}Button").setChecked(True)
+        self.page.findChild(QWidget, "galleryThumbnailSizeLabel").setText(
+            "Row density" if mode == "List" else "Thumbnail size"
+        )
+        self.update_density()
+
+    def open_detail(self, index):
+        """Open one sample without introducing gallery multi-selection state."""
+        self.page.findChild(QPushButton, f"galleryThumbnail{index}").click()
+        self.show_view("Detail")
+
+    def update_density(self, *_):
+        """Use uniform aspect-fit tiles, or compact list row height, from the shared slider."""
+        size = self.slider.value()
+        for card, button in self.cards:
+            card.setFixedWidth(size + 16)
+            button.setFixedSize(size + 16, size + 16)
+            placeholder = QPixmap(size, size)
+            placeholder.fill(Qt.GlobalColor.transparent)
+            button.setIcon(QIcon(placeholder))
+            button.setIconSize(placeholder.size())
+        height = max(36, min(84, round(size * 0.35)))
+        self.table.verticalHeader().setDefaultSectionSize(height)
+        self.table.setIconSize(QSize(height, max(24, height - 10)))
+        for row in range(self.table.rowCount()):
+            self.table.setRowHeight(row, height)
+        self.page.findChild(QWidget, "galleryThumbnailSizeValue").setText(
+            f"{height} px" if self.mode == "List" else f"{size} px"
+        )
+        self.layout_cards()
+
+    def layout_cards(self):
+        """Reflow a regular grid without masonry or ratio-dependent card heights."""
+        width = self.slider.value() + 16
+        columns = max(1, (self.grid_scroll.viewport().width() + 10) // (width + 10))
+        for card, _ in self.cards:
+            self.cards_layout.removeWidget(card)
+        for index, (card, _) in enumerate(self.cards):
+            self.cards_layout.addWidget(card, index // columns, index % columns, Qt.AlignmentFlag.AlignTop)
+        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+    def eventFilter(self, watched, event):
+        if watched is self.table.viewport():
+            if event.type() == QEvent.Type.MouseMove:
+                row = self.table.indexAt(event.position().toPoint()).row()
+                if row != self.table.property("hoverRow"):
+                    self.table.setProperty("hoverRow", row)
+                    self.table.viewport().update()
+            elif event.type() == QEvent.Type.Leave:
+                self.table.setProperty("hoverRow", -1)
+                self.table.viewport().update()
+        if watched is self.grid_scroll.viewport() and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self.layout_cards)
+        return False

@@ -35,7 +35,7 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 
 - PR #31 adds an opt-in cached Windows build and draft-only release workflow, including artifact-only same-repository PR-head builds; not yet runner-verified. Owner executable smoke/publication remain explicit.
 
-- Draft PR #33: reference-matched fixture Detail form/shared styling and offline launcher, mounted full-width in Images with logo/tabs and no left content column; not a real saved-output gallery or evidence of completed Phase 8A. See [the preview plan](plans/2026-10-05-phase-8a-ui-preview.md).
+- Draft PR #33: reference-matched fixture Grid/List/Detail form/shared styling and offline launcher, mounted full-width in Images with logo/tabs and no left content column; not a real saved-output gallery or evidence of completed Phase 8A. See [the preview plan](plans/2026-10-05-phase-8a-ui-preview.md).
 
 ## Next coding direction
 

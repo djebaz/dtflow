@@ -23,6 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capture", type=Path, help="Write one offline layout capture, then exit")
     parser.add_argument("--state", choices=("closed", "details", "raw"), default="closed")
+    parser.add_argument("--view", choices=("grid", "list", "detail"), default="detail")
     parser.add_argument("--size", default="1280x1000", help="Preview size, e.g. 800x680")
     args = parser.parse_args()
     try:
@@ -42,6 +43,7 @@ def main():
     if page is None:
         raise RuntimeError(loader.errorString())
     controller = DetailFixture(page)
+    controller.show_view(args.view.title() if args.state == "closed" else "Detail")
     if args.state == "details":
         controller.additional_button.setChecked(True)
     elif args.state == "raw":

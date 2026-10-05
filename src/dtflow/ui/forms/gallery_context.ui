@@ -20,7 +20,7 @@
     <property name="role" stdset="0"><string>secondary</string></property>
    </widget></item>
    <item><widget class="QLabel" name="galleryContextActionsHint">
-    <property name="text"><string>Try Cover / Fit, thumbnail size, and Additional details or Raw metadata JSON. Filters, Grid/List and saved-file actions are not wired yet.</string></property>
+    <property name="text"><string>Try Cover / Fit, thumbnail size, and Additional details or Raw metadata JSON. Grid/List open the same sample images. Filters and saved-file actions are not wired yet.</string></property>
     <property name="wordWrap"><bool>true</bool></property>
    </widget></item>
    <item><spacer name="galleryContextSpacer">
@@ -32,3 +32,4 @@
  <resources/>
  <connections/>
 </ui>
+

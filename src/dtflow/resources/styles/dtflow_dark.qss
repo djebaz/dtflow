@@ -779,3 +779,27 @@ QWidget#galleryHeaderScrollContents QLabel#productMarkLabel {
 QWidget#galleryHeaderScrollContents QPushButton#galleryRefreshButton {
   font-size: 14pt;
 }
+
+/* Grid and List reuse the mounted Detail header and scoped gallery palette. */
+QWidget#galleryDetailContent, QWidget#galleryGridContent, QWidget#galleryListContent,
+QWidget#galleryGridCards, QStackedWidget#galleryContentStack, QScrollArea#galleryGridScroll {
+  background: ${gallery.background}; border: 0;
+}
+QFrame[role="galleryCard"] {
+  background: ${gallery.surface}; border: 1px solid ${gallery.border}; border-radius: 8px;
+}
+QWidget#GalleryDetailPage QPushButton[role="galleryCardImage"] {
+  background: ${gallery.canvas}; border: 0; padding: 0; border-radius: 8px;
+}
+QLabel[role="galleryCardCaption"] { padding: 0 8px; font-size: ${type.small}; }
+QFrame[role="galleryCard"] QLabel[role="secondary"] { padding: 0 8px; font-size: ${type.small}; }
+QTableWidget#galleryListTable {
+  background: ${gallery.background}; color: ${gallery.text}; border: 1px solid ${gallery.border};
+  border-radius: 8px; padding: 0; font-size: ${type.small};
+}
+QTableWidget#galleryListTable::item { border: 0; border-bottom: 1px solid ${gallery.border}; padding: 4px 8px; }
+QTableWidget#galleryListTable::item:hover { background: ${gallery.surface}; }
+QTableWidget#galleryListTable QHeaderView::section {
+  background: ${gallery.surface}; color: ${gallery.secondary}; border: 0;
+  border-bottom: 1px solid ${gallery.border}; padding: 8px; font-size: ${type.small};
+}

@@ -34,3 +34,8 @@
 - Images aligns logo/view controls and navigation/filters on the same two header
   rows. Its bottom metadata, prompt and additional/raw panels span the full width
   beneath the image and filmstrip. No tests added or run for this layout follow-up.
+
+- Images adds fixture Grid and compact List views beneath the same Detail header,
+  with uniform aspect-fit tiles, metadata columns, row hover, density control and
+  click-to-Detail navigation. No checkboxes, multi-selection or real gallery
+  service integration is added. No tests added or run for this follow-up.
