@@ -143,7 +143,10 @@ class MainWindow:
     def _disable_preview_controls(page: QWidget) -> None:
         for control_type in PREVIEW_CONTROL_TYPES:
             for control in page.findChildren(control_type):
-                control.setEnabled(False)
+                # A spin box's or combo box's own editor follows its owner; disabling it separately would leave the
+                # value greyed out and untypeable after the owner is re-enabled.
+                if not isinstance(control.parent(), (QAbstractSpinBox, QComboBox)):
+                    control.setEnabled(False)
 
     def _show_queue(self) -> None:
         self.form.workspaceStack.setCurrentWidget(self.queue_page)
