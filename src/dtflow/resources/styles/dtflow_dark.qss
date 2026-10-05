@@ -45,8 +45,8 @@ QFrame#headerFrame {
 }
 
 QFrame#productMark {
-  background-color: ${color.accent};
-  border: 1px solid #1085dd;
+  background-color: transparent;
+  border: 0;
   border-radius: 8px;
 }
 
@@ -482,6 +482,13 @@ QLabel#previewDesignation {
   color: ${color.text}; background: #242424; border-radius: 4px; padding: 4px 7px;
   font-size: ${type.small};
 }
+QPushButton#previewSampleButton {
+  background: #24415b; color: #eaf5ff; border: 1px solid #3c729d;
+  border-radius: ${size.radius}; padding: 6px 14px; min-height: 24px;
+}
+QPushButton#previewSampleButton:hover { background: #315a7e; border-color: ${color.focus}; }
+QPushButton#previewSampleButton:pressed { background: #19364e; }
+QPushButton#previewSampleButton:focus { border-color: ${color.focus}; }
 QPushButton:focus, QPushButton[role="navigation"]:focus, QCheckBox:focus {
   border: 1px solid ${color.focus};
 }

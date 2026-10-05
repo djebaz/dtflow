@@ -51,8 +51,11 @@ def main(argv: list[str] | None = None) -> int:
         command = [
             sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--name", "dtflow-cli",
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
-            "--distpath", str(out), "tools/packaging/launch_dtflow.py",
+            "--collect-data", "dtflow", "--distpath", str(out),
         ]  # fmt: skip
+        if platform.system() == "Windows":
+            command.extend(["--icon", str(ROOT / "src/dtflow/resources/images/dtflow.ico")])
+        command.append("tools/packaging/launch_dtflow.py")
         subprocess.run(command, cwd=ROOT, check=True)
     finally:
         BUILDINFO.unlink(missing_ok=True)

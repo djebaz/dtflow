@@ -126,7 +126,10 @@ class MainWindow:
         self.confirm = ask_confirmation
         self.activity = Activity()
         form = self.form
-        logo = QPixmap(str(Path(__file__).parents[1] / "resources" / "images" / "dtflow-app.png"))
+        from dtflow.ui.brand import APP_ICON, app_icon
+
+        form.setWindowIcon(app_icon())
+        logo = QPixmap(str(APP_ICON))
         if not logo.isNull():
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)

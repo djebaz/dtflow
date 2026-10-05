@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QSlider,
 )
 
+from dtflow.ui.brand import APP_ICON, ILLUSTRATIVE_SAMPLE
 from dtflow.ui.theme import load_tokens
 
 
@@ -29,7 +30,8 @@ class ImagePreview(QAbstractScrollArea):
         self._scale = 1.0
         self._fit = True
         self._drag = None
-        self._text = "Your image appears here\nGenerate an image to begin."
+        self._text = "Your next image starts here\nSet a prompt or view a sample."
+        self._brand_mark = QPixmap(str(APP_ICON))
         self._expanded = False
         self._restore = None
         tokens = load_tokens()
@@ -56,6 +58,10 @@ class ImagePreview(QAbstractScrollArea):
         self._expand.clicked.connect(self.toggle_expanded)
         self._badge = QLabel(self.viewport())
         self._badge.setObjectName("previewDesignation")
+        self.sampleButton = QPushButton("View sample", self.viewport())
+        self.sampleButton.setObjectName("previewSampleButton")
+        self.sampleButton.setToolTip("Illustrative artwork only. No model inference or saved file.")
+        self.sampleButton.clicked.connect(self.show_sample)
         self._files = QFrame(self.viewport())
         self._files.setObjectName("previewFileToolbar")
         self._file_row = QGridLayout(self._files)
@@ -102,6 +108,15 @@ class ImagePreview(QAbstractScrollArea):
     def setPixmap(self, pixmap):
         self._pixmap = pixmap
         self.fit()
+
+    def show_sample(self):
+        sample = QPixmap(str(ILLUSTRATIVE_SAMPLE))
+        if sample.isNull():
+            return
+        self.setPixmap(sample)
+        self.setProperty("designation", "illustrative_sample")
+        self._badge.setText(f"{sample.width()} × {sample.height()}  ·  Illustrative sample · no inference")
+        self._position_controls()
 
     def set_designation(self, designation, *, fixture=False):
         self.setProperty("designation", designation)
@@ -161,6 +176,7 @@ class ImagePreview(QAbstractScrollArea):
         for control in (self.fitButton, self.actualButton, self.minusButton, self.plusButton, self.zoomSlider):
             control.setEnabled(available)
         self._badge.setVisible(available)
+        self.sampleButton.setVisible(not available)
         self._show_controls()
         self._position_controls()
         self.viewport().update()
@@ -172,7 +188,9 @@ class ImagePreview(QAbstractScrollArea):
         self._files.adjustSize()
         self._badge.adjustSize()
         self._expand.adjustSize()
+        self.sampleButton.adjustSize()
         width, height = self.viewport().width(), self.viewport().height()
+        self.sampleButton.move(max(0, (width - self.sampleButton.width()) // 2), height // 2 + 55)
         self.zoomSlider.setVisible(width >= 460)
         columns = 4 if width >= 500 else 2
         for index, button in enumerate(self._file_buttons):
@@ -208,8 +226,11 @@ class ImagePreview(QAbstractScrollArea):
         painter = QPainter(self.viewport())
         painter.fillRect(self.viewport().rect(), self._canvas_color)
         if self._pixmap.isNull():
+            if not self._brand_mark.isNull():
+                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                painter.drawPixmap(QRectF((self.viewport().width() - 56) / 2, self.viewport().height() / 2 - 110, 56, 56), self._brand_mark, QRectF(self._brand_mark.rect()))
             painter.setPen(self._secondary_color)
-            painter.drawText(self.viewport().rect(), Qt.AlignmentFlag.AlignCenter, self._text)
+            painter.drawText(QRectF(0, self.viewport().height() / 2 - 40, self.viewport().width(), 80), Qt.AlignmentFlag.AlignCenter, self._text)
         else:
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawPixmap(self.image_rect(), self._pixmap, QRectF(self._pixmap.rect()))

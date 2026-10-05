@@ -63,6 +63,23 @@ def settled(page):
     return lambda: page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
 
 
+def test_illustrative_sample_is_clearly_labeled_and_has_no_saved_actions(window):
+    page = window.generation_page
+    preview = page.resultPreviewLabel
+    preview.sampleButton.click()
+    assert preview.property("designation") == "illustrative_sample"
+    assert "no inference" in preview._badge.text()
+    assert preview.pixmap().height() > preview.pixmap().width()
+    assert page.resultList.count() == 0
+    assert not page.openOutputFolderButton.isEnabled()
+    assert not page.copyOutputPathButton.isEnabled()
+    assert not window.generation.openFileButton.isEnabled()
+    assert not window.generation.metadataButton.isEnabled()
+    preview.clear()
+    assert preview.pixmap().isNull()
+    assert preview.sampleButton.isHidden() is False
+
+
 def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(window, qtbot, fake):
     use, gate = fake
     use(gate=gate)
