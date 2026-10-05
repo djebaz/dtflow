@@ -16,6 +16,8 @@
 
 ## Fixed
 
+- PR #33 styling pass aligns the compact navigation row, adds a token-based connected fill and removes the native checkerboard vertical-scrollbar page track. Actual guarded fixture shell captures reviewed; owner visual acceptance remains pending.
+
 ## Release audit
 
 - PRs: #31.

@@ -62,3 +62,11 @@ uv run python tools/ui/preview_gallery_detail.py --size 800x680
 - Owner Windows navigation and native-DPI validation remain pending. No tests or live connection checks are authorized by the layout request.
 
 Implemented canonical compact navigation and shared-token power/status icon. Images remains disabled. Syntax/import, Designer compilation and Ruff checks recorded; owner visual/interaction acceptance remains pending.
+
+### Navigation polish — 2026-10-06
+
+- Matched row heights (40 px), enlarged the power glyph/status dot and kept a 52 px Connection target. Other tabs use quiet transparent text styling, including disabled Images; selected workspace remains distinct.
+- Added shared `color.successSurface` (`#203b2b`) and matching DESIGN.md snapshot for the connected control's green-tinted fill. All status/focus colors remain token-based; no glow or inline widget styles.
+- Explicit vertical scrollbar page backgrounds remove the native checkerboard track seen in the owner's screenshot.
+- Captured the actual shell with temporary state and network guard installed at 1182×792 and 800×680, plus fixture unknown/checking/error states. No real connection checks/generation or state writes to the user's application folder. Reviewed connected and narrow Generate captures; all four navigation targets remain available within the row (Images intentionally disabled).
+- Ruff, Designer compilation and whitespace checks passed. Native DPI, hover/focus ergonomics and owner final acceptance remain pending; no automated test suite was run.

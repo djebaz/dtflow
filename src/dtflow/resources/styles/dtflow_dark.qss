@@ -595,23 +595,57 @@ QPlainTextEdit#galleryPositivePrompt {
 QPlainTextEdit#galleryPositivePrompt:focus { border: 1px solid ${color.focus}; }
 QPlainTextEdit#galleryRawMetadata { background: ${color.canvas}; }
 
-/* Compact permanent navigation: reserve room for Images without widening the rail. */
+/* Permanent navigation: quiet text tabs, distinctive compact Connection control. */
+QFrame#navigationFrame { background: transparent; border: 0; }
 QFrame#navigationFrame QPushButton[role="navigation"] {
   min-width: 0;
+  min-height: 26px;
   padding: 6px 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: ${color.secondary};
+  font-size: ${type.body};
+}
+QFrame#navigationFrame QPushButton[role="navigation"]:hover {
+  background: ${color.surface};
+  color: ${color.text};
+}
+QFrame#navigationFrame QPushButton[role="navigation"]:checked {
+  background: ${color.selection};
+  color: ${color.selectionText};
+  border-color: ${color.border};
+}
+QFrame#navigationFrame QPushButton[role="navigation"]:pressed { background: ${color.canvas}; }
+QFrame#navigationFrame QPushButton[role="navigation"]:focus { border-color: ${color.focus}; }
+QFrame#navigationFrame QPushButton[role="navigation"]:disabled {
+  background: transparent;
+  border-color: transparent;
+  color: ${color.disabled};
 }
 QPushButton#connectionNavigationButton {
   min-width: 0;
+  min-height: 0;
   padding: 4px;
   background: ${color.input};
   border: 1px solid ${color.border};
-  border-radius: ${size.radius};
+  border-radius: 8px;
 }
 QPushButton#connectionNavigationButton:checked { background: ${color.selection}; }
-QPushButton#connectionNavigationButton[state="ok"] { border-color: ${color.success}; }
+QPushButton#connectionNavigationButton[state="ok"] {
+  background: ${color.successSurface};
+  border-color: ${color.success};
+}
 QPushButton#connectionNavigationButton[state="warning"] { border-color: ${color.warning}; }
 QPushButton#connectionNavigationButton[state="error"] { border-color: ${color.error}; }
-QPushButton#connectionNavigationButton:hover { background: ${color.surface}; }
+QPushButton#connectionNavigationButton:hover { border-width: 2px; }
 QPushButton#connectionNavigationButton:pressed { background: ${color.canvas}; }
 QPushButton#connectionNavigationButton:focus { border: 2px solid ${color.focus}; }
-QPushButton#connectionNavigationButton:disabled { border-color: ${color.border}; background: ${color.surface}; }
+QPushButton#connectionNavigationButton:disabled {
+  border-color: ${color.border};
+  background: ${color.surface};
+}
+/* Define vertical page tracks too: do not inherit the native checkerboard brush. */
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+  background: ${color.background};
+  border: 0;
+}
