@@ -1,7 +1,11 @@
 # Place at .github/dependabot.yml
 version: 2
 updates:
-  # Python dependencies managed by uv (pyproject.toml + uv.lock).
+  # One uv entry (Dependabot rejects two entries for the same ecosystem and directory).
+  # Weekly is enough (drawthings-py publishes about monthly); it is the base of every Draw Things connection and gets its own
+  # PR, never grouped. Everything else is batched into one PR for minor and patch updates.
+  # drawthings-py is bounded to 0.4.x in pyproject.toml, so a new line arrives as a PR to review by hand (see
+  # devdocs/research/drawthings-grpc-proof.md before changing the bound or the NumPy override).
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
@@ -15,15 +19,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
+        exclude-patterns:
+          - "drawthings-py"
     ignore:
       # Pinned on purpose by [tool.uv] override-dependencies: NumPy 2.4+ fails to import on the tested
       # legacy Windows CPU (see devdocs/research/drawthings-grpc-proof.md).
       - dependency-name: "numpy"
-      # drawthings-py is bounded to 0.4.x; a new release line needs a manual compatibility review.
-      - dependency-name: "drawthings-py"
-        update-types:
-          - "version-update:semver-minor"
-          - "version-update:semver-major"
 
   # GitHub Actions used by the CI workflow.
   - package-ecosystem: "github-actions"
