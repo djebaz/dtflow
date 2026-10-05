@@ -12,7 +12,7 @@
 - [x] Preserve canonical dev/log/cache options and readable help/version/errors without a console; keep source CLI unchanged.
 - [x] Update packaging instructions, development status and unreleased notes.
 - [x] Run syntax/import/help/configuration and lint/format checks; final tests and Windows executable smoke remain with the owner.
-- [ ] Push the implementation and ready the PR without merging or releasing.
+- [x] Push the implementation and ready PR #29 without merging or releasing.
 
 ## Decisions and Design Changes
 
