@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QSlider,
 )
 
-from dtflow.ui.brand import APP_ICON, ILLUSTRATIVE_SAMPLE
+from dtflow.ui.brand import APP_ICON
 from dtflow.ui.theme import load_tokens
 
 
@@ -30,7 +30,7 @@ class ImagePreview(QAbstractScrollArea):
         self._scale = 1.0
         self._fit = True
         self._drag = None
-        self._text = "Your next image starts here\nSet a prompt or view a sample."
+        self._text = "Your next image starts here\nSet a prompt and press Generate."
         self._brand_mark = QPixmap(str(APP_ICON))
         self._expanded = False
         self._restore = None
@@ -58,14 +58,11 @@ class ImagePreview(QAbstractScrollArea):
         self._expand.clicked.connect(self.toggle_expanded)
         self._badge = QLabel(self.viewport())
         self._badge.setObjectName("previewDesignation")
-        self.sampleButton = QPushButton("View sample", self.viewport())
-        self.sampleButton.setObjectName("previewSampleButton")
-        self.sampleButton.setToolTip("Illustrative artwork only. No model inference or saved file.")
-        self.sampleButton.clicked.connect(self.show_sample)
         self._files = QFrame(self.viewport())
         self._files.setObjectName("previewFileToolbar")
         self._file_row = QGridLayout(self._files)
         self._file_buttons = []
+        self._file_layout = None
         self._file_row.setContentsMargins(4, 4, 4, 4)
         self._file_row.setSpacing(4)
         self._idle = QTimer(self)
@@ -91,7 +88,6 @@ class ImagePreview(QAbstractScrollArea):
 
     def enable_inspection(self):
         self._expand.setEnabled(True)
-        self.sampleButton.setEnabled(True)
 
     def setText(self, text):  # Designer/controller presentation seam
         self._text = text
@@ -110,15 +106,6 @@ class ImagePreview(QAbstractScrollArea):
         self._pixmap = pixmap
         self.fit()
 
-    def show_sample(self):
-        sample = QPixmap(str(ILLUSTRATIVE_SAMPLE))
-        if sample.isNull():
-            return
-        self.setPixmap(sample)
-        self.setProperty("designation", "illustrative_sample")
-        self._badge.setText(f"{sample.width()} × {sample.height()}  ·  Illustrative sample · no inference")
-        self._position_controls()
-
     def set_designation(self, designation, *, fixture=False):
         self.setProperty("designation", designation)
         kind = "Fixture · no inference" if fixture else designation.title()
@@ -134,19 +121,23 @@ class ImagePreview(QAbstractScrollArea):
             return
         anchor = anchor or self.viewport().rect().center()
         old = self.image_rect()
-        x = (anchor.x() - old.x()) / self._scale
-        y = (anchor.y() - old.y()) / self._scale
+        x = (anchor.x() - old.x()) / self._factor()
+        y = (anchor.y() - old.y()) / self._factor()
         self._fit = False
         self._scale = max(0.05, min(4.0, scale))
         self._sync()
         new = self.image_rect()
         horizontal, vertical = self.horizontalScrollBar(), self.verticalScrollBar()
-        horizontal.setValue(round(x * self._scale + new.x() + horizontal.value() - anchor.x()))
-        vertical.setValue(round(y * self._scale + new.y() + vertical.value() - anchor.y()))
+        horizontal.setValue(round(x * self._factor() + new.x() + horizontal.value() - anchor.x()))
+        vertical.setValue(round(y * self._factor() + new.y() + vertical.value() - anchor.y()))
+
+    def _factor(self):
+        """Logical pixels per image pixel: the displayed scale is in device pixels, so 100% is true size."""
+        return self._scale / self.devicePixelRatioF()
 
     def image_rect(self):
-        width = self._pixmap.width() * self._scale
-        height = self._pixmap.height() * self._scale
+        width = self._pixmap.width() * self._factor()
+        height = self._pixmap.height() * self._factor()
         return QRectF(
             max(0, (self.viewport().width() - width) / 2) - self.horizontalScrollBar().value(),
             max(0, (self.viewport().height() - height) / 2) - self.verticalScrollBar().value(),
@@ -160,13 +151,14 @@ class ImagePreview(QAbstractScrollArea):
             # Clear old overflow before measuring the full fit area.
             self.horizontalScrollBar().setRange(0, 0)
             self.verticalScrollBar().setRange(0, 0)
+            ratio = self.devicePixelRatioF()
             self._scale = min(
-                max(1, self.viewport().width() - 24) / self._pixmap.width(),
-                max(1, self.viewport().height() - 24) / self._pixmap.height(),
+                max(1, self.viewport().width() - 24) * ratio / self._pixmap.width(),
+                max(1, self.viewport().height() - 24) * ratio / self._pixmap.height(),
             )
         for bar, extent, visible in (
-            (self.horizontalScrollBar(), self._pixmap.width() * self._scale, self.viewport().width()),
-            (self.verticalScrollBar(), self._pixmap.height() * self._scale, self.viewport().height()),
+            (self.horizontalScrollBar(), self._pixmap.width() * self._factor(), self.viewport().width()),
+            (self.verticalScrollBar(), self._pixmap.height() * self._factor(), self.viewport().height()),
         ):
             bar.setPageStep(visible)
             bar.setRange(0, 0 if self._fit else max(0, round(extent - visible)))
@@ -177,7 +169,6 @@ class ImagePreview(QAbstractScrollArea):
         for control in (self.fitButton, self.actualButton, self.minusButton, self.plusButton, self.zoomSlider):
             control.setEnabled(available)
         self._badge.setVisible(available)
-        self.sampleButton.setVisible(not available)
         self._show_controls()
         self._position_controls()
         self.viewport().update()
@@ -189,13 +180,13 @@ class ImagePreview(QAbstractScrollArea):
         self._files.adjustSize()
         self._badge.adjustSize()
         self._expand.adjustSize()
-        self.sampleButton.adjustSize()
         width, height = self.viewport().width(), self.viewport().height()
-        self.sampleButton.move(max(0, (width - self.sampleButton.width()) // 2), height // 2 + 55)
         self.zoomSlider.setVisible(width >= 460)
         columns = 4 if width >= 500 else 2
-        for index, button in enumerate(self._file_buttons):
-            self._file_row.addWidget(button, index // columns, index % columns)
+        if (len(self._file_buttons), columns) != self._file_layout:
+            self._file_layout = (len(self._file_buttons), columns)
+            for index, button in enumerate(self._file_buttons):
+                self._file_row.addWidget(button, index // columns, index % columns)
         self._top.adjustSize()
         self._files.adjustSize()
         self._top.move(10, 10)
@@ -241,7 +232,8 @@ class ImagePreview(QAbstractScrollArea):
                 self._text,
             )
         else:
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            # Smooth when shrinking; at 100% and above pixels stay crisp so detail can be inspected.
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, self._scale < 1.0)
             painter.drawPixmap(self.image_rect(), self._pixmap, QRectF(self._pixmap.rect()))
 
     def resizeEvent(self, event):

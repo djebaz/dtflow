@@ -1,4 +1,4 @@
-"""Bundled DTFlow identity and illustrative artwork."""
+"""Bundled DTFlow identity and icons."""
 
 from pathlib import Path
 
@@ -9,7 +9,6 @@ from dtflow.ui.theme import load_tokens
 
 IMAGES = Path(__file__).parents[1] / "resources" / "images"
 APP_ICON = IMAGES / "dtflow-app.png"
-ILLUSTRATIVE_SAMPLE = IMAGES / "illustrative-lighthouse.png"
 
 
 def app_icon() -> QIcon:

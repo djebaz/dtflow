@@ -76,3 +76,13 @@ def test_dimensions_snap_to_the_nearest_multiple_of_64_within_the_limits():
     assert [snap_dimension(v) for v in (64, 100, 160, 191, 192, 700, 5000)] == [128, 128, 192, 192, 192, 704, 2048]
     request = build_request(FormValues(prompt="x", width=700, height=500), backend="fake")
     assert (request.width_px, request.height_px) == (704, 512)
+
+
+def test_seed_zero_is_random_only_for_submissions_and_the_used_seed_is_recorded():
+    zero = replace(VALID, seed="0")
+    assert build_request(zero, backend="fake").seed == 0  # saving or checking keeps the form value
+    seeds = {build_request(zero, backend="fake", random_seed=True).seed for _ in range(3)}
+    request = build_request(zero, backend="fake", random_seed=True)
+    assert 0 not in seeds and len(seeds) > 1 and 1 <= request.seed <= 4294967295 - 1024
+    assert dict(request.resolution_evidence)["seed.resolved"].startswith("random")
+    assert build_request(replace(VALID, seed="42"), backend="fake", random_seed=True).seed == 42

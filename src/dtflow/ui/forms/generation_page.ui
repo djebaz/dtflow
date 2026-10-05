@@ -240,6 +240,68 @@
        </widget>
       </item>
       <item>
+       <widget class="QGroupBox" name="simulationBox">
+        <property name="title">
+         <string>Simulation (fake provider)</string>
+        </property>
+        <layout class="QFormLayout" name="simulationForm">
+         <item row="0" column="0">
+          <widget class="QLabel" name="simulationScenarioLabel">
+           <property name="text">
+            <string>Outcome</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QComboBox" name="simulationScenarioCombo">
+           <property name="accessibleName">
+            <string>Simulated outcome</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="simulationDelayLabel">
+           <property name="text">
+            <string>Duration</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QDoubleSpinBox" name="simulationDelaySpinBox">
+           <property name="suffix">
+            <string> s</string>
+           </property>
+           <property name="decimals">
+            <number>1</number>
+           </property>
+           <property name="maximum">
+            <double>60.000000000000000</double>
+           </property>
+           <property name="singleStep">
+            <double>0.500000000000000</double>
+           </property>
+           <property name="toolTip">
+            <string>How long the simulated generation takes. 0 is instant. Progress steps and Stop waiting need a duration above 0.</string>
+           </property>
+           <property name="accessibleName">
+            <string>Simulated duration in seconds</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0" colspan="2">
+          <widget class="QCheckBox" name="simulationPreviewsCheck">
+           <property name="text">
+            <string>Show previews while waiting</string>
+           </property>
+           <property name="toolTip">
+            <string>Emits preview images (never saved results) during the simulated duration.</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
        <widget class="QGroupBox" name="configurationBox">
         <property name="title">
          <string>Configuration</string>

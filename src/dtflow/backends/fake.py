@@ -1,7 +1,10 @@
 """Deterministic offline backend with explicit fake provenance."""
 
 import asyncio
+import struct
+import zlib
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Awaitable, Callable
 
 from dtflow.core.models import (
@@ -23,8 +26,42 @@ from dtflow.core.models import (
     SubmissionStage,
     ValidationError,
 )
-from dtflow.core.png import fixture_png
+from dtflow.core.png import encode_png, fixture_png
 from dtflow.core.tasks import settle
+
+FIXTURE_IMAGE = Path(__file__).parents[1] / "resources" / "images" / "illustrative-lighthouse.png"
+SIMULATED_STEPS = 6  # progress steps a simulated wait is split into (previews on the even ones)
+
+
+def fixture_result_image(width: int, height: int) -> bytes:
+    """The bundled illustration cropped to the requested aspect and resampled (nearest) to exactly width x height.
+
+    The shared artifact validation requires the output to match the request size, so the fake provider fits the
+    image to it rather than weakening that rule. The bundled file is an unfiltered 8-bit RGB PNG, so decoding is a
+    plain decompress; this is a fixture, not model output.
+    """
+    data = FIXTURE_IMAGE.read_bytes()
+    source_width, source_height = struct.unpack(">II", data[16:24])  # PNG IHDR
+    chunks, offset = [], 8
+    while offset < len(data):
+        (length,) = struct.unpack(">I", data[offset : offset + 4])
+        if data[offset + 4 : offset + 8] == b"IDAT":
+            chunks.append(data[offset + 8 : offset + 8 + length])
+        offset += 12 + length
+    raw = zlib.decompress(b"".join(chunks))
+    stride = 1 + source_width * 3
+    scale = min(source_width / width, source_height / height)  # cover: crop the excess, centred
+    left = (source_width - width * scale) / 2
+    top = (source_height - height * scale) / 2
+    columns = [min(source_width - 1, int(left + (x + 0.5) * scale)) * 3 + 1 for x in range(width)]
+    rows, previous = [], (-1, b"")
+    for y in range(height):
+        source_row = min(source_height - 1, int(top + (y + 0.5) * scale))
+        if source_row != previous[0]:
+            line = raw[source_row * stride : (source_row + 1) * stride]
+            previous = (source_row, b"".join(line[i : i + 3] for i in columns))
+        rows.append(previous[1])
+    return encode_png(b"".join(rows), width, height, 3)
 
 
 def now() -> str:
@@ -42,6 +79,8 @@ class FakeBackend:
         max_concurrency: int = 4,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         gate: asyncio.Event | None = None,
+        simulate: bool = False,
+        previews: bool = False,
     ):
         if scenario not in ("success", "reject", "lost", "empty", "terminal_error"):
             raise ValidationError("Unsupported fake scenario.")
@@ -50,6 +89,7 @@ class FakeBackend:
         if type(delay) not in (int, float) or not 0 <= delay <= 600:
             raise ValidationError("Fake delay must be in 0..600 seconds.")
         self.scenario, self.delay, self.sleep, self.gate = scenario, delay, sleep, gate
+        self.simulate, self.previews = simulate, previews
         self._capabilities = Capabilities(
             "fake", model_ids=("fake-fixture", "fake-grid"), max_concurrency=max_concurrency, lora_support="selection"
         )
@@ -168,7 +208,7 @@ class FakeBackend:
                 emit("submission_possible", stage="fake")
                 if self.gate is not None:
                     await self.gate.wait()
-                await self.sleep(self.delay)
+                await self._wait(request, emit)
                 if self.scenario == "lost":
                     fail("connection_lost", ErrorCategory.CONNECTIVITY, RemoteOutcome.UNKNOWN)
                 stage = SubmissionStage.TERMINAL_OBSERVED
@@ -177,22 +217,23 @@ class FakeBackend:
                 emit("progress", stage="fixture_complete", completed=1, total=1)
                 artifacts = ()
                 if self.scenario != "empty":
-                    encoded = await settle(
-                        asyncio.to_thread(
-                            fixture_png,
-                            request.width_px,
-                            request.height_px,
-                            request.seed,
-                            grid=request.model_id == "fake-grid",
+                    if request.model_id == "fake-grid":
+                        encoded = await settle(
+                            asyncio.to_thread(fixture_png, request.width_px, request.height_px, request.seed, grid=True)
                         )
-                    )
+                        width, height = request.width_px, request.height_px
+                    else:  # the bundled illustration fitted to the request size: no model inference
+                        encoded = await settle(
+                            asyncio.to_thread(fixture_result_image, request.width_px, request.height_px)
+                        )
+                        width, height = request.width_px, request.height_px
                     artifact = ImageArtifact(
                         "fixture",
                         Designation.FINAL,
                         "image/png",
                         encoded,
-                        request.width_px,
-                        request.height_px,
+                        width,
+                        height,
                         (("fake", "true"),),
                     )
                     emit("artifact_received", artifact=artifact)
@@ -220,6 +261,30 @@ class FakeBackend:
                 )
             finally:
                 self.active -= 1
+
+    async def _wait(self, request: ResolvedGenerationRequest, emit) -> None:
+        """The simulated generation time; stepped progress and previews only when the simulation asks for them."""
+        if not self.simulate or self.delay <= 0:
+            await self.sleep(self.delay)
+            return
+        for step in range(1, SIMULATED_STEPS + 1):
+            await self.sleep(self.delay / SIMULATED_STEPS)
+            emit("progress", stage="simulated sampling", completed=step, total=SIMULATED_STEPS)
+            if self.previews and step % 2 == 0 and step < SIMULATED_STEPS:
+                width = 128
+                height = max(16, round(width * request.height_px / request.width_px))
+                emit(
+                    "preview",
+                    artifact=ImageArtifact(
+                        "preview",
+                        Designation.PREVIEW,
+                        "image/png",
+                        fixture_png(width, height, request.seed + step, grid=True),
+                        width,
+                        height,
+                        (("fake", "true"),),
+                    ),
+                )
 
     async def aclose(self) -> None:
         if self.active:

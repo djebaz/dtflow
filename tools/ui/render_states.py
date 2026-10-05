@@ -86,10 +86,6 @@ def main():
         try:
             QTest.qWait(100)
             capture("01-empty")
-            page.resultPreviewLabel.sampleButton.click()
-            assert page.resultPreviewLabel.property("designation") == "illustrative_sample"
-            capture("01-sample-portrait")
-            page.resultPreviewLabel.clear()
             page.refreshInventoryButton.click()
             wait_for(lambda: page.refreshInventoryButton.isEnabled())
             page.modelCombo.setCurrentText("fake-grid")

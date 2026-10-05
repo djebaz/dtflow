@@ -83,6 +83,8 @@ async def dispatch_queue(
             recorded.get("endpoint"),
             load_cloud_concurrency(state) if recorded["name"] == "cloud" else 4,
             recorded.get("scenario", "success"),
+            recorded.get("delay", 0.0),
+            recorded.get("previews", False),
         )
         backend = session.create_backend(selection, timeouts=policy, saved=saved)
         async with asyncio.timeout(policy.connect):

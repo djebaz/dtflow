@@ -7,10 +7,11 @@ the resulting validation errors back to the widget that owns the field. No resol
 import asyncio
 import json
 import re
-from dataclasses import dataclass
+import secrets
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from dtflow.core.models import LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
+from dtflow.core.models import SEED_LIMIT, LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.config import export_config, load_config, resolve_request
 
@@ -69,10 +70,22 @@ def field_for(message: str) -> str | None:
     return ERROR_FIELDS.get(match.group(0).lower()) if match else None
 
 
+RANDOM_SEED_HEADROOM = 1024  # room above a random base seed for queue items (seed + index) to stay in range
+
+
 def build_request(
-    values: FormValues, *, backend: str, config: dict | None = None, config_name: str | None = None
+    values: FormValues,
+    *,
+    backend: str,
+    config: dict | None = None,
+    config_name: str | None = None,
+    random_seed: bool = False,
 ) -> ResolvedGenerationRequest:
-    """Resolve widget values through the shared resolver; every value is an explicit ``override``."""
+    """Resolve widget values through the shared resolver; every value is an explicit ``override``.
+
+    ``random_seed`` is for submissions only: a seed of 0 (as in the form's default) is replaced by a random one before
+    the request exists, so the recorded request and metadata carry the seed that was really used.
+    """
     try:
         seed = int(values.seed.strip()) if values.seed.strip() else None
     except ValueError:
@@ -98,6 +111,12 @@ def build_request(
         )
     except ValidationError as exc:
         raise FormError(str(exc), field_for(str(exc))) from exc
+    if random_seed and request.seed == 0:
+        request = replace(
+            request,
+            seed=secrets.randbelow(SEED_LIMIT - RANDOM_SEED_HEADROOM) + 1,
+            resolution_evidence=(*request.resolution_evidence, ("seed.resolved", "random (form seed was 0)")),
+        )
     return request
 
 
@@ -167,7 +186,8 @@ def form_from_document(document: object) -> FormValues:
 
 def describe_request(request: ResolvedGenerationRequest, backend: str, endpoint: str | None) -> str:
     """Effective values plus where each came from, exactly as resolved; no UI-only defaults are added."""
-    lines = [f"backend: {backend}" + (f" ({endpoint})" if endpoint else ""), f"model: {request.model_id}"]
+    shown = endpoint if backend == "local" else None  # only a local server has a host:port; cloud is not an address
+    lines = [f"backend: {backend}" + (f" ({shown})" if shown else ""), f"model: {request.model_id}"]
     lines += [f"seed: {request.seed}", f"size: {request.width_px}x{request.height_px}", f"steps: {request.steps}"]
     lines += [f"guidance: {request.guidance}", f"sampler: {request.sampler_id.value}"]
     receipts = {item.identifier: item.receipt_id[:8] for item in request.prepared_assets}

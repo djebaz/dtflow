@@ -112,7 +112,8 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
 
 def backend_label(view: dict) -> str:
     backend = view["backend"]
-    return backend["name"] + (f" ({backend['endpoint']})" if backend.get("endpoint") else "")
+    endpoint = backend.get("endpoint") if backend["name"] == "local" else None  # cloud has no host:port
+    return backend["name"] + (f" ({endpoint})" if endpoint else "")
 
 
 def summarize(view: dict) -> QueueSummary:
