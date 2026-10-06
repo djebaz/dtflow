@@ -951,6 +951,13 @@ class GalleryPage(QObject):
             card = button.parentWidget()
             card.setFixedWidth(density + 16)
             button.setFixedSize(density + 16, density + 16)
+            # CoverPainter owns the visible pixels, but the transparent icon gives
+            # QPushButton a stable content size hint when the scroll-area/grid
+            # layout is recalculated after asynchronous thumbnail delivery.
+            placeholder = QPixmap(density, density)
+            placeholder.fill(Qt.GlobalColor.transparent)
+            button.setIcon(QIcon(placeholder))
+            button.setIconSize(placeholder.size())
             painter = self._grid_painters.get(identity)
             if painter is not None:
                 painter.widget.update()
@@ -964,7 +971,12 @@ class GalleryPage(QObject):
         )
         self.film_scroll.setFixedWidth(density + 20)
         for button in self._film_buttons:
-            button.setFixedSize(density + 8, round((density + 8) * 0.63))
+            width, height = density + 8, round((density + 8) * 0.63)
+            button.setFixedSize(width, height)
+            placeholder = QPixmap(max(1, width - 8), max(1, height - 8))
+            placeholder.fill(Qt.GlobalColor.transparent)
+            button.setIcon(QIcon(placeholder))
+            button.setIconSize(placeholder.size())
         self.reflow_timer.start(0)
         self._schedule_save()
 
