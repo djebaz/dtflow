@@ -336,12 +336,12 @@ class QueuePage:
 
     def _controls_for(self, view: dict | None):
         detail = self._detail if view and self._detail and self._detail["queue_id"] == view["queue_id"] else None
-        dispatching_here = bool(view and self._dispatching == view["queue_id"])
+        owns_view = bool(view and self._dispatching == view["queue_id"])
         return controls(
             view,
-            dispatching_here=dispatching_here,
+            dispatching_here=self.dispatching_here,
             generating=self._activity.generating,
-            started=dispatching_here or has_started(detail) or bool(view and view["status"] == "running"),
+            started=owns_view or has_started(detail) or bool(view and view["status"] == "running"),
         )
 
     def _run_view(self) -> dict | None:
@@ -364,41 +364,52 @@ class QueuePage:
         dispatching_here = self._dispatching == queue_id
         status = view["status"]
         phase, action = "idle", None
-        if status == "paused" and dispatching_here and self._dispatch_started:
-            phase, action = "paused", "resume" if available.resume else None
-        elif dispatching_here or status == "running":
-            phase = "running"
-            action = "pause" if available.pause else None
-        elif available.resume:
-            phase, action = "paused", "resume"
-        elif available.start:
-            phase, action = "ready", "start"
-        elif status == "finished":
-            phase = "complete"
-        elif status == "blocked":
-            phase = "error"
 
-        completed = total = None
-        running_items = [item["item_id"] for item in view["items"] if item["state"] == "running"]
-        if phase == "running" and len(running_items) == 1:
-            progress = self._run_progress.get((queue_id, running_items[0]))
-            if progress is not None:
-                completed, total = progress
+        if dispatching_here:
+            if status == "paused" and self._dispatch_started:
+                phase, action = "paused", "resume" if available.resume else None
+            else:
+                phase = "running"
+                if status == "running" and available.pause:
+                    action = "pause"
+        elif status == "running":
+            # Another process owns this queue. Show activity, but keep the compact
+            # control status-only so a header click never controls foreign work.
+            phase = "running"
+        elif available.start:
+            # With no local dispatcher, Start is the only useful immediate action.
+            # Posting Resume here would remain pending until a dispatcher starts.
+            phase, action = "ready", "start"
 
         summary = summarize(view)
+        completed = total = None
+        running_items = [item for item in view["items"] if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
-        if len(running_items) == 1:
-            detail += f" Item {running_items[0][:8]}."
-        if completed is not None and total is not None:
-            detail += f" Step {completed}/{total}."
+
+        if phase == "running" and len(running_items) == 1:
+            item = running_items[0]
+            completed, total = item["position"], summary.total
+            detail += f" Item #{item['position']} of {summary.total}."
+            progress = self._run_progress.get((queue_id, item["item_id"]))
+            if progress is not None:
+                step, steps = progress
+                detail += f" Step {step}/{steps}."
+        elif phase == "running" and running_items:
+            detail += f" {len(running_items)} items running · {summary.settled}/{summary.total} settled."
+        elif status in ("finished", "cancelled", "blocked"):
+            # Settled/problem states stay on the Queues page. The global control
+            # returns to its quiet idle presentation instead of becoming a
+            # persistent completion/error badge for whichever queue is selected.
+            detail = "No runnable queue selected."
+
         self._activity.present_run(
             RunState(
-                owner="queue",
+                owner="queue" if phase != "idle" else "none",
                 phase=phase,
                 action=action,
                 completed=completed,
                 total=total,
-                queue_id=queue_id,
+                queue_id=queue_id if phase != "idle" else None,
                 detail=detail,
             )
         )
