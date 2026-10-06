@@ -28,6 +28,7 @@ from dtflow.services.connection import Presentation, check_connection, present_f
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
 from dtflow.ui.brand import connection_icon
+from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
@@ -100,22 +101,6 @@ class _LayoutGuard(QObject):
         return False
 
 
-class _NavigationFocusGuard(QObject):
-    """Keep mouse focus from disguising status; preserve a visible keyboard focus cue."""
-
-    def eventFilter(self, watched, event):
-        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
-            keyboard = event.type() == QEvent.Type.FocusIn and event.reason() in (
-                Qt.FocusReason.TabFocusReason,
-                Qt.FocusReason.BacktabFocusReason,
-                Qt.FocusReason.ShortcutFocusReason,
-            )
-            watched.setProperty("keyboardFocus", keyboard)
-            watched.style().unpolish(watched)
-            watched.style().polish(watched)
-        return False
-
-
 class MainWindow:
     """Owns the Designer form and an AsyncRunner; ``saved`` is injectable for tests."""
 
@@ -178,7 +163,7 @@ class MainWindow:
         ):
             setattr(form, name, getattr(self.shell, name))
         self.shell.productSubtitleLabel.hide()
-        form.connectionNavigationButton.installEventFilter(_NavigationFocusGuard(form.connectionNavigationButton))
+        form.connectionNavigationButton.installEventFilter(KeyboardFocusGuard(form.connectionNavigationButton))
         # Existing inspection integrations can refer to the same persistent shell controls.
         self.generation_page.inspectorToggle = self.shell.inspectorToggle
         self.generation_page.generationLeftRail = self.shell.leftRail

@@ -74,7 +74,19 @@ The thumbnail control is 25–250%, with 100% as the standard size. It scales Gr
 tiles, List row thumbnails and the Detail filmstrip. Grid/List loading is paged
 and thumbnail decoding is bounded/asynchronous so the Qt event loop is not used
 to decode the whole library at once. Auto-refresh is on for a first-run viewer
-and preserves the selected or visible browsing anchor.
+and preserves the selected or visible browsing anchor. Refresh reconciles Grid
+cards, List rows and the Detail filmstrip by output identity: additions insert
+only new entries, removals discard departed entries and changed metadata updates
+in place. Retained thumbnails and their in-flight decodes survive insertions and
+reordering; only new images or changed path/size/availability require a thumbnail
+decode. The selected Detail image and zoom/pan stay intact when other outputs
+change. Fully unchanged pages also preserve exact scroll and focus while
+counts/navigation can still update.
+
+The labelled Auto-refresh toggle uses Connection's mint/teal colors when On and
+neutral colors when Off; its size, label and refresh behavior are unchanged.
+Hover and mouse activation keep the On colors; the blue dashed focus outline is
+reserved for keyboard navigation, matching Connection.
 
 Click a Grid tile or List row to open Detail. Detail defaults to Fit, with Cover
 available when you prefer a filled canvas. It also provides true 100%, zoom/pan,

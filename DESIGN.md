@@ -303,6 +303,25 @@ anchors the selected or first visible output so newly saved results do not
 unexpectedly move the browsing context. Viewer preferences are durable and
 separate from disposable derived data.
 
+Auto-refresh keeps its labelled On/Off control and existing geometry. Its On
+colors reuse Connection's `color.connectionSurface`, `color.connectionAccent`
+and `color.connectionGlyph`; Off uses the neutral input, border and secondary
+tokens. This is a colors-only change, not a new icon or refresh behavior.
+On remains mint/teal on hover and after mouse activation. Connection and
+Auto-refresh share keyboard-only focus handling: Tab/Backtab/shortcut focus
+shows the dashed focus-token outline, while mouse focus preserves state colors.
+Auto-refresh selectors outrank the gallery's generic hover/focus rules.
+
+Refresh reconciles the bounded page by stable output identity: keep existing
+Grid cards, List cells/icons and filmstrip buttons/painters through insertions
+and reordering. Update metadata in place, remove only departed entries and
+decode only new or changed image references (path, size, availability). Retain
+unchanged in-flight decodes and the selected Detail pixels/zoom/pan when other
+outputs change; identical pages are a render no-op. Designer filmstrip slots
+remain valid for shared presentation callbacks. See the
+[incremental refresh plan](devdocs/plans/2026-10-06-images-incremental-refresh.md)
+for implementation and the owner validation boundary.
+
 The compact filter row omits separate visible labels. Positive-prompt search is
 visible and intentionally compact; model, LoRA, date, exact dimensions,
 aspect-ratio and deterministic sort controls use placeholders/defaults plus

@@ -23,6 +23,8 @@
 
 ## Changed
 
+- PR #37 aligns the existing labelled Auto-refresh toggle with Connection's shared mint/teal colors when On and neutral colors when Off. No new tokens, glyphs, dimensions or refresh behavior; color/visual acceptance remains with the owner.
+
 - Images hides the content rails and reuses the logo/navigation in two aligned header rows outside the scrolling controls. Leaving Images restores chrome, splitter widths and Inspector preference. No extra outer/header padding or sample-count pill; search/filter labels are replaced by explicit placeholders/defaults and accessible names/tooltips.
 - Detail's right filmstrip spans the content height to the workspace bottom. Metadata, prompt and Additional/Raw panels remain beneath the main image to its left; image overlays have a 10px interior inset. Additional/Raw panels are mutually exclusive.
 - Shared charcoal tokens and muted blue states replace the superseded gallery palette. Repeated neutral-control colors use named tokens; obsolete/repeated QSS declarations are removed. No separate gallery token family remains.
@@ -33,6 +35,10 @@
 - The desktop header keeps only a compact positive-prompt search; negative-prompt search remains available through the shared query/CLI service. Exact-dimensions and deterministic sort controls are exposed alongside model, LoRA, date and ratio filters.
 
 ## Fixed
+
+- PR #37 keeps Auto-refresh's mint On colors on hover and after mouse clicks by overriding generic gallery hover/focus rules. It shares Connection's keyboard-only dashed focus cue instead of leaving a blue mouse-focus outline until another control is clicked. Labels, dimensions and refresh semantics are unchanged; new visual acceptance is deferred to the owner.
+
+- PR #37 makes Images auto/manual refresh incremental: retain Grid cards, List cells/icons and Detail filmstrip entries by output identity through insertions/removals/reordering; update changed metadata in place. Only new images or changed path/size/availability require thumbnail decoding. Retained in-flight decodes and the selected Detail image/zoom/pan survive other outputs changing; unchanged pages preserve exact scroll/focus. Counts/navigation and changed filter choices still update. Tests and smoke tests are deferred to the owner under fast-implement.
 
 - Corrects the no-queue workspace stretching toolbar/hint/Plan header rows. The table or empty state owns flexible height; empty guidance stays centered and progress hides until a queue is selected. Queue actions and planning behavior remain intact.
 
@@ -45,6 +51,8 @@
 
 ## Validation and release audit
 
+- On 2026-10-06 the owner reported that PR #37's incremental refresh works and subsequently confirmed the Auto-refresh color/hover/mouse-focus smoke test passed after `a9e393a`. This is owner-reported source/UI acceptance, not agent-run tests or packaged-executable acceptance.
+
 - PR #33 remains the historical offline presentation/style change. PR #34 is the current Phase 8A production viewer implementation; presets/reuse/cache-management/organisation remain later Phase 8 work.
 - On 2026-10-06 the owner reported the full test suite passed after the PR #34 Qt lifecycle fix. No final command/count was supplied in that confirmation, so no exact count is claimed here. Earlier failing output showed the lifecycle exception cascading through Qt setup; the fix was then owner-retested successfully.
 - Owner interactive smoke testing exercised the new Images viewer and identified Grid asynchronous thumbnail collapse and List scaling limits; both were corrected. The newest Grid-first/Fit-default adjustments have not been separately reported as smoke-tested yet.
@@ -53,3 +61,8 @@
 ## Development tooling
 
 - Add headless design-system screen and component-state capture scripts, computed-style/bounds manifests, verified offline vendor caching and explicit unsupported-state reporting. Playwright is development-only; no Qt runtime/theme changes. See [capture tooling](../guides/design-captures.md).
+
+## Release audit
+
+- PRs: #31, #33, #34, #37
+- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; incremental Images refresh preserving retained widgets, thumbnails, in-flight work and selected Detail image state; Auto-refresh colors aligned with Connection tokens.
