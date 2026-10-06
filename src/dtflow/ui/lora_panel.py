@@ -22,6 +22,7 @@ from dtflow.services.connection import (
 )
 from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.search_select import choose_searchable
 
 UPLOAD_NOTICE = (
     "Preparing this file may upload its bytes to DT+ if the server does not already have it. Uploading itself does "
@@ -33,12 +34,18 @@ LORA_WEIGHT_RANGE = (-100.0, 100.0)  # a dialog bound only; the shared request m
 
 def _choose_lora(parent: QWidget, candidates: list[tuple[str, float | None]]) -> tuple[str, float] | None:
     names = [name for name, _ in candidates]
-    name, accepted = QInputDialog.getItem(parent, "Add LoRA", "Exact LoRA identifier", names, 0, True)
-    if not accepted or not name.strip():
+    name = choose_searchable(
+        parent,
+        title="Add LoRA",
+        items=names,
+        custom_label="Add custom identifier…",
+        custom_prompt="Exact LoRA identifier",
+    )
+    if name is None:
         return None
-    default = dict(candidates).get(name.strip()) or 1.0
+    default = dict(candidates).get(name) or 1.0
     weight, accepted = QInputDialog.getDouble(parent, "LoRA weight", "Weight", default, *LORA_WEIGHT_RANGE, 2)
-    return (name.strip(), weight) if accepted else None
+    return (name, weight) if accepted else None
 
 
 def _choose_asset_file(parent: QWidget, directory: Path) -> str:
