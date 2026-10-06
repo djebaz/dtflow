@@ -175,8 +175,11 @@ QComboBox::down-arrow {
   width: 12px;
   height: 12px;
 }
-QComboBox:hover::drop-down {
+QComboBox:hover:enabled {
   background-color: ${color.surface};
+}
+QComboBox:hover::drop-down {
+  background-color: ${color.button};
   border-left-color: ${color.inputBorderHover};
 }
 QComboBox:on {
