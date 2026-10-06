@@ -788,7 +788,33 @@ QWidget#GalleryDetailPage QComboBox:disabled {
 QWidget#GalleryDetailPage QComboBox::drop-down {
   width: 24px;
 }
-QPushButton#galleryAutoRefreshButton,
+/* Auto-refresh reuses Connection colors, without changing its labelled geometry. */
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton {
+  background: ${color.input};
+  border: 1px solid ${color.border};
+  border-radius: ${size.panelRadius};
+  color: ${color.secondary};
+}
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:hover {
+  background: ${color.input};
+  border-color: ${color.inputBorderHover};
+}
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:checked {
+  background: ${color.connectionSurface};
+  border-color: ${color.connectionAccent};
+  color: ${color.connectionGlyph};
+}
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:pressed {
+  background: ${color.canvas};
+}
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[keyboardFocus="true"] {
+  border: 1px dashed ${color.focus};
+}
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:disabled {
+  background: ${color.surface};
+  border: 1px solid ${color.border};
+  color: ${color.disabled};
+}
 QPushButton#galleryRefreshButton {
   background: ${color.surface};
   border: 0;
