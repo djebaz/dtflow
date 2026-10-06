@@ -14,6 +14,8 @@
 
 - PR #50 repository maintenance: remove the case-only design-system readme.md duplicate, preserving the newer content under canonical README.md. Windows checkouts no longer alternate between apparently modified README paths; existing links remain valid. No runtime behavior changes.
 
+- Cloud custom LoRA fix (unverified live): generation now sends `override.loras` (`name`, `file`, `version`) for LoRAs bound to a prepared receipt, with `version` taken from the selected base model's inventory architecture. Previously only the file name reached the server, which accepted the request but showed no LoRA effect. Whether the server now applies the LoRA needs a Windows live check; no generation, upload or billable action was run.
+
 ## Release audit
 
 - PRs: #46, #48, #49, #50

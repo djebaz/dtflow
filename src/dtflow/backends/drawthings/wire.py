@@ -6,6 +6,7 @@ The resolved seed is serialized through the public ``GenConfig.to_fbs(seed)`` pa
 
 from __future__ import annotations
 
+import json
 import struct
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -51,7 +52,27 @@ def validate_supported(request: ResolvedGenerationRequest) -> None:
         raise _reject(request, "unsupported_sampler", "Sampler is not supported by this adapter.")
 
 
-def build_generation_message(request: ResolvedGenerationRequest, shared_secret: str | None) -> WireRequest:
+def custom_lora_override(request: ResolvedGenerationRequest, version: str | None) -> bytes:
+    """Metadata for user-prepared cloud LoRAs, in the Echo ``override.loras`` JSON shape (``name``, ``file``, ``version``).
+
+    The server cannot resolve a custom file from its name alone and appears to ignore it without an error, so each prepared
+    LoRA is described explicitly. ``version`` is the selected base model's own Draw Things version string; with no known
+    version nothing is sent rather than a guess.
+    """
+    prepared = {item.identifier for item in request.prepared_assets}
+    if not prepared or not version:
+        return b""
+    entries = [
+        {"name": item.identifier, "file": item.identifier, "version": version}
+        for item in request.loras
+        if item.identifier in prepared
+    ]
+    return json.dumps(entries).encode() if entries else b""
+
+
+def build_generation_message(
+    request: ResolvedGenerationRequest, shared_secret: str | None, base_version: str | None = None
+) -> WireRequest:
     validate_supported(request)
     sampler = SAMPLER_NAME[request.sampler_id]
     config = GenConfig(
@@ -76,6 +97,9 @@ def build_generation_message(request: ResolvedGenerationRequest, shared_secret: 
         configuration=configuration,
         user=CLIENT_NAME,
     )
+    override = custom_lora_override(request, base_version)
+    if override:
+        message.override = image_service.MetadataOverride(loras=override)
     if shared_secret:
         message.shared_secret = shared_secret
     return WireRequest(message, effective)

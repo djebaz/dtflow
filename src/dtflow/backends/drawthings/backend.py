@@ -301,7 +301,12 @@ class DrawThingsBackend:
         self._active += 1
         try:
             async with asyncio.timeout(remaining()):
-                wire = build_generation_message(request, await self._secret())
+                model = (
+                    next((e for e in self._inventory.entries if e.identifier == request.model_id), None)
+                    if self._inventory
+                    else None
+                )
+                wire = build_generation_message(request, await self._secret(), model.architecture if model else None)
                 emit("preparing", stage="wire_validated")
                 async with self._lane:
                     await self._connect()
