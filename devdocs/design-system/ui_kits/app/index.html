@@ -1,0 +1,24 @@
+<!-- @dsCard group="UI Kits" viewport="1200x760" name="Full app (all tabs)" -->
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>DTFlow — App</title>
+<link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../shared.css"><link rel="stylesheet" href="../images/images.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script><script src="../images/data.js"></script></head>
+<body><div id="root"></div>
+<script type="text/babel" src="../Chrome.jsx"></script>
+<script type="text/babel" src="../connection/ConnectionScreen.jsx"></script>
+<script type="text/babel" src="../generate/GenerateScreen.jsx"></script>
+<script type="text/babel" src="../queues/QueuesScreen.jsx"></script>
+<script type="text/babel" src="../images/Header.jsx"></script>
+<script type="text/babel" src="../images/GridView.jsx"></script>
+<script type="text/babel" src="../images/ListView.jsx"></script>
+<script type="text/babel" src="../images/DetailView.jsx"></script>
+<script type="text/babel" src="../images/ImagesScreen.jsx"></script>
+<script type="text/babel">
+const SCREENS={Connection:ConnectionScreen,Generate:GenerateScreen,Queues:QueuesScreen,Images:ImagesScreen};
+function App(){const [tab,setTab]=React.useState("Connection");window.go=setTab;
+return <>{Object.entries(SCREENS).map(([k,S])=><div key={k} style={{display:tab===k?"block":"none"}}><S/></div>)}</>}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script></body></html>

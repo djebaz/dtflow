@@ -25,6 +25,7 @@ dtflow = "dtflow.cli:main"
 
 [dependency-groups]
 dev = [
+    "playwright>=1.63.0",
     "pytest",
     "pytest-asyncio>=1.4.0",
     "pytest-qt>=4.5.0",

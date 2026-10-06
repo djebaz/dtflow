@@ -1,0 +1,38 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Status Colors" -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body { padding: 20px; display: flex; gap: 12px; }
+    .item { flex: 1; }
+    .swatch { height: 80px; border-radius: 6px; margin-bottom: 8px; }
+    .label { font-size: 10pt; font-weight: 500; color: var(--color-text); }
+    .hex { font-size: 9pt; color: var(--color-secondary); font-family: Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-success);"></div>
+    <div class="label">Success</div>
+    <div class="hex">#78c97c</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-warning);"></div>
+    <div class="label">Warning</div>
+    <div class="hex">#ffbf59</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-error);"></div>
+    <div class="label">Error</div>
+    <div class="hex">#ff8179</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-unknown);"></div>
+    <div class="label">Unknown</div>
+    <div class="hex">#b2b2b2</div>
+  </div>
+</body>
+</html>

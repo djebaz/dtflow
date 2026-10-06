@@ -1,0 +1,38 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Text & Semantic" -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body { padding: 20px; display: flex; gap: 12px; }
+    .item { flex: 1; }
+    .swatch { height: 80px; border-radius: 6px; margin-bottom: 8px; }
+    .label { font-size: 10pt; font-weight: 500; color: var(--color-text); }
+    .hex { font-size: 9pt; color: var(--color-secondary); font-family: Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-text);"></div>
+    <div class="label">Text</div>
+    <div class="hex">#e6e6e6</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-secondary);"></div>
+    <div class="label">Secondary</div>
+    <div class="hex">#b2b2b2</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-placeholder);"></div>
+    <div class="label">Placeholder</div>
+    <div class="hex">#a8a8a8</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-disabled);"></div>
+    <div class="label">Disabled</div>
+    <div class="hex">#777777</div>
+  </div>
+</body>
+</html>
