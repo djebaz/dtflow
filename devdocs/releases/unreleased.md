@@ -8,7 +8,7 @@
 
 ## Added
 
-- Persist client-observed backend elapsed time for successful outputs and display it as Backend duration in Images Detail. The value runs from the submission boundary to terminal response, so it may include backend queueing/serialization and is not presented as pure inference time. Queues now mirror selected per-item backend lifecycle events into the existing event-evidence panel and include the same measured duration on successful settlement; progress/previews remain transient and no scheduling-derived duration is invented.
+- Persist client-observed backend elapsed time for successful outputs and display it as Backend duration in Images Detail. The value runs from the submission boundary to terminal response, so it may include backend queueing/serialization and is not presented as pure inference time. Queues mirror selected per-item backend lifecycle events durably, while the existing event panel presents a compact position-based activity stream such as `#2 submitted` and `#2 completed - 12.34 s`; full IDs and redundant prepare/artifact/terminal lines stay out of the default UX. Progress/previews remain transient and no scheduling-derived duration is invented.
 
 - `devdocs/design-system/`: Claude Design web reference (tokens, components, foundation cards, UI kits) mirroring `tokens.json`; documentation/prototype only, no runtime or QSS change.
 - Shared tokens: 30 component-local colors and 8 extra radii are now named in `tokens.json` and referenced from the QSS (resolved stylesheet unchanged). Queue state colors read the shared tokens, so an Unknown state is neutral gray instead of purple.
