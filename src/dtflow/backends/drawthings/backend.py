@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -47,6 +48,7 @@ from dtflow.core.models import (
 )
 from dtflow.core.tasks import settle
 
+log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 BACKEND_ID = "drawthings-grpc"
@@ -307,6 +309,13 @@ class DrawThingsBackend:
                     else None
                 )
                 wire = build_generation_message(request, await self._secret(), model.architecture if model else None)
+                if request.loras:
+                    log.debug(
+                        "loras sent=%s override=%s base_version=%s",
+                        dict(wire.effective_configuration).get("loras"),
+                        wire.message.override.loras.decode() or "none",
+                        model.architecture if model else None,
+                    )
                 emit("preparing", stage="wire_validated")
                 async with self._lane:
                     await self._connect()
