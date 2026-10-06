@@ -158,7 +158,13 @@ QDoubleSpinBox:disabled {
   border-color: ${color.disabledBorder};
   color: ${color.disabled};
 }
-/* Selects read as selects: a separated button segment with a chevron, unlike plain text inputs. */
+/* Selects read as selects: reserve the arrow segment in the control padding.
+   Qt styles QComboBox as a complex control; keeping the subcontrol inside the padding box
+   avoids native-style frame geometry leaking into the left edge on Windows. */
+QComboBox {
+  padding: ${size.inputRadius} 34px ${size.inputRadius} 7px;
+  combobox-popup: 0;
+}
 QComboBox::drop-down {
   subcontrol-origin: padding;
   subcontrol-position: top right;
@@ -168,7 +174,7 @@ QComboBox::drop-down {
   border-left: 1px solid ${color.border};
   border-top-right-radius: ${size.inputRadius};
   border-bottom-right-radius: ${size.inputRadius};
-  background-color: ${color.input};
+  background: transparent;
 }
 QComboBox::down-arrow {
   image: url(../images/controls/chevron-down.svg);
@@ -179,27 +185,19 @@ QComboBox:hover:enabled {
   background-color: ${color.surface};
 }
 QComboBox:hover::drop-down {
-  background-color: ${color.button};
+  background: transparent;
   border-left-color: ${color.inputBorderHover};
 }
 QComboBox:on {
   border-color: ${color.focus};
 }
 QComboBox:on::drop-down {
-  background-color: ${color.canvas};
+  background: transparent;
   border-left-color: ${color.focus};
 }
 QComboBox:disabled::drop-down {
-  background-color: ${color.surface};
+  background: transparent;
   border-left-color: ${color.disabledBorder};
-}
-/* Text starts on the same left edge as line edits and spin boxes. */
-QComboBox {
-  padding-left: 10px;
-}
-/* Open the list as a dropdown aligned under the select, not a popup overlapping/offset past its left edge. */
-QComboBox {
-  combobox-popup: 0;
 }
 QComboBox QAbstractItemView {
   background-color: ${color.input};
@@ -817,6 +815,41 @@ QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:pressed {
 QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:focus {
   border-color: ${color.focus};
 }
+/* Generate uses the same proven select box geometry as Images.
+   Keep this scoped so section-card QComboBoxes do not inherit the problematic
+   generic complex-control padding geometry on Windows. */
+QFrame#generationContextPanel QComboBox {
+  background: ${color.input};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+  padding: 0 10px;
+  min-height: 34px;
+}
+QFrame#generationContextPanel QComboBox:hover {
+  border-color: ${color.inputBorderHover};
+}
+QFrame#generationContextPanel QComboBox:focus,
+QFrame#generationContextPanel QComboBox:on {
+  border-color: ${color.focus};
+}
+
+/* Connection's contextRail is reparented into the shared workspace shell at runtime,
+   so scope these rules to the mounted rail rather than its original connectionPage parent. */
+QFrame#contextRail QComboBox {
+  background: ${color.input};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+  padding: 0 10px;
+  min-height: 34px;
+}
+QFrame#contextRail QComboBox:hover {
+  border-color: ${color.inputBorderHover};
+}
+QFrame#contextRail QComboBox:focus,
+QFrame#contextRail QComboBox:on {
+  border-color: ${color.focus};
+}
+
 QWidget#GalleryDetailPage QLineEdit,
 QWidget#GalleryDetailPage QComboBox {
   background: ${color.input};
