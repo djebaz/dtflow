@@ -20,6 +20,8 @@
 
 - PR #50 repository maintenance: remove the case-only design-system readme.md duplicate, preserving the newer content under canonical README.md. Windows checkouts no longer alternate between apparently modified README paths; existing links remain valid. No runtime behavior changes.
 
+- Cloud LoRA preflight: a LoRA that the DT+ inventory does not list, or lists only as an unclassified file, is now reported as unconfirmed (`availability_unknown` / `architecture_unknown`) instead of blocking dispatch as not available. Local and confirmed-mismatch behavior is unchanged. Whether DT+ then applies the LoRA is not verified; no generation, upload or billable action was run.
+
 ## Release audit
 
 - PRs: #46, #48, #49, #50, #51
