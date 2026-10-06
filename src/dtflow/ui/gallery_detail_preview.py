@@ -269,6 +269,8 @@ class DetailFixture(QObject):
     def __init__(self, page):
         super().__init__(page)
         self.page = page
+        page.setWindowTitle("DTFlow — Images layout preview (offline fixture)")
+        page.setToolTip("Offline layout preview with illustrative artwork and synthetic metadata.")
         self.painters = apply_gallery(page, sample=True)
         self.additional_button = page.findChild(QPushButton, "galleryAdditionalButton")
         self.raw_button = page.findChild(QPushButton, "galleryRawButton")
