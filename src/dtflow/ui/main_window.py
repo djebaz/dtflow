@@ -36,6 +36,7 @@ from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.theme import apply_native_dark_titlebar
 
 log = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ def load_ui(path: Path) -> QWidget:
     try:
         loader = QUiLoader()
         loader.registerCustomWidget(ImagePreview)
+        loader.registerCustomWidget(SearchableComboBox)
         widget = loader.load(file)
     finally:
         file.close()
