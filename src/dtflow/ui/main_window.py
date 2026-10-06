@@ -461,6 +461,12 @@ class MainWindow:
         )
         if not chosen:
             return
+        if not self.confirm(
+            self.form,
+            "Replace preset library?",
+            "Importing replaces the entire durable preset library, including presets saved from Generate. Continue?",
+        ):
+            return
         try:
             count = import_presets(Path(chosen), self.state_dir)
         except (ValidationError, OSError) as exc:
@@ -484,7 +490,16 @@ class MainWindow:
         self.form.statusBar().showMessage(f"Exported {count} Draw Things preset(s).", 5000)
 
     def refresh_cache(self) -> None:
-        usage = cache_usage(self.state_dir)
+        async def measure():
+            return await asyncio.to_thread(cache_usage, self.state_dir)
+
+        self.runner.submit(measure(), self._cache_measured)
+
+    def _cache_measured(self, usage, failure) -> None:
+        if failure is not None:
+            log.warning("cache measurement failed reason=%s", type(failure).__name__)
+            self.form.cacheStatusLabel.setText("Disposable cache size unavailable.")
+            return
         labels = {item.name: self._human_bytes(item.bytes) for item in usage}
         self.form.cacheStatusLabel.setText(
             f"Inventory {labels['inventory']} · Thumbnails {labels['thumbnails']} · Derived {labels['derived']}"
@@ -503,10 +518,16 @@ class MainWindow:
             f"Delete disposable {names} cache? Outputs, attempts, queues, presets, settings, credentials and model assets are preserved.",
         ):
             return
-        try:
-            purge_cache(self.state_dir, categories)
-        except OSError as exc:
-            QMessageBox.warning(self.form, "Cache not cleared", type(exc).__name__)
+
+        async def purge():
+            return await asyncio.to_thread(purge_cache, self.state_dir, categories)
+
+        self.runner.submit(purge(), lambda _, failure: self._cache_cleared(names, failure))
+
+    def _cache_cleared(self, names: str, failure) -> None:
+        if failure is not None:
+            log.warning("cache cleanup failed reason=%s", type(failure).__name__)
+            QMessageBox.warning(self.form, "Cache not cleared", type(failure).__name__)
             return
         self.refresh_cache()
         self.form.statusBar().showMessage(f"Cleared disposable cache: {names}.", 5000)
@@ -516,6 +537,11 @@ class MainWindow:
         self._show_generation()
 
     def _regenerate_output(self, request: dict, identity: str) -> None:
+        if self.activity.generating or self.activity.dispatching:
+            QMessageBox.warning(
+                self.form, "Generation is busy", "Stop the active generation or queue dispatch before regenerating."
+            )
+            return
         if not self.confirm(
             self.form,
             "Regenerate saved output?",
