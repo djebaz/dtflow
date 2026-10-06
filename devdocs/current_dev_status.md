@@ -1,6 +1,6 @@
 # Current development status
 
-Snapshot: 2026-10-06. Phase 8A saved-output viewing and the catalogue-driven Generate discovery from merged PR #40 are implemented on main. The 0.3.0 publication evidence below is retained from the earlier snapshot; PR #31 build/draft workflow status is not re-verified here.
+Snapshot: 2026-10-06. Phase 8A viewing, the catalogue-driven Generate discovery from PR #40 and the 8B–8D presets, reuse and cache management from PR #46 are implemented on main. The 0.3.0 publication evidence below is retained from the earlier snapshot; PR #31 build/draft workflow status is not re-verified here.
 This is coding orientation against [initial.md](plans/initial.md), not a release declaration. Implementation scope comes from source/plan inspection; owner-reported tests and interactive smoke observations are recorded separately. The agent ran no live generation or provider operations.
 
 ## Implemented on main
@@ -13,6 +13,7 @@ This is coding orientation against [initial.md](plans/initial.md), not a release
 | 4 — Qt shell | Connection selection/status and Windows saved API-key service. |
 | 5 — Desktop execution | Generate, LoRA/cloud asset actions, configuration save/load and queue controls through shared services. |
 | 6 — Batch planning | Shared seed/pair/cross planner, bounded expansion and CLI/desktop dry runs. |
+| 8A–8D — Gallery/presets | Saved-output browsing, native-format presets with conservative field application, reuse/explicit regeneration and category-specific cache cleanup (only the inventory category has files today). Runtime acceptance pending. |
 
 Implemented does not mean universal compatibility or remote cancellation. On 2026-10-05 the owner reported the other 0.3.0 release checks complete, identifying the exact portable Qt executable smoke test as the remaining gate; this is owner-reported, not newly assistant-verified. Keep existing detailed source/live evidence rather than rerunning it without need. PR #29 changes the builder to a GUI-first windowed launcher; the owner has now built and exercised its dirty 0.1.0 artifact, including key/form persistence and bounded local/cloud generation/queues. See [the identified GUI smoke](research/windows-gui-smoke-2026-10-05.md) for artifact identity, one unresolved cloud outcome and coverage limits. The owner subsequently built/launched the clean 0.3.0 artifact and confirmed its displayed identity; the agent verified bundled metadata/checksum and downloaded release assets. [0.3.0 is published](https://github.com/djebaz/dtflow/releases/tag/v0.3.0); earlier live coverage/limitations remain separate. See [the build guide](guides/building.md), [0.3.0 notes](releases/v0.3.0.md) and [packaging evidence](research/windows-packaging.md).
 
@@ -21,7 +22,7 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 | Phase | Remaining scope |
 | --- | --- |
 | 7 — Advanced scheduling | Priorities, fairness and adaptive concurrency; not a prerequisite for the proposed release milestones. Basic rolling dispatch already exists. |
-| 8 — Gallery/presets | Phase 8A saved-output viewing is implemented. PR #46 implements 8B Draw Things-compatible presets, 8C saved-output reuse/explicit regeneration and 8D category-specific disposable-cache management; owner/runtime acceptance remains pending. Separately scoped 8E organisation remains. |
+| 8 — Gallery/presets | Only separately scoped 8E organisation remains; it is not a 0.4.0 gate. Owner/runtime acceptance of 8B–8D remains pending. |
 | 9 — Image operations | 9A img2img, 9B existing mask-file inpainting, 9C interactive masks and selected controls/references. |
 | 10 — Workflows | 10A versioned workflow files/compiler/execution; 10B visual editor and expanded semantics. |
 | 11 — Broader DT+ | Additional verified cloud capabilities and hardening. Token handling, secret safety, subscription-only policy and ambiguous-outcome protection already belong to Phases 2/3; do not rebuild or defer them. |
@@ -53,7 +54,7 @@ not agent-run acceptance; the owner reports incremental refresh works. The
 subsequent Auto-refresh color/hover/focus adjustment was also owner-smoke-tested
 successfully after `a9e393a`. No agent-run tests or packaged acceptance are claimed.
 
-The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). Follow the [Phase 8 delivery plan](plans/2026-10-05-phase-8-sequencing.md): with 8A now implemented in PR #34, the next planned capability is Draw Things-compatible presets (8B), followed by reuse, cache management and separately scoped organisation. Recheck the roadmap and relevant phase plan before choosing work.
+The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). The remaining 0.4.0 steps are documentation reconciliation, the release PR, owner Windows acceptance of PR #46 and executable smoke acceptance. Recheck the roadmap and relevant phase plan before choosing work.
 
 ## Maintenance
 

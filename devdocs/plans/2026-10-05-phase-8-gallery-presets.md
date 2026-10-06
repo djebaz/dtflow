@@ -12,12 +12,12 @@
 
 Implement in order: **8A viewer → 8B presets → 8C reuse/regeneration → 8D cache management → 8E organisation**.
 Use small reviewable PR slices. This document records selected capabilities and constraints, not screen layouts or mockups.
-The [sequencing plan](2026-10-05-phase-8-sequencing.md) owns phase order and handoffs; the [viewer plan](2026-10-05-phase-8a-viewer.md) owns selected 8A scope. This document retains preset-format evidence and supporting later-phase constraints. Detailed feature choices for 8B–8E remain to be refined.
+The [sequencing plan](2026-10-05-phase-8-sequencing.md) owns phase order and handoffs; the [viewer plan](2026-10-05-phase-8a-viewer.md) owns selected 8A scope. This document retains preset-format evidence and supporting later-phase constraints. 8B–8D were implemented by PR #46 with the limits recorded in the desktop guide; 8E remains to be chosen.
 Organisation is a later extension, not automatically a prerequisite for 0.4.0.
 
 ## 8A — Read-only output viewer
 
-The [dedicated viewer plan](2026-10-05-phase-8a-viewer.md) owns all selected capabilities, implementation checkpoints, open semantics and viewer acceptance. Owner view-template decisions are recorded there; implementation is not started.
+The [dedicated viewer plan](2026-10-05-phase-8a-viewer.md) owns all selected capabilities, implementation checkpoints, open semantics and viewer acceptance. Owner view-template decisions are recorded there; viewer implementation is complete.
 
 ## 8B — Draw Things-compatible presets
 
@@ -63,9 +63,9 @@ Numeric formatting is normalised; round trips must preserve JSON values/semantic
 - Keep credentials, provider connection settings, cloud receipts and DTFlow organisation metadata outside the native export. Preservation of unknown fields does not override credential rejection.
 - Presets are durable user data, not cache. Keep existing DTFlow configuration save/load compatibility; loading a preset never starts generation.
 
-### Planned delivery and acceptance
+### Delivery and acceptance
 
-Refine named preset save/load, browse, rename, duplicate/delete and import/export scope before implementation.
+PR #46 delivered named save/load, whole-library import/export and conservative field application. Rename, duplicate and delete remain unselected.
 Use `8-O1` for semantic round trips, preservation of unsupported fields, malformed/oversized inputs, duplicate-name policy and unknown numeric values.
 Add focused Qt composition coverage only for new wiring (`8-O5`); do not repeat backend protocol tests.
 Before claiming Draw Things compatibility, have the owner import an exported fixture back into Draw Things and compare effective settings.
@@ -81,7 +81,7 @@ The upstream version that produced the sample and exact enum meanings remain unv
 
 ## 8D — Disposable cache management
 
-- Measure cache by type and expose confirmed category-specific purge operations, including new thumbnails and any rebuildable gallery index.
+- Measure cache by type and expose confirmed category-specific purge operations, with `inventory`, `thumbnails` and `derived` categories. PR #46 ships the management surface; only inventory currently has files, because gallery thumbnails are in-memory and no disk thumbnail or derived cache is written yet.
 - Preserve outputs, attempts, queues, presets, organisation, settings, last session, credentials, model assets and retained live-test evidence.
 - Respect `-nc` / `--no-cache`; make rebuilding possible without treating cache as authoritative provenance.
 - Define safe coordination with active readers/writers before implementation. Test preservation and category boundaries at one authoritative layer (`8-O4`).
