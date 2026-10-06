@@ -765,6 +765,10 @@ class GenerationPage:
             self._updating_catalogue = False
         self._filter_loras()
 
+    def reload_custom_loras(self) -> None:
+        """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
+        self._filter_loras()
+
     def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
