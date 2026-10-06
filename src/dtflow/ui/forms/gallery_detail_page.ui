@@ -2804,6 +2804,10 @@ No generation or saved output</string>
                   <item>
                    <widget class="QPushButton" name="galleryUseSettingsButton">
                     <property name="text"><string>Use settings</string></property>
+                    <property name="icon">
+                     <iconset resource="../../../resources.qrc">
+                      <normaloff>:/images/gallery/arrow-left.svg</normaloff>:/images/gallery/arrow-left.svg</iconset>
+                    </property>
                     <property name="enabled"><bool>false</bool></property>
                     <property name="toolTip"><string>Populate Generate from this recorded request without submitting.</string></property>
                     <property name="sizePolicy"><sizepolicy hsizetype="Maximum" vsizetype="Fixed" /></property>
@@ -2812,6 +2816,10 @@ No generation or saved output</string>
                   <item>
                    <widget class="QPushButton" name="galleryRegenerateButton">
                     <property name="text"><string>Regenerate…</string></property>
+                    <property name="icon">
+                     <iconset resource="../../../resources.qrc">
+                      <normaloff>:/images/gallery/repeat.svg</normaloff>:/images/gallery/repeat.svg</iconset>
+                    </property>
                     <property name="enabled"><bool>false</bool></property>
                     <property name="toolTip"><string>Create a fresh generation attempt from these recorded settings after confirmation.</string></property>
                     <property name="sizePolicy"><sizepolicy hsizetype="Maximum" vsizetype="Fixed" /></property>
