@@ -85,6 +85,7 @@ WIRED_CONTROLS = (
     "generationDomainCombo",
     "baseModelCombo",
     "modelCombo",
+    "includeCloudCheck",
     "includeNicheCheck",
     "unclassifiedModelsButton",
     "refreshInventoryButton",
@@ -191,6 +192,7 @@ class GenerationPage:
             page.generationDomainCombo.addItem(label, value)
         page.generationDomainCombo.currentIndexChanged.connect(self._catalogue_filter_changed)
         page.baseModelCombo.currentIndexChanged.connect(self._catalogue_family_changed)
+        page.includeCloudCheck.toggled.connect(self._catalogue_filter_changed)
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
         page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
@@ -251,6 +253,9 @@ class GenerationPage:
             self._listed_backend = None
         self._switch_provider(name)
         self.page.simulationBox.setVisible(name == "fake")
+        self.page.includeCloudCheck.setVisible(name == "local")
+        if name != "local" and self.page.includeCloudCheck.isChecked():
+            self.page.includeCloudCheck.setChecked(False)
         self.page.modelCombo.setToolTip(
             f"Select {FAKE_MODEL} or use a custom identifier."
             if name == "fake"
@@ -295,6 +300,7 @@ class GenerationPage:
         form["catalogue"] = {
             "domain": self.page.generationDomainCombo.currentData() or "all",
             "base_model": self.page.baseModelCombo.currentData(),
+            "include_cloud": self.page.includeCloudCheck.isChecked() if self._backend()[0] == "local" else False,
             "include_niche": self.page.includeNicheCheck.isChecked(),
         }
         return form
@@ -316,6 +322,9 @@ class GenerationPage:
             domain = catalogue.get("domain")
             index = self.page.generationDomainCombo.findData(domain if domain in ("all", "image", "video") else "all")
             self.page.generationDomainCombo.setCurrentIndex(max(index, 0))
+            self.page.includeCloudCheck.setChecked(
+                self._backend()[0] == "local" and catalogue.get("include_cloud") is True
+            )
             self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
             family = catalogue.get("base_model")
             if isinstance(family, str):
@@ -704,8 +713,11 @@ class GenerationPage:
             finally:
                 self._updating_catalogue = False
         current_family = preferred_family or page.baseModelCombo.currentData()
+        include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
         families = self._catalogue.families(
-            domain=self._catalogue_domain(), include_niche=page.includeNicheCheck.isChecked()
+            domain=self._catalogue_domain(),
+            include_niche=page.includeNicheCheck.isChecked(),
+            include_unavailable=include_cloud,
         )
         self._updating_catalogue = True
         try:
@@ -731,10 +743,12 @@ class GenerationPage:
         page = self.page
         current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
         family = page.baseModelCombo.currentData()
+        include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
         entries = self._catalogue.checkpoints(
             domain=self._catalogue_domain(),
             base_model=family if isinstance(family, str) else None,
             include_niche=page.includeNicheCheck.isChecked(),
+            include_unavailable=include_cloud,
         )
         allowed = {entry.identifier for entry in entries}
         unclassified = set(self._catalogue.view().unclassified_checkpoints)
@@ -753,7 +767,8 @@ class GenerationPage:
 
     def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
-        model = self._catalogue.checkpoint(checkpoint)
+        include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
+        model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
         entries = self._catalogue.compatible_loras(checkpoint, domain=self._catalogue_domain())
         self.lora.set_candidates(entries, prune_selected=model is not None and model.base_model is not None)
 
@@ -765,7 +780,7 @@ class GenerationPage:
             self.page,
             "Unclassified checkpoints",
             "These checkpoints are available on the active provider but are not classified by the DTFlow catalogue. "
-            "They remain usable by typing or selecting the exact identifier in the editable Checkpoint field. "
+            "They remain usable through the Checkpoint selector's custom-identifier action. "
             "DTFlow will not guess their family, generation type, quantization or compatible LoRAs.\n\n"
             + "\n".join(unknown),
         )
