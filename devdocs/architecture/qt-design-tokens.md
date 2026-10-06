@@ -107,5 +107,5 @@ stay in Designer/QSS rather than becoming duplicate tokens.
 Checkable section cards require an operable header control. Queues uses
 `planBoxToggle` (a keyboard-accessible checkbox) synchronized with the existing
 checkable `planBox`; the controller re-enables the custom header when unchecked
-and hides the entire contents wrapper. A passive label cannot replace a native
-group-box toggle. Parent activity disabling still applies.
+and hides the entire contents wrapper. The custom header covers the native indicator, so a scoped zero-size indicator
+rule suppresses it. Keep one visible toggle; retain the group's checked state. Parent activity disabling still applies.

@@ -24,7 +24,7 @@
 
 ## Fixed
 
-- Restores the Queues batch-plan card toggle after section-card conversion removed its usable native title. A visible keyboard-accessible header checkbox synchronizes with the existing group state; collapsed contents hide without disabling the custom toggle. Planning/queue semantics remain unchanged.
+- Restores the Queues batch-plan card toggle after the section-card header covered its native checkbox. The covered native indicator is explicitly suppressed. A visible keyboard-accessible header checkbox synchronizes with the existing group state; collapsed contents hide without disabling the custom toggle. Planning/queue semantics remain unchanged.
 
 - Prevents the gallery shutdown event filter from accessing deleted QTableWidget objects by caching viewport identities, guarding Qt lifetime and parenting deferred layout timers. The owner confirmed the closing error is resolved.
 - Removes the native checkerboard vertical-scrollbar page track and corrects gallery-preview import ordering for Ruff I001.

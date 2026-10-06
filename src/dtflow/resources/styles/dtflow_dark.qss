@@ -1076,6 +1076,13 @@ QGroupBox[role="sectionCard"] {
   padding: 0;
 }
 QGroupBox[role="sectionCard"]::title { padding: 0; }
+/* The custom header checkbox owns interaction; suppress the covered native indicator. */
+QGroupBox#planBox::indicator {
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
+}
 QFrame[role="sectionHeader"] {
   background: ${color.sectionHeader};
   border: 0;
