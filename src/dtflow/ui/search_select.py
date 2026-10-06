@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
+    QComboBox,
     QDialogButtonBox,
     QInputDialog,
     QLabel,
@@ -91,3 +92,32 @@ def choose_searchable(
         value = value.strip()
         return value if accepted and value else None
     return str(item.data(Qt.ItemDataRole.UserRole))
+
+
+class SearchableComboBox(QComboBox):
+    """Selection-first combo whose popup provides substring search and an explicit raw-ID escape hatch."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setEditable(False)
+        self.custom_label = "Use custom identifier…"
+        self.custom_prompt = "Exact identifier"
+
+    def setCurrentText(self, text: str) -> None:
+        """Preserve restored/custom identifiers without turning the normal control into a text input."""
+        if text and self.findText(text) < 0:
+            self.addItem(text)
+        super().setCurrentText(text)
+
+    def showPopup(self) -> None:
+        items = [self.itemText(index) for index in range(self.count())]
+        chosen = choose_searchable(
+            self,
+            title=self.accessibleName() or "Select",
+            items=items,
+            current=self.currentText(),
+            custom_label=self.custom_label,
+            custom_prompt=self.custom_prompt,
+        )
+        if chosen is not None:
+            self.setCurrentText(chosen)
