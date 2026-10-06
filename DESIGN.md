@@ -307,6 +307,10 @@ Auto-refresh keeps its labelled On/Off control and existing geometry. Its On
 colors reuse Connection's `color.connectionSurface`, `color.connectionAccent`
 and `color.connectionGlyph`; Off uses the neutral input, border and secondary
 tokens. This is a colors-only change, not a new icon or refresh behavior.
+On remains mint/teal on hover and after mouse activation. Connection and
+Auto-refresh share keyboard-only focus handling: Tab/Backtab/shortcut focus
+shows the dashed focus-token outline, while mouse focus preserves state colors.
+Auto-refresh selectors outrank the gallery's generic hover/focus rules.
 
 Refresh reconciles the bounded page by stable output identity: keep existing
 Grid cards, List cells/icons and filmstrip buttons/painters through insertions

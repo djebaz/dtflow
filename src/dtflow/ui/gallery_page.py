@@ -33,6 +33,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
+from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_detail_preview import CoverPainter, RowHoverDelegate, apply_gallery
 from dtflow.ui.runner import AsyncRunner
 
@@ -335,6 +336,7 @@ class GalleryPage(QObject):
         self.refresh_button.clicked.connect(lambda: self.refresh(preserve=True))
         self.auto_button.setEnabled(True)
         self.auto_button.setCheckable(True)
+        self.auto_button.installEventFilter(KeyboardFocusGuard(self.auto_button))
         self.auto_button.toggled.connect(self._auto_refresh_changed)
 
         self.previous_button = self._widget("galleryPreviousButton", QPushButton)

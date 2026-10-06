@@ -25,3 +25,13 @@
 - Ran canonical load_theme() token resolution successfully and git diff --check. No tests/smoke tests or packaging ran.
 - README.md/AGENTS.md and token snapshots remain unchanged: no new public API, token value or feature; DESIGN.md, desktop guide, current status and release notes reflect the color-only change.
 - Delivery: same fix/images-refresh-flicker branch and open PR #37; no merge/tag/release.
+
+## Focus and hover follow-up
+- Owner screenshot shows mouse focus replacing the mint On outline with blue until another control is clicked; owner also reports strange On hover.
+- [x] Share Connection keyboard-only focus handling with Auto-refresh; pin On/Off hover colors so generic button hover/checked rules cannot override them.
+- [x] Static checks and push the correction to PR #37; final tests/visual smoke remain owner-owned.
+- Keep labels, icons, dimensions, defaults and refresh behavior unchanged.
+
+- Shared the existing Connection focus guard in ui/button_focus.py rather than duplicating it. Connection behavior is unchanged; Auto-refresh uses the same keyboardFocus property.
+- Qualified Auto-refresh QSS outranks generic gallery rules. Rule order keeps checked colors over hover, pressed background over checked, keyboard outline over state borders and disabled feedback last.
+- Ran Ruff format/check, Python compilation/import, canonical theme-token resolution and git diff --check. No tests or smoke tests ran; visual acceptance remains with the owner.

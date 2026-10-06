@@ -85,6 +85,8 @@ counts/navigation can still update.
 
 The labelled Auto-refresh toggle uses Connection's mint/teal colors when On and
 neutral colors when Off; its size, label and refresh behavior are unchanged.
+Hover and mouse activation keep the On colors; the blue dashed focus outline is
+reserved for keyboard navigation, matching Connection.
 
 Click a Grid tile or List row to open Detail. Detail defaults to Fit, with Cover
 available when you prefer a filled canvas. It also provides true 100%, zoom/pan,
