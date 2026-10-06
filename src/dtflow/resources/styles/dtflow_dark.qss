@@ -697,9 +697,7 @@ QWidget#GalleryDetailPage QLineEdit:disabled, QWidget#GalleryDetailPage QComboBo
   color: ${color.disabled}; background: ${color.surface}; border-color: #303030;
 }
 QWidget#GalleryDetailPage QComboBox::drop-down { width: 24px; }
-QPushButton#galleryAutoRefreshButton, QPushButton#galleryRefreshButton,
-QLabel#galleryResultCount { background: ${color.surface}; border: 0; border-radius: 8px; }
-QLabel#galleryResultCount { color: ${color.text}; qproperty-alignment: AlignCenter; }
+QPushButton#galleryAutoRefreshButton, QPushButton#galleryRefreshButton { background: ${color.surface}; border: 0; border-radius: 8px; }
 QPushButton#galleryRefreshButton { font-size: 28px; }
 QFrame#galleryPreviewHost, QLabel#galleryImageSurface { border: 0; border-radius: 10px; background: ${color.canvas}; }
 QLabel[role="galleryOverlay"] {

@@ -56,3 +56,7 @@ slots sit outside the scrolling controls and retain the shell's chrome width and
 height, with the same 8 px row gap. Hidden Inspector controls reserve their space
 to keep the logo/title geometry stable. Gallery panel gaps are 8 px; the canvas
 has a compact 4 px inset and metadata avoids nested padding.
+
+Detail's filmstrip spans the entire content height. Metadata and prompt panels
+stay beneath the main image to its left. Overlay controls use 10 px interior
+spacers, separate from the compact canvas frame.

@@ -163,7 +163,7 @@ Images uses the same charcoal surfaces, blue accent, muted navy selection and
 control states as the other tabs, through shared `color.*` tokens and QSS.
 The reference guides its composition rather than introducing a separate palette.
 Its Detail form has two compact header rows, an
-aspect-preserving Cover image, right vertical filmstrip, full-width bottom metadata row and
+aspect-preserving Cover image, right vertical filmstrip extending to the bottom, metadata beneath the main image and
 three-line positive prompt with small inline disclosure buttons. Additional
 and raw panels are mutually exclusive.
 
@@ -191,3 +191,8 @@ slots sit outside the scrolling controls and retain the shell's chrome width and
 height, with the same 8 px row gap. Hidden Inspector controls reserve their space
 to keep the logo/title geometry stable. Gallery panel gaps are 8 px; the canvas
 has a compact 4 px inset and metadata avoids nested padding.
+
+
+In Detail, the filmstrip spans the whole content height beside the preview and
+its metadata/prompt/disclosure panels. Image overlays have a separate 10 px
+interior inset; this does not increase the canvas frame or outer gallery gutter.

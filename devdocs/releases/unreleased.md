@@ -54,3 +54,9 @@
   slots outside the scrolling controls with shell dimensions and row spacing.
   Tightens image, filmstrip and metadata gutters while retaining the current
   full-width gallery composition. No tests added or run.
+
+- Detail extends its filmstrip to the workspace bottom beside the main image
+  and its lower information panels. Adds a 10 px interior inset for image
+  badges, navigation arrows and zoom toolbar. No tests added or run.
+
+The header sample-count pill is removed; sample designation remains on the image.

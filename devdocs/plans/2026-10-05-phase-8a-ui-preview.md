@@ -172,3 +172,15 @@ logo/title/navigation aligned with the other tabs. Tightened gallery gaps, canva
 inset, filmstrip gutter and nested metadata padding. Shared Grid/List/Detail
 header, full-width lower panels, palette and presentation behavior remain.
 No tests added or run; Windows coordinate parity awaits owner review.
+
+
+## Detail filmstrip height and overlay inset (2026-10-06)
+
+The owner's follow-up moves metadata, prompt and disclosure panels beneath the
+main image within its column, superseding the earlier panels spanning beneath
+the filmstrip. The filmstrip now spans the whole content height to the workspace
+bottom. Canonical Designer spacers give badges, previous/next and zoom controls
+a 10 px interior inset without enlarging the canvas frame. Header chrome, Grid
+and List remain unchanged. No tests added or run; Windows visual review pending.
+
+The header sample-count pill is removed; sample designation remains on the image.
