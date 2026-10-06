@@ -19,8 +19,14 @@ Windows Credential Manager stores a saved cloud API key outside ordinary configu
 ### Image generation and inspection
 
 Compose prompts and control the model, seed, dimensions, steps, guidance and sampler.
-Select LoRAs with explicit weights and an optional trigger-prefix action; compatibility
-feedback distinguishes confirmed mismatches from unknown metadata rather than guessing.
+After inventory refresh, classified model discovery narrows the active provider's available
+checkpoints by All/Image/Video, base-model family and exact checkpoint; Prime models are shown
+by default and an explicit option adds Niche models. In Local mode, `Include DT+ Cloud` can add classified catalogue checkpoints that a Draw Things bridge may omit from its reported local inventory. Checkpoint selection opens a searchable list with case-insensitive substring matching; an explicit custom-identifier action keeps unclassified checkpoints usable without DTFlow guessing their family or compatibility.
+
+Import user-owned custom LoRA metadata as JSON from the Connection page; DTFlow validates it before atomically replacing the durable custom catalogue under the application state directory. Select LoRAs with explicit weights and an optional trigger-prefix action. For a classified
+checkpoint, the Add chooser is narrowed to available LoRAs with known family/mode compatibility;
+compatibility feedback still distinguishes confirmed mismatches from unknown metadata rather
+than guessing.
 
 Follow progress and previews in an image-first workspace, then inspect saved results with
 fit, zoom and pan. Output details link images to their generation metadata and provide
