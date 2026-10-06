@@ -22,6 +22,9 @@ uv run dtflow generate -b fake -p "Offline fixture" -s 0
 uv run dtflow generate -b cloud -m EXACT_MODEL -p "a cat" -l EXACT_LORA:0.8 -r -u cat.json
 uv run dtflow generate -b cloud -c cat.json -s 7                  # reuse a config; explicit flags override it
 uv run dtflow attempts                                            # inspect durable attempts; never resubmits
+uv run dtflow gallery list -k 50                                  # bounded read-only saved-output page
+uv run dtflow gallery list -p "portrait" -o newest                # positive-prompt search and deterministic sort
+uv run dtflow gallery show OUTPUT_ID                              # inspect one output's safe recorded metadata
 uv run dtflow settings -j 2                                       # persist the cloud concurrency maximum (1-4, default 4)
 ```
 
@@ -36,6 +39,29 @@ Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local), `-d/--state`, `-n
 Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`.
 
 Fake-only: `-f/--scenario`.
+
+## Saved-output gallery
+
+`dtflow gallery list` and the desktop Images tab use the same read-only query
+service. Gallery commands never generate or submit provider work and do not take
+the dispatch ownership lock.
+
+`gallery list` supports `-p/--prompt`, `-n/--negative`,
+`-m/--model`, `-l/--lora`, `-s/--since`, `-u/--until`,
+`-r/--ratio`, `-w/--width`, `-y/--height`, `-o/--sort`,
+`-k/--limit` (1–200) and `-f/--offset`. Prompt matching is a
+case-insensitive literal substring; model and LoRA matching use exact recorded
+identifiers. Filters compose with AND. `since` is inclusive and `until` is
+exclusive; CLI timestamps are UTC dates or offset-aware ISO values.
+
+Sort values are `newest`, `oldest`, `model`, `size` and `loras`.
+`size` means pixel area with deterministic dimension/tie ordering; multiple
+LoRAs use their canonical identifier/weight sequence.
+
+`gallery show OUTPUT_ID` returns the selected output plus bounded safe metadata.
+Credential-like values are redacted and unavailable recorded fields stay
+unknown rather than being reconstructed. Missing/corrupt artifacts are reported
+as issues; browsing does not repair, modify or delete originals.
 
 ## Configuration
 
