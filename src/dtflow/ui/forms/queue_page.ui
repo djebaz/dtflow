@@ -124,6 +124,19 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="clearFinishedQueuesButton">
+        <property name="text">
+         <string>Clear finished</string>
+        </property>
+        <property name="toolTip">
+         <string>Removes finished and cancelled queues from this list. Attempts and saved images are kept.</string>
+        </property>
+        <property name="accessibleName">
+         <string>Clear finished queues</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QGroupBox" name="concurrencyBox">
         <property name="title">
          <string />

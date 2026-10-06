@@ -21,6 +21,7 @@ from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan
 from dtflow.services.queue_session import (
+    clear_finished_queues,
     create_queue,
     dispatch_queue,
     expand_items,
@@ -65,6 +66,7 @@ WIRED_CONTROLS = (
     "queueList",
     "createQueueButton",
     "refreshQueuesButton",
+    "clearFinishedQueuesButton",
     "queueCountSpinBox",
     "concurrencySpinBox",
     "startQueueButton",
@@ -76,6 +78,10 @@ WIRED_CONTROLS = (
     "planBox",
     "planDryRunButton",
     *PLAN_INPUTS,
+)
+CLEAR_TEXT = (
+    "Finished and cancelled queues will be removed from this list. Their attempts and saved images are kept. "
+    "Queues that are running, paused or still hold an unresolved outcome are not removed."
 )
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
@@ -151,6 +157,7 @@ class QueuePage:
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self.refresh)
         page.refreshQueuesButton.clicked.connect(self.refresh)
+        page.clearFinishedQueuesButton.clicked.connect(self.clear_finished)
         page.createQueueButton.clicked.connect(self.create)
         page.startQueueButton.clicked.connect(self.start)
         page.pauseQueueButton.clicked.connect(lambda: self._post("pause"))
@@ -425,6 +432,9 @@ class QueuePage:
         page.cancelQueueButton.setEnabled(available.cancel)
         page.overrideReservationButton.setEnabled(available.override)
         page.createQueueButton.setEnabled(not self.dispatching_here and not self._activity.generating)
+        page.clearFinishedQueuesButton.setEnabled(
+            any(v["status"] in ("finished", "cancelled") for v in self._views.values())
+        )
         self._publish_run_state()
 
     def _select_default_item(self) -> None:
@@ -676,6 +686,18 @@ class QueuePage:
     def cancel(self) -> None:
         if self._view() is not None and self.confirm(self.page, "Cancel queue", CANCEL_TEXT):
             self._post("cancel")
+
+    def clear_finished(self) -> None:
+        if self.confirm(self.page, "Clear finished queues", CLEAR_TEXT):
+            self._runner.submit(clear_finished_queues(self._state), self._cleared)
+
+    def _cleared(self, removed, failure) -> None:
+        if failure is not None:
+            self._message(present_generation_failure(failure))
+            return
+        text = f"{removed} finished queue(s) removed." if removed else "No finished queue could be removed."
+        self._message(Presentation("ok", "Finished queues cleared", text))
+        self.refresh()
 
     def override(self) -> None:
         if self._view() is not None and self.confirm(self.page, "Acknowledge uncertain reservation", OVERRIDE_TEXT):

@@ -11,8 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from dtflow.composition import BackendSelection
-from dtflow.core.models import BackendEvent, CredentialProvider, ResolvedGenerationRequest, TimeoutPolicy, ValidationError
-from dtflow.persistence.queues import post_control, read_queues
+from dtflow.core.models import (
+    BackendEvent,
+    CredentialProvider,
+    ResolvedGenerationRequest,
+    TimeoutPolicy,
+    ValidationError,
+)
+from dtflow.persistence.queues import delete_finished, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services import session
@@ -116,6 +122,13 @@ async def read_queue_views(state: Path, queue_id: str | None = None) -> tuple[di
 async def post_queue_control(state: Path, queue_id: str, action: str, payload: dict[str, Any] | None = None) -> None:
     """Append one control for the dispatch owner to apply (at its next poll, or at the next start)."""
     await asyncio.to_thread(post_control, Path(state), queue_id, action, payload)
+
+
+async def clear_finished_queues(state: Path) -> int:
+    """Delete finished and cancelled queue records (never attempts or outputs); return how many were removed."""
+    if not (Path(state) / "attempts.sqlite3").is_file():
+        return 0
+    return await asyncio.to_thread(delete_finished, Path(state))
 
 
 async def set_concurrency(state: Path, value: int, *, queue_id: str | None = None, save_shared: bool = False) -> int:
