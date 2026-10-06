@@ -375,7 +375,7 @@ class GalleryPage(QObject):
             self.slider.setValue(density)
         selected = document.get("selected")
         self.selected_id = selected if isinstance(selected, str) and selected else None
-        self.auto_button.setChecked(bool(document.get("auto_refresh")))
+        self.auto_button.setChecked(bool(document.get("auto_refresh", True)))
         scroll = document.get("scroll")
         if isinstance(scroll, dict):
             for name in self._scroll:
