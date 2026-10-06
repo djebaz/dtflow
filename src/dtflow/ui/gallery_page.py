@@ -138,6 +138,7 @@ class GalleryPage(QObject):
         self._thumb_waiting: deque[tuple[int, str, str]] = deque()
         self._save_running = False
         self._save_dirty = False
+        self._save_future = None
         self._pending_page_selection: str | None = None
         self._page_scroll_target: str | None = None
         self.items: list[GalleryItem] = []
@@ -1099,10 +1100,28 @@ class GalleryPage(QObject):
         async def write():
             await asyncio.to_thread(save_viewer, self.state_dir, document)
 
-        self.runner.submit(write(), self._save_done)
+        self._save_future = self.runner.submit(write(), self._save_done)
+
+    def save_now(self) -> None:
+        """Persist the latest viewer state before the shared async runner is shut down."""
+
+        self.save_timer.stop()
+        future = self._save_future
+        if future is not None and not future.done():
+            try:
+                future.result(timeout=5)
+            except Exception as exc:
+                log.warning("final viewer preferences not saved reason=%s", type(exc).__name__)
+                return
+        try:
+            save_viewer(self.state_dir, self._state_document())
+            self._save_dirty = False
+        except Exception as exc:
+            log.warning("final viewer preferences not saved reason=%s", type(exc).__name__)
 
     def _save_done(self, _result, error) -> None:
         self._save_running = False
+        self._save_future = None
         if error is not None:
             log.warning("viewer preferences not saved reason=%s", type(error).__name__)
         if self._save_dirty:

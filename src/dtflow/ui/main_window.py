@@ -487,6 +487,7 @@ class MainWindow:
 
     def close(self) -> None:
         self.remember(background=False)
+        self.gallery.save_now()
         log.info("window closed")
         self.runner.shutdown()
         self.form.close()
