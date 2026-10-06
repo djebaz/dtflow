@@ -410,6 +410,13 @@ class GenerationPage:
             bar.setRange(0, 0)  # indeterminate: no server percentage is known
         bar.setFormat(text)
 
+    def _progress_stopped(self, text: str) -> None:
+        """A settled non-success end: a determinate empty bar, so the busy animation stops."""
+        bar = self.page.generationProgressBar
+        bar.setRange(0, 1)
+        bar.setValue(0)
+        bar.setFormat(text)
+
     def _show_image(self, encoded: bytes, designation: str, backend_id: str | None = None) -> None:
         pixmap = QPixmap()
         if not pixmap.loadFromData(encoded):
@@ -512,7 +519,7 @@ class GenerationPage:
         self._activity.set(generating=False)
         self._set_busy(False)
         if failure is not None:
-            self._progress("Failed")
+            self._progress_stopped("Failed")
             log.warning("generate failed reason=%s", failure_reason(failure))
             self._status(present_generation_failure(failure))
             return
@@ -598,7 +605,7 @@ class GenerationPage:
         self._generating = False
         self._activity.set(generating=False)
         self._set_busy(False)
-        self._progress("Stopped locally")
+        self._progress_stopped("Stopped locally")
         if failure is not None:
             self._status(present_generation_failure(failure))
             return
