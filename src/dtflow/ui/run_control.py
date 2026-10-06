@@ -33,8 +33,8 @@ class RunControl(QAbstractButton):
         self._colors = {
             "idle": QColor(tokens["color.borderStrong"]),
             "ready": QColor(tokens["color.secondary"]),
-            "running": QColor(tokens["color.accentHover"]),
-            "running_end": QColor(tokens["color.connectionAccent"]),
+            "running": QColor(tokens["color.runStart"]),
+            "running_end": QColor(tokens["color.runEnd"]),
             "paused": QColor(tokens["color.warning"]),
             "complete": QColor(tokens["color.success"]),
             "error": QColor(tokens["color.error"]),
@@ -140,7 +140,7 @@ class RunControl(QAbstractButton):
         painter.drawText(QRectF(0.0, 0.0, 30.0, 30.0), Qt.AlignmentFlag.AlignCenter, str(self._completed))
 
     def _progress_color(self) -> QColor:
-        """Running color moves from the accent blue to cyan as the queue or generation completes."""
+        """Running color moves from deep purple to cyan as the queue or generation completes."""
         start, end = self._colors["running"], self._colors["running_end"]
         if self._completed is None or self._total is None:
             return QColor(start)

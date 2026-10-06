@@ -19,6 +19,8 @@ colors:
   selectionText: "#d5ecff"
   success: "#78c97c"
   connectionAccent: "#00d8b0"
+  runStart: "#6f3bd6"
+  runEnd: "#22d3ee"
   connectionSurface: "#123e36"
   connectionGlyph: "#d9f7ef"
   warning: "#ffbf59"
