@@ -105,7 +105,10 @@ class SearchableComboBox(QComboBox):
 
     def setCurrentText(self, text: str) -> None:
         """Preserve restored/custom identifiers without turning the normal control into a text input."""
-        if text and self.findText(text) < 0:
+        if not text:
+            self.setCurrentIndex(-1)
+            return
+        if self.findText(text) < 0:
             self.addItem(text)
         super().setCurrentText(text)
 
