@@ -23,9 +23,9 @@
 - Cloud LoRA preflight: a LoRA that the DT+ inventory does not list, or lists only as an unclassified file, is now reported as unconfirmed (`availability_unknown` / `architecture_unknown`) instead of blocking dispatch as not available. Local and confirmed-mismatch behavior is unchanged. Whether DT+ then applies the LoRA is not verified; no generation, upload or billable action was run.
 
 - LoRA weights such as 0.6 no longer fail `wire_configuration_mismatch`: the wire check compared a float32-rounded weight exactly, while drawthings-py rounds some values on decode. The check is now tolerant by float32 precision.
-- Cloud custom LoRAs: a LoRA bound to a prepared (uploaded) asset is now named by its SHA-256 in the generation request, which Draw Things documents as the name its cloud server downloads uploaded LoRAs by; the file name was silently ignored. Unverified live: needs a Windows DT+ generation to confirm the LoRA now changes the image. No generation, upload or billable action was run.
+- Cloud custom LoRAs: a LoRA bound to a prepared (uploaded) asset is now named by its SHA-256 in the generation request, which Draw Things documents as the name its cloud server downloads uploaded LoRAs by; the file name was silently ignored. Confirmed live by the owner on Windows (Z-Image Turbo, DT+). No generation, upload or billable action was run.
 
-- Cloud custom LoRA fix (unverified live): generation now sends `override.loras` (`name`, `file`, `prefix`, `version`; the server drops an entry missing any of them) for LoRAs bound to a prepared receipt, with `version` taken from the selected base model's inventory architecture. Previously only the file name reached the server, which accepted the request but showed no LoRA effect. Whether the server now applies the LoRA needs a Windows live check; no generation, upload or billable action was run.
+- Cloud custom LoRA fix: generation now sends `override.loras` (`name`, `file`, `prefix`, `version`; the server drops an entry missing any of them) for LoRAs bound to a prepared receipt, with `version` taken from the selected base model's inventory architecture. Previously only the file name reached the server, which accepted the request but showed no LoRA effect. Whether the server now applies the LoRA needs a Windows live check; no generation, upload or billable action was run.
 
 ## Release audit
 
