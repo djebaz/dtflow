@@ -137,8 +137,6 @@ def apply_preset(preset: dict) -> PresetApplication:
     configuration = preset["configuration"]
     values = {}
     applied = []
-    supported = {"model", "width", "height", "steps", "guidanceScale", "seed", "sampler", "loras"}
-
     def take(key: str, target: str, kind):
         value = configuration.get(key)
         if type(value) is kind:
