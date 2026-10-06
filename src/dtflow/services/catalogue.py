@@ -123,6 +123,7 @@ class Catalogue:
         self._prime = self._load("Models_prime.json", kind="checkpoint", tier="prime")
         self._niche = self._load("Models_niche.json", kind="checkpoint", tier="niche")
         self._bundled_loras = self._load("Loras.json", kind="lora")
+        self._controls = self._load("Control.json", kind="control")
         self._inventory: InventorySnapshot | None = None
 
     def _load(
@@ -207,6 +208,20 @@ class Catalogue:
 
     def checkpoint(self, identifier: str) -> CatalogueEntry | None:
         return next((entry for entry in self.view().checkpoints if entry.identifier == identifier), None)
+
+    def controls(self, *, domain: str = "all", base_model: str | None = None) -> tuple[CatalogueEntry, ...]:
+        """Known available conditioning artifacts; no Control-specific UI is introduced by this change."""
+        if domain not in DOMAINS:
+            raise ValueError("Catalogue domain must be all, image or video.")
+        available = self._available_ids()
+        entries = (
+            entry
+            for entry in self._controls
+            if entry.identifier in available
+            and entry.supports_domain(domain)
+            and (base_model is None or entry.base_model == base_model)
+        )
+        return tuple(sorted(entries, key=lambda item: item.identifier.casefold()))
 
     def compatible_loras(self, checkpoint_id: str, *, domain: str = "all") -> tuple[CatalogueEntry, ...]:
         checkpoint = self.checkpoint(checkpoint_id)
