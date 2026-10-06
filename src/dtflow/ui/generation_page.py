@@ -25,6 +25,7 @@ from dtflow.core.models import (
     ValidationError,
     eligible_model_ids,
 )
+from dtflow.services.catalogue import Catalogue
 from dtflow.services.connection import (
     Presentation,
     present_generation_failure,
@@ -81,7 +82,11 @@ WIRED_CONTROLS = (
     "heightSpinBox",
     "guidanceSpinBox",
     "samplerCombo",
+    "generationDomainCombo",
+    "baseModelCombo",
     "modelCombo",
+    "includeNicheCheck",
+    "unclassifiedModelsButton",
     "refreshInventoryButton",
     "generateButton",
     "cancelButton",
@@ -147,6 +152,9 @@ class GenerationPage:
         self._activity = activity or Activity()
         self._no_cache = no_cache
         self._listed_backend: str | None = None
+        self._catalogue = Catalogue(self._state)
+        self._inventory_snapshot: InventorySnapshot | None = None
+        self._updating_catalogue = False
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         self._provider: str | None = None
         self._previewed_seed: int | None = None
@@ -179,6 +187,13 @@ class GenerationPage:
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.samplerCombo.addItems(SAMPLERS)
+        for label, value in (("All", "all"), ("Image", "image"), ("Video", "video")):
+            page.generationDomainCombo.addItem(label, value)
+        page.generationDomainCombo.currentIndexChanged.connect(self._catalogue_filter_changed)
+        page.baseModelCombo.currentIndexChanged.connect(self._catalogue_family_changed)
+        page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
+        page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
+        page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
         for label, scenario in SIMULATED_OUTCOMES:
             page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
@@ -226,7 +241,10 @@ class GenerationPage:
         name, _ = self._backend()
         self.page.generationBackendCombo.setCurrentText(name)
         if self._listed_backend is not None and self._listed_backend != name:
+            self._inventory_snapshot = None
+            self._catalogue.set_inventory(None)
             self._fill_models(())  # a list from another provider is not offered for this one
+            self._rebuild_catalogue()
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
             self.page.inventoryEvidenceLabel.setToolTip("")
             self._listed_backend = None
@@ -271,6 +289,11 @@ class GenerationPage:
         document = form_to_document(self._values())
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
         form["receipts"] = self.lora.receipts()
+        form["catalogue"] = {
+            "domain": self.page.generationDomainCombo.currentData() or "all",
+            "base_model": self.page.baseModelCombo.currentData(),
+            "include_niche": self.page.includeNicheCheck.isChecked(),
+        }
         return form
 
     def _apply_provider_form(self, document: object) -> None:
@@ -285,6 +308,15 @@ class GenerationPage:
             else {}
         )
         self.lora.set_loras(values.loras, receipts=valid)
+        catalogue = document.get("catalogue") if isinstance(document, dict) else None
+        if isinstance(catalogue, dict):
+            domain = catalogue.get("domain")
+            index = self.page.generationDomainCombo.findData(domain if domain in ("all", "image", "video") else "all")
+            self.page.generationDomainCombo.setCurrentIndex(max(index, 0))
+            self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
+            family = catalogue.get("base_model")
+            if isinstance(family, str):
+                self._rebuild_catalogue(preferred_family=family, preferred_checkpoint=values.model)
 
     def _switch_provider(self, name: str) -> None:
         """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
@@ -631,10 +663,91 @@ class GenerationPage:
         combo.addItems(ids)
         combo.setCurrentText(current)
 
+    def _catalogue_domain(self) -> str:
+        return self.page.generationDomainCombo.currentData() or "all"
+
+    def _catalogue_filter_changed(self, *_args) -> None:
+        if not self._updating_catalogue:
+            self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText())
+
+    def _catalogue_family_changed(self, *_args) -> None:
+        if not self._updating_catalogue:
+            self._rebuild_checkpoints(preferred_checkpoint=self.page.modelCombo.currentText())
+
+    def _catalogue_checkpoint_changed(self, *_args) -> None:
+        if not self._updating_catalogue:
+            self._filter_loras()
+
+    def _rebuild_catalogue(
+        self, *, preferred_family: str | None = None, preferred_checkpoint: str | None = None
+    ) -> None:
+        page = self.page
+        current_family = preferred_family or page.baseModelCombo.currentData()
+        families = self._catalogue.families(
+            domain=self._catalogue_domain(), include_niche=page.includeNicheCheck.isChecked()
+        )
+        self._updating_catalogue = True
+        try:
+            page.baseModelCombo.clear()
+            for family, label in families:
+                page.baseModelCombo.addItem(label, family)
+            family_index = page.baseModelCombo.findData(current_family)
+            if family_index < 0 and preferred_checkpoint:
+                entry = self._catalogue.checkpoint(preferred_checkpoint)
+                if entry is not None:
+                    family_index = page.baseModelCombo.findData(entry.base_model)
+            page.baseModelCombo.setCurrentIndex(family_index if family_index >= 0 else (0 if families else -1))
+        finally:
+            self._updating_catalogue = False
+        self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint)
+        unknown = self._catalogue.view().unclassified_checkpoints
+        page.unclassifiedModelsButton.setVisible(bool(unknown))
+        page.unclassifiedModelsButton.setText(
+            f"{len(unknown)} unclassified checkpoint" + ("" if len(unknown) == 1 else "s") + " found"
+        )
+
+    def _rebuild_checkpoints(self, *, preferred_checkpoint: str | None = None) -> None:
+        page = self.page
+        current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
+        family = page.baseModelCombo.currentData()
+        entries = self._catalogue.checkpoints(
+            domain=self._catalogue_domain(),
+            base_model=family if isinstance(family, str) else None,
+            include_niche=page.includeNicheCheck.isChecked(),
+        )
+        self._updating_catalogue = True
+        try:
+            self._fill_models(entry.identifier for entry in entries)
+            if current:
+                page.modelCombo.setCurrentText(current)
+        finally:
+            self._updating_catalogue = False
+        self._filter_loras()
+
+    def _filter_loras(self) -> None:
+        checkpoint = self.page.modelCombo.currentText().strip()
+        entries = self._catalogue.compatible_loras(checkpoint, domain=self._catalogue_domain())
+        self.lora.set_candidates(entries)
+
+    def _show_unclassified_models(self) -> None:
+        unknown = self._catalogue.view().unclassified_checkpoints
+        if not unknown:
+            return
+        QMessageBox.information(
+            self.page,
+            "Unclassified checkpoints",
+            "These checkpoints are available on the active provider but are not classified by the DTFlow catalogue. "
+            "They remain usable by typing or selecting the exact identifier in the editable Checkpoint field. "
+            "DTFlow will not guess their family, generation type, quantization or compatible LoRAs.\n\n"
+            + "\n".join(unknown),
+        )
+
     def _show_inventory(self, snapshot: InventorySnapshot, how: str) -> None:
         self.lora.set_inventory(snapshot)
+        self._inventory_snapshot = snapshot
+        self._catalogue.set_inventory(snapshot)
         ids = eligible_model_ids(snapshot)
-        self._fill_models(ids)
+        self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText())
         self._listed_backend = self._backend()[0]
         label = self.page.inventoryEvidenceLabel
         label.setToolTip(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
