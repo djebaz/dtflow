@@ -491,6 +491,8 @@ class GenerationPage:
             self._previewed_seed = request.seed
         elif resolved and self._previewed_seed is not None:
             request = replace(request, seed=self._previewed_seed)
+        if not preview:
+            self._reuse_source_identity = None
         return request, name, endpoint, self.lora.receipt_ids()
 
     # Overall progress is a determinate 0-100 bar that only grows: sampling steps fill the middle, the other stages
@@ -539,6 +541,7 @@ class GenerationPage:
             log.debug("generate validation message=%s", exc)
             self._status(Presentation("error", "Invalid request", str(exc)))
             return
+        self._reuse_source_identity = None
         self._request = request
         log.info("generate submitted backend=%s", name)
         log.debug(
@@ -950,6 +953,7 @@ class GenerationPage:
         if "loras" in application.values:
             self.lora.set_loras(application.values["loras"], loaded=True)
         self._config_name = f"preset:{preset['name']}"
+        self._reuse_source_identity = None
         preserved = ", ".join(application.preserved) if application.preserved else "none"
         self._status(
             Presentation(
@@ -996,6 +1000,7 @@ class GenerationPage:
             self._status(shown)
             return
         self._config_name = path.name
+        self._reuse_source_identity = None
         self._apply(values_from_request(request))
         self.lora.set_loras(request.loras, loaded=True)
         name, endpoint = self._backend()
@@ -1010,7 +1015,11 @@ class GenerationPage:
 
         def scan():
             paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
-            return paths, load_presets(self._state)
+            try:
+                presets, preset_failure = load_presets(self._state), None
+            except (ValidationError, OSError) as exc:
+                presets, preset_failure = (), exc
+            return paths, presets, preset_failure
 
         async def scan_async():
             return await asyncio.to_thread(scan)
@@ -1021,10 +1030,12 @@ class GenerationPage:
         combo = self.page.configurationCombo
         combo.clear()
         if failure is not None:
-            log.warning("configuration/preset scan failed reason=%s", type(failure).__name__)
+            log.warning("configuration scan failed reason=%s", type(failure).__name__)
             combo.setCurrentIndex(-1)
             return
-        paths, presets = result
+        paths, presets, preset_failure = result
+        if preset_failure is not None:
+            log.warning("preset scan failed reason=%s", type(preset_failure).__name__)
         for preset in presets:
             combo.addItem(f"Preset · {preset['name']}", ("preset", preset))
         for path in paths:
