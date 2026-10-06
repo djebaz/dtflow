@@ -4,7 +4,14 @@ import pytest
 from drawthings_py.configs.gen_config import GenConfig
 
 from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE, build_generation_message, float32
-from dtflow.core.models import BackendError, ErrorCategory, LoRASelection, ResolvedGenerationRequest, Sampler
+from dtflow.core.models import (
+    BackendError,
+    ErrorCategory,
+    LoRASelection,
+    PreparedAsset,
+    ResolvedGenerationRequest,
+    Sampler,
+)
 
 
 def request(**overrides):
@@ -74,3 +81,14 @@ def test_unsupported_requests_are_rejected_before_serialization(overrides, code)
 def test_lora_weights_that_the_library_rounds_on_decode_still_verify(weight):
     wire = build_generation_message(request(loras=(LoRASelection("a_lora_f16.ckpt", weight),)), None)
     assert dict(wire.effective_configuration)["loras"] == f"a_lora_f16.ckpt@{weight}"
+
+
+def test_prepared_loras_are_named_by_their_sha256_on_the_wire():
+    digest = "ab" * 32
+    prepared = PreparedAsset(
+        "cloud", "origin", "mine_lora_f16.ckpt", "mine_lora_f16.ckpt", digest, 10, "r1", "2026-10-06T00:00:00Z"
+    )
+    selections = (LoRASelection("mine_lora_f16.ckpt", 0.5), LoRASelection("builtin_lora_f16.ckpt", 1.0))
+    wire = build_generation_message(request(loras=selections, prepared_assets=(prepared,)), None)
+    decoded = GenConfig.from_fbs(wire.message.configuration)
+    assert [x["file"] for x in decoded["loras"]] == [digest, "builtin_lora_f16.ckpt"]

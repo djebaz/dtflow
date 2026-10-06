@@ -42,6 +42,14 @@ def _same_float32(decoded: object, wanted: float) -> bool:
     return isinstance(decoded, int | float) and abs(decoded - float32(wanted)) <= 1e-6 * max(1.0, abs(wanted))
 
 
+def wire_lora_name(request: ResolvedGenerationRequest, identifier: str) -> str:
+    """DT+ downloads an uploaded LoRA only when the request names it by its SHA-256 (Draw Things' ServerLoRALoader)."""
+    for prepared in request.prepared_assets:
+        if prepared.identifier == identifier:
+            return prepared.sha256
+    return identifier
+
+
 def _reject(request: ResolvedGenerationRequest, code: str, message: str):
     return error(ErrorCategory.VALIDATION, code, message, request.request_id)
 
@@ -71,7 +79,7 @@ def build_generation_message(request: ResolvedGenerationRequest, shared_secret: 
         batch_count=1,
     )
     for selection in request.loras:
-        config.add_lora(selection.identifier, selection.weight, LORA_MODE)
+        config.add_lora(wire_lora_name(request, selection.identifier), selection.weight, LORA_MODE)
     configuration = config.to_fbs(request.seed)
     effective = verify_wire_configuration(request, configuration)
     message = image_service.ImageGenerationRequest(
@@ -102,7 +110,7 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
     }
     mismatches = [key for key, value in expected.items() if decoded.get(key) != value]
     sent = [(item.get("file"), item.get("weight"), item.get("mode")) for item in decoded.get("loras") or []]
-    wanted = [(item.identifier, item.weight, LORA_MODE) for item in request.loras]
+    wanted = [(wire_lora_name(request, item.identifier), item.weight, LORA_MODE) for item in request.loras]
     if len(sent) != len(wanted) or any(
         (f, m) != (name, mode) or not _same_float32(w, weight)
         for (f, w, m), (name, weight, mode) in zip(sent, wanted, strict=True)
