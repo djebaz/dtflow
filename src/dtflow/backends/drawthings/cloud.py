@@ -29,7 +29,6 @@ from dtflow.core.models import (
 
 class DirectCloudBackend(DrawThingsBackend):
     backend_id = "drawthings-cloud"
-    allow_unlisted_models = False
 
     def __init__(
         self,
