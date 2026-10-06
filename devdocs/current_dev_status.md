@@ -61,3 +61,7 @@ The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement 
 ## Maintenance
 
 Update this short snapshot when implementation scope changes, with the reviewed base revision/date and evidence links. Keep completed, remaining and added scope aligned with `initial.md`; retain detailed validation in plans/research/release notes. If this snapshot disagrees with source or verified evidence, those sources win: refresh the snapshot rather than assuming completion. Do not append a running changelog here.
+
+## Inventory continuity follow-up
+
+PR #51 restores identity-matching provider inventory observations and per-provider form selections; keeps model/LoRA counts, provenance and observation time visible across refresh errors and cache-only launches. Live generation validation is unchanged. Static checks only locally; tests are delegated to GitHub Actions by the owner. The owner reports source smoke tests OK (2026-10-06); exact build/scenarios were not supplied, and packaged acceptance remains separate. See [the plan](plans/2026-10-06-retain-provider-inventory.md).

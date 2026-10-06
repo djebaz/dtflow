@@ -392,3 +392,7 @@ height; empty-state title and guidance stay together in its center. Hide queue
 progress when no queue is selected rather than presenting “0 of 0” as work.
 The Plan header has a fixed vertical size policy, while expanded contents retain
 their natural layout. Avoid distributing spare height among action rows.
+
+### Inventory continuity and statistics
+
+Provider switches restore each provider's last-successful matching observation without resetting its form. Preserve model/LoRA counts, provenance (cached, remembered or refreshed) and original observation time alongside refreshing/error status. A failed refresh says Refresh failed · showing previous inventory and does not rebuild/prune selections. Unknown/no matching observation is not a fabricated zero inventory. Endpoint or selected credential changes invalidate mismatched availability evidence; mere provider switching or a failed HTTP/RPC response does not. Discovery restoration itself never silently removes selected checkpoints/LoRAs; deliberate user filter changes keep existing catalogue behavior. Generation still performs fresh live validation. Use the existing inventoryEvidenceLabel and shared secondary-text styling; no new tokens or layouts.

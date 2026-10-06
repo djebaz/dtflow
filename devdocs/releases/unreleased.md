@@ -7,7 +7,13 @@
 - The Queues page has a **Clear queues** button that removes finished, cancelled and paused queue records (items, controls and events) after confirmation. Attempts and saved images are kept, and queues that are running or hold an unresolved outcome are never removed.
 - The shared header now uses a compact segmented Run control instead of the manual right-Inspector toggle. It exposes truthful global generation/queue activity, starts a runnable selected queue through the existing dispatch path, pauses/resumes only work owned by this window, shows reported single-generation steps, and shows the running queue's settled-item count (settled of total) in the ring. The right Inspector now follows responsive layout automatically.
 
+## Fixed
+
+- PR #51 retains the last successful display inventory per provider, restores identity-matching observations from memory or the existing disk cache on provider returns, and preserves departing form fields before clearing discovery. Model/LoRA counts, cached/remembered/refreshed provenance and original observation timestamps remain visible without a current-run refresh and alongside refresh errors. Failed requests keep previous choices/selections; discovery restoration no longer silently prunes selected checkpoints/LoRAs. Endpoint/selected-credential changes invalidate mismatched evidence, saving the same key does not erase it, and obsolete async completions are ignored. Generation/preflight live validation, cache filenames/schema and credentials precedence remain unchanged.
+
 ## Validation and release audit
+
+- PR #51: the owner reported source smoke tests OK on 2026-10-06 during implementation. No exact source/build ID or scenario list was supplied. Local static checks passed; no agent-run tests/smoke or packaged acceptance is claimed. Automated tests are delegated to GitHub Actions; outcome pending.
 
 - PR #46 implements the Phase 8B–8D scope after the 0.3.5 release boundary. The owner reports the PR CI passed after repairing the post-release merge/formatting issue. Runtime/Windows interaction acceptance and final 0.4.0 packaged-executable acceptance remain separate.
 - PR #49 implementation work was pushed without running tests at the owner's request. The owner reported an earlier branch head launched successfully; the latest queue-control fixes still require smoke/CI acceptance. No live provider generation, inference, training, upload or potentially billable action was performed for this work.
@@ -18,5 +24,5 @@
 
 ## Release audit
 
-- PRs: #46, #48, #49, #50
-- Scope: Phase 8B–8D presets, reuse and cache management; documentation reconciliation; global segmented Run control; Windows-safe canonical design-system README without a case-only tracked duplicate.
+- PRs: #46, #48, #49, #50, #51
+- Scope: Phase 8B–8D presets, reuse and cache management; documentation reconciliation; global segmented Run control; Windows-safe canonical design-system README without a case-only tracked duplicate; retained provider inventory and persistent last-observed UI statistics.

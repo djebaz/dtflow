@@ -251,7 +251,7 @@
             <item row="9" column="0" colspan="2">
              <widget class="QLabel" name="inventoryEvidenceLabel">
               <property name="text">
-               <string>Inventory has not been refreshed.</string>
+               <string>Inventory has not been observed. Refresh to discover models.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>
