@@ -682,6 +682,13 @@ class GenerationPage:
         self, *, preferred_family: str | None = None, preferred_checkpoint: str | None = None
     ) -> None:
         page = self.page
+        preferred_entry = self._catalogue.checkpoint(preferred_checkpoint or "") if preferred_checkpoint else None
+        if preferred_entry is not None and preferred_entry.tier == "niche" and not page.includeNicheCheck.isChecked():
+            self._updating_catalogue = True
+            try:
+                page.includeNicheCheck.setChecked(True)
+            finally:
+                self._updating_catalogue = False
         current_family = preferred_family or page.baseModelCombo.currentData()
         families = self._catalogue.families(
             domain=self._catalogue_domain(), include_niche=page.includeNicheCheck.isChecked()
@@ -722,8 +729,6 @@ class GenerationPage:
             self._fill_models(entry.identifier for entry in entries)
             if current in allowed or current in unclassified:
                 page.modelCombo.setCurrentText(current)
-            elif entries:
-                page.modelCombo.setCurrentText(entries[0].identifier)
             else:
                 page.modelCombo.setCurrentText("")
         finally:
