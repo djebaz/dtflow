@@ -23,7 +23,7 @@ After inventory refresh, classified model discovery narrows the active provider'
 checkpoints by All/Image/Video, base-model family and exact checkpoint; Prime models are shown
 by default and an explicit option adds Niche models. In Local mode, `Include DT+ Cloud` can add classified catalogue checkpoints that a Draw Things bridge may omit from its reported local inventory. Checkpoint selection opens a searchable list with case-insensitive substring matching; an explicit custom-identifier action keeps unclassified checkpoints usable without DTFlow guessing their family or compatibility.
 
-Select LoRAs with explicit weights and an optional trigger-prefix action. For a classified
+Import user-owned custom LoRA metadata as JSON from the Connection page; DTFlow validates it before atomically replacing the durable custom catalogue under the application state directory. Select LoRAs with explicit weights and an optional trigger-prefix action. For a classified
 checkpoint, the Add chooser is narrowed to available LoRAs with known family/mode compatibility;
 compatibility feedback still distinguishes confirmed mismatches from unknown metadata rather
 than guessing.
