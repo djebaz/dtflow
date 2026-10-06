@@ -741,7 +741,9 @@ class GenerationPage:
         self._updating_catalogue = True
         try:
             self._fill_models(entry.identifier for entry in entries)
-            if current in allowed or current in unclassified:
+            # Preserve an explicit raw identifier even when provider discovery is incomplete (for example,
+            # a local Draw Things endpoint bridging to DT+). Known classified checkpoints still obey the filters.
+            if current in allowed or current in unclassified or (current and self._catalogue.checkpoint(current) is None):
                 page.modelCombo.setCurrentText(current)
             else:
                 page.modelCombo.setCurrentText("")
