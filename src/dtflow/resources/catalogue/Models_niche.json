@@ -1706,9 +1706,9 @@
   },
   {
     "file": "anything_v3_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2079,16 +2079,16 @@
   },
   {
     "file": "counterfeit_v3.0_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "counterfeit_v3.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2264,16 +2264,16 @@
   },
   {
     "file": "dreamshaper_v8_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "dreamshaper_v8_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3023,9 +3023,9 @@
   },
   {
     "file": "juggernaut_reborn_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -4006,9 +4006,9 @@
   },
   {
     "file": "realistic_vision_v3.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
