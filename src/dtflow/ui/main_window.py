@@ -28,7 +28,7 @@ from dtflow.services.connection import Presentation, check_connection, present_f
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
 from dtflow.ui.brand import connection_icon
-from dtflow.ui.gallery_detail_preview import DetailFixture
+from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
@@ -157,7 +157,7 @@ class MainWindow:
                 stack.addWidget(getattr(page, name))
         self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
         self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
-        self.gallery_preview = DetailFixture(self.gallery_detail)
+        self.gallery = GalleryPage(self.gallery_detail, runner=self.runner, state_dir=self.state_dir)\n        self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
         self.shell.centerStack.addWidget(self.gallery_detail)
@@ -240,8 +240,8 @@ class MainWindow:
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
         form.imagesNavigationButton.setEnabled(True)
-        form.imagesNavigationButton.setToolTip("Show Images — offline layout preview, not saved outputs")
-        form.imagesNavigationButton.setAccessibleName("Show Images layout preview")
+        form.imagesNavigationButton.setToolTip("Browse committed saved outputs")
+        form.imagesNavigationButton.setAccessibleName("Show saved Images")
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
         self.shell.inspectorToggle.toggled.connect(self._toggle_inspector)
@@ -481,7 +481,7 @@ class MainWindow:
         self.refresh_credentials()
 
     def about(self) -> None:
-        QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
+        QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\        self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)\nn\nState folder: {self.state_dir}")
 
     def close(self) -> None:
         self.remember(background=False)
