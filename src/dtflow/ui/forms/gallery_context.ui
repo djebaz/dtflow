@@ -10,17 +10,17 @@
    <property name="bottomMargin"><number>12</number></property>
    <property name="spacing"><number>8</number></property>
    <item><widget class="QLabel" name="galleryContextHeading">
-    <property name="text"><string>IMAGES — LAYOUT PREVIEW</string></property>
+    <property name="text"><string>IMAGES</string></property>
     <property name="role" stdset="0"><string>eyebrow</string></property>
     <property name="wordWrap"><bool>true</bool></property>
    </widget></item>
    <item><widget class="QLabel" name="galleryContextHint">
-    <property name="text"><string>Illustrative artwork and synthetic metadata only. This is not your saved-output library.</string></property>
+    <property name="text"><string>Browse committed saved outputs and their recorded provenance without generating or modifying files.</string></property>
     <property name="wordWrap"><bool>true</bool></property>
     <property name="role" stdset="0"><string>secondary</string></property>
    </widget></item>
    <item><widget class="QLabel" name="galleryContextActionsHint">
-    <property name="text"><string>Try Cover / Fit, thumbnail size, and Additional details or Raw metadata JSON. Grid/List open the same sample images. Filters and saved-file actions are not wired yet.</string></property>
+    <property name="text"><string>Grid, List and Detail share the same bounded query. Search, filter, sort, refresh and inspect the selected saved file.</string></property>
     <property name="wordWrap"><bool>true</bool></property>
    </widget></item>
    <item><spacer name="galleryContextSpacer">

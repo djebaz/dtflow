@@ -451,6 +451,28 @@
            </widget>
           </item>
           <item>
+           <widget class="QLineEdit" name="galleryNegativeSearch">
+            <property name="accessibleName">
+             <string>Search negative prompts</string>
+            </property>
+            <property name="placeholderText">
+             <string>Search negative prompts…</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="toolTip">
+             <string>Search recorded negative prompts.</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>190</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QComboBox" name="galleryModelFilter">
             <property name="accessibleName">
              <string>Filter by model</string>
@@ -519,6 +541,51 @@
             </property>
             <property name="toolTip">
              <string>Filter by date range — offline preview; filtering is not wired.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="galleryDimensionsFilter">
+            <property name="accessibleName">
+             <string>Filter by exact dimensions</string>
+            </property>
+            <property name="editable">
+             <bool>true</bool>
+            </property>
+            <item>
+             <property name="text">
+              <string>Any size</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>132</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="gallerySortFilter">
+            <property name="accessibleName">
+             <string>Sort saved outputs</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>Newest first</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>132</width>
+              <height>30</height>
+             </size>
             </property>
            </widget>
           </item>
