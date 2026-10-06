@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -43,6 +43,8 @@ from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.theme import apply_native_dark_titlebar
 
 log = logging.getLogger(__name__)
+
+RUN_SETTLE_MS = 2000  # how long the header control shows its finishing state after work ends
 
 FORMS_DIR = Path(__file__).with_name("forms")
 UI_FILE = FORMS_DIR / "main_window.ui"
@@ -246,6 +248,11 @@ class MainWindow:
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
         self.shell.runControl.clicked.connect(self.queue.trigger_run_control)
+        self._run_was_running = False
+        self._run_settle = QTimer(form)
+        self._run_settle.setSingleShot(True)
+        self._run_settle.setInterval(RUN_SETTLE_MS)
+        self._run_settle.timeout.connect(self._sync_run_control)
         self.activity.listen(self._sync_run_control)
         self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
@@ -294,6 +301,18 @@ class MainWindow:
 
     def _sync_run_control(self) -> None:
         state = self.activity.run_state
+        running = state.phase == "running"
+        if running:
+            self._run_settle.stop()
+        elif self._run_was_running and state.phase in ("idle", "ready") and not self._run_settle.isActive():
+            # Work just ended: show the finishing state briefly before the control settles back.
+            self._run_was_running = False
+            self.shell.runControl.set_presentation("complete", detail="Finishing.")
+            self._run_settle.start()
+            return
+        elif self._run_settle.isActive():
+            return  # keep the finishing state until its timer elapses
+        self._run_was_running = running
         self.shell.runControl.set_presentation(
             state.phase,
             action=state.action,

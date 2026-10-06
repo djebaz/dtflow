@@ -1,7 +1,7 @@
 """Compact segmented execution-state control for the persistent DTFlow header."""
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF, QRadialGradient
 from PySide6.QtWidgets import QAbstractButton
 
 from dtflow.ui.theme import load_tokens
@@ -135,6 +135,18 @@ class RunControl(QAbstractButton):
 
         ring = QRectF(3.5, 3.5, 23.0, 23.0)
         base = self._colors[self._phase]
+        if self._phase == "complete":
+            # Brief white glow while the control shows it is finishing.
+            glow = QColor(self._colors["text"])
+            gradient = QRadialGradient(QPointF(15.0, 15.0), 15.0)
+            glow.setAlpha(110)
+            gradient.setColorAt(0.55, glow)
+            glow.setAlpha(0)
+            gradient.setColorAt(1.0, glow)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(gradient)
+            painter.drawEllipse(QRectF(0.0, 0.0, 30.0, 30.0))
+            base = self._colors["text"]
         for index in range(self.SEGMENTS):
             color = QColor(base)
             if self._phase == "running":
