@@ -2681,7 +2681,7 @@ No generation or saved output</string>
                      <string>AdditionalDurationLabel</string>
                     </property>
                     <property name="text">
-                     <string>Recorded duration</string>
+                     <string>Backend duration</string>
                     </property>
                     <property name="role" stdset="0">
                      <string>secondary</string>
