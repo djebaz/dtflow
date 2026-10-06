@@ -23,7 +23,7 @@ colors:
   connection-glyph: "#d9f7ef"
   warning: "#ffbf59"
   error: "#ff8179"
-  unknown: "#b7a4e5"
+  unknown: "#b2b2b2"
   button: "#2d2d2d"
   buttonHover: "#353535"
   buttonPressed: "#292929"
@@ -97,7 +97,7 @@ Blue marks primary action, focus and active selection. The four charcoal depths 
 
 - **Accent:** primary actions at rest, brighter on hover and deeper while pressed. Focus is a separate lighter blue and must remain visible on both neutral and selected controls.
 - **Selection:** muted navy with light text, shared by selected navigation, lists and tables. It is not the primary-action fill.
-- **Status:** success, warning, error and unknown each have a distinct label and semantic color. Unknown is not treated as failure or success.
+- **Status:** success, warning and error have distinct semantic colors. Unknown uses neutral secondary text and an explicit label; it is not treated as failure or success.
 - **Disabled:** muted text and surfaces without a blue or destructive accent. An unavailable file action must look unavailable over an image as well as over an empty canvas.
 
 Existing body, secondary and placeholder color pairs were checked for at least 4.5:1 contrast against the four primary surfaces. That check does not establish the contrast of every new overlay or future custom color; check those when added.
@@ -265,3 +265,9 @@ Keep the approved shell chrome and gallery gutters; deeper section hierarchy
 comes from headers/surfaces rather than extra external padding. These styles
 replace the earlier Generate group-box treatment. Windows visual acceptance
 remains pending; no runtime or native-DPI render is claimed.
+
+
+Unknown/informational notices use the neutral secondary palette, small body
+weight and explicit status wording. Do not tint entire LoRA names/weights or
+backend-availability hints purple. Success/warning/error colors remain reserved
+for their actual outcomes.

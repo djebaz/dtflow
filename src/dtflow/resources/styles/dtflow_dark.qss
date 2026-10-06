@@ -293,6 +293,8 @@ QLabel[state="error"] {
 }
 QLabel[state="unknown"] {
   color: ${color.unknown};
+  font-size: ${type.small};
+  font-weight: ${type.weightBody};
 }
 QProgressBar {
   background-color: #2a2a2a;
@@ -617,6 +619,8 @@ QFrame[role="galleryPanel"] {
 
 QLabel[role="unknown"] {
   color: ${color.unknown};
+  font-size: ${type.small};
+  font-weight: ${type.weightBody};
 }
 
 QPlainTextEdit#galleryPositivePrompt:focus {
@@ -1054,6 +1058,8 @@ QTextBrowser[textRole="code"] {
 }
 QWidget#GalleryDetailPage QLabel[role="unknown"] {
   color: ${color.unknown};
+  font-size: ${type.small};
+  font-weight: ${type.weightBody};
 }
 QLabel[textRole]:disabled,
 QWidget#GalleryDetailPage QLabel[textRole]:disabled {

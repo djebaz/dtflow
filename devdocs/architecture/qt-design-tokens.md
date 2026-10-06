@@ -80,3 +80,7 @@ with Designer header/content widgets. Shared header/border/item-surface tokens,
 resource-resolved SVG glyphs, information-label glyph rows and list/table states
 provide the same composition language in Connection, Generate, Queues and
 Images. Forms retain business-control names and the controller boundary.
+
+`color.unknown` now shares the neutral secondary gray. Unknown/availability
+text uses small regular typography and explicit wording rather than violet
+emphasis; compatibility remains Unknown until evidenced.

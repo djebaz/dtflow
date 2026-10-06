@@ -82,3 +82,8 @@ The header sample-count pill is removed; sample designation remains on the image
   metadata adopts matching glyph rows, reading emphasis and disclosure weights;
   lists/tables gain consistent item surfaces and separators. Business-control
   names and shell chrome remain. No tests added or run; Windows render pending.
+
+- Removes violet Unknown/informational styling across the application, using
+  neutral secondary gray and compact regular text for LoRA uncertainty and
+  availability hints. Status wording and success/warning/error semantics remain.
+  No tests added or run.
