@@ -783,8 +783,14 @@ class GenerationPage:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
-        entries = self._catalogue.compatible_loras(checkpoint, domain=self._catalogue_domain())
-        self.lora.set_candidates(entries, prune_selected=model is not None and model.base_model is not None)
+        entries = (
+            self._catalogue.compatible_loras(
+                checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
+            )
+            if model is not None and model.base_model is not None
+            else None
+        )
+        self.lora.set_candidates(entries, prune_selected=entries is not None)
 
     def _show_unclassified_models(self) -> None:
         unknown = self._catalogue.view().unclassified_checkpoints
