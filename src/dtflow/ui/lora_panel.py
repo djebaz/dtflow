@@ -119,7 +119,9 @@ class LoraAssetPanel:
 
     def set_inventory(self, snapshot) -> None:
         """Remember raw backend LoRAs until the catalogue controller supplies a compatible candidate set."""
-        self._inventory_candidates = [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"]
+        self._inventory_candidates = (
+            [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
+        )
         self._candidates = list(self._inventory_candidates)
 
     def set_candidates(self, entries, *, prune_selected: bool = False) -> None:
