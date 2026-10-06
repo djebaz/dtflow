@@ -66,7 +66,10 @@ def validate_supported(request: ResolvedGenerationRequest) -> None:
 
 
 def custom_lora_override(request: ResolvedGenerationRequest, version: str | None) -> bytes:
-    """Metadata for user-prepared cloud LoRAs, in the Echo ``override.loras`` JSON shape (``name``, ``file``, ``version``).
+    """Metadata for user-prepared cloud LoRAs, in the Echo ``override.loras`` JSON shape (``name``, ``file``, ``prefix``, ``version``).
+
+    The server decodes each entry as a Draw Things LoRA specification whose ``name``, ``file``, ``prefix`` and ``version``
+    are all required; an entry missing one is dropped without an error.
 
     The server cannot resolve a custom file from its name alone and appears to ignore it without an error, so each prepared
     LoRA is described explicitly. ``version`` is the selected base model's own Draw Things version string; with no known
@@ -76,7 +79,7 @@ def custom_lora_override(request: ResolvedGenerationRequest, version: str | None
     if not prepared or not version:
         return b""
     entries = [
-        {"name": item.identifier, "file": wire_lora_name(request, item.identifier), "version": version}
+        {"name": item.identifier, "file": wire_lora_name(request, item.identifier), "prefix": "", "version": version}
         for item in request.loras
         if item.identifier in prepared
     ]

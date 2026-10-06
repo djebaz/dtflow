@@ -103,7 +103,7 @@ def test_prepared_custom_loras_are_described_in_the_override_with_the_base_versi
     selections = (LoRASelection("mine_lora_f16.ckpt", 1.0), LoRASelection("other_lora_f16.ckpt", 1.0))
     sent = build_generation_message(request(loras=selections, prepared_assets=(asset,)), None, "z_image")
     assert json.loads(sent.message.override.loras) == [
-        {"name": "mine_lora_f16.ckpt", "file": "a" * 64, "version": "z_image"}
+        {"name": "mine_lora_f16.ckpt", "file": "a" * 64, "prefix": "", "version": "z_image"}
     ]
     assert not build_generation_message(
         request(loras=selections, prepared_assets=(asset,)), None
