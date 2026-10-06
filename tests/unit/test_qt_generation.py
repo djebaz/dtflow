@@ -106,7 +106,7 @@ def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: page.generationProgressBar.format() == "fake", timeout=5000)  # held at the gate
+    qtbot.waitUntil(lambda: page.generationProgressBar.format().startswith("fake"), timeout=5000)  # held at the gate
     png = fixture_png(64, 64, 1)
     preview = ImageArtifact("p", Designation.PREVIEW, "image/png", png, 64, 64)
     window.generation._relay(BackendEvent("r", 99, "preview", "t", artifact=preview))
@@ -125,6 +125,7 @@ def test_unknown_outcome_is_not_presented_as_a_plain_failure(window, qtbot, fake
     qtbot.waitUntil(settled(page), timeout=5000)
     text = page.generationStatusLabel.text()
     assert text.startswith("Outcome unknown") and "not replayed" in text
+    assert page.generationProgressBar.maximum() > 0  # a settled failure never leaves the busy animation running
     assert page.resultList.count() == 0
 
 
@@ -133,11 +134,13 @@ def test_local_stop_reports_recorded_evidence_not_remote_cancellation(window, qt
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: page.generationProgressBar.format() == "fake", timeout=5000)  # submission possible
+    qtbot.waitUntil(lambda: page.generationProgressBar.format().startswith("fake"), timeout=5000)  # submission possible
     page.cancelButton.click()
     qtbot.waitUntil(settled(page), timeout=5000)
     text = page.generationStatusLabel.text()
     assert text.startswith("Local stop requested") and "Outcome unknown" in text
+    bar = page.generationProgressBar
+    assert bar.format().startswith("Stopped locally") and bar.maximum() == 100  # determinate, no busy animation
     assert "cancelled on" not in text.lower() and "Remote cancellation is not confirmed" in text
 
 
