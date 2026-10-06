@@ -158,29 +158,37 @@ QDoubleSpinBox:disabled {
   border-color: ${color.disabledBorder};
   color: ${color.disabled};
 }
-/* Selects read as selects: a chevron pinned to the right edge, no divider, hover/open brighten it. */
+/* Selects read as selects: a separated button segment with a chevron, unlike plain text inputs. */
 QComboBox::drop-down {
   subcontrol-origin: padding;
-  subcontrol-position: center right;
-  width: 24px;
+  subcontrol-position: top right;
+  width: 26px;
   margin: 0;
   border: 0;
-  background: transparent;
+  border-left: 1px solid ${color.buttonBorder};
+  border-top-right-radius: ${size.inputRadius};
+  border-bottom-right-radius: ${size.inputRadius};
+  background-color: ${color.button};
 }
 QComboBox::down-arrow {
   image: url(../images/controls/chevron-down.svg);
   width: 12px;
   height: 12px;
 }
-QComboBox:hover::down-arrow,
-QComboBox:on::down-arrow {
-  image: url(../images/controls/chevron-down-hover.svg);
+QComboBox:hover::drop-down {
+  background-color: ${color.buttonHover};
+  border-left-color: ${color.buttonBorderHover};
 }
 QComboBox:on {
   border-color: ${color.focus};
 }
-QComboBox:disabled::down-arrow {
-  image: url(../images/controls/chevron-down-disabled.svg);
+QComboBox:on::drop-down {
+  background-color: ${color.buttonPressed};
+  border-left-color: ${color.focus};
+}
+QComboBox:disabled::drop-down {
+  background-color: ${color.surface};
+  border-left-color: ${color.disabledBorder};
 }
 /* Open the list as a dropdown aligned under the select, not a popup overlapping/offset past its left edge. */
 QComboBox {
