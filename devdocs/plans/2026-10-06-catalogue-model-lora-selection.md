@@ -298,7 +298,7 @@ Unclassified checkpoints do not automatically enter a base-model family because 
 - do not offer LoRAs as known-compatible solely from filename similarity; existing preflight may still report its independent evidence;
 - persist the exact checkpoint per provider so it can be restored if it remains available.
 
-The curated domain → family → checkpoint selectors and the raw escape hatch therefore coexist: filters govern classified discovery, while explicit raw selection keeps newly appeared provider artifacts usable without pretending they are classified.
+The curated domain → family → checkpoint selectors and the raw escape hatch therefore coexist: filters govern classified discovery, while explicit raw selection keeps newly appeared provider artifacts usable without pretending they are classified. The normal checkpoint and LoRA controls are selection-first searchable choosers; search is case-insensitive and matches any substring of the full artifact name. Raw identifiers live behind an explicit custom-identifier action rather than making the normal selector a free-form input.
 
 ## 10. Selection dependency and invalidation
 
