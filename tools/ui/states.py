@@ -53,6 +53,8 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from dtflow.ui.brand import connection_icon  # noqa: E402
+from dtflow.ui.gallery_detail_preview import apply_gallery_button_icons  # noqa: E402
+from dtflow.ui.main_window import load_ui  # noqa: E402
 from dtflow.ui.theme import (  # noqa: E402
     apply_theme,
     load_tokens,
@@ -130,13 +132,19 @@ def grab_widget(w, pad=8):
 
 def state_cell(make, state, host_name=None, size=None):
     """Create a fresh widget in a fresh host, force `state`, return a pixmap."""
-    host = Host(host_name)
-    lay = QVBoxLayout(host)
-    lay.setContentsMargins(8, 8, 8, 8)
-    w = make()
-    lay.addWidget(w, 0, Qt.AlignmentFlag.AlignLeft)
-    host.setMinimumSize(0, 0)
-    host.resize(size if size else host.sizeHint())
+    specimen = make()
+    mounted = isinstance(specimen, tuple)
+    if mounted:
+        # Retain real ancestry, layout constraints and scoped typography selectors.
+        host, w = specimen
+    else:
+        host = Host(host_name)
+        lay = QVBoxLayout(host)
+        lay.setContentsMargins(8, 8, 8, 8)
+        w = specimen
+        lay.addWidget(w, 0, Qt.AlignmentFlag.AlignLeft)
+        host.setMinimumSize(0, 0)
+        host.resize(size if size else host.sizeHint())
     host.show()
     host.activateWindow()
     QTest.qWaitForWindowActive(host, 500)
@@ -187,7 +195,7 @@ def state_cell(make, state, host_name=None, size=None):
         settle()
     elif state.startswith("custom:"):
         pass
-    pm = grab_widget(host, 0)
+    pm = grab_widget(w, 8) if mounted else grab_widget(host, 0)
     if state == "pressed" or state == "pressed+checked":
         QTest.mouseRelease(w, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
     host.hide()
@@ -287,41 +295,57 @@ def gallery_buttons():
     GN = "GalleryDetailPage"
     rows = []
 
-    def mode():
-        b = QPushButton("Grid")
-        b.setCheckable(True)
-        return prop(b, role="galleryMode")
+    def canonical(name):
+        def make():
+            page = load_ui(ROOT / "src/dtflow/ui/forms/gallery_detail_page.ui")
+            apply_gallery_button_icons(page)
+            button = page.findChild(QPushButton, name)
+            if name not in ("galleryPreviousButton", "galleryNextButton") and button.icon().isNull():
+                raise ValueError(f"Missing icon for {name}")
+            button.setEnabled(True)
+            if button.isCheckable():
+                button.setChecked(False)
+            page.findChild(QWidget, "galleryBrandSlot").hide()
+            page.findChild(QWidget, "galleryNavigationSlot").hide()
+            page.findChild(QWidget, "galleryAdditionalScroll").hide()
+            page.findChild(QWidget, "galleryRawMetadata").hide()
+            page.resize(1280, 900)
+            return page, button
 
-    rows.append(
-        row(
-            "Gallery mode (role=galleryMode)",
-            mode,
+        return make
+
+    for label, name, states in [
+        (
+            "Gallery mode Grid",
+            "galleryGridButton",
             ["rest", "hover", "pressed", "focus", "checked", "hover+checked", "disabled"],
-            GN,
-        )
-    )
-
-    def disc():
-        b = QPushButton("Additional details")
-        b.setCheckable(True)
-        return prop(b, role="galleryDisclosure")
-
-    rows.append(
-        row(
-            "Gallery disclosure (role=galleryDisclosure)",
-            disc,
+        ),
+        (
+            "Gallery mode List",
+            "galleryListButton",
+            ["rest", "hover", "pressed", "focus", "checked", "hover+checked", "disabled"],
+        ),
+        (
+            "Gallery mode Detail",
+            "galleryDetailButton",
+            ["rest", "hover", "pressed", "focus", "checked", "hover+checked", "disabled"],
+        ),
+        (
+            "Gallery disclosure Additional details",
+            "galleryAdditionalButton",
             ["rest", "hover", "pressed", "focus", "checked", "hover+checked", "pressed+checked", "disabled"],
-            GN,
-        )
-    )
-
-    def rnd():
-        b = QPushButton("‹")
-        b.setObjectName("galleryPreviousButton")
-        b.setFixedSize(44, 44)
-        return b
-
-    rows.append(row("Round prev (#galleryPreviousButton)", rnd, STATES, GN))
+        ),
+        (
+            "Gallery disclosure Raw metadata JSON",
+            "galleryRawButton",
+            ["rest", "hover", "pressed", "focus", "checked", "hover+checked", "pressed+checked", "disabled"],
+        ),
+        ("Gallery refresh icon-only", "galleryRefreshButton", STATES),
+        ("Gallery fullscreen icon-only", "galleryFullscreenButton", STATES),
+        ("Round prev (#galleryPreviousButton)", "galleryPreviousButton", STATES),
+        ("Round next (#galleryNextButton)", "galleryNextButton", STATES),
+    ]:
+        rows.append(row(label, canonical(name), states, GN))
 
     def thumb():
         b = QPushButton()

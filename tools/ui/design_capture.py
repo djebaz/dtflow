@@ -163,6 +163,16 @@ def ready(page):
         raise ValueError(f"Export bundle errors: {failures}")
 
 
+def images_ready(page):
+    """Wait after state changes too: screenshots must not race newly mounted icons."""
+    page.wait_for_function("() => [...document.images].every(image => image.complete)")
+    broken = page.evaluate("() => [...document.images].filter(i => !i.naturalWidth).map(i => i.src)")
+    if broken:
+        raise ValueError(f"Broken image assets: {broken}")
+    page.evaluate("() => Promise.all([...document.images].map(image => image.decode()))")
+    return page.evaluate("() => document.images.length")
+
+
 def manifest(args, data):
     data["blocked_request_count"] = len(data.get("blocked_requests", []))
     data["blocked_requests"] = list(dict.fromkeys(data.get("blocked_requests", [])))

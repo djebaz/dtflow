@@ -71,3 +71,7 @@ uv run python tools/ui/compare_gallery.py --qt tmp/qt-renders --design tmp/ds-re
 ```
 
 In the gallery, choose Specimen for one matching component/state. This control is enabled only for identical Qt/web state contracts; it clips the original PNGs with CSS at the shared scale, without rewriting images.
+
+### Icon coverage and image readiness
+
+The gallery state sheet uses canonical Qt-form buttons and the same icon initializer as the application. Buttons remain mounted in the canonical page while their own pixels are captured, preserving ancestor-scoped typography and layout constraints. It covers Grid/List/Detail, Additional details/Raw metadata JSON, Refresh/Fullscreen, both round-arrow directions and thumbnail states. Web recipes use the export's Icon component with its kit icon sizes and local asset paths; native size and disabled-state differences remain visible. Screens and states wait for all mounted images to load and decode after interactions, fail broken assets, and record decoded-image counts. Expanded Detail's metadata icons are therefore captured only once ready. Round buttons use a nonzero-height positioned wrapper, and component bounds must fit inside the screenshot host.

@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from design_capture import capture_session, manifest, parser, ready, vendor_sources
+from design_capture import capture_session, images_ready, manifest, parser, ready, vendor_sources
 from state_layout import compose
 
 BASE = ["rest", "hover", "pressed", "focus", "disabled"]
@@ -26,6 +26,11 @@ def specs():
 
     def button(text, variant):
         return f'e(D.Button,{{...p,variant:"{variant}",style:{{minWidth:110}}}},"{text}")'
+
+    def icon_button(text, variant, icon, size):
+        return (
+            f'e(D.Button,{{...p,variant:"{variant}"}},e(D.Icon,{{name:"{icon}",size:{size},base:iconBase}}),"{text}")'
+        )
 
     rows = {
         "buttons": (
@@ -51,14 +56,38 @@ def specs():
         "gallery": (
             "32-gallery-buttons",
             [
-                row("Gallery mode", button("Grid", "mode"), CHECK),
-                row("Gallery disclosure", button("Additional details", "disclosure"), CHECK),
+                row("Gallery mode Grid", icon_button("Grid", "mode", "grid", 14), CHECK),
+                row("Gallery mode List", icon_button("List", "mode", "list", 14), CHECK),
+                row("Gallery mode Detail", icon_button("Detail", "mode", "image", 14), CHECK),
+                row(
+                    "Gallery disclosure Additional details",
+                    icon_button("Additional details", "disclosure", "document", 12),
+                    CHECK,
+                ),
+                row(
+                    "Gallery disclosure Raw metadata JSON",
+                    icon_button("Raw metadata JSON", "disclosure", "json", 12),
+                    CHECK,
+                ),
+                row(
+                    "Gallery refresh icon-only",
+                    'e(D.Button,{...p,"aria-label":"Refresh",style:{width:44,height:34,background:"var(--color-surface)",borderColor:"var(--color-border)"}},e(D.Icon,{name:"refresh",size:20,base:iconBase}))',
+                ),
+                row(
+                    "Gallery fullscreen icon-only",
+                    'e("button",{...p,className:"ghost","aria-label":"Fullscreen"},e(D.Icon,{name:"fullscreen",size:16,base:iconBase}))',
+                ),
                 row(
                     "Round prev",
-                    'e(D.RoundButton,{direction:"prev",...p})',
+                    'e("div",{style:{position:"relative",width:62,height:42,marginLeft:-10}},e(D.RoundButton,{direction:"prev",...p}))',
                     BASE,
                     width=60,
-                    unsupported={"disabled": "RoundButton has no disabled prop"},
+                ),
+                row(
+                    "Round next",
+                    'e("div",{style:{position:"relative",width:62,height:42,marginLeft:-10}},e(D.RoundButton,{direction:"next",...p}))',
+                    BASE,
+                    width=60,
                 ),
                 row(
                     "Filmstrip thumbnail",
@@ -238,9 +267,10 @@ def html(base, vendors, expression, state, width):
     # The host fixes specimen bounds, not the component's styling/state appearance.
     return f'''<!doctype html><link rel="stylesheet" href="{base}/styles.css">
 {scripts}<script src="{base}/_ds_bundle.js"></script>
+<link rel="stylesheet" href="{base}/ui_kits/images/images.css">
 <body style="margin:0;overflow:hidden"><div id="cell" style="display:inline-block;padding:8px;position:relative;background:#252525"><div id="specimen" style="width:{width}"></div></div>
 <script>const D=window[Object.keys(window).find(k=>k.startsWith('DTFlowDesignSystem_'))];
-const e=React.createElement,p={json.dumps(props)},state={json.dumps(state)};
+const e=React.createElement,p={json.dumps(props)},state={json.dumps(state)},iconBase="{base}/assets/icons/";
 ReactDOM.createRoot(document.getElementById('specimen')).render({expression});</script>'''
 
 
@@ -314,7 +344,7 @@ def aligned_specs(name, definition):
                 state = "rest"
             if name == "31-connection-button":
                 recipe["width"] = "max-content"
-            if name == "32-gallery-buttons" and i < 3:
+            if name == "32-gallery-buttons" and i < len(recipes) - 1:
                 recipe["width"] = "max-content"
             if state not in recipe["states"]:
                 reason = reason or "No matching exported capture recipe for this state"
@@ -385,6 +415,15 @@ def main():
                         if state.startswith("pressed"):
                             page.mouse.down()
                         observed = observe(target)
+                        cell_bounds = page.locator("#cell").bounding_box()
+                        bounds = observed["bounds"]
+                        if (
+                            bounds["x"] < cell_bounds["x"]
+                            or bounds["y"] < cell_bounds["y"]
+                            or bounds["x"] + bounds["width"] > cell_bounds["x"] + cell_bounds["width"]
+                            or bounds["y"] + bounds["height"] > cell_bounds["y"] + cell_bounds["height"]
+                        ):
+                            raise ValueError("Component extends outside capture host; screenshot would be clipped")
                         for requested, actual in [
                             ("focus", observed["focus"]),
                             ("pressed", observed["active"]),
@@ -393,11 +432,12 @@ def main():
                         ]:
                             if state.startswith(requested) and not actual:
                                 raise ValueError(f"Requested {requested} was not reached")
+                        image_count = images_ready(page)
                         data = page.locator("#cell").screenshot(animations="disabled")
                         from PySide6.QtGui import QImage
 
                         rows[row_index][label] = QImage.fromData(data)
-                        report["cells"].append({**identity, "observed": observed})
+                        report["cells"].append({**identity, "observed": observed, "decoded_images": image_count})
                     except Exception as error:
                         report["failures"].append({**identity, "error": str(error)})
                         rows[row_index][label] = "Capture failed: " + str(error)

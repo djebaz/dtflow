@@ -76,3 +76,21 @@ def test_shared_state_frames_preserve_slots_scale_and_reject_overflow(tmp_path, 
     cell.setDevicePixelRatio(2)
     with pytest.raises(ValueError, match="DPR"):
         layout.compose(web, definition, [{"rest": cell}])
+
+
+def test_canonical_gallery_buttons_share_application_icon_configuration(qtbot):
+    from PySide6.QtCore import QSize
+    from PySide6.QtWidgets import QPushButton
+
+    from dtflow.ui.gallery_detail_preview import apply_gallery_button_icons
+    from dtflow.ui.main_window import load_ui
+
+    page = load_ui(Path(__file__).parents[1] / "src/dtflow/ui/forms/gallery_detail_page.ui")
+    qtbot.addWidget(page)
+    apply_gallery_button_icons(page)
+    for name in ["Grid", "List", "Detail", "Additional", "Raw", "Refresh", "Fullscreen"]:
+        button = page.findChild(QPushButton, f"gallery{name}Button")
+        assert not button.icon().isNull()
+        assert button.iconSize() == QSize(18, 18)
+        if name in ["Refresh", "Fullscreen"]:
+            assert not button.text()

@@ -1,6 +1,6 @@
 # Unreleased
 
-- Development render comparison: regenerated Qt/web state sheets share a DPR-1 capture contract, fixed frames, specimen inset, state ordering and common 2x compositor; unsupported web slots remain labelled. The offline HTML gallery uses a shared zoom scale and linked scrolling. This is comparison tooling, not visual-parity acceptance.
+- Development render comparison: regenerated Qt/web state sheets share a DPR-1 capture contract, fixed frames, specimen inset, state ordering and common 2x compositor; unsupported web slots remain labelled. The offline HTML gallery uses a shared zoom scale and linked scrolling. Icon-button states reuse canonical Qt configuration and real web icons. Web captures wait for image decode after interactions, and out-of-flow specimens fail if clipped. This is comparison tooling, not visual-parity acceptance.
 
 ## Highlights
 

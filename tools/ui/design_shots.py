@@ -1,6 +1,6 @@
 """Capture exported screen kits without changing their fixtures or appearance."""
 
-from design_capture import capture_session, manifest, parser, ready
+from design_capture import capture_session, images_ready, manifest, parser, ready
 
 
 def main():
@@ -23,15 +23,23 @@ def main():
                     page.set_viewport_size({"width": width, "height": height})
                     page.goto(f"{base}/ui_kits/{kit}/index.html")
                     ready(page)
-                    page.locator("#root").wait_for(state="visible")
+                    page.locator("#root > *").first.wait_for(state="visible")
                     if mode:
                         page.get_by_role("button", name=mode, exact=True).click()
                     if name.endswith("details"):
                         page.get_by_role("button", name="Additional details", exact=True).click()
+                        page.get_by_role("button", name="Additional details", exact=True, pressed=True).wait_for()
                     page.mouse.move(width - 1, height - 1)
+                    image_count = images_ready(page)
                     page.screenshot(path=str(args.out / f"{name}.png"), animations="disabled")
                     report["captures"].append(
-                        {"name": name, "viewport": [width, height], "fixture": "kit default", "mode": mode}
+                        {
+                            "name": name,
+                            "viewport": [width, height],
+                            "fixture": "kit default",
+                            "mode": mode,
+                            "decoded_images": image_count,
+                        }
                     )
                 except Exception as error:
                     report["failures"].append({"name": name, "error": str(error)})

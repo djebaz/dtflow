@@ -20,3 +20,11 @@ Use one shared scale in every view, including Fit pair. Keep a common top-left c
 Regenerate Qt states first and export a versioned contract containing sheet rows, state order, fixed capture frames and DPR 1. The web renderer consumes that contract, uses the same sheet compositor and reserves unsupported slots instead of shifting columns. Both keep native component dimensions, position specimens at an 8 px inset, and enlarge cells exactly 2x. Fixed frames must reject overflow rather than crop or resize silently. Record actual Qt DPI/DPR and retain the original ZIP separately. Identical harness geometry is not proof of matching fixtures, component APIs, fonts or visuals.
 
 The gallery exposes per-component/state regions only when both renderers have identical contracts. It displays those regions with CSS clipping of original PNG bytes at one shared scale, not independently resized images. Whole-sheet review remains available.
+
+## Round overlay capture correction
+
+RoundButton uses absolute positioning and must be hosted in a positioned, nonzero-height overlay wrapper. Position the specimen at the shared 8 px inset without altering the exported button CSS or its native 42 px diameter. Its forwarded DOM props support disabled, so capture that state rather than reporting it unsupported. Verify observed component bounds are contained by the screenshot host before capturing, preventing silent clipping from other out-of-flow specimens.
+
+## Icon button capture coverage
+
+Capture Grid, List, Detail, Additional details, Raw metadata JSON, Refresh and Fullscreen using the canonical Qt form and gallery presentation initializer, plus both round directions. Retain each button in its canonical page during capture so scoped ancestor selectors and Designer layout constraints are preserved; capture the widget itself with the common inset. Web specimens use the export's Icon component and the same icon names/sizes/composition as its Images kit, with an explicit local asset base. Wait for image load/decode after the final state transition before screenshots, and fail broken image assets. Verify expanded Detail icons without injecting icons or changing the export. Preserve native renderer sizing and state differences.
