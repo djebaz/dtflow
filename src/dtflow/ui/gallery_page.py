@@ -129,6 +129,7 @@ class GalleryPage(QObject):
         self.state_dir = Path(state_dir)
         self._active = False
         self._loading = False
+        self._pending_refresh: tuple[bool, bool] | None = None
         self._restoring = True
         self._query_generation = 0
         self._image_generation = 0
@@ -324,8 +325,12 @@ class GalleryPage(QObject):
         self.auto_button.setCheckable(True)
         self.auto_button.toggled.connect(self._auto_refresh_changed)
 
-        self._widget("galleryPreviousButton", QPushButton).clicked.connect(lambda: self.step(-1))
-        self._widget("galleryNextButton", QPushButton).clicked.connect(lambda: self.step(1))
+        self.previous_button = self._widget("galleryPreviousButton", QPushButton)
+        self.next_button = self._widget("galleryNextButton", QPushButton)
+        self.previous_button.setEnabled(False)
+        self.next_button.setEnabled(False)
+        self.previous_button.clicked.connect(lambda: self.step(-1))
+        self.next_button.clicked.connect(lambda: self.step(1))
         self.copy_button = self._widget("galleryCopyPathButton", QPushButton)
         self.folder_button = self._widget("galleryOpenFolderButton", QPushButton)
         self.external_button = self._widget("galleryExternalViewerButton", QPushButton)
@@ -432,6 +437,10 @@ class GalleryPage(QObject):
 
     def refresh(self, *, reset: bool = False, preserve: bool = True) -> None:
         if self._loading:
+            if self._pending_refresh is not None:
+                reset = reset or self._pending_refresh[0]
+                preserve = preserve and self._pending_refresh[1]
+            self._pending_refresh = (reset, preserve)
             return
         self._capture_scroll()
         if reset:
@@ -473,6 +482,11 @@ class GalleryPage(QObject):
             return
         self._loading = False
         self.refresh_button.setEnabled(True)
+        if self._pending_refresh is not None:
+            pending = self._pending_refresh
+            self._pending_refresh = None
+            self.refresh(reset=pending[0], preserve=pending[1])
+            return
         if error is not None:
             log.warning("gallery refresh failed reason=%s", type(error).__name__)
             self.refresh_button.setToolTip(f"Saved outputs could not be refreshed: {error}")
@@ -696,7 +710,24 @@ class GalleryPage(QObject):
             if index < len(self._film_buttons):
                 self._film_buttons[index].setChecked(record.identity == identity)
         self._present_item(item)
+        self._update_navigation()
         self._schedule_save()
+
+    def _update_navigation(self) -> None:
+        if not self.items or not self.selected_id:
+            self.previous_button.setEnabled(False)
+            self.next_button.setEnabled(False)
+            return
+        try:
+            index = next(i for i, item in enumerate(self.items) if item.identity == self.selected_id)
+        except StopIteration:
+            self.previous_button.setEnabled(False)
+            self.next_button.setEnabled(False)
+            return
+        self.previous_button.setEnabled(index > 0 or self.offset > 0)
+        self.next_button.setEnabled(
+            index + 1 < len(self.items) or self.offset + len(self.items) < self.total
+        )
 
     def _present_item(self, item: GalleryItem) -> None:
         request = self._request(item)
@@ -1026,6 +1057,7 @@ class GalleryPage(QObject):
         self.copy_button.setEnabled(False)
         self.folder_button.setEnabled(False)
         self.external_button.setEnabled(False)
+        self._update_navigation()
 
     def _schedule_save(self) -> None:
         if self._restoring:
