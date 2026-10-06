@@ -38,6 +38,7 @@
 
 ## Fixed
 
+- Generate: the progress bar is now a determinate 0-100% bar that only grows (preparing, then real sampling steps from the provider, then saved) and never shows the indeterminate busy animation; after Stop or a failure it stays where it stopped, labelled "Stopped locally" or "Failed". Percentages beyond sampling steps are stage floors, not server percentages.
 - PR #37 keeps Auto-refresh's mint On colors on hover and after mouse clicks by overriding generic gallery hover/focus rules. It shares Connection's keyboard-only dashed focus cue instead of leaving a blue mouse-focus outline until another control is clicked. Labels, dimensions and refresh semantics are unchanged; new visual acceptance is deferred to the owner.
 
 - PR #37 makes Images auto/manual refresh incremental: retain Grid cards, List cells/icons and Detail filmstrip entries by output identity through insertions/removals/reordering; update changed metadata in place. Only new images or changed path/size/availability require thumbnail decoding. Retained in-flight decodes and the selected Detail image/zoom/pan survive other outputs changing; unchanged pages preserve exact scroll/focus. Counts/navigation and changed filter choices still update. Tests and smoke tests are deferred to the owner under fast-implement.
