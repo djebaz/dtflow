@@ -387,6 +387,8 @@ class QueuePage:
 
         summary = summarize(view)
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
+        if len(running_items) == 1:
+            detail += f" Item {running_items[0][:8]}."
         if completed is not None and total is not None:
             detail += f" Step {completed}/{total}."
         self._activity.present_run(
