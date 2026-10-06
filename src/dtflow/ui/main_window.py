@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
     QComboBox,
+    QFileDialog,
     QLineEdit,
     QMainWindow,
     QMessageBox,
@@ -24,6 +25,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
 from dtflow.persistence.last_session import load_last_session, save_last_session
+from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
@@ -214,6 +216,8 @@ class MainWindow:
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
+        form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
+        form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
         form.aboutAction.triggered.connect(self.about)
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
         form.endpointEdit.textChanged.connect(self._selection_changed)
@@ -238,6 +242,7 @@ class MainWindow:
         self.generation.sync_backend()
         self.generation.request_cached()
         self.refresh_credentials()
+        self.refresh_custom_loras()
         self._workspace_changed(0)
         self._responsive_workspace()
 
@@ -409,6 +414,52 @@ class MainWindow:
         self.form.keyEdit.clear()
         # Remove is offered only when there may be a saved key to remove (the environment hides that answer).
         self.form.removeKeyButton.setEnabled(status["saved"] in ("present", "not consulted"))
+
+    def refresh_custom_loras(self) -> None:
+        count = len(Catalogue(self.state_dir).user_loras())
+        self.form.customLorasStatusLabel.setText(
+            f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
+            if count
+            else "No custom LoRA definitions imported."
+        )
+        self.form.clearCustomLorasButton.setEnabled(count > 0)
+
+    def import_custom_loras(self) -> None:
+        chosen, _ = QFileDialog.getOpenFileName(
+            self.form, "Import custom LoRAs", str(self.state_dir), "JSON (*.json)"
+        )
+        if not chosen:
+            return
+        try:
+            count = import_user_loras(Path(chosen), self.state_dir)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self.form, "Custom LoRAs not imported", str(exc))
+            return
+        self.refresh_custom_loras()
+        self.generation.reload_custom_loras()
+        self.form.statusBar().showMessage(
+            f"Imported {count} custom LoRA definition" + ("" if count == 1 else "s") + ".",
+            5000,
+        )
+
+    def clear_custom_loras(self) -> None:
+        catalogue = Catalogue(self.state_dir)
+        if not catalogue.user_loras_path.exists():
+            self.refresh_custom_loras()
+            return
+        if not self.confirm(
+            self.form,
+            "Clear custom LoRAs",
+            "Remove the imported custom LoRA definitions? Bundled DTFlow catalogue data is not affected.",
+        ):
+            return
+        try:
+            catalogue.user_loras_path.unlink()
+        except OSError as exc:
+            QMessageBox.warning(self.form, "Custom LoRAs not cleared", type(exc).__name__)
+            return
+        self.refresh_custom_loras()
+        self.generation.reload_custom_loras()
 
     def check(self) -> None:
         if self._busy:
