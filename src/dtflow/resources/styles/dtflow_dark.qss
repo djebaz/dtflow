@@ -158,9 +158,59 @@ QDoubleSpinBox:disabled {
   border-color: ${color.disabledBorder};
   color: ${color.disabled};
 }
+/* Selects read as selects: a separated button segment with a chevron, unlike plain text inputs. */
 QComboBox::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: center right;
+  width: 26px;
   border: 0;
-  width: ${size.controlContent};
+  border-left: 1px solid ${color.buttonBorder};
+  border-top-right-radius: ${size.inputRadius};
+  border-bottom-right-radius: ${size.inputRadius};
+  background-color: ${color.button};
+}
+QComboBox::down-arrow {
+  image: url(../images/controls/chevron-down.svg);
+  width: 12px;
+  height: 12px;
+}
+QComboBox:hover::drop-down {
+  background-color: ${color.buttonHover};
+  border-left-color: ${color.buttonBorderHover};
+}
+QComboBox:hover::down-arrow,
+QComboBox:on::down-arrow {
+  image: url(../images/controls/chevron-down-hover.svg);
+}
+QComboBox:on {
+  border-color: ${color.focus};
+}
+QComboBox:on::drop-down {
+  background-color: ${color.buttonPressed};
+  border-left-color: ${color.focus};
+}
+QComboBox:disabled::drop-down {
+  background-color: ${color.surface};
+  border-left-color: ${color.disabledBorder};
+}
+QComboBox:disabled::down-arrow {
+  image: url(../images/controls/chevron-down-disabled.svg);
+}
+QComboBox QAbstractItemView {
+  background-color: ${color.input};
+  border: 1px solid ${color.focus};
+  color: ${color.inputText};
+  outline: 0;
+  selection-background-color: ${color.selection};
+  selection-color: ${color.selectionText};
+}
+QComboBox QAbstractItemView::item {
+  min-height: ${size.controlContent};
+  padding: 2px 8px;
+}
+QComboBox QAbstractItemView::item:hover {
+  background-color: ${color.selectionHover};
+  color: ${color.selectionText};
 }
 QPushButton {
   font-weight: ${type.weightLabel};
@@ -785,9 +835,6 @@ QWidget#GalleryDetailPage QComboBox:disabled {
   background: ${color.surface};
   border-color: ${color.disabledBorder};
 }
-QWidget#GalleryDetailPage QComboBox::drop-down {
-  width: 24px;
-}
 /* Auto-refresh reuses Connection colors, without changing its labelled geometry. */
 QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton {
   background: ${color.input};
@@ -947,10 +994,13 @@ QLabel[role="galleryOverlay"] {
 QWidget#GalleryDetailPage QComboBox {
   min-width: 0;
 }
-QWidget#GalleryDetailPage QComboBox::down-arrow {
-  image: url(../images/gallery/chevron.svg);
-  width: 12px;
-  height: 12px;
+/* The compact toolbar select keeps a bare chevron, without the segment. */
+QFrame#galleryImageToolbar QComboBox::drop-down,
+QFrame#galleryImageToolbar QComboBox:hover::drop-down,
+QFrame#galleryImageToolbar QComboBox:on::drop-down {
+  width: 16px;
+  border: 0;
+  background: transparent;
 }
 
 QWidget#galleryBrandSlot,

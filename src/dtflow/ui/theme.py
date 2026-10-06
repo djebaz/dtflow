@@ -34,7 +34,7 @@ def load_theme() -> str:
 
     resolved = re.sub(r"\$\{([\w.]+)\}", token, source)
     return re.sub(
-        r"url\((\.\./images/gallery/[^)]+)\)",
+        r"url\((\.\./images/(?:gallery|controls)/[^)]+)\)",
         lambda match: f'url("{(THEME_FILE.parent / match.group(1)).resolve().as_posix()}")',
         resolved,
     )
