@@ -2818,7 +2818,7 @@ No generation or saved output</string>
                    </widget>
                   </item>
                  </layout>
-                </item>                </item>
+                </item>
                </layout>
               </widget>
               <property name="visible">
