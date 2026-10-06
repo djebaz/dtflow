@@ -548,9 +548,9 @@ class MainWindow:
             "This creates a fresh request and may consume provider generation credits. The original output is preserved.",
         ):
             return
-        self.generation.reuse_saved_request(request, identity)
         self._show_generation()
-        self.generation.generate()
+        if not self.generation.regenerate_saved_request(request, identity):
+            self.form.statusBar().showMessage("Regeneration was not submitted; Generate was left unchanged.", 5000)
 
     def refresh_custom_loras(self) -> None:
         count = len(Catalogue(self.state_dir).user_loras())
