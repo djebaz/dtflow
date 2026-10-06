@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>DTFlow render comparison</title>
+<style>
+:root{color-scheme:dark;font:14px "Segoe UI",sans-serif;color:#e6e6e6;background:#1f1f1f}
+*{box-sizing:border-box}body{margin:0;display:flex;flex-direction:column;height:100vh}
+header{padding:12px 16px;border-bottom:1px solid #3a3a3a}h1{font-size:18px;margin:0 0 10px;font-weight:600}
+.tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}label{display:flex;align-items:center;gap:6px}
+input,select,button{font:inherit;color:inherit;background:#252525;border:1px solid #424242;border-radius:5px;padding:5px 8px}button{cursor:pointer}button:hover:not(:disabled){background:#353535}button:disabled{color:#777;cursor:default}
+:focus-visible{outline:2px solid #60b6f6;outline-offset:2px}input[type=range]{accent-color:#0078d4;width:110px}input[type=checkbox]{accent-color:#0078d4}#search{width:190px}#summary{color:#b2b2b2;margin:10px 0 0;font-size:12px}
+details{margin-top:8px;font-size:12px}summary{cursor:pointer}pre{white-space:pre-wrap;overflow:auto;max-height:180px;font:12px Consolas,monospace;color:#b2b2b2}
+.workspace{display:grid;grid-template-columns:220px minmax(0,1fr);flex:1;min-height:0}nav{overflow:auto;border-right:1px solid #3a3a3a;padding:8px}#files{display:flex;flex-direction:column;gap:4px}#files button{text-align:left;overflow-wrap:anywhere;background:transparent;border-color:transparent}#files button[aria-current=true]{background:#173852;color:#d5ecff;border-color:#285d84}#files small{display:block;color:#b2b2b2;font-size:11px;margin-top:3px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}.caption{padding:10px 12px;border-bottom:1px solid #3a3a3a;display:flex;gap:12px;align-items:center;flex-wrap:wrap}.caption strong{overflow-wrap:anywhere}#notice{color:#ffbf59;font-size:12px}
+.panes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));flex:1;min-height:0}.pane{display:flex;flex-direction:column;min-width:0;min-height:0}.pane+ .pane{border-left:1px solid #3a3a3a}.pane h2{font-size:13px;font-weight:600;margin:0;padding:10px 12px;background:#252525;display:flex;justify-content:space-between;gap:8px}.dimensions{font-weight:400;color:#b2b2b2;font-variant-numeric:tabular-nums}.viewport{overflow:auto;flex:1;min-height:0;background:#151515;padding:8px}.viewport{scrollbar-gutter:stable}.stage{position:relative}.viewport img{position:absolute;display:block;height:auto;max-width:none}.alignment{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}.alignment input{width:72px}.alignment fieldset{display:flex;gap:8px;border:0;margin:0;padding:0;align-items:center}.alignment legend{float:left;margin-right:8px;padding:5px 0;color:#b2b2b2}.missing{padding:32px 12px;text-align:center;color:#b2b2b2}.help{padding:8px 12px;font-size:12px;color:#b2b2b2;border-top:1px solid #3a3a3a}*{scrollbar-color:#4a4a4a #1f1f1f;scrollbar-width:thin}::selection{background:#173852;color:#d5ecff}
+@media(max-width:850px){.workspace{grid-template-columns:160px minmax(0,1fr)}.panes{grid-template-columns:1fr;grid-template-rows:1fr 1fr}.pane+.pane{border-left:0;border-top:1px solid #3a3a3a}}
+</style>
+</head>
+<body>
+<header>
+<h1>DTFlow render comparison</h1>
+<div class="tools">
+<label>Search <input id="search" type="search" placeholder="Filename"></label>
+<label>Category <select id="group"><option value="all">All captures</option><option value="screens">Screens</option><option value="states">States</option></select></label>
+<label>Pairs <select id="pairs"><option value="all">All</option><option value="paired">Both sides</option><option value="missing">Missing a side</option></select></label>
+<label>Specimen <select id="region"><option value="">Whole sheet</option></select></label>
+<label>View <select id="view"><option value="fit">Fit pair (same scale)</option><option value="actual">100%</option><option value="zoom">Shared zoom</option></select></label>
+<label>Zoom <input id="zoom" type="range" min="10" max="200" step="10" value="100"><output id="zoomText">100%</output></label>
+<label><input id="sync" type="checkbox" checked>Link scrolling</label>
+<button id="previous">Previous</button><button id="next">Next</button>
+</div>
+<div class="alignment" aria-label="Image alignment">
+<fieldset><legend>Qt offset (source px)</legend><label>X <input id="qtX" aria-label="Qt offset X" type="number" value="0" step="1"></label><label>Y <input id="qtY" aria-label="Qt offset Y" type="number" value="0" step="1"></label></fieldset>
+<fieldset><legend>Design-system offset (source px)</legend><label>X <input id="designX" aria-label="Design-system offset X" type="number" value="0" step="1"></label><label>Y <input id="designY" aria-label="Design-system offset Y" type="number" value="0" step="1"></label></fieldset>
+<button id="resetAlignment">Reset alignment</button><span id="scaleReadout" aria-live="polite"></span>
+</div>
+<p id="summary"></p>
+<details><summary>Sources and capture limitations</summary><pre id="evidence"></pre></details>
+</header>
+<div class="workspace">
+<nav aria-label="Capture files"><div id="files"></div></nav>
+<main>
+<div class="caption"><strong id="name"></strong><span id="notice" role="status"></span></div>
+<div class="panes">
+<section class="pane"><h2>Qt renders <span id="qtSize" class="dimensions"></span></h2><div id="qt" class="viewport"></div></section>
+<section class="pane"><h2>Design-system renders <span id="designSize" class="dimensions"></span></h2><div id="design" class="viewport"></div></section>
+</div>
+<div class="help">Both sides use the same scale and top-left canvas origin. Offsets align a chosen region without stretching images. For matched state sheets, choose a Specimen to compare one component/state at a time. Different fixtures and platform rendering are not automatically defects. Arrow keys browse captures.</div>
+</main>
+</div>
+<script id="capture-data" type="application/json">__CAPTURE_DATA__</script>
+<script>
+'use strict';
+const DATA=JSON.parse(document.getElementById('capture-data').textContent);
+const $=id=>document.getElementById(id);
+let filtered=[],selected=null,scrollLock=false;
+let regionIndex='';
+const alignments=new Map();
+const paired=p=>Boolean(p.qt&&p.design);
+$('evidence').textContent=JSON.stringify({qt_source:DATA.qt_source,design_source:DATA.design_source,manifests:DATA.evidence},null,2);
+function filter(){
+ const query=$('search').value.toLowerCase(),group=$('group').value,kind=$('pairs').value;
+ filtered=DATA.pairs.filter(p=>p.name.toLowerCase().includes(query)&&(group==='all'||p.group===group)&&(kind==='all'||(kind==='paired'?paired(p):!paired(p))));
+ if(!filtered.some(p=>p.name===selected))selected=(filtered.find(paired)??filtered[0])?.name??null;
+ const fragment=document.createDocumentFragment();
+ for(const p of filtered){const b=document.createElement('button');b.textContent=p.name;b.dataset.name=p.name;b.setAttribute('aria-current',String(p.name===selected));const hint=document.createElement('small');hint.textContent=paired(p)?p.group:'Missing '+(p.qt?'design system':'Qt');b.append(hint);b.onclick=()=>choose(p.name);fragment.append(b);}
+ $('files').replaceChildren(fragment);
+ $('summary').textContent=`${filtered.length} shown · ${DATA.pairs.filter(paired).length} paired · ${DATA.pairs.filter(p=>!paired(p)).length} unmatched. Visual review only; no parity score.`;
+ render();
+}
+function choose(name){selected=name;for(const b of $('files').children)b.setAttribute('aria-current',String(b.dataset.name===name));render();}
+function render(){
+ regionIndex='';
+ const regions=filtered.find(p=>p.name===selected)?.regions??[];
+ $('region').replaceChildren(new Option('Whole sheet',''),...regions.map((r,i)=>new Option(r.label,String(i))));
+ $('region').disabled=!regions.length;
+ const offsets=alignments.get(selected)??{qtX:0,qtY:0,designX:0,designY:0};
+ for(const key of ['qtX','qtY','designX','designY'])$(key).value=offsets[key];
+ const p=filtered.find(p=>p.name===selected);
+ $('name').textContent=p?.name??'No matching captures';
+ $('notice').textContent=p&&paired(p)&&(p.qt.width!==p.design.width||p.qt.height!==p.design.height)?'Different image dimensions—do not assume pixel alignment.':'';
+ for(const side of ['qt','design']){
+  const host=$(side),record=p?.[side];host.replaceChildren();host.scrollTop=host.scrollLeft=0;
+  $(side+'Size').textContent=record?`${record.width} × ${record.height} px`:'';
+  if(record){const img=document.createElement('img');img.alt=`${side==='qt'?'Qt':'Design-system'} capture: ${p.name}`;img.src=record.src;const stage=document.createElement('div');stage.className='stage';stage.append(img);host.append(stage);}else{const missing=document.createElement('div');missing.className='missing';missing.textContent=p?'No matching image on this side.':'Adjust the filters to show a capture.';host.append(missing);}
+ }
+ $('previous').disabled=filtered.length<2;$('next').disabled=filtered.length<2;scale();
+}
+function scale(){
+ const mode=$('view').value,zoom=Number($('zoom').value);$('zoomText').value=zoom+'%';$('zoom').disabled=mode!=='zoom';
+ const p=filtered.find(p=>p.name===selected);
+ if(!p){$('scaleReadout').textContent='';return;}
+ const region=regionIndex===''?null:p.regions?.[Number(regionIndex)];
+ const sides=['qt','design'],offsets={};
+ for(const side of sides)offsets[side]={x:Number($(side+'X').value)||0,y:Number($(side+'Y').value)||0};
+ const present=sides.filter(side=>p[side]);
+ const left=Math.min(0,...present.map(side=>offsets[side].x)),top=Math.min(0,...present.map(side=>offsets[side].y));
+ const width=Math.max(...present.map(side=>(region?.width??p[side].width)+offsets[side].x))-left;
+ const height=Math.max(...present.map(side=>(region?.height??p[side].height)+offsets[side].y))-top;
+ const available=Math.min(...sides.map(side=>Math.max(1,$(side).clientWidth-16)));
+ const factor=mode==='fit'?Math.min(1,available/width):(mode==='actual'?1:zoom/100);
+ $('scaleReadout').textContent=`Shared scale: ${(factor*100).toFixed(1)}%`;
+ for(const side of present){const img=$(side).querySelector('img'),stage=img.parentElement;
+  stage.style.overflow=region?'hidden':'visible';
+  stage.style.width=(width*factor)+'px';stage.style.height=(height*factor)+'px';
+  img.style.width=(p[side].width*factor)+'px';img.style.left=((offsets[side].x-left-(region?.x??0))*factor)+'px';img.style.top=((offsets[side].y-top-(region?.y??0))*factor)+'px';
+ }
+}
+function align(){alignments.set(selected,Object.fromEntries(['qtX','qtY','designX','designY'].map(key=>[key,Number($(key).value)||0])));scale();}
+function step(delta){if(filtered.length){const i=filtered.findIndex(p=>p.name===selected);choose(filtered[(i+delta+filtered.length)%filtered.length].name);}}
+for(const id of ['search','group','pairs'])$(id).addEventListener(id==='search'?'input':'change',filter);
+for(const key of ['qtX','qtY','designX','designY'])$(key).oninput=align;
+$('resetAlignment').onclick=()=>{alignments.delete(selected);render();};
+new ResizeObserver(scale).observe(document.querySelector('.panes'));
+$('region').onchange=()=>{regionIndex=$('region').value;for(const side of ['qt','design'])$(side).scrollTop=$(side).scrollLeft=0;scale();};
+$('view').onchange=scale;$('zoom').oninput=scale;$('previous').onclick=()=>step(-1);$('next').onclick=()=>step(1);
+document.addEventListener('keydown',event=>{if(['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName))return;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();step(event.key==='ArrowLeft'?-1:1);}});
+for(const [side,other] of [['qt','design'],['design','qt']])$(side).addEventListener('scroll',()=>{if(!$('sync').checked||scrollLock)return;scrollLock=true;$(other).scrollTop=$(side).scrollTop;$(other).scrollLeft=$(side).scrollLeft;requestAnimationFrame(()=>scrollLock=false);});
+filter();
+</script>
+</body>
+</html>

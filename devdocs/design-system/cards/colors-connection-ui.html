@@ -1,0 +1,38 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Connection & UI" -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body { padding: 20px; display: flex; gap: 12px; }
+    .item { flex: 1; }
+    .swatch { height: 80px; border-radius: 6px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.1); }
+    .label { font-size: 10pt; font-weight: 500; color: var(--color-text); }
+    .hex { font-size: 9pt; color: var(--color-secondary); font-family: Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-connection-accent);"></div>
+    <div class="label">Connection</div>
+    <div class="hex">#00d8b0</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-connection-surface);"></div>
+    <div class="label">Connection Surf</div>
+    <div class="hex">#123e36</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-button);"></div>
+    <div class="label">Button</div>
+    <div class="hex">#2d2d2d</div>
+  </div>
+  <div class="item">
+    <div class="swatch" style="background-color: var(--color-button-hover);"></div>
+    <div class="label">Button Hover</div>
+    <div class="hex">#353535</div>
+  </div>
+</body>
+</html>

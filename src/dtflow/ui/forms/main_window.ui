@@ -137,7 +137,7 @@
                     <string>sectionIcon</string>
                    </property>
                    <property name="iconKey" stdset="0">
-                    <string>refresh</string>
+                    <string>server</string>
                    </property>
                    <property name="text">
                     <string />
@@ -306,7 +306,7 @@
                     <string>sectionIcon</string>
                    </property>
                    <property name="iconKey" stdset="0">
-                    <string>document</string>
+                    <string>key-round</string>
                    </property>
                    <property name="text">
                     <string />
@@ -688,7 +688,7 @@
                     <string>sectionIcon</string>
                    </property>
                    <property name="iconKey" stdset="0">
-                    <string>json</string>
+                    <string>shield-check</string>
                    </property>
                    <property name="text">
                     <string />

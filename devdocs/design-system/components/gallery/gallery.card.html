@@ -1,0 +1,18 @@
+<!-- @dsCard group="Components" viewport="700x470" name="Gallery" -->
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{padding:20px;display:flex;flex-direction:column;gap:14px}.r{display:flex;gap:10px;align-items:center;flex-wrap:wrap}</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script></head><body><div id="root" style="display:contents"></div>
+<script type="text/babel">
+const { Button, ToolbarRow, FloatingToolbar, OverlayChip, RoundButton, MetadataBlock, ImageCard, Thumbnail, LoraChip } = window.DTFlowDesignSystem_cee425;
+function Demo(){return <>
+<ToolbarRow><Button variant="mode" checked>Grid</Button><Button variant="mode">List</Button><Button variant="mode">Detail</Button></ToolbarRow>
+<div style={{position:"relative",height:150,background:"var(--color-canvas)",borderRadius:10}}><div style={{position:"absolute",top:10,left:10,display:"flex"}}><OverlayChip>1 / 6</OverlayChip><OverlayChip>1536 × 1024</OverlayChip><OverlayChip muted>Sample preview</OverlayChip></div><RoundButton direction="prev"/><RoundButton direction="next"/><FloatingToolbar position="bottom-center" pill><Button variant="neutral" style={{background:"transparent",border:0}}>100%</Button></FloatingToolbar><FloatingToolbar position="bottom-right"><Button>Open file</Button><Button>Copy path</Button></FloatingToolbar></div>
+<div className="r" style={{alignItems:"stretch"}}><div style={{display:"flex",background:"var(--color-surface)",border:"1px solid var(--color-border)",borderRadius:8}}><MetadataBlock label="Steps">30</MetadataBlock><MetadataBlock label="CFG">7.0</MetadataBlock><MetadataBlock label="Sampler">Not recorded</MetadataBlock></div></div>
+<div className="r" style={{alignItems:"flex-start"}}><div style={{width:150}}><ImageCard badge="1536 × 1024" title="portrait.jpg · 403 KB" subtitle="SDXL 1.0 (sample)"/></div><div style={{width:80}}><Thumbnail label="1" selected/></div><div style={{width:80}}><Thumbnail label="2"/></div></div>
+</>}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo/>);
+</script></body></html>

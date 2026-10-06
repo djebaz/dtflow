@@ -1,0 +1,88 @@
+/* DTFlow color palette */
+:root {
+  /* Depth surfaces */
+  --color-background: #1f1f1f;
+  --color-surface: #252525;
+  --color-input: #1e1e1e;
+  --color-canvas: #151515;
+
+  /* Text */
+  --color-text: #e6e6e6;
+  --color-secondary: #b2b2b2;
+  --color-placeholder: #a8a8a8;
+  --color-disabled: #777777;
+
+  /* Borders */
+  --color-border: #3a3a3a;
+  --color-border-strong: #4a4a4a;
+  --color-disabled-border: #303030;
+  --color-input-border-hover: #606060;
+
+  /* Accent (primary action) */
+  --color-accent: #0068b8;
+  --color-accent-hover: #0078d4;
+  --color-accent-pressed: #005a9e;
+  --color-focus: #60b6f6;
+
+  /* Selection */
+  --color-selection: #173852;
+  --color-selection-text: #d5ecff;
+  --color-selection-border: #285d84;
+  --color-selection-hover: #204c6e;
+  --color-selection-pressed: #122e44;
+
+  /* Status colors */
+  --color-success: #78c97c;
+  --color-warning: #ffbf59;
+  --color-error: #ff8179;
+  --color-unknown: #b2b2b2;
+
+  /* Button states */
+  --color-button: #2d2d2d;
+  --color-button-hover: #353535;
+  --color-button-pressed: #292929;
+  --color-button-border: #424242;
+  --color-button-border-hover: #5a5a5a;
+
+  /* Section cards */
+  --color-section-header: #2b2b2b;
+  --color-section-border: #343434;
+  --color-item-surface: #222222;
+
+  /* Connection (teal/mint accent) */
+  --color-connection-accent: #00d8b0;
+  --color-connection-surface: #123e36;
+  --color-connection-glyph: #d9f7ef;
+  /* Component-local tones lifted from dtflow_dark.qss (used by 2+ rules) */
+  --color-panel-edge: #333333;
+  --color-host: #1c1c1c;
+  --color-toolbar: #242424;
+  --color-bar-track: #2a2a2a;
+  --color-title: #f2f2f2;
+  --color-button-text: #eeeeee;
+  --color-input-text: #eaeaea;
+  --color-eyebrow: #8fbde3;
+  --color-badge-text: #b9dcf7;
+  --color-accent-edge: #1085dd;
+  --color-danger-text: #ff9d97;
+  --color-danger-surface: #432323;
+  --color-danger-border: #c62828;
+  --color-status-ok-border: #2e7d32;
+  --color-status-warning-border: #9a6700;
+  --color-status-error-border: #a33a35;
+  --color-glyph-neutral: #8a8a8a;
+  --color-groove: #505050;
+  --color-handle: #e6e6e6;
+  --color-handle-border: #909090;
+  --color-handle-disabled: #555555;
+  --color-check-border: #777777;
+  --color-check-disabled-border: #414141;
+  --color-disabled-edge: #2f2f2f;
+  --color-scroll-hover: #707070;
+  --color-scroll-pressed: #909090;
+  --color-tab-border: #363636;
+  --color-tab-text: #a8a8a8;
+  --color-on-accent: #ffffff;
+  --color-menu-text: #dddddd;
+  --color-statusbar-edge: #000000;
+}
