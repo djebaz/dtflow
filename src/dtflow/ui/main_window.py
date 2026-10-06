@@ -157,7 +157,8 @@ class MainWindow:
                 stack.addWidget(getattr(page, name))
         self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
         self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
-        self.gallery = GalleryPage(self.gallery_detail, runner=self.runner, state_dir=self.state_dir)\n        self.gallery_preview = self.gallery  # retain the established integration attribute
+        self.gallery = GalleryPage(self.gallery_detail, runner=self.runner, state_dir=self.state_dir)
+        self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
         self.shell.centerStack.addWidget(self.gallery_detail)
@@ -283,6 +284,7 @@ class MainWindow:
             self.form.imagesNavigationButton,
         )
         buttons[index].setChecked(True)
+        self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)
         self._responsive_workspace()
 
     def _toggle_inspector(self, visible: bool) -> None:
