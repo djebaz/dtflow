@@ -244,9 +244,7 @@ class GalleryPage(QObject):
         self.prompt.setToolTip("Case-insensitive literal search in recorded positive prompts.")
         self.model.setToolTip("Exact recorded model identifier; the list is a bounded convenience facet.")
         self.lora.setToolTip("Exact recorded LoRA identifier; the list is a bounded convenience facet.")
-        self.date_filter.setToolTip(
-            "Local calendar date or range. Examples: 2026-10-06 or 2026-10-01..2026-10-06."
-        )
+        self.date_filter.setToolTip("Local calendar date or range. Examples: 2026-10-06 or 2026-10-01..2026-10-06.")
         self.dimensions.setToolTip("Exact dimensions, for example 1024 × 1024.")
         self.ratio.setToolTip("Orientation or exact W:H aspect ratio.")
         self.sort.setToolTip("Deterministic saved-output ordering.")
@@ -286,12 +284,8 @@ class GalleryPage(QObject):
         self.table.horizontalHeader().setStretchLastSection(True)
         for column, width in enumerate((80, 160, 180, 300, 120, 90, 145, 360)):
             self.table.setColumnWidth(column, width)
-        self.table.itemClicked.connect(
-            lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole)))
-        )
-        self.table.itemActivated.connect(
-            lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole)))
-        )
+        self.table.itemClicked.connect(lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole))))
+        self.table.itemActivated.connect(lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole))))
 
         self.table_viewport.setMouseTracking(True)
         self.table_viewport.installEventFilter(self)
@@ -317,18 +311,14 @@ class GalleryPage(QObject):
         self._film_buttons = [self._widget(f"galleryThumbnail{i}", QPushButton) for i in range(1, 7)]
         self._film_painters = list(self._presentation_painters[1:7])
         for button in self._film_buttons:
-            button.clicked.connect(
-                lambda checked=False, source=button: self.select(str(source.property("identity")))
-            )
+            button.clicked.connect(lambda checked=False, source=button: self.select(str(source.property("identity"))))
             button.hide()
 
     def _setup_actions(self) -> None:
         self.refresh_button = self._widget("galleryRefreshButton", QPushButton)
         self.auto_button = self._widget("galleryAutoRefreshButton", QPushButton)
         self.refresh_button.setEnabled(True)
-        self.refresh_button.setToolTip(
-            "Refresh saved outputs while keeping the current browsing anchor when possible."
-        )
+        self.refresh_button.setToolTip("Refresh saved outputs while keeping the current browsing anchor when possible.")
         self.refresh_button.clicked.connect(lambda: self.refresh(preserve=True))
         self.auto_button.setEnabled(True)
         self.auto_button.setCheckable(True)
@@ -652,9 +642,7 @@ class GalleryPage(QObject):
             button.setProperty("role", "galleryThumbnail")
             button.setCheckable(True)
             button.setAutoExclusive(True)
-            button.clicked.connect(
-                lambda checked=False, source=button: self.select(str(source.property("identity")))
-            )
+            button.clicked.connect(lambda checked=False, source=button: self.select(str(source.property("identity"))))
             layout.insertWidget(max(0, layout.count() - 1), button)
             painter = CoverPainter(button, "", None)
             self._film_buttons.append(button)
@@ -679,9 +667,7 @@ class GalleryPage(QObject):
 
             self.runner.submit(
                 work(),
-                lambda result, error, gen=generation, ident=identity: self._thumbnail_done(
-                    gen, ident, result, error
-                ),
+                lambda result, error, gen=generation, ident=identity: self._thumbnail_done(gen, ident, result, error),
             )
 
     def _thumbnail_done(self, generation: int, identity: str, result, error) -> None:
@@ -745,9 +731,7 @@ class GalleryPage(QObject):
             self.next_button.setEnabled(False)
             return
         self.previous_button.setEnabled(index > 0 or self.offset > 0)
-        self.next_button.setEnabled(
-            index + 1 < len(self.items) or self.offset + len(self.items) < self.total
-        )
+        self.next_button.setEnabled(index + 1 < len(self.items) or self.offset + len(self.items) < self.total)
 
     def _present_item(self, item: GalleryItem) -> None:
         request = self._request(item)
@@ -936,9 +920,7 @@ class GalleryPage(QObject):
                 self.select(selected.identity, open_detail=False)
             else:
                 self._clear_detail()
-        self._widget("galleryThumbnailSizeLabel", QLabel).setText(
-            "Row density" if mode == "List" else "Thumbnail size"
-        )
+        self._widget("galleryThumbnailSizeLabel", QLabel).setText("Row density" if mode == "List" else "Thumbnail size")
         self._density_changed()
         if mode == "Grid" and self._origin_identity:
             button = self._grid_buttons.get(self._origin_identity)
