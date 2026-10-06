@@ -386,16 +386,17 @@ class QueuePage:
         running_items = [item for item in view["items"] if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
 
-        if phase == "running" and len(running_items) == 1:
-            item = running_items[0]
-            completed, total = item["position"], summary.total
-            detail += f" Item #{item['position']} of {summary.total}."
-            progress = self._run_progress.get((queue_id, item["item_id"]))
-            if progress is not None:
-                step, steps = progress
-                detail += f" Step {step}/{steps}."
-        elif phase == "running" and running_items:
-            detail += f" {len(running_items)} items running · {summary.settled}/{summary.total} settled."
+        if phase == "running":
+            # The ring counts settled items, which is meaningful however many items run at once.
+            completed, total = summary.settled, summary.total
+            detail += f" {summary.settled}/{summary.total} settled."
+            if len(running_items) == 1:
+                progress = self._run_progress.get((queue_id, running_items[0]["item_id"]))
+                if progress is not None:
+                    step, steps = progress
+                    detail += f" Item #{running_items[0]['position']} step {step}/{steps}."
+            elif running_items:
+                detail += f" {len(running_items)} items running."
         elif status in ("finished", "cancelled", "blocked"):
             # Settled/problem states stay on the Queues page. The global control
             # returns to its quiet idle presentation instead of becoming a
@@ -590,12 +591,7 @@ class QueuePage:
         if wrapped.queue_id == self._dispatching:
             self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)
-        if (
-            event.kind == "progress"
-            and type(event.completed) is int
-            and type(event.total) is int
-            and event.total > 0
-        ):
+        if event.kind == "progress" and type(event.completed) is int and type(event.total) is int and event.total > 0:
             self._run_progress[key] = (max(0, event.completed), event.total)
         elif event.kind == "terminal":
             self._run_progress.pop(key, None)
