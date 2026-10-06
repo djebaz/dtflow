@@ -382,7 +382,7 @@ User custom LoRA metadata:
 - is never overwritten by bundled catalogue updates;
 - is never assumed available without inventory evidence.
 
-The current user's custom Z-Image definitions are migration/input data for that user's catalogue only. They are not universal DTFlow defaults. The implemented durable boundary is `<state>/catalogue/custom_loras.json`; the bundled service tolerates that file being absent or malformed without disabling the bundled catalogue.
+The current user's custom Z-Image definitions are migration/input data for that user's catalogue only. They are not universal DTFlow defaults. The implemented durable boundary is `<state>/catalogue/custom_loras.json`; the bundled service tolerates that file being absent or malformed without disabling the bundled catalogue. The Connection page owns the user-facing `Import JSON…` and `Clear` actions: import validates the complete document first, then atomically replaces the durable file and refreshes Generate LoRA candidates; Clear requires confirmation and never touches bundled catalogue resources.
 
 ## 15. Data cleanup and import work
 
