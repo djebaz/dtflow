@@ -1,22 +1,28 @@
-import os, sys, tempfile
+import os
+import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(os.environ.get("DTFLOW_ROOT", Path.cwd()))
+# Bootstrap test support and install the network guard before provider imports.
 sys.path.insert(0, str(ROOT / "tests"))
-from support.network_guard import install
+from support.network_guard import install  # noqa: E402
 
 install()
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
-from support.fake_vault import Vault
-from support.cloud_assets import DtPlus
-from dtflow.backends.fake import FakeBackend
-from dtflow.services import session
-from dtflow.services.credentials import SavedCredentials
-from dtflow.ui.main_window import MainWindow
-from dtflow.ui.theme import apply_theme
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+from support.cloud_assets import DtPlus  # noqa: E402
+from support.fake_vault import Vault  # noqa: E402
+
+from dtflow.backends.fake import FakeBackend  # noqa: E402
+from dtflow.services import session  # noqa: E402
+from dtflow.services.credentials import (  # noqa: E402
+    SavedCredentials,
+)
+from dtflow.ui.main_window import MainWindow  # noqa: E402
+from dtflow.ui.theme import apply_theme  # noqa: E402
 
 out = Path(sys.argv[1])
 out.mkdir(parents=True, exist_ok=True)

@@ -1,19 +1,28 @@
 """State-matrix screenshots of real Qt widgets under the real DTFlow stylesheet (offscreen)."""
 
-import os, sys
+import os
+import sys
 from pathlib import Path
 
 ROOT = Path(os.environ.get("DTFLOW_ROOT", Path.cwd()))
+# Bootstrap test support and install the network guard before provider imports.
 sys.path.insert(0, str(ROOT / "tests"))
-from support.network_guard import install
+from support.network_guard import install  # noqa: E402
 
 install()
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPixmap
-from PySide6.QtTest import QTest
-from PySide6.QtWidgets import (
+from PySide6.QtCore import QPoint, QRect, QSize, Qt  # noqa: E402
+from PySide6.QtGui import (  # noqa: E402
+    QColor,
+    QFont,
+    QImage,
+    QPainter,
+    QPixmap,
+)
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QAbstractItemView,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -37,12 +46,13 @@ from PySide6.QtWidgets import (
     QToolTip,
     QVBoxLayout,
     QWidget,
-    QAbstractItemView,
-    QTextBrowser,
 )
 
-from dtflow.ui.brand import connection_icon
-from dtflow.ui.theme import apply_theme, load_tokens
+from dtflow.ui.brand import connection_icon  # noqa: E402
+from dtflow.ui.theme import (  # noqa: E402
+    apply_theme,
+    load_tokens,
+)
 
 OUT = Path(sys.argv[1])
 OUT.mkdir(parents=True, exist_ok=True)
@@ -186,7 +196,7 @@ def sheet(name, title, rows, col_w=None):
     p.setPen(QColor(T["color.text"]))
     p.drawText(pad, 26, f"{title}   (cells shown at {SCALE}x)")
     y = 40
-    for (label, cells), h in zip(rows, heights):
+    for (label, cells), h in zip(rows, heights, strict=True):
         p.setFont(f)
         p.setPen(QColor(T["color.text"]))
         p.drawText(QRect(pad, y, lw - pad, h), Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, label)
@@ -518,13 +528,13 @@ def lists_tables():
 
     def lw(selected=None, **p):
         def make():
-            l = QListWidget()
-            l.setFixedSize(190, 110)
+            widget = QListWidget()
+            widget.setFixedSize(190, 110)
             for t in ["zimage_turbo_lora @1.0", "fake-soft @0.8", "portrait_enhancer_v2"]:
-                l.addItem(t)
+                widget.addItem(t)
             if selected is not None:
-                l.setCurrentRow(selected)
-            return prop(l, **p) if p else l
+                widget.setCurrentRow(selected)
+            return prop(widget, **p) if p else widget
 
         return make
 
@@ -540,15 +550,15 @@ def lists_tables():
     def hover_item():
         host = Host()
         lay = QVBoxLayout(host)
-        l = lw()()
-        lay.addWidget(l)
+        widget = lw()()
+        lay.addWidget(widget)
         host.resize(host.sizeHint())
         host.show()
         host.activateWindow()
         QTest.qWaitForWindowActive(host, 500)
         settle()
-        r = l.visualItemRect(l.item(0))
-        QTest.mouseMove(l.viewport(), r.center())
+        r = widget.visualItemRect(widget.item(0))
+        QTest.mouseMove(widget.viewport(), r.center())
         settle(2)
         pm = grab_widget(host, 0)
         host.hide()
@@ -557,9 +567,9 @@ def lists_tables():
     cells.insert(1, ("hover row 0", hover_item()))
 
     def empty():
-        l = QListWidget()
-        l.setFixedSize(190, 110)
-        return l
+        widget = QListWidget()
+        widget.setFixedSize(190, 110)
+        return widget
 
     cells.append(("empty", state_cell(empty, "rest")))
     rows.append(("QListWidget", cells))
@@ -667,9 +677,9 @@ def tabs_scroll():
         a = QScrollArea()
         a.setFixedSize(170, 110)
         w = QWidget()
-        l = QVBoxLayout(w)
+        widget = QVBoxLayout(w)
         for i in range(12):
-            l.addWidget(QLabel(f"Row {i}"))
+            widget.addWidget(QLabel(f"Row {i}"))
         a.setWidget(w)
         return a
 
@@ -686,7 +696,6 @@ def tabs_scroll():
         bar = a.verticalScrollBar()
         bar.setValue(10)
         settle()
-        h = bar.mapTo(host, QPoint(bar.width() // 2, 40))
         if state == "hover":
             QTest.mouseMove(bar, QPoint(bar.width() // 2, 40))
             settle(2)
@@ -720,8 +729,8 @@ def labels_status():
 
     def lab(text, **p):
         def make():
-            l = QLabel(text)
-            return prop(l, **p)
+            widget = QLabel(text)
+            return prop(widget, **p)
 
         return make
 
