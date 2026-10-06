@@ -101,12 +101,13 @@ class _CloseGuard(QObject):
 
 
 class _LayoutGuard(QObject):
-    def __init__(self, callback, parent):
+    def __init__(self, callback, parent, events=(QEvent.Type.Resize,)):
         super().__init__(parent)
         self.callback = callback
+        self.events = events
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.Resize:
+        if event.type() in self.events:
             self.callback()
         return False
 
@@ -258,7 +259,18 @@ class MainWindow:
         self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         for frame in (self.shell.brandFrame, self.shell.navigationFrame):
-            frame.installEventFilter(_LayoutGuard(self._align_run_control, frame))
+            # Layout settles after the first show and after tab changes, not only on resize.
+            frame.installEventFilter(
+                _LayoutGuard(
+                    self._align_run_control,
+                    frame,
+                    (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest),
+                )
+            )
+        for widget in (self.shell.imagesNavigationButton, self.shell.runControl):
+            widget.installEventFilter(
+                _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
+            )
         self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
@@ -372,6 +384,7 @@ class MainWindow:
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
         self.form.show()
+        QTimer.singleShot(0, self._align_run_control)
         apply_native_dark_titlebar(self.form)
 
     # -- remembered session -----------------------------------------------------------------------------------------
