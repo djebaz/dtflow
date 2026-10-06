@@ -2798,71 +2798,80 @@ No generation or saved output</string>
                  </widget>
                 </item>
                 <item row="4" column="0" colspan="4">
-                 <layout class="QHBoxLayout" name="galleryPathActionsLayout">
+                 <layout class="QVBoxLayout" name="galleryActionsLayout">
+                  <property name="spacing"><number>6</number></property>
                   <item>
-                   <widget class="QPushButton" name="galleryUseSettingsButton">
-                    <property name="text"><string>Use settings</string></property>
-                    <property name="enabled"><bool>false</bool></property>
-                    <property name="toolTip"><string>Populate Generate from this recorded request without submitting.</string></property>
-                   </widget>
+                   <layout class="QHBoxLayout" name="galleryReuseActionsLayout">
+                    <property name="spacing"><number>6</number></property>
+                    <item>
+                     <widget class="QPushButton" name="galleryUseSettingsButton">
+                      <property name="text"><string>Use settings</string></property>
+                      <property name="enabled"><bool>false</bool></property>
+                      <property name="toolTip"><string>Populate Generate from this recorded request without submitting.</string></property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="galleryRegenerateButton">
+                      <property name="text"><string>Regenerate…</string></property>
+                      <property name="enabled"><bool>false</bool></property>
+                      <property name="toolTip"><string>Create a fresh generation attempt from these recorded settings after confirmation.</string></property>
+                     </widget>
+                    </item>
+                   </layout>
                   </item>
                   <item>
-                   <widget class="QPushButton" name="galleryRegenerateButton">
-                    <property name="text"><string>Regenerate…</string></property>
-                    <property name="enabled"><bool>false</bool></property>
-                    <property name="toolTip"><string>Create a fresh generation attempt from these recorded settings after confirmation.</string></property>
-                   </widget>
+                   <layout class="QHBoxLayout" name="galleryPathActionsLayout">
+                    <property name="spacing"><number>6</number></property>
+                    <item>
+                     <widget class="QPushButton" name="galleryCopyPathButton">
+                      <property name="accessibleName">
+                       <string>CopyPath</string>
+                      </property>
+                      <property name="text">
+                       <string>Copy path</string>
+                      </property>
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="toolTip">
+                       <string>Available when the current Images context supports this action.</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="galleryOpenFolderButton">
+                      <property name="accessibleName">
+                       <string>OpenFolder</string>
+                      </property>
+                      <property name="text">
+                       <string>Open folder</string>
+                      </property>
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="toolTip">
+                       <string>Available when the current Images context supports this action.</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="galleryExternalViewerButton">
+                      <property name="accessibleName">
+                       <string>ExternalViewer</string>
+                      </property>
+                      <property name="text">
+                       <string>Open in external viewer</string>
+                      </property>
+                      <property name="enabled">
+                       <bool>false</bool>
+                      </property>
+                      <property name="toolTip">
+                       <string>Available when the current Images context supports this action.</string>
+                      </property>
+                     </widget>
+                    </item>                   </layout>
                   </item>
-                  <item>
-                   <widget class="QPushButton" name="galleryCopyPathButton">
-                    <property name="accessibleName">
-                     <string>CopyPath</string>
-                    </property>
-                    <property name="text">
-                     <string>Copy path</string>
-                    </property>
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="toolTip">
-                     <string>Available when the current Images context supports this action.</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QPushButton" name="galleryOpenFolderButton">
-                    <property name="accessibleName">
-                     <string>OpenFolder</string>
-                    </property>
-                    <property name="text">
-                     <string>Open folder</string>
-                    </property>
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="toolTip">
-                     <string>Available when the current Images context supports this action.</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QPushButton" name="galleryExternalViewerButton">
-                    <property name="accessibleName">
-                     <string>ExternalViewer</string>
-                    </property>
-                    <property name="text">
-                     <string>Open in external viewer</string>
-                    </property>
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="toolTip">
-                     <string>Available when the current Images context supports this action.</string>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </item>
+                 </layout>                </item>
                </layout>
               </widget>
               <property name="visible">
