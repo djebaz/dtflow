@@ -25,7 +25,7 @@ These are delivery phases within initial-plan Phase 8. “Phase 1” here means 
 - Implement in the order above, using small coherent PR slices within a phase when useful. Do not omit selected viewer capabilities merely to call a first slice complete.
 - Keep UI, shared services, persistence, workers and provider protocols separated. Gallery/preset work does not introduce a second generation engine.
 - Start 8A with bounded/progressive queries, asynchronous derived-image work and cache/durable-state separation; do not defer those foundations until 8D's cleanup controls.
-- Preserve existing generation configuration save/load. Native preset compatibility is new planned work, not current behaviour.
+- Preserve existing generation configuration save/load. Native preset interchange is implemented by PR #46 within the conservative field mapping documented in the desktop guide; interoperability with Draw Things itself still awaits owner round-trip verification.
 - Preserve outputs, attempts, queues, credentials, model assets, presets, viewer preferences and later organisation during disposable-cache cleanup.
 - The sequence does not approve a UI layout or all later-phase feature candidates. Refine each phase's unresolved semantics before implementation and follow `DESIGN.md` when desktop design starts.
 
