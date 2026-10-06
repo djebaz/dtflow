@@ -137,6 +137,23 @@ class QueueMixin:
             (queue_id, now, kind, json.dumps(detail or {}, allow_nan=False)),
         )
 
+    async def record_queue_event(
+        self,
+        queue_id: str,
+        kind: str,
+        detail: dict[str, Any] | None = None,
+        *,
+        at_utc: str | None = None,
+    ) -> None:
+        """Append sanitized diagnostic evidence without changing queue/item scheduling state."""
+        await self._run(self._record_queue_event, queue_id, kind, detail, at_utc)
+
+    def _record_queue_event(self, queue_id: str, kind: str, detail: dict[str, Any] | None, at_utc: str | None) -> None:
+        with self._txn() as db:
+            if db.execute("SELECT 1 FROM queues WHERE queue_id=?", (queue_id,)).fetchone() is None:
+                raise QueueError("Unknown queue.")
+            self._event(db, queue_id, kind, at_utc or self._now(), detail)
+
     # -- creation -------------------------------------------------------------------------------------------------
 
     async def create_queue(

@@ -480,6 +480,7 @@ class GenerationResult:
     effective_configuration: Metadata
     completion: CompletionEvidence
     warnings: tuple[str, ...] = ()
+    backend_elapsed_seconds: float | None = None
 
     def __post_init__(self) -> None:
         validate_metadata(self.effective_configuration)
@@ -487,6 +488,12 @@ class GenerationResult:
             raise ValidationError("Result artifacts must be immutable typed values.")
         if not isinstance(self.warnings, tuple) or any(not isinstance(x, str) for x in self.warnings):
             raise ValidationError("Warnings must be immutable strings.")
+        if self.backend_elapsed_seconds is not None and (
+            type(self.backend_elapsed_seconds) not in (int, float)
+            or not math.isfinite(self.backend_elapsed_seconds)
+            or self.backend_elapsed_seconds < 0
+        ):
+            raise ValidationError("Backend elapsed time must be finite and nonnegative.")
 
 
 @dataclass(frozen=True, slots=True)

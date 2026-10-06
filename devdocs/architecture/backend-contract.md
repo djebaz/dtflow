@@ -81,7 +81,7 @@ Sampler mapping belongs in the provider integration: euler_a maps to EulerA (wir
 
 ImageArtifact contains artifact_id, designation (final / preview / partial), media_type (image/png initially), encoded bytes, decoded width/height and credential-free metadata. No Pillow/NumPy/protobuf objects cross the boundary. Decode provider tensors, validate dimensions and encode PNG inside the integration; services own filenames, durable writes and provenance.
 
-GenerationResult contains request_id, backend/server identity, immutable final artifacts, effective wire configuration including seed, completion evidence (successful terminal status plus validated output) and warnings. Previews are events, never required final artifacts. Partial evidence on failure belongs to the typed failure/event path. Phase 3 reports application success only after durable artifact/metadata saving.
+GenerationResult contains request_id, backend/server identity, immutable final artifacts, effective wire configuration including seed, completion evidence (successful terminal status plus validated output), warnings and optional client-observed backend elapsed seconds. The elapsed value is measured monotonically from the submission-possible boundary to the terminal event; it may include provider-side queueing or serialization and is not labelled inference/generation time. Previews are events, never required final artifacts. Partial evidence on failure belongs to the typed failure/event path. Phase 3 reports application success only after durable artifact/metadata saving.
 
 Validated backend completion survives later local notification or cleanup failure. Preserve its stronger terminal/output evidence and report the local failure separately; do not downgrade the remote outcome to unknown. This does not establish application success: the service still validates and durably saves outputs/metadata, and local saving may fail.
 
@@ -89,7 +89,7 @@ Initial DTFlow safety budgets: at most four final artifacts, 32 MiB encoded per 
 
 ## Events, errors and submission evidence
 
-BackendEvent contains request_id, monotonically ordered sequence, kind, timestamp and typed payload. Kinds include preparing, submission_possible, progress, preview, artifact_received and terminal. Progress carries signpost/stage and counters only when supplied; unknown percentage stays absent. Receiving an artifact is not request completion.
+BackendEvent contains request_id, monotonically ordered sequence, kind, timestamp and typed payload. Kinds include preparing, submission_possible, progress, preview, artifact_received and terminal. Progress carries signpost/stage and counters only when supplied; unknown percentage stays absent. Receiving an artifact is not request completion. The queue dispatcher may durably mirror selected lifecycle events as diagnostic evidence, but that event log is not scheduling state and logging failure must not turn a successful generation into failure.
 
 SubmissionStage is a separate evidence field:
 

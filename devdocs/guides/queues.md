@@ -8,6 +8,8 @@ Create a queue of N items from the Generate form (seeds s, s+1, ...), or enable 
 
 Queues and items stay in stable order. Start, Pause, Resume, Cancel and Override use the shared queue services. Cancel and Override require confirmation; neither resolves an uncertain remote attempt. The item panel summarizes outputs with Open folder; shortened attempt IDs expose full IDs in tooltips.
 
+The right-side event evidence panel presents a compact activity stream keyed by queue position (for example, `#3 submitted` and `#3 completed - 12.34 s`). The durable queue evidence still records selected backend lifecycle events (preparing, submission boundary, received final artifacts and terminal response) plus item settlement; the UI hides redundant low-level lines and full request/item identifiers from the default view. Successful settlement includes the same client-observed backend duration saved with the image metadata. That duration runs from submission boundary to terminal response and may include provider-side queueing or serialization; DTFlow does not call it pure generation/inference time. Progress and preview events are intentionally not persisted into this diagnostic stream.
+
 One concurrency control sets the selected paused, running or blocked queue's cap. With cloud chosen and no such queue selected, it edits the shared cloud maximum instead; values above two are tinted. Backend and shared memory limits still apply.
 
 Start holds the state ownership lock for the entire dispatch run, disabling desktop Generate. Other processes can read and post controls, but cannot own another generation or dispatch in that state directory. See [runtime ownership](../architecture/runtime-layout.md).
