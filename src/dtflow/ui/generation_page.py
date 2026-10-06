@@ -715,19 +715,26 @@ class GenerationPage:
             base_model=family if isinstance(family, str) else None,
             include_niche=page.includeNicheCheck.isChecked(),
         )
+        allowed = {entry.identifier for entry in entries}
+        unclassified = set(self._catalogue.view().unclassified_checkpoints)
         self._updating_catalogue = True
         try:
             self._fill_models(entry.identifier for entry in entries)
-            if current:
+            if current in allowed or current in unclassified:
                 page.modelCombo.setCurrentText(current)
+            elif entries:
+                page.modelCombo.setCurrentText(entries[0].identifier)
+            else:
+                page.modelCombo.setCurrentText("")
         finally:
             self._updating_catalogue = False
         self._filter_loras()
 
     def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
+        model = self._catalogue.checkpoint(checkpoint)
         entries = self._catalogue.compatible_loras(checkpoint, domain=self._catalogue_domain())
-        self.lora.set_candidates(entries)
+        self.lora.set_candidates(entries, prune_selected=model is not None and model.base_model is not None)
 
     def _show_unclassified_models(self) -> None:
         unknown = self._catalogue.view().unclassified_checkpoints
