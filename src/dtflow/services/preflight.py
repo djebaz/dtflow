@@ -39,6 +39,23 @@ def preflight_loras(request: ResolvedGenerationRequest, snapshot: InventorySnaps
                 )
             )
             continue
+        if entry is None and snapshot.backend_id.endswith("cloud"):
+            # DT+ Echo is not an authoritative LoRA listing (it may list files without metadata, or none), so a LoRA it
+            # does not name is unconfirmed, not confirmed absent.
+            diagnostics.append(
+                PreflightDiagnostic(
+                    selection.identifier, "unknown", "unknown", UNCONFIRMED, "availability_unknown", source
+                )
+            )
+            continue
+        if entry is not None and entry.kind == "unknown":
+            # A listed file the server did not classify (file list without metadata): present, architecture unknown.
+            diagnostics.append(
+                PreflightDiagnostic(
+                    selection.identifier, "unknown", "present", UNCONFIRMED, "architecture_unknown", source
+                )
+            )
+            continue
         if entry is None or entry.kind != "lora":
             diagnostics.append(
                 PreflightDiagnostic(selection.identifier, "unknown", "absent", UNCONFIRMED, "not_available", source)

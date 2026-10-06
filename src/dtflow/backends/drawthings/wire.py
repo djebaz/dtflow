@@ -6,6 +6,7 @@ The resolved seed is serialized through the public ``GenConfig.to_fbs(seed)`` pa
 
 from __future__ import annotations
 
+import json
 import struct
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -37,6 +38,19 @@ def float32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
 
+def _same_float32(decoded: object, wanted: float) -> bool:
+    """drawthings-py rounds some decoded float32 values (0.6 reads back as 0.6, not 0.6000000238...), so compare loosely."""
+    return isinstance(decoded, int | float) and abs(decoded - float32(wanted)) <= 1e-6 * max(1.0, abs(wanted))
+
+
+def wire_lora_name(request: ResolvedGenerationRequest, identifier: str) -> str:
+    """DT+ downloads an uploaded LoRA only when the request names it by its SHA-256 (Draw Things' ServerLoRALoader)."""
+    for prepared in request.prepared_assets:
+        if prepared.identifier == identifier:
+            return prepared.sha256
+    return identifier
+
+
 def _reject(request: ResolvedGenerationRequest, code: str, message: str):
     return error(ErrorCategory.VALIDATION, code, message, request.request_id)
 
@@ -51,7 +65,30 @@ def validate_supported(request: ResolvedGenerationRequest) -> None:
         raise _reject(request, "unsupported_sampler", "Sampler is not supported by this adapter.")
 
 
-def build_generation_message(request: ResolvedGenerationRequest, shared_secret: str | None) -> WireRequest:
+def custom_lora_override(request: ResolvedGenerationRequest, version: str | None) -> bytes:
+    """Metadata for user-prepared cloud LoRAs, in the Echo ``override.loras`` JSON shape (``name``, ``file``, ``prefix``, ``version``).
+
+    The server decodes each entry as a Draw Things LoRA specification whose ``name``, ``file``, ``prefix`` and ``version``
+    are all required; an entry missing one is dropped without an error.
+
+    The server cannot resolve a custom file from its name alone and appears to ignore it without an error, so each prepared
+    LoRA is described explicitly. ``version`` is the selected base model's own Draw Things version string; with no known
+    version nothing is sent rather than a guess.
+    """
+    prepared = {item.identifier for item in request.prepared_assets}
+    if not prepared or not version:
+        return b""
+    entries = [
+        {"name": item.identifier, "file": wire_lora_name(request, item.identifier), "prefix": "", "version": version}
+        for item in request.loras
+        if item.identifier in prepared
+    ]
+    return json.dumps(entries).encode() if entries else b""
+
+
+def build_generation_message(
+    request: ResolvedGenerationRequest, shared_secret: str | None, base_version: str | None = None
+) -> WireRequest:
     validate_supported(request)
     sampler = SAMPLER_NAME[request.sampler_id]
     config = GenConfig(
@@ -66,7 +103,7 @@ def build_generation_message(request: ResolvedGenerationRequest, shared_secret: 
         batch_count=1,
     )
     for selection in request.loras:
-        config.add_lora(selection.identifier, selection.weight, LORA_MODE)
+        config.add_lora(wire_lora_name(request, selection.identifier), selection.weight, LORA_MODE)
     configuration = config.to_fbs(request.seed)
     effective = verify_wire_configuration(request, configuration)
     message = image_service.ImageGenerationRequest(
@@ -76,6 +113,9 @@ def build_generation_message(request: ResolvedGenerationRequest, shared_secret: 
         configuration=configuration,
         user=CLIENT_NAME,
     )
+    override = custom_lora_override(request, base_version)
+    if override:
+        message.override = image_service.MetadataOverride(loras=override)
     if shared_secret:
         message.shared_secret = shared_secret
     return WireRequest(message, effective)
@@ -97,10 +137,13 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
     }
     mismatches = [key for key, value in expected.items() if decoded.get(key) != value]
     sent = [(item.get("file"), item.get("weight"), item.get("mode")) for item in decoded.get("loras") or []]
-    wanted = [(item.identifier, float32(item.weight), LORA_MODE) for item in request.loras]
-    if [(f, w, m) for f, w, m in sent] != wanted:
+    wanted = [(wire_lora_name(request, item.identifier), item.weight, LORA_MODE) for item in request.loras]
+    if len(sent) != len(wanted) or any(
+        (f, m) != (name, mode) or not _same_float32(w, weight)
+        for (f, w, m), (name, weight, mode) in zip(sent, wanted, strict=True)
+    ):
         mismatches.append("loras")
-    if float32(request.guidance) != decoded.get("guidance"):
+    if not _same_float32(decoded.get("guidance"), request.guidance):
         mismatches.append("guidance")
     if raw.Sampler() != SAMPLER_WIRE_VALUE[SAMPLER_NAME[request.sampler_id]]:
         mismatches.append("sampler_wire_value")
@@ -113,6 +156,6 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
         )
     pairs = {key: str(value) for key, value in decoded.items() if value is not None}
     pairs["sampler_wire_value"] = str(raw.Sampler())
-    pairs["loras"] = ",".join(f"{item.identifier}@{item.weight}" for item in request.loras)
+    pairs["loras"] = ",".join(f"{wire_lora_name(request, item.identifier)}@{item.weight}" for item in request.loras)
     pairs["config_source"] = "drawthings-py " + version("drawthings-py")
     return tuple(sorted(pairs.items()))

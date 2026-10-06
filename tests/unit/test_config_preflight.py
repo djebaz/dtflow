@@ -17,7 +17,7 @@ from dtflow.core.models import (
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.config import ConfigError, export_config, load_config, parse_document, resolve_request
 from dtflow.services.generation import GenerationService
-from dtflow.services.preflight import apply_trigger_prefixes, preflight_loras
+from dtflow.services.preflight import apply_trigger_prefixes, blocked, preflight_loras
 
 
 def entry(identifier, kind, architecture=None, **extra):
@@ -147,6 +147,19 @@ def test_absent_or_misclassified_selection_is_not_available_and_selection_order_
         ("notlora.ckpt", "not_available"),
         ("ok", "ok"),
     ]
+
+
+def test_cloud_unlisted_or_unclassified_loras_are_unconfirmed_not_blocked():
+    inventory = replace(
+        snapshot(entry("base.ckpt", "model", "a"), entry("file.ckpt", "unknown")), backend_id="drawthings-cloud"
+    )
+    selected = tuple(LoRASelection(name, 1.0) for name in ("unlisted.ckpt", "file.ckpt"))
+    diagnostics = preflight_loras(base_request(loras=selected), inventory)
+    assert [(d.identifier, d.availability, d.code) for d in diagnostics] == [
+        ("unlisted.ckpt", "unknown", "availability_unknown"),
+        ("file.ckpt", "present", "architecture_unknown"),
+    ]
+    assert not blocked(diagnostics)
 
 
 def test_trigger_prefix_is_explicit_ordered_deduplicated_and_recorded():

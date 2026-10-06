@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ from dtflow.backends.drawthings.codec import (
 from dtflow.backends.drawthings.errors import diagnostics, error, failure, from_exception
 from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
+from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
 from dtflow.core.models import (
     BackendError,
@@ -47,6 +49,7 @@ from dtflow.core.models import (
 )
 from dtflow.core.tasks import settle
 
+log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 BACKEND_ID = "drawthings-grpc"
@@ -301,7 +304,21 @@ class DrawThingsBackend:
         self._active += 1
         try:
             async with asyncio.timeout(remaining()):
-                wire = build_generation_message(request, await self._secret())
+                model = (
+                    next((e for e in self._inventory.entries if e.identifier == request.model_id), None)
+                    if self._inventory
+                    else None
+                )
+                base_version = (model.architecture if model else None) or bundled_base_version(request.model_id)
+                wire = build_generation_message(request, await self._secret(), base_version)
+                if request.loras:
+                    log.debug(
+                        "loras sent=%s override=%s base_version=%s prepared=%d",
+                        dict(wire.effective_configuration).get("loras"),
+                        wire.message.override.loras.decode() or "none",
+                        base_version,
+                        len(request.prepared_assets),
+                    )
                 emit("preparing", stage="wire_validated")
                 async with self._lane:
                     await self._connect()
@@ -323,6 +340,7 @@ class DrawThingsBackend:
                         await stream.send_message(wire.message, end=True)
                         previews = 0
                         async for response in stream:
+                            self._log_response(response)
                             if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
                                 raise self._reject(request, "chunked_output_unsupported", stage, finals)
                             for signpost in (response.current_signpost,) if response.current_signpost else ():
@@ -351,6 +369,12 @@ class DrawThingsBackend:
                                     raise self._reject(request, exc.code, stage, finals) from exc
                                 finals.append(artifact)
                                 emit("artifact_received", artifact=artifact)
+                    if log.isEnabledFor(logging.DEBUG):
+                        for label in ("initial_metadata", "trailing_metadata"):
+                            items = getattr(stream, label, None)
+                            if items:
+                                shown = {k: v for k, v in dict(items).items() if "auth" not in k.lower()}
+                                log.debug("grpc %s %s", label, shown)
                     stage = SubmissionStage.TERMINAL_OBSERVED
                     if len(finals) != expected:
                         code = "no_final_output" if not finals else "incomplete_final_output"
@@ -382,6 +406,29 @@ class DrawThingsBackend:
             CompletionEvidence("OK", True),
             warnings,
         )
+
+    @staticmethod
+    def _log_response(response) -> None:
+        """Development diagnostics: which non-image fields the server set, never image bytes."""
+        if not log.isEnabledFor(logging.DEBUG):
+            return
+        seen = {}
+        if response.tags:
+            seen["tags"] = list(response.tags)
+        if response.download_size:
+            seen["download_size"] = response.download_size
+        if response.remote_download is not None:
+            seen["remote_download"] = str(response.remote_download)[:300]
+        if response.scale_factor:
+            seen["scale_factor"] = response.scale_factor
+        if response.signposts:
+            seen["signposts"] = [betterproto.which_one_of(item, "signpost")[0] for item in response.signposts]
+        if response.current_signpost:
+            seen["signpost"] = betterproto.which_one_of(response.current_signpost, "signpost")[0]
+        if response.generated_images:
+            seen["images"] = len(response.generated_images)
+        if seen:
+            log.debug("server response %s", seen)
 
     @staticmethod
     def _partials(finals: list[ImageArtifact]) -> tuple[ImageArtifact, ...]:
