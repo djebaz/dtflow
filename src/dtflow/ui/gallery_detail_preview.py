@@ -9,20 +9,19 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QStyle,
     QButtonGroup,
     QFrame,
     QHeaderView,
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
-
 from shiboken6 import isValid
 
 from dtflow.ui.theme import load_tokens
