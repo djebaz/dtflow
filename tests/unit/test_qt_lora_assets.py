@@ -190,6 +190,9 @@ def test_use_receipt_binds_by_identifier_only_for_confirmed_receipts(window, clo
     page.useReceiptButton.click()
     assert page.assetStatusLabel.text().startswith("Add the LoRA first")
     add_lora(window, qtbot, "style.ckpt", 0.8)
+    assert page.assetStatusLabel.text().startswith("Receipt bound") and "[receipt " in page.loraList.item(0).text()
+    window.generation.lora._receipts.clear()  # adding a LoRA with a confirmed receipt already bound it; unbind to press the button
+    window.generation.lora._render_loras()
     page.useReceiptButton.click()
     assert page.assetStatusLabel.text().startswith("Receipt bound") and "[receipt " in page.loraList.item(0).text()
     assert len(window.generation.lora.receipt_ids()) == 1

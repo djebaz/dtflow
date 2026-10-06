@@ -82,6 +82,7 @@ class LoraAssetPanel:
         self._receipts: dict[str, str] = {}  # selected LoRA identifier -> local receipt id (never exported)
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[str, dict] = {}
+        self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         page.addLoraButton.clicked.connect(self.add)
         page.removeLoraButton.clicked.connect(self.remove)
         page.checkLorasButton.clicked.connect(self.check)
@@ -179,6 +180,7 @@ class LoraAssetPanel:
             self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRA not added", str(exc)))
             return
         self.set_loras((*[x for x in self.loras if x.identifier != selection.identifier], selection))
+        self._auto_bind(selection.identifier)
 
     def remove(self) -> None:
         row = self.page.loraList.currentRow()
@@ -236,6 +238,9 @@ class LoraAssetPanel:
             self.page.assetList.addItem(item)
             if record["asset_id"] == selected:
                 self.page.assetList.setCurrentItem(item)
+        if self._bind_after_list is not None:
+            identifier, self._bind_after_list = self._bind_after_list, None
+            self._bind_confirmed(identifier)
 
     def _selected_id(self) -> str | None:
         item = self.page.assetList.currentItem()
@@ -267,21 +272,54 @@ class LoraAssetPanel:
                     f"{record['identifier']} ({record['evidence']}).",
                 ),
             )
+            self._bind_after_list = record["identifier"]
         self.refresh_assets()
 
     def reconcile(self) -> None:
         asset_id = self._selected_id()
-        if self._is_busy() or self._backend()[0] != "cloud" or asset_id is None:
+        if asset_id is not None:
+            self._start_reconcile(asset_id)
+
+    def _start_reconcile(self, asset_id: str, bind: str | None = None) -> None:
+        if self._is_busy() or self._backend()[0] != "cloud":
             return
         self._set_busy(True)
         self._show(self.page.assetStatusLabel, Presentation("warning", "Reconciling", "Metadata check only."))
-        self._runner.submit(reconcile_asset(self._state, asset_id, saved=self._saved()), self._reconciled)
+        self._runner.submit(
+            reconcile_asset(self._state, asset_id, saved=self._saved()),
+            lambda outcome, failure: self._reconciled(outcome, failure, bind),
+        )
 
-    def _reconciled(self, outcome, failure) -> None:
+    def _reconciled(self, outcome, failure, bind: str | None = None) -> None:
         self._set_busy(False)
         status = self.page.assetStatusLabel
         self._show(status, present_asset_failure(failure) if failure else present_reconciliation(outcome[1]))
+        if bind is not None and failure is None:
+            self._bind_after_list = bind
         self.refresh_assets()
+
+    def _auto_bind(self, identifier: str) -> None:
+        """On cloud, bind (reconciling first when needed) the receipt of a LoRA that was just added."""
+        if self._backend()[0] != "cloud" or self._bind_confirmed(identifier):
+            return
+        pending = [r for r in self._records.values() if r["identifier"] == identifier and r["state"] != "failed"]
+        if pending:
+            self._start_reconcile(pending[0]["asset_id"], bind=identifier)
+
+    def _bind_confirmed(self, identifier: str) -> bool:
+        """Bind the confirmed receipt for a selected LoRA identifier; ``True`` when one was found."""
+        if identifier not in {item.identifier for item in self.loras}:
+            return False
+        for asset_id, record in self._records.items():
+            if record["identifier"] == identifier and record["state"] == "confirmed":
+                self._receipts[identifier] = asset_id
+                self._render_loras()
+                self._show(
+                    self.page.assetStatusLabel,
+                    Presentation("ok", "Receipt bound", f"{identifier} uses its confirmed cloud receipt."),
+                )
+                return True
+        return False
 
     def use_receipt(self) -> None:
         asset_id, status = self._selected_id(), self.page.assetStatusLabel
