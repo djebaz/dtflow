@@ -8,13 +8,14 @@ evidence, and neither action claims remote cancellation or resolution.
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QListWidgetItem, QMessageBox, QWidget
 
-from dtflow.core.models import ValidationError
+from dtflow.core.models import BackendEvent, ValidationError
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
@@ -28,7 +29,7 @@ from dtflow.services.queue_session import (
     set_concurrency,
 )
 from dtflow.services.session import bind_prepared
-from dtflow.ui.activity import Activity
+from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
@@ -55,7 +56,7 @@ from dtflow.ui.queue_presenter import (
     summarize,
     uncertainty_text,
 )
-from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.runner import AsyncRunner, EventRelay
 
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
 PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
@@ -77,6 +78,21 @@ WIRED_CONTROLS = (
     *PLAN_INPUTS,
 )
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
+
+
+@dataclass(frozen=True, slots=True)
+class _QueueBackendEvent:
+    queue_id: str
+    item_id: str
+    event: BackendEvent
+
+    @property
+    def kind(self) -> str:
+        return self.event.kind
+
+    @property
+    def sequence(self) -> int:
+        return self.event.sequence
 
 
 def ask_confirmation(parent: QWidget, title: str, text: str) -> bool:
@@ -119,6 +135,8 @@ class QueuePage:
         self._detail: dict | None = None
         self._shared_cap: int | None = None
         self._output_folder: Path | None = None
+        self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
+        self._event_relay = EventRelay(self._queue_backend_event, page)
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
         for view in (page.queueItemsView, page.planTableView):
@@ -214,6 +232,13 @@ class QueuePage:
             return
         views, self._detail, self._shared_cap = result
         self._views = {view["queue_id"]: view for view in views}
+        running = {
+            (view["queue_id"], item["item_id"])
+            for view in views
+            for item in view["items"]
+            if item["state"] == "running"
+        }
+        self._run_progress = {key: value for key, value in self._run_progress.items() if key in running}
         if self._select_after in self._views:
             self._selected, self._select_after = self._select_after, None
         elif self._selected not in self._views:
@@ -304,22 +329,82 @@ class QueuePage:
         spin.style().unpolish(spin)
         spin.style().polish(spin)
 
+    def _controls_for(self, view: dict | None):
+        detail = self._detail if view and self._detail and self._detail["queue_id"] == view["queue_id"] else None
+        dispatching_here = bool(view and self._dispatching == view["queue_id"])
+        return controls(
+            view,
+            dispatching_here=dispatching_here,
+            generating=self._activity.generating,
+            started=dispatching_here or has_started(detail) or bool(view and view["status"] == "running"),
+        )
+
+    def _run_view(self) -> dict | None:
+        if self._dispatching is not None:
+            active = self._views.get(self._dispatching)
+            if active is not None:
+                return active
+        return self._view()
+
+    def _publish_run_state(self) -> None:
+        if self._activity.generating:
+            return
+        view = self._run_view()
+        if view is None:
+            self._activity.present_run(RunState())
+            return
+
+        available = self._controls_for(view)
+        queue_id = view["queue_id"]
+        dispatching_here = self._dispatching == queue_id
+        status = view["status"]
+        phase, action = "idle", None
+        if dispatching_here or status == "running":
+            phase = "running"
+            action = "pause" if available.pause else None
+        elif available.resume:
+            phase, action = "paused", "resume"
+        elif available.start:
+            phase, action = "ready", "start"
+        elif status == "finished":
+            phase = "complete"
+        elif status == "blocked":
+            phase = "error"
+
+        completed = total = None
+        running_items = [item["item_id"] for item in view["items"] if item["state"] == "running"]
+        if phase == "running" and len(running_items) == 1:
+            progress = self._run_progress.get((queue_id, running_items[0]))
+            if progress is not None:
+                completed, total = progress
+
+        summary = summarize(view)
+        detail = f"Queue {queue_id[:8]} · {summary.headline}"
+        if completed is not None and total is not None:
+            detail += f" Step {completed}/{total}."
+        self._activity.present_run(
+            RunState(
+                owner="queue",
+                phase=phase,
+                action=action,
+                completed=completed,
+                total=total,
+                queue_id=queue_id,
+                detail=detail,
+            )
+        )
+
     def _sync(self) -> None:
         page = self.page
         view = self._view()
-        detail = self._detail if view and self._detail and self._detail["queue_id"] == view["queue_id"] else None
-        available = controls(
-            view,
-            dispatching_here=self.dispatching_here,
-            generating=self._activity.generating,
-            started=has_started(detail),
-        )
+        available = self._controls_for(view)
         page.startQueueButton.setEnabled(available.start)
         page.pauseQueueButton.setEnabled(available.pause)
         page.resumeQueueButton.setEnabled(available.resume)
         page.cancelQueueButton.setEnabled(available.cancel)
         page.overrideReservationButton.setEnabled(available.override)
         page.createQueueButton.setEnabled(not self.dispatching_here and not self._activity.generating)
+        self._publish_run_state()
 
     def _select_default_item(self) -> None:
         """Show evidence without a click: the first unknown or failed item, else the first item."""
@@ -480,6 +565,35 @@ class QueuePage:
         self.refresh()
 
     # -- dispatch and controls -------------------------------------------------------------------------------------
+    def _queue_backend_event(self, wrapped: _QueueBackendEvent) -> None:
+        event = wrapped.event
+        key = (wrapped.queue_id, wrapped.item_id)
+        if (
+            event.kind == "progress"
+            and type(event.completed) is int
+            and type(event.total) is int
+            and event.total > 0
+        ):
+            self._run_progress[key] = (max(0, event.completed), event.total)
+        elif event.kind == "terminal":
+            self._run_progress.pop(key, None)
+        self._publish_run_state()
+
+    def trigger_run_control(self) -> None:
+        """Route the compact header control through the same Start/Pause/Resume paths as the Queues page."""
+        if self._activity.generating:
+            return
+        view = self._run_view()
+        available = self._controls_for(view)
+        if view is None:
+            return
+        if available.pause:
+            self._post("pause", view["queue_id"])
+        elif available.resume:
+            self._post("resume", view["queue_id"])
+        elif available.start and view is self._view():
+            self.start()
+
     def start(self) -> None:
         view = self._view()
         if view is None or self.dispatching_here or self._activity.generating:
@@ -489,7 +603,16 @@ class QueuePage:
         self._message(Presentation("ok", "Dispatching", "This window owns dispatch until the queue stops."))
         self._render()
         saved = self._saved()
-        self._future = self._runner.submit(dispatch_queue(self._state, view["queue_id"], saved=saved), self._dispatched)
+        queue_id = view["queue_id"]
+        self._future = self._runner.submit(
+            dispatch_queue(
+                self._state,
+                queue_id,
+                saved=saved,
+                on_event=lambda item_id, event: self._event_relay(_QueueBackendEvent(queue_id, item_id, event)),
+            ),
+            self._dispatched,
+        )
         self._timer.start()
 
     def _dispatched(self, final, failure) -> None:
@@ -510,11 +633,12 @@ class QueuePage:
         self._render()
         self.refresh()
 
-    def _post(self, action: str) -> None:
+    def _post(self, action: str, queue_id: str | None = None) -> None:
         view = self._view()
-        if view is None:
+        target = queue_id or (view["queue_id"] if view is not None else None)
+        if target is None:
             return
-        self._runner.submit(post_queue_control(self._state, view["queue_id"], action), self._posted(action))
+        self._runner.submit(post_queue_control(self._state, target, action), self._posted(action))
 
     def _posted(self, action: str):
         def done(_, failure) -> None:
