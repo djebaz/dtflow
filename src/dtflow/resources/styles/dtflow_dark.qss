@@ -506,8 +506,21 @@ QFrame#modelPickerPopup {
   border: 1px solid ${color.border};
   border-radius: ${size.inputRadius};
 }
-QListWidget#modelPickerResults::item {
+QListView#modelPickerResults {
+  background: ${color.input};
+  color: ${color.text};
+  border: 1px solid ${color.border};
+}
+QListView#modelPickerResults::item {
   min-height: 26px;
+  padding: 5px 6px;
+}
+QListView#modelPickerResults::item:hover {
+  background: ${color.buttonHover};
+}
+QListView#modelPickerResults::item:selected {
+  background: ${color.selection};
+  color: ${color.selectionText};
 }
 QListWidget::item {
   padding: 5px 6px;

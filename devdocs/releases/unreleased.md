@@ -38,6 +38,8 @@
 
 ## Fixed
 
+- PR #38 follow-up after owner-reported picker failure/slowness replaces per-keystroke result reconstruction with a cached model/native proxy filter, bounded typing debounce and uniform single-line rows. Popup creation is delayed until after shell preview disabling; all dismissals reset native combo state. Static checks only: runtime function/performance acceptance remains owner-deferred.
+
 - PR #37 keeps Auto-refresh's mint On colors on hover and after mouse clicks by overriding generic gallery hover/focus rules. It shares Connection's keyboard-only dashed focus cue instead of leaving a blue mouse-focus outline until another control is clicked. Labels, dimensions and refresh semantics are unchanged; new visual acceptance is deferred to the owner.
 
 - PR #37 makes Images auto/manual refresh incremental: retain Grid cards, List cells/icons and Detail filmstrip entries by output identity through insertions/removals/reordering; update changed metadata in place. Only new images or changed path/size/availability require thumbnail decoding. Retained in-flight decodes and the selected Detail image/zoom/pan survive other outputs changing; unchanged pages preserve exact scroll/focus. Counts/navigation and changed filter choices still update. Tests and smoke tests are deferred to the owner under fast-implement.

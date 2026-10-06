@@ -40,7 +40,7 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 
 ## Generate model-selection refinement
 
-PR #38 adds a wide single-line searchable model picker, explicit exact-ID entry and eight per-provider recent selections. Inventory refresh preserves the selected ID and rejects stale source completions. See the [implementation plan](plans/2026-10-06-searchable-model-picker.md). Static checks only; final tests and desktop smoke remain with the owner.
+PR #38 adds a wide single-line searchable model picker, explicit exact-ID entry and eight per-provider recent selections. Inventory refresh preserves the selected ID and rejects stale source completions. See the [implementation plan](plans/2026-10-06-searchable-model-picker.md). The owner reported initial failure/slowness; a follow-up uses cached native model filtering and corrected popup lifetime/dismissal. Static checks only; runtime acceptance remains pending with the owner.
 
 ## Next coding direction
 

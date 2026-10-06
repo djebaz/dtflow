@@ -28,3 +28,13 @@ None.
 - Tests and smoke tests were not run or added; final 500+ item, keyboard, narrow-screen and restart acceptance remains with the owner.
 - Packaging skipped: source UI feature PR, no release requested. No training/inference, network/provider checks, uploads or billable actions performed.
 - AGENTS.md contract remains unchanged; desktop guide, README, DESIGN, runtime layout, current status and unreleased notes synchronized. No version bump.
+
+## Owner-reported failure follow-up
+- Owner reports initial implementation does not work and is very slow; not accepted.
+- Source review identifies full item destruction/recreation on every keystroke, duplicate filtering on open, and missing native combo state reset on outside-click popup dismissal.
+- Replace item-widget rebuilding with a cached model/native proxy filter and uniform-height QListView, debounce typing, create popup lazily after the shell disables preview controls, and reset native popup state for every dismissal.
+- No runtime speed claim without owner retest; static-only validation remains in force.
+
+
+- Follow-up implementation: cached detached QStandardItemModel, native escaped/anchored multi-word proxy filtering, 100ms debounce flushed by keyboard acceptance, uniform rows with once-per-rebuild width measurement for horizontal scrolling, and no per-keystroke item allocation/style toggles. Recents use explicit single-line Recent markers; matches include remembered IDs as well as inventory entries.
+- Follow-up checks passed: targeted Ruff lint/format, compilation/import and shared theme resolution. No UI launch, tests or timings were run; owner retest is required. Popup failure cause remains source-derived rather than runtime-reproduced.
