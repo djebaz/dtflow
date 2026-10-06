@@ -144,7 +144,8 @@ class RunControl(QAbstractButton):
         start, end = self._colors["running"], self._colors["running_end"]
         if self._completed is None or self._total is None:
             return QColor(start)
-        mix = min(1.0, max(0.0, self._completed / self._total))
+        # Cyan is reached when the last item starts, i.e. once every other item has settled.
+        mix = min(1.0, max(0.0, self._completed / max(1, self._total - 1)))
         return QColor(*(round(a + (b - a) * mix) for a, b in zip(start.getRgb()[:3], end.getRgb()[:3], strict=True)))
 
     def paintEvent(self, _event) -> None:
@@ -153,11 +154,13 @@ class RunControl(QAbstractButton):
         painter.scale(self.width() / 30.0, self.height() / 30.0)
 
         ring = QRectF(3.5, 3.5, 23.0, 23.0)
-        base = self._progress_color() if self._phase == "running" else self._colors[self._phase]
+        base = {"running": self._progress_color(), "complete": self._colors["running_end"]}.get(
+            self._phase, self._colors[self._phase]
+        )
         if self._phase == "complete":
-            # Soft pulsing halo while the control shows it is finishing; the ring itself stays in its own color.
+            # Soft pulsing cyan halo while the control shows it is finishing.
             strength = 0.5 - 0.5 * math.cos(self._pulse)
-            glow = QColor(self._colors["text"])
+            glow = QColor(self._colors["running_end"])
             gradient = QRadialGradient(QPointF(15.0, 15.0), 15.0)
             glow.setAlpha(round(20 + 55 * strength))
             gradient.setColorAt(0.6, glow)
