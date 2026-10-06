@@ -274,7 +274,7 @@
    </item>
    <item>
     <widget class="QFrame" name="queueWorkspace">
-     <layout class="QVBoxLayout" name="queueWorkspaceLayout">
+     <layout class="QVBoxLayout" name="queueWorkspaceLayout" stretch="0,0,0,0,1,1,0">
       <item>
        <widget class="QLabel" name="ownershipBadgeLabel">
         <property name="sizePolicy">
@@ -482,6 +482,12 @@
              </widget>
             </item>
            </layout>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
           </widget>
          </item>
          <item>
@@ -872,7 +878,20 @@
       </item>
       <item>
        <widget class="QFrame" name="emptyStateCard">
-        <layout class="QVBoxLayout" name="emptyStateLayout">
+        <layout class="QVBoxLayout" name="emptyStateLayout" stretch="1,0,0,1">
+         <item>
+          <spacer name="queueEmptyTopSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint">
+            <size>
+             <width>0</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
          <item>
           <widget class="QLabel" name="emptyStateTitleLabel">
            <property name="text">
@@ -889,7 +908,7 @@
          <item>
           <widget class="QLabel" name="emptyStateBodyLabel">
            <property name="text">
-            <string>Create or select a durable queue to inspect stable item identity, attempts, and dispatch evidence.</string>
+            <string>Select a queue from the left, or create one from the Generate form.</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>
@@ -901,6 +920,22 @@
             <string>secondary</string>
            </property>
           </widget>
+         </item>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <spacer name="queueEmptyBottomSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint">
+            <size>
+             <width>0</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
          </item>
         </layout>
        </widget>

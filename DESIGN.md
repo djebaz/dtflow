@@ -299,3 +299,10 @@ Checkable section cards require an operable header control. Queues uses
 checkable `planBox`; the controller re-enables the custom header when unchecked
 and hides the entire contents wrapper. A passive label cannot replace a native
 group-box toggle. Parent activity disabling still applies.
+
+Queues keeps toolbar, action hint and collapsed Plan card at their natural
+heights. The items table or empty-state region receives the flexible workspace
+height; empty-state title and guidance stay together in its center. Hide queue
+progress when no queue is selected rather than presenting “0 of 0” as work.
+The Plan header has a fixed vertical size policy, while expanded contents retain
+their natural layout. Avoid distributing spare height among action rows.

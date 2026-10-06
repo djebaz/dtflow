@@ -243,6 +243,7 @@ class QueuePage:
         view = self._view()
         page.emptyStateCard.setVisible(view is None)
         page.queueTableHost.setVisible(view is not None)
+        page.queueProgressBar.setVisible(view is not None)
         if view is None:
             self._show_cap(None)
             self.model.apply(())
