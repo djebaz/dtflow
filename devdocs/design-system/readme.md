@@ -120,7 +120,7 @@ The `ImagePreview` widget preserves original pixels with Fit/100%/zoom/pan suppo
 
 ### Status & progress
 
-Always pair color with text. Progress bars show only known progress. Unknown outcomes, interruptions, and failures remain distinct. Effective requests and attempt details remain accessible even when collapsed.
+Always pair color with text. Progress bars show only known progress. Unknown outcomes, interruptions, and failures remain distinct. Effective requests and attempt details remain accessible even when collapsed. The shared 30×30 segmented Run control is the persistent compact execution summary: queue-ready Play starts through the existing queue path; owned queue work can pause/resume; external queue work and single generation are status-only unless the underlying service truthfully supports an action. A single active queue item may show its queue position in the center, while backend step detail stays in the tooltip.
 
 ### Section cards
 
@@ -136,7 +136,7 @@ The metadata band is 108 logical px high (a scoped Designer dimension, not a tok
 
 ### Images layout
 
-Images is a full-width gallery. The shared brand and navigation widgets are remounted into two header slots (260px, shell chrome width): the logo aligns with the view-controls row (Grid / List / Detail, one shared size slider, Auto-refresh, Refresh) and the navigation tabs align with the filter row (prompt search, model, LoRA, date, ratio). Both content rails and the Inspector toggle are hidden; rows share an 8px gap. Detail: aspect-preserving Cover/Fit canvas with position, dimensions and fixture overlays, round prev/next buttons, a floating pill toolbar (view mode, −, 100%, +, fullscreen), the 108px metadata band, a three-line prompt with Additional/Raw disclosure (mutually exclusive) and a full-height right filmstrip. Grid tiles are uniform aspect-fit cards; List has metadata columns and no checkboxes. Filters, auto-refresh and file actions stay disabled until services exist; artwork and metadata are labelled fixtures, LoRA compatibility is Unknown.
+Images is a full-width gallery. The shared brand and navigation widgets are remounted into two header slots (260px, shell chrome width): the logo aligns with the view-controls row (Grid / List / Detail, one shared size slider, Auto-refresh, Refresh) and the navigation tabs align with the filter row (prompt search, model, LoRA, date, ratio). Both content rails are hidden while the segmented Run control stays in the shared brand row; rows share an 8px gap. Detail: aspect-preserving Cover/Fit canvas with position, dimensions and fixture overlays, round prev/next buttons, a floating pill toolbar (view mode, −, 100%, +, fullscreen), the 108px metadata band, a three-line prompt with Additional/Raw disclosure (mutually exclusive) and a full-height right filmstrip. Grid tiles are uniform aspect-fit cards; List has metadata columns and no checkboxes. Filters, auto-refresh and file actions stay disabled until services exist; artwork and metadata are labelled fixtures, LoRA compatibility is Unknown.
 
 ### Queues layout
 
@@ -150,7 +150,7 @@ Toolbar, action hint and the collapsed Plan card keep natural height; the items 
 
 ## Components
 
-- `components/icons/` — **Icon** (source SVGs, code-drawn panel/connection, Lucide substitutes; full catalogue on the "Icon Set" card)
+- `components/icons/` — **Icon** (source SVGs, code-drawn connection status, Lucide substitutes; full catalogue on the "Icon Set" card)
 - `components/layout/` — **SectionCard**, **Panel**, **StatusBar**
 - `components/controls/` — **Button**, **ConnectionButton**, **TextField**, **TextArea**, **ComboBox**, **SpinBox**, **Checkbox**, **Slider**, **Tabs**
 - `components/text/` — **Label**
