@@ -3,7 +3,9 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
+from time import monotonic
 from uuid import uuid4
 
 from dtflow.build import identity
@@ -150,14 +152,21 @@ class GenerationService:
         state = "prepared"
         last_sequence = 0
         events = EventBuffer(preview_bytes=caps.limits.preview_bytes)
+        backend_submitted_at: float | None = None
+        backend_terminal_at: float | None = None
 
         def receive(event: BackendEvent) -> None:
-            nonlocal last_sequence
+            nonlocal last_sequence, backend_submitted_at, backend_terminal_at
+            observed_at = monotonic()
             if event.request_id != request.request_id or event.sequence <= last_sequence:
                 raise ValueError("Backend event identity/order is invalid.")
             last_sequence = event.sequence
             if event.artifact and len(event.artifact.encoded) > caps.limits.artifact_bytes:
                 raise ValueError("Event artifact exceeds the limit.")
+            if event.kind == "submission_possible" and backend_submitted_at is None:
+                backend_submitted_at = observed_at
+            elif event.kind == "terminal":
+                backend_terminal_at = observed_at
             events(event)
             if on_event is not None:
                 on_event(event)
@@ -178,6 +187,15 @@ class GenerationService:
             stage = SubmissionStage.TERMINAL_OBSERVED
             if result.backend_id != caps.backend_id:
                 raise ValueError("Result backend identity does not match.")
+            if (
+                backend_submitted_at is not None
+                and backend_terminal_at is not None
+                and backend_terminal_at >= backend_submitted_at
+            ):
+                result = replace(
+                    result,
+                    backend_elapsed_seconds=backend_terminal_at - backend_submitted_at,
+                )
             # Validation/encoding run in the bounded worker path, not the owning loop.
             async with self._buffers:
                 await settle(asyncio.to_thread(validate_result, result, request, caps.limits))
