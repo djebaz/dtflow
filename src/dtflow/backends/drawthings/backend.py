@@ -356,6 +356,12 @@ class DrawThingsBackend:
                                     raise self._reject(request, exc.code, stage, finals) from exc
                                 finals.append(artifact)
                                 emit("artifact_received", artifact=artifact)
+                    if log.isEnabledFor(logging.DEBUG):
+                        for label in ("initial_metadata", "trailing_metadata"):
+                            items = getattr(stream, label, None)
+                            if items:
+                                shown = {k: v for k, v in dict(items).items() if "auth" not in k.lower()}
+                                log.debug("grpc %s %s", label, shown)
                     stage = SubmissionStage.TERMINAL_OBSERVED
                     if len(finals) != expected:
                         code = "no_final_output" if not finals else "incomplete_final_output"
@@ -403,7 +409,7 @@ class DrawThingsBackend:
         if response.scale_factor:
             seen["scale_factor"] = response.scale_factor
         if response.signposts:
-            seen["signposts"] = len(response.signposts)
+            seen["signposts"] = [betterproto.which_one_of(item, "signpost")[0] for item in response.signposts]
         if response.current_signpost:
             seen["signpost"] = betterproto.which_one_of(response.current_signpost, "signpost")[0]
         if response.generated_images:
