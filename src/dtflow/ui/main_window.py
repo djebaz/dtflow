@@ -248,6 +248,7 @@ class MainWindow:
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
         self.shell.runControl.clicked.connect(self.queue.trigger_run_control)
+        self.shell.brandFrame.layout().setAlignment(self.shell.runControl, Qt.AlignmentFlag.AlignVCenter)
         self._run_was_running = False
         self._run_settle = QTimer(form)
         self._run_settle.setSingleShot(True)
