@@ -14,6 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QButtonGroup,
     QComboBox,
@@ -460,7 +461,7 @@ class GalleryPage(QObject):
             self.refresh_button.setToolTip(str(exc))
             return
 
-        anchor = self.selected_id if preserve else None
+        anchor = self._browsing_anchor() if preserve else None
         self._submit_query(query, anchor=anchor)
 
     def _submit_query(self, query: GalleryQuery, *, anchor: str | None) -> None:
@@ -505,7 +506,7 @@ class GalleryPage(QObject):
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
-        if anchor and not anchor_found:
+        if self.mode == "Detail" and anchor == self.selected_id and anchor and not anchor_found:
             self.selected_id = None
         self._populate_facets(*choices)
         self._render_page()
@@ -523,7 +524,7 @@ class GalleryPage(QObject):
                 self._clear_detail()
 
         self.refresh_button.setToolTip(self._page_summary())
-        self._restore_scroll_later()
+        self._restore_scroll_later(anchor if anchor_found else None)
         self._schedule_save()
 
     def _populate_facets(self, models: tuple[str, ...], loras: tuple[str, ...]) -> None:
@@ -1014,7 +1015,25 @@ class GalleryPage(QObject):
         self._scroll["list"] = self.table.verticalScrollBar().value()
         self._scroll["filmstrip"] = self.film_scroll.verticalScrollBar().value()
 
-    def _restore_scroll_later(self) -> None:
+    def _browsing_anchor(self) -> str | None:
+        if not self.items:
+            return None
+        if self.mode == "Detail":
+            return self.selected_id
+        if self.mode == "List":
+            row = self.table.rowAt(0)
+            if row < 0:
+                row = 0
+            item = self.table.item(row, 0)
+            return str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else None
+        position = self.grid_scroll.verticalScrollBar().value()
+        for item in self.items:
+            button = self._grid_buttons.get(item.identity)
+            if button is not None and button.parentWidget().geometry().bottom() >= position:
+                return item.identity
+        return self.items[-1].identity
+
+    def _restore_scroll_later(self, anchor: str | None = None) -> None:
         target = self._page_scroll_target
         self._page_scroll_target = None
 
@@ -1030,6 +1049,28 @@ class GalleryPage(QObject):
                     bar.setValue(bar.maximum())
                 else:
                     bar.setValue(min(self._scroll[name], bar.maximum()))
+
+            if not anchor or target is not None:
+                return
+            if self.mode == "Grid":
+                button = self._grid_buttons.get(anchor)
+                if button is not None:
+                    self.grid_scroll.verticalScrollBar().setValue(button.parentWidget().y())
+            elif self.mode == "List":
+                try:
+                    row = next(i for i, item in enumerate(self.items) if item.identity == anchor)
+                except StopIteration:
+                    return
+                cell = self.table.item(row, 0)
+                if cell is not None:
+                    self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+            elif self.mode == "Detail":
+                try:
+                    row = next(i for i, item in enumerate(self.items) if item.identity == anchor)
+                except StopIteration:
+                    return
+                if row < len(self._film_buttons):
+                    self.film_scroll.ensureWidgetVisible(self._film_buttons[row])
 
         QTimer.singleShot(0, restore)
 
