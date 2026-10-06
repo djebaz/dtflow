@@ -129,6 +129,6 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
         )
     pairs = {key: str(value) for key, value in decoded.items() if value is not None}
     pairs["sampler_wire_value"] = str(raw.Sampler())
-    pairs["loras"] = ",".join(f"{item.identifier}@{item.weight}" for item in request.loras)
+    pairs["loras"] = ",".join(f"{wire_lora_name(request, item.identifier)}@{item.weight}" for item in request.loras)
     pairs["config_source"] = "drawthings-py " + version("drawthings-py")
     return tuple(sorted(pairs.items()))

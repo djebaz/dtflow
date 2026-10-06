@@ -305,7 +305,11 @@ class DrawThingsBackend:
             async with asyncio.timeout(remaining()):
                 wire = build_generation_message(request, await self._secret())
                 if request.loras:
-                    log.debug("loras sent=%s", dict(wire.effective_configuration).get("loras"))
+                    log.debug(
+                        "loras sent=%s prepared=%d",
+                        dict(wire.effective_configuration).get("loras"),
+                        len(request.prepared_assets),
+                    )
                 emit("preparing", stage="wire_validated")
                 async with self._lane:
                     await self._connect()
