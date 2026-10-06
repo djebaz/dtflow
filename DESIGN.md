@@ -244,7 +244,7 @@ One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/im
 | Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, filter combo arrow `chevron`, fullscreen `fullscreen` |
 | Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
 | Prompt disclosure | Additional `document`, Raw `json` |
-| Additional-details rows | Negative prompt `ban`, Resolved seed `dices`, Filename `file-image`, Source `hard-drive`, File size `weight`, Duration `timer`; Path keeps `document` |
+| Additional-details rows | Negative prompt `ban`, Resolved seed `dices`, Filename `file-image`, Source `hard-drive`, File size `weight`, Backend duration `timer`; Path keeps `document` |
 
 Do not use emoji; Unicode is limited to the gallery's prev/next and zoom glyphs. The web reference's "Icon Usage Map" card in [`devdocs/design-system/`](devdocs/design-system/README.md) mirrors this table.
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 from collections import deque
 from dataclasses import asdict, replace
@@ -959,23 +960,13 @@ class GalleryPage(QObject):
 
     @staticmethod
     def _recorded_duration(metadata: dict) -> str | None:
-        containers = [metadata]
-        effective = metadata.get("effective_configuration")
-        if isinstance(effective, dict):
-            containers.append(effective)
-        artifacts = metadata.get("artifacts")
-        if isinstance(artifacts, list):
-            containers.extend(item.get("metadata", {}) for item in artifacts if isinstance(item, dict))
-        for container in containers:
-            if not isinstance(container, dict):
-                continue
-            for key in ("duration_seconds", "generation_seconds", "elapsed_seconds"):
-                value = container.get(key)
-                if value is not None:
-                    return f"{value} s"
-            if container.get("duration_ms") is not None:
-                return f"{container['duration_ms']} ms"
-        return None
+        timing = metadata.get("timing")
+        if not isinstance(timing, dict):
+            return None
+        value = timing.get("backend_elapsed_seconds")
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+            return None
+        return f"{value:.2f} s"
 
     def _present_loras(self, item: GalleryItem) -> None:
         chips = [self._widget(f"galleryLoRAChip{i}") for i in (1, 2)]

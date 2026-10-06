@@ -192,13 +192,57 @@ def concurrency_level(value: int) -> str:
 
 
 def event_lines(view: dict) -> str:
-    """One line per recorded event, in local time to the second."""
+    """Compact human-readable queue activity; durable raw events remain unchanged in persistence."""
+    positions = {item["item_id"]: item["position"] for item in view.get("items", ())}
+    hidden = {"item_started", "backend_preparing", "backend_artifact_received", "backend_terminal"}
     lines = []
+
+    def item_label(detail: dict) -> str:
+        item_id = detail.get("item_id")
+        position = positions.get(item_id)
+        return f"#{position}" if position is not None else f"item {str(item_id)[:8]}"
+
     for event in view.get("events", ()):
-        detail = ", ".join(f"{key.replace('_', ' ')} {value}" for key, value in event["detail"].items())
-        lines.append(
-            f"{local_time(event['at_utc'])}  {event['kind'].replace('_', ' ')}" + (f", {detail}" if detail else "")
-        )
+        kind = event["kind"]
+        detail = event["detail"]
+        if kind in hidden:
+            continue
+        stamp = local_time(event["at_utc"])
+
+        if kind == "created":
+            count, cap = detail.get("items"), detail.get("cap")
+            summary = "Queue created"
+            if count is not None:
+                summary += f" - {count} item{'s' if count != 1 else ''}"
+            if cap is not None:
+                summary += f" - concurrency {cap}"
+        elif kind == "started":
+            summary = "Queue started"
+        elif kind == "backend_submission_possible":
+            summary = f"{item_label(detail)} submitted"
+        elif kind == "item_settled":
+            state = str(detail.get("state", "settled")).replace("_", " ")
+            if state == "succeeded":
+                summary = f"{item_label(detail)} completed"
+            else:
+                summary = f"{item_label(detail)} {state}"
+            duration = detail.get("backend_elapsed_seconds")
+            if type(duration) in (int, float):
+                summary += f" - {duration:.2f} s"
+        else:
+            summary = kind.replace("_", " ")
+            compact = []
+            for key, value in detail.items():
+                if key == "item_id":
+                    compact.append(item_label(detail))
+                elif key in ("request_id", "attempt_id"):
+                    compact.append(f"{key.replace('_', ' ')} {str(value)[:8]}")
+                else:
+                    compact.append(f"{key.replace('_', ' ')} {value}")
+            if compact:
+                summary += " - " + ", ".join(compact)
+        lines.append(f"{stamp}  {summary}")
+
     return "\n".join(lines)
 
 
