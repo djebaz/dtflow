@@ -328,9 +328,7 @@ class GenerationPage:
             self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
             family = catalogue.get("base_model")
             if isinstance(family, str):
-                self._rebuild_catalogue(
-                    preferred_family=family, preferred_checkpoint=values.model, restore_niche=True
-                )
+                self._rebuild_catalogue(preferred_family=family, preferred_checkpoint=values.model, restore_niche=True)
 
     def _switch_provider(self, name: str) -> None:
         """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
@@ -767,7 +765,11 @@ class GenerationPage:
             self._fill_models(selectable)
             # Preserve an explicit raw identifier even when provider discovery is incomplete (for example,
             # a local Draw Things endpoint bridging to DT+). Known classified checkpoints still obey the filters.
-            if current in allowed or current in unclassified or (current and self._catalogue.checkpoint(current) is None):
+            if (
+                current in allowed
+                or current in unclassified
+                or (current and self._catalogue.checkpoint(current) is None)
+            ):
                 page.modelCombo.setCurrentText(current)
             else:
                 page.modelCombo.setCurrentText("")

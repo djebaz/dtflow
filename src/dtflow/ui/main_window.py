@@ -427,9 +427,7 @@ class MainWindow:
         self.form.clearCustomLorasButton.setEnabled(count > 0)
 
     def import_custom_loras(self) -> None:
-        chosen, _ = QFileDialog.getOpenFileName(
-            self.form, "Import custom LoRAs", str(self.state_dir), "JSON (*.json)"
-        )
+        chosen, _ = QFileDialog.getOpenFileName(self.form, "Import custom LoRAs", str(self.state_dir), "JSON (*.json)")
         if not chosen:
             return
         try:

@@ -139,9 +139,7 @@ def validate_user_loras_document(document: object) -> list[dict]:
             raise ValueError(f"Custom LoRA entry {index} has an invalid 'modes' list.")
         unknown_modes = set(modes) - allowed_modes
         if unknown_modes:
-            raise ValueError(
-                f"Custom LoRA entry {index} has unsupported mode(s): {', '.join(sorted(unknown_modes))}."
-            )
+            raise ValueError(f"Custom LoRA entry {index} has unsupported mode(s): {', '.join(sorted(unknown_modes))}.")
         for key in ("name", "prefix"):
             value = record.get(key)
             if value is not None and not isinstance(value, str):
@@ -181,17 +179,13 @@ class Catalogue:
         self, filename: str, *, kind: str, tier: str | None = None, source: str = "bundled"
     ) -> tuple[CatalogueEntry, ...]:
         entries = (
-            _entry(record, kind=kind, tier=tier, source=source)
-            for record in _records(self.bundled_dir / filename)
+            _entry(record, kind=kind, tier=tier, source=source) for record in _records(self.bundled_dir / filename)
         )
         return tuple(entry for entry in entries if entry is not None)
 
     def user_loras(self) -> tuple[CatalogueEntry, ...]:
         path = self.state_dir / USER_CATALOGUE_DIR / USER_LORAS_FILE
-        entries = (
-            _entry(record, kind="lora", source="user")
-            for record in _records(path)
-        )
+        entries = (_entry(record, kind="lora", source="user") for record in _records(path))
         return tuple(entry for entry in entries if entry is not None)
 
     @property
@@ -220,9 +214,7 @@ class Catalogue:
         loras = tuple(loras_by_id.values())
         known_entries = (*self._prime, *self._niche)
         known = {entry.identifier for entry in known_entries}
-        known_nonmodels = {
-            entry.identifier for entry in (*self._bundled_loras, *self.user_loras(), *self._controls)
-        }
+        known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *self.user_loras(), *self._controls)}
         unknown = ()
         if self._inventory is not None:
             metadata = dict(self._inventory.diagnostics).get("model_metadata") == "present"
