@@ -4,6 +4,7 @@ import json
 import os
 
 from design_capture import capture_session, manifest, parser, ready, vendor_sources
+from state_layout import compose
 
 BASE = ["rest", "hover", "pressed", "focus", "disabled"]
 CHECK = BASE + ["checked", "hover+checked", "pressed+checked", "focus+checked", "disabled+checked"]
@@ -235,7 +236,7 @@ def html(base, vendors, expression, state, width):
     # The host fixes specimen bounds, not the component's styling/state appearance.
     return f'''<!doctype html><link rel="stylesheet" href="{base}/styles.css">
 {scripts}<script src="{base}/_ds_bundle.js"></script>
-<body style="overflow:hidden"><div id="cell" style="display:inline-block;padding:16px;min-width:{width + 32}px;min-height:90px;position:relative"><div id="specimen" style="width:{width}px"></div></div>
+<body style="margin:0;overflow:hidden"><div id="cell" style="display:inline-block;padding:8px;position:relative;background:#252525"><div id="specimen" style="width:{width}px"></div></div>
 <script>const D=window[Object.keys(window).find(k=>k.startsWith('DTFlowDesignSystem_'))];
 const e=React.createElement,p={json.dumps(props)},state={json.dumps(state)};
 ReactDOM.createRoot(document.getElementById('specimen')).render({expression});</script>'''
@@ -250,40 +251,90 @@ def observe(target):
       classes:el.className};}""")
 
 
-def compose(path, rows):
-    from PySide6.QtCore import QRect, Qt
-    from PySide6.QtGui import QColor, QFont, QImage, QPainter
-
-    loaded = [(label, [(state, QImage.fromData(data)) for state, data in cells]) for label, cells in rows if cells]
-    if not loaded:
-        return
-    cw = max(image.width() * 2 for _, cells in loaded for _, image in cells) + 12
-    heights = [max(image.height() * 2 for _, image in cells) + 42 for _, cells in loaded]
-    image = QImage(
-        150 + max(len(cells) for _, cells in loaded) * cw + 12, 52 + sum(heights), QImage.Format.Format_ARGB32
+def aligned_specs(name, definition):
+    """Map explicit Qt slots to real web recipes, never compact unavailable states."""
+    original = specs()
+    family = next(
+        key for key, (sheet, _) in original.items() if sheet == name or key == "inputs" and name == "34-combo-spin"
     )
-    image.fill(QColor("#1f1f1f"))
-    painter = QPainter(image)
-    painter.setPen(QColor("#e6e6e6"))
-    painter.setFont(QFont("Segoe UI", 9))
-    painter.drawText(12, 26, path.stem + " — web components, cells enlarged 2x")
-    y = 40
-    for (label, cells), height in zip(loaded, heights, strict=True):
-        painter.drawText(QRect(12, y, 126, height), Qt.TextFlag.TextWordWrap, label)
-        for i, (state, cell) in enumerate(cells):
-            x = 150 + i * cw
-            painter.drawText(x, y + 12, state)
-            painter.drawImage(x, y + 18, cell.scaled(cell.width() * 2, cell.height() * 2))
-        y += height
-    painter.end()
-    if not image.save(str(path)):
-        raise ValueError(f"Cannot save {path}")
+    recipes = original[family][1]
+    if name == "33-text-inputs":
+        recipes = [recipes[0], recipes[1], recipes[3], recipes[4]]
+    elif name == "34-combo-spin":
+        recipes = recipes[5:]
+    aliases = {
+        "focus (keyboardFocus)": "focus",
+        "placeholder": "rest",
+        "placeholder+hover": "hover",
+        "placeholder+focus": "focus",
+        "level=elevated": "elevated",
+        "0%": "0",
+        "40%": "40",
+        "100%": "100",
+        "busy (0,0)": "busy",
+        "disabled 40%": "disabled",
+        "hover row 0": "hover",
+        "hover row 1": "hover",
+        "selected row 1": "selected",
+        "selected row 2": "selected",
+        "rest (alternating)": "rest",
+        "hover tab 1": "hover",
+        "menubar": "rest",
+    }
+    result = []
+    for i, row in enumerate(definition["rows"]):
+        for label in row["states"]:
+            state = aliases.get(label, label)
+            recipe = dict(recipes[min(i, len(recipes) - 1)])
+            reason = None
+            if name == "38-labels-status":
+                if i == 0:
+                    if label in ["eyebrow", "caption", "value", "supporting", "section", "identifier", "panelHeading"]:
+                        recipe = next(r for r in recipes if r["label"] == label).copy()
+                        text = "Eyebrow" if label == "eyebrow" else label
+                        recipe["expression"] = f'e(D.Label,{{textRole:"{label}"}},"{text}")'
+                    else:
+                        reason = "No matching exported label role API"
+                elif i == 1:
+                    reason = "QLabel semantic state has no matching exported component API"
+                elif i == 2:
+                    recipe = next(r for r in recipes if r["label"] == "Status " + label).copy()
+                else:
+                    recipe = recipes[-1].copy()
+                state = "rest"
+            elif name == "39-popups":
+                if i == 2:
+                    recipe = recipes[-1].copy()
+                else:
+                    reason = "Web popup capture includes its trigger; no equivalent isolated Qt popup recipe yet"
+            elif name == "33-text-inputs" and i == 1 and label == "read-only":
+                recipe = original["inputs"][1][2].copy()
+                state = "rest"
+            if name == "31-connection-button":
+                recipe["width"] = "max-content"
+            if name == "32-gallery-buttons" and i < 3:
+                recipe["width"] = "max-content"
+            if state not in recipe["states"]:
+                reason = reason or "No matching exported capture recipe for this state"
+            reason = reason or recipe["unsupported"].get(state)
+            result.append((i, label, state, recipe, reason))
+    return family, result
 
 
 def main():
     cli = parser(__doc__)
     cli.add_argument("families", nargs="*", choices=list(specs()))
+    cli.add_argument(
+        "-q",
+        "--reference",
+        type=__import__("pathlib").Path,
+        default=__import__("pathlib").Path("tmp/qt-renders/states/contract.json"),
+        help="Qt state contract.json; generate Qt states first",
+    )
     args = cli.parse_args()
+    contract = json.loads(args.reference.read_text(encoding="utf-8"))
+    if contract.get("version") != 1 or contract.get("device_scale_factor") != 1:
+        cli.error("Unsupported state contract version or DPR")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from pathlib import Path
 
@@ -302,64 +353,60 @@ def main():
         with capture_session(args) as (page, base, diagnostics):
             report.update(diagnostics)
             page.set_viewport_size({"width": 700, "height": 500})
-            for family in args.families or list(specs()):
-                print(f"Capturing {family}...", flush=True)
-                name, definitions = specs()[family]
-                rows = []
-                for spec in definitions:
-                    cells = []
-                    for state in spec["states"]:
-                        identity = {"family": family, "component": spec["label"], "state": state}
-                        if state in spec["unsupported"]:
-                            report["unsupported"].append({**identity, "reason": spec["unsupported"][state]})
-                            continue
-                        try:
-                            page.goto(base + "/")
-                            page.set_content(html(base, vendors, spec["expression"], state, spec["width"]))
-                            ready(page)
-                            page.locator("#specimen > *").first.wait_for(state="visible")
-                            target = page.locator("#specimen").locator(spec["target"]).first
-                            if not target.count():
-                                target = page.locator("#specimen > *").first
-                            if family == "popups" and state == "hover":
-                                page.locator("#cell").evaluate("el=>el.style.paddingTop='64px'")
-                            page.mouse.move(699, 499)
-                            if "focus" in state:
-                                target.focus()
-                            if state.startswith("hover") or state.startswith("pressed"):
-                                target.hover()
-                            if state.startswith("pressed"):
-                                page.mouse.down()
-                            if state == "open":
-                                target.click()
-                            observed = observe(target)
-                            for requested, actual in [
-                                ("focus", observed["focus"]),
-                                ("pressed", observed["active"]),
-                                ("hover", observed["hover"]),
-                                ("disabled", observed["disabled"]),
-                            ]:
-                                if state.startswith(requested) and not actual:
-                                    raise ValueError(f"Requested {requested} was not reached")
-                            if state == "open":
-                                page.locator(".dt-combo-pop, .dt-menu").first.wait_for(state="visible")
-                            # Popups overflow their control; include them in the specimen host capture.
-                            if state == "open":
-                                page.locator("#cell").evaluate("el=>el.style.height='240px'")
-                            data = page.locator("#cell").screenshot(animations="disabled")
-                            cells.append((state, data))
-                            report["cells"].append({**identity, "observed": observed})
-                        except Exception as error:
-                            report["failures"].append({**identity, "error": str(error)})
-                            print(identity, str(error)[:180], flush=True)
-                        finally:
-                            page.mouse.up()
-                    rows.append((spec["label"], cells))
-                if family == "inputs":
-                    compose(args.out / "33-text-inputs.png", rows[:5])
-                    compose(args.out / "34-combo-spin.png", rows[5:])
-                else:
-                    compose(args.out / f"{name}.png", rows)
+            for name, definition in contract["sheets"].items():
+                family, slots = aligned_specs(name, definition)
+                if args.families and family not in args.families:
+                    continue
+                print(f"Capturing {name}...", flush=True)
+                rows = [{} for _ in definition["rows"]]
+                for row_index, label, state, spec, reason in slots:
+                    identity = {"family": family, "component": definition["rows"][row_index]["label"], "state": label}
+                    if reason:
+                        report["unsupported"].append({**identity, "reason": reason})
+                        rows[row_index][label] = "Unsupported: " + reason
+                        continue
+                    try:
+                        page.goto(base + "/")
+                        page.set_content(html(base, vendors, spec["expression"], state, spec["width"]))
+                        ready(page)
+                        page.locator("#specimen > *").first.wait_for(state="visible")
+                        target = page.locator("#specimen").locator(spec["target"]).first
+                        if not target.count():
+                            target = page.locator("#specimen > *").first
+                        if name == "36-lists-tables" and state == "hover":
+                            target = target.nth(0) if row_index == 0 else page.locator("tbody tr").nth(1)
+                        if name == "37-tabs-scrollbar" and state == "hover":
+                            target = page.locator('[role="tab"]').nth(1)
+                        page.mouse.move(699, 499)
+                        if "focus" in state:
+                            target.focus()
+                        if state.startswith("hover") or state.startswith("pressed"):
+                            target.hover()
+                        if state.startswith("pressed"):
+                            page.mouse.down()
+                        observed = observe(target)
+                        for requested, actual in [
+                            ("focus", observed["focus"]),
+                            ("pressed", observed["active"]),
+                            ("hover", observed["hover"]),
+                            ("disabled", observed["disabled"]),
+                        ]:
+                            if state.startswith(requested) and not actual:
+                                raise ValueError(f"Requested {requested} was not reached")
+                        data = page.locator("#cell").screenshot(animations="disabled")
+                        from PySide6.QtGui import QImage
+
+                        rows[row_index][label] = QImage.fromData(data)
+                        report["cells"].append({**identity, "observed": observed})
+                    except Exception as error:
+                        report["failures"].append({**identity, "error": str(error)})
+                        rows[row_index][label] = "Capture failed: " + str(error)
+                        print(identity, str(error)[:180], flush=True)
+                    finally:
+                        page.mouse.up()
+                compose(args.out / f"{name}.png", definition, rows)
+            report["state_contract"] = contract
+
     except Exception as error:
         report["failures"].append({"setup": str(error)})
     if (args.design_system / "_ds_bundle.js").exists():

@@ -1,5 +1,6 @@
 """State-matrix screenshots of real Qt widgets under the real DTFlow stylesheet (offscreen)."""
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -11,12 +12,14 @@ from support.network_guard import install  # noqa: E402
 
 install()
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["QT_SCALE_FACTOR"] = "1"
+os.environ["QT_SCREEN_SCALE_FACTORS"] = "1"
+os.environ["QT_FONT_DPI"] = "96"
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QSize, Qt  # noqa: E402
 from PySide6.QtGui import (  # noqa: E402
     QColor,
-    QFont,
-    QImage,
+    QFontDatabase,
     QPainter,
     QPixmap,
 )
@@ -57,7 +60,17 @@ from dtflow.ui.theme import (  # noqa: E402
 OUT = Path(sys.argv[1])
 OUT.mkdir(parents=True, exist_ok=True)
 app = QApplication([])
+if not QFontDatabase.families():
+    QFontDatabase.addApplicationFont(str(Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts/segoeui.ttf"))
 apply_theme(app)
+if app.primaryScreen().devicePixelRatio() != 1:
+    raise RuntimeError("State captures require DPR 1")
+CONTRACT = {
+    "version": 1,
+    "device_scale_factor": 1,
+    "logical_dpi": app.primaryScreen().logicalDotsPerInch(),
+    "sheets": {},
+}
 T = load_tokens()
 BG = QColor(T["color.surface"])
 CAP = QColor(T["color.secondary"])
@@ -176,49 +189,17 @@ def state_cell(make, state, host_name=None, size=None):
 
 def sheet(name, title, rows, col_w=None):
     """rows: list of (row label, [(state label, pixmap), ...]); compose and save a labelled sheet."""
-    f = QFont("Noto Sans", 9)
-    fb = QFont("Noto Sans", 11)
-    fb.setBold(True)
-    pad, lw = 12, 150
-    cell_sizes = [(pm.width() * SCALE, pm.height() * SCALE) for _, cells in rows for _, pm in cells]
-    cw = col_w or max(w for w, _ in cell_sizes) + pad
-    ncol = max(len(c) for _, c in rows)
-    heights = []
-    for _, cells in rows:
-        heights.append(max(pm.height() * SCALE for _, pm in cells) + 30 + pad)
-    W = lw + ncol * cw + pad
-    H = 40 + sum(heights) + pad
-    img = QImage(W, H, QImage.Format.Format_ARGB32)
-    img.fill(QColor(T["color.background"]))
-    p = QPainter(img)
-    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
-    p.setFont(fb)
-    p.setPen(QColor(T["color.text"]))
-    p.drawText(pad, 26, f"{title}   (cells shown at {SCALE}x)")
-    y = 40
-    for (label, cells), h in zip(rows, heights, strict=True):
-        p.setFont(f)
-        p.setPen(QColor(T["color.text"]))
-        p.drawText(QRect(pad, y, lw - pad, h), Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, label)
-        for i, (sl, pm) in enumerate(cells):
-            x = lw + i * cw
-            p.setPen(CAP)
-            p.drawText(x, y + 12, sl)
-            p.drawPixmap(
-                x,
-                y + 18,
-                pm.scaled(
-                    pm.width() * SCALE,
-                    pm.height() * SCALE,
-                    Qt.AspectRatioMode.IgnoreAspectRatio,
-                    Qt.TransformationMode.FastTransformation,
-                ),
-            )
-        y += h
-    p.end()
+    from state_layout import FRAMES, compose
+
+    definition = {
+        "frame": FRAMES[name],
+        "rows": [{"label": label, "states": [state for state, _ in cells]} for label, cells in rows],
+    }
     path = OUT / f"{name}.png"
-    img.save(str(path))
-    print(path, W, H)
+    dimensions = compose(path, definition, [{state: pm.toImage() for state, pm in cells} for _, cells in rows])
+    CONTRACT["sheets"][name] = definition
+    (OUT / "contract.json").write_text(json.dumps(CONTRACT, indent=2), encoding="utf-8")
+    print(path, *dimensions)
 
 
 STATES = ["rest", "hover", "pressed", "focus", "disabled"]
@@ -550,6 +531,7 @@ def lists_tables():
     def hover_item():
         host = Host()
         lay = QVBoxLayout(host)
+        lay.setContentsMargins(8, 8, 8, 8)
         widget = lw()()
         lay.addWidget(widget)
         host.resize(host.sizeHint())
@@ -594,6 +576,7 @@ def lists_tables():
     def hover_row():
         host = Host()
         lay = QVBoxLayout(host)
+        lay.setContentsMargins(8, 8, 8, 8)
         t = tw()()
         lay.addWidget(t)
         host.resize(host.sizeHint())
@@ -637,6 +620,7 @@ def tabs_scroll():
     def hover_tab():
         host = Host()
         lay = QVBoxLayout(host)
+        lay.setContentsMargins(8, 8, 8, 8)
         b = tabs()
         lay.addWidget(b)
         host.resize(host.sizeHint())
@@ -653,6 +637,7 @@ def tabs_scroll():
     def focus_tab():
         host = Host()
         lay = QVBoxLayout(host)
+        lay.setContentsMargins(8, 8, 8, 8)
         b = tabs()
         lay.addWidget(b)
         host.resize(host.sizeHint())
@@ -686,6 +671,7 @@ def tabs_scroll():
     def sb(state):
         host = Host()
         lay = QVBoxLayout(host)
+        lay.setContentsMargins(8, 8, 8, 8)
         a = scroller()
         lay.addWidget(a)
         host.resize(host.sizeHint())
@@ -798,6 +784,7 @@ def popups():
     # combo popup
     host = Host(size=(260, 200))
     lay = QVBoxLayout(host)
+    lay.setContentsMargins(8, 8, 8, 8)
     c = QComboBox()
     c.addItems(["euler_a", "dpm++ 2m karras", "ddim"])
     lay.addWidget(c)
@@ -870,11 +857,15 @@ if __name__ == "__main__":
         labels=labels_status,
         popups=popups,
     )
+    failures = []
     for k in which:
         try:
             fns[k]()
         except Exception as e:
             import traceback
 
+            failures.append(k)
             print("FAILED", k, type(e).__name__, e)
             traceback.print_exc()
+
+    raise SystemExit(int(bool(failures)))
