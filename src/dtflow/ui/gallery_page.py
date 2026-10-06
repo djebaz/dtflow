@@ -147,6 +147,7 @@ class GalleryPage(QObject):
         self._pending_page_selection: str | None = None
         self._page_scroll_target: str | None = None
         self.items: list[GalleryItem] = []
+        self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
         self.offset = 0
         self.selected_id: str | None = None
@@ -505,7 +506,26 @@ class GalleryPage(QObject):
         if self.mode == "Detail" and anchor == self.selected_id and anchor and not anchor_found:
             self.selected_id = None
         self._populate_facets(*choices)
+        visible_page = (query.offset, page.items)
+        if (
+            visible_page == self._rendered_page
+            and self._pending_page_selection is None
+            and self._page_scroll_target is None
+        ):
+            # Polling identical results must not destroy cards/cells, discard
+            # in-flight decodes or reset Detail zoom/pan and browsing position.
+            # The total can change outside this page without changing its pixels.
+            self._update_navigation()
+            if self.mode == "Detail" and self._selected() is not None:
+                position = (
+                    self.offset + next(i for i, item in enumerate(self.items) if item.identity == self.selected_id) + 1
+                )
+                self._widget("galleryPositionOverlay", QLabel).setText(f"{position} / {self.total}")
+            self.refresh_button.setToolTip(self._page_summary())
+            self._schedule_save()
+            return
         self._render_page()
+        self._rendered_page = visible_page
 
         pending = self._pending_page_selection
         self._pending_page_selection = None
@@ -529,6 +549,8 @@ class GalleryPage(QObject):
             (self.lora, "All LoRAs", loras),
         ):
             current = combo.currentText()
+            if tuple(combo.itemText(i) for i in range(combo.count())) == (placeholder, *values):
+                continue
             combo.blockSignals(True)
             combo.clear()
             combo.addItem(placeholder)

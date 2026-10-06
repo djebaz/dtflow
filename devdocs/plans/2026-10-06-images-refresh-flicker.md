@@ -6,9 +6,9 @@
 
 ## Action items
 - [x] Trace refresh and rendering; start a separate fix branch from current main.
-- [ ] Skip rendering/redecoding identical pages; still update counts/navigation and facets.
-- [ ] Sync viewer documentation and unreleased notes.
-- [ ] Review changes, commit, push and open a new PR to main; do not merge.
+- [x] Skip rendering/redecoding identical pages; still update counts/navigation and facets.
+- [x] Sync viewer documentation and unreleased notes.
+- [x] Review changes and open PR #37 to main; implementation commit/push follows this ledger update. Do not merge.
 
 ## Decisions and Design Changes
 - 2026-10-06 Compare the complete immutable visible item records and rendered offset, not just identities or total count. Changed metadata/file availability must still render; a changed total alone need not clear images.
@@ -21,3 +21,9 @@
 ## Validation
 - [ ] Final tests and smoke tests deferred to user.
 - Tests and smoke tests were not run; final validation remains with the user.
+
+- Checks run: Ruff format/check on the changed controller, Python compilation/import, and git diff --check. No tests or smoke tests.
+- Documentation review: AGENTS.md and README.md need no contract/feature-list changes; detailed behavior is recorded in the desktop guide, viewer plan and unreleased notes.
+- New PR: #37, targeting main; no merge, tag or release.
+
+

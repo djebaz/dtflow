@@ -34,6 +34,8 @@
 
 ## Fixed
 
+- PR #37 prevents Images auto/manual refresh from clearing and redecoding Grid, List and Detail images when the visible records/page offset are unchanged. Exact scroll, focus, in-flight decodes and Detail zoom/pan remain intact; counts/navigation and changed filter choices still update. Changed pages retain the existing render path. Tests and smoke tests are deferred to the owner under fast-implement.
+
 - Corrects the no-queue workspace stretching toolbar/hint/Plan header rows. The table or empty state owns flexible height; empty guidance stays centered and progress hides until a queue is selected. Queue actions and planning behavior remain intact.
 
 - Restores the Queues batch-plan card toggle after the section-card header covered its native checkbox. The covered native indicator is explicitly suppressed. A visible keyboard-accessible header checkbox synchronizes with the existing group state; collapsed contents hide without disabling the custom toggle. Planning/queue semantics remain unchanged.
@@ -53,3 +55,8 @@
 ## Development tooling
 
 - Add headless design-system screen and component-state capture scripts, computed-style/bounds manifests, verified offline vendor caching and explicit unsupported-state reporting. Playwright is development-only; no Qt runtime/theme changes. See [capture tooling](../guides/design-captures.md).
+
+## Release audit
+
+- PRs: #31, #33, #34, #37
+- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; skip unchanged Images refresh rendering without resetting image/browsing state.

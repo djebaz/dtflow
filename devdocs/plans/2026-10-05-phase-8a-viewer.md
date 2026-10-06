@@ -71,6 +71,7 @@ The additional/raw reference mockups resolve the buttons to mutually exclusive i
 - **Search/filter:** prompt matching is case-insensitive literal substring; filters compose with AND. Desktop exposes positive prompt only, while shared service/CLI also supports negative-prompt search.
 - **Dates/ratios:** desktop dates use local calendar boundaries normalized to UTC with date-specific DST rules; CLI accepts UTC dates or offset-aware timestamps. Ratios support orientation or exact W:H.
 - **Refresh/state:** first-run auto-refresh is on. Detail anchors the selected output; Grid/List anchor the visible output. Viewer preferences are versioned durable state in `viewer.json`; derived thumbnail data remains disposable.
+- **Unchanged refresh:** keep mounted Grid/List/Detail images and in-flight decodes when the complete visible records and rendered offset match; update counts/navigation without resetting scroll, focus or Detail zoom/pan. Changed pages retain the existing render path. See [the refresh fix plan](2026-10-06-images-refresh-flicker.md).
 - **Discovery:** committed final artifact references in durable attempts are authoritative, including custom output destinations. The read path does not acquire dispatch ownership, reconcile state or treat logs as output truth.
 - **Defaults:** without a valid viewer preference Images opens Grid; Detail image viewing defaults to Fit.
 
