@@ -15,6 +15,7 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QComboBox,
     QFrame,
     QHeaderView,
@@ -256,8 +257,11 @@ class GalleryPage(QObject):
 
     def _setup_views(self) -> None:
         self.modes: dict[str, QWidget] = {}
+        self.mode_buttons = QButtonGroup(self)
+        self.mode_buttons.setExclusive(True)
         for mode in ("Grid", "List", "Detail"):
             button = self._widget(f"gallery{mode}Button", QPushButton)
+            self.mode_buttons.addButton(button)
             button.clicked.connect(lambda checked=False, name=mode: self.show_view(name))
             self.modes[mode] = self._widget(f"gallery{mode}Content")
 
@@ -282,8 +286,12 @@ class GalleryPage(QObject):
         self.table.horizontalHeader().setStretchLastSection(True)
         for column, width in enumerate((80, 160, 180, 300, 120, 90, 145, 360)):
             self.table.setColumnWidth(column, width)
-        self.table.itemClicked.connect(lambda item: self.select(str(item.data(Qt.ItemDataRole.UserRole))))
-        self.table.itemActivated.connect(lambda item: self.select(str(item.data(Qt.ItemDataRole.UserRole))))
+        self.table.itemClicked.connect(
+            lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole)))
+        )
+        self.table.itemActivated.connect(
+            lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole)))
+        )
 
         self.table_viewport.setMouseTracking(True)
         self.table_viewport.installEventFilter(self)
@@ -700,6 +708,10 @@ class GalleryPage(QObject):
         self._origin_identity = identity
         self.select(identity)
 
+    def _open_from_list(self, identity: str) -> None:
+        self._origin_identity = None
+        self.select(identity)
+
     def select(self, identity: str, *, open_detail: bool = True) -> None:
         item = next((record for record in self.items if record.identity == identity), None)
         if item is None:
@@ -909,6 +921,14 @@ class GalleryPage(QObject):
         self.mode = mode
         self.stack.setCurrentWidget(self.modes[mode])
         self._widget(f"gallery{mode}Button", QPushButton).setChecked(True)
+        if mode == "Detail":
+            selected = next((item for item in self.items if item.identity == self.selected_id), None)
+            if selected is None and self.items:
+                selected = self.items[0]
+            if selected is not None:
+                self.select(selected.identity, open_detail=False)
+            else:
+                self._clear_detail()
         self._widget("galleryThumbnailSizeLabel", QLabel).setText(
             "Row density" if mode == "List" else "Thumbnail size"
         )
