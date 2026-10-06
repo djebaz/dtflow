@@ -170,6 +170,7 @@ class GenerationPage:
         self._busy = False
         self._progress_pct = 0
         self._config_name: str | None = None
+        self._reuse_source_identity: str | None = None
         self._metadata_path: Path | None = None
         self._submitted_backend: str | None = None
         self._empty_hints = (
@@ -399,6 +400,42 @@ class GenerationPage:
             self.lora._show(self.page.compatibilityStatusLabel, Presentation("error", "Cannot check", str(exc)))
             return None
 
+    def _with_reuse_lineage(self, request):
+        if not self._reuse_source_identity:
+            return request
+        return replace(
+            request,
+            resolution_evidence=(*request.resolution_evidence, ("source.output", self._reuse_source_identity)),
+        )
+
+    def reuse_saved_request(self, document: dict, source_identity: str) -> None:
+        """Populate Generate from one recorded request without dispatching."""
+        values = form_from_document(
+            {
+                "prompt": document.get("prompt", ""),
+                "negative_prompt": document.get("negative_prompt", ""),
+                "model": document.get("model_id", ""),
+                "seed": str(document.get("seed", 0)),
+                "width": document.get("width_px", 512),
+                "height": document.get("height_px", 512),
+                "steps": document.get("steps", 20),
+                "guidance": float(document.get("guidance", 7.0)),
+                "sampler": document.get("sampler_id", "euler_a"),
+                "loras": document.get("loras", []),
+            }
+        )
+        self._apply(values)
+        self.lora.set_loras(values.loras, loaded=True)
+        self._reuse_source_identity = source_identity
+        self._config_name = None
+        self._status(
+            Presentation(
+                "ok",
+                "Saved settings loaded",
+                "Generate was populated from the selected output. Nothing was submitted; availability is revalidated on use.",
+            )
+        )
+
     # -- presentation ----------------------------------------------------------------------------------------------
     def _status(self, presentation: Presentation) -> None:
         label = self.page.generationStatusLabel
@@ -445,7 +482,7 @@ class GenerationPage:
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
-            request = self._allow_local_bridge_model(request)
+            request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
         except FormError as exc:
             self._mark(exc.widget)
             raise
@@ -495,7 +532,7 @@ class GenerationPage:
         self._submitted_backend = name
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
-            request = self._allow_local_bridge_model(request)
+            request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
         except FormError as exc:
             self._mark(exc.widget)
             log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
