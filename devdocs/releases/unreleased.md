@@ -23,6 +23,8 @@
 
 ## Changed
 
+- PR #37 aligns the existing labelled Auto-refresh toggle with Connection's shared mint/teal colors when On and neutral colors when Off. No new tokens, glyphs, dimensions or refresh behavior; color/visual acceptance remains with the owner.
+
 - Images hides the content rails and reuses the logo/navigation in two aligned header rows outside the scrolling controls. Leaving Images restores chrome, splitter widths and Inspector preference. No extra outer/header padding or sample-count pill; search/filter labels are replaced by explicit placeholders/defaults and accessible names/tooltips.
 - Detail's right filmstrip spans the content height to the workspace bottom. Metadata, prompt and Additional/Raw panels remain beneath the main image to its left; image overlays have a 10px interior inset. Additional/Raw panels are mutually exclusive.
 - Shared charcoal tokens and muted blue states replace the superseded gallery palette. Repeated neutral-control colors use named tokens; obsolete/repeated QSS declarations are removed. No separate gallery token family remains.
@@ -47,6 +49,8 @@
 
 ## Validation and release audit
 
+- On 2026-10-06 the owner reported that PR #37's incremental refresh works. This is owner feedback, not agent-run tests; the subsequent Auto-refresh color change has not yet been owner-smoke-tested.
+
 - PR #33 remains the historical offline presentation/style change. PR #34 is the current Phase 8A production viewer implementation; presets/reuse/cache-management/organisation remain later Phase 8 work.
 - On 2026-10-06 the owner reported the full test suite passed after the PR #34 Qt lifecycle fix. No final command/count was supplied in that confirmation, so no exact count is claimed here. Earlier failing output showed the lifecycle exception cascading through Qt setup; the fix was then owner-retested successfully.
 - Owner interactive smoke testing exercised the new Images viewer and identified Grid asynchronous thumbnail collapse and List scaling limits; both were corrected. The newest Grid-first/Fit-default adjustments have not been separately reported as smoke-tested yet.
@@ -59,4 +63,4 @@
 ## Release audit
 
 - PRs: #31, #33, #34, #37
-- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; incremental Images refresh preserving retained widgets, thumbnails, in-flight work and selected Detail image state.
+- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; incremental Images refresh preserving retained widgets, thumbnails, in-flight work and selected Detail image state; Auto-refresh colors aligned with Connection tokens.

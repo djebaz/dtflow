@@ -303,6 +303,11 @@ anchors the selected or first visible output so newly saved results do not
 unexpectedly move the browsing context. Viewer preferences are durable and
 separate from disposable derived data.
 
+Auto-refresh keeps its labelled On/Off control and existing geometry. Its On
+colors reuse Connection's `color.connectionSurface`, `color.connectionAccent`
+and `color.connectionGlyph`; Off uses the neutral input, border and secondary
+tokens. This is a colors-only change, not a new icon or refresh behavior.
+
 Refresh reconciles the bounded page by stable output identity: keep existing
 Grid cards, List cells/icons and filmstrip buttons/painters through insertions
 and reordering. Update metadata in place, remove only departed entries and

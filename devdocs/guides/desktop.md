@@ -83,6 +83,9 @@ decode. The selected Detail image and zoom/pan stay intact when other outputs
 change. Fully unchanged pages also preserve exact scroll and focus while
 counts/navigation can still update.
 
+The labelled Auto-refresh toggle uses Connection's mint/teal colors when On and
+neutral colors when Off; its size, label and refresh behavior are unchanged.
+
 Click a Grid tile or List row to open Detail. Detail defaults to Fit, with Cover
 available when you prefer a filled canvas. It also provides true 100%, zoom/pan,
 previous/next through the current filtered order, keyboard navigation and
