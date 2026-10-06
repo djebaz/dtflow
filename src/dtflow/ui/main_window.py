@@ -25,8 +25,10 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
 from dtflow.persistence.last_session import load_last_session, save_last_session
+from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
+from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
 from dtflow.ui.brand import connection_icon
@@ -146,7 +148,13 @@ class MainWindow:
                 stack.addWidget(getattr(page, name))
         self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
         self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
-        self.gallery = GalleryPage(self.gallery_detail, runner=self.runner, state_dir=self.state_dir)
+        self.gallery = GalleryPage(
+            self.gallery_detail,
+            runner=self.runner,
+            state_dir=self.state_dir,
+            reuse_callback=self._reuse_output,
+            regenerate_callback=self._regenerate_output,
+        )
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
@@ -220,6 +228,12 @@ class MainWindow:
         form.removeKeyButton.clicked.connect(self.remove_key)
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
+        form.importPresetsButton.clicked.connect(self.import_presets)
+        form.exportPresetsButton.clicked.connect(self.export_presets)
+        form.clearInventoryCacheButton.clicked.connect(lambda: self.clear_cache(("inventory",)))
+        form.clearThumbnailCacheButton.clicked.connect(lambda: self.clear_cache(("thumbnails",)))
+        form.clearDerivedCacheButton.clicked.connect(lambda: self.clear_cache(("derived",)))
+        form.clearAllCacheButton.clicked.connect(lambda: self.clear_cache(CATEGORIES))
         form.aboutAction.triggered.connect(self.about)
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
         form.endpointEdit.textChanged.connect(self._selection_changed)
@@ -245,6 +259,8 @@ class MainWindow:
         self.generation.request_cached()
         self.refresh_credentials()
         self.refresh_custom_loras()
+        self.refresh_presets()
+        self.refresh_cache()
         self._workspace_changed(0)
         self._responsive_workspace()
 
@@ -416,6 +432,97 @@ class MainWindow:
         self.form.keyEdit.clear()
         # Remove is offered only when there may be a saved key to remove (the environment hides that answer).
         self.form.removeKeyButton.setEnabled(status["saved"] in ("present", "not consulted"))
+
+    @staticmethod
+    def _human_bytes(value: int) -> str:
+        amount = float(value)
+        for unit in ("B", "KB", "MB", "GB"):
+            if amount < 1024 or unit == "GB":
+                return f"{amount:.0f} {unit}" if unit in ("B", "KB") else f"{amount:.1f} {unit}"
+            amount /= 1024
+        return f"{value} B"
+
+    def refresh_presets(self) -> None:
+        try:
+            count = len(load_presets(self.state_dir))
+            self.form.presetLibraryStatusLabel.setText(
+                f"{count} named preset" + ("" if count == 1 else "s") + " in the durable library."
+                if count
+                else "No imported presets."
+            )
+            self.form.exportPresetsButton.setEnabled(count > 0)
+        except ValidationError as exc:
+            self.form.presetLibraryStatusLabel.setText(f"Preset library is unreadable: {exc}")
+            self.form.exportPresetsButton.setEnabled(False)
+
+    def import_presets(self) -> None:
+        chosen, _ = QFileDialog.getOpenFileName(
+            self.form, "Import Draw Things presets", str(self.state_dir), "Draw Things presets (*.json)"
+        )
+        if not chosen:
+            return
+        try:
+            count = import_presets(Path(chosen), self.state_dir)
+        except (ValidationError, OSError) as exc:
+            QMessageBox.warning(self.form, "Presets not imported", str(exc))
+            return
+        self.refresh_presets()
+        self.generation.refresh_presets()
+        self.form.statusBar().showMessage(f"Imported {count} Draw Things preset(s).", 5000)
+
+    def export_presets(self) -> None:
+        chosen, _ = QFileDialog.getSaveFileName(
+            self.form, "Export Draw Things presets", str(Path.home() / "custom_configs.json"), "JSON (*.json)"
+        )
+        if not chosen:
+            return
+        try:
+            count = export_presets(self.state_dir, Path(chosen))
+        except (ValidationError, OSError) as exc:
+            QMessageBox.warning(self.form, "Presets not exported", str(exc))
+            return
+        self.form.statusBar().showMessage(f"Exported {count} Draw Things preset(s).", 5000)
+
+    def refresh_cache(self) -> None:
+        usage = cache_usage(self.state_dir)
+        labels = {item.name: self._human_bytes(item.bytes) for item in usage}
+        self.form.cacheStatusLabel.setText(
+            f"Inventory {labels['inventory']} · Thumbnails {labels['thumbnails']} · Derived {labels['derived']}"
+        )
+
+    def clear_cache(self, categories: tuple[str, ...]) -> None:
+        if self.activity.generating or self.activity.dispatching:
+            QMessageBox.warning(self.form, "Cache is busy", "Stop the active generation or queue dispatch before cleanup.")
+            return
+        names = ", ".join(categories)
+        if not self.confirm(
+            self.form,
+            "Clear disposable cache?",
+            f"Delete disposable {names} cache? Outputs, attempts, queues, presets, settings, credentials and model assets are preserved.",
+        ):
+            return
+        try:
+            purge_cache(self.state_dir, categories)
+        except OSError as exc:
+            QMessageBox.warning(self.form, "Cache not cleared", type(exc).__name__)
+            return
+        self.refresh_cache()
+        self.form.statusBar().showMessage(f"Cleared disposable cache: {names}.", 5000)
+
+    def _reuse_output(self, request: dict, identity: str) -> None:
+        self.generation.reuse_saved_request(request, identity)
+        self._show_generation()
+
+    def _regenerate_output(self, request: dict, identity: str) -> None:
+        if not self.confirm(
+            self.form,
+            "Regenerate saved output?",
+            "This creates a fresh request and may consume provider generation credits. The original output is preserved.",
+        ):
+            return
+        self.generation.reuse_saved_request(request, identity)
+        self._show_generation()
+        self.generation.generate()
 
     def refresh_custom_loras(self) -> None:
         count = len(Catalogue(self.state_dir).user_loras())
