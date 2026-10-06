@@ -41,6 +41,8 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 
 - Follow-up catalogue research classifies 264 of the 514 formerly unknown Niche base-model entries using exact upstream Draw Things metadata and sourced model-family evidence; 250 remain unknown rather than guessed. No provider availability or runtime compatibility is implied. See [the evidence ledger](research/niche-catalogue-classification-2026-10-06.md).
 
+- Catalogue follow-up: user custom LoRA metadata now refines bundled definitions field-by-field instead of hiding their known compatibility, and catalogue views are cached across selector queries until inventory or the durable custom-LoRA file changes.
+
 ## Next coding direction
 
 PR #37 refines Phase 8A refresh: identity-based Grid/List/filmstrip reconciliation
