@@ -123,7 +123,6 @@ class Catalogue:
         self._prime = self._load("Models_prime.json", kind="checkpoint", tier="prime")
         self._niche = self._load("Models_niche.json", kind="checkpoint", tier="niche")
         self._bundled_loras = self._load("Loras.json", kind="lora")
-        self._custom_loras = self._load("Custom_loras.json", kind="lora", source="custom")
         self._inventory: InventorySnapshot | None = None
 
     def _load(
@@ -160,7 +159,7 @@ class Catalogue:
         checkpoints = tuple(entry for entry in (*self._prime, *self._niche) if entry.identifier in available)
         loras = tuple(
             entry
-            for entry in (*self._bundled_loras, *self._custom_loras, *self.user_loras())
+            for entry in (*self._bundled_loras, *self.user_loras())
             if entry.identifier in available
         )
         known_entries = (*self._prime, *self._niche)
