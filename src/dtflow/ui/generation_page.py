@@ -463,6 +463,7 @@ class GenerationPage:
         label.style().unpolish(label)
         label.style().polish(label)
         label.setText(f"{presentation.headline}. {presentation.detail}".strip())
+        label.setToolTip("")
 
     def _mark(self, widget_name: str | None) -> None:
         for name in FIELD_WIDGETS:
@@ -974,14 +975,20 @@ class GenerationPage:
             self.lora.set_loras(application.values["loras"], loaded=True)
         self._config_name = f"preset:{preset['name']}"
         self._reuse_source_identity = None
-        preserved = ", ".join(application.preserved) if application.preserved else "none"
+        # A native preset can carry dozens of unsupported fields; keep the status short and list them in the tooltip.
+        count = len(application.preserved)
+        kept = (
+            f"{count} native field{'s' if count != 1 else ''} kept but not applied" if count else "no fields kept aside"
+        )
         self._status(
             Presentation(
                 "ok",
                 "Preset loaded",
-                f"{preset['name']} applied without dispatch. Preserved-only fields: {preserved}. Prompts were unchanged.",
+                f"{preset['name']} applied without dispatch; {kept}. Prompts were unchanged.",
             )
         )
+        if count:
+            self.page.generationStatusLabel.setToolTip("Preserved-only fields: " + ", ".join(application.preserved))
 
     def save_preset(self) -> None:
         name, accepted = QInputDialog.getText(self.page, "Save preset", "Preset name")
