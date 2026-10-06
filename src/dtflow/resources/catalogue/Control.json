@@ -1,0 +1,459 @@
+[
+  {
+    "file": "1519790_flux1eastfp8_canny_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1519801_flux1eastfp8_depth_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_alimama_inpaint_flux_1_dev_beta_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_alimama_inpaint_flux_1_dev_beta_q6p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_alimama_inpaint_flux_1_dev_beta_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_canny_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_canny_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_canny_2.x_f16.ckpt",
+    "base_model": "sd_2",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_canny_kwai_kolors_1.0_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "controlnet_canny_kwai_kolors_1.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "controlnet_canny_sdxl_v1.0_mid_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_depth_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_depth_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_depth_2.x_f16.ckpt",
+    "base_model": "sd_2",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_depth_kwai_kolors_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "controlnet_depth_kwai_kolors_1.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "controlnet_depth_sdxl_v1.0_mid_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_inpaint_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_ip2p_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_jasper_ai_upscaler_flux_1_dev_1.0_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_lineart_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_lineart_anime_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_mlsd_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_normal_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_normalbae_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_openpose_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_openpose_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_openpose_2.x_f16.ckpt",
+    "base_model": "sd_2",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_pose_kwai_kolors_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "controlnet_pose_kwai_kolors_1.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "controlnet_qr_code_monster_1.x_v2.0_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_scribble_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_scribble_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_scribble_2.x_f16.ckpt",
+    "base_model": "sd_2",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_seg_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_shuffle_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_softedge_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_tile_1.x_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_union_pro_flux_1_dev_1.0_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_union_pro_flux_1_dev_1.0_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_union_pro_flux_1_dev_2.0_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_union_pro_flux_1_dev_2.0_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_depth_dev_q5p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ip_adapter_faceid_plus_kwai_kolors_1.0_clip_l14_336_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ip_adapter_faceid_plus_kwai_kolors_1.0_clip_l14_336_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ip_adapter_full_face_sd_v1.x_open_clip_h14_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ip_adapter_plus_face_sd_v1.x_open_clip_h14_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ip_adapter_plus_face_xl_base_open_clip_h14_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ip_adapter_plus_kwai_kolors_1.0_clip_l14_336_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ip_adapter_plus_sd_v1.x_open_clip_h14_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ip_adapter_plus_xl_base_open_clip_h14_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "t2iadapter_canny_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "t2iadapter_color_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "t2iadapter_depth_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "t2iadapter_openpose_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "t2iadapter_sketch_1.x_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  }
+]
