@@ -169,6 +169,9 @@ class Catalogue:
         loras = tuple(loras_by_id.values())
         known_entries = (*self._prime, *self._niche)
         known = {entry.identifier for entry in known_entries}
+        known_nonmodels = {
+            entry.identifier for entry in (*self._bundled_loras, *self.user_loras(), *self._controls)
+        }
         unknown = ()
         if self._inventory is not None:
             metadata = dict(self._inventory.diagnostics).get("model_metadata") == "present"
@@ -176,6 +179,7 @@ class Catalogue:
                 entry.identifier
                 for entry in self._inventory.entries
                 if entry.identifier not in known
+                and entry.identifier not in known_nonmodels
                 and (entry.kind == "model" or (entry.kind == "unknown" and not metadata))
             }
             classified_unknown = {
