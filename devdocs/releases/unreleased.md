@@ -34,7 +34,7 @@
 
 ## Fixed
 
-- PR #37 prevents Images auto/manual refresh from clearing and redecoding Grid, List and Detail images when the visible records/page offset are unchanged. Exact scroll, focus, in-flight decodes and Detail zoom/pan remain intact; counts/navigation and changed filter choices still update. Changed pages retain the existing render path. Tests and smoke tests are deferred to the owner under fast-implement.
+- PR #37 makes Images auto/manual refresh incremental: retain Grid cards, List cells/icons and Detail filmstrip entries by output identity through insertions/removals/reordering; update changed metadata in place. Only new images or changed path/size/availability require thumbnail decoding. Retained in-flight decodes and the selected Detail image/zoom/pan survive other outputs changing; unchanged pages preserve exact scroll/focus. Counts/navigation and changed filter choices still update. Tests and smoke tests are deferred to the owner under fast-implement.
 
 - Corrects the no-queue workspace stretching toolbar/hint/Plan header rows. The table or empty state owns flexible height; empty guidance stays centered and progress hides until a queue is selected. Queue actions and planning behavior remain intact.
 
@@ -59,4 +59,4 @@
 ## Release audit
 
 - PRs: #31, #33, #34, #37
-- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; skip unchanged Images refresh rendering without resetting image/browsing state.
+- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; incremental Images refresh preserving retained widgets, thumbnails, in-flight work and selected Detail image state.

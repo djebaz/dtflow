@@ -40,9 +40,14 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 
 ## Next coding direction
 
+PR #37 refines Phase 8A refresh: identity-based Grid/List/filmstrip reconciliation
+preserves retained thumbnails/in-flight work and the selected Detail image state
+when outputs are added, removed or reordered. See the
+[follow-up plan](plans/2026-10-06-images-incremental-refresh.md). Code presence is
+not visual acceptance; tests/smoke are deferred to the owner under fast-implement.
+
 The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). Follow the [Phase 8 delivery plan](plans/2026-10-05-phase-8-sequencing.md): with 8A now implemented in PR #34, the next planned capability is Draw Things-compatible presets (8B), followed by reuse, cache management and separately scoped organisation. Recheck the roadmap and relevant phase plan before choosing work.
 
 ## Maintenance
 
 Update this short snapshot when implementation scope changes, with the reviewed base revision/date and evidence links. Keep completed, remaining and added scope aligned with `initial.md`; retain detailed validation in plans/research/release notes. If this snapshot disagrees with source or verified evidence, those sources win: refresh the snapshot rather than assuming completion. Do not append a running changelog here.
-

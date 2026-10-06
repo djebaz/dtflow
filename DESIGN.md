@@ -303,6 +303,16 @@ anchors the selected or first visible output so newly saved results do not
 unexpectedly move the browsing context. Viewer preferences are durable and
 separate from disposable derived data.
 
+Refresh reconciles the bounded page by stable output identity: keep existing
+Grid cards, List cells/icons and filmstrip buttons/painters through insertions
+and reordering. Update metadata in place, remove only departed entries and
+decode only new or changed image references (path, size, availability). Retain
+unchanged in-flight decodes and the selected Detail pixels/zoom/pan when other
+outputs change; identical pages are a render no-op. Designer filmstrip slots
+remain valid for shared presentation callbacks. See the
+[incremental refresh plan](devdocs/plans/2026-10-06-images-incremental-refresh.md)
+for implementation and the owner validation boundary.
+
 The compact filter row omits separate visible labels. Positive-prompt search is
 visible and intentionally compact; model, LoRA, date, exact dimensions,
 aspect-ratio and deterministic sort controls use placeholders/defaults plus
