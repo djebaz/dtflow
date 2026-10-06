@@ -174,6 +174,9 @@ class Catalogue:
         self._bundled_loras = self._load("Loras.json", kind="lora")
         self._controls = self._load("Control.json", kind="control")
         self._inventory: InventorySnapshot | None = None
+        self._cached_view: CatalogueView | None = None
+        self._cached_user_loras: tuple[CatalogueEntry, ...] = ()
+        self._cached_user_loras_signature: tuple[int, int] | None = None
 
     def _load(
         self, filename: str, *, kind: str, tier: str | None = None, source: str = "bundled"
@@ -184,9 +187,25 @@ class Catalogue:
         return tuple(entry for entry in entries if entry is not None)
 
     def user_loras(self) -> tuple[CatalogueEntry, ...]:
-        path = self.state_dir / USER_CATALOGUE_DIR / USER_LORAS_FILE
+        path = self.user_loras_path
+        try:
+            stat = path.stat()
+            signature = (stat.st_mtime_ns, stat.st_size)
+        except FileNotFoundError:
+            signature = None
+        except OSError:
+            # Let _records() report the read failure; do not reuse stale user metadata.
+            signature = None
+
+        if signature == self._cached_user_loras_signature:
+            return self._cached_user_loras
+
         entries = (_entry(record, kind="lora", source="user") for record in _records(path))
-        return tuple(entry for entry in entries if entry is not None)
+        loaded = tuple(entry for entry in entries if entry is not None)
+        self._cached_user_loras = loaded
+        self._cached_user_loras_signature = signature
+        self._cached_view = None
+        return loaded
 
     @property
     def user_loras_path(self) -> Path:
@@ -194,6 +213,7 @@ class Catalogue:
 
     def set_inventory(self, snapshot: InventorySnapshot | None) -> None:
         self._inventory = snapshot
+        self._cached_view = None
 
     def _available_ids(self) -> set[str]:
         if self._inventory is None:
@@ -201,20 +221,40 @@ class Catalogue:
         return {entry.identifier for entry in self._inventory.entries}
 
     def view(self) -> CatalogueView:
+        user_loras = self.user_loras()
+        if self._cached_view is not None:
+            return self._cached_view
+
         available = self._available_ids()
         checkpoints_by_id: dict[str, CatalogueEntry] = {}
         for entry in (*self._niche, *self._prime):  # Prime wins an accidental exact-ID overlap.
             if entry.identifier in available:
                 checkpoints_by_id[entry.identifier] = entry
         checkpoints = tuple(checkpoints_by_id.values())
-        loras_by_id: dict[str, CatalogueEntry] = {}
-        for entry in (*self._bundled_loras, *self.user_loras()):  # user metadata may refine a bundled definition.
-            if entry.identifier in available:
-                loras_by_id[entry.identifier] = entry
+        loras_by_id = {entry.identifier: entry for entry in self._bundled_loras if entry.identifier in available}
+        for user_entry in user_loras:
+            if user_entry.identifier not in available:
+                continue
+            bundled = loras_by_id.get(user_entry.identifier)
+            if bundled is None:
+                loras_by_id[user_entry.identifier] = user_entry
+                continue
+            # User metadata refines a known LoRA. Missing compatibility fields inherit the bundled evidence instead of
+            # erasing it; explicitly supplied user fields remain authoritative.
+            loras_by_id[user_entry.identifier] = CatalogueEntry(
+                identifier=user_entry.identifier,
+                kind="lora",
+                base_model=user_entry.base_model or bundled.base_model,
+                modes=user_entry.modes or bundled.modes,
+                tier=bundled.tier,
+                source="user",
+                name=user_entry.name or bundled.name,
+                prefix=user_entry.prefix if user_entry.prefix is not None else bundled.prefix,
+            )
         loras = tuple(loras_by_id.values())
         known_entries = (*self._prime, *self._niche)
         known = {entry.identifier for entry in known_entries}
-        known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *self.user_loras(), *self._controls)}
+        known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *user_loras, *self._controls)}
         unknown = ()
         if self._inventory is not None:
             metadata = dict(self._inventory.diagnostics).get("model_metadata") == "present"
@@ -231,7 +271,8 @@ class Catalogue:
                 if entry.identifier in available and (entry.base_model is None or not entry.domains)
             }
             unknown = tuple(sorted(raw_unknown | classified_unknown))
-        return CatalogueView(checkpoints, loras, unknown)
+        self._cached_view = CatalogueView(checkpoints, loras, unknown)
+        return self._cached_view
 
     def checkpoints(
         self,
