@@ -27,6 +27,8 @@ from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.ui.activity import Activity
+from dtflow.ui.brand import connection_icon
+from dtflow.ui.gallery_detail_preview import DetailFixture
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
@@ -98,6 +100,22 @@ class _LayoutGuard(QObject):
         return False
 
 
+class _NavigationFocusGuard(QObject):
+    """Keep mouse focus from disguising status; preserve a visible keyboard focus cue."""
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.FocusOut):
+            keyboard = event.type() == QEvent.Type.FocusIn and event.reason() in (
+                Qt.FocusReason.TabFocusReason,
+                Qt.FocusReason.BacktabFocusReason,
+                Qt.FocusReason.ShortcutFocusReason,
+            )
+            watched.setProperty("keyboardFocus", keyboard)
+            watched.style().unpolish(watched)
+            watched.style().polish(watched)
+        return False
+
+
 class MainWindow:
     """Owns the Designer form and an AsyncRunner; ``saved`` is injectable for tests."""
 
@@ -137,6 +155,13 @@ class MainWindow:
                 (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack), names, strict=True
             ):
                 stack.addWidget(getattr(page, name))
+        self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
+        self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
+        self.gallery_preview = DetailFixture(self.gallery_detail)
+        form.workspaceStack.addWidget(self.images_page)
+        self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
+        self.shell.centerStack.addWidget(self.gallery_detail)
+        self.shell.rightStack.addWidget(QWidget())
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
         # Preserve the connection controller's established chrome references.
@@ -148,9 +173,11 @@ class MainWindow:
             "connectionNavigationButton",
             "generationNavigationButton",
             "queueNavigationButton",
+            "imagesNavigationButton",
         ):
             setattr(form, name, getattr(self.shell, name))
         self.shell.productSubtitleLabel.hide()
+        form.connectionNavigationButton.installEventFilter(_NavigationFocusGuard(form.connectionNavigationButton))
         # Existing inspection integrations can refer to the same persistent shell controls.
         self.generation_page.inspectorToggle = self.shell.inspectorToggle
         self.generation_page.generationLeftRail = self.shell.leftRail
@@ -168,6 +195,11 @@ class MainWindow:
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
+        policy = self.shell.inspectorToggle.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.shell.inspectorToggle.setSizePolicy(policy)
+        self._gallery_chrome_active = False
+        self._gallery_previous_sizes = None
         self._narrow = None
         self._inspector_wanted, self._inspector_auto = True, False
         self.generation = GenerationPage(
@@ -207,6 +239,10 @@ class MainWindow:
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
+        form.imagesNavigationButton.setEnabled(True)
+        form.imagesNavigationButton.setToolTip("Show Images — offline layout preview, not saved outputs")
+        form.imagesNavigationButton.setAccessibleName("Show Images layout preview")
+        form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
         self.shell.inspectorToggle.toggled.connect(self._toggle_inspector)
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
@@ -237,15 +273,17 @@ class MainWindow:
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
 
     def _workspace_changed(self, index: int) -> None:
-        """Change only content; shell widgets and splitter geometry stay mounted."""
+        """Switch content and use the compact full-width chrome for Images only."""
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         buttons = (
             self.form.connectionNavigationButton,
             self.form.generationNavigationButton,
             self.form.queueNavigationButton,
+            self.form.imagesNavigationButton,
         )
         buttons[index].setChecked(True)
+        self._responsive_workspace()
 
     def _toggle_inspector(self, visible: bool) -> None:
         if not self._inspector_auto:
@@ -260,7 +298,36 @@ class MainWindow:
             self._inspector_auto = True
             shell.inspectorToggle.setChecked(self._inspector_wanted and not narrow)
             self._inspector_auto = False
-        shell.rightRail.setVisible(shell.inspectorToggle.isChecked())
+        images = self.form.workspaceStack.currentWidget() is self.images_page
+        if images != self._gallery_chrome_active:
+            self._gallery_chrome_active = images
+            shell.setProperty("galleryMode", images)
+            shell.style().unpolish(shell)
+            shell.style().polish(shell)
+            if images:
+                self._gallery_previous_sizes = shell.workspaceSplitter.sizes()
+                # Match the mounted shell chrome before moving it into the gallery rows.
+                for slot, frame in (
+                    (self.gallery_detail.galleryBrandSlot, shell.brandFrame),
+                    (self.gallery_detail.galleryNavigationSlot, shell.navigationFrame),
+                ):
+                    slot.setFixedSize(shell.leftRail.width(), frame.height())
+                self.gallery_detail.galleryHeaderScroll.setFixedHeight(shell.brandFrame.height())
+                self.gallery_detail.galleryBrandSlotLayout.addWidget(shell.brandFrame)
+                self.gallery_detail.galleryNavigationSlotLayout.addWidget(shell.navigationFrame)
+            else:
+                shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+                shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+            shell.brandFrame.show()
+            shell.navigationFrame.show()
+            self.gallery_detail.galleryBrandSlot.setVisible(images)
+            self.gallery_detail.galleryNavigationSlot.setVisible(images)
+            shell.leftRail.setVisible(not images)
+            if not images and self._gallery_previous_sizes:
+                shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        shell.inspectorToggle.setVisible(not images)
+        shell.inspectorToggle.setEnabled(not images)
+        shell.rightRail.setVisible(not images and shell.inspectorToggle.isChecked())
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
@@ -322,6 +389,7 @@ class MainWindow:
 
     def _selection_changed(self, *_) -> None:
         """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
+        self._selection_revision = getattr(self, "_selection_revision", 0) + 1
         self._present(
             Presentation("unknown", "Not checked", f"Check the {self.form.backendCombo.currentText()} connection.")
         )
@@ -333,6 +401,14 @@ class MainWindow:
             widget.style().unpolish(widget)
             widget.style().polish(widget)
         label.setText(f"{presentation.headline}. {presentation.detail}".strip())
+        button = self.form.connectionNavigationButton
+        button.setProperty("state", presentation.level)
+        button.setIcon(connection_icon(presentation.level))
+        status = f"Connection ({self.form.backendCombo.currentText()}): {label.text()}"
+        button.setToolTip(f"Show connection workspace. Last explicit check: {status}")
+        button.setAccessibleName(status)
+        button.style().unpolish(button)
+        button.style().polish(button)
 
     def refresh_credentials(self) -> None:
         status = credential_status(self._environ, self._saved)
@@ -356,14 +432,19 @@ class MainWindow:
         self._present(Presentation("warning", "Checking", ""))
         log.info("connection check started backend=%s", selection.name)
         saved: CredentialProvider | None = self._saved if self._saved.available() else None
-        self.runner.submit(self._check(selection, saved), self._checked)
+        revision = self._selection_revision
+        self.runner.submit(
+            self._check(selection, saved), lambda status, failure: self._checked(status, failure, revision)
+        )
 
     async def _check(self, selection, saved):
         return await check_connection(selection, saved=saved)
 
-    def _checked(self, status, failure) -> None:
+    def _checked(self, status, failure, revision=None) -> None:
         self._busy = False
         self.form.checkButton.setEnabled(True)
+        if revision is not None and revision != self._selection_revision:
+            return  # The provider/endpoint changed while the old check was running.
         shown = present_failure(failure) if failure else present_status(status)
         log.info("connection check result level=%s headline=%s", shown.level, shown.headline)
         self._present(shown)

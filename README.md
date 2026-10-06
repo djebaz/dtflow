@@ -44,6 +44,11 @@ local asset receipts for reuse. Generation never hides an upload inside an ordin
 The fake provider lets you explore the same forms, progress, outputs and queue controls
 offline. Fixture images and configurable simulation outcomes require no model inference.
 
+The Images tab offers an illustrative Grid, List and Detail preview with a shared
+compact header, adjustable density and a full-height filmstrip. It uses bundled
+samples; saved-output discovery, search/filtering and refresh are not integrated.
+See the [desktop guide](devdocs/guides/desktop.md#images-preview).
+
 ## Design principles
 
 - **Desktop-first.** Keep the main workflow in a responsive graphical workspace, with

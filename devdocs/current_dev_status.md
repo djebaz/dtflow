@@ -1,6 +1,6 @@
 # Current development status
 
-Snapshot: 2026-10-05, main baseline `afda7ee` (PR #30 merged; 0.3.0 published), with manual build/draft workflow work in PR #31.
+Snapshot: 2026-10-06. PR #33 documentation review at `e922bfd`, based on `5d9c476`; 0.3.0 publication evidence below is retained from the earlier snapshot. Manual build/draft workflow work remains tracked in PR #31; this review does not re-verify its status.
 This is coding orientation against [initial.md](plans/initial.md), not a release declaration. Implementation scope comes from source/plan inspection; the bounded owner-run Windows evidence below is recorded separately. The agent ran no live operations.
 
 ## Implemented on main
@@ -35,6 +35,8 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 
 - PR #31 adds an opt-in cached Windows build and draft-only release workflow, including artifact-only same-repository PR-head builds; not yet runner-verified. Owner executable smoke/publication remain explicit.
 
+- Draft PR #33: offline Grid/List/Detail presentation with one shared compact header, full-height Detail filmstrip, inset overlays and inline metadata panels. Shared charcoal tokens, typography roles and section cards also cover Connection/Generate/Queues. Images reuses the logo/navigation widgets and restores the other tabs' rails; search/filters, refresh and saved-file actions remain disabled. This does not complete the saved-output gallery or Phase 8A. Owner reports tests passed on 2026-10-06 and confirms the shutdown error resolved; native-DPI/packaged visual acceptance remains separate. See [the preview plan](plans/2026-10-05-phase-8a-ui-preview.md).
+
 ## Next coding direction
 
 The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). Follow the [Phase 8 delivery plan](plans/2026-10-05-phase-8-sequencing.md): viewer → Draw Things-compatible presets → reuse → cache management → separately scoped organisation. This is recorded scope, not implementation or a completed UI design. Recheck the roadmap and relevant phase plan before choosing work.
@@ -42,3 +44,4 @@ The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement 
 ## Maintenance
 
 Update this short snapshot when implementation scope changes, with the reviewed base revision/date and evidence links. Keep completed, remaining and added scope aligned with `initial.md`; retain detailed validation in plans/research/release notes. If this snapshot disagrees with source or verified evidence, those sources win: refresh the snapshot rather than assuming completion. Do not append a running changelog here.
+
