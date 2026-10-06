@@ -197,6 +197,7 @@ class ResolvedGenerationRequest:
     loras: tuple[LoRASelection, ...] = ()
     resolution_evidence: Metadata = ()
     prepared_assets: tuple[PreparedAsset, ...] = ()
+    allow_unlisted_model: bool = False
 
     def __post_init__(self) -> None:
         for name in ("request_id", "model_id"):
@@ -445,7 +446,6 @@ class Capabilities:
     batch_count: int = 1
     lora_support: str = "unsupported"
     limits: ResourceLimits = field(default_factory=ResourceLimits)
-    allow_unlisted_models: bool = False
 
 
 @dataclass(frozen=True, slots=True)
