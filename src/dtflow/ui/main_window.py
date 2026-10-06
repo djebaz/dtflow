@@ -28,8 +28,8 @@ from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
-from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
+from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.brand import connection_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
