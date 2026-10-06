@@ -256,6 +256,8 @@ class MainWindow:
         self.activity.listen(self._sync_run_control)
         self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
+        for frame in (self.shell.brandFrame, self.shell.navigationFrame):
+            frame.installEventFilter(_LayoutGuard(self._align_run_control, frame))
         self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
@@ -321,6 +323,17 @@ class MainWindow:
             detail=state.detail,
         )
 
+    def _align_run_control(self) -> None:
+        """Centre the header control above the Images tab; both rows share the rail's left edge."""
+        shell = self.shell
+        images = shell.imagesNavigationButton.geometry()
+        if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or images.width() <= 0:
+            return
+        control, offset = shell.runControl, shell.runControlOffset
+        shift = images.center().x() - control.width() // 2 - control.x()
+        if shift:
+            offset.setFixedWidth(max(0, offset.width() + shift))
+
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
@@ -352,6 +365,7 @@ class MainWindow:
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
         shell.runControl.setVisible(True)
+        self._align_run_control()
         shell.rightRail.setVisible(not images and not narrow)
 
     def show(self) -> None:

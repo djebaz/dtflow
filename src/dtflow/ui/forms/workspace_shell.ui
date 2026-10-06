@@ -120,17 +120,20 @@
            </layout>
           </item>
           <item>
-           <spacer name="runControlLeftSpacer">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
+           <widget class="QWidget" name="runControlOffset">
+            <property name="minimumSize">
              <size>
               <width>10</width>
-              <height>20</height>
+              <height>1</height>
              </size>
             </property>
-           </spacer>
+            <property name="maximumSize">
+             <size>
+              <width>10</width>
+              <height>1</height>
+             </size>
+            </property>
+           </widget>
           </item>
           <item>
            <widget class="RunControl" name="runControl">
