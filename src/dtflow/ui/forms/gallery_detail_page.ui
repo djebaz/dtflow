@@ -2800,6 +2800,20 @@ No generation or saved output</string>
                 <item row="4" column="0" colspan="4">
                  <layout class="QHBoxLayout" name="galleryPathActionsLayout">
                   <item>
+                   <widget class="QPushButton" name="galleryUseSettingsButton">
+                    <property name="text"><string>Use settings</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Populate Generate from this recorded request without submitting.</string></property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="galleryRegenerateButton">
+                    <property name="text"><string>Regenerate…</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Create a fresh generation attempt from these recorded settings after confirmation.</string></property>
+                   </widget>
+                  </item>
+                  <item>
                    <widget class="QPushButton" name="galleryCopyPathButton">
                     <property name="accessibleName">
                      <string>CopyPath</string>
