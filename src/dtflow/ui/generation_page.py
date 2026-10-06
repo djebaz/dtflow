@@ -219,7 +219,8 @@ class GenerationPage:
         ):
             page.resultPreviewLabel.add_file_button(button)
         self._set_result_actions(False)
-        page.modelCombo.lineEdit().setPlaceholderText("Select or enter a model")
+        page.modelCombo.custom_prompt = "Exact checkpoint identifier"
+        page.modelCombo.setToolTip("Select a checkpoint. Search matches any part of its name.")
         page.promptEdit.setTabChangesFocus(True)
         page.seedEdit.setToolTip(
             "0 picks a random seed for each submission; the seed used is recorded with the output."
@@ -250,8 +251,10 @@ class GenerationPage:
             self._listed_backend = None
         self._switch_provider(name)
         self.page.simulationBox.setVisible(name == "fake")
-        self.page.modelCombo.lineEdit().setPlaceholderText(
-            f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
+        self.page.modelCombo.setToolTip(
+            f"Select {FAKE_MODEL} or use a custom identifier."
+            if name == "fake"
+            else "Select a checkpoint. Search matches any part of its name; custom identifiers remain available."
         )
         self.lora.sync_backend()
 
