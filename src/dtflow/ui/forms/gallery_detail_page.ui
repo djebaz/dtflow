@@ -6,7 +6,7 @@
    <string>GalleryDetailPage</string>
   </property>
   <property name="windowTitle">
-   <string>DTFlow — Detail layout preview (offline fixture)</string>
+   <string>DTFlow — Images</string>
   </property>
   <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,1">
    <item>
@@ -215,13 +215,13 @@
              <enum>Qt::Horizontal</enum>
             </property>
             <property name="minimum">
-             <number>96</number>
+             <number>25</number>
             </property>
             <property name="maximum">
-             <number>240</number>
+             <number>250</number>
             </property>
             <property name="value">
-             <number>160</number>
+             <number>100</number>
             </property>
             <property name="minimumSize">
              <size>
@@ -237,7 +237,7 @@
              <string>ThumbnailSizeValue</string>
             </property>
             <property name="text">
-             <string>160 px</string>
+             <string>100%</string>
             </property>
             <property name="textInteractionFlags">
              <set>Qt::TextSelectableByMouse</set>
@@ -274,7 +274,7 @@
              <bool>false</bool>
             </property>
             <property name="toolTip">
-             <string>Preview only: this application action is not wired.</string>
+             <string>Available when the current Images context supports this action.</string>
             </property>
             <property name="minimumSize">
              <size>
@@ -299,7 +299,7 @@
              <bool>false</bool>
             </property>
             <property name="toolTip">
-             <string>Preview only: this application action is not wired.</string>
+             <string>Available when the current Images context supports this action.</string>
             </property>
             <property name="minimumSize">
              <size>
@@ -440,16 +440,23 @@
              <bool>false</bool>
             </property>
             <property name="toolTip">
-             <string>Search positive prompts — offline preview; filtering is not wired.</string>
+             <string>Search recorded positive prompts.</string>
             </property>
             <property name="minimumSize">
              <size>
-              <width>200</width>
+              <width>170</width>
+              <height>30</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>260</width>
               <height>30</height>
              </size>
             </property>
            </widget>
           </item>
+          
           <item>
            <widget class="QComboBox" name="galleryModelFilter">
             <property name="accessibleName">
@@ -470,7 +477,7 @@
              </size>
             </property>
             <property name="toolTip">
-             <string>Filter by model — offline preview; filtering is not wired.</string>
+             <string>Filter by exact recorded model identifier.</string>
             </property>
            </widget>
           </item>
@@ -494,7 +501,7 @@
              </size>
             </property>
             <property name="toolTip">
-             <string>Filter by LoRA — offline preview; filtering is not wired.</string>
+             <string>Filter by exact recorded LoRA identifier.</string>
             </property>
            </widget>
           </item>
@@ -518,7 +525,52 @@
              </size>
             </property>
             <property name="toolTip">
-             <string>Filter by date range — offline preview; filtering is not wired.</string>
+             <string>Filter by saved date or date range.</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="galleryDimensionsFilter">
+            <property name="accessibleName">
+             <string>Filter by exact dimensions</string>
+            </property>
+            <property name="editable">
+             <bool>true</bool>
+            </property>
+            <item>
+             <property name="text">
+              <string>Any size</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>132</width>
+              <height>30</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="gallerySortFilter">
+            <property name="accessibleName">
+             <string>Sort saved outputs</string>
+            </property>
+            <item>
+             <property name="text">
+              <string>Newest first</string>
+             </property>
+            </item>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>132</width>
+              <height>30</height>
+             </size>
             </property>
            </widget>
           </item>
@@ -542,7 +594,7 @@
              </size>
             </property>
             <property name="toolTip">
-             <string>Filter by aspect ratio — offline preview; filtering is not wired.</string>
+             <string>Filter by orientation or exact aspect ratio.</string>
             </property>
            </widget>
           </item>
@@ -779,7 +831,7 @@ No generation or saved output</string>
                   <bool>false</bool>
                  </property>
                  <property name="toolTip">
-                  <string>Preview only: this application action is not wired.</string>
+                  <string>Available when the current Images context supports this action.</string>
                  </property>
                  <property name="minimumSize">
                   <size>
@@ -807,7 +859,7 @@ No generation or saved output</string>
                   <bool>false</bool>
                  </property>
                  <property name="toolTip">
-                  <string>Preview only: this application action is not wired.</string>
+                  <string>Available when the current Images context supports this action.</string>
                  </property>
                  <property name="minimumSize">
                   <size>
@@ -846,6 +898,9 @@ No generation or saved output</string>
                     <property name="accessibleName">
                      <string>ViewMode</string>
                     </property>
+                    <property name="currentIndex">
+                     <number>1</number>
+                    </property>
                     <item>
                      <property name="text">
                       <string>Cover</string>
@@ -882,7 +937,7 @@ No generation or saved output</string>
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Preview only: this application action is not wired.</string>
+                     <string>Available when the current Images context supports this action.</string>
                     </property>
                     <property name="minimumSize">
                      <size>
@@ -910,7 +965,7 @@ No generation or saved output</string>
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Preview only: this application action is not wired.</string>
+                     <string>Available when the current Images context supports this action.</string>
                     </property>
                     <property name="minimumSize">
                      <size>
@@ -938,7 +993,7 @@ No generation or saved output</string>
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Preview only: this application action is not wired.</string>
+                     <string>Available when the current Images context supports this action.</string>
                     </property>
                     <property name="minimumSize">
                      <size>
@@ -963,7 +1018,7 @@ No generation or saved output</string>
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Preview only: this application action is not wired.</string>
+                     <string>Available when the current Images context supports this action.</string>
                     </property>
                     <property name="minimumSize">
                      <size>
@@ -2756,7 +2811,7 @@ No generation or saved output</string>
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Preview only: this application action is not wired.</string>
+                     <string>Available when the current Images context supports this action.</string>
                     </property>
                    </widget>
                   </item>
@@ -2772,7 +2827,7 @@ No generation or saved output</string>
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Preview only: this application action is not wired.</string>
+                     <string>Available when the current Images context supports this action.</string>
                     </property>
                    </widget>
                   </item>
@@ -2788,7 +2843,7 @@ No generation or saved output</string>
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Preview only: this application action is not wired.</string>
+                     <string>Available when the current Images context supports this action.</string>
                     </property>
                    </widget>
                   </item>
@@ -3217,7 +3272,7 @@ No generation or saved output</string>
    </item>
   </layout>
   <property name="toolTip">
-   <string>Offline layout preview; no application gallery services are connected.</string>
+   <string>Browse committed saved outputs and recorded provenance.</string>
   </property>
   <property name="geometry">
    <rect>

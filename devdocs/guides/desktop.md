@@ -56,24 +56,39 @@ The Queues page creates paused seed sweeps or Pair/Cross batches from the Genera
 
 During generation or queue dispatch, the window owns the state directory. Generate is disabled during dispatch and competing CLI owners fail clearly as busy; another CLI operation can own generation between desktop operations. Reading and posting queue controls do not require ownership. Closing during dispatch asks first and does not imply remote cancellation.
 
-## Images preview
+## Images
 
-Images currently displays bundled illustrative samples, not this machine's saved
-outputs. Grid, List and Detail keep the same header. Click a tile or row to open
-Detail; returning preserves the mounted browse view's scroll position. The size
-slider adjusts grid thumbnails, list row density or Detail filmstrip thumbnails.
-Browse views have hover feedback without multi-selection or bulk actions.
+Images browses committed final outputs recorded in the selected state directory.
+With no saved viewer preference it opens in Grid; later launches restore the
+saved Grid/List/Detail mode, filters, sort, selection, scroll positions,
+thumbnail scale and auto-refresh choice.
 
-Detail provides Cover/Fit, 100%, zoom/pan, previous/next, keyboard navigation and
-fullscreen/Escape. Its right filmstrip extends beside the image and lower panels
-to the workspace bottom. Model and LoRA facts remain separate from Unknown
-compatibility status. The prompt is visible without a redundant caption;
-Additional details and Raw metadata reveal mutually exclusive inline panels.
+Grid, List and Detail share the same bounded query. Positive-prompt search is
+case-insensitive; model and LoRA filters use exact recorded identifiers. Date,
+exact dimensions and aspect-ratio filters compose with AND, and sorting supports
+newest/oldest, model, pixel area and canonical LoRA ordering. Negative-prompt
+search remains available through the shared CLI/service query but is not shown
+in the compact desktop header.
 
-Search/filter controls, refresh and saved-file actions remain disabled. Sample
-metadata is illustrative, including Detail's sample timestamp; it is not
-recorded generation evidence. No gallery persistence, real-output query or
-provider execution is provided by this preview.
+The thumbnail control is 25–250%, with 100% as the standard size. It scales Grid
+tiles, List row thumbnails and the Detail filmstrip. Grid/List loading is paged
+and thumbnail decoding is bounded/asynchronous so the Qt event loop is not used
+to decode the whole library at once. Auto-refresh is on for a first-run viewer
+and preserves the selected or visible browsing anchor.
+
+Click a Grid tile or List row to open Detail. Detail defaults to Fit, with Cover
+available when you prefer a filled canvas. It also provides true 100%, zoom/pan,
+previous/next through the current filtered order, keyboard navigation and
+fullscreen/Escape. Additional details include the negative prompt, resolved
+seed when recorded, provider, file size/path and file actions. Raw metadata is
+bounded and sanitized; unavailable evidence is shown as `Not recorded` or
+`Unknown`, not inferred.
+
+Copy path, Open folder and external-viewer actions operate on the actual saved
+artifact. Missing or corrupt files remain represented without preventing other
+outputs from being browsed. Browsing does not generate, modify or delete saved
+outputs.
+
 
 ## Remembered settings and diagnostics
 

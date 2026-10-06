@@ -148,6 +148,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     surface = get("galleryImageSurface")
     surface.setText("")
     paint = CoverPainter(surface, assets / "portrait.jpg")
+    paint.mode = "Fit"
     painters.append(paint)
     surface.setToolTip("Illustrative artwork — not a saved generation")
     get("galleryAdditionalScroll").hide()
@@ -269,6 +270,8 @@ class DetailFixture(QObject):
     def __init__(self, page):
         super().__init__(page)
         self.page = page
+        page.setWindowTitle("DTFlow — Images layout preview (offline fixture)")
+        page.setToolTip("Offline layout preview with illustrative artwork and synthetic metadata.")
         self.painters = apply_gallery(page, sample=True)
         self.additional_button = page.findChild(QPushButton, "galleryAdditionalButton")
         self.raw_button = page.findChild(QPushButton, "galleryRawButton")

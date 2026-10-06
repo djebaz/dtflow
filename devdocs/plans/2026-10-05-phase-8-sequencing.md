@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Planned sequence; owner view templates under review; implementation not started.
+**Status:** Sequence active. Phase 8A is implemented in PR #34 and pending merge; 8B presets is the next planned phase.
 
 **Target:** Proposed 0.4.0 daily-use refinement, subject to the [release roadmap](releases.md).
 
@@ -14,7 +14,7 @@ These are delivery phases within initial-plan Phase 8. “Phase 1” here means 
 
 | Order | Phase | Outcome and scope | Acceptance / handoff |
 | --- | --- | --- | --- |
-| 1 | **8A — Viewer** | Read-only saved-output browsing, all selected layouts/search/filter/sort/viewing/metadata capabilities. See the [dedicated viewer plan](2026-10-05-phase-8a-viewer.md). | `8-O2` and browsing-only `8-O5`; establish bounded queries and disposable derived assets before presets. |
+| 1 | **8A — Viewer** | **Implemented in PR #34:** read-only saved-output browsing, selected Grid/List/Detail layouts, query/filter/sort, durable browsing state and recorded metadata inspection. See the [dedicated viewer plan](2026-10-05-phase-8a-viewer.md). | `8-O2` and browsing-only `8-O5`; owner reports the full tests passed after lifecycle fixes; packaged/native-DPI acceptance remains separate. |
 | 2 | **8B — Presets** | Reusable named settings with native Draw Things `custom_configs.json` interchange; preserve unsupported fields and distinguish them from applied settings. See the [preset contract and example](2026-10-05-phase-8-gallery-presets.md#8b--draw-things-compatible-presets). Detailed library actions remain to be refined. | `8-O1` and necessary `8-O5`; verify enum mappings and upstream round trips before claiming interoperability. Loading never dispatches. |
 | 3 | **8C — Reuse/regeneration** | Populate Generate from recorded settings; explicitly create a fresh request/attempt for regeneration with source lineage, preserving originals. Exact actions remain to be refined. | `8-O3` and necessary `8-O5`; preserve existing preflight, dispatch and no-replay safety. |
 | 4 | **8D — Cache management** | Measure and confirm purge of disposable categories, including gallery derivatives, while retaining outputs and all durable state. | `8-O4`; coordinate with active readers/writers and respect no-cache mode. |
