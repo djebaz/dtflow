@@ -14,7 +14,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
-from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QMessageBox, QPushButton, QWidget
+from PySide6.QtWidgets import QFileDialog, QInputDialog, QListWidgetItem, QMessageBox, QPushButton, QWidget
 
 from dtflow.composition import BACKENDS
 from dtflow.core.models import (
@@ -32,6 +32,7 @@ from dtflow.services.connection import (
     present_interruption,
     present_outcome,
 )
+from dtflow.services.presets import apply_preset, load_presets, save_preset
 from dtflow.services.session import (
     cached_inventory,
     generate_once,
@@ -206,6 +207,8 @@ class GenerationPage:
         page.cancelButton.clicked.connect(self.cancel)
         page.refreshInventoryButton.clicked.connect(self.refresh)
         page.saveConfigurationButton.clicked.connect(self.save)
+        page.savePresetButton.setEnabled(True)
+        page.savePresetButton.clicked.connect(self.save_preset)
         page.loadConfigurationButton.clicked.connect(self.load)
         page.configurationCombo.activated.connect(self._config_chosen)
         page.openOutputFolderButton.clicked.connect(self.open_output_folder)
@@ -893,9 +896,47 @@ class GenerationPage:
             self._load(Path(chosen))
 
     def _config_chosen(self, index: int) -> None:
-        path = self.page.configurationCombo.itemData(index)
-        if path:
-            self._load(Path(path))
+        data = self.page.configurationCombo.itemData(index)
+        if not data:
+            return
+        if isinstance(data, tuple) and data[0] == "preset":
+            self._load_preset(data[1])
+        else:
+            self._load(Path(data))
+
+    def _load_preset(self, preset: dict) -> None:
+        application = apply_preset(preset)
+        current = form_to_document(self._values())
+        current.update(application.values)
+        values = form_from_document(current)
+        self._apply(values)
+        if "loras" in application.values:
+            self.lora.set_loras(application.values["loras"], loaded=True)
+        self._config_name = f"preset:{preset['name']}"
+        preserved = ", ".join(application.preserved) if application.preserved else "none"
+        self._status(
+            Presentation(
+                "ok",
+                "Preset loaded",
+                f"{preset['name']} applied without dispatch. Preserved-only fields: {preserved}. Prompts were unchanged.",
+            )
+        )
+
+    def save_preset(self) -> None:
+        name, accepted = QInputDialog.getText(self.page, "Save preset", "Preset name")
+        if not accepted or not name.strip():
+            return
+        document = form_to_document(self._values())
+        try:
+            save_preset(self._state, name, document)
+        except (ValidationError, OSError, ValueError) as exc:
+            self._status(Presentation("error", "Preset not saved", str(exc)))
+            return
+        self._status(Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library."))
+        self._scan_configs()
+
+    def refresh_presets(self) -> None:
+        self._scan_configs()
 
     def _load(self, path: Path) -> None:
         self._mark(None)
@@ -928,14 +969,25 @@ class GenerationPage:
     def _scan_configs(self) -> None:
         directory = self._configs
 
-        async def scan():
-            return await asyncio.to_thread(lambda: sorted(directory.glob("*.json")) if directory.is_dir() else [])
+        def scan():
+            paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
+            return paths, load_presets(self._state)
 
-        self._runner.submit(scan(), self._scanned)
+        async def scan_async():
+            return await asyncio.to_thread(scan)
 
-    def _scanned(self, paths, failure) -> None:
+        self._runner.submit(scan_async(), self._scanned)
+
+    def _scanned(self, result, failure) -> None:
         combo = self.page.configurationCombo
         combo.clear()
-        for path in paths or []:
-            combo.addItem(path.name, str(path))
+        if failure is not None:
+            log.warning("configuration/preset scan failed reason=%s", type(failure).__name__)
+            combo.setCurrentIndex(-1)
+            return
+        paths, presets = result
+        for preset in presets:
+            combo.addItem(f"Preset · {preset['name']}", ("preset", preset))
+        for path in paths:
+            combo.addItem(f"Config · {path.name}", str(path))
         combo.setCurrentIndex(-1)
