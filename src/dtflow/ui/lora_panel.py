@@ -229,6 +229,13 @@ class LoraAssetPanel:
             self._show(status, Presentation("warning", "Registry unavailable", present_asset_failure(failure).detail))
             return
         self._records = {record["asset_id"]: record for record in records}
+        # a receipt the registry no longer confirms (reconcile said the server lost the file) must not stay bound
+        self._receipts = {
+            name: asset
+            for name, asset in self._receipts.items()
+            if self._records.get(asset, {}).get("state") == "confirmed"
+        }
+        self._render_loras()
         selected = self._selected_id()
         self.page.assetList.clear()
         for record in records:
