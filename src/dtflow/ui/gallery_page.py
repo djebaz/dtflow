@@ -89,8 +89,8 @@ def _local_timestamp(value: str) -> str:
 
 
 def _local_midnight(day: date) -> str:
-    zone = datetime.now().astimezone().tzinfo
-    return datetime.combine(day, time.min, tzinfo=zone).astimezone(UTC).isoformat()
+    # A naive local wall time lets the OS apply the date-specific DST rule before normalization to UTC.
+    return datetime.combine(day, time.min).astimezone().astimezone(UTC).isoformat()
 
 
 def _date_bounds(text: str) -> tuple[str | None, str | None]:
