@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Sequence active. Phase 8A is implemented in PR #34 and pending merge; 8B presets is the next planned phase.
+**Status:** Phase 8A is implemented. PR #46 implements 8B presets, 8C reuse/regeneration and 8D disposable-cache management for the proposed 0.4.0 gate; owner/runtime acceptance remains pending.
 
 **Target:** Proposed 0.4.0 daily-use refinement, subject to the [release roadmap](releases.md).
 
