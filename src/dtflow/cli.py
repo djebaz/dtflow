@@ -10,6 +10,7 @@ from pathlib import Path
 
 from dtflow.build import display_identity, identity
 from dtflow.composition import BACKENDS
+from dtflow.core.gallery import SORTS, GalleryQuery
 from dtflow.core.models import (
     BackendError,
     ErrorCategory,
@@ -27,6 +28,7 @@ from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concu
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.config import export_config, load_config, resolve_request
+from dtflow.services.gallery import inspect_output, query_outputs
 from dtflow.services.planning import Plan, describe_plan, expand_plan, load_plan
 from dtflow.services.queue_session import create_queue, dispatch_queue
 from dtflow.services.session import (
@@ -129,7 +131,50 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("-t", "--timeout", type=float, default=600.0, help="Total backend deadline in seconds.")
     add_queue_commands(commands)
     add_asset_commands(commands)
+    add_gallery_commands(commands)
     return command
+
+
+def add_gallery_commands(commands) -> None:
+    """Read-only saved outputs through the same bounded query service as Images."""
+    gallery = commands.add_parser("gallery", help="Browse committed saved outputs offline; never generates.")
+    actions = gallery.add_subparsers(dest="gallery_command", required=True)
+    for name in ("list", "show"):
+        child = actions.add_parser(
+            name, help="Query saved outputs." if name == "list" else "Inspect one output's safe metadata."
+        )
+        child.add_argument("-d", "--state", type=Path, default=Path(".dtflow"))
+        if name == "show":
+            child.add_argument("identity", help="Stable output identity from gallery list.")
+            continue
+        child.add_argument("-p", "--prompt", default="", help="Case-insensitive literal positive-prompt substring.")
+        child.add_argument("-n", "--negative", default="", help="Case-insensitive literal negative-prompt substring.")
+        child.add_argument("-m", "--model", default="", help="Exact recorded model identifier.")
+        child.add_argument("-l", "--lora", default="", help="Exact recorded LoRA identifier.")
+        child.add_argument("-s", "--since", help="Inclusive UTC date or offset-aware ISO timestamp.")
+        child.add_argument("-u", "--until", help="Exclusive UTC date or offset-aware ISO timestamp.")
+        child.add_argument("-r", "--ratio", default="", help="square, portrait, landscape or exact W:H.")
+        child.add_argument("-w", "--width", type=int, help="Exact width in pixels.")
+        child.add_argument("-y", "--height", type=int, help="Exact height in pixels.")
+        child.add_argument("-o", "--sort", choices=SORTS, default="newest")
+        child.add_argument("-k", "--limit", type=int, default=100, help="Page size in 1..200.")
+        child.add_argument("-f", "--offset", type=int, default=0)
+
+
+async def run_gallery(args: argparse.Namespace) -> int:
+    if args.gallery_command == "show":
+        detail = await inspect_output(args.state, args.identity)
+        print(
+            json.dumps(
+                {"output": asdict(detail.item), "metadata": json.loads(detail.metadata_json), "issue": detail.issue},
+                indent=2,
+            )
+        )
+    else:
+        query = GalleryQuery(**{name: getattr(args, name) for name in GalleryQuery.__dataclass_fields__})
+        page = await query_outputs(args.state, query)
+        print(json.dumps(asdict(page), indent=2))
+    return EXIT_OK
 
 
 def add_request_options(child: argparse.ArgumentParser) -> None:
@@ -428,6 +473,8 @@ async def run_assets(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "gallery":
+        return await run_gallery(args)
     if args.command == "queue":
         return await run_queue(args)
     if args.command == "assets":
