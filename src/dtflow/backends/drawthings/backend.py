@@ -286,7 +286,10 @@ class DrawThingsBackend:
                     self._failure(request, ErrorCategory.PROTOCOL, "event_sink_failure", "Event sink failed.", stage)
                 ) from exc
 
-        if not (self.unlisted_model_bridge and request.allow_unlisted_model) and request.model_id not in self.capabilities.model_ids:
+        if (
+            not (self.unlisted_model_bridge and request.allow_unlisted_model)
+            and request.model_id not in self.capabilities.model_ids
+        ):
             raise error(
                 ErrorCategory.VALIDATION,
                 "unknown_model",
