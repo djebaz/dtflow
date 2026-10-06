@@ -143,7 +143,7 @@ Blue marks primary action, focus and active selection. The four charcoal depths 
 
 - **Accent:** primary actions at rest, brighter on hover and deeper while pressed. Focus is a separate lighter blue and must remain visible on both neutral and selected controls.
 - **Selection:** muted navy with light text, shared by selected navigation, lists and tables. It is not the primary-action fill.
-- **Selects:** every `QComboBox` reads as a select, not a text field: a separated button-colored chevron segment on the right, hover and open states that brighten the segment, the shared focus border while open or focused, a muted disabled chevron, and a popup list with the shared selection colors. Do not restyle a select as a bare input; the compact Images toolbar view mode is the only chevron-only exception.
+- **Selects:** every `QComboBox` reads as a select, not a text field: a chevron pinned to the right edge with no divider or segment, brightened on hover and while open, the shared focus border while open or focused, a muted disabled chevron, and a popup list with the shared selection colors. Do not restyle a select as a bare input; the compact Images toolbar view mode is the only chevron-only exception.
 - **Status:** success, warning and error have distinct semantic colors. Unknown uses neutral secondary text and an explicit label; it is not treated as failure or success.
 - **Disabled:** muted text and surfaces without a blue or destructive accent. An unavailable file action must look unavailable over an image as well as over an empty canvas.
 
