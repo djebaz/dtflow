@@ -132,6 +132,8 @@ def apply_gallery_button_icons(page, assets=ASSETS):
         ("galleryFullscreenButton", "fullscreen"),
         ("galleryAdditionalButton", "document"),
         ("galleryRawButton", "json"),
+        ("galleryUseSettingsButton", "arrow-left"),
+        ("galleryRegenerateButton", "repeat"),
     ]:
         get(name).setIcon(QIcon(str(assets / f"{icon}.svg")))
         get(name).setIconSize(QSize(18, 18))
