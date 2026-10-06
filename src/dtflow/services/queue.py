@@ -12,12 +12,14 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from dtflow.core.models import BackendError, ResolvedGenerationRequest
+from dtflow.core.models import BackendError, BackendEvent, ResolvedGenerationRequest
 from dtflow.core.tasks import settle
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.generation import GenerationService
 
 log = logging.getLogger(__name__)
+
+RECORDED_BACKEND_EVENTS = {"preparing", "submission_possible", "artifact_received", "terminal"}
 
 
 class QueueDispatcher:
@@ -54,7 +56,7 @@ class QueueDispatcher:
                     if claim is None:
                         break
                     item_id, request = claim
-                    task = asyncio.create_task(self._execute(item_id, request))
+                    task = asyncio.create_task(self._execute(queue_id, item_id, request))
                     tasks[task] = item_id
                 if tasks:
                     done, _ = await asyncio.wait(tasks, timeout=self.poll, return_when=asyncio.FIRST_COMPLETED)
@@ -77,27 +79,92 @@ class QueueDispatcher:
             if tasks:
                 await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
 
-    async def _execute(self, item_id: str, request: ResolvedGenerationRequest) -> None:
-        failure: dict[str, Any] | None = None
+    async def _record_event(
+        self,
+        queue_id: str,
+        kind: str,
+        detail: dict[str, Any],
+        at_utc: str | None = None,
+    ) -> None:
         try:
-            await self.service.generate(request)
-        except asyncio.CancelledError:
-            await settle(self.store.settle_item(item_id))
-            raise
-        except BackendError as exc:
-            failure = {
-                "code": exc.failure.code,
-                "category": str(exc.failure.category),
-                "submission_stage": str(exc.failure.submission_stage),
-                "remote_outcome": str(exc.failure.remote_outcome),
-            }
-        except PersistenceError:
-            # The state store itself failed: leave the durable reservation for the next owner's reconciliation.
-            log.error("queue item %s could not be settled; reconciliation will classify it", item_id)
-            raise
+            await self.store.record_queue_event(queue_id, kind, detail, at_utc=at_utc)
         except Exception as exc:
-            failure = {"code": "unexpected", "category": type(exc).__name__}
-        state = await settle(self.store.settle_item(item_id, failure))
-        if self.on_settle is not None:
-            self.on_settle(item_id, state)
-        log.info("queue item %s settled state=%s", item_id, state)
+            log.warning("queue event evidence not recorded kind=%s reason=%s", kind, type(exc).__name__)
+
+    async def _event_writer(
+        self,
+        queue_id: str,
+        evidence: asyncio.Queue[tuple[str, dict[str, Any], str | None] | None],
+    ) -> None:
+        while True:
+            record = await evidence.get()
+            if record is None:
+                return
+            kind, detail, at_utc = record
+            await self._record_event(queue_id, kind, detail, at_utc)
+
+    @staticmethod
+    def _backend_event_detail(item_id: str, request: ResolvedGenerationRequest, event: BackendEvent) -> dict[str, Any]:
+        detail: dict[str, Any] = {"item_id": item_id, "request_id": request.request_id}
+        if event.stage is not None:
+            detail["stage"] = event.stage
+        if event.completed is not None:
+            detail["completed"] = event.completed
+        if event.total is not None:
+            detail["total"] = event.total
+        if event.artifact is not None:
+            detail["artifact_id"] = event.artifact.artifact_id
+            detail["designation"] = str(event.artifact.designation)
+        return detail
+
+    async def _execute(self, queue_id: str, item_id: str, request: ResolvedGenerationRequest) -> None:
+        evidence: asyncio.Queue[tuple[str, dict[str, Any], str | None] | None] = asyncio.Queue()
+        writer = asyncio.create_task(self._event_writer(queue_id, evidence))
+        failure: dict[str, Any] | None = None
+        saved = None
+
+        def receive(event: BackendEvent) -> None:
+            if event.kind in RECORDED_BACKEND_EVENTS:
+                evidence.put_nowait(
+                    (
+                        f"backend_{event.kind}",
+                        self._backend_event_detail(item_id, request, event),
+                        event.timestamp_utc,
+                    )
+                )
+
+        evidence.put_nowait(("item_started", {"item_id": item_id, "request_id": request.request_id}, None))
+        try:
+            try:
+                saved = await self.service.generate(request, on_event=receive)
+            except asyncio.CancelledError:
+                state = await settle(self.store.settle_item(item_id))
+                evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))
+                raise
+            except BackendError as exc:
+                failure = {
+                    "code": exc.failure.code,
+                    "category": str(exc.failure.category),
+                    "submission_stage": str(exc.failure.submission_stage),
+                    "remote_outcome": str(exc.failure.remote_outcome),
+                }
+            except PersistenceError:
+                # The state store itself failed: leave the durable reservation for the next owner's reconciliation.
+                log.error("queue item %s could not be settled; reconciliation will classify it", item_id)
+                raise
+            except Exception as exc:
+                failure = {"code": "unexpected", "category": type(exc).__name__}
+
+            state = await settle(self.store.settle_item(item_id, failure))
+            detail: dict[str, Any] = {"item_id": item_id, "state": state}
+            if saved is not None:
+                detail["attempt_id"] = saved.attempt_id
+                if saved.backend_result.backend_elapsed_seconds is not None:
+                    detail["backend_elapsed_seconds"] = saved.backend_result.backend_elapsed_seconds
+            evidence.put_nowait(("item_settled", detail, None))
+            if self.on_settle is not None:
+                self.on_settle(item_id, state)
+            log.info("queue item %s settled state=%s", item_id, state)
+        finally:
+            evidence.put_nowait(None)
+            await settle(writer)
