@@ -22,6 +22,8 @@
 
 - Cloud LoRA preflight: a LoRA that the DT+ inventory does not list, or lists only as an unclassified file, is now reported as unconfirmed (`availability_unknown` / `architecture_unknown`) instead of blocking dispatch as not available. Local and confirmed-mismatch behavior is unchanged. Whether DT+ then applies the LoRA is not verified; no generation, upload or billable action was run.
 
+- LoRA weights such as 0.6 no longer fail `wire_configuration_mismatch`: the wire check compared a float32-rounded weight exactly, while drawthings-py rounds some values on decode. The check is now tolerant by float32 precision.
+
 ## Release audit
 
 - PRs: #46, #48, #49, #50, #51

@@ -68,3 +68,9 @@ def test_unsupported_requests_are_rejected_before_serialization(overrides, code)
         code,
         "not_submitted",
     )
+
+
+@pytest.mark.parametrize("weight", [0.6, 0.35, 1.2, 2.0])
+def test_lora_weights_that_the_library_rounds_on_decode_still_verify(weight):
+    wire = build_generation_message(request(loras=(LoRASelection("a_lora_f16.ckpt", weight),)), None)
+    assert dict(wire.effective_configuration)["loras"] == f"a_lora_f16.ckpt@{weight}"

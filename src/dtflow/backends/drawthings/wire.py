@@ -37,6 +37,11 @@ def float32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
 
+def _same_float32(decoded: object, wanted: float) -> bool:
+    """drawthings-py rounds some decoded float32 values (0.6 reads back as 0.6, not 0.6000000238...), so compare loosely."""
+    return isinstance(decoded, int | float) and abs(decoded - float32(wanted)) <= 1e-6 * max(1.0, abs(wanted))
+
+
 def _reject(request: ResolvedGenerationRequest, code: str, message: str):
     return error(ErrorCategory.VALIDATION, code, message, request.request_id)
 
@@ -97,10 +102,13 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
     }
     mismatches = [key for key, value in expected.items() if decoded.get(key) != value]
     sent = [(item.get("file"), item.get("weight"), item.get("mode")) for item in decoded.get("loras") or []]
-    wanted = [(item.identifier, float32(item.weight), LORA_MODE) for item in request.loras]
-    if [(f, w, m) for f, w, m in sent] != wanted:
+    wanted = [(item.identifier, item.weight, LORA_MODE) for item in request.loras]
+    if len(sent) != len(wanted) or any(
+        (f, m) != (name, mode) or not _same_float32(w, weight)
+        for (f, w, m), (name, weight, mode) in zip(sent, wanted, strict=True)
+    ):
         mismatches.append("loras")
-    if float32(request.guidance) != decoded.get("guidance"):
+    if not _same_float32(decoded.get("guidance"), request.guidance):
         mismatches.append("guidance")
     if raw.Sampler() != SAMPLER_WIRE_VALUE[SAMPLER_NAME[request.sampler_id]]:
         mismatches.append("sampler_wire_value")
