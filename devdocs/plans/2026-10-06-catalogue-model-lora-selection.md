@@ -109,7 +109,7 @@ Persist preferences/selections, **not inventory as durable truth**. On provider 
 
 If a persisted checkpoint is Niche, restoration may enable the provider's Niche toggle so the persisted state can be represented.
 
-The existing inventory cache remains disposable and separately scoped/validated according to the runtime-layout contract.
+The existing inventory cache remains disposable and separately scoped/validated according to the runtime-layout contract. Its `cache_version` governs only the disposable inventory-cache format, and `-nc` / `--no-cache` bypasses only cache reads/writes. Neither mechanism disables, invalidates, versions, deletes or otherwise changes the bundled catalogue or durable user custom-LoRA metadata.
 
 ## 5. Catalogue concepts
 
@@ -285,9 +285,20 @@ Treat these states separately:
 
 Unknown does not mean incompatible.
 
-The curated default selectors should not pollute Prime discovery with unclassified entries or claim unsupported family/mode information. Preserve the existing editable/raw escape hatch where the current UI intentionally permits an explicit artifact identifier, unless current canonical behavior says otherwise.
+The curated default selectors should not pollute Prime discovery with unclassified entries or claim unsupported family/mode information. A provider inventory may therefore contain artifacts that are available but not represented in the curated family selector.
 
-A provider inventory may therefore contain artifacts that are available but not represented in the curated family selector.
+Inventory resolution must explicitly detect **new/unclassified checkpoints**: exact checkpoint identities present in the active provider inventory but absent from the bundled Prime/Niche catalogue. When one or more appear after provider activation or refresh, the Generate UI shows a non-blocking warning/alert such as `3 unclassified checkpoints found`, with an action to inspect their exact identifiers. The alert is evidence of a catalogue gap, not an error and not a compatibility claim. It should not be repeatedly redisplayed merely because the same cached observation is re-rendered; the presentation should be tied to the resolved inventory observation.
+
+Unclassified checkpoints do not automatically enter a base-model family because DTFlow has no evidence for that classification. The implementation must inspect and preserve the current model combo's editable/raw identifier behavior as the explicit escape hatch. A user may deliberately select/type an unclassified checkpoint that is present in the active inventory. In that raw-selection state:
+
+- keep the exact checkpoint identifier;
+- represent base family as unknown/unclassified rather than inventing one;
+- do not reject the checkpoint merely because the Image/Video domain filter cannot classify it;
+- do not claim a precise mode, domain, family or quantization that the catalogue does not establish;
+- do not offer LoRAs as known-compatible solely from filename similarity; existing preflight may still report its independent evidence;
+- persist the exact checkpoint per provider so it can be restored if it remains available.
+
+The curated domain → family → checkpoint selectors and the raw escape hatch therefore coexist: filters govern classified discovery, while explicit raw selection keeps newly appeared provider artifacts usable without pretending they are classified.
 
 ## 10. Selection dependency and invalidation
 
@@ -400,7 +411,7 @@ Before the bundled catalogue becomes authoritative for the GUI:
 11. Implement dependency recomputation with preserve-if-valid semantics.
 12. Restore provider state and saved configurations without silent substitution.
 13. Reuse the catalogue service from Batch where its current controls require the same selection behavior.
-14. Update `README.md`, desktop/CLI documentation where behavior changes, runtime-layout documentation for new durable user data/provider state, current status, release notes and this plan with final decisions.
+14. Update `README.md`, desktop/CLI documentation where behavior changes, runtime-layout documentation for new durable user data/provider state, `devdocs/plans/initial.md`, `devdocs/current_dev_status.md`, release notes and this plan with final decisions. Map the implemented catalogue/discovery scope explicitly back to the roadmap phase/scope in `initial.md` and to implemented/remaining work in `current_dev_status.md` rather than leaving this PR as an isolated side plan.
 
 ## 17. Acceptance criteria
 
@@ -415,6 +426,8 @@ The feature is accepted when:
 - `Include niche models` is off by default and adds, rather than replaces, available Niche checkpoints;
 - LoRA selection combines bundled and user definitions, intersects them with active-provider availability, and presents only known-compatible choices in the curated compatible list;
 - unknown inventory artifacts are not falsely classified;
+- newly observed unclassified checkpoints produce a non-blocking catalogue-gap alert with inspectable exact identifiers;
+- an available unclassified checkpoint remains explicitly usable through the existing editable/raw model escape hatch without being assigned an invented family/domain or receiving guessed compatible LoRAs;
 - custom LoRA definitions remain user-owned and are not packaged as universal whitelist data;
 - each provider independently persists domain, family, exact checkpoint, Niche preference and LoRA selection/weights;
 - switching providers restores each provider's own state and revalidates it against that provider's current inventory;
