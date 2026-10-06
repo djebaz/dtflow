@@ -191,10 +191,10 @@ class GalleryPage(QObject):
         self._setup_filmstrip()
         self._setup_actions()
         self._restore_preferences()
-        self._restoring = False
         self._clear_detail()
         self.show_view(self.mode, persist=False)
         self._sync_auto_refresh()
+        self._restoring = False
 
     def _widget(self, name: str, cls=QWidget):
         value = self.page.findChild(cls, name)
@@ -1173,7 +1173,16 @@ class GalleryPage(QObject):
         async def write():
             await asyncio.to_thread(save_viewer, self.state_dir, document)
 
-        self._save_future = self.runner.submit(write(), self._save_done)
+        try:
+            self._save_future = self.runner.submit(write(), self._save_done)
+        except RuntimeError:
+            # The owner may shut down the shared runner directly (for example
+            # during Qt teardown). A stale debounce must never raise into the
+            # Qt event loop after that lifecycle boundary.
+            self._save_running = False
+            self._save_future = None
+            self._save_dirty = True
+            log.info("viewer preference save skipped because async runner is closed")
 
     def save_now(self) -> None:
         """Persist the latest viewer state before the shared async runner is shut down."""
