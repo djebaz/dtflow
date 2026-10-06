@@ -19,7 +19,8 @@
 - None.
 
 ## Validation
-- [ ] Final tests and color/visual smoke tests deferred to owner.
+- [x] Owner confirms color/hover/mouse-focus smoke test passed after `a9e393a` on 2026-10-06.
+- [ ] Final automated tests remain with the owner; no new test-suite result was supplied.
 - Tests and smoke tests are not run; final validation remains with the user.
 
 - Ran canonical load_theme() token resolution successfully and git diff --check. No tests/smoke tests or packaging ran.

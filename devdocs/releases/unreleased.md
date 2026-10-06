@@ -51,7 +51,7 @@
 
 ## Validation and release audit
 
-- On 2026-10-06 the owner reported that PR #37's incremental refresh works. This is owner feedback, not agent-run tests; the subsequent Auto-refresh color change has not yet been owner-smoke-tested.
+- On 2026-10-06 the owner reported that PR #37's incremental refresh works and subsequently confirmed the Auto-refresh color/hover/mouse-focus smoke test passed after `a9e393a`. This is owner-reported source/UI acceptance, not agent-run tests or packaged-executable acceptance.
 
 - PR #33 remains the historical offline presentation/style change. PR #34 is the current Phase 8A production viewer implementation; presets/reuse/cache-management/organisation remain later Phase 8 work.
 - On 2026-10-06 the owner reported the full test suite passed after the PR #34 Qt lifecycle fix. No final command/count was supplied in that confirmation, so no exact count is claimed here. Earlier failing output showed the lifecycle exception cascading through Qt setup; the fix was then owner-retested successfully.

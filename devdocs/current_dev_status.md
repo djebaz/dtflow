@@ -45,8 +45,8 @@ preserves retained thumbnails/in-flight work and the selected Detail image state
 when outputs are added, removed or reordered. See the
 [follow-up plan](plans/2026-10-06-images-incremental-refresh.md). Code presence is
 not agent-run acceptance; the owner reports incremental refresh works. The
-subsequent colors-only Auto-refresh alignment with Connection tokens still needs
-owner visual acceptance. Tests/smoke are deferred under fast-implement.
+subsequent Auto-refresh color/hover/focus adjustment was also owner-smoke-tested
+successfully after `a9e393a`. No agent-run tests or packaged acceptance are claimed.
 
 The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). Follow the [Phase 8 delivery plan](plans/2026-10-05-phase-8-sequencing.md): with 8A now implemented in PR #34, the next planned capability is Draw Things-compatible presets (8B), followed by reuse, cache management and separately scoped organisation. Recheck the roadmap and relevant phase plan before choosing work.
 
