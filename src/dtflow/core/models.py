@@ -445,6 +445,7 @@ class Capabilities:
     batch_count: int = 1
     lora_support: str = "unsupported"
     limits: ResourceLimits = field(default_factory=ResourceLimits)
+    allow_unlisted_models: bool = False
 
 
 @dataclass(frozen=True, slots=True)
