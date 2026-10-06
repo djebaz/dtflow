@@ -29,6 +29,7 @@ UPLOAD_NOTICE = (
     "not consume credits, but a later generation that uses the file may. Nothing else in DTFlow uploads. Continue?"
 )
 CLOUD_ONLY = "Asset actions need the cloud backend (choose it on the Connection page)."
+DEFAULT_LORA_WEIGHT = 1.0
 LORA_WEIGHT_RANGE = (-100.0, 100.0)  # a dialog bound only; the shared request model requires a finite weight
 
 
@@ -43,7 +44,7 @@ def _choose_lora(parent: QWidget, candidates: list[tuple[str, float | None]]) ->
     )
     if name is None:
         return None
-    default = dict(candidates).get(name) or 1.0
+    default = dict(candidates).get(name) or DEFAULT_LORA_WEIGHT
     weight, accepted = QInputDialog.getDouble(parent, "LoRA weight", "Weight", default, *LORA_WEIGHT_RANGE, 2)
     return (name, weight) if accepted else None
 
@@ -83,6 +84,7 @@ class LoraAssetPanel:
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[str, dict] = {}
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
+        self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
         page.addLoraButton.clicked.connect(self.add)
         page.removeLoraButton.clicked.connect(self.remove)
         page.checkLorasButton.clicked.connect(self.check)
@@ -240,6 +242,10 @@ class LoraAssetPanel:
                 self.page.assetList.setCurrentItem(item)
         if self._bind_after_list is not None:
             identifier, self._bind_after_list = self._bind_after_list, None
+            add, self._add_when_bound = self._add_when_bound, False
+            if add and identifier not in {item.identifier for item in self.loras}:
+                if any(r["identifier"] == identifier and r["state"] == "confirmed" for r in self._records.values()):
+                    self.set_loras((*self.loras, LoRASelection(identifier, DEFAULT_LORA_WEIGHT)))
             self._bind_confirmed(identifier)
 
     def _selected_id(self) -> str | None:
@@ -272,7 +278,7 @@ class LoraAssetPanel:
                     f"{record['identifier']} ({record['evidence']}).",
                 ),
             )
-            self._bind_after_list = record["identifier"]
+            self._bind_after_list, self._add_when_bound = record["identifier"], True
         self.refresh_assets()
 
     def reconcile(self) -> None:

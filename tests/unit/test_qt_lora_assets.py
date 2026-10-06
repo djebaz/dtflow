@@ -182,22 +182,24 @@ def test_asset_writer_contention_is_a_clear_busy_message(window, cloud, qtbot, t
         loop.close()
 
 
-def test_use_receipt_binds_by_identifier_only_for_confirmed_receipts(window, cloud, qtbot, tmp_path):
+def test_prepare_adds_and_binds_the_lora_and_use_receipt_binds_by_identifier(window, cloud, qtbot, tmp_path):
     page = window.generation_page
     prepare(window, qtbot, lora_file(tmp_path))
-    qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=5000)
+    qtbot.waitUntil(lambda: page.loraList.count() == 1, timeout=5000)  # Prepare adds the LoRA and binds its receipt
+    assert page.assetStatusLabel.text().startswith("Receipt bound") and "[receipt " in page.loraList.item(0).text()
+    assert len(window.generation.lora.receipt_ids()) == 1
+    page.loraList.setCurrentRow(0)
+    page.removeLoraButton.click()
+    assert window.generation.lora.receipt_ids() == ()  # removing the LoRA drops its binding
     page.assetList.setCurrentRow(0)
     page.useReceiptButton.click()
     assert page.assetStatusLabel.text().startswith("Add the LoRA first")
-    add_lora(window, qtbot, "style.ckpt", 0.8)
+    add_lora(window, qtbot, "style.ckpt", 0.8)  # adding a LoRA with a confirmed receipt binds it in the same action
     assert page.assetStatusLabel.text().startswith("Receipt bound") and "[receipt " in page.loraList.item(0).text()
-    window.generation.lora._receipts.clear()  # adding a LoRA with a confirmed receipt already bound it; unbind to press the button
+    window.generation.lora._receipts.clear()
     window.generation.lora._render_loras()
-    page.useReceiptButton.click()
+    page.useReceiptButton.click()  # the manual button still works
     assert page.assetStatusLabel.text().startswith("Receipt bound") and "[receipt " in page.loraList.item(0).text()
     assert len(window.generation.lora.receipt_ids()) == 1
     window.form.backendCombo.setCurrentText("fake")  # receipts are cloud-only; actions are disabled elsewhere
     assert not page.prepareAssetButton.isEnabled() and page.assetStatusLabel.text().startswith("Cloud only")
-    page.loraList.setCurrentRow(0)
-    page.removeLoraButton.click()
-    assert window.generation.lora.receipt_ids() == ()  # removing the LoRA drops its binding
