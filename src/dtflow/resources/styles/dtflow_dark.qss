@@ -752,13 +752,11 @@ QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked {
   color: ${color.selectionText};
   font-weight: ${type.weightEmphasis};
 }
-QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:hover,
-QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"]:checked:hover {
+QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:hover {
   background: ${color.selectionHover};
   color: ${color.selectionText};
 }
-QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:pressed,
-QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"]:checked:pressed {
+QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:pressed {
   background: ${color.selectionPressed};
 }
 QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:focus {
@@ -857,13 +855,6 @@ QFrame[role="galleryMetadataBlock"] {
 QFrame#galleryDateBlock {
   border: 0;
 }
-QLabel#galleryLoRAValue {
-  color: ${color.text};
-  font-size: 12px;
-}
-QLabel#galleryPositivePromptLabel {
-  color: ${color.text};
-}
 QPlainTextEdit#galleryPositivePrompt {
   background: transparent;
   border: 0;
@@ -874,8 +865,8 @@ QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"] {
   font-size: 12px;
 }
 QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"]:checked {
-  background: ${color.selection};
-  border-color: ${color.border};
+  background: ${color.accent};
+  border-color: ${color.accentHover};
   color: ${color.selectionText};
 }
 QScrollArea#galleryFilmstripScroll,
@@ -1129,3 +1120,42 @@ QTableView::item {
   padding: 5px 7px;
 }
 QTableView::item:hover { background: ${color.buttonHover}; }
+
+QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"]:checked:hover { background: ${color.accentHover}; }
+
+QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"]:checked:pressed { background: ${color.accentPressed}; }
+
+/* Model identity and LoRA facts remain visually distinct from status. */
+QWidget#GalleryDetailPage QLabel[role="modelMark"] {
+  background: ${color.accent};
+  border: 1px solid ${color.accentHover};
+  border-radius: 5px;
+  padding: 4px;
+}
+QWidget#GalleryDetailPage QLabel#galleryModelValue {
+  font-size: ${type.body};
+  font-weight: ${type.weightEmphasis};
+}
+QFrame[role="loraChip"] {
+  background: ${color.input};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: 5px;
+}
+QWidget#GalleryDetailPage QLabel[textRole="loraName"] {
+  color: ${color.text};
+  font-size: ${type.small};
+  font-weight: ${type.weightLabel};
+}
+QWidget#GalleryDetailPage QLabel[statusBadge="true"] {
+  color: ${color.unknown};
+  background: ${color.surface};
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: ${type.small};
+  font-weight: ${type.weightBody};
+}
+QWidget#galleryAdditionalScrollContents QLabel[textRole="value"] {
+  font-weight: ${type.weightBody};
+  border-bottom: 1px solid ${color.sectionBorder};
+  padding-bottom: 3px;
+}

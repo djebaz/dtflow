@@ -271,3 +271,9 @@ Unknown/informational notices use the neutral secondary palette, small body
 weight and explicit status wording. Do not tint entire LoRA names/weights or
 backend-availability hints purple. Success/warning/error colors remain reserved
 for their actual outcomes.
+
+Gallery metadata separates model identity (accent icon, semibold name, secondary
+identifier) from LoRA rows (neutral chip, name, numeric weight, explicit Unknown
+badge). Status does not tint the full identifier. The positive prompt has no
+redundant visible caption; its accessible name remains explicit. Expanded
+disclosure controls use shared accent rest/hover/pressed states.

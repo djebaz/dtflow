@@ -87,3 +87,8 @@ The header sample-count pill is removed; sample designation remains on the image
   neutral secondary gray and compact regular text for LoRA uncertainty and
   availability hints. Status wording and success/warning/error semantics remain.
   No tests added or run.
+
+- Refines gallery metadata with an accent model-identity tile and separate
+  LoRA name/weight/Unknown chips. Removes the redundant Positive prompt caption
+  and emphasizes expanded disclosure actions with shared accent states. No
+  compatibility evidence inferred; no tests added or run.

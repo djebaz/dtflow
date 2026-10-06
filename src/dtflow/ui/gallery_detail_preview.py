@@ -247,10 +247,6 @@ def apply_gallery(page, assets=ASSETS, sample=False):
         get("galleryAutoRefreshButton").setText("●  Auto-refresh: Off")
         get("galleryModelValue").setText("SDXL 1.0")
         get("galleryModelIdentifier").setText("stabilityai/stable-diffusion-xl-base-1.0")
-        get("galleryLoRAValue").setText(
-            "<span >portrait_enhancer_v2　0.8　<span >● Unknown</span><br>film_photography_xl　0.4　<span >● Unknown</span></span>"
-        )
-        get("galleryLoRAValue").setToolTip("Offline fixture: no compatibility evidence recorded.")
         get("galleryAdditionalFilenameValue").setText("portrait.jpg (illustrative fixture)")
         get("galleryAdditionalFileSizeValue").setText(
             f"{(assets / 'portrait.jpg').stat().st_size / 1024:.0f} KB (fixture file)"
