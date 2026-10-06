@@ -44,7 +44,7 @@ def choose_searchable(
         hint = QLabel(f"{custom_label} is available for identifiers that are not listed.", dialog)
         hint.setProperty("role", "secondary")
         layout.addWidget(hint)
-    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dialog)
     layout.addWidget(buttons)
 
     unique = list(dict.fromkeys(name for name in items if name))
@@ -77,6 +77,7 @@ def choose_searchable(
     search.textChanged.connect(populate)
     search.returnPressed.connect(accept_current)
     choices.itemDoubleClicked.connect(lambda _item: accept_current())
+    buttons.accepted.connect(accept_current)
     buttons.rejected.connect(dialog.reject)
     populate()
     search.setFocus()
