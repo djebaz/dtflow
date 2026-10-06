@@ -408,9 +408,9 @@ class GenerationPage:
             resolution_evidence=(*request.resolution_evidence, ("source.output", self._reuse_source_identity)),
         )
 
-    def reuse_saved_request(self, document: dict, source_identity: str) -> None:
-        """Populate Generate from one recorded request without dispatching."""
-        values = form_from_document(
+    @staticmethod
+    def _saved_request_values(document: dict) -> FormValues:
+        return form_from_document(
             {
                 "prompt": document.get("prompt", ""),
                 "negative_prompt": document.get("negative_prompt", ""),
@@ -424,6 +424,10 @@ class GenerationPage:
                 "loras": document.get("loras", []),
             }
         )
+
+    def reuse_saved_request(self, document: dict, source_identity: str) -> None:
+        """Populate Generate from one recorded request without dispatching."""
+        values = self._saved_request_values(document)
         self._apply(values)
         self.lora.set_loras(values.loras, loaded=True)
         self._reuse_source_identity = source_identity
@@ -435,6 +439,22 @@ class GenerationPage:
                 "Generate was populated from the selected output. Nothing was submitted; availability is revalidated on use.",
             )
         )
+
+    def regenerate_saved_request(self, document: dict, source_identity: str) -> bool:
+        """Validate recorded settings before replacing the form, then submit them as a fresh request."""
+        if self._busy or self._activity.dispatching:
+            return False
+        values = self._saved_request_values(document)
+        name, _ = self._backend()
+        try:
+            build_request(values, backend=name, random_seed=True)
+        except FormError as exc:
+            self._mark(exc.widget)
+            self._status(Presentation("error", "Cannot regenerate", str(exc)))
+            return False
+        self.reuse_saved_request(document, source_identity)
+        self.generate()
+        return True
 
     # -- presentation ----------------------------------------------------------------------------------------------
     def _status(self, presentation: Presentation) -> None:
