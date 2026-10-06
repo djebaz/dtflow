@@ -32,6 +32,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
+from dtflow.ui.model_picker import ModelPicker
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import apply_native_dark_titlebar
@@ -60,6 +61,7 @@ def load_ui(path: Path) -> QWidget:
     try:
         loader = QUiLoader()
         loader.registerCustomWidget(ImagePreview)
+        loader.registerCustomWidget(ModelPicker)
         widget = loader.load(file)
     finally:
         file.close()
@@ -217,8 +219,10 @@ class MainWindow:
         form.aboutAction.triggered.connect(self.about)
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
         form.endpointEdit.textChanged.connect(self._selection_changed)
+        form.endpointEdit.editingFinished.connect(self.generation.sync_backend)
         form.endpointEdit.editingFinished.connect(self._endpoint_entered)
         self.generation_page.generateButton.clicked.connect(self.remember)
+        self.generation_page.modelCombo.recentChanged.connect(self.remember)
         form.connectionNavigationButton.clicked.connect(
             lambda: form.workspaceStack.setCurrentWidget(form.connectionPage)
         )

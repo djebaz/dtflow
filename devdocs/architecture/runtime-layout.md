@@ -46,3 +46,7 @@ Derived LoRA inventory stores `resolved_at_utc` separately from each source's or
 Use an integer `CACHE_VERSION = 2`, written as `cache_version` in inventory JSON. Application inventory persistence owns this constant and the live evidence writer imports it rather than maintaining an independent copy. Increment it when that format changes incompatibly, not on every release or inventory refresh. It is independent of application version, run identity and SQLite schema version. Version 2 adds raw endpoint metadata and replaces the derived inventory's single observation timestamp with resolution time plus source provenance.
 
 Future disposable-cache readers must treat a missing or mismatched version as a cache miss and fetch a fresh inventory. No conversion, legacy folder search or old-tree fallback is required. Retained live snapshots are historical evidence and are not rewritten on a version change. Existing old-layout files are neither read, moved nor deleted.
+
+### Model selection history
+
+Generate stores up to eight recent exact model IDs per provider in the optional forms.<provider>.model_recents field of last_session.json. This is additive schema-1 desktop convenience state, not inventory/cache, availability evidence or exported generation configuration. Missing/malformed lists are ignored; existing session atomic-write and credential exclusions remain unchanged. The Qt picker only filters reported eligible IDs/names; backend protocols and request validation remain in shared services.

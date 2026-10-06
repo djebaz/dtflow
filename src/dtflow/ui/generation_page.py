@@ -146,7 +146,7 @@ class GenerationPage:
         self._state = Path(state_dir)
         self._activity = activity or Activity()
         self._no_cache = no_cache
-        self._listed_backend: str | None = None
+        self._listed_selection: tuple[str, str | None] | None = None
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         self._provider: str | None = None
         self._previewed_seed: int | None = None
@@ -223,13 +223,13 @@ class GenerationPage:
     # -- context ---------------------------------------------------------------------------------------------------
     def sync_backend(self) -> None:
         """Mirror the Connection page's backend; it is read-only here so there is one selector."""
-        name, _ = self._backend()
+        name, endpoint = self._backend()
         self.page.generationBackendCombo.setCurrentText(name)
-        if self._listed_backend is not None and self._listed_backend != name:
-            self._fill_models(())  # a list from another provider is not offered for this one
+        if self._listed_selection is not None and self._listed_selection != (name, endpoint):
+            self._fill_models(())  # do not offer another provider/endpoint's inventory
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
             self.page.inventoryEvidenceLabel.setToolTip("")
-            self._listed_backend = None
+            self._listed_selection = None
         self._switch_provider(name)
         self.page.simulationBox.setVisible(name == "fake")
         self.page.modelCombo.lineEdit().setPlaceholderText(
@@ -271,6 +271,7 @@ class GenerationPage:
         document = form_to_document(self._values())
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
         form["receipts"] = self.lora.receipts()
+        form["model_recents"] = self.page.modelCombo.recents()
         return form
 
     def _apply_provider_form(self, document: object) -> None:
@@ -279,6 +280,7 @@ class GenerationPage:
         values = replace(form_from_document(document), prompt=current.prompt, negative_prompt=current.negative_prompt)
         self._apply(values)
         receipts = document.get("receipts") if isinstance(document, dict) else None
+        self.page.modelCombo.restore_recents(document.get("model_recents") if isinstance(document, dict) else None)
         valid = (
             {k: v for k, v in receipts.items() if type(k) is str and type(v) is str}
             if isinstance(receipts, dict)
@@ -617,25 +619,33 @@ class GenerationPage:
         self._set_busy(True)
         self.page.inventoryEvidenceLabel.setText("Refreshing inventory…")
         log.info("inventory refresh requested backend=%s", name)
-        self._runner.submit(self._refresh(name, endpoint, self._saved()), self._refreshed)
+        source = (name, endpoint)
+        self._runner.submit(
+            self._refresh(name, endpoint, self._saved()),
+            lambda snapshot, failure: self._refresh_completed(source, snapshot, failure),
+        )
+
+    def _refresh_completed(self, source, snapshot, failure):
+        if self._backend() != source:
+            self._set_busy(False)
+            self.sync_backend()
+            self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
+            return
+        self._refreshed(snapshot, failure)
 
     async def _refresh(self, name, endpoint, saved):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
         return await refresh_inventory(selection, self._state, saved=saved, no_cache=self._no_cache)
 
     def _fill_models(self, ids) -> None:
-        """Replace the drop-down entries, keeping whatever is typed (the box stays editable for unlisted models)."""
-        combo = self.page.modelCombo
-        current = combo.currentText()
-        combo.clear()
-        combo.addItems(ids)
-        combo.setCurrentText(current)
+        """Clear stale source evidence without changing the exact ID."""
+        self.page.modelCombo.set_inventory(ids, observed=False)
 
     def _show_inventory(self, snapshot: InventorySnapshot, how: str) -> None:
         self.lora.set_inventory(snapshot)
         ids = eligible_model_ids(snapshot)
-        self._fill_models(ids)
-        self._listed_backend = self._backend()[0]
+        self.page.modelCombo.set_inventory(ids, {entry.identifier: entry.display_name for entry in snapshot.entries})
+        self._listed_selection = self._backend()
         label = self.page.inventoryEvidenceLabel
         label.setToolTip(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
         try:
@@ -661,15 +671,16 @@ class GenerationPage:
             return
         name, endpoint = self._backend()
         self._runner.submit(
-            self._cached(name, endpoint, self._saved()), lambda snapshot, failure: self._cached_loaded(name, snapshot)
+            self._cached(name, endpoint, self._saved()),
+            lambda snapshot, failure: self._cached_loaded(name, snapshot, endpoint),
         )
 
     async def _cached(self, name, endpoint, saved):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
         return await cached_inventory(selection, self._state, saved=saved)
 
-    def _cached_loaded(self, name: str, snapshot) -> None:
-        if snapshot is None or self._backend()[0] != name or self._listed_backend == name:
+    def _cached_loaded(self, name: str, snapshot, endpoint=None) -> None:
+        if snapshot is None or self._backend() != (name, endpoint) or self._listed_selection == (name, endpoint):
             return
         self._show_inventory(snapshot, "cached (press Refresh inventory for live)")
 

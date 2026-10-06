@@ -26,6 +26,9 @@ Follow progress and previews in an image-first workspace, then inspect saved res
 fit, zoom and pan. Output details link images to their generation metadata and provide
 folder/path actions. Save and load generation configurations to reuse a setup.
 
+Find models in a wide, single-line searchable picker with exact-ID tooltips and recent
+choices per provider. Searching does not change the selected model until you choose a result.
+
 ### Durable queues and controlled comparisons
 
 Create a paused queue from the generation form, then start, pause, resume or cancel it.

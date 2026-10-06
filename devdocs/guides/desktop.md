@@ -28,6 +28,10 @@ Refresh inventory to populate model and LoRA choices. A cached inventory can pre
 
 Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and sampler. Width and height snap to the nearest multiple of 64 with an adjustment message. The CLI and loaded configurations remain strict.
 
+Open the model dropdown for a separate search field. Case-insensitive words match anywhere in the reported name or exact ID; all words must match. Arrow keys navigate and Enter/click commits the highlighted result; Escape or clicking outside closes without changing the model. The popup is 760 logical pixels wide by default (limited to the screen), with single-line rows, horizontal scrolling and full-ID tooltips—never wrapped IDs.
+
+With an empty search, up to eight recent selections appear first, remembered separately for each provider in the last desktop session. Recent IDs are convenience history, not availability evidence. A refreshed inventory never substitutes a different selection; an absent ID is labelled "Not in current inventory". Names are shown only from reported inventory metadata. Type an exact ID directly in the model field, or explicitly choose "Use exact ID from search" for unlisted models. Configuration loading and provider-form restoration do not populate history automatically.
+
 **Desktop seed 0 means random on submission or queue creation.** The effective request and metadata retain the resolved seed. Saving a configuration, checking LoRAs and the CLI preserve 0 literally.
 
 Local/cloud Generate submits real work and may consume subscription credits. Initial DT+ generation does not enable PAYG, and failures never switch provider or credential automatically. Use fake for an offline tour.

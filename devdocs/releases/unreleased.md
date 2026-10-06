@@ -8,6 +8,8 @@
 
 ## Added
 
+- PR #38 adds the Generate searchable model picker for large inventories: separate multi-word name/ID search, 760px default screen-clamped popup, single-line results with horizontal scrolling/full-ID tooltips, click/Enter commit and Escape cancel. Eight per-provider recent IDs persist in the existing desktop session; manual exact-ID entry remains available. Inventory refresh preserves selection and changed-provider/endpoint completions are ignored. No inferred compatibility/availability, dependencies or generation changes; tests and smoke remain owner-deferred under fast-implement.
+
 - `devdocs/design-system/`: Claude Design web reference (tokens, components, foundation cards, UI kits) mirroring `tokens.json`; documentation/prototype only, no runtime or QSS change.
 - Shared tokens: 30 component-local colors and 8 extra radii are now named in `tokens.json` and referenced from the QSS (resolved stylesheet unchanged). Queue state colors read the shared tokens, so an Unknown state is neutral gray instead of purple.
 - Icons: section headers, metadata labels and additional-details rows use one icon per meaning from the design-system usage map. 21 Lucide icons (`lucide-static` 1.52.0, ISC, stroke recolored to `#f2f6f8`, notice in `resources/images/gallery/LICENSE-lucide.txt`) join the repository SVGs, and the Detail view button uses `image` instead of the sliders icon.
@@ -64,5 +66,5 @@
 
 ## Release audit
 
-- PRs: #31, #33, #34, #37
-- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; incremental Images refresh preserving retained widgets, thumbnails, in-flight work and selected Detail image state; Auto-refresh colors aligned with Connection tokens.
+- PRs: #31, #33, #34, #37, #38
+- Scope: Windows build/draft workflow; shared desktop styling and Images presentation; production saved-output viewer; incremental Images refresh preserving retained widgets, thumbnails, in-flight work and selected Detail image state; Auto-refresh colors aligned with Connection tokens; searchable Generate model picker with wide single-line results and bounded per-provider history.

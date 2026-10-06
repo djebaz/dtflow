@@ -389,3 +389,7 @@ height; empty-state title and guidance stay together in its center. Hide queue
 progress when no queue is selected rather than presenting “0 of 0” as work.
 The Plan header has a fixed vertical size policy, while expanded contents retain
 their natural layout. Avoid distributing spare height among action rows.
+
+### Generate model picker
+
+The canonical modelCombo is promoted to ModelPicker (a QComboBox presentation seam). Keep the form compact; use a 760 logical-pixel default popup clamped to the screen. Results stay single-line with horizontal scrolling and full-ID tooltips, never wrapped. Separate search from exact-ID selection; all query words match name/ID case-insensitively. Click/Enter commits; Escape cancels. Show eight bounded per-provider recent IDs before remaining inventory entries when search is empty. Unlisted IDs remain enterable and labelled Not in current inventory, never inferred unavailable. Popup colors reuse shared surface/border/input/selection tokens; no new palette.

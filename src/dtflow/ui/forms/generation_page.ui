@@ -162,7 +162,7 @@
              </widget>
             </item>
             <item row="2" column="0" colspan="2">
-             <widget class="QComboBox" name="modelCombo">
+             <widget class="ModelPicker" name="modelCombo">
               <property name="editable">
                <bool>true</bool>
               </property>
@@ -1391,6 +1391,11 @@
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>ModelPicker</class>
+   <extends>QComboBox</extends>
+   <header>dtflow.ui.model_picker</header>
+  </customwidget>
   <customwidget>
    <class>ImagePreview</class>
    <extends>QAbstractScrollArea</extends>

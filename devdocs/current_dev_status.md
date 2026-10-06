@@ -38,6 +38,10 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 - PR #33 established the offline Grid/List/Detail presentation and shared Images styling; its fixture launcher remains available for visual development. See [the preview plan](plans/2026-10-05-phase-8a-ui-preview.md).
 - PR #34 connects those views to committed saved outputs through shared read-only services and CLI commands. It adds bounded query/paging, asynchronous thumbnails, positive-prompt/model/LoRA/date/dimensions/aspect filters, deterministic sorting, durable viewer state, anchored auto-refresh, real provenance/raw metadata, file actions and missing/corrupt-file handling. The thumbnail control is 25–250% with 100% as the standard size; first-run Images opens Grid and Detail defaults to Fit. The owner reports the full test suite passed after the Qt lifecycle fix and performed interactive smoke testing that drove thumbnail-layout refinements. Packaged/native-DPI acceptance remains separate. See [the viewer plan](plans/2026-10-05-phase-8a-viewer.md).
 
+## Generate model-selection refinement
+
+PR #38 adds a wide single-line searchable model picker, explicit exact-ID entry and eight per-provider recent selections. Inventory refresh preserves the selected ID and rejects stale source completions. See the [implementation plan](plans/2026-10-06-searchable-model-picker.md). Static checks only; final tests and desktop smoke remain with the owner.
+
 ## Next coding direction
 
 PR #37 refines Phase 8A refresh: identity-based Grid/List/filmstrip reconciliation

@@ -501,6 +501,14 @@ QListWidget:disabled {
   border-color: ${color.disabledBorder};
   color: ${color.disabled};
 }
+QFrame#modelPickerPopup {
+  background: ${color.surface};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+}
+QListWidget#modelPickerResults::item {
+  min-height: 26px;
+}
 QListWidget::item {
   padding: 5px 6px;
 }
