@@ -1,9 +1,9 @@
 [
   {
     "file": "1001176_jibmixflux_fp8v4canvasgalore_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -16,16 +16,16 @@
   },
   {
     "file": "1004235_artsydream_v2fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1004320_artsydream_v2fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -37,23 +37,23 @@
   },
   {
     "file": "1023471_artsydream_v3fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1023964_artsydream_v3fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1024165_ratatoskranimalcreature_v594fp8dev1hybrid_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -65,37 +65,37 @@
   },
   {
     "file": "1035832_c4pacitor_av2beta_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1045901_copaxtimeless_fluxrealfast_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "1048219_demoncoresfwnsfw_fluxv13_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1050076_fluxmania_i_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1052470_acornisspinningflux_aisf11h8stpchinfx_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -108,65 +108,65 @@
   },
   {
     "file": "1055211_agflux_v21fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1068773_genovaapex_s_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1070930_artsydream_v4fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1071391_artsydream_v4fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1085190_copaxtimeless_xplus2basetrain_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "1086868_c4pacitor_sv2alpha_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1087807_redcraftcadsupdatedjun1_revealnsfw_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1093373_redcraftcadsupdatedjun1_rasch1forge_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1095703_ultrarealfinetune_v10_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -186,58 +186,58 @@
   },
   {
     "file": "1108227_illustrationjuanerghibli_v10_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1111281_genovaapex_real_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1115605_redcraftcadsupdatedjun1_rasch2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1123235_c4pacitor_dv2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1126942_fluxedupfluxnsfw_21_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1134093_copaxtimeless_xplusmix3_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "1136364_artsydream_v5fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1136806_artsydream_v5fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -249,58 +249,58 @@
   },
   {
     "file": "1148473_copaxtimeless_xplusmix3dark_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "1159932_colossusprojectflux_v42aio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1164498_ultrarealfinetune_v20_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1171942_redcraftcadsupdatedjun1_revealultrav35_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1178183_centerfoldflux_v35fp8e54steps_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1181877_project0_v10fp8unetonly_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1182699_fluxedupfluxnsfw_22_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1186008_rayflux_v10_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -312,49 +312,49 @@
   },
   {
     "file": "1193229_jibmixflux_v7pixelheavenbeta_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1201074_redcraftcadsupdatedjun1_turborevealhotfix21_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1209969_genovaapex_plus_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1213097_artsydream_v6fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1213649_artsydream_v6fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1215918_illustrationjuanerghibli_v20_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1217501_copaxtimeless_xplusmix4_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -369,16 +369,16 @@
   },
   {
     "file": "1224657_edgeofreality_v30_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "1244250_agflux_v3fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -390,30 +390,30 @@
   },
   {
     "file": "1249092_project0_v20fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1249359_moxiefusionflux_v141s_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1249496_project0_v20fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1249737_jibmixflux_v72pixelheaven_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -432,37 +432,37 @@
   },
   {
     "file": "1255371_moxiefusionflux_v141d_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1288366_nepotism_xdit_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1292596_moxiefusionflux_v15s_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1298942_acornisspinningflux_aisfhyper8stepv15_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1305680_fluxedupfluxnsfw_24_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -474,16 +474,16 @@
   },
   {
     "file": "1308180_artsyvibe_v1fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1308807_artsyvibe_v1fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -495,9 +495,9 @@
   },
   {
     "file": "1315432_redcraftcadsupdatedjun1_newreveal_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -510,72 +510,72 @@
   },
   {
     "file": "1320268_project0_v30artfp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1326315_nepotism_xidit_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1329004_genovaapex_1618experiment_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1338565_copaxtimeless_xpluscartoon_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "1344905_redcraftcadsupdatedjun1_rasch3rushreveal_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1355240_jibmixflux_v78cleartextfocus_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1357212_demoncoresfwnsfw_v25helheimprojectaio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1374658_acornisspinningflux_aisfluxv15_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1389019_jibmixflux_v8accentueightnow_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1413133_ultrarealfinetune_v4_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -588,30 +588,30 @@
   },
   {
     "file": "1443922_colossusprojectflux_v50aio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1445047_redcraftcadsupdatedjun1_f1fillnsfw_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
     "file": "1450688_acornisspinningflux_aisfdedistilledv15_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1451754_project0_real1smfp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -632,37 +632,37 @@
   },
   {
     "file": "1462430_colossusprojectflux_v50fp8unet_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1463804_fluxmania_iv_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1466679_fluxedupfluxnsfw_25_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1473409_moxiefusionflux_v16s_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1495910_colossusprojectflux_v44aio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -674,9 +674,9 @@
   },
   {
     "file": "1507835_colossusprojectflux_v50aiobehemoth_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -696,63 +696,63 @@
   },
   {
     "file": "1539776_fluxmania_v_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1550408_redcraftcadsupdatedjun1_realreveal5_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1576605_redcraftcadsupdatedjun1_reveal5sfwultra_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1591370_project0_real1smv2fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1596255_project0_real1smv2fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1637227_ratatoskranimalcreature_v667fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1637484_ratatoskranimalcreature_v667fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1656743_acornisspinningflux_aisfv169_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1677057_edgeofreality_32beyondreality_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -766,23 +766,23 @@
   },
   {
     "file": "1700674_c4pacitor_dv3alpha_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1700814_fluxedupfluxnsfw_40devfp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1703060_colossusprojectflux_v90aio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -803,37 +803,37 @@
   },
   {
     "file": "1742386_moxiefusionflux_v17s_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1745151_redcraftcadsupdatedjun1_redediticedit11_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1755367_jibmixflux_v85consisteight_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1769925_fluxmania_legacy_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1785042_rayflux_v30aio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -846,51 +846,51 @@
   },
   {
     "file": "1823302_fluxedupfluxnsfw_41_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1831456_genovaapex_genovav2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1840540_artsyvibe_v2fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1842885_artsyvibe_v2fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1845222_centerfoldflux_v40fp8e5m2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1846322_colossusprojectflux_v10aiofp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1848909_colossusprojectflux_v10unetonlyfp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -903,23 +903,23 @@
   },
   {
     "file": "1851709_colossusprojectflux_v10behemothaiofp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1855312_colossusprojectflux_v10unetonlyfp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1860608_colossusprojectflux_v10bfp8aiobobfp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -932,16 +932,16 @@
   },
   {
     "file": "1875661_project0_real1smv3fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "1878051_project0_real1smv3fp8aio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -991,13 +991,14 @@
   },
   {
     "file": "778112_copaxtimeless_xplus1_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
-    "file": "783956_copaxtimeless_xplusunrealfast_q8p.ckpt",    "base_model": "unknown",
+    "file": "783956_copaxtimeless_xplusunrealfast_q8p.ckpt",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -1011,9 +1012,9 @@
   },
   {
     "file": "793143_ratatoskranimalcreature_v29_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1025,14 +1026,14 @@
   },
   {
     "file": "796103_jibmixflux_fp16v1_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "801556_copaxtimeless_xplusposes_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -1070,9 +1071,9 @@
   },
   {
     "file": "835047_ratatoskranimalcreature_v40fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1084,9 +1085,9 @@
   },
   {
     "file": "845592_c4pacitor_dv1_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1106,9 +1107,9 @@
   },
   {
     "file": "864441_agflux_v10fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1143,30 +1144,30 @@
   },
   {
     "file": "873136_ratatoskranimalcreature_v41_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "873546_moxiefusionflux_v1328step_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "874291_moxiefusionflux_v132_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "876813_moxiefusionflux_v1318step_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1202,9 +1203,9 @@
   },
   {
     "file": "884843_agflux_schnellv10fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1223,7 +1224,7 @@
   },
   {
     "file": "894590_copaxtimeless_stylemix1fluxdevfp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -1237,7 +1238,7 @@
   },
   {
     "file": "897535_copaxtimeless_stylemix1fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -1260,16 +1261,16 @@
   },
   {
     "file": "907183_copaxtimeless_xplus2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "913024_moxiefusionflux_v1338step_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1282,9 +1283,9 @@
   },
   {
     "file": "918242_jibmixflux_fp8v2electric_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1296,44 +1297,44 @@
   },
   {
     "file": "931988_colossusprojectflux_v10allinonefp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "932231_moxiefusionflux_v1348step_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "940696_colossusprojectflux_v10fp16unetonly_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "943051_moxiefusionflux_v134_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "947686_fluxedupfluxnsfw_10_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "949363_c4pacitor_dv11_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1345,14 +1346,14 @@
   },
   {
     "file": "954181_c4pacitor_sv11_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "954640_copaxtimeless_xplusmix1_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -1366,7 +1367,7 @@
   },
   {
     "file": "962412_copaxtimeless_xplusmix1fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
@@ -1381,9 +1382,9 @@
   },
   {
     "file": "971579_colossusprojectflux_v20allinoneexp_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1396,30 +1397,30 @@
   },
   {
     "file": "974825_artsydream_v1fp16_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "974932_artsydream_v1fp8_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "975743_copaxtimeless_stylemix2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "978066_c4pacitor_av2alpha_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1438,16 +1439,16 @@
   },
   {
     "file": "982160_copaxtimeless_xplusmix2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
       "unknown"
     ]
   },
   {
     "file": "985269_moxiefusionflux_v135_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1460,9 +1461,9 @@
   },
   {
     "file": "987485_acornisspinningflux_aisfluxdedistilled_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1496,9 +1497,9 @@
   },
   {
     "file": "996001_colossusprojectflux_21dedistilledaioexp_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1511,9 +1512,9 @@
   },
   {
     "file": "aloeveras_simpmaker_3k1_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1598,16 +1599,16 @@
   },
   {
     "file": "animagine_xl_v3.1_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "animagine_xl_v3.1_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1705,16 +1706,16 @@
   },
   {
     "file": "anything_v3_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "arcane_v3_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1866,9 +1867,9 @@
   },
   {
     "file": "chroma_1_hd_r0.1_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -1996,46 +1997,47 @@
     "modes": [
       "unknown"
     ]
-  },  {
+  },
+  {
     "file": "chroma_v47_detail_calibrated_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "chroma_v47_detail_calibrated_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "chroma_v48_detail_calibrated_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "chroma_v48_detail_calibrated_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "chronoedit_14b_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
-      "unknown"
+      "i2v"
     ]
   },
   {
     "file": "chronoedit_14b_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
-      "unknown"
+      "i2v"
     ]
   },
   {
@@ -2055,16 +2057,16 @@
   },
   {
     "file": "colorfulxl_v6.0_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "colorfulxl_v6.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2077,16 +2079,16 @@
   },
   {
     "file": "counterfeit_v3.0_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "counterfeit_v3.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2107,9 +2109,9 @@
   },
   {
     "file": "cyberpunk_anime_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2176,23 +2178,23 @@
   },
   {
     "file": "deliberate_v2_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "devmode_v0.3_turbo_q5p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "devmode_v0.3_turbo_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2220,9 +2222,9 @@
   },
   {
     "file": "disney_pixar_cartoon_type_b_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2234,16 +2236,16 @@
   },
   {
     "file": "dnd_30000_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "dnd_classes_and_species_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2262,30 +2264,30 @@
   },
   {
     "file": "dreamshaper_v8_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "dreamshaper_v8_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "dreamshaper_xl_v2.1_turbo_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "dreamshaper_xl_v2.1_turbo_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2342,9 +2344,9 @@
   },
   {
     "file": "eldenring_v3_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2413,9 +2415,9 @@
   },
   {
     "file": "f222_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2602,9 +2604,9 @@
   },
   {
     "file": "hidream_e1_1_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
@@ -2644,65 +2646,65 @@
   },
   {
     "file": "hidream_i1_dev_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_dev_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_dev_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_fast_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_fast_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_fast_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_full_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_full_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "hidream_i1_full_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2714,9 +2716,9 @@
   },
   {
     "file": "hna_3dkx_1.1_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2759,44 +2761,44 @@
   },
   {
     "file": "hunyuan_video_t2v_720p_q5p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "hunyuan_video",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "hunyuan_video_t2v_720p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hunyuan_video",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "icatcher_cartoon_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "icatcher_cartoon_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "icatcher_realistic_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "icatcher_realistic_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2977,9 +2979,9 @@
   },
   {
     "file": "inkpunk_v2_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -2995,7 +2997,8 @@
     "modes": [
       "unknown"
     ]
-  },  {
+  },
+  {
     "file": "is_net_v1.1_fp16.ckpt",
     "base_model": "sd_1",
     "modes": [
@@ -3020,58 +3023,58 @@
   },
   {
     "file": "juggernaut_reborn_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "juggernaut_xl_ragnarok_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "juggernaut_xl_ragnarok_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "juggernaut_xl_v9_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "juggernaut_xl_v9_lightning_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "juggernaut_xl_v9_lightning_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "juggernaut_xl_v9_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "juggernaut_xl_x_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3151,28 +3154,28 @@
   },
   {
     "file": "kwai_kolors_1.0_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "kwai_kolors_1.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "kwai_kolors_inpainting_1.0_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
       "i2i"
     ]
   },
   {
     "file": "kwai_kolors_inpainting_1.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
       "i2i"
     ]
@@ -3230,9 +3233,9 @@
   },
   {
     "file": "lvngvncnt_v2_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3244,23 +3247,23 @@
   },
   {
     "file": "majicmix_realistic_v7_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "majicmix_realistic_v7_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "mdjrny_v4_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3396,9 +3399,9 @@
   },
   {
     "file": "noobai_xl_nai_xl_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3644,16 +3647,16 @@
   },
   {
     "file": "pixelwave_10_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "pixelwave_10_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3674,16 +3677,16 @@
   },
   {
     "file": "pixelwave_v9_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "pixelwave_v9_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3702,30 +3705,30 @@
   },
   {
     "file": "playground_v2.5_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "playground_v2.5_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "playground_v2_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "playground_v2_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3778,16 +3781,16 @@
   },
   {
     "file": "proteus_v0.3_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "proteus_v0.3_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3939,16 +3942,16 @@
   },
   {
     "file": "rayflux_v3.0_aio_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "rayflux_v3.0_aio_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -3994,7 +3997,8 @@
       "i2i"
     ]
   },
-  {    "file": "realistic_blend_xl_f16.ckpt",
+  {
+    "file": "realistic_blend_xl_f16.ckpt",
     "base_model": "unknown",
     "modes": [
       "unknown"
@@ -4002,37 +4006,37 @@
   },
   {
     "file": "realistic_vision_v3.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "realistic_vision_v5.1_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "realistic_vision_v5.1_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "realvisxl_v4.0_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "realvisxl_v4.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -4044,9 +4048,9 @@
   },
   {
     "file": "redshift_768_v_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_2",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -4111,16 +4115,16 @@
   },
   {
     "file": "samdoesart_v3_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "schnellmode_v3.3_q5p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -4270,30 +4274,30 @@
   },
   {
     "file": "shuttle_jaguar_q5p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "shuttle_jaguar_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "shuttle_v3.1_aesthetic_q5p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "shuttle_v3.1_aesthetic_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -4349,70 +4353,70 @@
   },
   {
     "file": "skyreels_v2_i2v_1.3b_540p_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "skyreels_v2_i2v_1.3b_540p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "skyreels_v2_i2v_14b_540p_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "skyreels_v2_i2v_14b_540p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "skyreels_v2_i2v_14b_720p_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "skyreels_v2_i2v_14b_720p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "skyreels_v2_t2v_14b_540p_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "skyreels_v2_t2v_14b_540p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "skyreels_v2_t2v_14b_720p_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "skyreels_v2_t2v_14b_720p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_1",
     "modes": [
       "t2v"
     ]
@@ -4475,16 +4479,16 @@
   },
   {
     "file": "ssd_1b_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "ssd_1b_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -4497,21 +4501,21 @@
   },
   {
     "file": "supermarionation_v2_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
     "file": "svd_i2v_1.0_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "svd",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "svd_i2v_1.0_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "svd",
     "modes": [
       "i2v"
     ]
@@ -4532,14 +4536,14 @@
   },
   {
     "file": "svd_i2v_xt_1.1_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "svd",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "svd_i2v_xt_1.1_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "svd",
     "modes": [
       "i2v"
     ]
@@ -4569,9 +4573,9 @@
   },
   {
     "file": "trnlgcy_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i"
     ]
   },
   {
@@ -4770,112 +4774,114 @@
   },
   {
     "file": "wan_v2.2_5b_ti2v_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
-      "unknown"
+      "t2v",
+      "i2v"
     ]
   },
   {
     "file": "wan_v2.2_5b_ti2v_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
-      "unknown"
+      "t2v",
+      "i2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_i2v_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_i2v_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_i2v_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_t2v_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_t2v_lightning_250928_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_t2v_lightning_250928_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_t2v_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_hne_t2v_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_lne_i2v_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_lne_i2v_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_lne_i2v_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "i2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_lne_t2v_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_lne_t2v_q6p_svd.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]
   },
   {
     "file": "wan_v2.2_a14b_lne_t2v_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "wan_2_2",
     "modes": [
       "t2v"
     ]

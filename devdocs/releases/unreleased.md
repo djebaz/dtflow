@@ -27,6 +27,8 @@
 
 ## Changed
 
+- Enrich the bundled Niche checkpoint catalogue from exact upstream Draw Things metadata and sourced Hugging Face/published model evidence. 264 of the 514 previously unknown base-model entries are now classified without filename-only guessing; 250 remain intentionally unknown pending stronger evidence. See [the research ledger](../research/niche-catalogue-classification-2026-10-06.md).
+
 - PR #37 aligns the existing labelled Auto-refresh toggle with Connection's shared mint/teal colors when On and neutral colors when Off. No new tokens, glyphs, dimensions or refresh behavior; color/visual acceptance remains with the owner.
 
 - Images hides the content rails and reuses the logo/navigation in two aligned header rows outside the scrolling controls. Leaving Images restores chrome, splitter widths and Inspector preference. No extra outer/header padding or sample-count pill; search/filter labels are replaced by explicit placeholders/defaults and accessible names/tooltips.
