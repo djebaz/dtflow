@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Selected saved-output scope recorded; PR #33 implements offline Grid/List/Detail presentation only. Saved-output query, filtering, persistence and service acceptance remain unimplemented. The [preview plan](2026-10-05-phase-8a-ui-preview.md) records the implemented UI boundary.
+**Status:** Implemented in draft PR #34 on top of PR #33's Grid/List/Detail presentation; pending merge. Shared saved-output query/inspection services, CLI access, Qt browsing, durable viewer preferences and asynchronous loading are present. The [preview plan](2026-10-05-phase-8a-ui-preview.md) remains the historical UI-presentation record.
 
 **Position:** First delivery phase within Phase 8, not initial-plan Phase 1.
 
@@ -23,7 +23,7 @@ Owner Grid, List and Detail mockups define the current layout direction. The [te
 | Area | Selected scope |
 | --- | --- |
 | Browsing | **A1** uniform thumbnail grid; **A3** compact list with metadata columns; **A4** Detail view with a right-hand filmstrip beside a large selected-image preview; **A5** adjustable thumbnail size/density; **A6** keyboard navigation/selection; **A7** remember scroll position, selection and view settings; **A8** refresh when new outputs are saved; **A9** pagination or progressively loaded scrolling. |
-| Search/filter | **B1** positive prompts; **B2** negative prompts; **B3** model; **B5** LoRA; **B6** date/date range; **B7** dimensions/aspect ratio. |
+| Search/filter | **B1** positive prompts; **B2** negative prompts through the shared query/CLI service (not exposed in the compact desktop header); **B3** model; **B5** LoRA; **B6** date/date range; **B7** dimensions/aspect ratio. |
 | Sorting | **C1** newest/oldest first; **C2** model, size and LoRAs. Define size and multi-LoRA ordering before implementation. |
 | Viewing | **D1** large selected-image preview; **D2** fullscreen; **D3** fit/zoom/pan; **D4** true 100% pixel viewing; **D5** previous/next through filtered results; **D7** external image viewer; **D10** dimensions and file size beside the image. |
 | Metadata | **E1** positive/negative prompts; **E2** actual resolved seed; **E3** model/provider identifiers; **E4** LoRAs, weights and recorded compatibility evidence; **E5** dimensions, steps, guidance and sampler; **E7** generation date and recorded timings; **E11** raw metadata JSON inspection. |
@@ -41,10 +41,10 @@ Owner Grid, List and Detail mockups define the current layout direction. The [te
 ## Current view-template decisions
 
 - **Modes:** Grid · List · Detail. A2 Masonry is withdrawn; the original feature IDs remain unchanged for traceability.
-- **Shared header:** two compact rows; no title/subtitle or filename/tag/note search. View buttons, thumbnail-size control, auto-refresh and refresh above positive-prompt search, model, LoRA, date and aspect-ratio filters. Negative-prompt search is absent from the visible header; its optional-filter versus removal policy remains open.
+- **Shared header:** two compact rows; no title/subtitle or filename/tag/note search. View buttons, 25–250% thumbnail-scale control, auto-refresh and refresh sit above a compact positive-prompt search plus model, LoRA, date, exact-dimensions, aspect-ratio and sort controls. Negative-prompt search remains supported by the shared query/CLI service but is intentionally absent from the visible desktop header. With no valid viewer preference, Images opens Grid.
 - **Grid activation:** hover outline and distinct keyboard focus; click or Enter opens that image in Detail. Return restores Grid scroll position and originating thumbnail focus. No persistent Grid selection or per-thumbnail action buttons.
 - **Detail geometry:** large near-square canvas at the reference window size; right-hand filmstrip extending to the workspace bottom beside the image and its metadata/prompt/inline panels. Overlays have a 10px interior inset. Keep this arrangement stable across image proportions; no automatic portrait-specific sidebar relocation.
-- **Image overlays:** position in filtered results and source dimensions. Cover fills proportionally with cropping; Fit shows the whole image. Keep pan/zoom, true 100% and fullscreen available. Near-square canvas does not mean square images.
+- **Image overlays:** position in filtered results and source dimensions. Detail defaults to Fit so the complete image is visible; Cover remains available to fill the canvas proportionally with cropping. Keep pan/zoom, true 100% and fullscreen available. Near-square canvas does not mean square images.
 - **Visible metadata band:** model/checkpoint and LoRAs with weights/recorded compatibility first, followed by steps, guidance, sampler and generation date/time. Compact, with wrapping or bounded scrolling for longer content.
 - **Prompt band:** positive prompt visible and wrapping, without a redundant visible caption; retain an explicit accessible name. Buttons for Additional details and Raw metadata JSON alongside it replace the earlier two permanently stacked accordion rows.
 - **Additional details:** negative prompt, filename, file size, actual resolved seed, provider, recorded duration, image path and copy/open-folder actions; closed until requested.
@@ -63,16 +63,16 @@ The additional/raw reference mockups resolve the buttons to mutually exclusive i
 6. **Deliver metadata inspection.** Show the selected recorded provenance and raw JSON. Represent unavailable fields explicitly; preserve original metadata.
 7. **Validate and record acceptance.** Test query/provenance semantics at the authoritative service layer and only necessary Qt composition. Use local fixture libraries including missing/corrupt artifacts, mixed dimensions and incomplete metadata. Record owner Windows keyboard, view-state, fullscreen/100%, refresh and external-viewer checks separately.
 
-## Decisions to resolve before relevant implementation
+## Implementation decisions resolved in PR #34
 
-- Whether progressive scrolling or pagination satisfies A9, and which loading limits apply.
-- What “size” means for sorting (pixel area, dimensions or file bytes), and deterministic ordering for multiple LoRAs.
-- Prompt search matching/case rules; combined filter semantics; date timezone/boundaries and aspect-ratio matching.
-- How selection and scroll anchors behave after filtering, sorting, refresh or disappearance of an image.
-- Durable ownership/versioning of viewer preferences versus disposable thumbnail/index data.
-- Initial discovery source and scope of saved outputs; arbitrary-folder importing is not implicitly selected.
-
-Resolve these in the relevant implementation/design PR, rather than inventing them as already approved behaviour.
+- **Loading:** Qt uses 80-output pages; the shared service hard limit is 200. Grid/List page transitions are bounded and image/thumbnail decoding runs off the GUI thread with six concurrent thumbnail decodes.
+- **Thumbnail scale:** the user-facing control is 25–250%; 100% maps to the established 160 logical-pixel standard. Grid, List and Detail filmstrip follow the same percentage.
+- **Sorting:** `size` means pixel area with deterministic dimension/tie ordering. Multi-LoRA sort uses a canonical identifier/weight sequence.
+- **Search/filter:** prompt matching is case-insensitive literal substring; filters compose with AND. Desktop exposes positive prompt only, while shared service/CLI also supports negative-prompt search.
+- **Dates/ratios:** desktop dates use local calendar boundaries normalized to UTC with date-specific DST rules; CLI accepts UTC dates or offset-aware timestamps. Ratios support orientation or exact W:H.
+- **Refresh/state:** first-run auto-refresh is on. Detail anchors the selected output; Grid/List anchor the visible output. Viewer preferences are versioned durable state in `viewer.json`; derived thumbnail data remains disposable.
+- **Discovery:** committed final artifact references in durable attempts are authoritative, including custom output destinations. The read path does not acquire dispatch ownership, reconcile state or treat logs as output truth.
+- **Defaults:** without a valid viewer preference Images opens Grid; Detail image viewing defaults to Fit.
 
 ## Completion boundary
 
@@ -83,4 +83,4 @@ No live inference, training or potentially billable action is needed for viewer 
 Then proceed to [8B preset interchange](2026-10-05-phase-8-gallery-presets.md#8b--draw-things-compatible-presets).
 
 
-Preview-only Detail forms and styling are tracked separately in [the PR #33 implementation plan](2026-10-05-phase-8a-ui-preview.md). They do not mark gallery services or Phase 8A acceptance complete.
+PR #33's preview-only forms and styling remain documented in [the UI preview plan](2026-10-05-phase-8a-ui-preview.md). PR #34 supplies the production saved-output services and controller. On 2026-10-06 the owner reported the full test suite passed after the gallery lifecycle fix; interactive smoke testing also exercised the Images viewer and drove Grid/List thumbnail-sizing fixes. No agent-run inference, training, provider generation or potentially billable action was used for 8A validation. Packaged Windows/native-DPI visual acceptance remains a separate release concern.
