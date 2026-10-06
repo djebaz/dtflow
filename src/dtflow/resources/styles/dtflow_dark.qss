@@ -1107,6 +1107,27 @@ QLabel[iconKey="grid"] { image: url(../images/gallery/grid.svg); }
 QLabel[iconKey="document"] { image: url(../images/gallery/document.svg); }
 QLabel[iconKey="json"] { image: url(../images/gallery/json.svg); }
 QLabel[iconKey="calendar"] { image: url(../images/gallery/calendar.svg); }
+QLabel[iconKey="server"] { image: url(../images/gallery/server.svg); }
+QLabel[iconKey="key-round"] { image: url(../images/gallery/key-round.svg); }
+QLabel[iconKey="shield-check"] { image: url(../images/gallery/shield-check.svg); }
+QLabel[iconKey="flask-conical"] { image: url(../images/gallery/flask-conical.svg); }
+QLabel[iconKey="settings"] { image: url(../images/gallery/settings.svg); }
+QLabel[iconKey="cloud"] { image: url(../images/gallery/cloud.svg); }
+QLabel[iconKey="send"] { image: url(../images/gallery/send.svg); }
+QLabel[iconKey="layers"] { image: url(../images/gallery/layers.svg); }
+QLabel[iconKey="list-checks"] { image: url(../images/gallery/list-checks.svg); }
+QLabel[iconKey="triangle-alert"] { image: url(../images/gallery/triangle-alert.svg); }
+QLabel[iconKey="image"] { image: url(../images/gallery/image.svg); }
+QLabel[iconKey="box"] { image: url(../images/gallery/box.svg); }
+QLabel[iconKey="repeat"] { image: url(../images/gallery/repeat.svg); }
+QLabel[iconKey="compass"] { image: url(../images/gallery/compass.svg); }
+QLabel[iconKey="waypoints"] { image: url(../images/gallery/waypoints.svg); }
+QLabel[iconKey="ban"] { image: url(../images/gallery/ban.svg); }
+QLabel[iconKey="dices"] { image: url(../images/gallery/dices.svg); }
+QLabel[iconKey="file-image"] { image: url(../images/gallery/file-image.svg); }
+QLabel[iconKey="hard-drive"] { image: url(../images/gallery/hard-drive.svg); }
+QLabel[iconKey="weight"] { image: url(../images/gallery/weight.svg); }
+QLabel[iconKey="timer"] { image: url(../images/gallery/timer.svg); }
 QGroupBox[role="sectionCard"]:disabled,
 QGroupBox[role="sectionCard"]:disabled QFrame[role="sectionHeader"] {
   border-color: ${color.disabledBorder};

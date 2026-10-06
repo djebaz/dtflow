@@ -231,7 +231,22 @@ Use a short outcome heading plus concrete evidence. A progress bar reflects only
 
 ## Iconography
 
-Gallery and navigation icons are the repository's own monochrome SVGs in `src/dtflow/resources/images/gallery/` (grid, list, detail, refresh, document, json, calendar, fullscreen, chevron): 24 px viewBox, 1.6 stroke, round caps and joins, light stroke `#f2f6f8`, no fill. The app mark is `resources/images/dtflow-app.png` with `dtflow.ico`; the panel and connection icons are code-drawn in `ui/brand.py`. Do not use emoji; Unicode is limited to the gallery's prev/next and zoom glyphs. The web reference borrows Lucide icons (2 px stroke) where no repository icon fits a meaning, such as a server, key or flask section glyph. That is a flagged web-only substitution, not an app icon specification; add a repository SVG before using such a glyph in Qt.
+One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/images/gallery/`, drawn into section, metadata and row icon labels through the `iconKey` property and a `QLabel[iconKey="…"]` QSS rule; set the key in the Designer `.ui` file, never a per-widget stylesheet. Section headers lead with a 16 px icon, additional-details rows use 14 px and metadata-band labels and prompt disclosure buttons 12 px (sizes are Designer dimensions). Strokes are light `#f2f6f8` with no fill.
+
+- **Repository icons (use first):** `grid`, `list`, `detail` (sliders: Parameters), `refresh`, `document`, `json`, `calendar`, `fullscreen` and `chevron`: 24 px viewBox, 1.6 stroke, round caps and joins. The app mark is `resources/images/dtflow-app.png` with `dtflow.ico`; the panel and connection icons are code-drawn in `ui/brand.py`.
+- **Lucide icons (where no repository icon fits):** `server`, `key-round`, `shield-check`, `flask-conical`, `settings`, `cloud`, `send`, `layers`, `list-checks`, `triangle-alert`, `image`, `box`, `repeat`, `compass`, `waypoints`, `ban`, `dices`, `file-image`, `hard-drive`, `weight` and `timer`, copied unmodified from `lucide-static` 1.52.0 (ISC, notice in `images/gallery/LICENSE-lucide.txt`) except that the stroke is `#f2f6f8` instead of `currentColor`. They keep Lucide's 2 px stroke, slightly heavier than the repository set; replace one with a repository SVG by changing its file and keeping the key.
+
+| Area | Icons |
+| --- | --- |
+| Connection sections | Backend `server`, DT+ credentials `key-round`, Connection check `shield-check` |
+| Generate sections | Backend `server`, Parameters `detail`, Simulation `flask-conical`, Configuration `settings`, Cloud assets `cloud` |
+| Queues sections | Dispatch policy `send`, Plan batch `layers`, Selected item `list-checks`, Uncertainty `triangle-alert` |
+| Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, filter combo arrow `chevron`, fullscreen `fullscreen` |
+| Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
+| Prompt disclosure | Additional `document`, Raw `json` |
+| Additional-details rows | Negative prompt `ban`, Resolved seed `dices`, Filename `file-image`, Source `hard-drive`, File size `weight`, Duration `timer`; Path keeps `document` |
+
+Do not use emoji; Unicode is limited to the gallery's prev/next and zoom glyphs. The web reference's "Icon Usage Map" card in [`devdocs/design-system/`](devdocs/design-system/README.md) mirrors this table.
 
 ## Web design-system reference
 

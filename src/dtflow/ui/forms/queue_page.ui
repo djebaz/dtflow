@@ -177,7 +177,7 @@
                <string>sectionIcon</string>
               </property>
               <property name="iconKey" stdset="0">
-               <string>detail</string>
+               <string>send</string>
               </property>
               <property name="text">
                <string />
@@ -446,7 +446,7 @@
                <string>sectionIcon</string>
               </property>
               <property name="iconKey" stdset="0">
-               <string>grid</string>
+               <string>layers</string>
               </property>
               <property name="text">
                <string />
@@ -1035,7 +1035,7 @@
                <string>sectionIcon</string>
               </property>
               <property name="iconKey" stdset="0">
-               <string>json</string>
+               <string>list-checks</string>
               </property>
               <property name="text">
                <string />
@@ -1245,7 +1245,7 @@
                <string>sectionIcon</string>
               </property>
               <property name="iconKey" stdset="0">
-               <string>document</string>
+               <string>triangle-alert</string>
               </property>
               <property name="text">
                <string />

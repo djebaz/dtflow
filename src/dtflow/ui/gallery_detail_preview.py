@@ -135,7 +135,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     for name, icon in [
         ("galleryGridButton", "grid"),
         ("galleryListButton", "list"),
-        ("galleryDetailButton", "detail"),
+        ("galleryDetailButton", "image"),
         ("galleryRefreshButton", "refresh"),
         ("galleryFullscreenButton", "fullscreen"),
         ("galleryAdditionalButton", "document"),
