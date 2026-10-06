@@ -73,3 +73,10 @@ Queues and Images assign caption/value/section/identifier/code roles to fields,
 evidence and metadata. Secondary text uses the small regular style; raw data
 uses the shared monospace family. Gallery model name/identifier are separate
 labels, and custom-painted thumbnail badges use shared typography tokens.
+
+
+Section cards retain QGroupBox identities but replace native floating titles
+with Designer header/content widgets. Shared header/border/item-surface tokens,
+resource-resolved SVG glyphs, information-label glyph rows and list/table states
+provide the same composition language in Connection, Generate, Queues and
+Images. Forms retain business-control names and the controller boundary.

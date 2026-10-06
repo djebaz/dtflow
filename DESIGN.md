@@ -35,6 +35,9 @@ colors:
   selectionBorder: "#285d84"
   selectionHover: "#204c6e"
   selectionPressed: "#122e44"
+  sectionHeader: "#2b2b2b"
+  sectionBorder: "#343434"
+  itemSurface: "#222222"
 typography:
   title:
     fontFamily: "Segoe UI, sans-serif"
@@ -245,3 +248,20 @@ retains an explicit accessible name and descriptive tooltip.
 Reusable neutral-button, input-hover and selection states use named `color.*`
 tokens. Keep intentional component geometry overrides scoped; remove obsolete
 base declarations rather than layering another copy of the same selector.
+
+
+## Section cards and information surfaces
+
+Connection, Generate and Queues use shared `sectionCard` group boxes with an
+internal `sectionHeader` row (16 px glyph and compact semibold heading) and a
+`sectionContents` region. Native floating group titles are empty; the QGroupBox
+identity, enable/disable behavior and accessible name remain intact. Shared
+neutral header/border/item-surface tokens separate sections without introducing
+a second tab palette. Gallery metadata uses the same leading glyph language;
+its prompt uses medium reading weight and disclosure actions use semibold.
+Lists use compact rounded item surfaces; table rows use fine separators and a
+shared hover fill. Selected and disabled states retain the existing semantics.
+Keep the approved shell chrome and gallery gutters; deeper section hierarchy
+comes from headers/surfaces rather than extra external padding. These styles
+replace the earlier Generate group-box treatment. Windows visual acceptance
+remains pending; no runtime or native-DPI render is claimed.

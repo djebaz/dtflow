@@ -45,67 +45,168 @@
       <item>
        <widget class="QGroupBox" name="backendSummaryBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Backend</string>
         </property>
-        <layout class="QFormLayout" name="backendSummaryForm">
-         <item row="0" column="0">
-          <widget class="QLabel" name="backendSummaryLabel">
-           <property name="text">
-            <string>Provider</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="0" column="1">
-          <widget class="QComboBox" name="generationBackendCombo">
-           <property name="accessibleName">
-            <string>Generation backend</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0" colspan="2">
-          <widget class="QLabel" name="modelLabel">
-           <property name="text">
-            <string>Model</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="0" colspan="2">
-          <widget class="QComboBox" name="modelCombo">
-           <property name="editable">
-            <bool>true</bool>
-           </property>
-           <property name="accessibleName">
-            <string>Model or checkpoint</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0" colspan="2">
-          <widget class="QPushButton" name="refreshInventoryButton">
-           <property name="text">
-            <string>Refresh inventory</string>
-           </property>
-           <property name="accessibleName">
-            <string>Refresh backend inventory</string>
-           </property>
-          </widget>
-         </item>
-         <item row="4" column="0" colspan="2">
-          <widget class="QLabel" name="inventoryEvidenceLabel">
-           <property name="text">
-            <string>Inventory has not been refreshed.</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
+        <layout class="QVBoxLayout" name="backendSummaryBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="backendSummaryBoxHeader">
            <property name="role" stdset="0">
-            <string>secondary</string>
+            <string>sectionHeader</string>
            </property>
+           <layout class="QHBoxLayout" name="backendSummaryBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="backendSummaryBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>refresh</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="backendSummaryBoxHeading">
+              <property name="text">
+               <string>Backend</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="backendSummaryBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+           <layout class="QFormLayout" name="backendSummaryForm">
+            <item row="0" column="0">
+             <widget class="QLabel" name="backendSummaryLabel">
+              <property name="text">
+               <string>Provider</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QComboBox" name="generationBackendCombo">
+              <property name="accessibleName">
+               <string>Generation backend</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0" colspan="2">
+             <widget class="QLabel" name="modelLabel">
+              <property name="text">
+               <string>Model</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0" colspan="2">
+             <widget class="QComboBox" name="modelCombo">
+              <property name="editable">
+               <bool>true</bool>
+              </property>
+              <property name="accessibleName">
+               <string>Model or checkpoint</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0" colspan="2">
+             <widget class="QPushButton" name="refreshInventoryButton">
+              <property name="text">
+               <string>Refresh inventory</string>
+              </property>
+              <property name="accessibleName">
+               <string>Refresh backend inventory</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0" colspan="2">
+             <widget class="QLabel" name="inventoryEvidenceLabel">
+              <property name="text">
+               <string>Inventory has not been refreshed.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
          </item>
         </layout>
@@ -114,151 +215,252 @@
       <item>
        <widget class="QGroupBox" name="parametersBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Parameters</string>
         </property>
-        <layout class="QGridLayout" name="parametersGrid" columnstretch="0,1">
-         <property name="horizontalSpacing">
-          <number>8</number>
+        <layout class="QVBoxLayout" name="parametersBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
          </property>
-         <property name="verticalSpacing">
-          <number>8</number>
+         <property name="topMargin">
+          <number>0</number>
          </property>
-         <item row="0" column="0">
-          <widget class="QLabel" name="seedLabel">
-           <property name="text">
-            <string>Seed</string>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="parametersBoxHeader">
+           <property name="role" stdset="0">
+            <string>sectionHeader</string>
            </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
+           <layout class="QHBoxLayout" name="parametersBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="parametersBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>detail</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="parametersBoxHeading">
+              <property name="text">
+               <string>Parameters</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
-         <item row="0" column="1">
-          <widget class="QLineEdit" name="seedEdit">
-           <property name="text">
-            <string>0</string>
+         <item>
+          <widget class="QWidget" name="parametersBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
            </property>
-           <property name="accessibleName">
-            <string>Generation seed</string>
-           </property>
+           <layout class="QGridLayout" name="parametersGrid" columnstretch="0,1">
+            <property name="horizontalSpacing">
+             <number>8</number>
+            </property>
+            <property name="verticalSpacing">
+             <number>8</number>
+            </property>
+            <item row="0" column="0">
+             <widget class="QLabel" name="seedLabel">
+              <property name="text">
+               <string>Seed</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLineEdit" name="seedEdit">
+              <property name="text">
+               <string>0</string>
+              </property>
+              <property name="accessibleName">
+               <string>Generation seed</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="stepsLabel">
+              <property name="text">
+               <string>Steps</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QSpinBox" name="stepsSpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>150</number>
+              </property>
+              <property name="value">
+               <number>20</number>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="widthLabel">
+              <property name="text">
+               <string>Width</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QSpinBox" name="widthSpinBox">
+              <property name="minimum">
+               <number>64</number>
+              </property>
+              <property name="maximum">
+               <number>4096</number>
+              </property>
+              <property name="singleStep">
+               <number>64</number>
+              </property>
+              <property name="value">
+               <number>512</number>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="heightLabel">
+              <property name="text">
+               <string>Height</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QSpinBox" name="heightSpinBox">
+              <property name="minimum">
+               <number>64</number>
+              </property>
+              <property name="maximum">
+               <number>4096</number>
+              </property>
+              <property name="singleStep">
+               <number>64</number>
+              </property>
+              <property name="value">
+               <number>512</number>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="guidanceLabel">
+              <property name="text">
+               <string>Guidance</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QDoubleSpinBox" name="guidanceSpinBox">
+              <property name="decimals">
+               <number>2</number>
+              </property>
+              <property name="minimum">
+               <double>0.000000000000000</double>
+              </property>
+              <property name="maximum">
+               <double>50.000000000000000</double>
+              </property>
+              <property name="singleStep">
+               <double>0.500000000000000</double>
+              </property>
+              <property name="value">
+               <double>7.000000000000000</double>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="0">
+             <widget class="QLabel" name="samplerLabel">
+              <property name="text">
+               <string>Sampler</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="1">
+             <widget class="QComboBox" name="samplerCombo" />
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="stepsLabel">
-           <property name="text">
-            <string>Steps</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QSpinBox" name="stepsSpinBox">
-           <property name="minimum">
-            <number>1</number>
-           </property>
-           <property name="maximum">
-            <number>150</number>
-           </property>
-           <property name="value">
-            <number>20</number>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="0">
-          <widget class="QLabel" name="widthLabel">
-           <property name="text">
-            <string>Width</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="1">
-          <widget class="QSpinBox" name="widthSpinBox">
-           <property name="minimum">
-            <number>64</number>
-           </property>
-           <property name="maximum">
-            <number>4096</number>
-           </property>
-           <property name="singleStep">
-            <number>64</number>
-           </property>
-           <property name="value">
-            <number>512</number>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0">
-          <widget class="QLabel" name="heightLabel">
-           <property name="text">
-            <string>Height</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="1">
-          <widget class="QSpinBox" name="heightSpinBox">
-           <property name="minimum">
-            <number>64</number>
-           </property>
-           <property name="maximum">
-            <number>4096</number>
-           </property>
-           <property name="singleStep">
-            <number>64</number>
-           </property>
-           <property name="value">
-            <number>512</number>
-           </property>
-          </widget>
-         </item>
-         <item row="4" column="0">
-          <widget class="QLabel" name="guidanceLabel">
-           <property name="text">
-            <string>Guidance</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="4" column="1">
-          <widget class="QDoubleSpinBox" name="guidanceSpinBox">
-           <property name="decimals">
-            <number>2</number>
-           </property>
-           <property name="minimum">
-            <double>0.000000000000000</double>
-           </property>
-           <property name="maximum">
-            <double>50.000000000000000</double>
-           </property>
-           <property name="singleStep">
-            <double>0.500000000000000</double>
-           </property>
-           <property name="value">
-            <double>7.000000000000000</double>
-           </property>
-          </widget>
-         </item>
-         <item row="5" column="0">
-          <widget class="QLabel" name="samplerLabel">
-           <property name="text">
-            <string>Sampler</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="5" column="1">
-          <widget class="QComboBox" name="samplerCombo" />
          </item>
         </layout>
        </widget>
@@ -266,66 +468,167 @@
       <item>
        <widget class="QGroupBox" name="simulationBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Simulation (fake provider)</string>
         </property>
-        <layout class="QFormLayout" name="simulationForm">
-         <item row="0" column="0">
-          <widget class="QLabel" name="simulationScenarioLabel">
-           <property name="text">
-            <string>Outcome</string>
+        <layout class="QVBoxLayout" name="simulationBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="simulationBoxHeader">
+           <property name="role" stdset="0">
+            <string>sectionHeader</string>
            </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
+           <layout class="QHBoxLayout" name="simulationBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="simulationBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>grid</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="simulationBoxHeading">
+              <property name="text">
+               <string>Simulation (fake provider)</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
-         <item row="0" column="1">
-          <widget class="QComboBox" name="simulationScenarioCombo">
-           <property name="accessibleName">
-            <string>Simulated outcome</string>
+         <item>
+          <widget class="QWidget" name="simulationBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
            </property>
-          </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="simulationDelayLabel">
-           <property name="text">
-            <string>Duration</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>caption</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QDoubleSpinBox" name="simulationDelaySpinBox">
-           <property name="suffix">
-            <string> s</string>
-           </property>
-           <property name="decimals">
-            <number>1</number>
-           </property>
-           <property name="maximum">
-            <double>60.000000000000000</double>
-           </property>
-           <property name="singleStep">
-            <double>0.500000000000000</double>
-           </property>
-           <property name="toolTip">
-            <string>How long the simulated generation takes. 0 is instant. Progress steps and Stop waiting need a duration above 0.</string>
-           </property>
-           <property name="accessibleName">
-            <string>Simulated duration in seconds</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="0" colspan="2">
-          <widget class="QCheckBox" name="simulationPreviewsCheck">
-           <property name="text">
-            <string>Show previews while waiting</string>
-           </property>
-           <property name="toolTip">
-            <string>Emits preview images (never saved results) during the simulated duration.</string>
-           </property>
+           <layout class="QFormLayout" name="simulationForm">
+            <item row="0" column="0">
+             <widget class="QLabel" name="simulationScenarioLabel">
+              <property name="text">
+               <string>Outcome</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QComboBox" name="simulationScenarioCombo">
+              <property name="accessibleName">
+               <string>Simulated outcome</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="simulationDelayLabel">
+              <property name="text">
+               <string>Duration</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QDoubleSpinBox" name="simulationDelaySpinBox">
+              <property name="suffix">
+               <string> s</string>
+              </property>
+              <property name="decimals">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <double>60.000000000000000</double>
+              </property>
+              <property name="singleStep">
+               <double>0.500000000000000</double>
+              </property>
+              <property name="toolTip">
+               <string>How long the simulated generation takes. 0 is instant. Progress steps and Stop waiting need a duration above 0.</string>
+              </property>
+              <property name="accessibleName">
+               <string>Simulated duration in seconds</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0" colspan="2">
+             <widget class="QCheckBox" name="simulationPreviewsCheck">
+              <property name="text">
+               <string>Show previews while waiting</string>
+              </property>
+              <property name="toolTip">
+               <string>Emits preview images (never saved results) during the simulated duration.</string>
+              </property>
+             </widget>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
          </item>
         </layout>
@@ -334,45 +637,146 @@
       <item>
        <widget class="QGroupBox" name="configurationBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Configuration</string>
         </property>
-        <layout class="QVBoxLayout" name="configurationLayout">
+        <layout class="QVBoxLayout" name="configurationBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
          <item>
-          <widget class="QComboBox" name="configurationCombo">
-           <property name="placeholderText">
-            <string>Current values</string>
+          <widget class="QFrame" name="configurationBoxHeader">
+           <property name="role" stdset="0">
+            <string>sectionHeader</string>
            </property>
+           <layout class="QHBoxLayout" name="configurationBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="configurationBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>document</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="configurationBoxHeading">
+              <property name="text">
+               <string>Configuration</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
          <item>
-          <layout class="QHBoxLayout" name="configurationButtons">
-           <item>
-            <widget class="QPushButton" name="loadConfigurationButton">
-             <property name="text">
-              <string>Load</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="saveConfigurationButton">
-             <property name="text">
-              <string>Save</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <widget class="QLabel" name="configurationHintLabel">
-           <property name="text">
-            <string>Credential-free versioned configuration only.</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
+          <widget class="QWidget" name="configurationBoxContents">
            <property name="role" stdset="0">
-            <string>secondary</string>
+            <string>sectionContents</string>
            </property>
+           <layout class="QVBoxLayout" name="configurationLayout">
+            <item>
+             <widget class="QComboBox" name="configurationCombo">
+              <property name="placeholderText">
+               <string>Current values</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="configurationButtons">
+              <item>
+               <widget class="QPushButton" name="loadConfigurationButton">
+                <property name="text">
+                 <string>Load</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="saveConfigurationButton">
+                <property name="text">
+                 <string>Save</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="configurationHintLabel">
+              <property name="text">
+               <string>Credential-free versioned configuration only.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
          </item>
         </layout>
@@ -672,80 +1076,181 @@
       <item>
        <widget class="QGroupBox" name="assetBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Cloud assets</string>
         </property>
-        <layout class="QVBoxLayout" name="assetLayout">
+        <layout class="QVBoxLayout" name="assetBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
          <item>
-          <widget class="QListWidget" name="assetList">
-           <property name="maximumSize">
-            <size>
-             <width>16777215</width>
-             <height>96</height>
-            </size>
-           </property>
-           <property name="accessibleName">
-            <string>Known local asset receipts</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <layout class="QHBoxLayout" name="assetButtons">
-           <item>
-            <widget class="QPushButton" name="prepareAssetButton">
-             <property name="text">
-              <string>Prepare…</string>
-             </property>
-             <property name="toolTip">
-              <string>The only action that can upload file bytes to DT+.</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="reconcileAssetButton">
-             <property name="text">
-              <string>Reconcile</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="useReceiptButton">
-             <property name="text">
-              <string>Use</string>
-             </property>
-             <property name="toolTip">
-              <string>Bind this confirmed receipt to the LoRA with the same identifier for the next generation.</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <widget class="QLabel" name="assetStatusLabel">
-           <property name="text">
-            <string>Asset actions need the cloud backend.</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="state" stdset="0">
-            <string>unknown</string>
-           </property>
-           <property name="textRole" stdset="0">
-            <string>value</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="assetNoteLabel">
-           <property name="text">
-            <string>Local registry of receipts, not DT+ account inventory. Only Prepare uploads.</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
+          <widget class="QFrame" name="assetBoxHeader">
            <property name="role" stdset="0">
-            <string>secondary</string>
+            <string>sectionHeader</string>
            </property>
+           <layout class="QHBoxLayout" name="assetBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="assetBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>document</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="assetBoxHeading">
+              <property name="text">
+               <string>Cloud assets</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="assetBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+           <layout class="QVBoxLayout" name="assetLayout">
+            <item>
+             <widget class="QListWidget" name="assetList">
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>96</height>
+               </size>
+              </property>
+              <property name="accessibleName">
+               <string>Known local asset receipts</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="assetButtons">
+              <item>
+               <widget class="QPushButton" name="prepareAssetButton">
+                <property name="text">
+                 <string>Prepare…</string>
+                </property>
+                <property name="toolTip">
+                 <string>The only action that can upload file bytes to DT+.</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="reconcileAssetButton">
+                <property name="text">
+                 <string>Reconcile</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="useReceiptButton">
+                <property name="text">
+                 <string>Use</string>
+                </property>
+                <property name="toolTip">
+                 <string>Bind this confirmed receipt to the LoRA with the same identifier for the next generation.</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QLabel" name="assetStatusLabel">
+              <property name="text">
+               <string>Asset actions need the cloud backend.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="state" stdset="0">
+               <string>unknown</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="assetNoteLabel">
+              <property name="text">
+               <string>Local registry of receipts, not DT+ account inventory. Only Prepare uploads.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
          </item>
         </layout>

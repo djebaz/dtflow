@@ -1135,26 +1135,70 @@ No generation or saved output</string>
                   </property>
                   <layout class="QVBoxLayout" name="galleryModelLayout">
                    <item>
-                    <widget class="QLabel" name="galleryModelLabel">
-                     <property name="accessibleName">
-                      <string>ModelLabel</string>
+                    <layout class="QHBoxLayout" name="galleryModelLabelHeadingLayout" stretch="0,1">
+                     <property name="leftMargin">
+                      <number>0</number>
                      </property>
-                     <property name="role" stdset="0">
-                      <string>secondary</string>
+                     <property name="topMargin">
+                      <number>0</number>
                      </property>
-                     <property name="textInteractionFlags">
-                      <set>Qt::TextSelectableByMouse</set>
+                     <property name="rightMargin">
+                      <number>0</number>
                      </property>
-                     <property name="wordWrap">
-                      <bool>false</bool>
+                     <property name="bottomMargin">
+                      <number>0</number>
                      </property>
-                     <property name="text">
-                      <string>Model</string>
+                     <property name="spacing">
+                      <number>6</number>
                      </property>
-                     <property name="textRole" stdset="0">
-                      <string>caption</string>
-                     </property>
-                    </widget>
+                     <item>
+                      <widget class="QLabel" name="galleryModelLabelIcon">
+                       <property name="role" stdset="0">
+                        <string>sectionIcon</string>
+                       </property>
+                       <property name="iconKey" stdset="0">
+                        <string>detail</string>
+                       </property>
+                       <property name="text">
+                        <string />
+                       </property>
+                       <property name="minimumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                       <property name="maximumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
+                      <widget class="QLabel" name="galleryModelLabel">
+                       <property name="accessibleName">
+                        <string>ModelLabel</string>
+                       </property>
+                       <property name="role" stdset="0">
+                        <string>secondary</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextSelectableByMouse</set>
+                       </property>
+                       <property name="wordWrap">
+                        <bool>false</bool>
+                       </property>
+                       <property name="text">
+                        <string>Model</string>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
                    </item>
                    <item>
                     <widget class="QLabel" name="galleryModelValue">
@@ -1222,26 +1266,70 @@ No generation or saved output</string>
                   </property>
                   <layout class="QVBoxLayout" name="galleryLoRALayout">
                    <item>
-                    <widget class="QLabel" name="galleryLoRALabel">
-                     <property name="accessibleName">
-                      <string>LoRALabel</string>
+                    <layout class="QHBoxLayout" name="galleryLoRALabelHeadingLayout" stretch="0,1">
+                     <property name="leftMargin">
+                      <number>0</number>
                      </property>
-                     <property name="text">
-                      <string>LoRAs</string>
+                     <property name="topMargin">
+                      <number>0</number>
                      </property>
-                     <property name="role" stdset="0">
-                      <string>secondary</string>
+                     <property name="rightMargin">
+                      <number>0</number>
                      </property>
-                     <property name="textInteractionFlags">
-                      <set>Qt::TextSelectableByMouse</set>
+                     <property name="bottomMargin">
+                      <number>0</number>
                      </property>
-                     <property name="wordWrap">
-                      <bool>false</bool>
+                     <property name="spacing">
+                      <number>6</number>
                      </property>
-                     <property name="textRole" stdset="0">
-                      <string>caption</string>
-                     </property>
-                    </widget>
+                     <item>
+                      <widget class="QLabel" name="galleryLoRALabelIcon">
+                       <property name="role" stdset="0">
+                        <string>sectionIcon</string>
+                       </property>
+                       <property name="iconKey" stdset="0">
+                        <string>detail</string>
+                       </property>
+                       <property name="text">
+                        <string />
+                       </property>
+                       <property name="minimumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                       <property name="maximumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
+                      <widget class="QLabel" name="galleryLoRALabel">
+                       <property name="accessibleName">
+                        <string>LoRALabel</string>
+                       </property>
+                       <property name="text">
+                        <string>LoRAs</string>
+                       </property>
+                       <property name="role" stdset="0">
+                        <string>secondary</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextSelectableByMouse</set>
+                       </property>
+                       <property name="wordWrap">
+                        <bool>false</bool>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
                    </item>
                    <item>
                     <widget class="QLabel" name="galleryLoRAValue">
@@ -1294,26 +1382,70 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <layout class="QVBoxLayout" name="galleryStepsLayout">
                    <item>
-                    <widget class="QLabel" name="galleryStepsLabel">
-                     <property name="accessibleName">
-                      <string>StepsLabel</string>
+                    <layout class="QHBoxLayout" name="galleryStepsLabelHeadingLayout" stretch="0,1">
+                     <property name="leftMargin">
+                      <number>0</number>
                      </property>
-                     <property name="text">
-                      <string>Steps</string>
+                     <property name="topMargin">
+                      <number>0</number>
                      </property>
-                     <property name="role" stdset="0">
-                      <string>secondary</string>
+                     <property name="rightMargin">
+                      <number>0</number>
                      </property>
-                     <property name="textInteractionFlags">
-                      <set>Qt::TextSelectableByMouse</set>
+                     <property name="bottomMargin">
+                      <number>0</number>
                      </property>
-                     <property name="wordWrap">
-                      <bool>false</bool>
+                     <property name="spacing">
+                      <number>6</number>
                      </property>
-                     <property name="textRole" stdset="0">
-                      <string>caption</string>
-                     </property>
-                    </widget>
+                     <item>
+                      <widget class="QLabel" name="galleryStepsLabelIcon">
+                       <property name="role" stdset="0">
+                        <string>sectionIcon</string>
+                       </property>
+                       <property name="iconKey" stdset="0">
+                        <string>refresh</string>
+                       </property>
+                       <property name="text">
+                        <string />
+                       </property>
+                       <property name="minimumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                       <property name="maximumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
+                      <widget class="QLabel" name="galleryStepsLabel">
+                       <property name="accessibleName">
+                        <string>StepsLabel</string>
+                       </property>
+                       <property name="text">
+                        <string>Steps</string>
+                       </property>
+                       <property name="role" stdset="0">
+                        <string>secondary</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextSelectableByMouse</set>
+                       </property>
+                       <property name="wordWrap">
+                        <bool>false</bool>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
                    </item>
                    <item>
                     <widget class="QLabel" name="galleryStepsValue">
@@ -1362,26 +1494,70 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <layout class="QVBoxLayout" name="galleryGuidanceLayout">
                    <item>
-                    <widget class="QLabel" name="galleryGuidanceLabel">
-                     <property name="accessibleName">
-                      <string>GuidanceLabel</string>
+                    <layout class="QHBoxLayout" name="galleryGuidanceLabelHeadingLayout" stretch="0,1">
+                     <property name="leftMargin">
+                      <number>0</number>
                      </property>
-                     <property name="text">
-                      <string>CFG</string>
+                     <property name="topMargin">
+                      <number>0</number>
                      </property>
-                     <property name="role" stdset="0">
-                      <string>secondary</string>
+                     <property name="rightMargin">
+                      <number>0</number>
                      </property>
-                     <property name="textInteractionFlags">
-                      <set>Qt::TextSelectableByMouse</set>
+                     <property name="bottomMargin">
+                      <number>0</number>
                      </property>
-                     <property name="wordWrap">
-                      <bool>false</bool>
+                     <property name="spacing">
+                      <number>6</number>
                      </property>
-                     <property name="textRole" stdset="0">
-                      <string>caption</string>
-                     </property>
-                    </widget>
+                     <item>
+                      <widget class="QLabel" name="galleryGuidanceLabelIcon">
+                       <property name="role" stdset="0">
+                        <string>sectionIcon</string>
+                       </property>
+                       <property name="iconKey" stdset="0">
+                        <string>detail</string>
+                       </property>
+                       <property name="text">
+                        <string />
+                       </property>
+                       <property name="minimumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                       <property name="maximumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
+                      <widget class="QLabel" name="galleryGuidanceLabel">
+                       <property name="accessibleName">
+                        <string>GuidanceLabel</string>
+                       </property>
+                       <property name="text">
+                        <string>CFG</string>
+                       </property>
+                       <property name="role" stdset="0">
+                        <string>secondary</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextSelectableByMouse</set>
+                       </property>
+                       <property name="wordWrap">
+                        <bool>false</bool>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
                    </item>
                    <item>
                     <widget class="QLabel" name="galleryGuidanceValue">
@@ -1430,26 +1606,70 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <layout class="QVBoxLayout" name="gallerySamplerLayout">
                    <item>
-                    <widget class="QLabel" name="gallerySamplerLabel">
-                     <property name="accessibleName">
-                      <string>SamplerLabel</string>
+                    <layout class="QHBoxLayout" name="gallerySamplerLabelHeadingLayout" stretch="0,1">
+                     <property name="leftMargin">
+                      <number>0</number>
                      </property>
-                     <property name="text">
-                      <string>Sampler</string>
+                     <property name="topMargin">
+                      <number>0</number>
                      </property>
-                     <property name="role" stdset="0">
-                      <string>secondary</string>
+                     <property name="rightMargin">
+                      <number>0</number>
                      </property>
-                     <property name="textInteractionFlags">
-                      <set>Qt::TextSelectableByMouse</set>
+                     <property name="bottomMargin">
+                      <number>0</number>
                      </property>
-                     <property name="wordWrap">
-                      <bool>false</bool>
+                     <property name="spacing">
+                      <number>6</number>
                      </property>
-                     <property name="textRole" stdset="0">
-                      <string>caption</string>
-                     </property>
-                    </widget>
+                     <item>
+                      <widget class="QLabel" name="gallerySamplerLabelIcon">
+                       <property name="role" stdset="0">
+                        <string>sectionIcon</string>
+                       </property>
+                       <property name="iconKey" stdset="0">
+                        <string>detail</string>
+                       </property>
+                       <property name="text">
+                        <string />
+                       </property>
+                       <property name="minimumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                       <property name="maximumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
+                      <widget class="QLabel" name="gallerySamplerLabel">
+                       <property name="accessibleName">
+                        <string>SamplerLabel</string>
+                       </property>
+                       <property name="text">
+                        <string>Sampler</string>
+                       </property>
+                       <property name="role" stdset="0">
+                        <string>secondary</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextSelectableByMouse</set>
+                       </property>
+                       <property name="wordWrap">
+                        <bool>false</bool>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
                    </item>
                    <item>
                     <widget class="QLabel" name="gallerySamplerValue">
@@ -1498,26 +1718,70 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <layout class="QVBoxLayout" name="galleryDateLayout">
                    <item>
-                    <widget class="QLabel" name="galleryDateLabel">
-                     <property name="accessibleName">
-                      <string>DateLabel</string>
+                    <layout class="QHBoxLayout" name="galleryDateLabelHeadingLayout" stretch="0,1">
+                     <property name="leftMargin">
+                      <number>0</number>
                      </property>
-                     <property name="role" stdset="0">
-                      <string>secondary</string>
+                     <property name="topMargin">
+                      <number>0</number>
                      </property>
-                     <property name="textInteractionFlags">
-                      <set>Qt::TextSelectableByMouse</set>
+                     <property name="rightMargin">
+                      <number>0</number>
                      </property>
-                     <property name="wordWrap">
-                      <bool>false</bool>
+                     <property name="bottomMargin">
+                      <number>0</number>
                      </property>
-                     <property name="text">
-                      <string>Date / time</string>
+                     <property name="spacing">
+                      <number>6</number>
                      </property>
-                     <property name="textRole" stdset="0">
-                      <string>caption</string>
-                     </property>
-                    </widget>
+                     <item>
+                      <widget class="QLabel" name="galleryDateLabelIcon">
+                       <property name="role" stdset="0">
+                        <string>sectionIcon</string>
+                       </property>
+                       <property name="iconKey" stdset="0">
+                        <string>calendar</string>
+                       </property>
+                       <property name="text">
+                        <string />
+                       </property>
+                       <property name="minimumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                       <property name="maximumSize">
+                        <size>
+                         <width>16</width>
+                         <height>16</height>
+                        </size>
+                       </property>
+                      </widget>
+                     </item>
+                     <item>
+                      <widget class="QLabel" name="galleryDateLabel">
+                       <property name="accessibleName">
+                        <string>DateLabel</string>
+                       </property>
+                       <property name="role" stdset="0">
+                        <string>secondary</string>
+                       </property>
+                       <property name="textInteractionFlags">
+                        <set>Qt::TextSelectableByMouse</set>
+                       </property>
+                       <property name="wordWrap">
+                        <bool>false</bool>
+                       </property>
+                       <property name="text">
+                        <string>Date / time</string>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
                    </item>
                    <item>
                     <widget class="QLabel" name="galleryDateValue">
@@ -1647,6 +1911,9 @@ fixture-film · 0.4 · Unknown</string>
                    <height>66</height>
                   </size>
                  </property>
+                 <property name="textRole" stdset="0">
+                  <string>reading</string>
+                 </property>
                 </widget>
                </item>
                <item>
@@ -1770,23 +2037,67 @@ fixture-film · 0.4 · Unknown</string>
                  <number>8</number>
                 </property>
                 <item row="0" column="0">
-                 <widget class="QLabel" name="galleryAdditionalNegativePromptLabel">
-                  <property name="accessibleName">
-                   <string>AdditionalNegativePromptLabel</string>
+                 <layout class="QHBoxLayout" name="galleryAdditionalNegativePromptLabelHeadingLayout" stretch="0,1">
+                  <property name="leftMargin">
+                   <number>0</number>
                   </property>
-                  <property name="text">
-                   <string>Negative prompt</string>
+                  <property name="topMargin">
+                   <number>0</number>
                   </property>
-                  <property name="role" stdset="0">
-                   <string>secondary</string>
+                  <property name="rightMargin">
+                   <number>0</number>
                   </property>
-                  <property name="wordWrap">
-                   <bool>false</bool>
+                  <property name="bottomMargin">
+                   <number>0</number>
                   </property>
-                  <property name="textRole" stdset="0">
-                   <string>caption</string>
+                  <property name="spacing">
+                   <number>6</number>
                   </property>
-                 </widget>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalNegativePromptLabelIcon">
+                    <property name="role" stdset="0">
+                     <string>sectionIcon</string>
+                    </property>
+                    <property name="iconKey" stdset="0">
+                     <string>document</string>
+                    </property>
+                    <property name="text">
+                     <string />
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalNegativePromptLabel">
+                    <property name="accessibleName">
+                     <string>AdditionalNegativePromptLabel</string>
+                    </property>
+                    <property name="text">
+                     <string>Negative prompt</string>
+                    </property>
+                    <property name="role" stdset="0">
+                     <string>secondary</string>
+                    </property>
+                    <property name="wordWrap">
+                     <bool>false</bool>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </item>
                 <item row="0" column="1">
                  <widget class="QLabel" name="galleryAdditionalNegativePromptValue">
@@ -1808,23 +2119,67 @@ fixture-film · 0.4 · Unknown</string>
                  </widget>
                 </item>
                 <item row="0" column="2">
-                 <widget class="QLabel" name="galleryAdditionalSeedLabel">
-                  <property name="accessibleName">
-                   <string>AdditionalSeedLabel</string>
+                 <layout class="QHBoxLayout" name="galleryAdditionalSeedLabelHeadingLayout" stretch="0,1">
+                  <property name="leftMargin">
+                   <number>0</number>
                   </property>
-                  <property name="text">
-                   <string>Actual resolved seed</string>
+                  <property name="topMargin">
+                   <number>0</number>
                   </property>
-                  <property name="role" stdset="0">
-                   <string>secondary</string>
+                  <property name="rightMargin">
+                   <number>0</number>
                   </property>
-                  <property name="wordWrap">
-                   <bool>false</bool>
+                  <property name="bottomMargin">
+                   <number>0</number>
                   </property>
-                  <property name="textRole" stdset="0">
-                   <string>caption</string>
+                  <property name="spacing">
+                   <number>6</number>
                   </property>
-                 </widget>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalSeedLabelIcon">
+                    <property name="role" stdset="0">
+                     <string>sectionIcon</string>
+                    </property>
+                    <property name="iconKey" stdset="0">
+                     <string>json</string>
+                    </property>
+                    <property name="text">
+                     <string />
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalSeedLabel">
+                    <property name="accessibleName">
+                     <string>AdditionalSeedLabel</string>
+                    </property>
+                    <property name="text">
+                     <string>Actual resolved seed</string>
+                    </property>
+                    <property name="role" stdset="0">
+                     <string>secondary</string>
+                    </property>
+                    <property name="wordWrap">
+                     <bool>false</bool>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </item>
                 <item row="0" column="3">
                  <widget class="QLabel" name="galleryAdditionalSeedValue">
@@ -1846,23 +2201,67 @@ fixture-film · 0.4 · Unknown</string>
                  </widget>
                 </item>
                 <item row="1" column="0">
-                 <widget class="QLabel" name="galleryAdditionalFilenameLabel">
-                  <property name="accessibleName">
-                   <string>AdditionalFilenameLabel</string>
+                 <layout class="QHBoxLayout" name="galleryAdditionalFilenameLabelHeadingLayout" stretch="0,1">
+                  <property name="leftMargin">
+                   <number>0</number>
                   </property>
-                  <property name="text">
-                   <string>Filename</string>
+                  <property name="topMargin">
+                   <number>0</number>
                   </property>
-                  <property name="role" stdset="0">
-                   <string>secondary</string>
+                  <property name="rightMargin">
+                   <number>0</number>
                   </property>
-                  <property name="wordWrap">
-                   <bool>false</bool>
+                  <property name="bottomMargin">
+                   <number>0</number>
                   </property>
-                  <property name="textRole" stdset="0">
-                   <string>caption</string>
+                  <property name="spacing">
+                   <number>6</number>
                   </property>
-                 </widget>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalFilenameLabelIcon">
+                    <property name="role" stdset="0">
+                     <string>sectionIcon</string>
+                    </property>
+                    <property name="iconKey" stdset="0">
+                     <string>document</string>
+                    </property>
+                    <property name="text">
+                     <string />
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalFilenameLabel">
+                    <property name="accessibleName">
+                     <string>AdditionalFilenameLabel</string>
+                    </property>
+                    <property name="text">
+                     <string>Filename</string>
+                    </property>
+                    <property name="role" stdset="0">
+                     <string>secondary</string>
+                    </property>
+                    <property name="wordWrap">
+                     <bool>false</bool>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </item>
                 <item row="1" column="1">
                  <widget class="QLabel" name="galleryAdditionalFilenameValue">
@@ -1884,23 +2283,67 @@ fixture-film · 0.4 · Unknown</string>
                  </widget>
                 </item>
                 <item row="1" column="2">
-                 <widget class="QLabel" name="galleryAdditionalProviderLabel">
-                  <property name="accessibleName">
-                   <string>AdditionalProviderLabel</string>
+                 <layout class="QHBoxLayout" name="galleryAdditionalProviderLabelHeadingLayout" stretch="0,1">
+                  <property name="leftMargin">
+                   <number>0</number>
                   </property>
-                  <property name="text">
-                   <string>Provider</string>
+                  <property name="topMargin">
+                   <number>0</number>
                   </property>
-                  <property name="role" stdset="0">
-                   <string>secondary</string>
+                  <property name="rightMargin">
+                   <number>0</number>
                   </property>
-                  <property name="wordWrap">
-                   <bool>false</bool>
+                  <property name="bottomMargin">
+                   <number>0</number>
                   </property>
-                  <property name="textRole" stdset="0">
-                   <string>caption</string>
+                  <property name="spacing">
+                   <number>6</number>
                   </property>
-                 </widget>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalProviderLabelIcon">
+                    <property name="role" stdset="0">
+                     <string>sectionIcon</string>
+                    </property>
+                    <property name="iconKey" stdset="0">
+                     <string>detail</string>
+                    </property>
+                    <property name="text">
+                     <string />
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalProviderLabel">
+                    <property name="accessibleName">
+                     <string>AdditionalProviderLabel</string>
+                    </property>
+                    <property name="text">
+                     <string>Provider</string>
+                    </property>
+                    <property name="role" stdset="0">
+                     <string>secondary</string>
+                    </property>
+                    <property name="wordWrap">
+                     <bool>false</bool>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </item>
                 <item row="1" column="3">
                  <widget class="QLabel" name="galleryAdditionalProviderValue">
@@ -1922,23 +2365,67 @@ fixture-film · 0.4 · Unknown</string>
                  </widget>
                 </item>
                 <item row="2" column="0">
-                 <widget class="QLabel" name="galleryAdditionalFileSizeLabel">
-                  <property name="accessibleName">
-                   <string>AdditionalFileSizeLabel</string>
+                 <layout class="QHBoxLayout" name="galleryAdditionalFileSizeLabelHeadingLayout" stretch="0,1">
+                  <property name="leftMargin">
+                   <number>0</number>
                   </property>
-                  <property name="text">
-                   <string>File size</string>
+                  <property name="topMargin">
+                   <number>0</number>
                   </property>
-                  <property name="role" stdset="0">
-                   <string>secondary</string>
+                  <property name="rightMargin">
+                   <number>0</number>
                   </property>
-                  <property name="wordWrap">
-                   <bool>false</bool>
+                  <property name="bottomMargin">
+                   <number>0</number>
                   </property>
-                  <property name="textRole" stdset="0">
-                   <string>caption</string>
+                  <property name="spacing">
+                   <number>6</number>
                   </property>
-                 </widget>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalFileSizeLabelIcon">
+                    <property name="role" stdset="0">
+                     <string>sectionIcon</string>
+                    </property>
+                    <property name="iconKey" stdset="0">
+                     <string>document</string>
+                    </property>
+                    <property name="text">
+                     <string />
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalFileSizeLabel">
+                    <property name="accessibleName">
+                     <string>AdditionalFileSizeLabel</string>
+                    </property>
+                    <property name="text">
+                     <string>File size</string>
+                    </property>
+                    <property name="role" stdset="0">
+                     <string>secondary</string>
+                    </property>
+                    <property name="wordWrap">
+                     <bool>false</bool>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </item>
                 <item row="2" column="1">
                  <widget class="QLabel" name="galleryAdditionalFileSizeValue">
@@ -1960,23 +2447,67 @@ fixture-film · 0.4 · Unknown</string>
                  </widget>
                 </item>
                 <item row="2" column="2">
-                 <widget class="QLabel" name="galleryAdditionalDurationLabel">
-                  <property name="accessibleName">
-                   <string>AdditionalDurationLabel</string>
+                 <layout class="QHBoxLayout" name="galleryAdditionalDurationLabelHeadingLayout" stretch="0,1">
+                  <property name="leftMargin">
+                   <number>0</number>
                   </property>
-                  <property name="text">
-                   <string>Recorded duration</string>
+                  <property name="topMargin">
+                   <number>0</number>
                   </property>
-                  <property name="role" stdset="0">
-                   <string>secondary</string>
+                  <property name="rightMargin">
+                   <number>0</number>
                   </property>
-                  <property name="wordWrap">
-                   <bool>false</bool>
+                  <property name="bottomMargin">
+                   <number>0</number>
                   </property>
-                  <property name="textRole" stdset="0">
-                   <string>caption</string>
+                  <property name="spacing">
+                   <number>6</number>
                   </property>
-                 </widget>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalDurationLabelIcon">
+                    <property name="role" stdset="0">
+                     <string>sectionIcon</string>
+                    </property>
+                    <property name="iconKey" stdset="0">
+                     <string>calendar</string>
+                    </property>
+                    <property name="text">
+                     <string />
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalDurationLabel">
+                    <property name="accessibleName">
+                     <string>AdditionalDurationLabel</string>
+                    </property>
+                    <property name="text">
+                     <string>Recorded duration</string>
+                    </property>
+                    <property name="role" stdset="0">
+                     <string>secondary</string>
+                    </property>
+                    <property name="wordWrap">
+                     <bool>false</bool>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </item>
                 <item row="2" column="3">
                  <widget class="QLabel" name="galleryAdditionalDurationValue">
@@ -1998,23 +2529,67 @@ fixture-film · 0.4 · Unknown</string>
                  </widget>
                 </item>
                 <item row="3" column="0">
-                 <widget class="QLabel" name="galleryAdditionalPathLabel">
-                  <property name="accessibleName">
-                   <string>AdditionalPathLabel</string>
+                 <layout class="QHBoxLayout" name="galleryAdditionalPathLabelHeadingLayout" stretch="0,1">
+                  <property name="leftMargin">
+                   <number>0</number>
                   </property>
-                  <property name="text">
-                   <string>Image path</string>
+                  <property name="topMargin">
+                   <number>0</number>
                   </property>
-                  <property name="role" stdset="0">
-                   <string>secondary</string>
+                  <property name="rightMargin">
+                   <number>0</number>
                   </property>
-                  <property name="wordWrap">
-                   <bool>false</bool>
+                  <property name="bottomMargin">
+                   <number>0</number>
                   </property>
-                  <property name="textRole" stdset="0">
-                   <string>caption</string>
+                  <property name="spacing">
+                   <number>6</number>
                   </property>
-                 </widget>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalPathLabelIcon">
+                    <property name="role" stdset="0">
+                     <string>sectionIcon</string>
+                    </property>
+                    <property name="iconKey" stdset="0">
+                     <string>document</string>
+                    </property>
+                    <property name="text">
+                     <string />
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QLabel" name="galleryAdditionalPathLabel">
+                    <property name="accessibleName">
+                     <string>AdditionalPathLabel</string>
+                    </property>
+                    <property name="text">
+                     <string>Image path</string>
+                    </property>
+                    <property name="role" stdset="0">
+                     <string>secondary</string>
+                    </property>
+                    <property name="wordWrap">
+                     <bool>false</bool>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </item>
                 <item row="3" column="1">
                  <widget class="QLabel" name="galleryAdditionalPathValue">

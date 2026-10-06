@@ -195,3 +195,16 @@ use separate labels. The hierarchy reuses the approved charcoal palette and
 existing geometry, preserves status/action roles and does not add services.
 No tests added or run; native Windows font metrics and line wrapping await
 owner review.
+
+
+## Shared section-card presentation (2026-10-06)
+
+The owner authorized abandoning the earlier Generate styling for the more
+structured mockup presentation. Connection, Generate and Queues now use shared
+section cards with icon/title headers and content regions, preserving QGroupBox
+identities and enable/disable behavior. Gallery information rows use matching
+glyphs; reading/disclosure emphasis and list/table surfaces complete the shared
+presentation. New neutral surface tokens extend the current charcoal palette.
+Shell logo/navigation placement and gallery gutters remain unchanged. No
+provider or service behavior added; no tests or application execution. Source
+token references and form names reviewed; native Windows appearance pending.

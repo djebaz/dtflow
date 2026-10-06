@@ -1069,3 +1069,57 @@ QWidget#GalleryDetailPage QLabel[role="galleryCardCaption"] {
   font-size: ${type.small};
   font-weight: ${type.weightEmphasis};
 }
+
+/* Shared section cards replace the old native group-box framing. */
+QGroupBox[role="sectionCard"] {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: 8px;
+  margin-top: 0;
+  padding: 0;
+}
+QGroupBox[role="sectionCard"]::title { padding: 0; }
+QFrame[role="sectionHeader"] {
+  background: ${color.sectionHeader};
+  border: 0;
+  border-bottom: 1px solid ${color.sectionBorder};
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
+}
+QWidget[role="sectionContents"] {
+  background: transparent;
+  border: 0;
+}
+QLabel[textRole="panelHeading"] {
+  color: ${color.text};
+  font-size: ${type.small};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel[role="sectionIcon"] { background: transparent; border: 0; padding: 0; }
+QLabel[iconKey="refresh"] { image: url(../images/gallery/refresh.svg); }
+QLabel[iconKey="detail"] { image: url(../images/gallery/detail.svg); }
+QLabel[iconKey="grid"] { image: url(../images/gallery/grid.svg); }
+QLabel[iconKey="document"] { image: url(../images/gallery/document.svg); }
+QLabel[iconKey="json"] { image: url(../images/gallery/json.svg); }
+QLabel[iconKey="calendar"] { image: url(../images/gallery/calendar.svg); }
+QGroupBox[role="sectionCard"]:disabled,
+QGroupBox[role="sectionCard"]:disabled QFrame[role="sectionHeader"] {
+  border-color: ${color.disabledBorder};
+}
+QLabel[textRole="panelHeading"]:disabled { color: ${color.disabled}; }
+QWidget#GalleryDetailPage QPlainTextEdit[textRole="reading"] {
+  font-weight: ${type.weightLabel};
+}
+QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"] {
+  font-weight: ${type.weightEmphasis};
+}
+QListWidget::item {
+  background: ${color.itemSurface};
+  border-radius: 4px;
+  margin: 2px;
+}
+QTableView::item {
+  border-bottom: 1px solid ${color.sectionBorder};
+  padding: 5px 7px;
+}
+QTableView::item:hover { background: ${color.buttonHover}; }

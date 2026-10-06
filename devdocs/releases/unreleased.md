@@ -76,3 +76,9 @@ The header sample-count pill is removed; sample designation remains on the image
   status roles; shared tokens drive QSS and thumbnail badge painting. Existing
   chrome and layout spacing remain. No tests added or run; Windows font/line-wrap
   acceptance remains unverified.
+
+- Replaces the older Generate/Connection/Queues group-box framing with shared
+  section cards, compact icon headers and separate content surfaces. Gallery
+  metadata adopts matching glyph rows, reading emphasis and disclosure weights;
+  lists/tables gain consistent item surfaces and separators. Business-control
+  names and shell chrome remain. No tests added or run; Windows render pending.
