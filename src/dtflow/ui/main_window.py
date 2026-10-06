@@ -343,9 +343,10 @@ class MainWindow:
         if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or images.width() <= 0:
             return
         control, offset = shell.runControl, shell.runControlOffset
-        shift = images.center().x() - control.width() // 2 - control.x()
-        if shift:
-            offset.setFixedWidth(max(0, offset.width() + shift))
+        # The offset's left edge does not depend on its own width, so this target is stable and cannot oscillate.
+        width = max(0, images.center().x() - control.width() // 2 - offset.x())
+        if offset.width() != width:
+            offset.setFixedWidth(width)
 
     def _responsive_workspace(self) -> None:
         shell = self.shell
