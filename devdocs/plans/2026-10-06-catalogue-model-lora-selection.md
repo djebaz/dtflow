@@ -1,6 +1,6 @@
 # Catalogue-driven model and LoRA selection
 
-Status: implementation in progress in this PR.
+Status: implemented and squash-merged in PR #40 on 2026-10-06. The owner reports the full test suite passed and CI run 37449328588 passed before merge. No live generation, training, model download or billable DT+ action was required for acceptance.
 
 ## 1. Goal
 
