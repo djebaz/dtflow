@@ -196,10 +196,7 @@
              </widget>
             </item>
             <item row="4" column="0" colspan="2">
-             <widget class="QComboBox" name="modelCombo">
-              <property name="editable">
-               <bool>true</bool>
-              </property>
+             <widget class="SearchableComboBox" name="modelCombo">
               <property name="accessibleName">
                <string>Checkpoint</string>
               </property>
@@ -1448,6 +1445,11 @@
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>SearchableComboBox</class>
+   <extends>QComboBox</extends>
+   <header>dtflow.ui.search_select</header>
+  </customwidget>
   <customwidget>
    <class>ImagePreview</class>
    <extends>QAbstractScrollArea</extends>
