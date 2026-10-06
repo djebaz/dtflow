@@ -354,7 +354,7 @@ def test_canvas_zoom_anchor_expand_lifecycle_and_narrow_navigation(window, qtbot
     assert page.width() <= form.centralWidget().width()
     form.resize(1600, 1000)
     qtbot.wait(20)
-    page.inspectorToggle.setChecked(False)
+    assert page.generationRightRail.isVisible()  # the inspector follows the layout; there is no manual toggle
     assert form.navigationFrame.isVisible()
     assert form.navigationFrame.parent() is page.generationLeftRail
     form.resize(800, 680)
