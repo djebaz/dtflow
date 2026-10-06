@@ -38,6 +38,36 @@ colors:
   sectionHeader: "#2b2b2b"
   sectionBorder: "#343434"
   itemSurface: "#222222"
+  title: "#f2f2f2"
+  panelEdge: "#333333"
+  onAccent: "#ffffff"
+  eyebrow: "#8fbde3"
+  badgeText: "#b9dcf7"
+  menuText: "#dddddd"
+  inputText: "#eaeaea"
+  toolbar: "#242424"
+  buttonText: "#eeeeee"
+  disabledEdge: "#2f2f2f"
+  accentEdge: "#1085dd"
+  dangerText: "#ff9d97"
+  dangerSurface: "#432323"
+  dangerBorder: "#c62828"
+  host: "#1c1c1c"
+  glyphNeutral: "#8a8a8a"
+  statusOkBorder: "#2e7d32"
+  statusWarningBorder: "#9a6700"
+  statusErrorBorder: "#a33a35"
+  barTrack: "#2a2a2a"
+  tabBorder: "#363636"
+  tabText: "#a8a8a8"
+  checkBorder: "#777777"
+  checkDisabledBorder: "#414141"
+  groove: "#505050"
+  handle: "#e6e6e6"
+  handleBorder: "#909090"
+  handleDisabled: "#555555"
+  scrollHover: "#707070"
+  scrollPressed: "#909090"
 typography:
   title:
     fontFamily: "Segoe UI, sans-serif"
@@ -67,6 +97,13 @@ rounded:
   input: "5px"
   button: "6px"
   panel: "8px"
+  2xs: "2px"
+  xs: "3px"
+  sm: "4px"
+  thumb: "9px"
+  chip: "16px"
+  pill: "17px"
+  round: "21px"
 spacing:
   rail-gap: "8px"
   workspace-gutter: "8px"
@@ -80,7 +117,7 @@ spacing:
 
 DTFlow is a compact, image-first native desktop workspace. The generated image gets the largest flexible region; the controls that create and inspect it remain nearby. The interface uses charcoal surfaces, one blue action language, restrained corners and precise state text. It is a Qt Widgets application, not a web skin.
 
-This file describes the shared design implemented across Connection, Generate, Queues and the saved-output Images viewer, and the rules to use when adding a tab. The frontmatter is a readable snapshot of the reusable tokens and selected component dimensions; color keys use the exact suffix of `color.*`, while component-only spacing/radii remain Designer/QSS values. the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. The QSS contains some local, one-off colors; do not turn each into a global token without a second use.
+This file describes the shared design implemented across Connection, Generate, Queues and the saved-output Images viewer, and the rules to use when adding a tab. The frontmatter is a readable snapshot of the reusable tokens and selected component dimensions; color keys use the exact suffix of `color.*`, while the extra radii are `size.radius*` tokens (`rounded:` keys drop that prefix) and spacing remains Designer/QSS values. the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. Component-local colors repeated across QSS rules (control text, danger, slider, checkbox, scrollbar, tab, status-card borders) are named `color.*` tokens too; a few single-use literals remain in the QSS (see the token contract), and a new one should become a token on its second use.
 
 The canonical files and responsibilities are:
 

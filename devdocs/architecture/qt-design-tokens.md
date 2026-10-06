@@ -115,32 +115,32 @@ rule suppresses it. Keep one visible toggle; retain the group's checked state. P
 
 [`devdocs/design-system/`](../design-system/README.md) is the Claude Design web reference. It is a prototype aid: `tokens.json` and `dtflow_dark.qss` stay the runtime authority, and a value change lands in them first, then in `design-system/tokens/*.css`, the root `DESIGN.md` snapshot and this document in the same PR.
 
-**Naming.** Every `color.*` token maps to `--color-*` in kebab-case (`color.secondary` → `--color-secondary`, `color.disabledBorder` → `--color-disabled-border`, `color.connectionAccent` → `--color-connection-accent`). Type and size tokens map as `type.body` → `--font-size-body`, `type.weightLabel` → `--font-weight-label`, `type.family` → `--font-family-ui`, `type.monoFamily` → `--font-family-mono`, `size.controlContent` → `--size-control-content`, `size.scrollbar` → `--size-scrollbar`, `size.inputRadius`/`size.radius` → `--radius-input`/`--radius-button`. All 22 base `color.*` values and the button, selection, border and section-card tokens match `tokens.json` exactly. The web reference substitutes Noto Sans / Noto Sans Mono for Segoe UI / Consolas and uses browser-native `SpinBox` arrows and `ComboBox` popup; Qt draws its own.
+**Naming.** Every `color.*` token maps to `--color-*` in kebab-case (`color.secondary` → `--color-secondary`, `color.disabledBorder` → `--color-disabled-border`, `color.connectionAccent` → `--color-connection-accent`). Type and size tokens map as `type.body` → `--font-size-body`, `type.weightLabel` → `--font-weight-label`, `type.family` → `--font-family-ui`, `type.monoFamily` → `--font-family-mono`, `size.controlContent` → `--size-control-content`, `size.scrollbar` → `--size-scrollbar`, `size.inputRadius`/`size.radius` → `--radius-input`/`--radius-button`. Every `color.*`, `type.*` and radius token in `tokens.json` now matches the web tokens exactly. The web reference substitutes Noto Sans / Noto Sans Mono for Segoe UI / Consolas and uses browser-native `SpinBox` arrows and `ComboBox` popup; Qt draws its own.
 
-**Component-local tones.** These literals are repeated in `dtflow_dark.qss` rules but are intentionally *not* in `tokens.json` (promote one only on a second independent use). The web reference names them for reuse:
+**Component-local tones.** These colors were repeated QSS literals and are now `color.*` tokens in `tokens.json`, referenced as `${color.name}` in `dtflow_dark.qss`; the web reference uses the same values as `--color-*`. The resolved stylesheet is byte-identical to the previous literal version.
 
-| Web name | Value | Role |
+| Token | Value | Role |
 | --- | --- | --- |
-| `--color-panel-edge` | `#333333` | Panel edge |
-| `--color-host` | `#1c1c1c` | Canvas/preview host |
-| `--color-toolbar` | `#242424` | Floating toolbar surface |
-| `--color-bar-track` | `#2a2a2a` | Progress track |
-| `--color-title` | `#f2f2f2` | Title text |
-| `--color-button-text` / `--color-input-text` / `--color-menu-text` | `#eeeeee` / `#eaeaea` / `#dddddd` | Control text |
-| `--color-on-accent` | `#ffffff` | Text on accent fills |
-| `--color-eyebrow` / `--color-badge-text` | `#8fbde3` / `#b9dcf7` | Eyebrow and badge text |
-| `--color-accent-edge` | `#1085dd` | Accent border |
-| `--color-danger-text` / `-surface` / `-border` | `#ff9d97` / `#432323` / `#c62828` | Danger button |
-| `--color-status-ok-border` / `-warning-border` / `-error-border` | `#2e7d32` / `#9a6700` / `#a33a35` | Status card borders |
-| `--color-glyph-neutral` | `#8a8a8a` | Neutral glyph |
-| `--color-groove` / `--color-handle` / `--color-handle-border` / `--color-handle-disabled` | `#505050` / `#e6e6e6` / `#909090` / `#555555` | Slider |
-| `--color-check-border` / `--color-check-disabled-border` | `#777777` / `#414141` | Checkbox |
-| `--color-disabled-edge` | `#2f2f2f` | Disabled edge |
-| `--color-scroll-hover` / `--color-scroll-pressed` | `#707070` / `#909090` | Scrollbar thumb |
-| `--color-tab-border` / `--color-tab-text` | `#363636` / `#a8a8a8` | Tabs |
+| `color.panelEdge` | `#333333` | Header/panel edge |
+| `color.host` | `#1c1c1c` | Card/preview host surface |
+| `color.toolbar` | `#242424` | Floating toolbar, alternate row |
+| `color.barTrack` | `#2a2a2a` | Progress track |
+| `color.title` | `#f2f2f2` | Title and tooltip text |
+| `color.buttonText` / `color.inputText` / `color.menuText` | `#eeeeee` / `#eaeaea` / `#dddddd` | Control text |
+| `color.onAccent` | `#ffffff` | Text on accent and danger-hover fills |
+| `color.eyebrow` / `color.badgeText` | `#8fbde3` / `#b9dcf7` | Eyebrow and badge text |
+| `color.accentEdge` | `#1085dd` | Accent border |
+| `color.dangerText` / `dangerSurface` / `dangerBorder` | `#ff9d97` / `#432323` / `#c62828` | Danger button |
+| `color.statusOkBorder` / `statusWarningBorder` / `statusErrorBorder` | `#2e7d32` / `#9a6700` / `#a33a35` | Status card borders |
+| `color.glyphNeutral` | `#8a8a8a` | Neutral status glyph |
+| `color.groove` / `handle` / `handleBorder` / `handleDisabled` | `#505050` / `#e6e6e6` / `#909090` / `#555555` | Slider |
+| `color.checkBorder` / `checkDisabledBorder` | `#777777` / `#414141` | Checkbox indicator |
+| `color.disabledEdge` | `#2f2f2f` | Disabled control edge |
+| `color.scrollHover` / `scrollPressed` | `#707070` / `#909090` | Scrollbar thumb |
+| `color.tabBorder` / `tabText` | `#363636` / `#a8a8a8` | Tabs |
 
-`--color-statusbar-edge` (`#000000`) has no literal match in `dtflow_dark.qss` (no `#000`, `#000000`, `black` or `rgba(0` found); its Qt source is unconfirmed.
+Single-use QSS literals not named by the design system remain literal: `#232323` and `#373737` (header/group surface and border), `#d7d7d7`, `#e0e0e0`, `#d8d8d8` (label/progress/menu text), `#d9b36a` (elevated spin box), `#6a6a6a` (group indicator), plus `#2b2b2b`, `#343434` in the tooltip, header and menu rules that coincide with the section tokens. `--color-statusbar-edge` (`#000000`) has no literal match in the QSS and is not a token.
 
-**Radii.** Beyond the 5/6/8 px tokens, the QSS uses scoped literal radii of 2, 3, 4, 7, 9, 10, 16, 17 and 21 px (the web names 2, 3, 4, 9, 16, 17 and 21 as `--radius-2xs` … `--radius-round`). They belong to single components; keep them scoped.
+**Radii.** `size.inputRadius` (5 px), `size.radius` (6 px) and the new `size.panelRadius` (8 px), `size.radius2xs` (2), `radiusXs` (3), `radiusSm` (4), `radiusThumb` (9), `radiusChip` (16), `radiusPill` (17) and `radiusRound` (21 px) replace the matching `border-radius` literals. The web reference names the same values `--radius-*`. Radii of 7 and 10 px, and the `border-top-*-radius` rules, stay literal.
 
 **Spacing.** The web `--space-*` scale (2, 4, 6, 8, 10, 12, 14, 18 px) names gaps that the Designer forms actually use. Counting `spacing` and margin properties in `src/dtflow/ui/forms/*.ui` gives 0 (most), 1, 2, 4, 5, 6, 7, 8, 10, 12, 14, 16 and 18 px; 8, 10, 12 and 6 px dominate, and 14 and 18 px occur a handful of times. The scale omits 1, 5, 7 and 16 px, and Python layouts also use 5 px and 8 px. Like the component-only radii, these are Designer/QSS layout values rather than `tokens.json` tokens, and only the 8 px workspace gutter, 12 px panel padding and 10 px overlay inset are shared tokens. The scale is therefore a documentation aid for web mockups of the same layouts, not a separate web invention.

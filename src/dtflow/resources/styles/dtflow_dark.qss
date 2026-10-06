@@ -14,7 +14,7 @@ QWidget {
 }
 QToolTip {
   background-color: #2b2b2b;
-  color: #f2f2f2;
+  color: ${color.title};
   border: 1px solid ${color.borderStrong};
   padding: ${size.inputRadius};
 }
@@ -23,8 +23,8 @@ QLabel {
   background: transparent;
 }
 QFrame#headerFrame {
-  border: 1px solid #333333;
-  border-radius: 8px;
+  border: 1px solid ${color.panelEdge};
+  border-radius: ${size.panelRadius};
 }
 QFrame#contextRail,
 QFrame#workspaceFrame,
@@ -35,11 +35,11 @@ QFrame#queueContextPanel,
 QFrame#queueWorkspace,
 QFrame#queueInspector {
   background-color: ${color.surface};
-  border: 1px solid #333333;
-  border-radius: 8px;
+  border: 1px solid ${color.panelEdge};
+  border-radius: ${size.panelRadius};
 }
 QFrame#generationWorkspace {
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QFrame#headerFrame {
   background-color: #232323;
@@ -48,11 +48,11 @@ QFrame#headerFrame {
 QFrame#productMark {
   background-color: transparent;
   border: 0;
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QLabel#productMarkLabel {
   background: transparent;
-  color: #ffffff;
+  color: ${color.onAccent};
   font-size: 15pt;
   font-weight: ${type.weightStrong};
 }
@@ -60,7 +60,7 @@ QLabel#productTitleLabel,
 QLabel#workspaceTitleLabel,
 QLabel#pageTitleLabel {
   background: transparent;
-  color: #f2f2f2;
+  color: ${color.title};
   font-size: ${type.title};
   font-weight: ${type.weightTitle};
 }
@@ -84,15 +84,15 @@ QLabel#workspaceEyebrowLabel,
 QLabel#inspectorEyebrowLabel,
 QLabel[role="eyebrow"] {
   background: transparent;
-  color: #8fbde3;
+  color: ${color.eyebrow};
   font-size: 8pt;
   font-weight: ${type.weightStrong};
 }
 QLabel[role="badge"] {
   background-color: ${color.selection};
   border: 1px solid ${color.selectionBorder};
-  border-radius: 8px;
-  color: #b9dcf7;
+  border-radius: ${size.panelRadius};
+  color: ${color.badgeText};
   font-size: 8pt;
   font-weight: ${type.weightStrong};
   padding: ${size.inputRadius} 9px;
@@ -110,7 +110,7 @@ QGroupBox::title {
   subcontrol-origin: margin;
   left: 10px;
   padding: 0 ${size.inputRadius};
-  color: #dddddd;
+  color: ${color.menuText};
 }
 QLineEdit,
 QPlainTextEdit,
@@ -125,10 +125,10 @@ QTableView {
   background-color: ${color.input};
   border: 1px solid ${color.border};
   border-radius: ${size.inputRadius};
-  color: #eaeaea;
+  color: ${color.inputText};
   selection-background-color: ${color.selection};
   selection-color: ${color.selectionText};
-  alternate-background-color: #242424;
+  alternate-background-color: ${color.toolbar};
   font-weight: ${type.weightBody};
   padding: ${size.inputRadius} 7px;
 }
@@ -167,7 +167,7 @@ QPushButton {
   background-color: ${color.button};
   border: 1px solid ${color.buttonBorder};
   border-radius: ${size.radius};
-  color: #eeeeee;
+  color: ${color.buttonText};
   min-height: ${size.controlContent};
   padding: ${size.radius} 10px;
 }
@@ -183,7 +183,7 @@ QPushButton[role="navigation"] {
 QPushButton[role="navigation"]:hover {
   background-color: ${color.button};
   border-color: ${color.border};
-  color: #eeeeee;
+  color: ${color.buttonText};
 }
 QPushButton[role="navigation"]:checked {
   background-color: ${color.selection};
@@ -197,7 +197,7 @@ QPushButton:pressed {
 }
 QPushButton:disabled {
   background-color: ${color.buttonPressed};
-  border-color: #2f2f2f;
+  border-color: ${color.disabledEdge};
   color: ${color.disabled};
 }
 QPushButton#checkButton,
@@ -206,7 +206,7 @@ QPushButton#createQueueButton,
 QPushButton[role="primary"] {
   background-color: ${color.accent};
   border-color: ${color.accent};
-  color: #ffffff;
+  color: ${color.onAccent};
   font-weight: ${type.weightEmphasis};
 }
 QPushButton#checkButton:hover,
@@ -214,25 +214,25 @@ QPushButton#generateButton:hover,
 QPushButton#createQueueButton:hover,
 QPushButton[role="primary"]:hover {
   background-color: ${color.accentHover};
-  border-color: #1085dd;
+  border-color: ${color.accentEdge};
 }
 QPushButton#removeKeyButton,
 QPushButton#cancelQueueButton,
 QPushButton[role="danger"] {
-  color: #ff9d97;
+  color: ${color.dangerText};
 }
 QPushButton#removeKeyButton:hover,
 QPushButton#cancelQueueButton:hover,
 QPushButton[role="danger"]:hover {
-  background-color: #432323;
-  border-color: #c62828;
-  color: #ffffff;
+  background-color: ${color.dangerSurface};
+  border-color: ${color.dangerBorder};
+  color: ${color.onAccent};
 }
 QPushButton#removeKeyButton:disabled,
 QPushButton#cancelQueueButton:disabled,
 QPushButton[role="danger"]:disabled {
   background-color: ${color.buttonPressed};
-  border-color: #2f2f2f;
+  border-color: ${color.disabledEdge};
   color: ${color.disabled};
 }
 QGroupBox:disabled {
@@ -243,26 +243,26 @@ QFrame#statusCard,
 QFrame#queueTableHost,
 QFrame#emptyStateCard,
 QFrame[role="card"] {
-  background-color: #1c1c1c;
+  background-color: ${color.host};
   border: 1px solid ${color.buttonHover};
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QFrame#previewHost {
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QLabel#statusGlyphLabel {
   background: transparent;
-  color: #8a8a8a;
+  color: ${color.glyphNeutral};
   font-size: 18pt;
 }
 QFrame#statusCard[state="ok"] {
-  border-color: #2e7d32;
+  border-color: ${color.statusOkBorder};
 }
 QFrame#statusCard[state="warning"] {
-  border-color: #9a6700;
+  border-color: ${color.statusWarningBorder};
 }
 QFrame#statusCard[state="error"] {
-  border-color: #a33a35;
+  border-color: ${color.statusErrorBorder};
 }
 QLabel#statusGlyphLabel[state="ok"] {
   color: ${color.success};
@@ -297,32 +297,32 @@ QLabel[state="unknown"] {
   font-weight: ${type.weightBody};
 }
 QProgressBar {
-  background-color: #2a2a2a;
+  background-color: ${color.barTrack};
   border: 1px solid ${color.border};
-  border-radius: 4px;
+  border-radius: ${size.radiusSm};
   color: #e0e0e0;
   min-height: 12px;
   text-align: center;
 }
 QProgressBar::chunk {
   background-color: ${color.accent};
-  border-radius: 3px;
+  border-radius: ${size.radiusXs};
 }
 QTabWidget::pane {
-  border: 1px solid #363636;
+  border: 1px solid ${color.tabBorder};
   border-radius: ${size.radius};
   top: -1px;
 }
 QTabBar::tab {
   background-color: ${color.surface};
-  border: 1px solid #363636;
-  color: #a8a8a8;
+  border: 1px solid ${color.tabBorder};
+  color: ${color.tabText};
   padding: 7px 12px;
 }
 QTabBar::tab:selected {
   background-color: ${color.button};
   border-bottom-color: ${color.button};
-  color: #ffffff;
+  color: ${color.onAccent};
 }
 QHeaderView::section {
   font-size: ${type.small};
@@ -344,7 +344,7 @@ QMenuBar,
 QMenu,
 QStatusBar {
   background-color: ${color.background};
-  color: #dddddd;
+  color: ${color.menuText};
 }
 QMenuBar::item:selected,
 QMenu::item:selected {
@@ -388,7 +388,7 @@ QGroupBox::indicator {
   width: 14px;
   height: 14px;
   border: 1px solid #6a6a6a;
-  border-radius: 3px;
+  border-radius: ${size.radiusXs};
   background-color: ${color.input};
 }
 QGroupBox::indicator:hover {
@@ -396,7 +396,7 @@ QGroupBox::indicator:hover {
 }
 QGroupBox::indicator:checked {
   background-color: ${color.accent};
-  border-color: #1085dd;
+  border-color: ${color.accentEdge};
 }
 QGroupBox::indicator:disabled {
   border-color: ${color.border};
@@ -424,7 +424,7 @@ ImagePreview {
 }
 QFrame#previewToolbar,
 QFrame#previewFileToolbar {
-  background: #242424;
+  background: ${color.toolbar};
   border: 1px solid ${color.buttonBorder};
   border-radius: ${size.radius};
 }
@@ -435,8 +435,8 @@ QFrame#previewFileToolbar QPushButton {
 }
 QLabel#previewDesignation {
   color: ${color.text};
-  background: #242424;
-  border-radius: 4px;
+  background: ${color.toolbar};
+  border-radius: ${size.radiusSm};
   padding: 4px 7px;
   font-size: ${type.small};
 }
@@ -518,8 +518,8 @@ QCheckBox {
 QCheckBox::indicator {
   width: 14px;
   height: 14px;
-  border: 1px solid #777777;
-  border-radius: 3px;
+  border: 1px solid ${color.checkBorder};
+  border-radius: ${size.radiusXs};
   background: ${color.input};
 }
 QCheckBox::indicator:hover {
@@ -531,26 +531,26 @@ QCheckBox::indicator:checked {
 }
 QCheckBox::indicator:disabled {
   background: ${color.disabledBorder};
-  border-color: #414141;
+  border-color: ${color.checkDisabledBorder};
 }
 QCheckBox:disabled {
   color: ${color.disabled};
 }
 QSlider::groove:horizontal {
   height: 4px;
-  background: #505050;
-  border-radius: 2px;
+  background: ${color.groove};
+  border-radius: ${size.radius2xs};
 }
 QSlider::sub-page:horizontal {
   background: ${color.accentHover};
-  border-radius: 2px;
+  border-radius: ${size.radius2xs};
 }
 QSlider::handle:horizontal {
   width: 12px;
   margin: -4px 0;
-  background: #e6e6e6;
-  border: 1px solid #909090;
-  border-radius: 3px;
+  background: ${color.handle};
+  border: 1px solid ${color.handleBorder};
+  border-radius: ${size.radiusXs};
 }
 QSlider::handle:horizontal:hover,
 QSlider::handle:horizontal:focus {
@@ -560,16 +560,16 @@ QSlider::handle:horizontal:pressed {
   background: ${color.accentHover};
 }
 QSlider::handle:horizontal:disabled {
-  background: #555555;
-  border-color: #555555;
+  background: ${color.handleDisabled};
+  border-color: ${color.handleDisabled};
 }
 QScrollBar::handle:vertical:hover,
 QScrollBar::handle:horizontal:hover {
-  background: #707070;
+  background: ${color.scrollHover};
 }
 QScrollBar::handle:vertical:pressed,
 QScrollBar::handle:horizontal:pressed {
-  background: #909090;
+  background: ${color.scrollPressed};
 }
 ImagePreview:focus {
   border-color: ${color.focus};
@@ -582,7 +582,7 @@ QScrollBar:horizontal {
 }
 QScrollBar::handle:horizontal {
   background: ${color.borderStrong};
-  border-radius: 5px;
+  border-radius: ${size.inputRadius};
   min-width: 28px;
   margin: 2px;
 }
@@ -666,7 +666,7 @@ QPushButton#connectionNavigationButton {
   padding: 0;
   background: ${color.input};
   border: 1px solid ${color.border};
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QPushButton#connectionNavigationButton:checked {
   background: ${color.selection};
@@ -713,7 +713,7 @@ QScrollArea#galleryFilterScroll,
 QWidget#galleryFilterScrollContents {
   background: ${color.surface};
   border: 0;
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QWidget#GalleryDetailPage QLabel {
   font-size: 13px;
@@ -721,7 +721,7 @@ QWidget#GalleryDetailPage QLabel {
 QWidget#GalleryDetailPage QPushButton {
   background: ${color.button};
   border: 1px solid ${color.buttonBorder};
-  border-radius: 6px;
+  border-radius: ${size.radius};
   min-height: 0;
   padding: 0 8px;
   font-size: 13px;
@@ -766,7 +766,7 @@ QWidget#GalleryDetailPage QLineEdit,
 QWidget#GalleryDetailPage QComboBox {
   background: ${color.input};
   border: 1px solid ${color.border};
-  border-radius: 5px;
+  border-radius: ${size.inputRadius};
   padding: 0 10px;
   min-height: 34px;
   font-size: 13px;
@@ -792,7 +792,7 @@ QPushButton#galleryAutoRefreshButton,
 QPushButton#galleryRefreshButton {
   background: ${color.surface};
   border: 0;
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QFrame#galleryPreviewHost,
 QLabel#galleryImageSurface {
@@ -822,7 +822,7 @@ QWidget#GalleryDetailPage QPushButton#galleryNextButton {
 QFrame#galleryImageToolbar {
   background: ${color.surface};
   border: 1px solid ${color.border};
-  border-radius: 17px;
+  border-radius: ${size.radiusPill};
 }
 QFrame#galleryImageToolbar QPushButton,
 QFrame#galleryImageToolbar QComboBox {
@@ -845,7 +845,7 @@ QScrollArea#galleryAdditionalScroll,
 QWidget#galleryAdditionalScrollContents {
   background: ${color.surface};
   border: 1px solid ${color.border};
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QFrame[role="galleryMetadataBlock"] {
   border: 0;
@@ -877,7 +877,7 @@ QWidget#galleryFilmstripScrollContents {
 QWidget#GalleryDetailPage QPushButton[role="galleryThumbnail"] {
   border: 2px solid transparent;
   padding: 0;
-  border-radius: 9px;
+  border-radius: ${size.radiusThumb};
 }
 QWidget#GalleryDetailPage QPushButton[role="galleryThumbnail"]:checked {
   border: 3px solid ${color.accent};
@@ -911,12 +911,12 @@ QWidget#GalleryDetailPage QPushButton#galleryPreviousButton,
 QWidget#GalleryDetailPage QPushButton#galleryNextButton {
   min-height: 42px;
   max-height: 42px;
-  border-radius: 21px;
+  border-radius: ${size.radiusRound};
 }
 QLabel[role="galleryOverlay"] {
   min-height: 20px;
   padding: 6px 12px;
-  border-radius: 16px;
+  border-radius: ${size.radiusChip};
 }
 QWidget#GalleryDetailPage QComboBox {
   min-width: 0;
@@ -977,13 +977,13 @@ QScrollArea#galleryGridScroll {
 QFrame[role="galleryCard"] {
   background: ${color.surface};
   border: 1px solid ${color.border};
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QWidget#GalleryDetailPage QPushButton[role="galleryCardImage"] {
   background: ${color.canvas};
   border: 0;
   padding: 0;
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
 }
 QLabel[role="galleryCardCaption"] {
   padding: 0 8px;
@@ -997,7 +997,7 @@ QTableWidget#galleryListTable {
   background: ${color.background};
   color: ${color.text};
   border: 1px solid ${color.border};
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
   padding: 0;
   font-size: ${type.small};
 }
@@ -1071,7 +1071,7 @@ QWidget#GalleryDetailPage QLabel[role="galleryCardCaption"] {
 QGroupBox[role="sectionCard"] {
   background: ${color.surface};
   border: 1px solid ${color.sectionBorder};
-  border-radius: 8px;
+  border-radius: ${size.panelRadius};
   margin-top: 0;
   padding: 0;
 }
@@ -1121,7 +1121,7 @@ QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"] {
 }
 QListWidget::item {
   background: ${color.itemSurface};
-  border-radius: 4px;
+  border-radius: ${size.radiusSm};
   margin: 2px;
 }
 QTableView::item {
@@ -1138,7 +1138,7 @@ QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"]:checked:pressed 
 QWidget#GalleryDetailPage QLabel[role="modelMark"] {
   background: ${color.accent};
   border: 1px solid ${color.accentHover};
-  border-radius: 5px;
+  border-radius: ${size.inputRadius};
   padding: 4px;
 }
 QWidget#GalleryDetailPage QLabel#galleryModelValue {
@@ -1148,7 +1148,7 @@ QWidget#GalleryDetailPage QLabel#galleryModelValue {
 QFrame[role="loraChip"] {
   background: ${color.input};
   border: 1px solid ${color.sectionBorder};
-  border-radius: 5px;
+  border-radius: ${size.inputRadius};
 }
 QWidget#GalleryDetailPage QLabel[textRole="loraName"] {
   color: ${color.text};
@@ -1158,7 +1158,7 @@ QWidget#GalleryDetailPage QLabel[textRole="loraName"] {
 QWidget#GalleryDetailPage QLabel[statusBadge="true"] {
   color: ${color.unknown};
   background: ${color.surface};
-  border-radius: 4px;
+  border-radius: ${size.radiusSm};
   padding: 2px 5px;
   font-size: ${type.small};
   font-weight: ${type.weightBody};
