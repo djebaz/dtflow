@@ -21,7 +21,7 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 | Phase | Remaining scope |
 | --- | --- |
 | 7 — Advanced scheduling | Priorities, fairness and adaptive concurrency; not a prerequisite for the proposed release milestones. Basic rolling dispatch already exists. |
-| 8 — Gallery/presets | Phase 8A saved-output viewing is implemented in PR #34; 8B presets, 8C reuse/regeneration, 8D cache management and separately scoped 8E organisation remain. Inventory cache and last-session restore already exist; configuration save/load is not a preset library. |
+| 8 — Gallery/presets | Phase 8A saved-output viewing is implemented. PR #46 implements 8B Draw Things-compatible presets, 8C saved-output reuse/explicit regeneration and 8D category-specific disposable-cache management; owner/runtime acceptance remains pending. Separately scoped 8E organisation remains. |
 | 9 — Image operations | 9A img2img, 9B existing mask-file inpainting, 9C interactive masks and selected controls/references. |
 | 10 — Workflows | 10A versioned workflow files/compiler/execution; 10B visual editor and expanded semantics. |
 | 11 — Broader DT+ | Additional verified cloud capabilities and hardening. Token handling, secret safety, subscription-only policy and ambiguous-outcome protection already belong to Phases 2/3; do not rebuild or defer them. |

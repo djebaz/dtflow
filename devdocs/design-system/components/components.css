@@ -44,7 +44,10 @@ code,pre{font-family:var(--font-family-mono);font-size:var(--font-size-small)}
 .dt-field:disabled{background:var(--color-surface);border-color:var(--color-disabled-border);color:var(--color-disabled)}
 .dt-field.invalid{border-color:var(--color-error)}
 textarea.dt-field{resize:vertical}
-select.dt-field{appearance:none;-webkit-appearance:none;padding-right:24px;background-image:url(../assets/icons/chevron.svg);background-repeat:no-repeat;background-position:right 6px center;background-size:12px}
+/* selects read as selects: a chevron segment in the input fill (mirrors QComboBox::drop-down) */
+select.dt-field{appearance:none;-webkit-appearance:none;padding-right:34px;background-image:url(../assets/icons/chevron.svg),linear-gradient(var(--color-border),var(--color-border)),linear-gradient(var(--color-input),var(--color-input));background-repeat:no-repeat;background-position:right 7px center,right 26px center,right center;background-size:12px,1px 100%,26px 100%}
+select.dt-field:hover,.dt-combo-btn:hover{background-image:url(../assets/icons/chevron.svg),linear-gradient(var(--color-input-border-hover),var(--color-input-border-hover)),linear-gradient(var(--color-surface),var(--color-surface))}
+select.dt-field:disabled,.dt-combo-btn:disabled{background-image:url(../assets/icons/chevron.svg),linear-gradient(var(--color-disabled-border),var(--color-disabled-border)),linear-gradient(var(--color-surface),var(--color-surface));opacity:1}
 .dt-check{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
 .dt-check input{appearance:none;-webkit-appearance:none;width:14px;height:14px;margin:0;border:1px solid var(--color-check-border);border-radius:var(--radius-xs);background:var(--color-input)}
 .dt-check input:hover{border-color:var(--color-focus)}
@@ -146,7 +149,7 @@ select.dt-field{appearance:none;-webkit-appearance:none;padding-right:24px;backg
 .dt-toolrow>*{white-space:nowrap}.dt-toolrow>label,.dt-toolrow>.dt-label,.dt-toolrow>.dt-btn{flex:none}.dt-toolrow .dt-slider{min-width:80px}
 /* combo popup (QComboBox view) */
 .dt-combo{position:relative;display:block;min-width:0;width:100%}
-.dt-combo-btn{display:block;text-align:left;cursor:pointer;padding-right:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background-image:url(../assets/icons/chevron.svg);background-repeat:no-repeat;background-position:right 6px center;background-size:12px}
+.dt-combo-btn{display:block;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:34px;background-image:url(../assets/icons/chevron.svg),linear-gradient(var(--color-border),var(--color-border)),linear-gradient(var(--color-input),var(--color-input));background-repeat:no-repeat;background-position:right 7px center,right 26px center,right center;background-size:12px,1px 100%,26px 100%}
 .dt-combo-btn:disabled{cursor:default}
 .dt-combo-pop{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:30;background:var(--color-input);border:1px solid var(--color-border-strong);border-radius:var(--radius-input);padding:var(--space-3xs);max-height:240px;overflow:auto}
 .dt-combo-opt{padding:5px 6px;border-radius:var(--radius-sm);cursor:pointer;color:var(--color-input-text)}

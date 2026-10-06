@@ -651,6 +651,56 @@
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="presetLibraryBox">
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Preset library</string></property>
+             <layout class="QVBoxLayout" name="presetLibraryCardLayout">
+              <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item><widget class="QFrame" name="presetLibraryBoxHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
+               <layout class="QHBoxLayout" name="presetLibraryBoxHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
+                <item><widget class="QLabel" name="presetLibraryHeading"><property name="text"><string>Draw Things presets</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
+               </layout></widget></item>
+              <item><widget class="QWidget" name="presetLibraryBoxContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <layout class="QVBoxLayout" name="presetLibraryLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
+                <item><widget class="QLabel" name="presetLibraryStatusLabel"><property name="text"><string>No imported presets.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+                <item><layout class="QVBoxLayout" name="presetLibraryButtons"><property name="spacing"><number>6</number></property>
+                 <item><widget class="QPushButton" name="importPresetsButton"><property name="text"><string>Import custom_configs.json…</string></property></widget></item>
+                 <item><widget class="QPushButton" name="exportPresetsButton"><property name="text"><string>Export custom_configs.json…</string></property></widget></item>
+                </layout></item>
+               </layout></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="cacheManagementBox">
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Disposable cache</string></property>
+             <layout class="QVBoxLayout" name="cacheManagementCardLayout">
+              <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item><widget class="QFrame" name="cacheManagementBoxHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
+               <layout class="QHBoxLayout" name="cacheManagementBoxHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
+                <item><widget class="QLabel" name="cacheManagementHeading"><property name="text"><string>Disposable cache</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
+               </layout></widget></item>
+              <item><widget class="QWidget" name="cacheManagementBoxContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <layout class="QVBoxLayout" name="cacheManagementLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
+                <item><widget class="QLabel" name="cacheStatusLabel"><property name="text"><string>Measuring cache…</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+                <item><layout class="QGridLayout" name="cacheButtons"><property name="horizontalSpacing"><number>6</number></property><property name="verticalSpacing"><number>6</number></property>
+                 <item row="0" column="0"><widget class="QPushButton" name="clearInventoryCacheButton"><property name="text"><string>Clear inventory</string></property></widget></item>
+                 <item row="0" column="1"><widget class="QPushButton" name="clearThumbnailCacheButton"><property name="text"><string>Clear thumbnails</string></property></widget></item>
+                 <item row="1" column="0"><widget class="QPushButton" name="clearDerivedCacheButton"><property name="text"><string>Clear derived</string></property></widget></item>
+                 <item row="1" column="1"><widget class="QPushButton" name="clearAllCacheButton"><property name="text"><string>Clear all</string></property><property name="role" stdset="0"><string>danger</string></property></widget></item>
+                </layout></item>
+               </layout></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <spacer name="workspaceSpacer">
              <property name="orientation">
               <enum>Qt::Vertical</enum>

@@ -158,9 +158,60 @@ QDoubleSpinBox:disabled {
   border-color: ${color.disabledBorder};
   color: ${color.disabled};
 }
+/* Selects reserve a distinct chevron segment while keeping the approved compact geometry. */
+QComboBox {
+  padding: ${size.inputRadius} 34px ${size.inputRadius} 7px;
+  combobox-popup: 0;
+}
 QComboBox::drop-down {
+  subcontrol-origin: padding;
+  subcontrol-position: top right;
+  width: 26px;
+  margin: 0;
   border: 0;
-  width: ${size.controlContent};
+  border-left: 1px solid ${color.border};
+  border-top-right-radius: ${size.inputRadius};
+  border-bottom-right-radius: ${size.inputRadius};
+  background: transparent;
+}
+QComboBox::down-arrow {
+  image: url(../images/controls/chevron-down.svg);
+  width: 12px;
+  height: 12px;
+}
+QComboBox:hover:enabled {
+  background-color: ${color.surface};
+}
+QComboBox:hover::drop-down {
+  background: transparent;
+  border-left-color: ${color.inputBorderHover};
+}
+QComboBox:on {
+  border-color: ${color.focus};
+}
+QComboBox:on::drop-down {
+  background: transparent;
+  border-left-color: ${color.focus};
+}
+QComboBox:disabled::drop-down {
+  background: transparent;
+  border-left-color: ${color.disabledBorder};
+}
+QComboBox QAbstractItemView {
+  background-color: ${color.input};
+  border: 1px solid ${color.focus};
+  color: ${color.inputText};
+  outline: 0;
+  selection-background-color: ${color.selection};
+  selection-color: ${color.selectionText};
+}
+QComboBox QAbstractItemView::item {
+  min-height: ${size.controlContent};
+  padding: 2px 8px;
+}
+QComboBox QAbstractItemView::item:hover {
+  background-color: ${color.selectionHover};
+  color: ${color.selectionText};
 }
 QPushButton {
   font-weight: ${type.weightLabel};
@@ -762,6 +813,39 @@ QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:pressed {
 QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:focus {
   border-color: ${color.focus};
 }
+/* Generate keeps the shared select treatment within its mounted context panel. */
+QFrame#generationContextPanel QComboBox {
+  background: ${color.input};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+  padding: 0 10px;
+  min-height: 34px;
+}
+QFrame#generationContextPanel QComboBox:hover {
+  border-color: ${color.inputBorderHover};
+}
+QFrame#generationContextPanel QComboBox:focus,
+QFrame#generationContextPanel QComboBox:on {
+  border-color: ${color.focus};
+}
+
+/* Connection's contextRail is reparented into the shared workspace shell at runtime,
+   so scope these rules to the mounted rail rather than its original connectionPage parent. */
+QFrame#contextRail QComboBox {
+  background: ${color.input};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+  padding: 0 10px;
+  min-height: 34px;
+}
+QFrame#contextRail QComboBox:hover {
+  border-color: ${color.inputBorderHover};
+}
+QFrame#contextRail QComboBox:focus,
+QFrame#contextRail QComboBox:on {
+  border-color: ${color.focus};
+}
+
 QWidget#GalleryDetailPage QLineEdit,
 QWidget#GalleryDetailPage QComboBox {
   background: ${color.input};
@@ -784,9 +868,6 @@ QWidget#GalleryDetailPage QComboBox:disabled {
   color: ${color.disabled};
   background: ${color.surface};
   border-color: ${color.disabledBorder};
-}
-QWidget#GalleryDetailPage QComboBox::drop-down {
-  width: 24px;
 }
 /* Auto-refresh reuses Connection colors, without changing its labelled geometry. */
 QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton {
@@ -947,10 +1028,13 @@ QLabel[role="galleryOverlay"] {
 QWidget#GalleryDetailPage QComboBox {
   min-width: 0;
 }
-QWidget#GalleryDetailPage QComboBox::down-arrow {
-  image: url(../images/gallery/chevron.svg);
-  width: 12px;
-  height: 12px;
+/* The compact toolbar select keeps a bare chevron, without the segment. */
+QFrame#galleryImageToolbar QComboBox::drop-down,
+QFrame#galleryImageToolbar QComboBox:hover::drop-down,
+QFrame#galleryImageToolbar QComboBox:on::drop-down {
+  width: 16px;
+  border: 0;
+  background: transparent;
 }
 
 QWidget#galleryBrandSlot,

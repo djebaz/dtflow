@@ -75,6 +75,15 @@ def _image(path: str, max_side: int) -> tuple[QImage | None, str]:
     return value, ""
 
 
+def _display_output_path(path: str) -> str:
+    """Show a saved image path from the output directory onward."""
+    parts = Path(path).parts
+    for index, part in enumerate(parts):
+        if part.lower() in {"output", "outputs"}:
+            return str(Path(*parts[index:]))
+    return path
+
+
 def _human_size(value: int | None) -> str:
     if value is None:
         return "Unknown"
@@ -129,11 +138,15 @@ def _date_bounds(text: str) -> tuple[str | None, str | None]:
 class GalleryPage(QObject):
     """Bind saved-output services to the existing Designer gallery without owning generation."""
 
-    def __init__(self, page: QWidget, *, runner: AsyncRunner, state_dir: Path):
+    def __init__(
+        self, page: QWidget, *, runner: AsyncRunner, state_dir: Path, reuse_callback=None, regenerate_callback=None
+    ):
         super().__init__(page)
         self.page = page
         self.runner = runner
         self.state_dir = Path(state_dir)
+        self._reuse_callback = reuse_callback
+        self._regenerate_callback = regenerate_callback
         self._active = False
         self._loading = False
         self._pending_refresh: tuple[bool, bool] | None = None
@@ -346,6 +359,10 @@ class GalleryPage(QObject):
         self.next_button.setEnabled(False)
         self.previous_button.clicked.connect(lambda: self.step(-1))
         self.next_button.clicked.connect(lambda: self.step(1))
+        self.use_settings_button = self._widget("galleryUseSettingsButton", QPushButton)
+        self.regenerate_button = self._widget("galleryRegenerateButton", QPushButton)
+        self.use_settings_button.clicked.connect(self._use_settings)
+        self.regenerate_button.clicked.connect(self._regenerate)
         self.copy_button = self._widget("galleryCopyPathButton", QPushButton)
         self.folder_button = self._widget("galleryOpenFolderButton", QPushButton)
         self.external_button = self._widget("galleryExternalViewerButton", QPushButton)
@@ -901,7 +918,10 @@ class GalleryPage(QObject):
         self._widget("galleryAdditionalProviderValue", QLabel).setText(item.backend_id or "Not recorded")
         self._widget("galleryAdditionalFileSizeValue", QLabel).setText(_human_size(item.file_size))
         self._widget("galleryAdditionalDurationValue", QLabel).setText("Not recorded")
-        self._widget("galleryAdditionalPathValue", QLabel).setText(item.path)
+        self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
+        reusable = bool(request.get("model_id"))
+        self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
+        self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
         self.copy_button.setEnabled(bool(item.path))
         available = not item.issue
         self.folder_button.setEnabled(available)
@@ -1011,6 +1031,16 @@ class GalleryPage(QObject):
     @staticmethod
     def _dimensions(item: GalleryItem) -> str:
         return f"{item.width} × {item.height}" if item.width and item.height else "Unknown"
+
+    def _use_settings(self) -> None:
+        item = self._selected()
+        if item is not None and self._reuse_callback is not None:
+            self._reuse_callback(self._request(item), item.identity)
+
+    def _regenerate(self) -> None:
+        item = self._selected()
+        if item is not None and self._regenerate_callback is not None:
+            self._regenerate_callback(self._request(item), item.identity)
 
     def step(self, delta: int) -> None:
         if not self.items:
@@ -1271,6 +1301,8 @@ class GalleryPage(QObject):
         ):
             self._widget(name, QLabel).setText("—")
         self._widget("galleryRawMetadata").setPlainText("{}")
+        self.use_settings_button.setEnabled(False)
+        self.regenerate_button.setEnabled(False)
         self.copy_button.setEnabled(False)
         self.folder_button.setEnabled(False)
         self.external_button.setEnabled(False)
