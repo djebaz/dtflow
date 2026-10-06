@@ -120,35 +120,58 @@
            </layout>
           </item>
           <item>
-           <widget class="QPushButton" name="inspectorToggle">
-            <property name="text">
-             <string />
-            </property>
-            <property name="checkable">
-             <bool>true</bool>
-            </property>
-            <property name="checked">
-             <bool>true</bool>
-            </property>
-            <property name="toolTip">
-             <string>Show or hide the right details panel</string>
-            </property>
-            <property name="accessibleName">
-             <string>Toggle right details panel</string>
-            </property>
+           <widget class="QWidget" name="runControlOffset">
             <property name="minimumSize">
              <size>
-              <width>30</width>
-              <height>30</height>
+              <width>10</width>
+              <height>1</height>
              </size>
             </property>
             <property name="maximumSize">
              <size>
-              <width>30</width>
-              <height>30</height>
+              <width>10</width>
+              <height>1</height>
              </size>
             </property>
            </widget>
+          </item>
+          <item>
+           <widget class="RunControl" name="runControl">
+            <property name="toolTip">
+             <string>No runnable queue selected.</string>
+            </property>
+            <property name="accessibleName">
+             <string>Execution control</string>
+            </property>
+            <property name="focusPolicy">
+             <enum>Qt::StrongFocus</enum>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>40</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>40</width>
+              <height>40</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="runControlRightSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>3</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
           </item>
          </layout>
         </widget>
@@ -382,4 +405,11 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>RunControl</class>
+   <extends>QAbstractButton</extends>
+   <header>dtflow.ui.run_control</header>
+  </customwidget>
+ </customwidgets>
 </ui>

@@ -30,8 +30,9 @@ class QueueDispatcher:
         *,
         poll: float = 0.5,
         on_settle: Callable[[str, str], None] | None = None,
+        on_event: Callable[[str, BackendEvent], None] | None = None,
     ):
-        self.store, self.service, self.poll, self.on_settle = store, service, poll, on_settle
+        self.store, self.service, self.poll, self.on_settle, self.on_event = store, service, poll, on_settle, on_event
 
     async def run(self, queue_id: str) -> dict[str, Any]:
         """Dispatch until the queue is finished, cancelled, or blocked by uncertainty with nothing active.
@@ -124,6 +125,8 @@ class QueueDispatcher:
         saved = None
 
         def receive(event: BackendEvent) -> None:
+            if self.on_event is not None:
+                self.on_event(item_id, event)
             if event.kind in RECORDED_BACKEND_EVENTS:
                 evidence.put_nowait(
                     (

@@ -47,7 +47,7 @@ from dtflow.services.session import (
     refresh_inventory,
     selection_for,
 )
-from dtflow.ui.activity import Activity
+from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.empty_hint import EmptyListHint
 from dtflow.ui.generation_presenter import (
     FAKE_MODEL,
@@ -619,7 +619,14 @@ class GenerationPage:
         self._progress("Preparing", floor=self.PROGRESS_FLOORS["preparing"])
         self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
         self._generating = True
-        self._activity.set(generating=True)
+        self._activity.set(
+            generating=True,
+            run_state=RunState(
+                owner="generation",
+                phase="running",
+                detail="Single generation is running. Pause is not supported for single generation.",
+            ),
+        )
         self._set_busy(True)
         self._future = self._runner.submit(
             self._generate(
@@ -656,6 +663,18 @@ class GenerationPage:
             return  # a late event after completion never changes the settled view
         if event.kind == "progress":
             self._progress(event.stage or "Generating", event.completed, event.total)
+            detail = event.stage or "Single generation is running"
+            if type(event.completed) is int and type(event.total) is int and event.total > 0:
+                detail = f"{detail} · step {event.completed}/{event.total}"
+            self._activity.present_run(
+                RunState(
+                    owner="generation",
+                    phase="running",
+                    completed=event.completed,
+                    total=event.total,
+                    detail=detail + ". Pause is not supported for single generation.",
+                )
+            )
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
             self._show_image(event.artifact.encoded, "preview")
             self._progress("Preview shown (not the final image)")
@@ -669,7 +688,7 @@ class GenerationPage:
             self._runner.submit(read_attempt(self._state, request_id), self._interrupted)
             return
         self._generating = False
-        self._activity.set(generating=False)
+        self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
         if failure is not None:
             self._progress_stopped("Failed")
@@ -753,7 +772,7 @@ class GenerationPage:
 
     def _interrupted(self, evidence, failure) -> None:
         self._generating = False
-        self._activity.set(generating=False)
+        self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
         self._progress_stopped("Stopped locally")
         if failure is not None:

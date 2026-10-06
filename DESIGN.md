@@ -19,6 +19,8 @@ colors:
   selectionText: "#d5ecff"
   success: "#78c97c"
   connectionAccent: "#00d8b0"
+  runStart: "#6f3bd6"
+  runEnd: "#00ffff"
   connectionSurface: "#123e36"
   connectionGlyph: "#d9f7ef"
   warning: "#ffbf59"
@@ -181,13 +183,13 @@ Windows font metrics and resulting line wraps still need target-machine review.
 
 ## Layout
 
-All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. The splitter, rails and page content remain mounted across tab switches. Connection, Generate and Queues change context, primary workspace and evidence stacks. Images reparents the same branding/navigation widgets into its two header slots and hides both content rails; leaving Images restores their parents and splitter geometry. The shell owns the global Inspector toggle and responsive state; page controllers retain their content references and service wiring.
+All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. The splitter, rails and page content remain mounted across tab switches. Connection, Generate and Queues change context, primary workspace and evidence stacks. Images reparents the same branding/navigation widgets into its two header slots and hides both content rails; leaving Images restores their parents and splitter geometry. The shell owns the global segmented Run control and responsive right-rail state; page controllers retain their content references and service wiring.
 
-Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a collapsible right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact panel-outline toggle beside the brand shows or hides right-side details; its tooltip and accessible name explain the action. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses durable queue selection/policy, items and dispatch in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
+Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a responsive right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact 30×30 segmented Run control sits in the brand row with deliberate clearance from the logo. It shows queue readiness/activity or single-generation progress: Play starts a runnable selected queue, an owned running queue can be paused, an owned paused queue can be resumed, single generation shows reported step progress but remains status-only, and work owned by another process is never controlled implicitly from the header. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses durable queue selection/policy, items and dispatch in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
 
 The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral drag gutter between panels, with a subtle border-colored hover affordance. Internal panel padding is unchanged.
 
-The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. For Connection, Generate and Queues, at a window width below 1100 the inspector initially collapses and navigation remains in the left rail. The panel icon can reopen it. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
+The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. For Connection, Generate and Queues, at a window width below 1100 the inspector is hidden automatically and navigation remains in the left rail; there is no manual Inspector toggle in the header. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
 
 The prompt starts at 76 px and expands to 180 px on request. The negative prompt stays compact. The canvas takes the remaining center height and fits the whole image, whether portrait 1:2 or landscape 16:9, without crop or distortion. Its 12 px fit inset and 10 px floating-control inset are implemented in the preview widget. At 100% or manual zoom, overflow gets scrollbars; drag pans and Control-wheel zoom anchors at the pointer. Expand temporarily gives the preview its own window and restores its original parent on Escape or close.
 
@@ -207,7 +209,7 @@ Inputs use gently rounded 5 px corners, buttons 6 px, and panels 8 px. The reusa
 
 Neutral buttons have distinct rest, hover, pressed, focus and disabled states. Primary actions use the accent family and lose that accent when disabled. Destructive actions use warning red only while actionable; disabled destructive controls return to the neutral disabled treatment. Checkable navigation shares the navy selection language with item views. Maintain stable `role` properties and object names instead of adding inline widget styles.
 
-Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and opens the saved-output Grid/List/Detail viewer. Its inline metadata replaces the right Inspector while Images is active; other workspaces retain their Inspector preference. The standalone fixture launcher remains explicitly offline and illustrative. Compact labels preserve the shared navigation width, including when mounted in Images.
+Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and opens the saved-output Grid/List/Detail viewer. Its inline metadata replaces the right Inspector while Images is active; the shared Run control stays visible with the remounted brand row. The standalone fixture launcher remains explicitly offline and illustrative. Compact labels preserve the shared navigation width, including when mounted in Images.
 
 ### Fields and selection
 
@@ -219,7 +221,7 @@ The `ImagePreview` widget keeps original pixels and handles Fit, 100%, zoom, pan
 
 ### Status and progress
 
-Use a short outcome heading plus concrete evidence. A progress bar reflects only known progress. `Outcome unknown`, interruption and failure remain different states. The effective request and attempt details may collapse, but their content remains reachable for reproducibility. Do not infer remote cancellation or a finished result from a local Stop waiting action.
+Use a short outcome heading plus concrete evidence. A progress bar reflects only known progress. `Outcome unknown`, interruption and failure remain different states. The effective request and attempt details may collapse, but their content remains reachable for reproducibility. Do not infer remote cancellation or a finished result from a local Stop waiting action. The global Run control is a compact summary, not a second execution authority: single generation may show its reported step number; a queue with one unambiguous running item shows that item's queue position in the center and keeps backend step detail in the tooltip; concurrent queue work does not invent a single item number. Finished, cancelled and blocked queue selections do not leave persistent completion/error badges in the header.
 
 ### Page implementation checklist
 
@@ -273,9 +275,9 @@ Images uses a full-width gallery with its logo aligned to the view-controls row
 and navigation tabs aligned to the filter row. The shared brand and tabs remain
 the same widgets; only in Images are they mounted in the Designer-defined
 `galleryBrandSlot` and `galleryNavigationSlot` header slots. Both content rails
-and the global Inspector toggle are hidden. Leaving Images restores the rails,
-chrome and splitter widths; the Inspector preference remains independent of this
-page.
+while the global segmented Run control stays visible in the remounted brand row.
+Leaving Images restores the rails, chrome and splitter widths; right-inspector
+visibility follows the responsive shell layout rather than a saved toggle preference.
 
 Images uses the same charcoal surfaces, blue accent, muted navy selection and
 control states as the other tabs through shared `color.*` tokens and QSS. Grid,
@@ -337,8 +339,8 @@ replace or establish saved-output evidence.
 
 Images header rows have no additional outer inset. The shared brand/navigation
 slots sit outside the scrolling controls and retain the shell's chrome width and
-height, with the same 8 px row gap. Hidden Inspector controls reserve their space
-to keep the logo/title geometry stable. Gallery panel gaps are 8 px; the canvas
+height, with the same 8 px row gap. The compact Run control remains part of the
+brand row in this remounted chrome. Gallery panel gaps are 8 px; the canvas
 has a compact 4 px inset and metadata avoids nested padding.
 
 Reusable neutral-button, input-hover and selection states use named `color.*`
