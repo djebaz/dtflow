@@ -26,7 +26,7 @@ Refresh inventory to populate model and LoRA choices. A cached inventory can pre
 
 ## Generate
 
-Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and sampler. Width and height snap to the nearest multiple of 64 with an adjustment message. The CLI and loaded configurations remain strict.
+Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and sampler. After inventory refresh, use All/Image/Video to narrow classified models, choose a base-model family, then choose the exact available checkpoint/quantization. Prime checkpoints are the default; `Include niche models` adds available Niche entries without replacing Prime. If the provider exposes a checkpoint DTFlow has not classified, the page reports it as unclassified and keeps the editable exact-ID field as the explicit escape hatch rather than guessing its family or mode. Width and height snap to the nearest multiple of 64 with an adjustment message. The CLI and loaded configurations remain strict.
 
 **Desktop seed 0 means random on submission or queue creation.** The effective request and metadata retain the resolved seed. Saving a configuration, checking LoRAs and the CLI preserve 0 literally.
 
@@ -36,7 +36,7 @@ Progress and previews are not final results. A result is successful only after t
 
 ## LoRAs and cloud assets
 
-Choose exact inventory identifiers and explicit weights. Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
+For a classified checkpoint, Add LoRA offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose exact inventory identifiers and explicit weights. Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
 
 Trigger prefixes are added only when you explicitly choose that option; otherwise the prompt is unchanged.
 
@@ -104,7 +104,7 @@ outputs.
 
 ## Remembered settings and diagnostics
 
-`.dtflow/last_session.json` remembers the provider, local endpoint and Generate form on submission, a successful connection check and quit. Prompts are shared; model, LoRAs/weights and bound receipts, seed, dimensions, steps, guidance and sampler are remembered separately per provider. It is durable state, not cache, and cache bypass does not remove it.
+`.dtflow/last_session.json` remembers the provider, local endpoint and Generate form on submission, a successful connection check and quit. Prompts are shared; generation domain, base-model family, Niche preference, exact model, LoRAs/weights and bound receipts, seed, dimensions, steps, guidance and sampler are remembered separately per provider. It is durable state, not cache, and cache bypass does not remove it.
 
 Raw local/cloud inventory snapshots live under `.dtflow/cache/inventory/`. Cache reads reject incompatible versions, changed endpoints and changed cloud credential identity; no account-dependent evidence is reused blindly. See [runtime layout](../architecture/runtime-layout.md) for the exact ownership contract.
 

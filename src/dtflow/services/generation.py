@@ -92,7 +92,12 @@ class GenerationService:
             for name, code, failed in (
                 ("operation", "not_offered", request.operation not in caps.operations),
                 ("sampler", "not_offered", request.sampler_id not in caps.samplers),
-                ("model", "not_offered", request.model_id not in caps.model_ids),
+                (
+                    "model",
+                    "not_offered",
+                    not (caps.unlisted_model_bridge and request.allow_unlisted_model)
+                    and request.model_id not in caps.model_ids,
+                ),
                 ("lora", "not_supported", bool(request.loras) and caps.lora_support == "unsupported"),
                 (
                     "batch",

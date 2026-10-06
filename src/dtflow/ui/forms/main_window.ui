@@ -429,6 +429,63 @@
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="customLorasBox">
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Custom LoRAs</string></property>
+             <layout class="QVBoxLayout" name="customLorasBoxCardLayout">
+              <property name="leftMargin"><number>0</number></property>
+              <property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property>
+              <property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item>
+               <widget class="QFrame" name="customLorasBoxHeader">
+                <property name="role" stdset="0"><string>sectionHeader</string></property>
+                <layout class="QHBoxLayout" name="customLorasBoxHeaderLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>7</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>7</number></property>
+                 <item>
+                  <widget class="QLabel" name="customLorasBoxHeading">
+                   <property name="text"><string>Custom LoRAs</string></property>
+                   <property name="textRole" stdset="0"><string>panelHeading</string></property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="customLorasBoxContents">
+                <property name="role" stdset="0"><string>sectionContents</string></property>
+                <layout class="QVBoxLayout" name="customLorasLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>8</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>10</number></property>
+                 <property name="spacing"><number>8</number></property>
+                 <item>
+                  <widget class="QLabel" name="customLorasStatusLabel">
+                   <property name="text"><string>No custom LoRA definitions imported.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="customLorasButtons">
+                   <property name="spacing"><number>6</number></property>
+                   <item><widget class="QPushButton" name="importCustomLorasButton"><property name="text"><string>Import JSON…</string></property></widget></item>
+                   <item><widget class="QPushButton" name="clearCustomLorasButton"><property name="text"><string>Clear</string></property></widget></item>
+                  </layout>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <spacer name="contextSpacer">
              <property name="orientation">
               <enum>Qt::Vertical</enum>

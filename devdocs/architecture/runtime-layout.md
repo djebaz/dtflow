@@ -31,7 +31,8 @@ The derived LoRA cache writer is implemented. A successful `dtflow models` or de
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
 | `logs/dtflow-<session>.log` | Rotating application diagnostics, one file set per process; the newest 20 sessions are kept |
 | `.dtflow/settings.json` | Versioned, credential-free shared settings (currently the cloud concurrency maximum); durable, not cache |
-| `.dtflow/last_session.json` | Versioned, credential-free last desktop session (provider, local endpoint, Generate form incl. prompts, plus each provider's own fields under `forms`: model, seed, size, steps, guidance, sampler, LoRAs and bound cloud receipts for fake, local and cloud separately); durable, written on submit, successful connection check and quit; ignored if unreadable or a newer schema; `-nc` and cache cleanup never touch it |
+| `.dtflow/last_session.json` | Versioned, credential-free last desktop session (provider, local endpoint, Generate form incl. prompts, plus each provider's own fields under `forms`: model, seed, size, steps, guidance, sampler, LoRAs, catalogue domain/base-family/Niche preference and bound cloud receipts for fake, local and cloud separately); durable, written on submit, successful connection check and quit; ignored if unreadable or a newer schema; `-nc` and cache cleanup never touch it |
+| `.dtflow/catalogue/custom_loras.json` | Optional user-owned normalized custom-LoRA metadata (exact file, base-model family, modes and optional display/prefix fields); durable, credential-free and independent of bundled catalogue updates; availability still comes from the active provider inventory; `-nc` and cache cleanup never touch it |
 | `logs/tests/<run-id>.log` | Optional live-run diagnostics when implemented |
 | `tmp/<operation-id>/` | Disposable operation scratch; no predetermined backend categories |
 

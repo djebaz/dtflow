@@ -25,6 +25,7 @@ from dtflow.core.models import (
     ValidationError,
     eligible_model_ids,
 )
+from dtflow.services.catalogue import Catalogue
 from dtflow.services.connection import (
     Presentation,
     present_generation_failure,
@@ -81,7 +82,12 @@ WIRED_CONTROLS = (
     "heightSpinBox",
     "guidanceSpinBox",
     "samplerCombo",
+    "generationDomainCombo",
+    "baseModelCombo",
     "modelCombo",
+    "includeCloudCheck",
+    "includeNicheCheck",
+    "unclassifiedModelsButton",
     "refreshInventoryButton",
     "generateButton",
     "cancelButton",
@@ -147,6 +153,9 @@ class GenerationPage:
         self._activity = activity or Activity()
         self._no_cache = no_cache
         self._listed_backend: str | None = None
+        self._catalogue = Catalogue(self._state)
+        self._inventory_snapshot: InventorySnapshot | None = None
+        self._updating_catalogue = False
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         self._provider: str | None = None
         self._previewed_seed: int | None = None
@@ -180,6 +189,14 @@ class GenerationPage:
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.samplerCombo.addItems(SAMPLERS)
+        for label, value in (("All", "all"), ("Image", "image"), ("Video", "video")):
+            page.generationDomainCombo.addItem(label, value)
+        page.generationDomainCombo.currentIndexChanged.connect(self._catalogue_filter_changed)
+        page.baseModelCombo.currentIndexChanged.connect(self._catalogue_family_changed)
+        page.includeCloudCheck.toggled.connect(self._catalogue_filter_changed)
+        page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
+        page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
+        page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
         for label, scenario in SIMULATED_OUTCOMES:
             page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
@@ -205,7 +222,8 @@ class GenerationPage:
         ):
             page.resultPreviewLabel.add_file_button(button)
         self._set_result_actions(False)
-        page.modelCombo.lineEdit().setPlaceholderText("Select or enter a model")
+        page.modelCombo.custom_prompt = "Exact checkpoint identifier"
+        page.modelCombo.setToolTip("Select a checkpoint. Search matches any part of its name.")
         page.promptEdit.setTabChangesFocus(True)
         page.seedEdit.setToolTip(
             "0 picks a random seed for each submission; the seed used is recorded with the output."
@@ -227,14 +245,22 @@ class GenerationPage:
         name, _ = self._backend()
         self.page.generationBackendCombo.setCurrentText(name)
         if self._listed_backend is not None and self._listed_backend != name:
+            self._inventory_snapshot = None
+            self._catalogue.set_inventory(None)
             self._fill_models(())  # a list from another provider is not offered for this one
+            self._rebuild_catalogue()
             self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
             self.page.inventoryEvidenceLabel.setToolTip("")
             self._listed_backend = None
         self._switch_provider(name)
         self.page.simulationBox.setVisible(name == "fake")
-        self.page.modelCombo.lineEdit().setPlaceholderText(
-            f"{FAKE_MODEL} (default)" if name == "fake" else "Exact model ID, or Refresh inventory"
+        self.page.includeCloudCheck.setVisible(name == "local")
+        if name != "local" and self.page.includeCloudCheck.isChecked():
+            self.page.includeCloudCheck.setChecked(False)
+        self.page.modelCombo.setToolTip(
+            f"Select {FAKE_MODEL} or use a custom identifier."
+            if name == "fake"
+            else "Select a checkpoint. Search matches any part of its name; custom identifiers remain available."
         )
         self.lora.sync_backend()
 
@@ -272,6 +298,12 @@ class GenerationPage:
         document = form_to_document(self._values())
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
         form["receipts"] = self.lora.receipts()
+        form["catalogue"] = {
+            "domain": self.page.generationDomainCombo.currentData() or "all",
+            "base_model": self.page.baseModelCombo.currentData(),
+            "include_cloud": self.page.includeCloudCheck.isChecked() if self._backend()[0] == "local" else False,
+            "include_niche": self.page.includeNicheCheck.isChecked(),
+        }
         return form
 
     def _apply_provider_form(self, document: object) -> None:
@@ -286,6 +318,18 @@ class GenerationPage:
             else {}
         )
         self.lora.set_loras(values.loras, receipts=valid)
+        catalogue = document.get("catalogue") if isinstance(document, dict) else None
+        if isinstance(catalogue, dict):
+            domain = catalogue.get("domain")
+            index = self.page.generationDomainCombo.findData(domain if domain in ("all", "image", "video") else "all")
+            self.page.generationDomainCombo.setCurrentIndex(max(index, 0))
+            self.page.includeCloudCheck.setChecked(
+                self._backend()[0] == "local" and catalogue.get("include_cloud") is True
+            )
+            self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
+            family = catalogue.get("base_model")
+            if isinstance(family, str):
+                self._rebuild_catalogue(preferred_family=family, preferred_checkpoint=values.model, restore_niche=True)
 
     def _switch_provider(self, name: str) -> None:
         """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
@@ -334,13 +378,19 @@ class GenerationPage:
         log.info("size adjusted from %dx%d to %dx%d", *old, *new)
         return f"Size adjusted from {old[0]}x{old[1]} to {new[0]}x{new[1]} (multiples of 64)."
 
+    def _allow_local_bridge_model(self, request):
+        """Mark an unlisted checkpoint as an explicit Local -> DT+ bridge choice."""
+        enabled = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
+        return replace(request, allow_unlisted_model=enabled)
+
     def _request_for_check(self):
         """A request for LoRA preflight only: a blank prompt gets a placeholder because nothing is dispatched."""
         self._mark(None)
         name, _ = self._backend()
         values = self._values()
         try:
-            return build_request(replace(values, prompt=values.prompt or "preflight check"), backend=name)
+            request = build_request(replace(values, prompt=values.prompt or "preflight check"), backend=name)
+            return self._allow_local_bridge_model(request)
         except FormError as exc:
             self._mark(exc.widget)
             self.lora._show(self.page.compatibilityStatusLabel, Presentation("error", "Cannot check", str(exc)))
@@ -392,6 +442,7 @@ class GenerationPage:
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
+            request = self._allow_local_bridge_model(request)
         except FormError as exc:
             self._mark(exc.widget)
             raise
@@ -441,6 +492,7 @@ class GenerationPage:
         self._submitted_backend = name
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
+            request = self._allow_local_bridge_model(request)
         except FormError as exc:
             self._mark(exc.widget)
             log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
@@ -640,10 +692,136 @@ class GenerationPage:
         combo.addItems(ids)
         combo.setCurrentText(current)
 
+    def _catalogue_domain(self) -> str:
+        return self.page.generationDomainCombo.currentData() or "all"
+
+    def _catalogue_filter_changed(self, *_args) -> None:
+        if not self._updating_catalogue:
+            self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText())
+
+    def _catalogue_family_changed(self, *_args) -> None:
+        if not self._updating_catalogue:
+            self._rebuild_checkpoints(preferred_checkpoint=self.page.modelCombo.currentText())
+
+    def _catalogue_checkpoint_changed(self, *_args) -> None:
+        if not self._updating_catalogue:
+            self._filter_loras()
+
+    def _rebuild_catalogue(
+        self,
+        *,
+        preferred_family: str | None = None,
+        preferred_checkpoint: str | None = None,
+        restore_niche: bool = False,
+    ) -> None:
+        page = self.page
+        preferred_entry = self._catalogue.checkpoint(preferred_checkpoint or "") if preferred_checkpoint else None
+        if (
+            restore_niche
+            and preferred_entry is not None
+            and preferred_entry.tier == "niche"
+            and not page.includeNicheCheck.isChecked()
+        ):
+            self._updating_catalogue = True
+            try:
+                page.includeNicheCheck.setChecked(True)
+            finally:
+                self._updating_catalogue = False
+        current_family = preferred_family or page.baseModelCombo.currentData()
+        include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
+        families = self._catalogue.families(
+            domain=self._catalogue_domain(),
+            include_niche=page.includeNicheCheck.isChecked(),
+            include_unavailable=include_cloud,
+        )
+        self._updating_catalogue = True
+        try:
+            page.baseModelCombo.clear()
+            for family, label in families:
+                page.baseModelCombo.addItem(label, family)
+            family_index = page.baseModelCombo.findData(current_family)
+            if family_index < 0 and preferred_checkpoint:
+                entry = self._catalogue.checkpoint(preferred_checkpoint)
+                if entry is not None:
+                    family_index = page.baseModelCombo.findData(entry.base_model)
+            page.baseModelCombo.setCurrentIndex(family_index if family_index >= 0 else (0 if families else -1))
+        finally:
+            self._updating_catalogue = False
+        self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint)
+        unknown = self._catalogue.view().unclassified_checkpoints
+        page.unclassifiedModelsButton.setVisible(bool(unknown))
+        page.unclassifiedModelsButton.setText(
+            f"{len(unknown)} unclassified checkpoint" + ("" if len(unknown) == 1 else "s") + " found"
+        )
+
+    def _rebuild_checkpoints(self, *, preferred_checkpoint: str | None = None) -> None:
+        page = self.page
+        current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
+        family = page.baseModelCombo.currentData()
+        include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
+        entries = self._catalogue.checkpoints(
+            domain=self._catalogue_domain(),
+            base_model=family if isinstance(family, str) else None,
+            include_niche=page.includeNicheCheck.isChecked(),
+            include_unavailable=include_cloud,
+        )
+        allowed = {entry.identifier for entry in entries}
+        unclassified = set(self._catalogue.view().unclassified_checkpoints)
+        selectable = [entry.identifier for entry in entries]
+        selectable.extend(identifier for identifier in sorted(unclassified) if identifier not in allowed)
+        self._updating_catalogue = True
+        try:
+            self._fill_models(selectable)
+            # Preserve an explicit raw identifier even when provider discovery is incomplete (for example,
+            # a local Draw Things endpoint bridging to DT+). Known classified checkpoints still obey the filters.
+            if (
+                current in allowed
+                or current in unclassified
+                or (current and self._catalogue.checkpoint(current) is None)
+            ):
+                page.modelCombo.setCurrentText(current)
+            else:
+                page.modelCombo.setCurrentText("")
+        finally:
+            self._updating_catalogue = False
+        self._filter_loras()
+
+    def reload_custom_loras(self) -> None:
+        """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
+        self._filter_loras()
+
+    def _filter_loras(self) -> None:
+        checkpoint = self.page.modelCombo.currentText().strip()
+        include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
+        model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
+        entries = (
+            self._catalogue.compatible_loras(
+                checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
+            )
+            if model is not None and model.base_model is not None
+            else None
+        )
+        self.lora.set_candidates(entries, prune_selected=entries is not None)
+
+    def _show_unclassified_models(self) -> None:
+        unknown = self._catalogue.view().unclassified_checkpoints
+        if not unknown:
+            return
+        QMessageBox.information(
+            self.page,
+            "Unclassified checkpoints",
+            "These checkpoints are available on the active provider but are not classified by the DTFlow catalogue. "
+            "They remain usable through the Checkpoint selector's custom-identifier action. "
+            "DTFlow will not guess their family, generation type, quantization or compatible LoRAs.\n\n"
+            + "\n".join(unknown),
+        )
+
     def _show_inventory(self, snapshot: InventorySnapshot, how: str) -> None:
         self.lora.set_inventory(snapshot)
+        self._inventory_snapshot = snapshot
+        self._catalogue.set_inventory(snapshot)
         ids = eligible_model_ids(snapshot)
-        self._fill_models(ids)
+        self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText(), restore_niche=True)
         self._listed_backend = self._backend()[0]
         label = self.page.inventoryEvidenceLabel
         label.setToolTip(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
