@@ -1,5 +1,7 @@
 """Compact segmented execution-state control for the persistent DTFlow header."""
 
+import math
+
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF, QRadialGradient
 from PySide6.QtWidgets import QAbstractButton
@@ -24,6 +26,7 @@ class RunControl(QAbstractButton):
         self._completed: int | None = None
         self._total: int | None = None
         self._rotation = 0
+        self._pulse = 0.0
 
         tokens = load_tokens()
         self._colors = {
@@ -60,12 +63,14 @@ class RunControl(QAbstractButton):
         if self._completed is not None and self._total is not None:
             self._completed = min(self._completed, self._total)
 
-        if self._phase == "running":
+        if self._phase in ("running", "complete"):
+            self._timer.setInterval(110 if self._phase == "running" else 40)
             if not self._timer.isActive():
                 self._timer.start()
         else:
             self._timer.stop()
             self._rotation = 0
+        self._pulse = 0.0
 
         hints = {"start": "Click to start.", "pause": "Click to pause.", "resume": "Click to resume."}
         tooltip = " ".join(part for part in (detail.strip(), hints.get(action, "")) if part)
@@ -76,7 +81,10 @@ class RunControl(QAbstractButton):
         self.update()
 
     def _advance(self) -> None:
-        self._rotation = (self._rotation + 1) % self.SEGMENTS
+        if self._phase == "complete":
+            self._pulse += 0.16
+        else:
+            self._rotation = (self._rotation + 1) % self.SEGMENTS
         self.update()
 
     @staticmethod
@@ -136,17 +144,17 @@ class RunControl(QAbstractButton):
         ring = QRectF(3.5, 3.5, 23.0, 23.0)
         base = self._colors[self._phase]
         if self._phase == "complete":
-            # Brief white glow while the control shows it is finishing.
+            # Soft pulsing halo while the control shows it is finishing; the ring itself stays in its own color.
+            strength = 0.5 - 0.5 * math.cos(self._pulse)
             glow = QColor(self._colors["text"])
             gradient = QRadialGradient(QPointF(15.0, 15.0), 15.0)
-            glow.setAlpha(110)
-            gradient.setColorAt(0.55, glow)
+            glow.setAlpha(round(20 + 55 * strength))
+            gradient.setColorAt(0.6, glow)
             glow.setAlpha(0)
             gradient.setColorAt(1.0, glow)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(gradient)
             painter.drawEllipse(QRectF(0.0, 0.0, 30.0, 30.0))
-            base = self._colors["text"]
         for index in range(self.SEGMENTS):
             color = QColor(base)
             if self._phase == "running":
