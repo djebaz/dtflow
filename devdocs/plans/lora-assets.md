@@ -1,6 +1,6 @@
 # LoRA compatibility and custom cloud assets
 
-**Status:** Phase 3A local selection/preflight is implemented and offline-validated (exception/refiner rules not yet pinned; no deployed LoRA application evidence); cloud upload/receipts/reuse are implemented and offline-validated (3B-O6 to O9); live `3-LG4` has not run, so custom cloud LoRA support is not advertised.  
+**Status:** Phase 3A local selection/preflight is implemented and offline-validated (exception/refiner rules not yet pinned; no deployed LoRA application evidence); cloud upload/receipts/reuse are implemented and offline-validated (3B-O6 to O9); formal live `3-LG4` has not run, so custom cloud LoRA support is not advertised. On 2026-10-06 the owner reported on Windows that two prepared custom LoRAs changed Z-Image Turbo output on DT+ once referenced as described in [Referencing a prepared LoRA](#referencing-a-prepared-lora-in-a-generation-request).  
 **References:** [Phase 2](phase-2-backends.md), [Phase 3](phase-3-cli.md), [detailed Phase 3B completion](2026-10-04-phase-3b-cloud-assets.md), [roadmap](initial.md), [parity matrix](tanquestudio-parity.md), [release gates](releases.md), [source findings](../research/dtflow-ecosystem-research-report.md#appendix-e--lora-compatibility-and-cloud-storage-follow-up).
 
 ## Delivery sequence
@@ -54,6 +54,17 @@ Model fixture responses on the inspected structures, but do not inherit its gene
 Use bounded-memory file hashing and streaming transfer suitable for the target Windows machine. Upload explicitly during asset preparation; reuse the prepared reference across generations and queue items. Coordinate simultaneous preparation of identical content within the same backend/account scope so ordinary concurrency does not trigger redundant transfers. Changed content requires fresh preparation, even under an unchanged filename.
 
 Never send cloud authorization headers to the signed storage endpoint. Treat signed URLs as temporary credentials: keep them out of logs, durable receipts, ordinary metadata and error messages. Production TLS remains validated; injectable endpoints/trust are for local fixtures only.
+
+## Referencing a prepared LoRA in a generation request
+
+Uploading is not enough: a request that names the uploaded file by its file name is accepted and the LoRA is silently ignored (observed, owner-reported 2026-10-06). The inspected Draw Things community server source (`ServerLoRALoader`, `ImageGenerationServiceImpl`, `LoRAZoo`) explains why, and the adapter now follows it:
+
+- The configuration LoRA `file` must be the file's SHA-256 (64 hex characters, optionally followed by `_suffix`). Only then does the server download the file from its storage; a plain file name is never fetched. DTFlow sends the receipt's SHA-256 for LoRAs bound to a prepared asset and the plain identifier for built-in LoRAs.
+- The request also carries `override.loras`, a JSON array the server decodes as LoRA specifications. Each entry needs `name`, `file`, `prefix` and `version`; an entry missing any of them is dropped without an error. DTFlow sends `name` (the original file name), `file` (the SHA-256), `prefix` (empty) and `version` (the base model's Draw Things version string, from the inventory or the bundled catalogue; nothing is sent when it is unknown).
+- Progress of the server-side fetch appears as `remote_download` responses; the effect shows as a different output. With `-x`, the debug log records the names sent (`loras sent=`, `override=`, `prepared=`) and the server responses. Server responses carry no other LoRA metadata, and an unbound custom LoRA fails with `grpc_permission_denied`.
+- The gRPC `FilesExist`/`UploadFile` calls are not the route for custom LoRAs: uploaded files report `exists=false` there and `UploadFile` is refused at transport level.
+
+Desktop behavior: Prepare adds the LoRA to the Generate list and binds its confirmed receipt; adding a LoRA that has a receipt runs the metadata reconciliation and binds it if confirmed; LoRAs already selected (restored session, loaded configuration, switch to cloud) are bound from the local registry. Cloud preflight reports a LoRA that the DT+ inventory does not list as unconfirmed rather than blocking it.
 
 ## Durable receipts and uncertainty
 

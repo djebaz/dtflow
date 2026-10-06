@@ -30,5 +30,5 @@
 
 ## Release audit
 
-- PRs: #46, #48, #49, #50, #51
-- Scope: Phase 8B–8D presets, reuse and cache management; documentation reconciliation; global segmented Run control; Windows-safe canonical design-system README without a case-only tracked duplicate; retained provider inventory and persistent last-observed UI statistics.
+- PRs: #46, #48, #49, #50, #51, #53
+- Scope: Phase 8B–8D presets, reuse and cache management; documentation reconciliation; global segmented Run control; Windows-safe canonical design-system README without a case-only tracked duplicate; retained provider inventory and persistent last-observed UI statistics; custom cloud LoRA use fix (SHA-256 naming, complete override entry), cloud LoRA preflight relaxation, float32 weight tolerance and automatic receipt binding.

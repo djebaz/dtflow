@@ -11,7 +11,7 @@ This is coding orientation against [initial.md](plans/initial.md), not a release
 | 2 — Backends | Backend-neutral contract, fake backend, local Draw Things and direct DT+ adapters; packaging investigations. |
 | 3 — CLI/services | Generation/configuration, LoRA preflight, cloud LoRA prepare/reuse with durable receipts, durable rolling queues. |
 | 4 — Qt shell | Connection selection/status and Windows saved API-key service. |
-| 5 — Desktop execution | Generate, LoRA/cloud asset actions, configuration save/load and queue controls through shared services. |
+| 5 — Desktop execution | Generate, LoRA/cloud asset actions (Prepare adds and binds the receipt automatically; custom cloud LoRA use owner-reported working 2026-10-06, see [lora-assets.md](plans/lora-assets.md#referencing-a-prepared-lora-in-a-generation-request)), configuration save/load and queue controls through shared services. |
 | 6 — Batch planning | Shared seed/pair/cross planner, bounded expansion and CLI/desktop dry runs. |
 | 8A–8D — Gallery/presets | Saved-output browsing, native-format presets with conservative field application, reuse/explicit regeneration and category-specific cache cleanup (only the inventory category has files today). Runtime acceptance pending. |
 
