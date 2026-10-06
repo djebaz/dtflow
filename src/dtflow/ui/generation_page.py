@@ -41,10 +41,9 @@ from dtflow.services.connection import (
 )
 from dtflow.services.presets import apply_preset, load_presets, save_preset
 from dtflow.services.session import (
-    cached_inventory,
+    InventoryDisplayMemory,
     generate_once,
     read_attempt,
-    refresh_inventory,
     selection_for,
 )
 from dtflow.ui.activity import Activity, RunState
@@ -175,7 +174,14 @@ class GenerationPage:
         self._state = Path(state_dir)
         self._activity = activity or Activity()
         self._no_cache = no_cache
-        self._listed_backend: str | None = None
+        self._inventory_memory = InventoryDisplayMemory()
+        self._inventory_source: tuple[str, str | None] | None = None
+        self._inventory_revision = 0
+        self._cache_request = None
+        self._inventory_how = ""
+        self._inventory_notice = ""
+        self._inventory_error = ""
+        self._pending_family: str | None = None
         self._catalogue = Catalogue(self._state)
         self._inventory_snapshot: InventorySnapshot | None = None
         self._updating_catalogue = False
@@ -270,16 +276,30 @@ class GenerationPage:
     def sync_backend(self) -> None:
         """Mirror the Connection page's backend; it is read-only here so there is one selector."""
         name, _ = self._backend()
+        if not name:
+            return
         self.page.generationBackendCombo.setCurrentText(name)
-        if self._listed_backend is not None and self._listed_backend != name:
-            self._inventory_snapshot = None
-            self._catalogue.set_inventory(None)
-            self._fill_models(())  # a list from another provider is not offered for this one
-            self._rebuild_catalogue()
-            self.page.inventoryEvidenceLabel.setText("Inventory has not been refreshed.")
-            self.page.inventoryEvidenceLabel.setToolTip("")
-            self._listed_backend = None
-        self._switch_provider(name)
+        source = self._current_inventory_source()
+        changed = source != self._inventory_source
+        if changed:
+            # Capture the leaving form BEFORE clearing availability/filter choices.
+            if self._provider:
+                self._forms[self._provider] = self._provider_form()
+            self._inventory_source = source
+            self._inventory_revision += 1
+            self._cache_request = None
+            self._inventory_notice = self._inventory_error = ""
+            self._clear_inventory()
+            self._updating_catalogue = True
+            try:
+                if self._provider == name:
+                    self._apply_provider_form(self._forms.get(name, {}))
+                else:
+                    self._switch_provider(name, remember=False)
+            finally:
+                self._updating_catalogue = False
+            catalogue = self._forms.get(name, {}).get("catalogue", {})
+            self._pending_family = catalogue.get("base_model") if isinstance(catalogue, dict) else None
         self.page.simulationBox.setVisible(name == "fake")
         self.page.includeCloudCheck.setVisible(name == "local")
         if name != "local" and self.page.includeCloudCheck.isChecked():
@@ -290,6 +310,30 @@ class GenerationPage:
             else "Select a checkpoint. Search matches any part of its name; custom identifiers remain available."
         )
         self.lora.sync_backend()
+        if changed:
+            self._rebuild_catalogue(
+                preferred_family=self._pending_family,
+                preferred_checkpoint=self.page.modelCombo.currentText(),
+                preserve_selection=True,
+            )
+            self.request_cached()
+
+    def _current_inventory_source(self):
+        name, endpoint = self._backend()
+        return name, (endpoint.strip() if endpoint else None) if name == "local" else None
+
+    def _clear_inventory(self):
+        self._inventory_snapshot = None
+        self._inventory_how = ""
+        self._catalogue.set_inventory(None)
+        self.lora.set_inventory(None)
+        self._updating_catalogue = True
+        try:
+            self._fill_models(())
+            self.page.baseModelCombo.clear()
+        finally:
+            self._updating_catalogue = False
+        self._write_inventory_stats()
 
     def _values(self) -> FormValues:
         page = self.page
@@ -327,8 +371,8 @@ class GenerationPage:
         form["receipts"] = self.lora.receipts()
         form["catalogue"] = {
             "domain": self.page.generationDomainCombo.currentData() or "all",
-            "base_model": self.page.baseModelCombo.currentData(),
-            "include_cloud": self.page.includeCloudCheck.isChecked() if self._backend()[0] == "local" else False,
+            "base_model": self.page.baseModelCombo.currentData() or self._pending_family,
+            "include_cloud": self.page.includeCloudCheck.isChecked() if self._provider == "local" else False,
             "include_niche": self.page.includeNicheCheck.isChecked(),
         }
         return form
@@ -356,16 +400,23 @@ class GenerationPage:
             self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
             family = catalogue.get("base_model")
             if isinstance(family, str):
-                self._rebuild_catalogue(preferred_family=family, preferred_checkpoint=values.model, restore_niche=True)
+                self._pending_family = family
+                self._rebuild_catalogue(
+                    preferred_family=family,
+                    preferred_checkpoint=values.model,
+                    restore_niche=True,
+                    preserve_selection=True,
+                )
 
-    def _switch_provider(self, name: str) -> None:
+    def _switch_provider(self, name: str, *, remember: bool = True) -> None:
         """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
         if not name:
             return
         if self._provider is None:
             self._provider = name
         elif name != self._provider:
-            self._forms[self._provider] = self._provider_form()
+            if remember:
+                self._forms[self._provider] = self._provider_form()
             self._provider = name
             self._apply_provider_form(self._forms.get(name, {}))
             log.info("form fields switched provider=%s remembered=%s", name, name in self._forms)
@@ -791,13 +842,28 @@ class GenerationPage:
             return
         name, endpoint = self._backend()
         self._set_busy(True)
-        self.page.inventoryEvidenceLabel.setText("Refreshing inventory…")
+        self._inventory_notice = "Refreshing inventory…"
+        self._inventory_error = ""
+        self._write_inventory_stats()
         log.info("inventory refresh requested backend=%s", name)
-        self._runner.submit(self._refresh(name, endpoint, self._saved()), self._refreshed)
+        source, revision = self._current_inventory_source(), self._inventory_revision
+        self._runner.submit(
+            self._refresh(name, endpoint, self._saved()),
+            lambda snapshot, failure: self._refresh_completed(source, revision, snapshot, failure),
+        )
+
+    def _refresh_completed(self, source, revision, snapshot, failure):
+        if source != self._current_inventory_source() or revision != self._inventory_revision:
+            self._set_busy(False)
+            if self._inventory_notice == "Refreshing inventory…":
+                self._inventory_notice = ""
+                self._write_inventory_stats()
+            return
+        self._refreshed(snapshot, failure)
 
     async def _refresh(self, name, endpoint, saved):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
-        return await refresh_inventory(selection, self._state, saved=saved, no_cache=self._no_cache)
+        return await self._inventory_memory.refresh(selection, self._state, saved=saved, no_cache=self._no_cache)
 
     def _fill_models(self, ids) -> None:
         """Replace the drop-down entries, keeping whatever is typed (the box stays editable for unlisted models)."""
@@ -828,6 +894,7 @@ class GenerationPage:
         preferred_family: str | None = None,
         preferred_checkpoint: str | None = None,
         restore_niche: bool = False,
+        preserve_selection: bool = False,
     ) -> None:
         page = self.page
         preferred_entry = self._catalogue.checkpoint(preferred_checkpoint or "") if preferred_checkpoint else None
@@ -862,14 +929,16 @@ class GenerationPage:
             page.baseModelCombo.setCurrentIndex(family_index if family_index >= 0 else (0 if families else -1))
         finally:
             self._updating_catalogue = False
-        self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint)
+        self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint, preserve_selection=preserve_selection)
         unknown = self._catalogue.view().unclassified_checkpoints
         page.unclassifiedModelsButton.setVisible(bool(unknown))
         page.unclassifiedModelsButton.setText(
             f"{len(unknown)} unclassified checkpoint" + ("" if len(unknown) == 1 else "s") + " found"
         )
 
-    def _rebuild_checkpoints(self, *, preferred_checkpoint: str | None = None) -> None:
+    def _rebuild_checkpoints(
+        self, *, preferred_checkpoint: str | None = None, preserve_selection: bool = False
+    ) -> None:
         page = self.page
         current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
         family = page.baseModelCombo.currentData()
@@ -890,7 +959,9 @@ class GenerationPage:
             # Preserve an explicit raw identifier even when provider discovery is incomplete (for example,
             # a local Draw Things endpoint bridging to DT+). Known classified checkpoints still obey the filters.
             if (
-                current in allowed
+                preserve_selection
+                or self._inventory_snapshot is None
+                or current in allowed
                 or current in unclassified
                 or (current and self._catalogue.checkpoint(current) is None)
             ):
@@ -899,13 +970,13 @@ class GenerationPage:
                 page.modelCombo.setCurrentText("")
         finally:
             self._updating_catalogue = False
-        self._filter_loras()
+        self._filter_loras(prune_selected=not preserve_selection and self._inventory_snapshot is not None)
 
     def reload_custom_loras(self) -> None:
         """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
         self._filter_loras()
 
-    def _filter_loras(self) -> None:
+    def _filter_loras(self, *, prune_selected: bool = True) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
@@ -916,7 +987,7 @@ class GenerationPage:
             if model is not None and model.base_model is not None
             else None
         )
-        self.lora.set_candidates(entries, prune_selected=entries is not None)
+        self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
 
     def _show_unclassified_models(self) -> None:
         unknown = self._catalogue.view().unclassified_checkpoints
@@ -935,45 +1006,110 @@ class GenerationPage:
         self.lora.set_inventory(snapshot)
         self._inventory_snapshot = snapshot
         self._catalogue.set_inventory(snapshot)
-        ids = eligible_model_ids(snapshot)
-        self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText(), restore_niche=True)
-        self._listed_backend = self._backend()[0]
+        self._inventory_how = how
+        if self._inventory_error:
+            self._inventory_notice = "Refresh failed · showing previous inventory"
+        self._rebuild_catalogue(
+            preferred_family=self._pending_family,
+            preferred_checkpoint=self.page.modelCombo.currentText(),
+            restore_niche=True,
+            preserve_selection=True,
+        )
+        self._pending_family = None
+        self._write_inventory_stats()
+
+    def _write_inventory_stats(self):
         label = self.page.inventoryEvidenceLabel
-        label.setToolTip(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
+        snapshot = self._inventory_snapshot
+        if snapshot is None:
+            label.setText(self._inventory_notice or "Inventory has not been observed. Refresh to discover models.")
+            label.setToolTip(self._inventory_error)
+            return
+        models = len(eligible_model_ids(snapshot))
+        loras = sum(entry.kind == "lora" for entry in snapshot.entries)
         try:
             observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
         except ValueError:
             observed = snapshot.observed_at_utc
-        label.setText(f"{len(ids)} model(s) · {how.split(' (')[0]}\nobserved {observed}")
+        lines = [f"{models} model(s) · {loras} LoRA(s)", f"{self._inventory_how} · observed {observed}"]
+        if self._inventory_notice:
+            lines.append(self._inventory_notice)
+        label.setText("\n".join(lines))
+        label.setToolTip(
+            f"{snapshot.backend_id} inventory {self._inventory_how}; observed {snapshot.observed_at_utc}.\n"
+            "Last successful observation only; generation still validates live.\n" + self._inventory_error
+        )
 
     def _refreshed(self, snapshot, failure) -> None:
         self._set_busy(False)
-        label = self.page.inventoryEvidenceLabel
         if failure is not None:
             shown = present_generation_failure(failure)
             log.warning("inventory refresh failed reason=%s", failure_reason(failure))
-            label.setText(f"Inventory refresh failed. {shown.headline}: {shown.detail}")
-            label.setToolTip("")
+            self._inventory_notice = (
+                "Refresh failed · showing previous inventory"
+                if self._inventory_snapshot
+                else "Inventory refresh failed."
+            )
+            self._inventory_error = f"{shown.headline}: {shown.detail}"
+            self._write_inventory_stats()
             return
+        self._cache_request = None  # an older disk read must not replace this live observation
+        self._inventory_notice = self._inventory_error = ""
         self._show_inventory(snapshot, "refreshed" if snapshot.refreshed else "as reported")
 
-    def request_cached(self) -> None:
-        """Prefill the lists from the disposable cache; a miss, a bypass or a stale answer changes nothing."""
-        if self._no_cache:
-            return
+    def request_cached(self, *, revalidate: bool = False) -> None:
+        """Restore only matching last-successful evidence, including on return to a provider."""
         name, endpoint = self._backend()
+        if not name:
+            return
+        token = object()
+        self._cache_request = token
+        source, revision = self._current_inventory_source(), self._inventory_revision
+        if self._inventory_snapshot is None and not self._inventory_notice:
+            self._inventory_notice = "Loading saved inventory…"
+            self._write_inventory_stats()
         self._runner.submit(
-            self._cached(name, endpoint, self._saved()), lambda snapshot, failure: self._cached_loaded(name, snapshot)
+            self._cached(name, endpoint, self._saved()),
+            lambda result, failure: self._inventory_restored(source, revision, token, result, revalidate),
         )
 
     async def _cached(self, name, endpoint, saved):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
-        return await cached_inventory(selection, self._state, saved=saved)
+        return await self._inventory_memory.restore(selection, self._state, saved=saved, no_cache=self._no_cache)
 
-    def _cached_loaded(self, name: str, snapshot) -> None:
-        if snapshot is None or self._backend()[0] != name or self._listed_backend == name:
+    def _inventory_restored(self, source, revision, token, result, revalidate):
+        if (
+            token is not self._cache_request
+            or source != self._current_inventory_source()
+            or revision != self._inventory_revision
+        ):
             return
-        self._show_inventory(snapshot, "cached (press Refresh inventory for live)")
+        self._cache_request = None
+        if self._inventory_notice == "Loading saved inventory…":
+            self._inventory_notice = ""
+        if result is None:
+            if revalidate:
+                self._inventory_notice = self._inventory_error = ""
+                self._pending_family = self.page.baseModelCombo.currentData() or self._pending_family
+                self._clear_inventory()
+                self._rebuild_catalogue(
+                    preferred_checkpoint=self.page.modelCombo.currentText(), preserve_selection=True
+                )
+            self._write_inventory_stats()
+            return
+        snapshot, how = result
+        if snapshot is self._inventory_snapshot:
+            self._write_inventory_stats()
+        else:
+            if revalidate:
+                self._inventory_notice = self._inventory_error = ""
+            self._show_inventory(snapshot, how)
+
+    def credentials_changed(self):
+        """Recheck the selected credential identity; saving the same key must not erase evidence."""
+        if self._backend()[0] == "cloud":
+            self._inventory_revision += 1
+            self.request_cached(revalidate=True)
 
     # -- configuration ---------------------------------------------------------------------------------------------
     def save(self) -> None:

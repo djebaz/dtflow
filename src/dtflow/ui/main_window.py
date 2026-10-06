@@ -236,6 +236,7 @@ class MainWindow:
         form.backendCombo.currentTextChanged.connect(self._backend_changed)
         form.endpointEdit.textChanged.connect(self._selection_changed)
         form.endpointEdit.editingFinished.connect(self._endpoint_entered)
+        form.endpointEdit.editingFinished.connect(self.generation.sync_backend)
         self.generation_page.generateButton.clicked.connect(self.remember)
         form.connectionNavigationButton.clicked.connect(
             lambda: form.workspaceStack.setCurrentWidget(form.connectionPage)
@@ -275,7 +276,6 @@ class MainWindow:
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
-        self.generation.request_cached()
         self.refresh_credentials()
         self.refresh_custom_loras()
         self.refresh_presets()
@@ -679,6 +679,7 @@ class MainWindow:
             return
         log.info("api key saved")
         self.refresh_credentials()
+        self.generation.credentials_changed()
 
     def remove_key(self) -> None:
         if not self.confirm(
@@ -696,6 +697,7 @@ class MainWindow:
             return
         log.info("api key removed")
         self.refresh_credentials()
+        self.generation.credentials_changed()
 
     def about(self) -> None:
         QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
