@@ -1,0 +1,4912 @@
+[
+  {
+    "file": "1001176_jibmixflux_fp8v4canvasgalore_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1002647_pixelwave_flux1schnell03_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1004235_artsydream_v2fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1004320_artsydream_v2fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1006775_iniversemixsfwnsfw_f1drealguofengfp8v20_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1023471_artsydream_v3fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1023964_artsydream_v3fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1024165_ratatoskranimalcreature_v594fp8dev1hybrid_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1031531_iniversemixsfwnsfw_f1drealnsfwguofengv2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1035832_c4pacitor_av2beta_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1045901_copaxtimeless_fluxrealfast_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1048219_demoncoresfwnsfw_fluxv13_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1050076_fluxmania_i_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1052470_acornisspinningflux_aisf11h8stpchinfx_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1054490_flux1_v10fp8_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1055211_agflux_v21fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1068773_genovaapex_s_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1070930_artsydream_v4fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1071391_artsydream_v4fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1085190_copaxtimeless_xplus2basetrain_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1086868_c4pacitor_sv2alpha_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1087807_redcraftcadsupdatedjun1_revealnsfw_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1093373_redcraftcadsupdatedjun1_rasch1forge_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1095703_ultrarealfinetune_v10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1095910_agfluxfillnsfwfp8_agfluxfillnsfwv17fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1103485_flux1_v10fp8schnell_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1108227_illustrationjuanerghibli_v10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1111281_genovaapex_real_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1115605_redcraftcadsupdatedjun1_rasch2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1123235_c4pacitor_dv2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1126942_fluxedupfluxnsfw_21_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1134093_copaxtimeless_xplusmix3_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1136364_artsydream_v5fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1136806_artsydream_v5fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1138590_redbluefantasy_fluxv10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1148473_copaxtimeless_xplusmix3dark_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1159932_colossusprojectflux_v42aio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1164498_ultrarealfinetune_v20_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1171942_redcraftcadsupdatedjun1_revealultrav35_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1178183_centerfoldflux_v35fp8e54steps_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1181877_project0_v10fp8unetonly_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1182699_fluxedupfluxnsfw_22_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1186008_rayflux_v10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1187144_8stepscrearthyperflux_v30hyperdevfp8unet_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1193229_jibmixflux_v7pixelheavenbeta_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1201074_redcraftcadsupdatedjun1_turborevealhotfix21_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1209969_genovaapex_plus_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1213097_artsydream_v6fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1213649_artsydream_v6fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1215918_illustrationjuanerghibli_v20_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1217501_copaxtimeless_xplusmix4_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1219311_flux1_v20fp8_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1224657_edgeofreality_v30_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1244250_agflux_v3fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1247362_majicflus_v10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1249092_project0_v20fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1249359_moxiefusionflux_v141s_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1249496_project0_v20fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1249737_jibmixflux_v72pixelheaven_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1254943_hyperfluxdedistilled_hyper16stepsfp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1255083_hyperfluxdedistilled_hyper8stepsfp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1255371_moxiefusionflux_v141d_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1288366_nepotism_xdit_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1292596_moxiefusionflux_v15s_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1298942_acornisspinningflux_aisfhyper8stepv15_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1305680_fluxedupfluxnsfw_24_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1308101_originbyn0utis_fluxfp8v1_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1308180_artsyvibe_v1fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1308807_artsyvibe_v1fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1315145_8stepscrearthyperflux_v40hyperdevfp8unet_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1315432_redcraftcadsupdatedjun1_newreveal_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1319871_flux1_v30fp8_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1320268_project0_v30artfp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1326315_nepotism_xidit_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1329004_genovaapex_1618experiment_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1338565_copaxtimeless_xpluscartoon_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1344905_redcraftcadsupdatedjun1_rasch3rushreveal_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1355240_jibmixflux_v78cleartextfocus_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1357212_demoncoresfwnsfw_v25helheimprojectaio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1374658_acornisspinningflux_aisfluxv15_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1389019_jibmixflux_v8accentueightnow_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1413133_ultrarealfinetune_v4_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1442202_flux1_v30papfp8_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1443922_colossusprojectflux_v50aio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1445047_redcraftcadsupdatedjun1_f1fillnsfw_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1450688_acornisspinningflux_aisfdedistilledv15_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1451754_project0_real1smfp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1453489_moxieflux1ds_v16d_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1454015_ultrarealfinetune_v1_q8p.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1462430_colossusprojectflux_v50fp8unet_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1463804_fluxmania_iv_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1466679_fluxedupfluxnsfw_25_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1473409_moxiefusionflux_v16s_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1495910_colossusprojectflux_v44aio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1505959_msfluxsfwnsfwv3_v3_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1507835_colossusprojectflux_v50aiobehemoth_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1519030_flux1eastfp8_dev_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1519446_flux1eastfp8_fill_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "1539776_fluxmania_v_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1550408_redcraftcadsupdatedjun1_realreveal5_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1576605_redcraftcadsupdatedjun1_reveal5sfwultra_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1591370_project0_real1smv2fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1596255_project0_real1smv2fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1637227_ratatoskranimalcreature_v667fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1637484_ratatoskranimalcreature_v667fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1656743_acornisspinningflux_aisfv169_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1677057_edgeofreality_32beyondreality_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1693152_8stepscrearthyperflux_creartultimate_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1700674_c4pacitor_dv3alpha_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1700814_fluxedupfluxnsfw_40devfp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1703060_colossusprojectflux_v90aio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1703341_realdream_flux1v1_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1718411_moxiefusionflux_17d_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1742386_moxiefusionflux_v17s_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1745151_redcraftcadsupdatedjun1_redediticedit11_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1755367_jibmixflux_v85consisteight_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1769925_fluxmania_legacy_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1785042_rayflux_v30aio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1802008_moxieflux1ds_v17s_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1823302_fluxedupfluxnsfw_41_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1831456_genovaapex_genovav2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1840540_artsyvibe_v2fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1842885_artsyvibe_v2fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1845222_centerfoldflux_v40fp8e5m2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1846322_colossusprojectflux_v10aiofp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1848909_colossusprojectflux_v10unetonlyfp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1849802_redcraftcadsupdatedjun1_redomniflux1dreamo_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1851709_colossusprojectflux_v10behemothaiofp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1855312_colossusprojectflux_v10unetonlyfp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1860608_colossusprojectflux_v10bfp8aiobobfp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1868950_gonzalomoxlfluxpony_v03fluxityfp8_q8p.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "1875661_project0_real1smv3fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1878051_project0_real1smv3fp8aio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "1883195_gonzalomoxlfluxpony_v10fluxityfp8_q8p.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "2dn_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "4x_ultrasharp_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "742904_thearamintaexperiment_flux1a1_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "752959_flux1devasian_v10fp16_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "765642_colorfulasiangirlflux_beta_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "778112_copaxtimeless_xplus1_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "783956_copaxtimeless_xplusunrealfast_q8p.ckpt",    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "791130_xehentaianimeflux_03_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "793143_ratatoskranimalcreature_v29_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "795206_fenrisxlflux_fenrisfluxv1fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "796103_jibmixflux_fp16v1_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "801556_copaxtimeless_xplusposes_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "806846_projectgaiaflux1d_v10unet_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "807911_xehentaianimeflux_04_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "808159_bluepencilflux1_v010_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "826571_pixelwave_flux1dev02_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "835047_ratatoskranimalcreature_v40fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "835744_lyhanimeflux_delete_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "845592_c4pacitor_dv1_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "862533_whiteflux1_v10_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "862930_8stepscrearthyperflux_v24hyperdevfp8unet_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "864441_agflux_v10fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "866874_myhumanflux_12train_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "867256_bluepencilflux1_v021_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "869391_stoiqonewrealityfluxsd35_f1dalpha_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "872820_lahmysteriousflux_fluxalpha_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "873136_ratatoskranimalcreature_v41_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "873546_moxiefusionflux_v1328step_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "874291_moxiefusionflux_v132_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "876813_moxiefusionflux_v1318step_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "878315_sdvn11ghibliflux_fp8hyper_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "881836_realflux10b_10bcompactschnell_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "882554_realflux10b_10btransformer_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "883958_moxieflux1ds_v138step_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "884843_agflux_schnellv10fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "885693_myhumanflux_myh11_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "886474_isenganmixflux_vb_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "894590_copaxtimeless_stylemix1fluxdevfp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "897489_stoiqoafroditefluxxl_f1dalpha_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "897535_copaxtimeless_stylemix1fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "905329_moxieflux1ds_flux1d8step_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "905879_moxieflux1ds_flux1s8step_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "907183_copaxtimeless_xplus2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "913024_moxiefusionflux_v1338step_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "915279_realflux10b_10btransformerdev_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "918242_jibmixflux_fp8v2electric_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "930403_8stepscrearthyperflux_v26hyperdevfp8unet_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "931988_colossusprojectflux_v10allinonefp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "932231_moxiefusionflux_v1348step_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "940696_colossusprojectflux_v10fp16unetonly_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "943051_moxiefusionflux_v134_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "947686_fluxedupfluxnsfw_10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "949363_c4pacitor_dv11_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "951641_xueronecyantencolor_fluxv10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "954181_c4pacitor_sv11_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "954640_copaxtimeless_xplusmix1_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "959302_fluxrealistic_fluxrealisticsamayv2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "962412_copaxtimeless_xplusmix1fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "966095_iniversemixsfwnsfw_flux1dnsfwfp8v10_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "971579_colossusprojectflux_v20allinoneexp_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "973626_iniversemixsfwnsfw_flux1dnsfwfp16v12_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "974825_artsydream_v1fp16_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "974932_artsydream_v1fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "975743_copaxtimeless_stylemix2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "978066_c4pacitor_av2alpha_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "979329_stoiqonewrealityfluxsd35_f1dalphatwo_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "980131_atomixfluxunet_v10_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "982160_copaxtimeless_xplusmix2_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "985269_moxiefusionflux_v135_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "986682_moxieflux1ds_v14_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "987485_acornisspinningflux_aisfluxdedistilled_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "988886_verusvision10b_10btransformer_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "989443_myhumanflux_myh13_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "991687_myhumanflux_myh13fp8_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "992642_pixelwave_flux1dev03_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "996001_colossusprojectflux_21dedistilledaioexp_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "agga_s_utopia__illustrious_sdxl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "aloeveras_simpmaker_3k1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "amanatsu_illustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "analog_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "anillustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "anima_aesthetic_1.1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anima_aesthetic_1.1_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anima_base_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anima_base_1.0_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anima_preview_3_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anima_preview_3_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anima_turbo_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anima_turbo_1.0_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "animagine_xl_v3.1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "animagine_xl_v3.1_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "animatelcm_svd_xt_v1.1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "animatelcm_svd_xt_v1.1_q6p_q8p.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "animij_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "anisora_v2_i2v_wan_2.1_14b_q6p_svd.ckpt",
+    "base_model": "wan_2_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v2_i2v_wan_2.1_14b_q8p.ckpt",
+    "base_model": "wan_2_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3.1_i2v_wan_2.1_14b_q6p_svd.ckpt",
+    "base_model": "wan_2_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3.1_i2v_wan_2.1_14b_q8p.ckpt",
+    "base_model": "wan_2_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3.2_i2v_wan_2.2_a14b_hne_q6p_svd.ckpt",
+    "base_model": "wan_2_2",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3.2_i2v_wan_2.2_a14b_hne_q8p.ckpt",
+    "base_model": "wan_2_2",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3.2_i2v_wan_2.2_a14b_lne_q6p_svd.ckpt",
+    "base_model": "wan_2_2",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3.2_i2v_wan_2.2_a14b_lne_q8p.ckpt",
+    "base_model": "wan_2_2",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3_i2v_wan_2.1_14b_q6p_svd.ckpt",
+    "base_model": "wan_2_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anisora_v3_i2v_wan_2.1_14b_q8p.ckpt",
+    "base_model": "wan_2_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "anything_v3_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "arcane_v3_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "arcface_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "artofura_furry_mix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "artsy_vibe_v1_q5p_svd.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "artsy_vibe_v1_q8p.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "asian_realism_by_stable_yogi_pony_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "aungir_aungir_t6a4_1405004_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "aungir_aungir_t6ao4.5_1723632_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "balloonart_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "big_love_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "bismuth_illustrious_mix_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "blendermix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "blip2_eva_vit_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "blip2_qformer_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "boleromixillustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "candied_anime_illustriousxl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "chatglm3_6b_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_1_hd_annealed_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_1_hd_annealed_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_1_hd_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_1_hd_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_1_hd_r0.1_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v38_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v38_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v39_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v39_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v40_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v40_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v41_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v41_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v42_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v42_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v43_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v43_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v44_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v44_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v45_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v45_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v46_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v46_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },  {
+    "file": "chroma_v47_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v47_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v48_detail_calibrated_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chroma_v48_detail_calibrated_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chronoedit_14b_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "chronoedit_14b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "circusmix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "classicanim_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "colorfulxl_v6.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "colorfulxl_v6.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "copax_pony_xl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "counterfeit_v3.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "counterfeit_v3.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "crow___pony_qp_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberillustrious_cyberrealistic_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberpunk_anime_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "cyberrealistic_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "cyberrealistic_flux_v2.5_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberrealistic_pony_catalyst_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberrealistic_pony_semi_realistic_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberrealistic_pony_v8.5_1478064_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberrealistic_pony_v8_1346181_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberrealistic_pony_v9.0_alt_1_1691220_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "cyberrealistic_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "deliberate_v2_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "devmode_v0.3_turbo_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "devmode_v0.3_turbo_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dhxl_v1.0_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "dino_v2_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dis_v1.0_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "disney_pixar_cartoon_type_b_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dixar_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dnd_30000_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dnd_classes_and_species_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dreamisoa_remix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dreamshaper_v6.31_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dreamshaper_v8_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dreamshaper_v8_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dreamshaper_xl_v2.1_turbo_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "dreamshaper_xl_v2.1_turbo_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "duchaiten_cool_age_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "duchaiten_noobai_cinematic_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "duchaiten_noobai_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "duchaiten_pony_real_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "duchaiten_pony_xl_no_score_v5.2_706363_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "duchaiten_pony_xl_no_score_v6.0_817261_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "editijon_k_pop_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "eldenring_v3_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "epicrealism_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "eri_lumenveil_v1_illustrious_nai_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ernie_image_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ernie_image_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ernie_image_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ernie_image_turbo_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ernie_image_turbo_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ernie_image_turbo_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "eva02_clip_l14_336_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "f222_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "fantasm_pony_xl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "film_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "five_stars_illustrious_1.0_1398525_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "five_stars_illustrious_4.0_1657020_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "flex_1_redux_siglip2_512_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "flux_1_fill_dev_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_fill_dev_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_kontext_dev_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_kontext_dev_q5p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_kontext_dev_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_krea_dev_q5p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_krea_dev_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "flux_1_redux_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "fooocus_inpaint_sd_xl_v2.6_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "fooocus_inpaint_sd_xl_v2.6_q6p_q8p.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "furrytoonmix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "gemma_3_12b_it_qat_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "gemma_3_12b_it_qat_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "getphat_flux_reality_nsfw_v11_softcore_f16.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "getphat_flux_reality_nsfw_v11_softcore_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ghibli_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "hassanblend_v1.4_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "hassanblend_v1.5.1.2_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "hed_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_e1_1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_e1_1_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_e1_1_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_e1_full_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_e1_full_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_e1_full_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_dev_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_dev_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_dev_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_fast_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_fast_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_fast_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_full_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_full_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hidream_i1_full_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hna_3dkx_1.0b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hna_3dkx_1.1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "homosimile_xl_pony__illustrious__noobai_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "hoseki_lustrousmix_illustriousxl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "hoseki_lustrousmix_pony_xl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "hs_ultrahd_cg_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "hunyuan_video_t2v_720p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "hunyuan_video_t2v_720p_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "hunyuan_video_t2v_720p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "icatcher_cartoon_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "icatcher_cartoon_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "icatcher_realistic_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "icatcher_realistic_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "icedcoffeeil_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ideogram_4_fast_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ideogram_4_fast_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ideogram_4_instant_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ideogram_4_instant_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ideogram_4_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ideogram_4_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "iffymix_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "illumiyume_xl_illustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "illustrij_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "illustrij_genv1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "illustrij_genv1_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "illustrious_black_magic_illustrious_noob_more_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "illustrious_gehenna_illustrious_checkpoint_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "illustrious_realism_by_klaabu_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "illustrious_xl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "illustrious_xl_personal_merge_noob_v_pred0.5_test_merge_updated_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "image_vit_l14_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "inbetweij___no.04_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "inbetweij___no.04_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "indigo_furry_mix_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "indigo_void_furry_fused_xl_furry_noobai_noobai_v1.7_1569147_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "indigo_void_furry_fused_xl_furry_noobai_noobai_v1.8_1731573_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "indigo_void_furry_vpred_furry_noobai_v_pred_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "inkpunk_v2_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "instruct_pix2pix_22000_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ionsyx_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },  {
+    "file": "is_net_v1.1_fp16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "jib_mix_pony_realistic_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "jib_mix_realistic_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_reborn_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_xl_ragnarok_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_xl_ragnarok_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_xl_v9_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_xl_v9_lightning_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_xl_v9_lightning_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_xl_v9_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "juggernaut_xl_x_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "jujumix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "kageillustrious_illustrious_xl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "kantanmix_xlillustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "kft_requiem_fur_a_dream_illustrious_semi_real_checkpoint_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "konanmix_noobai_xl_illustriousxl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "koronemix_illustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "krea_2_raw_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "krea_2_raw_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "krea_2_turbo_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "krea_2_turbo_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "kwai_kolors_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "kwai_kolors_1.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "kwai_kolors_inpainting_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "kwai_kolors_inpainting_1.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "lcm_ssd_1b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "lcm_ssd_1b_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "like_reality_pony_by_ethanar_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "longcat_video_avatar_1.5_dmd_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "longcat_video_avatar_1.5_dmd_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "lox_s_souls_mix_prisma__f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "lunargrapemix_illustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "lvngvncnt_v2_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "madly_mix_ver_nightnoob_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "majicmix_realistic_v7_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "majicmix_realistic_v7_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "mdjrny_v4_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "meichidarkmix_reload_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "minisd_v1.4_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ministral_3_3b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ministral_3_3b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "miruku_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "mistoon_anime_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "mistral_7b_v0.1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "mistral_small_3.2_24b_instruct_2506_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "mistral_small_3.2_24b_instruct_2506_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "modi_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "mol_keun_mix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "molcajetemix_noobil_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "moondream1_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "moondream2_240520_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "moondream2_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nevolution_sdxl_v2_anim_1733673_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "nevolution_sdxl_v2_base_1645671_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "nitro_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "noobai_xl_nai_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nostramix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_3dcg_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_animal_xl_illustrious_v3.0_1634769_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "nova_animal_xl_v4.0_1028888_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_anime3d_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_anime_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_asian_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_cross_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_flat_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_furry_xl_illustrious_v6a_1625975_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "nova_furry_xl_illustrious_v6b_1626156_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "nova_furry_xl_illustrious_v7a_1759909_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "nova_furry_xl_illustrious_v7b_1760102_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "nova_orange_xl_v7.0_1525944_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_orange_xl_v9.0_1701002_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_reality_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "nova_unreal_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "one_for_all_pony_fantasy_dpovae_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "oops_all_toons_illustrious_v1.0_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "oops_all_vpred_noobai_western_2d_furry_toon_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ootd_garm_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ootd_garm_full_body_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ootd_garm_upper_body_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ootd_vton_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ootd_vton_full_body_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ootd_vton_upper_body_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "opt_2.7b_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "papercut_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "parsenet_v1.0_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "photonic_fusion_sdxl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "pikon_realism_v2_alt_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pikon_realism_v2_alt_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pile_t5_xl_encoder_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pixelwave_10_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pixelwave_10_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pixelwave_flux_1_schnell_04_q5p_svd.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "pixelwave_flux_1_schnell_04_q8p.ckpt",
+    "base_model": "flux_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "pixelwave_v9_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pixelwave_v9_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "plant_milk_model_suite_flax_1331188_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "plant_milk_model_suite_hemp_ii_1714314_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "playground_v2.5_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "playground_v2.5_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "playground_v2_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "playground_v2_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pony_realism_v2.1_534642_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "pony_realism_v2.2_914390_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "praeclarus_illustriousxl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "prefect_illustrious_xl_v1.0_1379960_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "prefect_illustrious_xl_v1.5_1731647_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "prefect_pony_xl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "proteus_v0.3_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "proteus_v0.3_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pulid_0.9.1_eva02_clip_l14_336_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "pulid_0.9_eva02_clip_l14_336_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_2.5_vl_7b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_2.5_vl_7b_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_2.5_vl_7b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_2.5_vl_7b_vit_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3.5_9b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3.6_27b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_0.6b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_0.6b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_4b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_4b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_8b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_8b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_vl_4b_instruct_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_vl_4b_instruct_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_vl_4b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_vl_8b_instruct_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_vl_8b_instruct_i8x.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "qwen_3_vl_8b_instruct_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ratatoskr_animal__creature_and_furry__f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "rayflux_v3.0_aio_q5p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "rayflux_v3.0_aio_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realcartoon_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realesrgan_x2plus_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realesrgan_x4plus_anime_6b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realesrgan_x4plus_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realism_by_stable_yogi_v4.0_fp16_1422871_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realism_sdxl_by_stable_yogi_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {    "file": "realistic_blend_xl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realistic_vision_v3.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realistic_vision_v5.1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realistic_vision_v5.1_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realvisxl_v4.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "realvisxl_v4.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "redcraft___cads_updated_may4_commercial___advertising_design_system_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "redshift_768_v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "redshift_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "remacri_4x_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "restoreformer_v1.0_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "rev_animated_v1.22_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "rev_animated_v1.22_q6p_q8p.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "richyrichmixixl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "rillusm___realistic_il_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "sam_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "samdoesart_v3_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "schnellmode_v3.3_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "schp_atr_fp16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "schp_lip_fp16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "sd-v1.4.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "sd-v1.5.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "sd_v1.4_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "sd_v1.5_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "sd_v1.5_inpainting_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "sd_v2.0_768_v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "sd_v2.0_depth_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "sd_v2.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "sd_v2.0_inpainting_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2i"
+    ]
+  },
+  {
+    "file": "sd_v2.1_768_v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "sd_v2.1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "seedvr2_3b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "seedvr2_3b_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "seedvr2_3b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "seedvr2_7b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "seedvr2_7b_q6p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "seedvr2_7b_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "seek_art_mega_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "shuttle_jaguar_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "shuttle_jaguar_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "shuttle_v3.1_aesthetic_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "shuttle_v3.1_aesthetic_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "silvermoonmix_illustrious_evolved_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "singlo_illustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "skibidimix_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "skyreels_v1_hunyuan_i2v_q5p_svd.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v1_hunyuan_i2v_q8p.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v1_hunyuan_t2v_q5p_svd.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "skyreels_v1_hunyuan_t2v_q8p.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_i2v_1.3b_540p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_i2v_1.3b_540p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_i2v_14b_540p_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_i2v_14b_540p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_i2v_14b_720p_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_i2v_14b_720p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_t2v_14b_540p_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_t2v_14b_540p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_t2v_14b_720p_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "skyreels_v2_t2v_14b_720p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "smooth_mix_noobai_illustrious_pony_illustrious_v.2_1401686_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "smooth_mix_noobai_illustrious_pony_illustrious_v.3_1470541_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "smooth_mix_noobai_illustrious_pony_noobai_v2.0_1629718_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "smooth_mix_noobai_illustrious_pony_pony_v.3_997031_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "smooth_mix_noobai_illustrious_pony_realism_1675843_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "snowpony_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "spiderverse_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ssd_1b_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ssd_1b_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "steinillustrious_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "supermarionation_v2_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "svd_i2v_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "svd_i2v_1.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "svd_i2v_xt_1.0_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "svd_i2v_xt_1.0_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "svd_i2v_xt_1.1_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "svd_i2v_xt_1.1_q6p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "throwing_pasta_mix_spaghetti_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "toonify_toonify_illustrious_1495132_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "toonify_toonify_ponydiffusionxl_410539_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "trnlgcy_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "tt_animerge_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "ultra_realistic_by_stable_yogi_pony_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "umbroxponyxl_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "uncanny_valley_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "untitled_pony_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "virtual_diffusion_pony_xl_2025_f16.ckpt",
+    "base_model": "sdxl",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "vixon_s_dream_weave_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "voxelart_v1_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "wai_shuffle_noob_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_1.3b_480p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_1.3b_480p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_1.3b_vace_480p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_1.3b_vace_480p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_720p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_720p_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_720p_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_720p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_480p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_480p_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_480p_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_480p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_720p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_720p_q5p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_720p_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_i2v_720p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_vace_720p_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.1_14b_vace_720p_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.2_5b_ti2v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.2_5b_ti2v_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_i2v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_i2v_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_i2v_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_t2v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_t2v_lightning_250928_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_t2v_lightning_250928_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_t2v_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_hne_t2v_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_lne_i2v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_lne_i2v_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_lne_i2v_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_lne_t2v_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_lne_t2v_q6p_svd.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wan_v2.2_a14b_lne_t2v_q8p.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "t2v"
+    ]
+  },
+  {
+    "file": "wd-v1.3.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "wd_v1.3_f16.ckpt",
+    "base_model": "sd_1",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "zavychromaxl_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  },
+  {
+    "file": "zep9_f16.ckpt",
+    "base_model": "unknown",
+    "modes": [
+      "unknown"
+    ]
+  }
+]
