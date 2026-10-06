@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from dtflow.composition import BackendSelection
-from dtflow.core.models import CredentialProvider, ResolvedGenerationRequest, TimeoutPolicy, ValidationError
+from dtflow.core.models import BackendEvent, CredentialProvider, ResolvedGenerationRequest, TimeoutPolicy, ValidationError
 from dtflow.persistence.queues import post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts
@@ -65,6 +65,7 @@ async def dispatch_queue(
     timeouts: TimeoutPolicy | None = None,
     out: Path | None = None,
     on_settle: Callable[[str, str], None] | None = None,
+    on_event: Callable[[str, BackendEvent], None] | None = None,
 ) -> dict[str, Any]:
     """Make this process the dispatch owner and run the queue until it finishes, is cancelled or is blocked.
 
@@ -95,7 +96,7 @@ async def dispatch_queue(
         # Real adapters accept only inventory-listed models, so refresh once before dispatching.
         await service.get_inventory(refresh=True)
         log.info("command=queue start backend=%s", recorded["name"])
-        return await QueueDispatcher(store, service, on_settle=on_settle).run(queue_id)
+        return await QueueDispatcher(store, service, on_settle=on_settle, on_event=on_event).run(queue_id)
     finally:
         try:
             if backend is not None:
