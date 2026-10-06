@@ -195,7 +195,13 @@ def event_lines(view: dict) -> str:
     """One line per recorded event, in local time to the second."""
     lines = []
     for event in view.get("events", ()):
-        detail = ", ".join(f"{key.replace('_', ' ')} {value}" for key, value in event["detail"].items())
+        details = []
+        for key, value in event["detail"].items():
+            if key == "backend_elapsed_seconds" and type(value) in (int, float):
+                details.append(f"backend duration {value:.2f} s")
+            else:
+                details.append(f"{key.replace('_', ' ')} {value}")
+        detail = ", ".join(details)
         lines.append(
             f"{local_time(event['at_utc'])}  {event['kind'].replace('_', ' ')}" + (f", {detail}" if detail else "")
         )
