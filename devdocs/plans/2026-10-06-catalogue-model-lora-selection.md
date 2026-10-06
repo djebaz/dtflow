@@ -1,6 +1,6 @@
 # Catalogue-driven model and LoRA selection
 
-Status: implementation plan for this PR.
+Status: implementation in progress in this PR.
 
 ## 1. Goal
 
@@ -382,14 +382,14 @@ User custom LoRA metadata:
 - is never overwritten by bundled catalogue updates;
 - is never assumed available without inventory evidence.
 
-The current user's custom Z-Image definitions are migration/input data for that user's catalogue only. They are not universal DTFlow defaults.
+The current user's custom Z-Image definitions are migration/input data for that user's catalogue only. They are not universal DTFlow defaults. The implemented durable boundary is `<state>/catalogue/custom_loras.json`; the bundled service tolerates that file being absent or malformed without disabling the bundled catalogue.
 
 ## 15. Data cleanup and import work
 
 Before the bundled catalogue becomes authoritative for the GUI:
 
-1. import the reviewed Prime, Niche, LoRA and Control classification data into an appropriate packaged-resource location;
-2. resolve known cross-classification conflicts, including full checkpoints incorrectly duplicated as Control artifacts;
+1. import the reviewed Prime, Niche, LoRA and Control classification data into `src/dtflow/resources/catalogue/`;
+2. resolve known cross-classification conflicts, including the three reviewed FLUX full checkpoints removed from Control ownership;
 3. ensure Prime entries have sufficient known family/domain metadata for the advertised filters;
 4. preserve unknowns instead of guessing;
 5. detect duplicate exact artifact identities within an artifact class;
