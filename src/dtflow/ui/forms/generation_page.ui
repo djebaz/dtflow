@@ -151,27 +151,84 @@
               </property>
              </widget>
             </item>
-            <item row="1" column="0" colspan="2">
-             <widget class="QLabel" name="modelLabel">
+            <item row="1" column="0">
+             <widget class="QLabel" name="generationDomainLabel">
               <property name="text">
-               <string>Model</string>
+               <string>Generation</string>
               </property>
               <property name="textRole" stdset="0">
                <string>caption</string>
               </property>
              </widget>
             </item>
-            <item row="2" column="0" colspan="2">
+            <item row="1" column="1">
+             <widget class="QComboBox" name="generationDomainCombo">
+              <property name="accessibleName">
+               <string>Generation type</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="baseModelLabel">
+              <property name="text">
+               <string>Base model</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QComboBox" name="baseModelCombo">
+              <property name="accessibleName">
+               <string>Base model family</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0" colspan="2">
+             <widget class="QLabel" name="modelLabel">
+              <property name="text">
+               <string>Checkpoint</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0" colspan="2">
              <widget class="QComboBox" name="modelCombo">
               <property name="editable">
                <bool>true</bool>
               </property>
               <property name="accessibleName">
-               <string>Model or checkpoint</string>
+               <string>Checkpoint</string>
               </property>
              </widget>
             </item>
-            <item row="3" column="0" colspan="2">
+            <item row="5" column="0" colspan="2">
+             <widget class="QCheckBox" name="includeNicheCheck">
+              <property name="text">
+               <string>Include niche models</string>
+              </property>
+              <property name="toolTip">
+               <string>Add classified Niche checkpoints to the default Prime catalogue.</string>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="0" colspan="2">
+             <widget class="QPushButton" name="unclassifiedModelsButton">
+              <property name="text">
+               <string>Unclassified checkpoints</string>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+              <property name="toolTip">
+               <string>Inspect provider checkpoints that are available but not classified by the DTFlow catalogue.</string>
+              </property>
+             </widget>
+            </item>
+            <item row="7" column="0" colspan="2">
              <widget class="QPushButton" name="refreshInventoryButton">
               <property name="text">
                <string>Refresh inventory</string>
@@ -181,7 +238,7 @@
               </property>
              </widget>
             </item>
-            <item row="4" column="0" colspan="2">
+            <item row="8" column="0" colspan="2">
              <widget class="QLabel" name="inventoryEvidenceLabel">
               <property name="text">
                <string>Inventory has not been refreshed.</string>
