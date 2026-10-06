@@ -111,8 +111,16 @@ class LoraAssetPanel:
             self._show(self.page.assetStatusLabel, Presentation("unknown", "Cloud only", CLOUD_ONLY))
 
     def set_inventory(self, snapshot) -> None:
-        """Remember the LoRA identifiers the backend listed, as suggestions for Add; typing any identifier still works."""
+        """Remember raw backend LoRAs until the catalogue controller supplies a compatible candidate set."""
         self._candidates = [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"]
+
+    def set_candidates(self, entries) -> None:
+        """Replace Add suggestions with the catalogue's available compatible LoRAs.
+
+        Explicit typing remains available for an unknown/raw checkpoint; compatibility is never inferred here.
+        """
+        weights = {name: weight for name, weight in self._candidates}
+        self._candidates = [(entry.identifier, weights.get(entry.identifier)) for entry in entries]
 
     # -- selection -------------------------------------------------------------------------------------------------
     def receipts(self) -> dict[str, str]:
