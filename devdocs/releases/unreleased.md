@@ -60,3 +60,7 @@
   badges, navigation arrows and zoom toolbar. No tests added or run.
 
 The header sample-count pill is removed; sample designation remains on the image.
+
+- Gallery removes redundant visible search/filter labels from its shared header;
+  explicit placeholders/defaults, accessible names and tooltips identify fields.
+  No tests added or run.

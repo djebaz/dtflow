@@ -196,3 +196,7 @@ has a compact 4 px inset and metadata avoids nested padding.
 In Detail, the filmstrip spans the whole content height beside the preview and
 its metadata/prompt/disclosure panels. Image overlays have a separate 10 px
 interior inset; this does not increase the canvas frame or outer gallery gutter.
+
+The compact gallery filter row omits separate visible labels: the prompt-search
+placeholder and model/LoRA/time/ratio defaults identify the controls. Each field
+retains an explicit accessible name and descriptive tooltip.

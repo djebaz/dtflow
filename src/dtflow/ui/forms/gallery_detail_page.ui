@@ -423,25 +423,9 @@
          </property>
          <layout class="QHBoxLayout" name="galleryFilterLayout">
           <item>
-           <widget class="QLabel" name="galleryPromptSearchLabel">
-            <property name="accessibleName">
-             <string>PromptSearchLabel</string>
-            </property>
-            <property name="text">
-             <string>Positive prompt</string>
-            </property>
-            <property name="textInteractionFlags">
-             <set>Qt::TextSelectableByMouse</set>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
            <widget class="QLineEdit" name="galleryPromptSearch">
             <property name="accessibleName">
-             <string>PromptSearch</string>
+             <string>Search positive prompts</string>
             </property>
             <property name="placeholderText">
              <string>Search positive prompts…</string>
@@ -450,7 +434,7 @@
              <bool>false</bool>
             </property>
             <property name="toolTip">
-             <string>Preview only: search is not wired.</string>
+             <string>Search positive prompts — offline preview; filtering is not wired.</string>
             </property>
             <property name="minimumSize">
              <size>
@@ -461,25 +445,9 @@
            </widget>
           </item>
           <item>
-           <widget class="QLabel" name="galleryModelFilterLabel">
-            <property name="accessibleName">
-             <string>ModelFilterLabel</string>
-            </property>
-            <property name="text">
-             <string>Model</string>
-            </property>
-            <property name="textInteractionFlags">
-             <set>Qt::TextSelectableByMouse</set>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
            <widget class="QComboBox" name="galleryModelFilter">
             <property name="accessibleName">
-             <string>ModelFilter</string>
+             <string>Filter by model</string>
             </property>
             <item>
              <property name="text">
@@ -495,28 +463,15 @@
               <height>30</height>
              </size>
             </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="galleryLoRAFilterLabel">
-            <property name="accessibleName">
-             <string>LoRAFilterLabel</string>
-            </property>
-            <property name="text">
-             <string>LoRA</string>
-            </property>
-            <property name="textInteractionFlags">
-             <set>Qt::TextSelectableByMouse</set>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
+            <property name="toolTip">
+             <string>Filter by model — offline preview; filtering is not wired.</string>
             </property>
            </widget>
           </item>
           <item>
            <widget class="QComboBox" name="galleryLoRAFilter">
             <property name="accessibleName">
-             <string>LoRAFilter</string>
+             <string>Filter by LoRA</string>
             </property>
             <item>
              <property name="text">
@@ -532,28 +487,15 @@
               <height>30</height>
              </size>
             </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="galleryDateFilterLabel">
-            <property name="accessibleName">
-             <string>DateFilterLabel</string>
-            </property>
-            <property name="text">
-             <string>Date range</string>
-            </property>
-            <property name="textInteractionFlags">
-             <set>Qt::TextSelectableByMouse</set>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
+            <property name="toolTip">
+             <string>Filter by LoRA — offline preview; filtering is not wired.</string>
             </property>
            </widget>
           </item>
           <item>
            <widget class="QComboBox" name="galleryDateFilter">
             <property name="accessibleName">
-             <string>DateFilter</string>
+             <string>Filter by date range</string>
             </property>
             <item>
              <property name="text">
@@ -569,28 +511,15 @@
               <height>30</height>
              </size>
             </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="galleryRatioFilterLabel">
-            <property name="accessibleName">
-             <string>RatioFilterLabel</string>
-            </property>
-            <property name="text">
-             <string>Aspect ratio</string>
-            </property>
-            <property name="textInteractionFlags">
-             <set>Qt::TextSelectableByMouse</set>
-            </property>
-            <property name="wordWrap">
-             <bool>false</bool>
+            <property name="toolTip">
+             <string>Filter by date range — offline preview; filtering is not wired.</string>
             </property>
            </widget>
           </item>
           <item>
            <widget class="QComboBox" name="galleryRatioFilter">
             <property name="accessibleName">
-             <string>RatioFilter</string>
+             <string>Filter by aspect ratio</string>
             </property>
             <item>
              <property name="text">
@@ -605,6 +534,9 @@
               <width>124</width>
               <height>30</height>
              </size>
+            </property>
+            <property name="toolTip">
+             <string>Filter by aspect ratio — offline preview; filtering is not wired.</string>
             </property>
            </widget>
           </item>
