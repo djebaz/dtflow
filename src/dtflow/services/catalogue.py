@@ -293,8 +293,10 @@ class Catalogue:
         )
         return tuple(sorted(entries, key=lambda item: item.identifier.casefold()))
 
-    def compatible_loras(self, checkpoint_id: str, *, domain: str = "all") -> tuple[CatalogueEntry, ...]:
-        checkpoint = self.checkpoint(checkpoint_id)
+    def compatible_loras(
+        self, checkpoint_id: str, *, domain: str = "all", include_unavailable: bool = False
+    ) -> tuple[CatalogueEntry, ...]:
+        checkpoint = self.checkpoint(checkpoint_id, include_unavailable=include_unavailable)
         if checkpoint is None or checkpoint.base_model is None:
             return ()
         candidates = []
