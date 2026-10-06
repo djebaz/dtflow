@@ -119,15 +119,15 @@ class LoraAssetPanel:
 
     def set_inventory(self, snapshot) -> None:
         """Remember raw backend LoRAs until the catalogue controller supplies a compatible candidate set."""
-        self._candidates = [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"]
+        self._inventory_candidates = [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"]
+        self._candidates = list(self._inventory_candidates)
 
     def set_candidates(self, entries, *, prune_selected: bool = False) -> None:
-        """Replace Add suggestions with the catalogue's available compatible LoRAs.
-
-        A classified checkpoint may prune selections that became incompatible after an upstream filter change. Unknown
-        or raw checkpoints never prune: the editable escape hatch must not turn missing metadata into incompatibility.
-        """
-        weights = {name: weight for name, weight in self._candidates}
+        """Use compatible catalogue LoRAs, or raw inventory suggestions when the checkpoint is unclassified."""
+        if entries is None:
+            self._candidates = list(getattr(self, "_inventory_candidates", ()))
+            return
+        weights = {name: weight for name, weight in getattr(self, "_inventory_candidates", self._candidates)}
         self._candidates = [(entry.identifier, weights.get(entry.identifier)) for entry in entries]
         if prune_selected:
             allowed = {entry.identifier for entry in entries}
