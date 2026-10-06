@@ -123,11 +123,14 @@ class Catalogue:
         self._prime = self._load("Models_prime.json", kind="checkpoint", tier="prime")
         self._niche = self._load("Models_niche.json", kind="checkpoint", tier="niche")
         self._bundled_loras = self._load("Loras.json", kind="lora")
+        self._custom_loras = self._load("Custom_loras.json", kind="lora", source="custom")
         self._inventory: InventorySnapshot | None = None
 
-    def _load(self, filename: str, *, kind: str, tier: str | None = None) -> tuple[CatalogueEntry, ...]:
+    def _load(
+        self, filename: str, *, kind: str, tier: str | None = None, source: str = "bundled"
+    ) -> tuple[CatalogueEntry, ...]:
         entries = (
-            _entry(record, kind=kind, tier=tier)
+            _entry(record, kind=kind, tier=tier, source=source)
             for record in _records(self.bundled_dir / filename)
         )
         return tuple(entry for entry in entries if entry is not None)
@@ -157,21 +160,26 @@ class Catalogue:
         checkpoints = tuple(entry for entry in (*self._prime, *self._niche) if entry.identifier in available)
         loras = tuple(
             entry
-            for entry in (*self._bundled_loras, *self.user_loras())
+            for entry in (*self._bundled_loras, *self._custom_loras, *self.user_loras())
             if entry.identifier in available
         )
-        known = {entry.identifier for entry in (*self._prime, *self._niche)}
+        known_entries = (*self._prime, *self._niche)
+        known = {entry.identifier for entry in known_entries}
         unknown = ()
         if self._inventory is not None:
             metadata = dict(self._inventory.diagnostics).get("model_metadata") == "present"
-            unknown = tuple(
-                sorted(
-                    entry.identifier
-                    for entry in self._inventory.entries
-                    if entry.identifier not in known
-                    and (entry.kind == "model" or (entry.kind == "unknown" and not metadata))
-                )
-            )
+            raw_unknown = {
+                entry.identifier
+                for entry in self._inventory.entries
+                if entry.identifier not in known
+                and (entry.kind == "model" or (entry.kind == "unknown" and not metadata))
+            }
+            classified_unknown = {
+                entry.identifier
+                for entry in known_entries
+                if entry.identifier in available and (entry.base_model is None or not entry.domains)
+            }
+            unknown = tuple(sorted(raw_unknown | classified_unknown))
         return CatalogueView(checkpoints, loras, unknown)
 
     def checkpoints(
