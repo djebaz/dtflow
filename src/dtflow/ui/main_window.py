@@ -37,6 +37,7 @@ from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
+from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.theme import apply_native_dark_titlebar
@@ -66,6 +67,7 @@ def load_ui(path: Path) -> QWidget:
         loader = QUiLoader()
         loader.registerCustomWidget(ImagePreview)
         loader.registerCustomWidget(SearchableComboBox)
+        loader.registerCustomWidget(RunControl)
         widget = loader.load(file)
     finally:
         file.close()
@@ -176,30 +178,23 @@ class MainWindow:
             setattr(form, name, getattr(self.shell, name))
         self.shell.productSubtitleLabel.hide()
         form.connectionNavigationButton.installEventFilter(KeyboardFocusGuard(form.connectionNavigationButton))
-        # Existing inspection integrations can refer to the same persistent shell controls.
-        self.generation_page.inspectorToggle = self.shell.inspectorToggle
+        # Existing inspection integrations can refer to the same persistent shell rails.
         self.generation_page.generationLeftRail = self.shell.leftRail
         self.generation_page.generationRightRail = self.shell.rightRail
         self.shell.workspaceSplitter.setStretchFactor(0, 0)
         self.shell.workspaceSplitter.setStretchFactor(1, 1)
         self.shell.workspaceSplitter.setStretchFactor(2, 0)
         self.shell.workspaceSplitter.setSizes([260, 700, 300])
-        from dtflow.ui.brand import APP_ICON, app_icon, panel_icon
+        from dtflow.ui.brand import APP_ICON, app_icon
 
         form.setWindowIcon(app_icon())
-        self.shell.inspectorToggle.setIcon(panel_icon())
         logo = QPixmap(str(APP_ICON))
         if not logo.isNull():
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
-        policy = self.shell.inspectorToggle.sizePolicy()
-        policy.setRetainSizeWhenHidden(True)
-        self.shell.inspectorToggle.setSizePolicy(policy)
         self._gallery_chrome_active = False
         self._gallery_previous_sizes = None
-        self._narrow = None
-        self._inspector_wanted, self._inspector_auto = True, False
         self.generation = GenerationPage(
             self.generation_page,
             runner=self.runner,
@@ -250,7 +245,9 @@ class MainWindow:
         form.imagesNavigationButton.setAccessibleName("Show saved Images")
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
-        self.shell.inspectorToggle.toggled.connect(self._toggle_inspector)
+        self.shell.runControl.clicked.connect(self.queue.trigger_run_control)
+        self.activity.listen(self._sync_run_control)
+        self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
@@ -295,19 +292,19 @@ class MainWindow:
         self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)
         self._responsive_workspace()
 
-    def _toggle_inspector(self, visible: bool) -> None:
-        if not self._inspector_auto:
-            self._inspector_wanted = visible  # the user's own choice survives crossing the narrow breakpoint
-        self._responsive_workspace()
+    def _sync_run_control(self) -> None:
+        state = self.activity.run_state
+        self.shell.runControl.set_presentation(
+            state.phase,
+            action=state.action,
+            completed=state.completed,
+            total=state.total,
+            detail=state.detail,
+        )
 
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
-        if narrow != self._narrow:
-            self._narrow = narrow
-            self._inspector_auto = True
-            shell.inspectorToggle.setChecked(self._inspector_wanted and not narrow)
-            self._inspector_auto = False
         images = self.form.workspaceStack.currentWidget() is self.images_page
         if images != self._gallery_chrome_active:
             self._gallery_chrome_active = images
@@ -335,9 +332,8 @@ class MainWindow:
             shell.leftRail.setVisible(not images)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
-        shell.inspectorToggle.setVisible(not images)
-        shell.inspectorToggle.setEnabled(not images)
-        shell.rightRail.setVisible(not images and shell.inspectorToggle.isChecked())
+        shell.runControl.setVisible(True)
+        shell.rightRail.setVisible(not images and not narrow)
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
