@@ -95,6 +95,8 @@ def save_artifacts(
             for path, artifact in zip(paths, result.artifacts, strict=True)
         ],
     }
+    if result.backend_elapsed_seconds is not None:
+        metadata["timing"] = {"backend_elapsed_seconds": result.backend_elapsed_seconds}
     metadata_path = directory / "metadata.json"
     atomic_write(metadata_path, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     return tuple(paths), str(metadata_path.resolve())
