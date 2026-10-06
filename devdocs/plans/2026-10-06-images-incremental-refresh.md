@@ -10,7 +10,7 @@
 - [x] Replace page-wide thumbnail invalidation with per-output revision checks; retain unchanged in-flight work.
 - [x] Preserve selected Detail pixels/zoom/pan when only other outputs or metadata change.
 - [x] Sync user guide, viewer design/plan and unreleased notes.
-- [ ] Run only static checks, review, commit/push and update the same PR; do not merge.
+- [x] Run only static checks, review, commit/push and update the same PR; not merged.
 
 ## Decisions and Design Changes
 - 2026-10-06 Owner extends the original fix beyond identical pages. Preserve the completed original plan as history; this follow-up supersedes its changed-page full-render boundary.
@@ -29,3 +29,5 @@
 - Static checks run: Ruff format/check on the changed controller, Python compilation/import and git diff --check. No tests or smoke tests were run.
 - Source review covers additions/removals/reordering, empty-page transitions, metadata-only updates, bounded thumbnail revision ownership and stale callbacks; this is not runtime or visual acceptance.
 - AGENTS.md/README.md need no new API/feature contract; detailed behavior is synchronized in DESIGN.md, desktop guide, viewer plan, current status and unreleased notes.
+
+- Delivered implementation commit: 0f46547, pushed to fix/images-refresh-flicker; PR #37 updated in place, base main. Final ledger-only commit follows.
