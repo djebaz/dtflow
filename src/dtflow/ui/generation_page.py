@@ -379,13 +379,19 @@ class GenerationPage:
         log.info("size adjusted from %dx%d to %dx%d", *old, *new)
         return f"Size adjusted from {old[0]}x{old[1]} to {new[0]}x{new[1]} (multiples of 64)."
 
+    def _allow_local_bridge_model(self, request):
+        """Mark an unlisted checkpoint as an explicit Local -> DT+ bridge choice."""
+        enabled = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
+        return replace(request, allow_unlisted_model=enabled)
+
     def _request_for_check(self):
         """A request for LoRA preflight only: a blank prompt gets a placeholder because nothing is dispatched."""
         self._mark(None)
         name, _ = self._backend()
         values = self._values()
         try:
-            return build_request(replace(values, prompt=values.prompt or "preflight check"), backend=name)
+            request = build_request(replace(values, prompt=values.prompt or "preflight check"), backend=name)
+            return self._allow_local_bridge_model(request)
         except FormError as exc:
             self._mark(exc.widget)
             self.lora._show(self.page.compatibilityStatusLabel, Presentation("error", "Cannot check", str(exc)))
@@ -437,6 +443,7 @@ class GenerationPage:
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
+            request = self._allow_local_bridge_model(request)
         except FormError as exc:
             self._mark(exc.widget)
             raise
@@ -476,6 +483,7 @@ class GenerationPage:
         self._submitted_backend = name
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
+            request = self._allow_local_bridge_model(request)
         except FormError as exc:
             self._mark(exc.widget)
             log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
@@ -752,9 +760,11 @@ class GenerationPage:
         )
         allowed = {entry.identifier for entry in entries}
         unclassified = set(self._catalogue.view().unclassified_checkpoints)
+        selectable = [entry.identifier for entry in entries]
+        selectable.extend(identifier for identifier in sorted(unclassified) if identifier not in allowed)
         self._updating_catalogue = True
         try:
-            self._fill_models(entry.identifier for entry in entries)
+            self._fill_models(selectable)
             # Preserve an explicit raw identifier even when provider discovery is incomplete (for example,
             # a local Draw Things endpoint bridging to DT+). Known classified checkpoints still obey the filters.
             if current in allowed or current in unclassified or (current and self._catalogue.checkpoint(current) is None):
