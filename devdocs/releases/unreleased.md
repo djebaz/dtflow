@@ -8,6 +8,8 @@
 
 ## Added
 
+- Persist client-observed backend elapsed time for successful outputs and display it as Backend duration in Images Detail. The value runs from the submission boundary to terminal response, so it may include backend queueing/serialization and is not presented as pure inference time. Queues now mirror selected per-item backend lifecycle events into the existing event-evidence panel and include the same measured duration on successful settlement; progress/previews remain transient and no scheduling-derived duration is invented.
+
 - `devdocs/design-system/`: Claude Design web reference (tokens, components, foundation cards, UI kits) mirroring `tokens.json`; documentation/prototype only, no runtime or QSS change.
 - Shared tokens: 30 component-local colors and 8 extra radii are now named in `tokens.json` and referenced from the QSS (resolved stylesheet unchanged). Queue state colors read the shared tokens, so an Unknown state is neutral gray instead of purple.
 - Icons: section headers, metadata labels and additional-details rows use one icon per meaning from the design-system usage map. 21 Lucide icons (`lucide-static` 1.52.0, ISC, stroke recolored to `#f2f6f8`, notice in `resources/images/gallery/LICENSE-lucide.txt`) join the repository SVGs, and the Detail view button uses `image` instead of the sliders icon.
@@ -50,6 +52,8 @@
 - Prevents debounced viewer-preference saves from raising into the Qt event loop after the shared async runner shuts down, avoiding the cascading pytest-qt setup failures observed during PR #34 validation.
 
 ## Validation and release audit
+
+- Backend timing/event implementation was source-reviewed only in this PR session. No live provider generation, inference, training, upload or potentially billable action was performed; no scheduling-derived processing interval is recorded because current production queue evidence does not prove serialized overlap for concurrent requests.
 
 - On 2026-10-06 the owner reported that PR #37's incremental refresh works and subsequently confirmed the Auto-refresh color/hover/mouse-focus smoke test passed after `a9e393a`. This is owner-reported source/UI acceptance, not agent-run tests or packaged-executable acceptance.
 
