@@ -148,6 +148,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     surface = get("galleryImageSurface")
     surface.setText("")
     paint = CoverPainter(surface, assets / "portrait.jpg")
+    paint.mode = "Fit"
     painters.append(paint)
     surface.setToolTip("Illustrative artwork — not a saved generation")
     get("galleryAdditionalScroll").hide()

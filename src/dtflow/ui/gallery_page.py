@@ -366,9 +366,9 @@ class GalleryPage(QObject):
         self.dimensions.setCurrentText(str(dimensions or "Any size"))
         self.ratio.setCurrentText(str(filters.get("ratio", stored_query.ratio or "Any ratio")))
         self.sort.setCurrentText(str(filters.get("sort", SORT_NAMES.get(stored_query.sort, "Newest first"))))
-        self.mode = str(document.get("view", "Detail"))
+        self.mode = str(document.get("view", "Grid"))
         if self.mode not in self.modes:
-            self.mode = "Detail"
+            self.mode = "Grid"
         scale_percent = document.get("thumbnail_scale_percent")
         if type(scale_percent) is int and MIN_THUMBNAIL_PERCENT <= scale_percent <= MAX_THUMBNAIL_PERCENT:
             self.slider.setValue(scale_percent)

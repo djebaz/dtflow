@@ -898,6 +898,9 @@ No generation or saved output</string>
                     <property name="accessibleName">
                      <string>ViewMode</string>
                     </property>
+                    <property name="currentIndex">
+                     <number>1</number>
+                    </property>
                     <item>
                      <property name="text">
                       <string>Cover</string>
