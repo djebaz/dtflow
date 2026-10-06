@@ -79,6 +79,7 @@ class DrawThingsBackend:
 
     backend_id = BACKEND_ID
     max_concurrency = 1
+    allow_unlisted_models = True  # Local Draw Things may bridge DT+ models omitted from Echo inventory.
 
     def __init__(
         self,
@@ -114,6 +115,7 @@ class DrawThingsBackend:
             batch_count=1,
             lora_support="selection",
             limits=self.limits,
+            allow_unlisted_models=self.allow_unlisted_models,
         )
 
     async def open(self) -> None:
@@ -284,7 +286,7 @@ class DrawThingsBackend:
                     self._failure(request, ErrorCategory.PROTOCOL, "event_sink_failure", "Event sink failed.", stage)
                 ) from exc
 
-        if request.model_id not in self.capabilities.model_ids:
+        if not self.allow_unlisted_models and request.model_id not in self.capabilities.model_ids:
             raise error(
                 ErrorCategory.VALIDATION,
                 "unknown_model",
