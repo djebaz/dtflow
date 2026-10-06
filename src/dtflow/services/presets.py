@@ -128,6 +128,11 @@ def save_preset(state: Path, name: str, values: dict) -> None:
         if item["name"] == name:
             # Editing supported DTFlow fields must not discard Draw Things fields DTFlow does not currently apply.
             merged_configuration = dict(item["configuration"])
+            existing_loras = merged_configuration.get("loras")
+            if isinstance(existing_loras, list) and any(
+                not isinstance(lora, dict) or lora.get("mode", "all") != "all" for lora in existing_loras
+            ):
+                configuration.pop("loras", None)
             merged_configuration.update(configuration)
             replacement = {**item, "name": name, "configuration": merged_configuration}
             presets[index] = replacement
