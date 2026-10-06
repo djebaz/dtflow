@@ -36,5 +36,5 @@ command corrections/documentation. Do not commit unrelated owner changes.
 ## Implementation evidence
 
 - Scripts and verified vendor cache implemented; ordinary captures block non-local traffic.
-- Focused offline contracts: 3 passed. Eight updated-export screen captures and 25 button-state cells succeeded using existing Chromium 149 (explicit executable override); broader matrix validation is in progress.
+- Focused offline contracts: 3 passed. Eight updated-export screen captures and 25 button-state cells succeeded using existing Chromium 149 (explicit executable override); the final full matrix run captured 158 cells across ten sheets, with 18 explicit unsupported states and zero capture/JavaScript/resource errors.
 - Installing the Playwright-matched Chromium hit ENOSPC on C: and was stopped. No user files were deleted. Exact browser version remains recorded in each manifest.

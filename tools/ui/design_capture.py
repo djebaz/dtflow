@@ -164,10 +164,13 @@ def ready(page):
 
 
 def manifest(args, data):
+    data["blocked_request_count"] = len(data.get("blocked_requests", []))
+    data["blocked_requests"] = list(dict.fromkeys(data.get("blocked_requests", [])))
     data["design_system"] = str(args.design_system.resolve())
     data["bundle_sha256"] = hashlib.sha256((args.design_system / "_ds_bundle.js").read_bytes()).hexdigest()
     data["limits"] = [
         "Browser versus Qt rendering; no pixel-parity assertion",
+        "Remote fonts are blocked; native system font fallbacks apply",
         "Kit defaults/fixtures remain unchanged",
         "Matrix cells enlarged 2x from DPR 1, not native high-DPI renders",
     ]

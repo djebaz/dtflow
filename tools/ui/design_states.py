@@ -203,9 +203,10 @@ def specs():
                 ),
                 row(
                     "QMenu / QMenuBar",
-                    'e(D.MenuBar,{menus:[{label:"Help",items:[{label:"About DTFlow"},{label:"Disabled item",disabled:true},{label:"Quit"}]}]})',
-                    ["rest", "open"],
+                    'e(D.MenuBar,{menus:[{label:"Help",items:["About DTFlow","Quit"]}]})',
+                    ["rest", "open", "disabled item"],
                     width=220,
+                    unsupported={"disabled item": "MenuBar items are strings with no disabled-item API"},
                 ),
             ],
         ),
@@ -320,6 +321,8 @@ def main():
                             target = page.locator("#specimen").locator(spec["target"]).first
                             if not target.count():
                                 target = page.locator("#specimen > *").first
+                            if family == "popups" and state == "hover":
+                                page.locator("#cell").evaluate("el=>el.style.paddingTop='64px'")
                             page.mouse.move(699, 499)
                             if "focus" in state:
                                 target.focus()
@@ -338,6 +341,8 @@ def main():
                             ]:
                                 if state.startswith(requested) and not actual:
                                     raise ValueError(f"Requested {requested} was not reached")
+                            if state == "open":
+                                page.locator(".dt-combo-pop, .dt-menu").first.wait_for(state="visible")
                             # Popups overflow their control; include them in the specimen host capture.
                             if state == "open":
                                 page.locator("#cell").evaluate("el=>el.style.height='240px'")

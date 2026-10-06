@@ -54,3 +54,14 @@ its screenshot paths can be missing, and its fixtures differ from shots.py.
 Matching content and states, token-role correctness, pixel-diff alignment and
 full workflow scenarios remain separate follow-ups.
 
+
+## Verified development capture (2026-10-06)
+
+Against the external `DTFlow Design System (5)` export: eight screen captures,
+ten state sheets / 158 captured cells, 18 explicit unsupported states, and zero
+capture/JavaScript/resource errors. Browser: existing Chromium 149.0.7827.55 via
+an explicit executable override; the Playwright-matched browser installation hit
+C: disk-space limits and was stopped. This is not matched-browser, high-DPI or
+pixel-parity acceptance. Three focused offline vendor-cache contract tests,
+Ruff, compilation and both CLI help commands passed. No full application suite,
+packaging, model inference, real upload or billable action was run.
