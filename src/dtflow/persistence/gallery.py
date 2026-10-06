@@ -1,0 +1,169 @@
+"""Bounded read-only artifact discovery; never own, migrate or reconcile execution state."""
+
+import json
+import sqlite3
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+from dtflow.core.gallery import GalleryQuery
+from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_sqlite
+
+# The saver commits image paths followed by metadata.json only after every durable write succeeds.
+# These references include non-default --out locations. Failed/orphaned files are not discovery sources.
+BASE = """
+WITH outputs AS (
+ SELECT a.attempt_id, a.request_id, a.backend_id, a.updated_at_utc AS saved_at_utc,
+        CASE WHEN json_valid(a.request_json) THEN a.request_json ELSE '{}' END AS request_json,
+        p.value AS path, CAST(p.key AS INTEGER) AS ordinal,
+        json_extract(a.artifacts_json, '$[' || (json_array_length(a.artifacts_json)-1) || ']') AS metadata_path
+ FROM attempts a, json_each(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END) p
+ WHERE a.state='succeeded' AND a.remote_outcome='succeeded' AND p.type='text'
+   AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
+), records AS (
+ SELECT *, attempt_id || ':' || ordinal AS identity,
+   json_extract(request_json, '$.model_id') AS model,
+   json_extract(request_json, '$.prompt') AS prompt,
+   json_extract(request_json, '$.negative_prompt') AS negative,
+   json_extract(request_json, '$.width_px') AS width,
+   json_extract(request_json, '$.height_px') AS height
+ FROM outputs
+)
+"""
+
+
+def lora_order(value: str) -> str:
+    """Canonical sorted identifier/weight sequence; no LoRAs sort first, then casefolded identifiers."""
+    try:
+        loras = json.loads(value).get("loras", [])
+        return json.dumps(sorted((x["identifier"].casefold(), float(x["weight"])) for x in loras))
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return "[]"
+
+
+@contextmanager
+def reader(state: Path):
+    """Read an existing supported store without initialization or the dispatch ownership lock."""
+    path = Path(state).resolve() / "attempts.sqlite3"
+    if not path.is_file():
+        yield None
+        return
+    if not patched_sqlite(sqlite3.sqlite_version):
+        raise PersistenceError("SQLite needs an official WAL-reset fix (3.51.3+ or a supported backport).")
+    connection = None
+    try:
+        connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only=ON")
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if version not in (1, SCHEMA_VERSION):
+            raise PersistenceError("Unsupported execution-state schema; browsing made no migration or reset.")
+        connection.create_function("fold", 1, lambda text: str(text or "").casefold(), deterministic=True)
+        connection.create_function("lora_order", 1, lora_order, deterministic=True)
+        deadline = time.monotonic() + 5
+        connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 10000)
+        connection.execute("BEGIN")
+        yield connection
+    except sqlite3.Error as exc:
+        raise PersistenceError("Saved outputs could not be queried within the read budget.") from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def clauses(query: GalleryQuery) -> tuple[str, list, str]:
+    terms, values = [], []
+    for field, text in (("prompt", query.prompt), ("negative", query.negative)):
+        if text:
+            terms.append(f"instr(fold({field}), ?) > 0")
+            values.append(text.casefold())
+    if query.model:
+        terms.append("model=?")
+        values.append(query.model)
+    if query.lora:
+        terms.append(
+            "EXISTS (SELECT 1 FROM json_each(request_json, '$.loras') l WHERE json_extract(l.value, '$.identifier')=?)"
+        )
+        values.append(query.lora)
+    for boundary, comparison in ((query.since, ">="), (query.until, "<")):
+        if boundary:
+            terms.append(f"julianday(saved_at_utc) {comparison} julianday(?)")
+            values.append(boundary)
+    for field, value in (("width", query.width), ("height", query.height)):
+        if value is not None:
+            terms.append(f"{field}=?")
+            values.append(value)
+    if query.ratio in ("square", "portrait", "landscape"):
+        comparison = {"square": "=", "portrait": "<", "landscape": ">"}[query.ratio]
+        terms.append(f"width {comparison} height")
+    elif query.ratio:
+        a, b = map(int, query.ratio.split(":"))
+        terms.append("width * ? = height * ?")
+        values.extend((b, a))
+    where = " AND ".join(terms) or "1"
+    order = {
+        "newest": "julianday(saved_at_utc) DESC",
+        "oldest": "julianday(saved_at_utc) ASC",
+        "model": "fold(model) ASC",
+        "size": "width * height ASC, width ASC, height ASC",
+        "loras": "lora_order(request_json) ASC",
+    }[query.sort] + ", attempt_id ASC, ordinal ASC"
+    return where, values, order
+
+
+def query_records(state: Path, query: GalleryQuery) -> tuple[tuple[dict, ...], int]:
+    """Count and return one bounded page from the same read snapshot."""
+    where, values, order = clauses(query)
+    with reader(state) as db:
+        if db is None:
+            return (), 0
+        total = db.execute(BASE + "SELECT count(*) FROM records WHERE " + where, values).fetchone()[0]
+        rows = db.execute(
+            BASE + f"SELECT * FROM records WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            [*values, query.limit, query.offset],
+        )
+        return tuple(dict(row) for row in rows), total
+
+
+def locate_record(state: Path, query: GalleryQuery, identity: str) -> int | None:
+    """Find an anchor's position in filtered results without materializing those results."""
+    where, values, order = clauses(query)
+    with reader(state) as db:
+        if db is None:
+            return None
+        row = db.execute(
+            BASE
+            + f", ranked AS (SELECT identity, row_number() OVER (ORDER BY {order})-1 AS position FROM records WHERE {where}) SELECT position FROM ranked WHERE identity=?",
+            [*values, identity],
+        ).fetchone()
+        return row[0] if row else None
+
+
+def get_record(state: Path, identity: str) -> dict | None:
+    with reader(state) as db:
+        if db is None:
+            return None
+        row = db.execute(BASE + "SELECT * FROM records WHERE identity=?", (identity,)).fetchone()
+        return dict(row) if row else None
+
+
+def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """At most 1000 exact model/LoRA choices; editable controls support identifiers beyond this list."""
+    with reader(state) as db:
+        if db is None:
+            return (), ()
+        models = tuple(
+            row[0]
+            for row in db.execute(
+                BASE
+                + "SELECT DISTINCT model FROM records WHERE model IS NOT NULL ORDER BY fold(model), model LIMIT 1000"
+            )
+        )
+        loras = tuple(
+            row[0]
+            for row in db.execute(
+                BASE
+                + "SELECT DISTINCT json_extract(l.value, '$.identifier') AS id FROM records, json_each(request_json, '$.loras') l WHERE id IS NOT NULL ORDER BY fold(id), id LIMIT 1000"
+            )
+        )
+        return models, loras

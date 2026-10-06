@@ -2,7 +2,7 @@
 
 **Reviewed:** 2026-10-06, PR #33 at `e922bfd` before documentation consolidation.
 
-**Status:** Offline Grid/List/Detail presentation is implemented in draft PR #33. Saved-output discovery, queries, filtering, persistence and Phase 8A service acceptance remain unimplemented.
+**Status:** Historical PR #33 UI-presentation record. PR #34 now connects the same canonical Grid/List/Detail forms to real saved outputs; this document remains the fixture/design evidence for PR #33.
 
 **Base:** Phase 8 documentation PR #32, `5d9c476`.
 

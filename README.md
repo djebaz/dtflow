@@ -44,10 +44,12 @@ local asset receipts for reuse. Generation never hides an upload inside an ordin
 The fake provider lets you explore the same forms, progress, outputs and queue controls
 offline. Fixture images and configurable simulation outcomes require no model inference.
 
-The Images tab offers an illustrative Grid, List and Detail preview with a shared
-compact header, adjustable density and a full-height filmstrip. It uses bundled
-samples; saved-output discovery, search/filtering and refresh are not integrated.
-See the [desktop guide](devdocs/guides/desktop.md#images-preview).
+The Images tab browses committed saved outputs in Grid, List and Detail views with a
+shared compact header, 25–250% thumbnail scaling and a full-height Detail filmstrip.
+Positive-prompt search, model/LoRA/date/dimensions/aspect filters, deterministic sorting
+and refresh use the same bounded read-only gallery services as the CLI. Detail exposes
+recorded provenance and safe raw metadata without inventing unavailable values.
+See the [desktop guide](devdocs/guides/desktop.md#images).
 
 ## Design principles
 

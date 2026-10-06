@@ -80,7 +80,7 @@ spacing:
 
 DTFlow is a compact, image-first native desktop workspace. The generated image gets the largest flexible region; the controls that create and inspect it remain nearby. The interface uses charcoal surfaces, one blue action language, restrained corners and precise state text. It is a Qt Widgets application, not a web skin.
 
-This file describes the shared design implemented across Connection, Generate, Queues and the fixture-only Images presentation, and the rules to use when adding a tab. The frontmatter is a readable snapshot of the reusable tokens and selected component dimensions; color keys use the exact suffix of `color.*`, while component-only spacing/radii remain Designer/QSS values. the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. The QSS contains some local, one-off colors; do not turn each into a global token without a second use.
+This file describes the shared design implemented across Connection, Generate, Queues and the saved-output Images viewer, and the rules to use when adding a tab. The frontmatter is a readable snapshot of the reusable tokens and selected component dimensions; color keys use the exact suffix of `color.*`, while component-only spacing/radii remain Designer/QSS values. the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. The QSS contains some local, one-off colors; do not turn each into a global token without a second use.
 
 The canonical files and responsibilities are:
 
@@ -93,7 +93,8 @@ The canonical files and responsibilities are:
 | Persistent geometry | [`ui/forms/workspace_shell.ui`](src/dtflow/ui/forms/workspace_shell.ui) |
 | Shared shell, navigation and responsive placement | [`ui/main_window.py`](src/dtflow/ui/main_window.py) |
 | Aspect-fit image inspection and floating controls | [`ui/image_preview.py`](src/dtflow/ui/image_preview.py) |
-| Images structure and shared offline presentation | [`ui/forms/gallery_detail_page.ui`](src/dtflow/ui/forms/gallery_detail_page.ui), [`ui/gallery_detail_preview.py`](src/dtflow/ui/gallery_detail_preview.py) |
+| Images structure and production controller | [`ui/forms/gallery_detail_page.ui`](src/dtflow/ui/forms/gallery_detail_page.ui), [`ui/gallery_page.py`](src/dtflow/ui/gallery_page.py) |
+| Images offline fixture presentation | [`ui/gallery_detail_preview.py`](src/dtflow/ui/gallery_detail_preview.py) |
 | Offline state capture | [`tools/ui/render_states.py`](tools/ui/render_states.py) |
 
 The existing [Qt token and interaction contract](devdocs/architecture/qt-design-tokens.md) records the renderer command and fixture boundaries. The [Generate refinement plan](devdocs/plans/2026-10-05-preview-workspace.md) records the earlier workspace work; the [Images preview plan](devdocs/plans/2026-10-05-phase-8a-ui-preview.md) records PR #33. Earlier plans are historical decisions; the current implementation and these sources govern new work.
@@ -167,7 +168,7 @@ Inputs use gently rounded 5 px corners, buttons 6 px, and panels 8 px. The reusa
 
 Neutral buttons have distinct rest, hover, pressed, focus and disabled states. Primary actions use the accent family and lose that accent when disabled. Destructive actions use warning red only while actionable; disabled destructive controls return to the neutral disabled treatment. Checkable navigation shares the navy selection language with item views. Maintain stable `role` properties and object names instead of adding inline widget styles.
 
-Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and opens the explicitly labelled offline Detail preview. Its inline metadata replaces the right Inspector while Images is active; other workspaces retain their Inspector preference. Compact labels preserve the shared navigation width, including when mounted in Images.
+Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and opens the saved-output Grid/List/Detail viewer. Its inline metadata replaces the right Inspector while Images is active; other workspaces retain their Inspector preference. The standalone fixture launcher remains explicitly offline and illustrative. Compact labels preserve the shared navigation width, including when mounted in Images.
 
 ### Fields and selection
 
@@ -207,38 +208,51 @@ The compact Connection control follows the supplied mint/teal reference using de
 ## Images reference presentation
 
 Images uses a full-width gallery with its logo aligned to the view-controls row
-and navigation tabs aligned to the filter row. The
-shared brand and tabs remain the same widgets; only in Images are they mounted
-in the Designer-defined `galleryBrandSlot` and `galleryNavigationSlot` header slots. Both content rails and the global
-Inspector toggle are hidden. Leaving Images restores the rails, chrome and
-splitter widths; the Inspector preference remains independent of this page.
+and navigation tabs aligned to the filter row. The shared brand and tabs remain
+the same widgets; only in Images are they mounted in the Designer-defined
+`galleryBrandSlot` and `galleryNavigationSlot` header slots. Both content rails
+and the global Inspector toggle are hidden. Leaving Images restores the rails,
+chrome and splitter widths; the Inspector preference remains independent of this
+page.
 
 Images uses the same charcoal surfaces, blue accent, muted navy selection and
-control states as the other tabs, through shared `color.*` tokens and QSS.
-The reference guides its composition rather than introducing a separate palette.
-Its Detail form has two compact header rows, an
-aspect-preserving Cover image, right vertical filmstrip extending to the bottom, metadata beneath the main image and
-three-line positive prompt with small inline disclosure buttons. Additional
-and raw panels are mutually exclusive.
+control states as the other tabs through shared `color.*` tokens and QSS. Grid,
+List and Detail share one compact header above `galleryContentStack`. With no
+valid saved viewer preference, Images opens in Grid. A saved view preference
+restores Grid, List or Detail on later launches.
 
-The shared fixture controller provides Cover/Fit, 100%, zoom, pan, previous/next,
-keyboard navigation, fullscreen/Escape and thumbnail sizing. Artwork and metadata
-remain explicit samples; LoRA compatibility stays Unknown. Filters, auto-refresh and file actions are disabled until services exist. The source
-assets include a generated portrait and crops from the approved reference,
-identified as fixtures rather than generation evidence. No saved-output query,
-gallery persistence or provider execution is implemented by this presentation.
+The shared thumbnail control is user-facing percentage, not pixels: 100% is the
+standard 160 logical-pixel Grid/filmstrip baseline, with a 25–250% range. List
+row thumbnails follow the same percentage through the full range. The internal
+pixel conversion is a presentation detail and must not leak into the control
+label. Grid keeps uniform aspect-fit tiles; List has metadata columns and
+row-wide hover. Neither browsing view exposes bulk selection or destructive
+actions.
 
+Detail defaults to Fit so the complete saved image is visible on entry. Cover
+remains available for a filled canvas; 100%, zoom, pan, previous/next,
+fullscreen/Escape and the right-hand filmstrip remain available. The filmstrip
+spans the content height beside the preview and its metadata/prompt/disclosure
+panels. Image overlays have a separate 10 px interior inset.
 
-Grid, List and Detail share one header instance above `galleryContentStack`.
-Grid has uniform, aspect-fit thumbnail tiles with the same height at every ratio;
-List has metadata columns and a compact row-density control. Neither browsing
-view exposes checkboxes, selection state or bulk actions. List hover spans the
-row. Clicking a tile or row opens that fixture in Detail; returning to browsing
-retains the mounted widgets and their scroll positions. The shared slider controls
-Grid thumbnail size, List row density or Detail filmstrip size for the active view.
-The fixture controller keeps all three presentations offline; a populated preview
-does not establish saved-output discovery, query, filtering or provenance services.
+The production `GalleryPage` queries committed saved outputs through shared
+bounded read-only services. Thumbnail decoding, selected-image decoding and
+metadata reads remain off the GUI thread. Auto-refresh is on by default and
+anchors the selected or first visible output so newly saved results do not
+unexpectedly move the browsing context. Viewer preferences are durable and
+separate from disposable derived data.
 
+The compact filter row omits separate visible labels. Positive-prompt search is
+visible and intentionally compact; model, LoRA, date, exact dimensions,
+aspect-ratio and deterministic sort controls use placeholders/defaults plus
+accessible names and tooltips. Negative-prompt search remains available through
+the shared query/CLI service but is intentionally absent from the visible Images
+header. Detail shows recorded provenance and uses explicit `Not recorded` or
+`Unknown` text when evidence is absent.
+
+The standalone `DetailFixture` and preview tools continue to use bundled
+illustrative artwork. They are development presentation fixtures only and do not
+replace or establish saved-output evidence.
 
 Images header rows have no additional outer inset. The shared brand/navigation
 slots sit outside the scrolling controls and retain the shell's chrome width and
@@ -246,20 +260,9 @@ height, with the same 8 px row gap. Hidden Inspector controls reserve their spac
 to keep the logo/title geometry stable. Gallery panel gaps are 8 px; the canvas
 has a compact 4 px inset and metadata avoids nested padding.
 
-
-In Detail, the filmstrip spans the whole content height beside the preview and
-its metadata/prompt/disclosure panels. Image overlays have a separate 10 px
-interior inset; this does not increase the canvas frame or outer gallery gutter.
-
-The compact gallery filter row omits separate visible labels: the prompt-search
-placeholder and model/LoRA/time/ratio defaults identify the controls. Each field
-retains an explicit accessible name and descriptive tooltip.
-
-
 Reusable neutral-button, input-hover and selection states use named `color.*`
 tokens. Keep intentional component geometry overrides scoped; remove obsolete
 base declarations rather than layering another copy of the same selector.
-
 
 ## Section cards and information surfaces
 
