@@ -139,8 +139,8 @@ rule suppresses it. Keep one visible toggle; retain the group's checked state. P
 | `--color-scroll-hover` / `--color-scroll-pressed` | `#707070` / `#909090` | Scrollbar thumb |
 | `--color-tab-border` / `--color-tab-text` | `#363636` / `#a8a8a8` | Tabs |
 
-`--color-statusbar-edge` (`#000000`) is web-only and has no QSS counterpart.
+`--color-statusbar-edge` (`#000000`) has no literal match in `dtflow_dark.qss` (no `#000`, `#000000`, `black` or `rgba(0` found); its Qt source is unconfirmed.
 
 **Radii.** Beyond the 5/6/8 px tokens, the QSS uses scoped literal radii of 2, 3, 4, 7, 9, 10, 16, 17 and 21 px (the web names 2, 3, 4, 9, 16, 17 and 21 as `--radius-2xs` … `--radius-round`). They belong to single components; keep them scoped.
 
-**Spacing.** The web `--space-*` scale (2, 4, 6, 8, 10, 12, 14, 18 px) is a documentation helper for web mockups. Qt spacing remains Designer/QSS values, and the QSS padding/margin literals span 2–12 px; 14 and 18 px appear only in the web kits.
+**Spacing.** The web `--space-*` scale (2, 4, 6, 8, 10, 12, 14, 18 px) names gaps that the Designer forms actually use. Counting `spacing` and margin properties in `src/dtflow/ui/forms/*.ui` gives 0 (most), 1, 2, 4, 5, 6, 7, 8, 10, 12, 14, 16 and 18 px; 8, 10, 12 and 6 px dominate, and 14 and 18 px occur a handful of times. The scale omits 1, 5, 7 and 16 px, and Python layouts also use 5 px and 8 px. Like the component-only radii, these are Designer/QSS layout values rather than `tokens.json` tokens, and only the 8 px workspace gutter, 12 px panel padding and 10 px overlay inset are shared tokens. The scale is therefore a documentation aid for web mockups of the same layouts, not a separate web invention.
