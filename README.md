@@ -14,6 +14,8 @@ Batch planning lets you compare prompts, seeds and other parameters while keepin
 Connection, Generate and Queues share one interface, with persistent navigation and an
 Inspector for request details and output evidence. Choose local Draw Things or direct DT+
 Cloud Compute, check the connection, and refresh model and LoRA inventory without generating.
+Inventory choices return with their provider; last-observed model/LoRA counts and timestamps
+remain visible through refresh failures and cache-only startup.
 Windows Credential Manager stores a saved cloud API key outside ordinary configuration files.
 
 ### Image generation and inspection

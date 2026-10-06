@@ -8,7 +8,9 @@ dispatched) instead of the desktop blocking it for the window's lifetime.
 """
 
 import asyncio
+import hashlib
 import logging
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -240,6 +242,88 @@ async def cached_inventory(
     snapshot = await asyncio.to_thread(load_inventory, state, kind, endpoint=endpoint, credential=credential)
     log.info("inventory cache %s backend=%s", "hit" if snapshot is not None else "miss reason=absent_or_mismatch", kind)
     return snapshot
+
+
+class InventoryDisplayMemory:
+    """Last successful observations for presentation only, never generation/preflight evidence.
+
+    Keep at most one snapshot per provider. Revalidate endpoint/selected credentials before reuse; store only a
+    process-salted identity digest, never the credential. Persistent fallback uses the existing cache contract.
+    """
+
+    def __init__(self):
+        self._salt = secrets.token_bytes(32)
+        self._snapshots: dict[str, tuple[tuple, InventorySnapshot]] = {}
+
+    async def _scope(self, selection, saved):
+        identity = await _cache_identity(selection, saved)
+        return self._scope_from_identity(selection, identity)
+
+    def _scope_from_identity(self, selection, identity):
+        if identity is None:
+            return (selection.name, None, None)
+        kind, endpoint, credential = identity
+        fingerprint = None
+        if credential is not None:
+            source, key = credential
+            fingerprint = (source, hashlib.sha256(self._salt + key.encode()).digest())
+        return (kind, endpoint, fingerprint)
+
+    async def restore(
+        self,
+        selection: BackendSelection,
+        state: Path,
+        *,
+        saved: CredentialProvider | None = None,
+        no_cache: bool = False,
+    ) -> tuple[InventorySnapshot, str] | None:
+        try:
+            scope = await self._scope(selection, saved)
+        except (BackendError, ValidationError):
+            self._snapshots.pop(selection.name, None)
+            return None
+        previous = self._snapshots.get(selection.name)
+        if previous is not None and previous[0] == scope:
+            return previous[1], "remembered"
+        self._snapshots.pop(selection.name, None)
+        snapshot = await cached_inventory(selection, state, saved=saved, no_cache=no_cache)
+        try:
+            still_matches = await self._scope(selection, saved) == scope
+        except (BackendError, ValidationError):
+            still_matches = False
+        if not still_matches:
+            return None
+        # A live refresh can finish while the disk read is pending. Never overwrite that newer observation.
+        previous = self._snapshots.get(selection.name)
+        if previous is not None and previous[0] == scope:
+            return previous[1], "remembered"
+        if snapshot is None:
+            return None
+        self._snapshots[selection.name] = (scope, snapshot)
+        return snapshot, "cached"
+
+    async def refresh(
+        self,
+        selection: BackendSelection,
+        state: Path,
+        *,
+        saved: CredentialProvider | None = None,
+        no_cache: bool = False,
+    ) -> InventorySnapshot:
+        scope = await self._scope(selection, saved)
+        snapshot = await refresh_inventory(selection, state, saved=saved, no_cache=True)
+        identity = await _cache_identity(selection, saved)
+        # Failed refreshes never reach this assignment; credential changes never bind old evidence to a new key.
+        if self._scope_from_identity(selection, identity) != scope:
+            raise ValidationError("Inventory identity changed while refreshing; refresh for the current selection.")
+        self._snapshots[selection.name] = (scope, snapshot)
+        if not no_cache and identity is not None:
+            kind, _, credential = identity
+            try:
+                await asyncio.to_thread(save_inventory, state, kind, snapshot, credential=credential)
+            except OSError as exc:
+                log.warning("inventory cache not written backend=%s reason=%s", kind, type(exc).__name__)
+        return snapshot
 
 
 async def refresh_inventory(
