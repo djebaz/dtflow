@@ -42,6 +42,8 @@
 
 ## Fixed
 
+- Preserve bundled LoRA compatibility metadata when a user custom entry only refines fields such as name or trigger prefix, and cache the effective catalogue view until provider inventory or the durable custom-LoRA file changes.
+
 - Generate: the progress bar is now a determinate 0-100% bar that only grows (preparing, then real sampling steps from the provider, then saved) and never shows the indeterminate busy animation; after Stop or a failure it stays where it stopped, labelled "Stopped locally" or "Failed". Percentages beyond sampling steps are stage floors, not server percentages.
 - PR #37 keeps Auto-refresh's mint On colors on hover and after mouse clicks by overriding generic gallery hover/focus rules. It shares Connection's keyboard-only dashed focus cue instead of leaving a blue mouse-focus outline until another control is clicked. Labels, dimensions and refresh semantics are unchanged; new visual acceptance is deferred to the owner.
 
