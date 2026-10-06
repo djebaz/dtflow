@@ -1,6 +1,6 @@
 # Current development status
 
-Snapshot: 2026-10-06. Draft PR #34 implements the Phase 8A saved-output viewer on top of PR #33's merged Images presentation. The 0.3.0 publication evidence below is retained from the earlier snapshot; PR #31 build/draft workflow status is not re-verified here.
+Snapshot: 2026-10-06. PR #34 implements the Phase 8A saved-output viewer on top of PR #33's merged Images presentation. The 0.3.0 publication evidence below is retained from the earlier snapshot; PR #31 build/draft workflow status is not re-verified here.
 This is coding orientation against [initial.md](plans/initial.md), not a release declaration. Implementation scope comes from source/plan inspection; owner-reported tests and interactive smoke observations are recorded separately. The agent ran no live generation or provider operations.
 
 ## Implemented on main
@@ -21,7 +21,7 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 | Phase | Remaining scope |
 | --- | --- |
 | 7 — Advanced scheduling | Priorities, fairness and adaptive concurrency; not a prerequisite for the proposed release milestones. Basic rolling dispatch already exists. |
-| 8 — Gallery/presets | Phase 8A saved-output viewing is implemented in draft PR #34; 8B presets, 8C reuse/regeneration, 8D cache management and separately scoped 8E organisation remain. Inventory cache and last-session restore already exist; configuration save/load is not a preset library. |
+| 8 — Gallery/presets | Phase 8A saved-output viewing is implemented in PR #34; 8B presets, 8C reuse/regeneration, 8D cache management and separately scoped 8E organisation remain. Inventory cache and last-session restore already exist; configuration save/load is not a preset library. |
 | 9 — Image operations | 9A img2img, 9B existing mask-file inpainting, 9C interactive masks and selected controls/references. |
 | 10 — Workflows | 10A versioned workflow files/compiler/execution; 10B visual editor and expanded semantics. |
 | 11 — Broader DT+ | Additional verified cloud capabilities and hardening. Token handling, secret safety, subscription-only policy and ambiguous-outcome protection already belong to Phases 2/3; do not rebuild or defer them. |
@@ -36,11 +36,11 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 - PR #31 adds an opt-in cached Windows build and draft-only release workflow, including artifact-only same-repository PR-head builds; not yet runner-verified. Owner executable smoke/publication remain explicit.
 
 - PR #33 established the offline Grid/List/Detail presentation and shared Images styling; its fixture launcher remains available for visual development. See [the preview plan](plans/2026-10-05-phase-8a-ui-preview.md).
-- Draft PR #34 connects those views to committed saved outputs through shared read-only services and CLI commands. It adds bounded query/paging, asynchronous thumbnails, positive-prompt/model/LoRA/date/dimensions/aspect filters, deterministic sorting, durable viewer state, anchored auto-refresh, real provenance/raw metadata, file actions and missing/corrupt-file handling. The thumbnail control is 25–250% with 100% as the standard size; first-run Images opens Grid and Detail defaults to Fit. The owner reports the full test suite passed after the Qt lifecycle fix and performed interactive smoke testing that drove thumbnail-layout refinements. Packaged/native-DPI acceptance remains separate. See [the viewer plan](plans/2026-10-05-phase-8a-viewer.md).
+- PR #34 connects those views to committed saved outputs through shared read-only services and CLI commands. It adds bounded query/paging, asynchronous thumbnails, positive-prompt/model/LoRA/date/dimensions/aspect filters, deterministic sorting, durable viewer state, anchored auto-refresh, real provenance/raw metadata, file actions and missing/corrupt-file handling. The thumbnail control is 25–250% with 100% as the standard size; first-run Images opens Grid and Detail defaults to Fit. The owner reports the full test suite passed after the Qt lifecycle fix and performed interactive smoke testing that drove thumbnail-layout refinements. Packaged/native-DPI acceptance remains separate. See [the viewer plan](plans/2026-10-05-phase-8a-viewer.md).
 
 ## Next coding direction
 
-The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). Follow the [Phase 8 delivery plan](plans/2026-10-05-phase-8-sequencing.md): with 8A now implemented in draft PR #34, the next planned capability is Draw Things-compatible presets (8B), followed by reuse, cache management and separately scoped organisation. Recheck the roadmap and relevant phase plan before choosing work.
+The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). Follow the [Phase 8 delivery plan](plans/2026-10-05-phase-8-sequencing.md): with 8A now implemented in PR #34, the next planned capability is Draw Things-compatible presets (8B), followed by reuse, cache management and separately scoped organisation. Recheck the roadmap and relevant phase plan before choosing work.
 
 ## Maintenance
 

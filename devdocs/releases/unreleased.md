@@ -2,7 +2,7 @@
 
 ## Highlights
 
-- PR #33 establishes the Images presentation and shared styling; draft PR #34 connects it to real committed saved outputs through shared bounded gallery services, CLI inspection and the production Qt viewer. No release/version bump is introduced.
+- PR #33 establishes the Images presentation and shared styling; PR #34 connects it to real committed saved outputs through shared bounded gallery services, CLI inspection and the production Qt viewer. No release/version bump is introduced.
 
 ## Added
 
@@ -40,7 +40,7 @@
 
 ## Validation and release audit
 
-- PR #33 remains the historical offline presentation/style change. Draft PR #34 is the current Phase 8A production viewer implementation; presets/reuse/cache-management/organisation remain later Phase 8 work.
+- PR #33 remains the historical offline presentation/style change. PR #34 is the current Phase 8A production viewer implementation; presets/reuse/cache-management/organisation remain later Phase 8 work.
 - On 2026-10-06 the owner reported the full test suite passed after the PR #34 Qt lifecycle fix. No final command/count was supplied in that confirmation, so no exact count is claimed here. Earlier failing output showed the lifecycle exception cascading through Qt setup; the fix was then owner-retested successfully.
 - Owner interactive smoke testing exercised the new Images viewer and identified Grid asynchronous thumbnail collapse and List scaling limits; both were corrected. The newest Grid-first/Fit-default adjustments have not been separately reported as smoke-tested yet.
 - Documentation closeout is source review only. Exact native-DPI and packaged Windows visual acceptance remain separate. No live provider operations, inference, training, uploads or potentially billable actions ran during PR #34 implementation/documentation work.

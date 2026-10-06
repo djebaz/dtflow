@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Implemented in draft PR #34 on top of PR #33's Grid/List/Detail presentation; pending merge. Shared saved-output query/inspection services, CLI access, Qt browsing, durable viewer preferences and asynchronous loading are present. The [preview plan](2026-10-05-phase-8a-ui-preview.md) remains the historical UI-presentation record.
+**Status:** Implemented in PR #34 on top of PR #33's Grid/List/Detail presentation; pending merge. Shared saved-output query/inspection services, CLI access, Qt browsing, durable viewer preferences and asynchronous loading are present. The [preview plan](2026-10-05-phase-8a-ui-preview.md) remains the historical UI-presentation record.
 
 **Position:** First delivery phase within Phase 8, not initial-plan Phase 1.
 
