@@ -316,7 +316,9 @@ class GenerationPage:
             self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
             family = catalogue.get("base_model")
             if isinstance(family, str):
-                self._rebuild_catalogue(preferred_family=family, preferred_checkpoint=values.model)
+                self._rebuild_catalogue(
+                    preferred_family=family, preferred_checkpoint=values.model, restore_niche=True
+                )
 
     def _switch_provider(self, name: str) -> None:
         """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
@@ -679,11 +681,20 @@ class GenerationPage:
             self._filter_loras()
 
     def _rebuild_catalogue(
-        self, *, preferred_family: str | None = None, preferred_checkpoint: str | None = None
+        self,
+        *,
+        preferred_family: str | None = None,
+        preferred_checkpoint: str | None = None,
+        restore_niche: bool = False,
     ) -> None:
         page = self.page
         preferred_entry = self._catalogue.checkpoint(preferred_checkpoint or "") if preferred_checkpoint else None
-        if preferred_entry is not None and preferred_entry.tier == "niche" and not page.includeNicheCheck.isChecked():
+        if (
+            restore_niche
+            and preferred_entry is not None
+            and preferred_entry.tier == "niche"
+            and not page.includeNicheCheck.isChecked()
+        ):
             self._updating_catalogue = True
             try:
                 page.includeNicheCheck.setChecked(True)
@@ -759,7 +770,7 @@ class GenerationPage:
         self._inventory_snapshot = snapshot
         self._catalogue.set_inventory(snapshot)
         ids = eligible_model_ids(snapshot)
-        self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText())
+        self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText(), restore_niche=True)
         self._listed_backend = self._backend()[0]
         label = self.page.inventoryEvidenceLabel
         label.setToolTip(f"{snapshot.backend_id} inventory {how}; observed {snapshot.observed_at_utc}.")
