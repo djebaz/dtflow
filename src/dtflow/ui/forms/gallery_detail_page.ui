@@ -444,34 +444,19 @@
             </property>
             <property name="minimumSize">
              <size>
-              <width>200</width>
+              <width>170</width>
               <height>30</height>
              </size>
             </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLineEdit" name="galleryNegativeSearch">
-            <property name="accessibleName">
-             <string>Search negative prompts</string>
-            </property>
-            <property name="placeholderText">
-             <string>Search negative prompts…</string>
-            </property>
-            <property name="enabled">
-             <bool>false</bool>
-            </property>
-            <property name="toolTip">
-             <string>Search recorded negative prompts.</string>
-            </property>
-            <property name="minimumSize">
+            <property name="maximumSize">
              <size>
-              <width>190</width>
+              <width>260</width>
               <height>30</height>
              </size>
             </property>
            </widget>
           </item>
+          
           <item>
            <widget class="QComboBox" name="galleryModelFilter">
             <property name="accessibleName">

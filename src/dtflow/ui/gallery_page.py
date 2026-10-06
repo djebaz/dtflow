@@ -204,7 +204,6 @@ class GalleryPage(QObject):
 
     def _setup_filters(self) -> None:
         self.prompt = self._widget("galleryPromptSearch", QLineEdit)
-        self.negative = self._widget("galleryNegativeSearch", QLineEdit)
         self.model = self._widget("galleryModelFilter", QComboBox)
         self.lora = self._widget("galleryLoRAFilter", QComboBox)
         self.date_filter = self._widget("galleryDateFilter", QComboBox)
@@ -214,7 +213,6 @@ class GalleryPage(QObject):
 
         for control in (
             self.prompt,
-            self.negative,
             self.model,
             self.lora,
             self.date_filter,
@@ -241,7 +239,6 @@ class GalleryPage(QObject):
         self.sort.addItems(SORT_LABELS)
 
         self.prompt.setToolTip("Case-insensitive literal search in recorded positive prompts.")
-        self.negative.setToolTip("Case-insensitive literal search in recorded negative prompts.")
         self.model.setToolTip("Exact recorded model identifier; the list is a bounded convenience facet.")
         self.lora.setToolTip("Exact recorded LoRA identifier; the list is a bounded convenience facet.")
         self.date_filter.setToolTip(
@@ -252,7 +249,6 @@ class GalleryPage(QObject):
         self.sort.setToolTip("Deterministic saved-output ordering.")
 
         self.prompt.textChanged.connect(self._filter_edited)
-        self.negative.textChanged.connect(self._filter_edited)
         for combo in (self.model, self.lora, self.date_filter, self.dimensions, self.ratio, self.sort):
             combo.currentTextChanged.connect(self._filter_edited)
 
@@ -358,7 +354,6 @@ class GalleryPage(QObject):
         self.offset = stored_query.offset
         filters = document.get("filters", {}) if isinstance(document.get("filters"), dict) else {}
         self.prompt.setText(str(filters.get("prompt", stored_query.prompt)))
-        self.negative.setText(str(filters.get("negative", stored_query.negative)))
         self.model.setCurrentText(str(filters.get("model", stored_query.model or "All models")))
         self.lora.setCurrentText(str(filters.get("lora", stored_query.lora or "All LoRAs")))
         self.date_filter.setCurrentText(str(filters.get("date", "All time")))
@@ -432,7 +427,7 @@ class GalleryPage(QObject):
         sort = SORT_LABELS.get(self.sort.currentText(), "newest")
         return GalleryQuery(
             prompt=self.prompt.text(),
-            negative=self.negative.text(),
+            negative="",
             model="" if model.casefold() == "all models" else model,
             lora="" if lora.casefold() == "all loras" else lora,
             since=since,
@@ -1148,7 +1143,6 @@ class GalleryPage(QObject):
             "query": asdict(query),
             "filters": {
                 "prompt": self.prompt.text(),
-                "negative": self.negative.text(),
                 "model": self.model.currentText(),
                 "lora": self.lora.currentText(),
                 "date": self.date_filter.currentText(),
