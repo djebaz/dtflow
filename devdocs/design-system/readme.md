@@ -150,7 +150,7 @@ Toolbar, action hint and the collapsed Plan card keep natural height; the items 
 
 ## Components
 
-- `components/icons/` — **Icon** (source SVGs, code-drawn panel/connection, Lucide substitutes; full catalogue on the "Icon Set" card)
+- `components/icons/` — **Icon** (source SVGs, code-drawn connection status, Lucide substitutes; full catalogue on the "Icon Set" card)
 - `components/layout/` — **SectionCard**, **Panel**, **StatusBar**
 - `components/controls/` — **Button**, **ConnectionButton**, **TextField**, **TextArea**, **ComboBox**, **SpinBox**, **Checkbox**, **Slider**, **Tabs**
 - `components/text/` — **Label**
