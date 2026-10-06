@@ -129,7 +129,7 @@ def main():
             controller.lora.set_loras(())
             gate = asyncio.Event()
             page.generateButton.click()
-            wait_for(lambda: page.generationProgressBar.format() == "fake")
+            wait_for(lambda: page.generationProgressBar.format().startswith("fake"))
             capture("10-busy-disabled")
             shell.runner._loop.call_soon_threadsafe(gate.set)
             wait_for(settled)

@@ -158,6 +158,7 @@ class GenerationPage:
         self._generating = False
         self._request = None
         self._busy = False
+        self._progress_pct = 0
         self._config_name: str | None = None
         self._metadata_path: Path | None = None
         self._submitted_backend: str | None = None
@@ -401,21 +402,24 @@ class GenerationPage:
             request = replace(request, seed=self._previewed_seed)
         return request, name, endpoint, self.lora.receipt_ids()
 
-    def _progress(self, text: str, completed: int | None = None, total: int | None = None) -> None:
-        bar = self.page.generationProgressBar
+    # Overall progress is a determinate 0-100 bar that only grows: sampling steps fill the middle, the other stages
+    # only set floors, so a stage without a step count never turns the bar into a busy animation.
+    PROGRESS_FLOORS = {"preparing": 5, "submission_possible": 10, "terminal": 95}
+    SAMPLING_SPAN = (10, 90)
+
+    def _progress(self, text: str, completed: int | None = None, total: int | None = None, *, floor: int = 0) -> None:
         if total:
-            bar.setRange(0, total)
-            bar.setValue(min(completed or 0, total))
-        else:
-            bar.setRange(0, 0)  # indeterminate: no server percentage is known
-        bar.setFormat(text)
+            low, high = self.SAMPLING_SPAN
+            floor = max(floor, low + (high - low) * min(completed or 0, total) // total)
+        self._progress_pct = max(self._progress_pct, floor)
+        bar = self.page.generationProgressBar
+        bar.setRange(0, 100)
+        bar.setValue(self._progress_pct)
+        bar.setFormat(f"{text} · %p%")
 
     def _progress_stopped(self, text: str) -> None:
-        """A settled non-success end: a determinate empty bar, so the busy animation stops."""
-        bar = self.page.generationProgressBar
-        bar.setRange(0, 1)
-        bar.setValue(0)
-        bar.setFormat(text)
+        """A settled non-success end: the bar stays where it stopped, never animating."""
+        self._progress(text)
 
     def _show_image(self, encoded: bytes, designation: str, backend_id: str | None = None) -> None:
         pixmap = QPixmap()
@@ -463,7 +467,8 @@ class GenerationPage:
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
-        self._progress("Preparing")
+        self._progress_pct = 0
+        self._progress("Preparing", floor=self.PROGRESS_FLOORS["preparing"])
         self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
         self._generating = True
         self._activity.set(generating=True)
@@ -506,8 +511,8 @@ class GenerationPage:
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
             self._show_image(event.artifact.encoded, "preview")
             self._progress("Preview shown (not the final image)")
-        elif event.kind in ("preparing", "submission_possible", "terminal"):
-            self._progress(event.stage or event.kind)
+        elif event.kind in self.PROGRESS_FLOORS:
+            self._progress(event.stage or event.kind, floor=self.PROGRESS_FLOORS[event.kind])
 
     def _generated(self, outcome, failure) -> None:
         if isinstance(failure, asyncio.CancelledError):
@@ -524,10 +529,7 @@ class GenerationPage:
             self._status(present_generation_failure(failure))
             return
         log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
-        bar = self.page.generationProgressBar
-        bar.setRange(0, 1)
-        bar.setValue(1)
-        bar.setFormat("Saved")
+        self._progress("Saved", floor=100)
         self._status(present_outcome(outcome))
         self.lora.show_diagnostics(outcome.diagnostics)
         self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
