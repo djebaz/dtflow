@@ -8,7 +8,7 @@
 - [x] Confirm main matches origin/main and identify the two conflicting tracked paths.
 - [x] Preserve the newer lowercase file content in canonical uppercase README.md; remove only the duplicate index entry.
 - [x] Check all tracked paths for case-insensitive collisions and existing documentation references.
-- [ ] Commit/push and open a small PR to main; leave merging to the owner.
+- [x] Commit/push and open a small PR to main; leave merging to the owner.
 
 ## Decisions and Design Changes
 - 2026-10-06: Windows maps both tracked names to one physical file, so restoring one necessarily dirties the other. This was not an ordinary local edit.
@@ -21,3 +21,7 @@ None.
 ## Validation
 - Documentation/index checks and git diff --check only; no tests/smoke or packaging needed for this documentation-only repair.
 - No runtime changes, inference, training, provider operations or billable actions.
+
+## Delivery
+- PR #50: https://github.com/djebaz/dtflow/pull/50, base main. Not merged.
+- Final branch worktree clean; canonical README blob preserved exactly; tracked paths now have no case-insensitive duplicates.
