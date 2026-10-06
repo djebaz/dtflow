@@ -4,7 +4,14 @@ import pytest
 from drawthings_py.configs.gen_config import GenConfig
 
 from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE, build_generation_message, float32
-from dtflow.core.models import BackendError, ErrorCategory, LoRASelection, ResolvedGenerationRequest, Sampler
+from dtflow.core.models import (
+    BackendError,
+    ErrorCategory,
+    LoRASelection,
+    PreparedAsset,
+    ResolvedGenerationRequest,
+    Sampler,
+)
 
 
 def request(**overrides):
@@ -68,3 +75,44 @@ def test_unsupported_requests_are_rejected_before_serialization(overrides, code)
         code,
         "not_submitted",
     )
+
+
+@pytest.mark.parametrize("weight", [0.6, 0.35, 1.2, 2.0])
+def test_lora_weights_that_the_library_rounds_on_decode_still_verify(weight):
+    wire = build_generation_message(request(loras=(LoRASelection("a_lora_f16.ckpt", weight),)), None)
+    assert dict(wire.effective_configuration)["loras"] == f"a_lora_f16.ckpt@{weight}"
+
+
+def test_prepared_loras_are_named_by_their_sha256_on_the_wire():
+    digest = "ab" * 32
+    prepared = PreparedAsset(
+        "cloud", "origin", "mine_lora_f16.ckpt", "mine_lora_f16.ckpt", digest, 10, "r1", "2026-10-06T00:00:00Z"
+    )
+    selections = (LoRASelection("mine_lora_f16.ckpt", 0.5), LoRASelection("builtin_lora_f16.ckpt", 1.0))
+    wire = build_generation_message(request(loras=selections, prepared_assets=(prepared,)), None)
+    decoded = GenConfig.from_fbs(wire.message.configuration)
+    assert [x["file"] for x in decoded["loras"]] == [digest, "builtin_lora_f16.ckpt"]
+
+
+def test_prepared_custom_loras_are_described_in_the_override_with_the_base_version():
+    import json
+
+    from dtflow.core.models import PreparedAsset
+
+    asset = PreparedAsset("cloud", "o", "mine_lora_f16.ckpt", "ref", "a" * 64, 1, "rc", "2026-01-01T00:00:00+00:00")
+    selections = (LoRASelection("mine_lora_f16.ckpt", 1.0), LoRASelection("other_lora_f16.ckpt", 1.0))
+    sent = build_generation_message(request(loras=selections, prepared_assets=(asset,)), None, "z_image")
+    assert json.loads(sent.message.override.loras) == [
+        {"name": "mine_lora_f16.ckpt", "file": "a" * 64, "prefix": "", "version": "z_image"}
+    ]
+    assert not build_generation_message(
+        request(loras=selections, prepared_assets=(asset,)), None
+    ).message.override.loras
+    assert not build_generation_message(request(loras=selections), None, "z_image").message.override.loras
+
+
+def test_bundled_catalogue_supplies_a_base_version_when_inventory_has_none():
+    from dtflow.backends.drawthings.versions import bundled_base_version
+
+    assert bundled_base_version("z_image_turbo_1.0_q6p.ckpt") == "z_image"
+    assert bundled_base_version("unknown.ckpt") is None

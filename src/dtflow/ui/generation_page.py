@@ -1221,7 +1221,11 @@ class GenerationPage:
         self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
         detail = f"{path.name} applied; values come from the file, with defaults only where it is silent."
         if request.loras:
-            detail += " It names LoRA(s); no cloud receipt is bound."
+            detail += (
+                " It names LoRA(s); local cloud receipts are bound."
+                if self.lora.receipt_ids()
+                else " It names LoRA(s); no cloud receipt is bound."
+            )
         self._status(Presentation("ok", "Configuration loaded", detail))
 
     def _scan_configs(self) -> None:
