@@ -118,6 +118,27 @@ class RowHoverDelegate(QStyledItemDelegate):
         super().paint(painter, style, index)
 
 
+def apply_gallery_button_icons(page, assets=ASSETS):
+    """Shared real icon configuration for application and state-catalogue buttons."""
+
+    def get(name):
+        return page.findChild(QWidget, name)
+
+    for name, icon in [
+        ("galleryGridButton", "grid"),
+        ("galleryListButton", "list"),
+        ("galleryDetailButton", "image"),
+        ("galleryRefreshButton", "refresh"),
+        ("galleryFullscreenButton", "fullscreen"),
+        ("galleryAdditionalButton", "document"),
+        ("galleryRawButton", "json"),
+    ]:
+        get(name).setIcon(QIcon(str(assets / f"{icon}.svg")))
+        get(name).setIconSize(QSize(18, 18))
+    get("galleryRefreshButton").setText("")
+    get("galleryFullscreenButton").setText("")
+
+
 def apply_gallery(page, assets=ASSETS, sample=False):
     """Apply cover painting, icons and disclosure behavior to a loaded gallery page.
 
@@ -132,19 +153,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     get("galleryBrandSlot").hide()
     get("galleryNavigationSlot").hide()
     painters = []
-    for name, icon in [
-        ("galleryGridButton", "grid"),
-        ("galleryListButton", "list"),
-        ("galleryDetailButton", "detail"),
-        ("galleryRefreshButton", "refresh"),
-        ("galleryFullscreenButton", "fullscreen"),
-        ("galleryAdditionalButton", "document"),
-        ("galleryRawButton", "json"),
-    ]:
-        get(name).setIcon(QIcon(str(assets / f"{icon}.svg")))
-        get(name).setIconSize(QSize(18, 18))
-    get("galleryRefreshButton").setText("")
-    get("galleryFullscreenButton").setText("")
+    apply_gallery_button_icons(page, assets)
     surface = get("galleryImageSurface")
     surface.setText("")
     paint = CoverPainter(surface, assets / "portrait.jpg")

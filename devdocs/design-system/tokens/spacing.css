@@ -1,0 +1,33 @@
+/* DTFlow spacing and sizing tokens */
+:root {
+  /* Spacing */
+  --layout-workspace-gutter: var(--space-sm);
+  --layout-panel-padding: var(--space-lg);
+  --layout-overlay-inset: var(--space-md);
+
+  /* Gap / padding scale used across rails, forms and toolbars */
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 6px;
+  --space-sm: 8px;
+  --space-md: 10px;
+  --space-lg: 12px;
+  --space-xl: 14px;
+  --space-2xl: 18px;
+
+  /* Control sizes */
+  --size-control-content: 22px;
+  --size-scrollbar: 12px;
+
+  /* Radii */
+  --radius-input: 5px;
+  --radius-button: 6px;
+  --radius-panel: 8px;
+  --radius-2xs: 2px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-thumb: 9px;
+  --radius-chip: 16px;
+  --radius-pill: 17px;
+  --radius-round: 21px;
+}

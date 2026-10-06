@@ -38,6 +38,36 @@ colors:
   sectionHeader: "#2b2b2b"
   sectionBorder: "#343434"
   itemSurface: "#222222"
+  title: "#f2f2f2"
+  panelEdge: "#333333"
+  onAccent: "#ffffff"
+  eyebrow: "#8fbde3"
+  badgeText: "#b9dcf7"
+  menuText: "#dddddd"
+  inputText: "#eaeaea"
+  toolbar: "#242424"
+  buttonText: "#eeeeee"
+  disabledEdge: "#2f2f2f"
+  accentEdge: "#1085dd"
+  dangerText: "#ff9d97"
+  dangerSurface: "#432323"
+  dangerBorder: "#c62828"
+  host: "#1c1c1c"
+  glyphNeutral: "#8a8a8a"
+  statusOkBorder: "#2e7d32"
+  statusWarningBorder: "#9a6700"
+  statusErrorBorder: "#a33a35"
+  barTrack: "#2a2a2a"
+  tabBorder: "#363636"
+  tabText: "#a8a8a8"
+  checkBorder: "#777777"
+  checkDisabledBorder: "#414141"
+  groove: "#505050"
+  handle: "#e6e6e6"
+  handleBorder: "#909090"
+  handleDisabled: "#555555"
+  scrollHover: "#707070"
+  scrollPressed: "#909090"
 typography:
   title:
     fontFamily: "Segoe UI, sans-serif"
@@ -67,6 +97,13 @@ rounded:
   input: "5px"
   button: "6px"
   panel: "8px"
+  2xs: "2px"
+  xs: "3px"
+  sm: "4px"
+  thumb: "9px"
+  chip: "16px"
+  pill: "17px"
+  round: "21px"
 spacing:
   rail-gap: "8px"
   workspace-gutter: "8px"
@@ -80,7 +117,7 @@ spacing:
 
 DTFlow is a compact, image-first native desktop workspace. The generated image gets the largest flexible region; the controls that create and inspect it remain nearby. The interface uses charcoal surfaces, one blue action language, restrained corners and precise state text. It is a Qt Widgets application, not a web skin.
 
-This file describes the shared design implemented across Connection, Generate, Queues and the saved-output Images viewer, and the rules to use when adding a tab. The frontmatter is a readable snapshot of the reusable tokens and selected component dimensions; color keys use the exact suffix of `color.*`, while component-only spacing/radii remain Designer/QSS values. the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. The QSS contains some local, one-off colors; do not turn each into a global token without a second use.
+This file describes the shared design implemented across Connection, Generate, Queues and the saved-output Images viewer, and the rules to use when adding a tab. The frontmatter is a readable snapshot of the reusable tokens and selected component dimensions; color keys use the exact suffix of `color.*`, while the extra radii are `size.radius*` tokens (`rounded:` keys drop that prefix) and spacing remains Designer/QSS values. the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. Component-local colors repeated across QSS rules (control text, danger, slider, checkbox, scrollbar, tab, status-card borders) are named `color.*` tokens too; a few single-use literals remain in the QSS (see the token contract), and a new one should become a token on its second use.
 
 The canonical files and responsibilities are:
 
@@ -96,6 +133,7 @@ The canonical files and responsibilities are:
 | Images structure and production controller | [`ui/forms/gallery_detail_page.ui`](src/dtflow/ui/forms/gallery_detail_page.ui), [`ui/gallery_page.py`](src/dtflow/ui/gallery_page.py) |
 | Images offline fixture presentation | [`ui/gallery_detail_preview.py`](src/dtflow/ui/gallery_detail_preview.py) |
 | Offline state capture | [`tools/ui/render_states.py`](tools/ui/render_states.py) |
+| Web design-system reference (prototype aid, not runtime) | [`devdocs/design-system/`](devdocs/design-system/README.md) |
 
 The existing [Qt token and interaction contract](devdocs/architecture/qt-design-tokens.md) records the renderer command and fixture boundaries. The [Generate refinement plan](devdocs/plans/2026-10-05-preview-workspace.md) records the earlier workspace work; the [Images preview plan](devdocs/plans/2026-10-05-phase-8a-ui-preview.md) records PR #33. Earlier plans are historical decisions; the current implementation and these sources govern new work.
 
@@ -190,6 +228,29 @@ Use a short outcome heading plus concrete evidence. A progress bar reflects only
 4. Wire presentation through a page/controller and the existing background service boundary. Do not put backend protocols, network waits or durable state decisions in a Designer file or custom visual widget.
 5. Exercise empty, populated, loading/busy, invalid, disabled, selected, keyboard focus, hover, pressed, error and unknown states as applicable. Fixture imagery, models and cloud receipts must remain explicitly fake and must not contact a provider.
 6. Capture the actual Qt page at normal and narrow widths with representative long text. Compare it with Generate's density and state language; correct clipping and hidden navigation. Verify on Windows for native frame, font metrics and DPI before claiming Windows visual acceptance.
+
+## Iconography
+
+One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/images/gallery/`, drawn into section, metadata and row icon labels through the `iconKey` property and a `QLabel[iconKey="…"]` QSS rule; set the key in the Designer `.ui` file, never a per-widget stylesheet. Section headers lead with a 16 px icon, additional-details rows use 14 px and metadata-band labels and prompt disclosure buttons 12 px (sizes are Designer dimensions). Strokes are light `#f2f6f8` with no fill.
+
+- **Repository icons (use first):** `grid`, `list`, `detail` (sliders: Parameters), `refresh`, `document`, `json`, `calendar`, `fullscreen` and `chevron`: 24 px viewBox, 1.6 stroke, round caps and joins. The app mark is `resources/images/dtflow-app.png` with `dtflow.ico`; the panel and connection icons are code-drawn in `ui/brand.py`.
+- **Lucide icons (where no repository icon fits):** `server`, `key-round`, `shield-check`, `flask-conical`, `settings`, `cloud`, `send`, `layers`, `list-checks`, `triangle-alert`, `image`, `box`, `repeat`, `compass`, `waypoints`, `ban`, `dices`, `file-image`, `hard-drive`, `weight` and `timer`, copied unmodified from `lucide-static` 1.52.0 (ISC, notice in `images/gallery/LICENSE-lucide.txt`) except that the stroke is `#f2f6f8` instead of `currentColor`. They keep Lucide's 2 px stroke, slightly heavier than the repository set; replace one with a repository SVG by changing its file and keeping the key.
+
+| Area | Icons |
+| --- | --- |
+| Connection sections | Backend `server`, DT+ credentials `key-round`, Connection check `shield-check` |
+| Generate sections | Backend `server`, Parameters `detail`, Simulation `flask-conical`, Configuration `settings`, Cloud assets `cloud` |
+| Queues sections | Dispatch policy `send`, Plan batch `layers`, Selected item `list-checks`, Uncertainty `triangle-alert` |
+| Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, filter combo arrow `chevron`, fullscreen `fullscreen` |
+| Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
+| Prompt disclosure | Additional `document`, Raw `json` |
+| Additional-details rows | Negative prompt `ban`, Resolved seed `dices`, Filename `file-image`, Source `hard-drive`, File size `weight`, Duration `timer`; Path keeps `document` |
+
+Do not use emoji; Unicode is limited to the gallery's prev/next and zoom glyphs. The web reference's "Icon Usage Map" card in [`devdocs/design-system/`](devdocs/design-system/README.md) mirrors this table.
+
+## Web design-system reference
+
+[`devdocs/design-system/`](devdocs/design-system/README.md) mirrors these tokens as CSS custom properties, with React components, foundation cards and per-view kits for prototyping. It follows this guide and never overrides it. Token naming, the named component-local QSS tones, the extra radii, the web-only spacing scale and the font substitution are recorded in the [token contract](devdocs/architecture/qt-design-tokens.md#web-design-system-mapping). Update both in the PR that changes a token.
 
 ## Do's and Don'ts
 

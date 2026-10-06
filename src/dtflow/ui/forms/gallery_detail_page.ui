@@ -1212,7 +1212,7 @@ No generation or saved output</string>
                         <string>sectionIcon</string>
                        </property>
                        <property name="iconKey" stdset="0">
-                        <string>detail</string>
+                        <string>box</string>
                        </property>
                        <property name="text">
                         <string />
@@ -1293,7 +1293,7 @@ No generation or saved output</string>
                         <string>modelMark</string>
                        </property>
                        <property name="iconKey" stdset="0">
-                        <string>detail</string>
+                        <string>box</string>
                        </property>
                        <property name="minimumSize">
                         <size>
@@ -1400,7 +1400,7 @@ No generation or saved output</string>
                         <string>sectionIcon</string>
                        </property>
                        <property name="iconKey" stdset="0">
-                        <string>detail</string>
+                        <string>layers</string>
                        </property>
                        <property name="text">
                         <string />
@@ -1613,7 +1613,7 @@ No generation or saved output</string>
                         <string>sectionIcon</string>
                        </property>
                        <property name="iconKey" stdset="0">
-                        <string>refresh</string>
+                        <string>repeat</string>
                        </property>
                        <property name="text">
                         <string />
@@ -1725,7 +1725,7 @@ No generation or saved output</string>
                         <string>sectionIcon</string>
                        </property>
                        <property name="iconKey" stdset="0">
-                        <string>detail</string>
+                        <string>compass</string>
                        </property>
                        <property name="text">
                         <string />
@@ -1837,7 +1837,7 @@ No generation or saved output</string>
                         <string>sectionIcon</string>
                        </property>
                        <property name="iconKey" stdset="0">
-                        <string>detail</string>
+                        <string>waypoints</string>
                        </property>
                        <property name="text">
                         <string />
@@ -2246,7 +2246,7 @@ No generation or saved output</string>
                      <string>sectionIcon</string>
                     </property>
                     <property name="iconKey" stdset="0">
-                     <string>document</string>
+                     <string>ban</string>
                     </property>
                     <property name="text">
                      <string />
@@ -2328,7 +2328,7 @@ No generation or saved output</string>
                      <string>sectionIcon</string>
                     </property>
                     <property name="iconKey" stdset="0">
-                     <string>json</string>
+                     <string>dices</string>
                     </property>
                     <property name="text">
                      <string />
@@ -2410,7 +2410,7 @@ No generation or saved output</string>
                      <string>sectionIcon</string>
                     </property>
                     <property name="iconKey" stdset="0">
-                     <string>document</string>
+                     <string>file-image</string>
                     </property>
                     <property name="text">
                      <string />
@@ -2492,7 +2492,7 @@ No generation or saved output</string>
                      <string>sectionIcon</string>
                     </property>
                     <property name="iconKey" stdset="0">
-                     <string>detail</string>
+                     <string>hard-drive</string>
                     </property>
                     <property name="text">
                      <string />
@@ -2574,7 +2574,7 @@ No generation or saved output</string>
                      <string>sectionIcon</string>
                     </property>
                     <property name="iconKey" stdset="0">
-                     <string>document</string>
+                     <string>weight</string>
                     </property>
                     <property name="text">
                      <string />
@@ -2656,7 +2656,7 @@ No generation or saved output</string>
                      <string>sectionIcon</string>
                     </property>
                     <property name="iconKey" stdset="0">
-                     <string>calendar</string>
+                     <string>timer</string>
                     </property>
                     <property name="text">
                      <string />

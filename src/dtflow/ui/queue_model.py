@@ -4,10 +4,17 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor
 
 from dtflow.ui.queue_presenter import ItemRow
+from dtflow.ui.theme import load_tokens
 
 COLUMNS = ("#", "Item", "Seed", "State", "Attempt", "Outputs")
-# The same palette as the shared stylesheet's state colors; "secondary" keeps the default text color.
-LEVEL_COLORS = {"ok": "#78c97c", "warning": "#ffbf59", "error": "#ff8179", "unknown": "#b7a4e5"}
+# Shared state tokens; "secondary" keeps the default text color. Unknown is neutral gray, never tinted.
+_TOKENS = load_tokens()
+LEVEL_COLORS = {
+    "ok": _TOKENS["color.success"],
+    "warning": _TOKENS["color.warning"],
+    "error": _TOKENS["color.error"],
+    "unknown": _TOKENS["color.unknown"],
+}
 ITEM_ID_ROLE = Qt.ItemDataRole.UserRole
 NUMERIC_COLUMNS = (0, 2)  # "#" and "Seed"
 
