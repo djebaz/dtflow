@@ -46,7 +46,8 @@ $ds = 'C:/Users/dje/Downloads/DTFlow Design System (5)'
 # --fetch explicitly downloads the export's pinned React/ReactDOM/Babel scripts,
 # verifies SHA-384 integrity, and caches them in ignored tmp/design-system-vendor.
 uv run python tools/ui/design_shots.py tmp/ds-renders/screens --design-system $ds --fetch
-uv run python tools/ui/design_states.py tmp/ds-renders/states --design-system $ds
+uv run python tools/ui/states.py tmp/qt-renders/states
+uv run python tools/ui/design_states.py tmp/ds-renders/states --design-system $ds --reference tmp/qt-renders/states/contract.json
 # Optional subset, matching states.py family names:
 uv run python tools/ui/design_states.py tmp/ds-renders/buttons buttons --design-system $ds
 ```
@@ -55,8 +56,18 @@ Omit `--design-system` to capture the tracked `devdocs/design-system` reference.
 
 Outputs:
 - Screens use `10-connection`, `11-generate`, `12-queues`, `13-images`, and the gallery filenames used by the Qt captures; sizes are 1600x1000, 1280x900, and 1280x1000 for expanded Detail. No title bar is fabricated.
-- State families emit sheets `30` through `39`, at DPR 1 with cells enlarged 2x, like the Qt sheets. Specimen-host dimensions are not overrides of component appearance. Sheet dimensions/row coverage need not equal the Qt matrices.
+- State families emit sheets `30` through `39`, at DPR 1 with cells enlarged 2x, like the Qt sheets. Specimen-host dimensions are not overrides of component appearance. The Qt script emits contract.json; the web script consumes it (default tmp/qt-renders/states/contract.json). Both use the same fixed frames, row/state order, 8 px specimen inset and sheet compositor. Unsupported states retain labelled slots. No component is stretched to match another; frame overflow fails clearly. The original ZIP sheets predate this contract and must be regenerated for alignment.
 - `manifest.json` records the export bundle hash, browser version, captures, computed styles/bounds and observed interaction states for matrix cells, unsupported states, blocked requests and errors. Do not use stale PNGs from a prior run as current evidence; the manifest lists only the current captures.
 - A capture/setup/JavaScript/resource error returns nonzero. Unsupported states are recorded separately, not rendered with invented styling. Native scrollbar hover/press, missing component disabled APIs, indeterminate progress and elevated numeric styling are examples. A run without failures is not full state parity.
 
 The existing review/scenarios.json is not assumed complete or authoritative: its screenshot paths can be missing, and its fixtures differ from shots.py. Matching content and states, token-role correctness, pixel-diff alignment and full workflow scenarios remain separate follow-ups.
+
+## Comparison gallery
+
+Generate a portable offline gallery with shared zoom and linked scrolling. For matched states, use the fresh Qt captures rather than the original ZIP. Screen fixtures remain different; aligned state frames do not imply visual parity.
+
+```powershell
+uv run python tools/ui/compare_gallery.py --qt tmp/qt-renders --design tmp/ds-renders --out tmp/render-gallery/index.html
+```
+
+In the gallery, choose Specimen for one matching component/state. This control is enabled only for identical Qt/web state contracts; it clips the original PNGs with CSS at the shared scale, without rewriting images.

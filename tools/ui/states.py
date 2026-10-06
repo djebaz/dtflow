@@ -1,5 +1,6 @@
 """State-matrix screenshots of real Qt widgets under the real DTFlow stylesheet (offscreen)."""
 
+import argparse
 import json
 import os
 import sys
@@ -57,7 +58,15 @@ from dtflow.ui.theme import (  # noqa: E402
     load_tokens,
 )
 
-OUT = Path(sys.argv[1])
+cli = argparse.ArgumentParser(description=__doc__)
+cli.add_argument("out", type=Path)
+cli.add_argument(
+    "families",
+    nargs="*",
+    choices=["buttons", "connection", "gallery", "inputs", "checks", "lists", "tabs", "labels", "popups"],
+)
+args = cli.parse_args()
+OUT = args.out
 OUT.mkdir(parents=True, exist_ok=True)
 app = QApplication([])
 if not QFontDatabase.families():
@@ -835,7 +844,7 @@ def popups():
 
 
 if __name__ == "__main__":
-    which = sys.argv[2:] or [
+    which = args.families or [
         "buttons",
         "connection",
         "gallery",

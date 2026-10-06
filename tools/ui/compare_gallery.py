@@ -28,6 +28,12 @@ def image_record(path):
 
 def build_data(qt, design):
     left, right = scan(qt), scan(design)
+    contract_path = qt / "states/contract.json"
+    web_manifest = design / "states/manifest.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8")) if contract_path.exists() else None
+    web_contract = (
+        json.loads(web_manifest.read_text(encoding="utf-8")).get("state_contract") if web_manifest.exists() else None
+    )
     pairs = []
     for name in sorted(left.keys() | right.keys()):
         group = (
@@ -43,6 +49,20 @@ def build_data(qt, design):
                 "design": image_record(right[name]) if name in right else None,
             }
         )
+        definition = (contract or {}).get("sheets", {}).get(Path(name).stem)
+        if definition and contract == web_contract:
+            width, height = definition["frame"]
+            pairs[-1]["regions"] = [
+                {
+                    "label": row["label"] + " / " + state,
+                    "x": 150 + c * (width * 2 + 12),
+                    "y": 58 + r * (height * 2 + 42),
+                    "width": width * 2,
+                    "height": height * 2,
+                }
+                for r, row in enumerate(definition["rows"])
+                for c, state in enumerate(row["states"])
+            ]
     if not pairs:
         raise ValueError("No PNG captures found in either directory")
     evidence = []

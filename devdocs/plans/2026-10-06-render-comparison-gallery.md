@@ -18,3 +18,5 @@ Use one shared scale in every view, including Fit pair. Keep a common top-left c
 ## Matched state capture contract
 
 Regenerate Qt states first and export a versioned contract containing sheet rows, state order, fixed capture frames and DPR 1. The web renderer consumes that contract, uses the same sheet compositor and reserves unsupported slots instead of shifting columns. Both keep native component dimensions, position specimens at an 8 px inset, and enlarge cells exactly 2x. Fixed frames must reject overflow rather than crop or resize silently. Record actual Qt DPI/DPR and retain the original ZIP separately. Identical harness geometry is not proof of matching fixtures, component APIs, fonts or visuals.
+
+The gallery exposes per-component/state regions only when both renderers have identical contracts. It displays those regions with CSS clipping of original PNG bytes at one shared scale, not independently resized images. Whole-sheet review remains available.

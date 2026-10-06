@@ -26,6 +26,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0}.caption{paddin
 <label>Search <input id="search" type="search" placeholder="Filename"></label>
 <label>Category <select id="group"><option value="all">All captures</option><option value="screens">Screens</option><option value="states">States</option></select></label>
 <label>Pairs <select id="pairs"><option value="all">All</option><option value="paired">Both sides</option><option value="missing">Missing a side</option></select></label>
+<label>Specimen <select id="region"><option value="">Whole sheet</option></select></label>
 <label>View <select id="view"><option value="fit">Fit pair (same scale)</option><option value="actual">100%</option><option value="zoom">Shared zoom</option></select></label>
 <label>Zoom <input id="zoom" type="range" min="10" max="200" step="10" value="100"><output id="zoomText">100%</output></label>
 <label><input id="sync" type="checkbox" checked>Link scrolling</label>
@@ -47,7 +48,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0}.caption{paddin
 <section class="pane"><h2>Qt renders <span id="qtSize" class="dimensions"></span></h2><div id="qt" class="viewport"></div></section>
 <section class="pane"><h2>Design-system renders <span id="designSize" class="dimensions"></span></h2><div id="design" class="viewport"></div></section>
 </div>
-<div class="help">Both sides use the same scale and top-left canvas origin. Offsets align a chosen region without stretching images. Match state labels—not sheet columns. Different fixtures and platform rendering are not automatically defects. Arrow keys browse captures.</div>
+<div class="help">Both sides use the same scale and top-left canvas origin. Offsets align a chosen region without stretching images. For matched state sheets, choose a Specimen to compare one component/state at a time. Different fixtures and platform rendering are not automatically defects. Arrow keys browse captures.</div>
 </main>
 </div>
 <script id="capture-data" type="application/json">__CAPTURE_DATA__</script>
@@ -56,6 +57,7 @@ main{display:flex;flex-direction:column;min-width:0;min-height:0}.caption{paddin
 const DATA=JSON.parse(document.getElementById('capture-data').textContent);
 const $=id=>document.getElementById(id);
 let filtered=[],selected=null,scrollLock=false;
+let regionIndex='';
 const alignments=new Map();
 const paired=p=>Boolean(p.qt&&p.design);
 $('evidence').textContent=JSON.stringify({qt_source:DATA.qt_source,design_source:DATA.design_source,manifests:DATA.evidence},null,2);
@@ -71,6 +73,10 @@ function filter(){
 }
 function choose(name){selected=name;for(const b of $('files').children)b.setAttribute('aria-current',String(b.dataset.name===name));render();}
 function render(){
+ regionIndex='';
+ const regions=filtered.find(p=>p.name===selected)?.regions??[];
+ $('region').replaceChildren(new Option('Whole sheet',''),...regions.map((r,i)=>new Option(r.label,String(i))));
+ $('region').disabled=!regions.length;
  const offsets=alignments.get(selected)??{qtX:0,qtY:0,designX:0,designY:0};
  for(const key of ['qtX','qtY','designX','designY'])$(key).value=offsets[key];
  const p=filtered.find(p=>p.name===selected);
@@ -87,18 +93,20 @@ function scale(){
  const mode=$('view').value,zoom=Number($('zoom').value);$('zoomText').value=zoom+'%';$('zoom').disabled=mode!=='zoom';
  const p=filtered.find(p=>p.name===selected);
  if(!p){$('scaleReadout').textContent='';return;}
+ const region=regionIndex===''?null:p.regions?.[Number(regionIndex)];
  const sides=['qt','design'],offsets={};
  for(const side of sides)offsets[side]={x:Number($(side+'X').value)||0,y:Number($(side+'Y').value)||0};
  const present=sides.filter(side=>p[side]);
  const left=Math.min(0,...present.map(side=>offsets[side].x)),top=Math.min(0,...present.map(side=>offsets[side].y));
- const width=Math.max(...present.map(side=>p[side].width+offsets[side].x))-left;
- const height=Math.max(...present.map(side=>p[side].height+offsets[side].y))-top;
+ const width=Math.max(...present.map(side=>(region?.width??p[side].width)+offsets[side].x))-left;
+ const height=Math.max(...present.map(side=>(region?.height??p[side].height)+offsets[side].y))-top;
  const available=Math.min(...sides.map(side=>Math.max(1,$(side).clientWidth-16)));
  const factor=mode==='fit'?Math.min(1,available/width):(mode==='actual'?1:zoom/100);
  $('scaleReadout').textContent=`Shared scale: ${(factor*100).toFixed(1)}%`;
  for(const side of present){const img=$(side).querySelector('img'),stage=img.parentElement;
+  stage.style.overflow=region?'hidden':'visible';
   stage.style.width=(width*factor)+'px';stage.style.height=(height*factor)+'px';
-  img.style.width=(p[side].width*factor)+'px';img.style.left=((offsets[side].x-left)*factor)+'px';img.style.top=((offsets[side].y-top)*factor)+'px';
+  img.style.width=(p[side].width*factor)+'px';img.style.left=((offsets[side].x-left-(region?.x??0))*factor)+'px';img.style.top=((offsets[side].y-top-(region?.y??0))*factor)+'px';
  }
 }
 function align(){alignments.set(selected,Object.fromEntries(['qtX','qtY','designX','designY'].map(key=>[key,Number($(key).value)||0])));scale();}
@@ -107,6 +115,7 @@ for(const id of ['search','group','pairs'])$(id).addEventListener(id==='search'?
 for(const key of ['qtX','qtY','designX','designY'])$(key).oninput=align;
 $('resetAlignment').onclick=()=>{alignments.delete(selected);render();};
 new ResizeObserver(scale).observe(document.querySelector('.panes'));
+$('region').onchange=()=>{regionIndex=$('region').value;for(const side of ['qt','design'])$(side).scrollTop=$(side).scrollLeft=0;scale();};
 $('view').onchange=scale;$('zoom').oninput=scale;$('previous').onclick=()=>step(-1);$('next').onclick=()=>step(1);
 document.addEventListener('keydown',event=>{if(['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName))return;if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();step(event.key==='ArrowLeft'?-1:1);}});
 for(const [side,other] of [['qt','design'],['design','qt']])$(side).addEventListener('scroll',()=>{if(!$('sync').checked||scrollLock)return;scrollLock=true;$(other).scrollTop=$(side).scrollTop;$(other).scrollLeft=$(side).scrollLeft;requestAnimationFrame(()=>scrollLock=false);});

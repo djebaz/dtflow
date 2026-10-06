@@ -20,7 +20,8 @@ $ds = 'C:/Users/dje/Downloads/DTFlow Design System (5)'
 # --fetch explicitly downloads the export's pinned React/ReactDOM/Babel scripts,
 # verifies SHA-384 integrity, and caches them in ignored tmp/design-system-vendor.
 uv run python tools/ui/design_shots.py tmp/ds-renders/screens --design-system $ds --fetch
-uv run python tools/ui/design_states.py tmp/ds-renders/states --design-system $ds
+uv run python tools/ui/states.py tmp/qt-renders/states
+uv run python tools/ui/design_states.py tmp/ds-renders/states --design-system $ds --reference tmp/qt-renders/states/contract.json
 # Optional subset, matching states.py family names:
 uv run python tools/ui/design_states.py tmp/ds-renders/buttons buttons --design-system $ds
 ```
@@ -39,7 +40,7 @@ Outputs:
   1280x1000 for expanded Detail. No title bar is fabricated.
 - State families emit sheets `30` through `39`, at DPR 1 with cells enlarged 2x,
   like the Qt sheets. Specimen-host dimensions are not overrides of component
-  appearance. Sheet dimensions/row coverage need not equal the Qt matrices.
+  appearance. Regenerated Qt states emit contract.json, consumed by the web renderer: both use identical fixed frames, 8 px specimen insets, row/state ordering and a common compositor. Unsupported slots are labelled without shifting columns. Component sizes are preserved; overflow fails, rather than silently cropping/stretching. The original ZIP does not use this contract.
 - `manifest.json` records the export bundle hash, browser version, captures,
   computed styles/bounds and observed interaction states for matrix cells,
   unsupported states, blocked requests and errors. Do not use stale PNGs from a
@@ -55,7 +56,7 @@ Matching content and states, token-role correctness, pixel-diff alignment and
 full workflow scenarios remain separate follow-ups.
 
 
-## Verified development capture (2026-10-06)
+## Earlier development capture (2026-10-06, before matched state frames)
 
 Against the external `DTFlow Design System (5)` export: eight screen captures,
 ten state sheets / 158 captured cells, 18 explicit unsupported states, and zero
@@ -65,3 +66,9 @@ C: disk-space limits and was stopped. This is not matched-browser, high-DPI or
 pixel-parity acceptance. Three focused offline vendor-cache contract tests,
 Ruff, compilation and both CLI help commands passed. No full application suite,
 packaging, model inference, real upload or billable action was run.
+
+## Matched state frames (2026-10-06)
+
+Fresh Windows offscreen Qt captures produced ten sheets at DPR 1 and logical DPI 96. The web capture consumed their contract and produced the same ten sheet dimensions, with 146 captured cells, 26 explicitly unsupported slots and zero capture/JavaScript/resource errors. All ten dimension pairs were checked. Unsupported slots include isolated popups without equivalent recipes; they are not silently replaced with screenshots of different components.
+
+The regenerated tmp/render-gallery/index.html uses these fresh states on both sides. Its screens retain the supplied ZIP captures, with a provenance warning. Choose Specimen to inspect a single matching component/state without resampling the source PNG; Whole sheet remains available. Six focused offline tests, repository Ruff checks/format, compilation, CLI help and headless gallery navigation/zoom/alignment/specimen checks passed. No full application suite or packaged/high-DPI acceptance was run. No inference, upload or billable action ran.

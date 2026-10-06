@@ -51,3 +51,28 @@ def test_export_rejects_unapproved_or_unpinned_vendors(tmp_path, url, integrity)
     export(tmp_path, integrity, url)
     with pytest.raises(ValueError, match="Unapproved or unpinned"):
         capture.vendor_sources(tmp_path)
+
+
+def test_shared_state_frames_preserve_slots_scale_and_reject_overflow(tmp_path, qapp):
+    from PySide6.QtGui import QColor, QImage
+
+    spec = importlib.util.spec_from_file_location(
+        "state_layout", Path(__file__).parents[1] / "tools/ui/state_layout.py"
+    )
+    layout = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(layout)
+    definition = {"frame": [100, 70], "rows": [{"label": "Connection", "states": ["rest", "disabled"]}]}
+    cell = QImage(74, 50, QImage.Format.Format_ARGB32)
+    cell.fill(QColor("#ff0000"))
+    qt, web = tmp_path / "qt.png", tmp_path / "web.png"
+    assert layout.compose(qt, definition, [{"rest": cell, "disabled": cell}]) == (586, 234)
+    assert layout.compose(web, definition, [{"rest": cell, "disabled": "Unsupported"}]) == (586, 234)
+    image = QImage(str(web))
+    assert image.pixelColor(150, 58) == QColor("#ff0000")
+    assert image.pixelColor(150 + 148, 58) == QColor("#252525")
+    oversized = QImage(101, 70, QImage.Format.Format_ARGB32)
+    with pytest.raises(ValueError, match="exceeds frame"):
+        layout.compose(web, definition, [{"rest": oversized}])
+    cell.setDevicePixelRatio(2)
+    with pytest.raises(ValueError, match="DPR"):
+        layout.compose(web, definition, [{"rest": cell}])

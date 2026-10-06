@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 
 from design_capture import capture_session, manifest, parser, ready, vendor_sources
 from state_layout import compose
@@ -233,10 +234,11 @@ def specs():
 def html(base, vendors, expression, state, width):
     scripts = "".join(f'<script src="{url}"></script>' for url in vendors if "babel" not in url)
     props = {"disabled": "disabled" in state, "checked": "checked" in state, "invalid": state == "invalid"}
+    width = f"{width}px" if isinstance(width, int) else width
     # The host fixes specimen bounds, not the component's styling/state appearance.
     return f'''<!doctype html><link rel="stylesheet" href="{base}/styles.css">
 {scripts}<script src="{base}/_ds_bundle.js"></script>
-<body style="margin:0;overflow:hidden"><div id="cell" style="display:inline-block;padding:8px;position:relative;background:#252525"><div id="specimen" style="width:{width}px"></div></div>
+<body style="margin:0;overflow:hidden"><div id="cell" style="display:inline-block;padding:8px;position:relative;background:#252525"><div id="specimen" style="width:{width}"></div></div>
 <script>const D=window[Object.keys(window).find(k=>k.startsWith('DTFlowDesignSystem_'))];
 const e=React.createElement,p={json.dumps(props)},state={json.dumps(state)};
 ReactDOM.createRoot(document.getElementById('specimen')).render({expression});</script>'''
@@ -327,8 +329,8 @@ def main():
     cli.add_argument(
         "-q",
         "--reference",
-        type=__import__("pathlib").Path,
-        default=__import__("pathlib").Path("tmp/qt-renders/states/contract.json"),
+        type=Path,
+        default=Path("tmp/qt-renders/states/contract.json"),
         help="Qt state contract.json; generate Qt states first",
     )
     args = cli.parse_args()
@@ -336,8 +338,6 @@ def main():
     if contract.get("version") != 1 or contract.get("device_scale_factor") != 1:
         cli.error("Unsupported state contract version or DPR")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from pathlib import Path
-
     from PySide6.QtGui import QFontDatabase, QGuiApplication
 
     app = QGuiApplication([])

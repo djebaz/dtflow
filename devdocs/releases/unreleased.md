@@ -1,5 +1,7 @@
 # Unreleased
 
+- Development render comparison: regenerated Qt/web state sheets share a DPR-1 capture contract, fixed frames, specimen inset, state ordering and common 2x compositor; unsupported web slots remain labelled. The offline HTML gallery uses a shared zoom scale and linked scrolling. This is comparison tooling, not visual-parity acceptance.
+
 ## Highlights
 
 - PR #33 establishes the Images presentation and shared styling; PR #34 connects it to real committed saved outputs through shared bounded gallery services, CLI inspection and the production Qt viewer. No release/version bump is introduced.
