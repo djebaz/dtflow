@@ -24,7 +24,7 @@ Exact available checkpoint / quantization
 Compatible available LoRAs
 ```
 
-Prime checkpoints are the default. A compact `Include niche models` toggle adds Niche checkpoints without replacing Prime results.
+Prime checkpoints are the default. In Local mode, an `Include DT+ Cloud` toggle immediately above `Include niche models` adds classified catalogue checkpoint candidates that a Draw Things DT+ bridge may omit from its local Echo inventory. These candidates are catalogue-derived, not falsely reported as locally observed. The compact `Include niche models` toggle adds Niche checkpoints without replacing Prime results.
 
 This is a GUI discovery feature. The CLI remains an explicit automation/development interface and is not redesigned into an interactive domain → family → checkpoint → LoRA browser.
 
