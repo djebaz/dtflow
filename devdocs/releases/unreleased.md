@@ -8,6 +8,8 @@
 
 ## Added
 
+- Catalogue-driven Generate discovery resolves reviewed Prime/Niche checkpoints and known LoRAs against the active provider inventory by exact artifact identity. The Generate model area now exposes All/Image/Video, base-model family, exact checkpoint and an additive `Include niche models` option; compatible LoRA suggestions follow the selected classified checkpoint. Unclassified available checkpoints remain usable through the editable exact-ID field without invented family/mode/LoRA compatibility. Optional custom-LoRA metadata is user-owned durable state, not a packaged whitelist.
+
 - Persist client-observed backend elapsed time for successful outputs and display it as Backend duration in Images Detail. The value runs from the submission boundary to terminal response, so it may include backend queueing/serialization and is not presented as pure inference time. Queues mirror selected per-item backend lifecycle events durably, while the existing event panel presents a compact position-based activity stream such as `#2 submitted` and `#2 completed - 12.34 s`; full IDs and redundant prepare/artifact/terminal lines stay out of the default UX. Progress/previews remain transient and no scheduling-derived duration is invented.
 
 - `devdocs/design-system/`: Claude Design web reference (tokens, components, foundation cards, UI kits) mirroring `tokens.json`; documentation/prototype only, no runtime or QSS change.
