@@ -79,6 +79,7 @@ class DrawThingsBackend:
 
     backend_id = BACKEND_ID
     max_concurrency = 1
+    unlisted_model_bridge = True
 
     def __init__(
         self,
@@ -114,6 +115,7 @@ class DrawThingsBackend:
             batch_count=1,
             lora_support="selection",
             limits=self.limits,
+            unlisted_model_bridge=self.unlisted_model_bridge,
         )
 
     async def open(self) -> None:
@@ -284,7 +286,7 @@ class DrawThingsBackend:
                     self._failure(request, ErrorCategory.PROTOCOL, "event_sink_failure", "Event sink failed.", stage)
                 ) from exc
 
-        if not request.allow_unlisted_model and request.model_id not in self.capabilities.model_ids:
+        if not (self.unlisted_model_bridge and request.allow_unlisted_model) and request.model_id not in self.capabilities.model_ids:
             raise error(
                 ErrorCategory.VALIDATION,
                 "unknown_model",
