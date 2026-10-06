@@ -29,8 +29,9 @@ The control stays in the same compact header area, but it is intentionally posit
 ### Queue running
 
 - Show the segmented ring as active.
-- The center displays the current generation step when trustworthy progress exists, for example `8`.
-- Clicking posts the existing **Pause** control for that queue.
+- When exactly one running queue item is unambiguous, the center displays that item's queue position, for example `3` for item `#3`; the tooltip may also report trustworthy backend step progress.
+- Clicking posts the existing **Pause** control only when this window owns that dispatch. Work observed from another process is status-only in the compact header.
+- With concurrent running items, do not invent one current item number.
 - The ring is a status/control affordance, not a second progress authority.
 
 ### Queue paused
@@ -53,7 +54,7 @@ The control stays in the same compact header area, but it is intentionally posit
 
 ### Settled / failure feedback
 
-- Completion and failure may use short-lived checked/error treatments, but should not turn the header into a persistent status banner.
+- Finished, cancelled and blocked queue selections return the compact header to its quiet idle presentation rather than leaving a persistent completion/error badge.
 - Detailed queue/generation messages remain on their existing pages and in tooltips/accessibility text.
 
 ## Visual direction
@@ -124,7 +125,7 @@ The Queue page already polls durable queue views and computes allowed controls.
 - Route header clicks back to narrow QueuePage methods that invoke the same `start()` or `_post("pause"/"resume")` paths used by the page buttons.
 - If the selected queue changes or becomes unavailable, the header follows that state on the next normal refresh.
 
-For current-step display during queues, use only progress evidence DTFlow already records or exposes. If concurrent queue items make one unambiguous single step impossible, show activity without inventing a number. A later design can represent multiple active items if needed.
+For queue counters, use the durable item's existing `position` only when one running item is unambiguous. Keep provider/backend step progress as tooltip detail when available. If concurrent queue items make one current item ambiguous, show activity without inventing a number. A later design can represent multiple active items if needed.
 
 ### 6. Keep navigation-independent chrome
 
@@ -159,8 +160,9 @@ After the replacement is functional:
 - The old right-panel show/hide header button is gone.
 - The replacement remains approximately 30×30 px and is not enlarged to logo scale; it sits slightly left of the former Inspector-toggle position rather than exactly replacing its coordinates.
 - A startable selected queue shows Play and starts through the existing queue dispatch path.
-- A running queue shows the active segmented treatment; click posts Pause through the existing control path.
-- A paused queue shows Resume/Play; click posts Resume through the existing control path.
+- A running queue shows the active segmented treatment; when this window owns the dispatch, click posts Pause through the existing control path. Externally owned queue work is status-only.
+- A paused queue owned by this window shows Resume/Play; without a live local dispatcher, Play starts dispatch instead of posting a dead Resume request.
+- A single unambiguous running queue item can show its durable queue position in the center; concurrent items do not fabricate one current position.
 - Generation progress can show the current step in the control when the backend reports trustworthy `completed/total`.
 - Single generation does not claim pause/resume until a real service contract exists.
 - The control stays visible and coherent while moving between all four workspaces.
