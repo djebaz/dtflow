@@ -85,3 +85,10 @@ def test_prepared_custom_loras_are_described_in_the_override_with_the_base_versi
         request(loras=selections, prepared_assets=(asset,)), None
     ).message.override.loras
     assert not build_generation_message(request(loras=selections), None, "z_image").message.override.loras
+
+
+def test_bundled_catalogue_supplies_a_base_version_when_inventory_has_none():
+    from dtflow.backends.drawthings.versions import bundled_base_version
+
+    assert bundled_base_version("z_image_turbo_1.0_q6p.ckpt") == "z_image"
+    assert bundled_base_version("unknown.ckpt") is None

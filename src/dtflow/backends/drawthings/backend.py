@@ -23,6 +23,7 @@ from dtflow.backends.drawthings.codec import (
 from dtflow.backends.drawthings.errors import diagnostics, error, failure, from_exception
 from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
+from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
 from dtflow.core.models import (
     BackendError,
@@ -308,13 +309,15 @@ class DrawThingsBackend:
                     if self._inventory
                     else None
                 )
-                wire = build_generation_message(request, await self._secret(), model.architecture if model else None)
+                base_version = (model.architecture if model else None) or bundled_base_version(request.model_id)
+                wire = build_generation_message(request, await self._secret(), base_version)
                 if request.loras:
                     log.debug(
-                        "loras sent=%s override=%s base_version=%s",
+                        "loras sent=%s override=%s base_version=%s prepared=%d",
                         dict(wire.effective_configuration).get("loras"),
                         wire.message.override.loras.decode() or "none",
-                        model.architecture if model else None,
+                        base_version,
+                        len(request.prepared_assets),
                     )
                 emit("preparing", stage="wire_validated")
                 async with self._lane:
