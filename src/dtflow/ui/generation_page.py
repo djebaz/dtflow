@@ -14,7 +14,16 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QListWidgetItem, QMessageBox, QPushButton, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFormLayout,
+    QInputDialog,
+    QLabel,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QWidget,
+)
 
 from dtflow.composition import BACKENDS
 from dtflow.core.models import (
@@ -190,6 +199,7 @@ class GenerationPage:
         )
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
+        self._align_rail_labels()
         page.samplerCombo.addItems(SAMPLERS)
         for label, value in (("All", "all"), ("Image", "image"), ("Video", "video")):
             page.generationDomainCombo.addItem(label, value)
@@ -457,6 +467,23 @@ class GenerationPage:
         return True
 
     # -- presentation ----------------------------------------------------------------------------------------------
+    def _align_rail_labels(self) -> None:
+        """Give every rail group the same label column, so inputs and selects share one left edge."""
+        labels: list[QLabel] = []
+        for form in (self.page.backendSummaryForm, self.page.simulationForm):
+            for row in range(form.rowCount()):
+                item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+                if item is not None and isinstance(item.widget(), QLabel):
+                    labels.append(item.widget())
+        grid = self.page.parametersGrid
+        for row in range(grid.rowCount()):
+            item = grid.itemAtPosition(row, 0)
+            if item is not None and isinstance(item.widget(), QLabel):
+                labels.append(item.widget())
+        width = max((label.sizeHint().width() for label in labels), default=0)
+        for label in labels:
+            label.setMinimumWidth(width)
+
     def _status(self, presentation: Presentation) -> None:
         label = self.page.generationStatusLabel
         label.setProperty("state", presentation.level)

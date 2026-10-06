@@ -165,10 +165,10 @@ QComboBox::drop-down {
   width: 26px;
   margin: 0;
   border: 0;
-  border-left: 1px solid ${color.buttonBorder};
+  border-left: 1px solid ${color.border};
   border-top-right-radius: ${size.inputRadius};
   border-bottom-right-radius: ${size.inputRadius};
-  background-color: ${color.button};
+  background-color: ${color.input};
 }
 QComboBox::down-arrow {
   image: url(../images/controls/chevron-down.svg);
@@ -176,14 +176,14 @@ QComboBox::down-arrow {
   height: 12px;
 }
 QComboBox:hover::drop-down {
-  background-color: ${color.buttonHover};
-  border-left-color: ${color.buttonBorderHover};
+  background-color: ${color.surface};
+  border-left-color: ${color.inputBorderHover};
 }
 QComboBox:on {
   border-color: ${color.focus};
 }
 QComboBox:on::drop-down {
-  background-color: ${color.buttonPressed};
+  background-color: ${color.canvas};
   border-left-color: ${color.focus};
 }
 QComboBox:disabled::drop-down {
