@@ -129,6 +129,7 @@ class QueuePage:
         self._selected: str | None = None
         self._select_after: str | None = None
         self._dispatching: str | None = None
+        self._dispatch_started = False
         self._future = None
         self._reading = False
         self._syncing = False
@@ -239,6 +240,10 @@ class QueuePage:
             if item["state"] == "running"
         }
         self._run_progress = {key: value for key, value in self._run_progress.items() if key in running}
+        if self._dispatching is not None:
+            active = self._views.get(self._dispatching)
+            if active is not None and active["status"] == "running":
+                self._dispatch_started = True
         if self._select_after in self._views:
             self._selected, self._select_after = self._select_after, None
         elif self._selected not in self._views:
@@ -359,7 +364,9 @@ class QueuePage:
         dispatching_here = self._dispatching == queue_id
         status = view["status"]
         phase, action = "idle", None
-        if dispatching_here or status == "running":
+        if status == "paused" and dispatching_here and self._dispatch_started:
+            phase, action = "paused", "resume" if available.resume else None
+        elif dispatching_here or status == "running":
             phase = "running"
             action = "pause" if available.pause else None
         elif available.resume:
@@ -567,6 +574,8 @@ class QueuePage:
     # -- dispatch and controls -------------------------------------------------------------------------------------
     def _queue_backend_event(self, wrapped: _QueueBackendEvent) -> None:
         event = wrapped.event
+        if wrapped.queue_id == self._dispatching:
+            self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)
         if (
             event.kind == "progress"
@@ -599,6 +608,7 @@ class QueuePage:
         if view is None or self.dispatching_here or self._activity.generating:
             return
         self._dispatching = view["queue_id"]
+        self._dispatch_started = False
         self._activity.set(dispatching=True)
         self._message(Presentation("ok", "Dispatching", "This window owns dispatch until the queue stops."))
         self._render()
@@ -617,6 +627,7 @@ class QueuePage:
 
     def _dispatched(self, final, failure) -> None:
         self._dispatching, self._future = None, None
+        self._dispatch_started = False
         self._activity.set(dispatching=False)
         if isinstance(failure, StateBusyError):
             self._message(
