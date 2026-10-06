@@ -99,7 +99,7 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Queues and batch plans](devdocs/guides/queues.md) — queue controls, concurrency and parameter comparisons.
 - [CLI reference](devdocs/guides/cli.md) — automation and development interface.
 - [Testing](devdocs/guides/testing.md), [development tools](devdocs/guides/development.md) and [Windows builds](devdocs/guides/building.md).
-- [Architecture](devdocs/architecture/) and [runtime layout](devdocs/architecture/runtime-layout.md).
+- [Architecture](devdocs/architecture/), [runtime layout](devdocs/architecture/runtime-layout.md) and the [design system reference](devdocs/design-system/README.md).
 - [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
 - [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
 

@@ -1,11 +1,16 @@
 # Unreleased
 
+- Development render comparison: regenerated Qt/web state sheets share a DPR-1 capture contract, fixed frames, specimen inset, state ordering and common 2x compositor; unsupported web slots remain labelled. The offline HTML gallery uses a shared zoom scale and linked scrolling. Icon-button states reuse canonical Qt configuration and real web icons. Web captures wait for image decode after interactions, and out-of-flow specimens fail if clipped. This is comparison tooling, not visual-parity acceptance.
+
 ## Highlights
 
 - PR #33 establishes the Images presentation and shared styling; PR #34 connects it to real committed saved outputs through shared bounded gallery services, CLI inspection and the production Qt viewer. No release/version bump is introduced.
 
 ## Added
 
+- `devdocs/design-system/`: Claude Design web reference (tokens, components, foundation cards, UI kits) mirroring `tokens.json`; documentation/prototype only, no runtime or QSS change.
+- Shared tokens: 30 component-local colors and 8 extra radii are now named in `tokens.json` and referenced from the QSS (resolved stylesheet unchanged). Queue state colors read the shared tokens, so an Unknown state is neutral gray instead of purple.
+- Icons: section headers, metadata labels and additional-details rows use one icon per meaning from the design-system usage map. 21 Lucide icons (`lucide-static` 1.52.0, ISC, stroke recolored to `#f2f6f8`, notice in `resources/images/gallery/LICENSE-lucide.txt`) join the repository SVGs, and the Detail view button uses `image` instead of the sliders icon.
 - Manual Windows build/draft-release workflow (PR #31): one fresh canonical GUI build with locked runtime dependencies, uv/managed-Python caching across version-only bumps, bundled identity checks, checksum/manifest and a downloadable Actions artifact. Optional PR-number mode resolves the same-repository head SHA, isolates its cache and is strictly artifact-only; PR plus release tag is rejected before checkout. Optional existing tag mode attaches only to a draft; it checks merged/tag/version provenance, refuses published releases/asset replacement and verifies downloaded uploads. Owner target-Windows smoke and explicit publication remain required. No new release/version bump, build-run acceptance or PyInstaller speedup is claimed.
 
 - Recorded the Phase 8 delivery sequence and selected read-only viewer scope, with a sample-derived Draw Things preset interchange contract and an anonymised representative configuration. Planning only; no gallery or preset runtime support is added.
@@ -44,3 +49,7 @@
 - On 2026-10-06 the owner reported the full test suite passed after the PR #34 Qt lifecycle fix. No final command/count was supplied in that confirmation, so no exact count is claimed here. Earlier failing output showed the lifecycle exception cascading through Qt setup; the fix was then owner-retested successfully.
 - Owner interactive smoke testing exercised the new Images viewer and identified Grid asynchronous thumbnail collapse and List scaling limits; both were corrected. The newest Grid-first/Fit-default adjustments have not been separately reported as smoke-tested yet.
 - Documentation closeout is source review only. Exact native-DPI and packaged Windows visual acceptance remain separate. No live provider operations, inference, training, uploads or potentially billable actions ran during PR #34 implementation/documentation work.
+
+## Development tooling
+
+- Add headless design-system screen and component-state capture scripts, computed-style/bounds manifests, verified offline vendor caching and explicit unsupported-state reporting. Playwright is development-only; no Qt runtime/theme changes. See [capture tooling](../guides/design-captures.md).

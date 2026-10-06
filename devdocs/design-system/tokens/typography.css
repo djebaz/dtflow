@@ -1,0 +1,14 @@
+/* DTFlow typography tokens */
+:root {
+  --font-family-ui: "Segoe UI", "Noto Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-mono: "Consolas", "Noto Sans Mono", "Monaco", monospace;
+  --font-size-small: 9pt;
+  --font-size-body: 10pt;
+  --font-size-section: 11pt;
+  --font-size-title: 17pt;
+  --font-weight-body: 400;
+  --font-weight-label: 500;
+  --font-weight-emphasis: 600;
+  --font-weight-title: 650;
+  --font-weight-strong: 700;
+}
