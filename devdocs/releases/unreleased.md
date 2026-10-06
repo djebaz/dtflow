@@ -42,6 +42,8 @@
 
 ## Fixed
 
+- Custom LoRA catalogue replacement now uses the same durable atomic-write pattern as last-session persistence: a unique temporary file, flush and fsync before replacement, and cleanup on failure.
+
 - Preserve bundled LoRA compatibility metadata when a user custom entry only refines fields such as name or trigger prefix, and cache the effective catalogue view until provider inventory or the durable custom-LoRA file changes.
 
 - Generate: the progress bar is now a determinate 0-100% bar that only grows (preparing, then real sampling steps from the provider, then saved) and never shows the indeterminate busy animation; after Stop or a failure it stays where it stopped, labelled "Stopped locally" or "Failed". Percentages beyond sampling steps are stage floors, not server percentages.
