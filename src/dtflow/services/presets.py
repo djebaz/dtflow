@@ -126,6 +126,10 @@ def save_preset(state: Path, name: str, values: dict) -> None:
     replacement = {"name": name, "configuration": configuration}
     for index, item in enumerate(presets):
         if item["name"] == name:
+            # Editing supported DTFlow fields must not discard Draw Things fields DTFlow does not currently apply.
+            merged_configuration = dict(item["configuration"])
+            merged_configuration.update(configuration)
+            replacement = {**item, "name": name, "configuration": merged_configuration}
             presets[index] = replacement
             break
     else:
