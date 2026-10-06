@@ -109,3 +109,38 @@ Checkable section cards require an operable header control. Queues uses
 checkable `planBox`; the controller re-enables the custom header when unchecked
 and hides the entire contents wrapper. The custom header covers the native indicator, so a scoped zero-size indicator
 rule suppresses it. Keep one visible toggle; retain the group's checked state. Parent activity disabling still applies.
+
+
+## Web design-system mapping
+
+[`devdocs/design-system/`](../design-system/README.md) is the Claude Design web reference. It is a prototype aid: `tokens.json` and `dtflow_dark.qss` stay the runtime authority, and a value change lands in them first, then in `design-system/tokens/*.css`, the root `DESIGN.md` snapshot and this document in the same PR.
+
+**Naming.** Every `color.*` token maps to `--color-*` in kebab-case (`color.secondary` → `--color-secondary`, `color.disabledBorder` → `--color-disabled-border`, `color.connectionAccent` → `--color-connection-accent`). Type and size tokens map as `type.body` → `--font-size-body`, `type.weightLabel` → `--font-weight-label`, `type.family` → `--font-family-ui`, `type.monoFamily` → `--font-family-mono`, `size.controlContent` → `--size-control-content`, `size.scrollbar` → `--size-scrollbar`, `size.inputRadius`/`size.radius` → `--radius-input`/`--radius-button`. All 22 base `color.*` values and the button, selection, border and section-card tokens match `tokens.json` exactly. The web reference substitutes Noto Sans / Noto Sans Mono for Segoe UI / Consolas and uses browser-native `SpinBox` arrows and `ComboBox` popup; Qt draws its own.
+
+**Component-local tones.** These literals are repeated in `dtflow_dark.qss` rules but are intentionally *not* in `tokens.json` (promote one only on a second independent use). The web reference names them for reuse:
+
+| Web name | Value | Role |
+| --- | --- | --- |
+| `--color-panel-edge` | `#333333` | Panel edge |
+| `--color-host` | `#1c1c1c` | Canvas/preview host |
+| `--color-toolbar` | `#242424` | Floating toolbar surface |
+| `--color-bar-track` | `#2a2a2a` | Progress track |
+| `--color-title` | `#f2f2f2` | Title text |
+| `--color-button-text` / `--color-input-text` / `--color-menu-text` | `#eeeeee` / `#eaeaea` / `#dddddd` | Control text |
+| `--color-on-accent` | `#ffffff` | Text on accent fills |
+| `--color-eyebrow` / `--color-badge-text` | `#8fbde3` / `#b9dcf7` | Eyebrow and badge text |
+| `--color-accent-edge` | `#1085dd` | Accent border |
+| `--color-danger-text` / `-surface` / `-border` | `#ff9d97` / `#432323` / `#c62828` | Danger button |
+| `--color-status-ok-border` / `-warning-border` / `-error-border` | `#2e7d32` / `#9a6700` / `#a33a35` | Status card borders |
+| `--color-glyph-neutral` | `#8a8a8a` | Neutral glyph |
+| `--color-groove` / `--color-handle` / `--color-handle-border` / `--color-handle-disabled` | `#505050` / `#e6e6e6` / `#909090` / `#555555` | Slider |
+| `--color-check-border` / `--color-check-disabled-border` | `#777777` / `#414141` | Checkbox |
+| `--color-disabled-edge` | `#2f2f2f` | Disabled edge |
+| `--color-scroll-hover` / `--color-scroll-pressed` | `#707070` / `#909090` | Scrollbar thumb |
+| `--color-tab-border` / `--color-tab-text` | `#363636` / `#a8a8a8` | Tabs |
+
+`--color-statusbar-edge` (`#000000`) is web-only and has no QSS counterpart.
+
+**Radii.** Beyond the 5/6/8 px tokens, the QSS uses scoped literal radii of 2, 3, 4, 7, 9, 10, 16, 17 and 21 px (the web names 2, 3, 4, 9, 16, 17 and 21 as `--radius-2xs` … `--radius-round`). They belong to single components; keep them scoped.
+
+**Spacing.** The web `--space-*` scale (2, 4, 6, 8, 10, 12, 14, 18 px) is a documentation helper for web mockups. Qt spacing remains Designer/QSS values, and the QSS padding/margin literals span 2–12 px; 14 and 18 px appear only in the web kits.

@@ -96,6 +96,7 @@ The canonical files and responsibilities are:
 | Images structure and production controller | [`ui/forms/gallery_detail_page.ui`](src/dtflow/ui/forms/gallery_detail_page.ui), [`ui/gallery_page.py`](src/dtflow/ui/gallery_page.py) |
 | Images offline fixture presentation | [`ui/gallery_detail_preview.py`](src/dtflow/ui/gallery_detail_preview.py) |
 | Offline state capture | [`tools/ui/render_states.py`](tools/ui/render_states.py) |
+| Web design-system reference (prototype aid, not runtime) | [`devdocs/design-system/`](devdocs/design-system/README.md) |
 
 The existing [Qt token and interaction contract](devdocs/architecture/qt-design-tokens.md) records the renderer command and fixture boundaries. The [Generate refinement plan](devdocs/plans/2026-10-05-preview-workspace.md) records the earlier workspace work; the [Images preview plan](devdocs/plans/2026-10-05-phase-8a-ui-preview.md) records PR #33. Earlier plans are historical decisions; the current implementation and these sources govern new work.
 
@@ -190,6 +191,14 @@ Use a short outcome heading plus concrete evidence. A progress bar reflects only
 4. Wire presentation through a page/controller and the existing background service boundary. Do not put backend protocols, network waits or durable state decisions in a Designer file or custom visual widget.
 5. Exercise empty, populated, loading/busy, invalid, disabled, selected, keyboard focus, hover, pressed, error and unknown states as applicable. Fixture imagery, models and cloud receipts must remain explicitly fake and must not contact a provider.
 6. Capture the actual Qt page at normal and narrow widths with representative long text. Compare it with Generate's density and state language; correct clipping and hidden navigation. Verify on Windows for native frame, font metrics and DPI before claiming Windows visual acceptance.
+
+## Iconography
+
+Gallery and navigation icons are the repository's own monochrome SVGs in `src/dtflow/resources/images/gallery/` (grid, list, detail, refresh, document, json, calendar, fullscreen, chevron): 24 px viewBox, 1.6 stroke, round caps and joins, light stroke `#f2f6f8`, no fill. The app mark is `resources/images/dtflow-app.png` with `dtflow.ico`; the panel and connection icons are code-drawn in `ui/brand.py`. Do not use emoji; Unicode is limited to the gallery's prev/next and zoom glyphs. The web reference borrows Lucide icons (2 px stroke) where no repository icon fits a meaning, such as a server, key or flask section glyph. That is a flagged web-only substitution, not an app icon specification; add a repository SVG before using such a glyph in Qt.
+
+## Web design-system reference
+
+[`devdocs/design-system/`](devdocs/design-system/README.md) mirrors these tokens as CSS custom properties, with React components, foundation cards and per-view kits for prototyping. It follows this guide and never overrides it. Token naming, the named component-local QSS tones, the extra radii, the web-only spacing scale and the font substitution are recorded in the [token contract](devdocs/architecture/qt-design-tokens.md#web-design-system-mapping). Update both in the PR that changes a token.
 
 ## Do's and Don'ts
 
