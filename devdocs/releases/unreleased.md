@@ -64,3 +64,8 @@ The header sample-count pill is removed; sample designation remains on the image
 - Gallery removes redundant visible search/filter labels from its shared header;
   explicit placeholders/defaults, accessible names and tooltips identify fields.
   No tests added or run.
+
+- Consolidates shared QSS declarations and removes superseded gallery states
+  and obsolete chrome selectors. Repeated control/selection colors now use
+  named tokens with unchanged values. Source token references reviewed; no
+  tests added or run and runtime visual equivalence remains unverified.

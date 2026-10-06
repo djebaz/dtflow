@@ -60,3 +60,7 @@ has a compact 4 px inset and metadata avoids nested padding.
 Detail's filmstrip spans the entire content height. Metadata and prompt panels
 stay beneath the main image to its left. Overlay controls use 10 px interior
 spacers, separate from the compact canvas frame.
+
+Neutral button rest/hover/pressed fills and borders, disabled borders, input
+hover borders and selection hover/pressed/border colors are named shared tokens.
+Gallery-specific dimensions remain scoped to their presentation selectors.

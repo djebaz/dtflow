@@ -24,6 +24,17 @@ colors:
   warning: "#ffbf59"
   error: "#ff8179"
   unknown: "#b7a4e5"
+  button: "#2d2d2d"
+  buttonHover: "#353535"
+  buttonPressed: "#292929"
+  buttonBorder: "#424242"
+  buttonBorderHover: "#5a5a5a"
+  borderStrong: "#4a4a4a"
+  disabledBorder: "#303030"
+  inputBorderHover: "#606060"
+  selectionBorder: "#285d84"
+  selectionHover: "#204c6e"
+  selectionPressed: "#122e44"
 typography:
   title:
     fontFamily: "Segoe UI, sans-serif"
@@ -200,3 +211,8 @@ interior inset; this does not increase the canvas frame or outer gallery gutter.
 The compact gallery filter row omits separate visible labels: the prompt-search
 placeholder and model/LoRA/time/ratio defaults identify the controls. Each field
 retains an explicit accessible name and descriptive tooltip.
+
+
+Reusable neutral-button, input-hover and selection states use named `color.*`
+tokens. Keep intentional component geometry overrides scoped; remove obsolete
+base declarations rather than layering another copy of the same selector.
