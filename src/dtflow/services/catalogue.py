@@ -157,12 +157,16 @@ class Catalogue:
 
     def view(self) -> CatalogueView:
         available = self._available_ids()
-        checkpoints = tuple(entry for entry in (*self._prime, *self._niche) if entry.identifier in available)
-        loras = tuple(
-            entry
-            for entry in (*self._bundled_loras, *self.user_loras())
-            if entry.identifier in available
-        )
+        checkpoints_by_id: dict[str, CatalogueEntry] = {}
+        for entry in (*self._niche, *self._prime):  # Prime wins an accidental exact-ID overlap.
+            if entry.identifier in available:
+                checkpoints_by_id[entry.identifier] = entry
+        checkpoints = tuple(checkpoints_by_id.values())
+        loras_by_id: dict[str, CatalogueEntry] = {}
+        for entry in (*self._bundled_loras, *self.user_loras()):  # user metadata may refine a bundled definition.
+            if entry.identifier in available:
+                loras_by_id[entry.identifier] = entry
+        loras = tuple(loras_by_id.values())
         known_entries = (*self._prime, *self._niche)
         known = {entry.identifier for entry in known_entries}
         unknown = ()
