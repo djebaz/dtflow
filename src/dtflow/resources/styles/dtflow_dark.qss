@@ -190,6 +190,10 @@ QComboBox:disabled::drop-down {
   background-color: ${color.surface};
   border-left-color: ${color.disabledBorder};
 }
+/* Text starts on the same left edge as line edits and spin boxes. */
+QComboBox {
+  padding-left: 10px;
+}
 /* Open the list as a dropdown aligned under the select, not a popup overlapping/offset past its left edge. */
 QComboBox {
   combobox-popup: 0;

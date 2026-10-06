@@ -16,9 +16,7 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
-    QFormLayout,
     QInputDialog,
-    QLabel,
     QListWidgetItem,
     QMessageBox,
     QPushButton,
@@ -139,6 +137,21 @@ def _choose_save(parent: QWidget, directory: Path) -> str:
 
 def _choose_open(parent: QWidget, directory: Path) -> str:
     return QFileDialog.getOpenFileName(parent, "Load generation configuration", str(directory), "JSON (*.json)")[0]
+
+
+RAIL_LABELS = (
+    "backendSummaryLabel",
+    "generationDomainLabel",
+    "baseModelLabel",
+    "seedLabel",
+    "stepsLabel",
+    "widthLabel",
+    "heightLabel",
+    "guidanceLabel",
+    "samplerLabel",
+    "simulationScenarioLabel",
+    "simulationDelayLabel",
+)
 
 
 class GenerationPage:
@@ -468,21 +481,13 @@ class GenerationPage:
 
     # -- presentation ----------------------------------------------------------------------------------------------
     def _align_rail_labels(self) -> None:
-        """Give every rail group the same label column, so inputs and selects share one left edge."""
-        labels: list[QLabel] = []
-        for form in (self.page.backendSummaryForm, self.page.simulationForm):
-            for row in range(form.rowCount()):
-                item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
-                if item is not None and isinstance(item.widget(), QLabel):
-                    labels.append(item.widget())
-        grid = self.page.parametersGrid
-        for row in range(grid.rowCount()):
-            item = grid.itemAtPosition(row, 0)
-            if item is not None and isinstance(item.widget(), QLabel):
-                labels.append(item.widget())
-        width = max((label.sizeHint().width() for label in labels), default=0)
+        """Give every rail group the same label column and gap, so inputs and selects share one left edge."""
+        labels = [getattr(self.page, name) for name in RAIL_LABELS]
+        width = max(label.sizeHint().width() for label in labels)
         for label in labels:
             label.setMinimumWidth(width)
+        for name in ("backendSummaryForm", "simulationForm"):
+            getattr(self.page, name).setHorizontalSpacing(self.page.parametersGrid.horizontalSpacing())
 
     def _status(self, presentation: Presentation) -> None:
         label = self.page.generationStatusLabel
