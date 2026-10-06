@@ -89,8 +89,6 @@ class LoraAssetPanel:
         page.removeLoraButton.clicked.connect(self.remove)
         page.checkLorasButton.clicked.connect(self.check)
         page.prepareAssetButton.clicked.connect(self.prepare)
-        page.reconcileAssetButton.clicked.connect(self.reconcile)
-        page.useReceiptButton.clicked.connect(self.use_receipt)
         self.sync_backend()
         self.refresh_assets()
 
@@ -111,7 +109,7 @@ class LoraAssetPanel:
         cloud = self._backend()[0] == "cloud"
         for name in ("addLoraButton", "removeLoraButton", "checkLorasButton"):
             getattr(self.page, name).setEnabled(enabled)
-        for name in ("prepareAssetButton", "reconcileAssetButton", "useReceiptButton"):
+        for name in ("prepareAssetButton",):
             getattr(self.page, name).setEnabled(enabled and cloud)
 
     def sync_backend(self) -> None:
@@ -281,11 +279,6 @@ class LoraAssetPanel:
             self._bind_after_list, self._add_when_bound = record["identifier"], True
         self.refresh_assets()
 
-    def reconcile(self) -> None:
-        asset_id = self._selected_id()
-        if asset_id is not None:
-            self._start_reconcile(asset_id)
-
     def _start_reconcile(self, asset_id: str, bind: str | None = None) -> None:
         if self._is_busy() or self._backend()[0] != "cloud":
             return
@@ -305,12 +298,13 @@ class LoraAssetPanel:
         self.refresh_assets()
 
     def _auto_bind(self, identifier: str) -> None:
-        """On cloud, bind (reconciling first when needed) the receipt of a LoRA that was just added."""
-        if self._backend()[0] != "cloud" or self._bind_confirmed(identifier):
+        """On cloud, reconcile the receipt of a LoRA that was just added (a metadata check) and bind it if confirmed."""
+        if self._backend()[0] != "cloud":
             return
-        pending = [r for r in self._records.values() if r["identifier"] == identifier and r["state"] != "failed"]
-        if pending:
-            self._start_reconcile(pending[0]["asset_id"], bind=identifier)
+        known = [r for r in self._records.values() if r["identifier"] == identifier and r["state"] != "failed"]
+        if known:
+            known.sort(key=lambda r: r["state"] != "confirmed")
+            self._start_reconcile(known[0]["asset_id"], bind=identifier)
 
     def _bind_confirmed(self, identifier: str) -> bool:
         """Bind the confirmed receipt for a selected LoRA identifier; ``True`` when one was found."""
@@ -326,32 +320,3 @@ class LoraAssetPanel:
                 )
                 return True
         return False
-
-    def use_receipt(self) -> None:
-        asset_id, status = self._selected_id(), self.page.assetStatusLabel
-        record = self._records.get(asset_id or "")
-        if record is None:
-            self._show(status, Presentation("error", "No receipt selected", "Select a receipt in the list first."))
-        elif record["state"] != "confirmed":
-            self._show(
-                status,
-                Presentation("error", "Receipt not usable", f"It is {record['state']}; reconcile it to confirm."),
-            )
-        elif record["identifier"] not in {item.identifier for item in self.loras}:
-            self._show(
-                status,
-                Presentation(
-                    "error", "Add the LoRA first", f"Receipts bind by identifier: add {record['identifier']}."
-                ),
-            )
-        else:
-            self._receipts[record["identifier"]] = asset_id
-            self._render_loras()
-            self._show(
-                status,
-                Presentation(
-                    "ok",
-                    "Receipt bound",
-                    "The server re-validates it before dispatch; it is never exported to a config.",
-                ),
-            )

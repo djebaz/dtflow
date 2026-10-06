@@ -1263,23 +1263,6 @@
                 </property>
                </widget>
               </item>
-              <item>
-               <widget class="QPushButton" name="reconcileAssetButton">
-                <property name="text">
-                 <string>Reconcile</string>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QPushButton" name="useReceiptButton">
-                <property name="text">
-                 <string>Use</string>
-                </property>
-                <property name="toolTip">
-                 <string>Bind this confirmed receipt to the LoRA with the same identifier for the next generation.</string>
-                </property>
-               </widget>
-              </item>
              </layout>
             </item>
             <item>
