@@ -1169,13 +1169,13 @@ No generation or saved output</string>
                  <number>8</number>
                 </property>
                 <property name="topMargin">
-                 <number>8</number>
+                 <number>4</number>
                 </property>
                 <property name="rightMargin">
                  <number>8</number>
                 </property>
                 <property name="bottomMargin">
-                 <number>8</number>
+                 <number>4</number>
                 </property>
                 <property name="spacing">
                  <number>8</number>
@@ -2040,13 +2040,13 @@ No generation or saved output</string>
               <property name="minimumSize">
                <size>
                 <width>0</width>
-                <height>108</height>
+                <height>76</height>
                </size>
               </property>
               <property name="maximumSize">
                <size>
                 <width>16777215</width>
-                <height>108</height>
+                <height>76</height>
                </size>
               </property>
              </widget>
@@ -2064,13 +2064,13 @@ No generation or saved output</string>
                 <number>8</number>
                </property>
                <property name="topMargin">
-                <number>8</number>
+                <number>4</number>
                </property>
                <property name="rightMargin">
                 <number>8</number>
                </property>
                <property name="bottomMargin">
-                <number>8</number>
+                <number>4</number>
                </property>
                <property name="spacing">
                 <number>8</number>
@@ -2089,13 +2089,13 @@ No generation or saved output</string>
                  <property name="maximumSize">
                   <size>
                    <width>16777215</width>
-                   <height>66</height>
+                   <height>38</height>
                   </size>
                  </property>
                  <property name="minimumSize">
                   <size>
                    <width>80</width>
-                   <height>66</height>
+                   <height>38</height>
                   </size>
                  </property>
                  <property name="textRole" stdset="0">
@@ -2169,13 +2169,13 @@ No generation or saved output</string>
               <property name="minimumSize">
                <size>
                 <width>0</width>
-                <height>92</height>
+                <height>54</height>
                </size>
               </property>
               <property name="maximumSize">
                <size>
                 <width>16777215</width>
-                <height>92</height>
+                <height>54</height>
                </size>
               </property>
              </widget>
@@ -2797,54 +2797,53 @@ No generation or saved output</string>
                   </property>
                  </widget>
                 </item>
+                <item row="3" column="2" colspan="2">
+                 <layout class="QHBoxLayout" name="galleryReuseActionsLayout">
+                  <property name="spacing"><number>6</number></property>
+                  <item><spacer name="galleryReuseActionsSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
+                  <item>
+                   <widget class="QPushButton" name="galleryUseSettingsButton">
+                    <property name="text"><string>Use settings</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Populate Generate from this recorded request without submitting.</string></property>
+                    <property name="sizePolicy"><sizepolicy hsizetype="Maximum" vsizetype="Fixed" /></property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QPushButton" name="galleryRegenerateButton">
+                    <property name="text"><string>Regenerate…</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Create a fresh generation attempt from these recorded settings after confirmation.</string></property>
+                    <property name="sizePolicy"><sizepolicy hsizetype="Maximum" vsizetype="Fixed" /></property>
+                   </widget>
+                  </item>
+                 </layout>
+                </item>
                 <item row="4" column="0" colspan="4">
                  <layout class="QHBoxLayout" name="galleryPathActionsLayout">
+                  <property name="spacing"><number>6</number></property>
                   <item>
                    <widget class="QPushButton" name="galleryCopyPathButton">
-                    <property name="accessibleName">
-                     <string>CopyPath</string>
-                    </property>
-                    <property name="text">
-                     <string>Copy path</string>
-                    </property>
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="toolTip">
-                     <string>Available when the current Images context supports this action.</string>
-                    </property>
+                    <property name="accessibleName"><string>CopyPath</string></property>
+                    <property name="text"><string>Copy path</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Available when the current Images context supports this action.</string></property>
                    </widget>
                   </item>
                   <item>
                    <widget class="QPushButton" name="galleryOpenFolderButton">
-                    <property name="accessibleName">
-                     <string>OpenFolder</string>
-                    </property>
-                    <property name="text">
-                     <string>Open folder</string>
-                    </property>
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="toolTip">
-                     <string>Available when the current Images context supports this action.</string>
-                    </property>
+                    <property name="accessibleName"><string>OpenFolder</string></property>
+                    <property name="text"><string>Open folder</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Available when the current Images context supports this action.</string></property>
                    </widget>
                   </item>
                   <item>
                    <widget class="QPushButton" name="galleryExternalViewerButton">
-                    <property name="accessibleName">
-                     <string>ExternalViewer</string>
-                    </property>
-                    <property name="text">
-                     <string>Open in external viewer</string>
-                    </property>
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="toolTip">
-                     <string>Available when the current Images context supports this action.</string>
-                    </property>
+                    <property name="accessibleName"><string>ExternalViewer</string></property>
+                    <property name="text"><string>Open in external viewer</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Available when the current Images context supports this action.</string></property>
                    </widget>
                   </item>
                  </layout>

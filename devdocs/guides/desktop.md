@@ -44,7 +44,7 @@ The cloud asset list contains this machine's local receipts, not complete DT+ ac
 
 ## Configurations and outputs
 
-Save and load the shared versioned, credential-free generation configuration. It records generation parameters, not account credentials. This is configuration interchange, not a preset library.
+Save and load the shared versioned, credential-free DTFlow generation configuration. Named presets are separate durable user data under `.dtflow/presets/custom_configs.json` and use Draw Things' native `custom_configs.json` array envelope. Connection owns global Import/Export all actions; Generate can save a named preset and load presets alongside DTFlow configurations. Imported unknown fields are preserved for re-export. DTFlow applies only supported mappings; prompts are not part of the native preset and are left unchanged.
 
 The image workspace supports fit, zoom and pan; 100% means device pixels. Saved-output details expose output/metadata paths, Open folder and Copy path; multiple saved outputs offer a chooser. Previews and illustrative empty-canvas images never enable saved-result actions.
 
@@ -96,6 +96,8 @@ seed when recorded, provider, file size/path and file actions. Raw metadata is
 bounded and sanitized; unavailable evidence is shown as `Not recorded` or
 `Unknown`, not inferred.
 
+Use settings populates Generate from the recorded request without dispatching. Regenerate asks for confirmation because it may consume provider credits, then creates a fresh request through the normal generation path and records the source output identity as lineage; the original output and attempt remain untouched.
+
 Copy path, Open folder and external-viewer actions operate on the actual saved
 artifact. Missing or corrupt files remain represented without preventing other
 outputs from being browsed. Browsing does not generate, modify or delete saved
@@ -105,6 +107,8 @@ outputs.
 ## Remembered settings and diagnostics
 
 `.dtflow/last_session.json` remembers the provider, local endpoint and Generate form on submission, a successful connection check and quit. Prompts are shared; generation domain, base-model family, Niche preference, exact model, LoRAs/weights and bound receipts, seed, dimensions, steps, guidance and sampler are remembered separately per provider. It is durable state, not cache, and cache bypass does not remove it.
+
+Connection reports disposable inventory, thumbnail and derived-cache sizes and offers confirmed category-specific or all-cache cleanup. Cleanup is blocked during an active generation or queue dispatch and never traverses outputs, attempts, queues, presets, settings, credentials, assets, custom catalogue data or model files.
 
 Raw local/cloud inventory snapshots live under `.dtflow/cache/inventory/`. Cache reads reject incompatible versions, changed endpoints and changed cloud credential identity; no account-dependent evidence is reused blindly. See [runtime layout](../architecture/runtime-layout.md) for the exact ownership contract.
 

@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Scope recorded; owner view templates under review; implementation not started.
+**Status:** 8A is implemented. PR #46 implements the selected 8B–8D scope; owner/runtime acceptance and final 0.4.0 release acceptance remain pending.
 
 **Target:** Proposed 0.4.0, not a shipped version.
 

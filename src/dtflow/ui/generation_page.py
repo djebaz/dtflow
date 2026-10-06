@@ -14,7 +14,14 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
-from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QMessageBox, QPushButton, QWidget
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QInputDialog,
+    QListWidgetItem,
+    QMessageBox,
+    QPushButton,
+    QWidget,
+)
 
 from dtflow.composition import BACKENDS
 from dtflow.core.models import (
@@ -32,6 +39,7 @@ from dtflow.services.connection import (
     present_interruption,
     present_outcome,
 )
+from dtflow.services.presets import apply_preset, load_presets, save_preset
 from dtflow.services.session import (
     cached_inventory,
     generate_once,
@@ -131,6 +139,21 @@ def _choose_open(parent: QWidget, directory: Path) -> str:
     return QFileDialog.getOpenFileName(parent, "Load generation configuration", str(directory), "JSON (*.json)")[0]
 
 
+RAIL_LABELS = (
+    "backendSummaryLabel",
+    "generationDomainLabel",
+    "baseModelLabel",
+    "seedLabel",
+    "stepsLabel",
+    "widthLabel",
+    "heightLabel",
+    "guidanceLabel",
+    "samplerLabel",
+    "simulationScenarioLabel",
+    "simulationDelayLabel",
+)
+
+
 class GenerationPage:
     def __init__(
         self,
@@ -169,6 +192,7 @@ class GenerationPage:
         self._busy = False
         self._progress_pct = 0
         self._config_name: str | None = None
+        self._reuse_source_identity: str | None = None
         self._metadata_path: Path | None = None
         self._submitted_backend: str | None = None
         self._empty_hints = (
@@ -188,6 +212,7 @@ class GenerationPage:
         )
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
+        self._align_rail_labels()
         page.samplerCombo.addItems(SAMPLERS)
         for label, value in (("All", "all"), ("Image", "image"), ("Video", "video")):
             page.generationDomainCombo.addItem(label, value)
@@ -206,6 +231,8 @@ class GenerationPage:
         page.cancelButton.clicked.connect(self.cancel)
         page.refreshInventoryButton.clicked.connect(self.refresh)
         page.saveConfigurationButton.clicked.connect(self.save)
+        page.savePresetButton.setEnabled(True)
+        page.savePresetButton.clicked.connect(self.save_preset)
         page.loadConfigurationButton.clicked.connect(self.load)
         page.configurationCombo.activated.connect(self._config_chosen)
         page.openOutputFolderButton.clicked.connect(self.open_output_folder)
@@ -396,13 +423,79 @@ class GenerationPage:
             self.lora._show(self.page.compatibilityStatusLabel, Presentation("error", "Cannot check", str(exc)))
             return None
 
+    def _with_reuse_lineage(self, request):
+        if not self._reuse_source_identity:
+            return request
+        return replace(
+            request,
+            resolution_evidence=(*request.resolution_evidence, ("source.output", self._reuse_source_identity)),
+        )
+
+    @staticmethod
+    def _saved_request_values(document: dict) -> FormValues:
+        return form_from_document(
+            {
+                "prompt": document.get("prompt", ""),
+                "negative_prompt": document.get("negative_prompt", ""),
+                "model": document.get("model_id", ""),
+                "seed": str(document.get("seed", 0)),
+                "width": document.get("width_px", 512),
+                "height": document.get("height_px", 512),
+                "steps": document.get("steps", 20),
+                "guidance": float(document.get("guidance", 7.0)),
+                "sampler": document.get("sampler_id", "euler_a"),
+                "loras": document.get("loras", []),
+            }
+        )
+
+    def reuse_saved_request(self, document: dict, source_identity: str) -> None:
+        """Populate Generate from one recorded request without dispatching."""
+        values = self._saved_request_values(document)
+        self._apply(values)
+        self.lora.set_loras(values.loras, loaded=True)
+        self._reuse_source_identity = source_identity
+        self._config_name = None
+        self._status(
+            Presentation(
+                "ok",
+                "Saved settings loaded",
+                "Generate was populated from the selected output. Nothing was submitted; availability is revalidated on use.",
+            )
+        )
+
+    def regenerate_saved_request(self, document: dict, source_identity: str) -> bool:
+        """Validate recorded settings before replacing the form, then submit them as a fresh request."""
+        if self._busy or self._activity.dispatching:
+            return False
+        values = self._saved_request_values(document)
+        name, _ = self._backend()
+        try:
+            build_request(values, backend=name, random_seed=True)
+        except FormError as exc:
+            self._mark(exc.widget)
+            self._status(Presentation("error", "Cannot regenerate", str(exc)))
+            return False
+        self.reuse_saved_request(document, source_identity)
+        self.generate()
+        return True
+
     # -- presentation ----------------------------------------------------------------------------------------------
+    def _align_rail_labels(self) -> None:
+        """Give every rail group the same label column and gap, so inputs and selects share one left edge."""
+        labels = [getattr(self.page, name) for name in RAIL_LABELS]
+        width = max(label.sizeHint().width() for label in labels)
+        for label in labels:
+            label.setMinimumWidth(width)
+        for name in ("backendSummaryForm", "simulationForm"):
+            getattr(self.page, name).setHorizontalSpacing(self.page.parametersGrid.horizontalSpacing())
+
     def _status(self, presentation: Presentation) -> None:
         label = self.page.generationStatusLabel
         label.setProperty("state", presentation.level)
         label.style().unpolish(label)
         label.style().polish(label)
         label.setText(f"{presentation.headline}. {presentation.detail}".strip())
+        label.setToolTip("")
 
     def _mark(self, widget_name: str | None) -> None:
         for name in FIELD_WIDGETS:
@@ -442,7 +535,7 @@ class GenerationPage:
         name, endpoint = self._backend()
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
-            request = self._allow_local_bridge_model(request)
+            request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
         except FormError as exc:
             self._mark(exc.widget)
             raise
@@ -451,6 +544,8 @@ class GenerationPage:
             self._previewed_seed = request.seed
         elif resolved and self._previewed_seed is not None:
             request = replace(request, seed=self._previewed_seed)
+        if not preview:
+            self._reuse_source_identity = None
         return request, name, endpoint, self.lora.receipt_ids()
 
     # Overall progress is a determinate 0-100 bar that only grows: sampling steps fill the middle, the other stages
@@ -492,13 +587,14 @@ class GenerationPage:
         self._submitted_backend = name
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
-            request = self._allow_local_bridge_model(request)
+            request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
         except FormError as exc:
             self._mark(exc.widget)
             log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
             log.debug("generate validation message=%s", exc)
             self._status(Presentation("error", "Invalid request", str(exc)))
             return
+        self._reuse_source_identity = None
         self._request = request
         log.info("generate submitted backend=%s", name)
         log.debug(
@@ -893,9 +989,56 @@ class GenerationPage:
             self._load(Path(chosen))
 
     def _config_chosen(self, index: int) -> None:
-        path = self.page.configurationCombo.itemData(index)
-        if path:
-            self._load(Path(path))
+        data = self.page.configurationCombo.itemData(index)
+        if not data:
+            return
+        if isinstance(data, tuple) and data[0] == "preset":
+            self._load_preset(data[1])
+        else:
+            self._load(Path(data))
+
+    def _load_preset(self, preset: dict) -> None:
+        application = apply_preset(preset)
+        current = form_to_document(self._values())
+        current.update(application.values)
+        values = form_from_document(current)
+        self._apply(values)
+        if "loras" in application.values:
+            self.lora.set_loras(application.values["loras"], loaded=True)
+        self._config_name = f"preset:{preset['name']}"
+        self._reuse_source_identity = None
+        # A native preset can carry dozens of unsupported fields; keep the status short and list them in the tooltip.
+        count = len(application.preserved)
+        kept = (
+            f"{count} native field{'s' if count != 1 else ''} kept but not applied" if count else "no fields kept aside"
+        )
+        self._status(
+            Presentation(
+                "ok",
+                "Preset loaded",
+                f"{preset['name']} applied without dispatch; {kept}. Prompts were unchanged.",
+            )
+        )
+        if count:
+            self.page.generationStatusLabel.setToolTip("Preserved-only fields: " + ", ".join(application.preserved))
+
+    def save_preset(self) -> None:
+        name, accepted = QInputDialog.getText(self.page, "Save preset", "Preset name")
+        if not accepted or not name.strip():
+            return
+        document = form_to_document(self._values())
+        try:
+            save_preset(self._state, name, document)
+        except (ValidationError, OSError, ValueError) as exc:
+            self._status(Presentation("error", "Preset not saved", str(exc)))
+            return
+        self._status(
+            Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library.")
+        )
+        self._scan_configs()
+
+    def refresh_presets(self) -> None:
+        self._scan_configs()
 
     def _load(self, path: Path) -> None:
         self._mark(None)
@@ -916,6 +1059,7 @@ class GenerationPage:
             self._status(shown)
             return
         self._config_name = path.name
+        self._reuse_source_identity = None
         self._apply(values_from_request(request))
         self.lora.set_loras(request.loras, loaded=True)
         name, endpoint = self._backend()
@@ -928,14 +1072,31 @@ class GenerationPage:
     def _scan_configs(self) -> None:
         directory = self._configs
 
-        async def scan():
-            return await asyncio.to_thread(lambda: sorted(directory.glob("*.json")) if directory.is_dir() else [])
+        def scan():
+            paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
+            try:
+                presets, preset_failure = load_presets(self._state), None
+            except (ValidationError, OSError) as exc:
+                presets, preset_failure = (), exc
+            return paths, presets, preset_failure
 
-        self._runner.submit(scan(), self._scanned)
+        async def scan_async():
+            return await asyncio.to_thread(scan)
 
-    def _scanned(self, paths, failure) -> None:
+        self._runner.submit(scan_async(), self._scanned)
+
+    def _scanned(self, result, failure) -> None:
         combo = self.page.configurationCombo
         combo.clear()
-        for path in paths or []:
-            combo.addItem(path.name, str(path))
+        if failure is not None:
+            log.warning("configuration scan failed reason=%s", type(failure).__name__)
+            combo.setCurrentIndex(-1)
+            return
+        paths, presets, preset_failure = result
+        if preset_failure is not None:
+            log.warning("preset scan failed reason=%s", type(preset_failure).__name__)
+        for preset in presets:
+            combo.addItem(f"Preset · {preset['name']}", ("preset", preset))
+        for path in paths:
+            combo.addItem(f"Config · {path.name}", str(path))
         combo.setCurrentIndex(-1)
