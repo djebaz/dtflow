@@ -114,6 +114,57 @@ def _entry(record: dict, *, kind: str, tier: str | None = None, source: str = "b
     )
 
 
+def validate_user_loras_document(document: object) -> list[dict]:
+    """Validate imported user LoRA metadata without inferring missing compatibility."""
+    if not isinstance(document, list):
+        raise ValueError("Custom LoRA JSON must contain a list of LoRA definitions.")
+    validated: list[dict] = []
+    seen: set[str] = set()
+    allowed_modes = IMAGE_MODES | VIDEO_MODES
+    for index, record in enumerate(document, start=1):
+        if not isinstance(record, dict):
+            raise ValueError(f"Custom LoRA entry {index} must be an object.")
+        identifier = record.get("file")
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise ValueError(f"Custom LoRA entry {index} requires a non-empty 'file'.")
+        identifier = identifier.strip()
+        if identifier in seen:
+            raise ValueError(f"Custom LoRA file is duplicated: {identifier}")
+        seen.add(identifier)
+        base_model = record.get("base_model")
+        if base_model is not None and (not isinstance(base_model, str) or not base_model.strip()):
+            raise ValueError(f"Custom LoRA entry {index} has an invalid 'base_model'.")
+        modes = record.get("modes", [])
+        if not isinstance(modes, list) or any(not isinstance(mode, str) for mode in modes):
+            raise ValueError(f"Custom LoRA entry {index} has an invalid 'modes' list.")
+        unknown_modes = set(modes) - allowed_modes
+        if unknown_modes:
+            raise ValueError(
+                f"Custom LoRA entry {index} has unsupported mode(s): {', '.join(sorted(unknown_modes))}."
+            )
+        for key in ("name", "prefix"):
+            value = record.get(key)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"Custom LoRA entry {index} has an invalid '{key}'.")
+        validated.append(dict(record, file=identifier))
+    return validated
+
+
+def import_user_loras(source: Path, state_dir: Path) -> int:
+    """Validate and atomically replace the durable user-owned custom LoRA catalogue."""
+    try:
+        document = json.loads(Path(source).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Custom LoRA JSON could not be read: {type(exc).__name__}.") from exc
+    validated = validate_user_loras_document(document)
+    target = Path(state_dir) / USER_CATALOGUE_DIR / USER_LORAS_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps(validated, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    temporary.replace(target)
+    return len(validated)
+
+
 class Catalogue:
     """Static classification plus one active provider's availability."""
 
