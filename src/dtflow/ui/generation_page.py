@@ -969,7 +969,9 @@ class GenerationPage:
         except (ValidationError, OSError, ValueError) as exc:
             self._status(Presentation("error", "Preset not saved", str(exc)))
             return
-        self._status(Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library."))
+        self._status(
+            Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library.")
+        )
         self._scan_configs()
 
     def refresh_presets(self) -> None:

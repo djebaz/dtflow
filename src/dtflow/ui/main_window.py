@@ -492,7 +492,9 @@ class MainWindow:
 
     def clear_cache(self, categories: tuple[str, ...]) -> None:
         if self.activity.generating or self.activity.dispatching:
-            QMessageBox.warning(self.form, "Cache is busy", "Stop the active generation or queue dispatch before cleanup.")
+            QMessageBox.warning(
+                self.form, "Cache is busy", "Stop the active generation or queue dispatch before cleanup."
+            )
             return
         names = ", ".join(categories)
         if not self.confirm(
