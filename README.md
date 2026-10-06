@@ -21,8 +21,7 @@ Windows Credential Manager stores a saved cloud API key outside ordinary configu
 Compose prompts and control the model, seed, dimensions, steps, guidance and sampler.
 After inventory refresh, classified model discovery narrows the active provider's available
 checkpoints by All/Image/Video, base-model family and exact checkpoint; Prime models are shown
-by default and an explicit option adds Niche models. Exact identifiers remain available for
-unclassified checkpoints without DTFlow guessing their family or compatibility.
+by default and an explicit option adds Niche models. Checkpoint selection opens a searchable list with case-insensitive substring matching; an explicit custom-identifier action keeps unclassified checkpoints usable without DTFlow guessing their family or compatibility.
 
 Select LoRAs with explicit weights and an optional trigger-prefix action. For a classified
 checkpoint, the Add chooser is narrowed to available LoRAs with known family/mode compatibility;
