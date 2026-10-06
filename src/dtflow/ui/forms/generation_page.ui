@@ -816,12 +816,18 @@
                 </property>
                </widget>
               </item>
+              <item>
+               <widget class="QPushButton" name="savePresetButton">
+                <property name="text"><string>Save preset</string></property>
+                <property name="toolTip"><string>Save current supported settings to the Draw Things-compatible preset library.</string></property>
+               </widget>
+              </item>
              </layout>
             </item>
             <item>
              <widget class="QLabel" name="configurationHintLabel">
               <property name="text">
-               <string>Credential-free versioned configuration only.</string>
+               <string>Configurations are DTFlow files. Presets use the shared Draw Things custom_configs.json library.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>
