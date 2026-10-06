@@ -483,7 +483,7 @@ class MainWindow:
         self.refresh_credentials()
 
     def about(self) -> None:
-        QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\        self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)\nn\nState folder: {self.state_dir}")
+        QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\\n\\nState folder: {self.state_dir}")
 
     def close(self) -> None:
         self.remember(background=False)
