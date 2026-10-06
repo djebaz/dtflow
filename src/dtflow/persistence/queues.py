@@ -413,11 +413,13 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
         connection.close()
 
 
-def delete_finished(directory: Path) -> int:
-    """Delete finished and cancelled queues with their items, controls and events; return how many were removed.
+def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
+    """Delete finished, cancelled and paused queues with their items, controls and events; return how many went.
 
-    Attempts and saved outputs are never touched. A queue with a running reservation or an unacknowledged unknown
-    outcome is kept: its uncertainty still blocks the backend until an explicit override, so its record must stay.
+    Attempts and saved outputs are never touched. A queue that is running, holds a running reservation or has an
+    unacknowledged unknown outcome is kept: its uncertainty still blocks the backend until an explicit override, so its
+    record must stay. ``keep`` names queues the caller is dispatching (a paused queue can still be owned by a live
+    dispatcher).
     """
     connection = _shared_connection(directory)
     try:
@@ -427,12 +429,13 @@ def delete_finished(directory: Path) -> int:
                 row["queue_id"]
                 for row in connection.execute(
                     """SELECT q.queue_id FROM queues q
-                    WHERE (q.state='cancelled' OR NOT EXISTS (
+                    WHERE (q.state IN ('paused','cancelled') OR NOT EXISTS (
                             SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state IN ('pending','running')))
                         AND NOT EXISTS (
                             SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id
                                 AND (i.state='running' OR (i.state='unknown' AND i.overridden=0)))"""
                 )
+                if row["queue_id"] not in keep
             ]
             for table in ("queue_controls", "queue_events", "queue_items", "queues"):
                 connection.executemany(f"DELETE FROM {table} WHERE queue_id=?", [(queue_id,) for queue_id in queue_ids])

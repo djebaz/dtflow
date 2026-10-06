@@ -124,15 +124,15 @@
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="clearFinishedQueuesButton">
+       <widget class="QPushButton" name="clearQueuesButton">
         <property name="text">
-         <string>Clear finished</string>
+         <string>Clear queues</string>
         </property>
         <property name="toolTip">
-         <string>Removes finished and cancelled queues from this list. Attempts and saved images are kept.</string>
+         <string>Removes finished, cancelled and paused queues from this list. Attempts and saved images are kept.</string>
         </property>
         <property name="accessibleName">
-         <string>Clear finished queues</string>
+         <string>Clear queues</string>
         </property>
        </widget>
       </item>

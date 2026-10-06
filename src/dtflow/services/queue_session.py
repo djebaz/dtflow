@@ -18,7 +18,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
-from dtflow.persistence.queues import delete_finished, post_control, read_queues
+from dtflow.persistence.queues import delete_idle_queues, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services import session
@@ -124,11 +124,11 @@ async def post_queue_control(state: Path, queue_id: str, action: str, payload: d
     await asyncio.to_thread(post_control, Path(state), queue_id, action, payload)
 
 
-async def clear_finished_queues(state: Path) -> int:
-    """Delete finished and cancelled queue records (never attempts or outputs); return how many were removed."""
+async def clear_queues(state: Path, keep: tuple[str, ...] = ()) -> int:
+    """Delete finished, cancelled and paused queue records (never attempts or outputs); return how many went."""
     if not (Path(state) / "attempts.sqlite3").is_file():
         return 0
-    return await asyncio.to_thread(delete_finished, Path(state))
+    return await asyncio.to_thread(delete_idle_queues, Path(state), keep)
 
 
 async def set_concurrency(state: Path, value: int, *, queue_id: str | None = None, save_shared: bool = False) -> int:
