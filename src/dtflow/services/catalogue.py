@@ -191,31 +191,42 @@ class Catalogue:
         return CatalogueView(checkpoints, loras, unknown)
 
     def checkpoints(
-        self, *, domain: str = "all", base_model: str | None = None, include_niche: bool = False
+        self,
+        *,
+        domain: str = "all",
+        base_model: str | None = None,
+        include_niche: bool = False,
+        include_unavailable: bool = False,
     ) -> tuple[CatalogueEntry, ...]:
         if domain not in DOMAINS:
             raise ValueError("Catalogue domain must be all, image or video.")
+        source = (*self._prime, *self._niche) if include_unavailable else self.view().checkpoints
         entries = (
             entry
-            for entry in self.view().checkpoints
+            for entry in source
             if (entry.tier == "prime" or include_niche)
             and entry.supports_domain(domain)
             and (base_model is None or entry.base_model == base_model)
         )
         return tuple(sorted(entries, key=lambda item: (item.tier == "niche", item.identifier.casefold())))
 
-    def families(self, *, domain: str = "all", include_niche: bool = False) -> tuple[tuple[str, str], ...]:
+    def families(
+        self, *, domain: str = "all", include_niche: bool = False, include_unavailable: bool = False
+    ) -> tuple[tuple[str, str], ...]:
         present = {
             entry.base_model
-            for entry in self.checkpoints(domain=domain, include_niche=include_niche)
+            for entry in self.checkpoints(
+                domain=domain, include_niche=include_niche, include_unavailable=include_unavailable
+            )
             if entry.base_model is not None
         }
         ordered = [family for family in FAMILY_ORDER if family in present]
         ordered.extend(sorted(present - set(ordered)))
         return tuple((family, FAMILY_LABELS.get(family, family)) for family in ordered)
 
-    def checkpoint(self, identifier: str) -> CatalogueEntry | None:
-        return next((entry for entry in self.view().checkpoints if entry.identifier == identifier), None)
+    def checkpoint(self, identifier: str, *, include_unavailable: bool = False) -> CatalogueEntry | None:
+        entries = (*self._prime, *self._niche) if include_unavailable else self.view().checkpoints
+        return next((entry for entry in entries if entry.identifier == identifier), None)
 
     def controls(self, *, domain: str = "all", base_model: str | None = None) -> tuple[CatalogueEntry, ...]:
         """Known available conditioning artifacts; no Control-specific UI is introduced by this change."""
