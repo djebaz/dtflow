@@ -117,6 +117,9 @@ class LoraAssetPanel:
         self.set_enabled(not self._is_busy())
         if not cloud:
             self._show(self.page.assetStatusLabel, Presentation("unknown", "Cloud only", CLOUD_ONLY))
+        else:
+            self.bind_selected()
+            self._render_loras()
 
     def set_inventory(self, snapshot) -> None:
         """Remember raw backend LoRAs until the catalogue controller supplies a compatible candidate set."""
@@ -149,10 +152,11 @@ class LoraAssetPanel:
         if receipts is not None:
             self._receipts = dict(receipts)
         self._receipts = {name: asset for name, asset in self._receipts.items() if name in selected}
+        self.bind_selected()
         self._render_loras()
         text = (
             "Loaded configuration names LoRA(s). No cloud receipt is bound and compatibility is not checked."
-            if loaded and self.loras
+            if loaded and any(item.identifier not in self._receipts for item in self.loras)
             else "Compatibility not checked."
         )
         self._show(self.page.compatibilityStatusLabel, Presentation("unknown", text, ""))
@@ -245,6 +249,7 @@ class LoraAssetPanel:
                 if any(r["identifier"] == identifier and r["state"] == "confirmed" for r in self._records.values()):
                     self.set_loras((*self.loras, LoRASelection(identifier, DEFAULT_LORA_WEIGHT)))
             self._bind_confirmed(identifier)
+        self.bind_selected()
 
     def _selected_id(self) -> str | None:
         item = self.page.assetList.currentItem()
@@ -306,7 +311,15 @@ class LoraAssetPanel:
             known.sort(key=lambda r: r["state"] != "confirmed")
             self._start_reconcile(known[0]["asset_id"], bind=identifier)
 
-    def _bind_confirmed(self, identifier: str) -> bool:
+    def bind_selected(self) -> None:
+        """Bind the confirmed receipt of every selected LoRA that has none (local registry only, no network)."""
+        if self._backend()[0] != "cloud":
+            return
+        for item in self.loras:
+            if item.identifier not in self._receipts:
+                self._bind_confirmed(item.identifier, announce=False)
+
+    def _bind_confirmed(self, identifier: str, *, announce: bool = True) -> bool:
         """Bind the confirmed receipt for a selected LoRA identifier; ``True`` when one was found."""
         if identifier not in {item.identifier for item in self.loras}:
             return False
@@ -314,9 +327,10 @@ class LoraAssetPanel:
             if record["identifier"] == identifier and record["state"] == "confirmed":
                 self._receipts[identifier] = asset_id
                 self._render_loras()
-                self._show(
-                    self.page.assetStatusLabel,
-                    Presentation("ok", "Receipt bound", f"{identifier} uses its confirmed cloud receipt."),
-                )
+                if announce:
+                    self._show(
+                        self.page.assetStatusLabel,
+                        Presentation("ok", "Receipt bound", f"{identifier} uses its confirmed cloud receipt."),
+                    )
                 return True
         return False
