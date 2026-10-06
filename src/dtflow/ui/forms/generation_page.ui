@@ -203,6 +203,19 @@
              </widget>
             </item>
             <item row="5" column="0" colspan="2">
+             <widget class="QCheckBox" name="includeCloudCheck">
+              <property name="text">
+               <string>Include DT+ Cloud</string>
+              </property>
+              <property name="toolTip">
+               <string>Local bridge mode: include classified catalogue checkpoints that the local inventory may not report.</string>
+              </property>
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="0" colspan="2">
              <widget class="QCheckBox" name="includeNicheCheck">
               <property name="text">
                <string>Include niche models</string>
@@ -212,7 +225,7 @@
               </property>
              </widget>
             </item>
-            <item row="6" column="0" colspan="2">
+            <item row="7" column="0" colspan="2">
              <widget class="QPushButton" name="unclassifiedModelsButton">
               <property name="text">
                <string>Unclassified checkpoints</string>
@@ -225,7 +238,7 @@
               </property>
              </widget>
             </item>
-            <item row="7" column="0" colspan="2">
+            <item row="8" column="0" colspan="2">
              <widget class="QPushButton" name="refreshInventoryButton">
               <property name="text">
                <string>Refresh inventory</string>
@@ -235,7 +248,7 @@
               </property>
              </widget>
             </item>
-            <item row="8" column="0" colspan="2">
+            <item row="9" column="0" colspan="2">
              <widget class="QLabel" name="inventoryEvidenceLabel">
               <property name="text">
                <string>Inventory has not been refreshed.</string>
