@@ -1,5 +1,7 @@
 # Unreleased
 
+- Development render comparison: regenerated Qt/web state sheets share a DPR-1 capture contract, fixed frames, specimen inset, state ordering and common 2x compositor; unsupported web slots remain labelled. The offline HTML gallery uses a shared zoom scale and linked scrolling. Icon-button states reuse canonical Qt configuration and real web icons. Web captures wait for image decode after interactions, and out-of-flow specimens fail if clipped. This is comparison tooling, not visual-parity acceptance.
+
 ## Highlights
 
 - PR #33 establishes the Images presentation and shared styling; PR #34 connects it to real committed saved outputs through shared bounded gallery services, CLI inspection and the production Qt viewer. No release/version bump is introduced.
@@ -47,3 +49,7 @@
 - On 2026-10-06 the owner reported the full test suite passed after the PR #34 Qt lifecycle fix. No final command/count was supplied in that confirmation, so no exact count is claimed here. Earlier failing output showed the lifecycle exception cascading through Qt setup; the fix was then owner-retested successfully.
 - Owner interactive smoke testing exercised the new Images viewer and identified Grid asynchronous thumbnail collapse and List scaling limits; both were corrected. The newest Grid-first/Fit-default adjustments have not been separately reported as smoke-tested yet.
 - Documentation closeout is source review only. Exact native-DPI and packaged Windows visual acceptance remain separate. No live provider operations, inference, training, uploads or potentially billable actions ran during PR #34 implementation/documentation work.
+
+## Development tooling
+
+- Add headless design-system screen and component-state capture scripts, computed-style/bounds manifests, verified offline vendor caching and explicit unsupported-state reporting. Playwright is development-only; no Qt runtime/theme changes. See [capture tooling](../guides/design-captures.md).
