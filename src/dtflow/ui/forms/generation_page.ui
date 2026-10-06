@@ -827,7 +827,7 @@
             <item>
              <widget class="QLabel" name="configurationHintLabel">
               <property name="text">
-               <string>Configurations are DTFlow files. Presets use the shared Draw Things custom_configs.json library.</string>
+               <string>DTFlow configs and Draw Things presets.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>
