@@ -977,7 +977,7 @@ class GalleryPage(QObject):
             if painter is not None:
                 painter.widget.update()
 
-        row_height = max(36, min(84, round(density * 0.35)))
+        row_height = max(36, round(density * 0.35))
         self.table.verticalHeader().setDefaultSectionSize(row_height)
         self.table.setIconSize(QSize(row_height, max(24, row_height - 10)))
         for row in range(self.table.rowCount()):
