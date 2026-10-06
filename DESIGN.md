@@ -45,6 +45,15 @@ typography:
   small:
     fontFamily: "Segoe UI, sans-serif"
     fontSize: "9pt"
+  section:
+    fontFamily: "Segoe UI, sans-serif"
+    fontSize: "11pt"
+font-weights:
+  body: "400"
+  label: "500"
+  emphasis: "600"
+  title: "650"
+  strong: "700"
 rounded:
   input: "5px"
   button: "6px"
@@ -92,9 +101,29 @@ Existing body, secondary and placeholder color pairs were checked for at least 4
 
 ## Typography
 
-The shared QSS uses Segoe UI with a sans-serif fallback. Body controls are 10pt, small evidence and preview designations 9pt, and shell titles 17pt. These are point sizes so Qt can follow DPI scaling. Some existing one-off roles, such as 8pt eyebrow labels and the 15pt product mark fallback, live in QSS; they are not a general page-heading scale.
+The shared QSS uses Segoe UI with a sans-serif fallback. Body controls are 10pt, small evidence and preview designations 9pt, section headings 11pt, and shell titles 17pt. These are point sizes so Qt can follow DPI scaling. Some existing one-off roles, such as 8pt eyebrow labels and the 15pt product mark fallback, live in QSS; they are not a general page-heading scale.
 
 Use short labels and specific status text. Keep long paths, model identifiers, timestamps and request evidence in scrolling or expandable regions rather than truncating the identity needed for diagnosis. Placeholders describe the expected input and never stand in for a persistent field label when the field's meaning would disappear on entry.
+
+Use the same text hierarchy in Connection, Generate, Queues and Images. Designer
+`textRole` properties describe typography independently of `role` and runtime
+`state` properties, so presentation does not erase status or action semantics.
+
+| Text role | Treatment | Use |
+| --- | --- | --- |
+| Default body | Segoe UI, regular 400 | Editable content and prose |
+| `caption` | 9pt, medium 500, secondary color | Field/metadata labels |
+| `value` | Semibold 600, existing component size | Metadata values and concise status |
+| `supporting` / secondary | 9pt, regular 400 | Model identifiers, hints and evidence |
+| `section` | 11pt, semibold 600 | Prompt and empty-state headings |
+| `identifier` / `code` | Consolas, 9pt, regular 400 | Stable IDs, effective request, events and raw JSON |
+
+Group titles, primary actions and active tabs use emphasis weight; ordinary
+buttons use medium weight. Thumbnail badges use the same family, small size and
+emphasis tokens in custom painting. Keep Unknown/status colors distinct.
+Gallery model names and model identifiers are separate labels to preserve their
+hierarchy without inline HTML styles. Existing layout margins and chrome remain
+unchanged; Windows font metrics and resulting line wraps need owner review.
 
 ## Layout
 

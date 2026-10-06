@@ -77,6 +77,9 @@
           <property name="text">
            <string>Items</string>
           </property>
+          <property name="textRole" stdset="0">
+           <string>caption</string>
+          </property>
          </widget>
         </item>
         <item>
@@ -130,6 +133,9 @@
           <widget class="QLabel" name="concurrencyLabel">
            <property name="text">
             <string>Cloud max</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>caption</string>
            </property>
           </widget>
          </item>
@@ -253,6 +259,9 @@
           <property name="state" stdset="0">
            <string>warning</string>
           </property>
+          <property name="textRole" stdset="0">
+           <string>value</string>
+          </property>
          </widget>
         </item>
        </layout>
@@ -310,6 +319,9 @@
                 <property name="text">
                  <string>Mode</string>
                 </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
+                </property>
                </widget>
               </item>
               <item row="0" column="1">
@@ -333,6 +345,9 @@
                <widget class="QLabel" name="planPromptsLabel">
                 <property name="text">
                  <string>Prompts</string>
+                </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
                 </property>
                </widget>
               </item>
@@ -366,6 +381,9 @@
                 <property name="text">
                  <string>Models</string>
                 </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
+                </property>
                </widget>
               </item>
               <item row="2" column="1">
@@ -385,6 +403,9 @@
                <widget class="QLabel" name="planSeedsLabel">
                 <property name="text">
                  <string>Seeds</string>
+                </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
                 </property>
                </widget>
               </item>
@@ -406,6 +427,9 @@
                 <property name="text">
                  <string>Steps</string>
                 </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
+                </property>
                </widget>
               </item>
               <item row="4" column="1">
@@ -425,6 +449,9 @@
                <widget class="QLabel" name="planGuidanceLabel">
                 <property name="text">
                  <string>Guidance</string>
+                </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
                 </property>
                </widget>
               </item>
@@ -446,6 +473,9 @@
                 <property name="text">
                  <string>Samplers</string>
                 </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
+                </property>
                </widget>
               </item>
               <item row="6" column="1">
@@ -466,6 +496,9 @@
                 <property name="text">
                  <string>Sizes</string>
                 </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
+                </property>
                </widget>
               </item>
               <item row="7" column="1">
@@ -485,6 +518,9 @@
                <widget class="QLabel" name="planLorasLabel">
                 <property name="text">
                  <string>LoRA weights</string>
+                </property>
+                <property name="textRole" stdset="0">
+                 <string>caption</string>
                 </property>
                </widget>
               </item>
@@ -550,6 +586,9 @@
                 </property>
                 <property name="accessibleName">
                  <string>Planned item count</string>
+                </property>
+                <property name="textRole" stdset="0">
+                 <string>value</string>
                 </property>
                </widget>
               </item>
@@ -634,6 +673,9 @@
            <property name="alignment">
             <set>Qt::AlignCenter</set>
            </property>
+           <property name="textRole" stdset="0">
+            <string>section</string>
+           </property>
           </widget>
          </item>
          <item>
@@ -707,12 +749,18 @@
            <property name="text">
             <string>Item</string>
            </property>
+           <property name="textRole" stdset="0">
+            <string>caption</string>
+           </property>
           </widget>
          </item>
          <item row="0" column="1">
           <widget class="QLabel" name="itemIdLabel">
            <property name="text">
             <string>—</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>identifier</string>
            </property>
           </widget>
          </item>
@@ -721,12 +769,18 @@
            <property name="text">
             <string>Attempt</string>
            </property>
+           <property name="textRole" stdset="0">
+            <string>caption</string>
+           </property>
           </widget>
          </item>
          <item row="1" column="1">
           <widget class="QLabel" name="attemptIdLabel">
            <property name="text">
             <string>—</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>identifier</string>
            </property>
           </widget>
          </item>
@@ -735,6 +789,9 @@
            <property name="text">
             <string>Backend</string>
            </property>
+           <property name="textRole" stdset="0">
+            <string>caption</string>
+           </property>
           </widget>
          </item>
          <item row="2" column="1">
@@ -742,12 +799,18 @@
            <property name="text">
             <string>—</string>
            </property>
+           <property name="textRole" stdset="0">
+            <string>value</string>
+           </property>
           </widget>
          </item>
          <item row="3" column="0">
           <widget class="QLabel" name="outputsCaption">
            <property name="text">
             <string>Outputs</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>caption</string>
            </property>
           </widget>
          </item>
@@ -760,6 +823,9 @@
              </property>
              <property name="wordWrap">
               <bool>true</bool>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>value</string>
              </property>
             </widget>
            </item>
@@ -820,6 +886,9 @@
         </property>
         <property name="accessibleName">
          <string>Queue event evidence</string>
+        </property>
+        <property name="textRole" stdset="0">
+         <string>code</string>
         </property>
        </widget>
       </item>

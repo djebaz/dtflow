@@ -68,7 +68,9 @@ class CoverPainter(QObject):
                 painter.setPen(QColor(self.tokens["color.focus"]))
                 painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 9, 9)
             if self.badges:
-                painter.setFont(QFont("Segoe UI", 9))
+                badge_font = QFont(self.tokens["type.family"], int(self.tokens["type.small"].removesuffix("pt")))
+                badge_font.setWeight(QFont.Weight(int(self.tokens["type.weightEmphasis"])))
+                painter.setFont(badge_font)
                 for x, text in [(6, self.badges[0]), (rect.width() - 58, self.badges[1])]:
                     width = painter.fontMetrics().horizontalAdvance(text) + 12
                     badge = QRectF(x, rect.height() - 28, width, 22)
@@ -243,7 +245,8 @@ def apply_gallery(page, assets=ASSETS, sample=False):
         get("galleryPositionOverlay").setText("1 / 6")
         get("galleryDimensionsOverlay").setText("1536 × 1024")
         get("galleryAutoRefreshButton").setText("●  Auto-refresh: Off")
-        get("galleryModelValue").setText("SDXL 1.0\nstabilityai/stable-diffusion-xl-base-1.0")
+        get("galleryModelValue").setText("SDXL 1.0")
+        get("galleryModelIdentifier").setText("stabilityai/stable-diffusion-xl-base-1.0")
         get("galleryLoRAValue").setText(
             "<span >portrait_enhancer_v2　0.8　<span >● Unknown</span><br>film_photography_xl　0.4　<span >● Unknown</span></span>"
         )
@@ -345,6 +348,7 @@ class DetailFixture(QObject):
             layout.addWidget(caption)
             model = QLabel(record["model"], card)
             model.setProperty("role", "secondary")
+            model.setProperty("textRole", "supporting")
             layout.addWidget(model)
             self.cards.append((card, button))
         self.table.setColumnCount(8)

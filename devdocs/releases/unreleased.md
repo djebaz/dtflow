@@ -69,3 +69,10 @@ The header sample-count pill is removed; sample designation remains on the image
   and obsolete chrome selectors. Repeated control/selection colors now use
   named tokens with unchanged values. Source token references reviewed; no
   tests added or run and runtime visual equivalence remains unverified.
+
+- Adds a shared typography hierarchy to Connection, Generate, Queues and Images:
+  quieter captions, emphasized values/actions, section titles, supporting text
+  and monospace IDs/evidence/raw data. Designer text roles preserve semantic
+  status roles; shared tokens drive QSS and thumbnail badge painting. Existing
+  chrome and layout spacing remain. No tests added or run; Windows font/line-wrap
+  acceptance remains unverified.

@@ -64,3 +64,12 @@ spacers, separate from the compact canvas frame.
 Neutral button rest/hover/pressed fills and borders, disabled borders, input
 hover borders and selection hover/pressed/border colors are named shared tokens.
 Gallery-specific dimensions remain scoped to their presentation selectors.
+
+
+Shared typography uses token-defined families and weights (body 400, label 500,
+emphasis 600, title 650, strong 700) and an 11pt section size. Designer `textRole`
+is independent of semantic `role` and runtime `state`. Connection, Generate,
+Queues and Images assign caption/value/section/identifier/code roles to fields,
+evidence and metadata. Secondary text uses the small regular style; raw data
+uses the shared monospace family. Gallery model name/identifier are separate
+labels, and custom-painted thumbnail badges use shared typography tokens.

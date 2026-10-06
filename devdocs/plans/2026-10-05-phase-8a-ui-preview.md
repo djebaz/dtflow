@@ -184,3 +184,14 @@ a 10 px interior inset without enlarging the canvas frame. Header chrome, Grid
 and List remain unchanged. No tests added or run; Windows visual review pending.
 
 The header sample-count pill is removed; sample designation remains on the image.
+
+
+## Shared typography hierarchy (2026-10-06)
+
+Applied caption, value, supporting, section and identifier/code roles across
+Connection, Generate, Queues and Images. Shared font family/weight tokens drive
+QSS and custom-painted thumbnail badges. Gallery model names and identifiers
+use separate labels. The hierarchy reuses the approved charcoal palette and
+existing geometry, preserves status/action roles and does not add services.
+No tests added or run; native Windows font metrics and line wrapping await
+owner review.

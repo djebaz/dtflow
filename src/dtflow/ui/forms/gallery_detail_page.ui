@@ -201,6 +201,9 @@
             <property name="wordWrap">
              <bool>false</bool>
             </property>
+            <property name="textRole" stdset="0">
+             <string>caption</string>
+            </property>
            </widget>
           </item>
           <item>
@@ -253,6 +256,9 @@
             </property>
             <property name="wordWrap">
              <bool>false</bool>
+            </property>
+            <property name="textRole" stdset="0">
+             <string>value</string>
             </property>
            </widget>
           </item>
@@ -1145,6 +1151,9 @@ No generation or saved output</string>
                      <property name="text">
                       <string>Model</string>
                      </property>
+                     <property name="textRole" stdset="0">
+                      <string>caption</string>
+                     </property>
                     </widget>
                    </item>
                    <item>
@@ -1153,14 +1162,16 @@ No generation or saved output</string>
                       <string>ModelValue</string>
                      </property>
                      <property name="text">
-                      <string>Illustrative model
-fixture-model.ckpt</string>
+                      <string>Illustrative model</string>
                      </property>
                      <property name="wordWrap">
                       <bool>false</bool>
                      </property>
                      <property name="textInteractionFlags">
                       <set>Qt::TextSelectableByMouse</set>
+                     </property>
+                     <property name="textRole" stdset="0">
+                      <string>value</string>
                      </property>
                     </widget>
                    </item>
@@ -1179,6 +1190,25 @@ fixture-model.ckpt</string>
                    <property name="bottomMargin">
                     <number>0</number>
                    </property>
+                   <item>
+                    <widget class="QLabel" name="galleryModelIdentifier">
+                     <property name="text">
+                      <string>fixture-model.ckpt</string>
+                     </property>
+                     <property name="role" stdset="0">
+                      <string>secondary</string>
+                     </property>
+                     <property name="textRole" stdset="0">
+                      <string>supporting</string>
+                     </property>
+                     <property name="accessibleName">
+                      <string>Model identifier</string>
+                     </property>
+                     <property name="wordWrap">
+                      <bool>true</bool>
+                     </property>
+                    </widget>
+                   </item>
                   </layout>
                  </widget>
                 </item>
@@ -1208,6 +1238,9 @@ fixture-model.ckpt</string>
                      <property name="wordWrap">
                       <bool>false</bool>
                      </property>
+                     <property name="textRole" stdset="0">
+                      <string>caption</string>
+                     </property>
                     </widget>
                    </item>
                    <item>
@@ -1227,6 +1260,9 @@ fixture-film · 0.4 · Unknown</string>
                      </property>
                      <property name="textInteractionFlags">
                       <set>Qt::TextSelectableByMouse</set>
+                     </property>
+                     <property name="textRole" stdset="0">
+                      <string>value</string>
                      </property>
                     </widget>
                    </item>
@@ -1274,6 +1310,9 @@ fixture-film · 0.4 · Unknown</string>
                      <property name="wordWrap">
                       <bool>false</bool>
                      </property>
+                     <property name="textRole" stdset="0">
+                      <string>caption</string>
+                     </property>
                     </widget>
                    </item>
                    <item>
@@ -1289,6 +1328,9 @@ fixture-film · 0.4 · Unknown</string>
                      </property>
                      <property name="wordWrap">
                       <bool>false</bool>
+                     </property>
+                     <property name="textRole" stdset="0">
+                      <string>value</string>
                      </property>
                     </widget>
                    </item>
@@ -1336,6 +1378,9 @@ fixture-film · 0.4 · Unknown</string>
                      <property name="wordWrap">
                       <bool>false</bool>
                      </property>
+                     <property name="textRole" stdset="0">
+                      <string>caption</string>
+                     </property>
                     </widget>
                    </item>
                    <item>
@@ -1351,6 +1396,9 @@ fixture-film · 0.4 · Unknown</string>
                      </property>
                      <property name="wordWrap">
                       <bool>false</bool>
+                     </property>
+                     <property name="textRole" stdset="0">
+                      <string>value</string>
                      </property>
                     </widget>
                    </item>
@@ -1398,6 +1446,9 @@ fixture-film · 0.4 · Unknown</string>
                      <property name="wordWrap">
                       <bool>false</bool>
                      </property>
+                     <property name="textRole" stdset="0">
+                      <string>caption</string>
+                     </property>
                     </widget>
                    </item>
                    <item>
@@ -1413,6 +1464,9 @@ fixture-film · 0.4 · Unknown</string>
                      </property>
                      <property name="wordWrap">
                       <bool>false</bool>
+                     </property>
+                     <property name="textRole" stdset="0">
+                      <string>value</string>
                      </property>
                     </widget>
                    </item>
@@ -1460,6 +1514,9 @@ fixture-film · 0.4 · Unknown</string>
                      <property name="text">
                       <string>Date / time</string>
                      </property>
+                     <property name="textRole" stdset="0">
+                      <string>caption</string>
+                     </property>
                     </widget>
                    </item>
                    <item>
@@ -1475,6 +1532,9 @@ fixture-film · 0.4 · Unknown</string>
                      </property>
                      <property name="textInteractionFlags">
                       <set>Qt::TextSelectableByMouse</set>
+                     </property>
+                     <property name="textRole" stdset="0">
+                      <string>value</string>
                      </property>
                     </widget>
                    </item>
@@ -1558,6 +1618,9 @@ fixture-film · 0.4 · Unknown</string>
                  </property>
                  <property name="wordWrap">
                   <bool>false</bool>
+                 </property>
+                 <property name="textRole" stdset="0">
+                  <string>caption</string>
                  </property>
                 </widget>
                </item>
@@ -1720,6 +1783,9 @@ fixture-film · 0.4 · Unknown</string>
                   <property name="wordWrap">
                    <bool>false</bool>
                   </property>
+                  <property name="textRole" stdset="0">
+                   <string>caption</string>
+                  </property>
                  </widget>
                 </item>
                 <item row="0" column="1">
@@ -1735,6 +1801,9 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <property name="wordWrap">
                    <bool>false</bool>
+                  </property>
+                  <property name="textRole" stdset="0">
+                   <string>value</string>
                   </property>
                  </widget>
                 </item>
@@ -1752,6 +1821,9 @@ fixture-film · 0.4 · Unknown</string>
                   <property name="wordWrap">
                    <bool>false</bool>
                   </property>
+                  <property name="textRole" stdset="0">
+                   <string>caption</string>
+                  </property>
                  </widget>
                 </item>
                 <item row="0" column="3">
@@ -1767,6 +1839,9 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <property name="wordWrap">
                    <bool>false</bool>
+                  </property>
+                  <property name="textRole" stdset="0">
+                   <string>value</string>
                   </property>
                  </widget>
                 </item>
@@ -1784,6 +1859,9 @@ fixture-film · 0.4 · Unknown</string>
                   <property name="wordWrap">
                    <bool>false</bool>
                   </property>
+                  <property name="textRole" stdset="0">
+                   <string>caption</string>
+                  </property>
                  </widget>
                 </item>
                 <item row="1" column="1">
@@ -1799,6 +1877,9 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <property name="wordWrap">
                    <bool>false</bool>
+                  </property>
+                  <property name="textRole" stdset="0">
+                   <string>value</string>
                   </property>
                  </widget>
                 </item>
@@ -1816,6 +1897,9 @@ fixture-film · 0.4 · Unknown</string>
                   <property name="wordWrap">
                    <bool>false</bool>
                   </property>
+                  <property name="textRole" stdset="0">
+                   <string>caption</string>
+                  </property>
                  </widget>
                 </item>
                 <item row="1" column="3">
@@ -1831,6 +1915,9 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <property name="wordWrap">
                    <bool>false</bool>
+                  </property>
+                  <property name="textRole" stdset="0">
+                   <string>value</string>
                   </property>
                  </widget>
                 </item>
@@ -1848,6 +1935,9 @@ fixture-film · 0.4 · Unknown</string>
                   <property name="wordWrap">
                    <bool>false</bool>
                   </property>
+                  <property name="textRole" stdset="0">
+                   <string>caption</string>
+                  </property>
                  </widget>
                 </item>
                 <item row="2" column="1">
@@ -1863,6 +1953,9 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <property name="wordWrap">
                    <bool>false</bool>
+                  </property>
+                  <property name="textRole" stdset="0">
+                   <string>value</string>
                   </property>
                  </widget>
                 </item>
@@ -1880,6 +1973,9 @@ fixture-film · 0.4 · Unknown</string>
                   <property name="wordWrap">
                    <bool>false</bool>
                   </property>
+                  <property name="textRole" stdset="0">
+                   <string>caption</string>
+                  </property>
                  </widget>
                 </item>
                 <item row="2" column="3">
@@ -1895,6 +1991,9 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <property name="wordWrap">
                    <bool>false</bool>
+                  </property>
+                  <property name="textRole" stdset="0">
+                   <string>value</string>
                   </property>
                  </widget>
                 </item>
@@ -1912,6 +2011,9 @@ fixture-film · 0.4 · Unknown</string>
                   <property name="wordWrap">
                    <bool>false</bool>
                   </property>
+                  <property name="textRole" stdset="0">
+                   <string>caption</string>
+                  </property>
                  </widget>
                 </item>
                 <item row="3" column="1">
@@ -1927,6 +2029,9 @@ fixture-film · 0.4 · Unknown</string>
                   </property>
                   <property name="wordWrap">
                    <bool>false</bool>
+                  </property>
+                  <property name="textRole" stdset="0">
+                   <string>value</string>
                   </property>
                  </widget>
                 </item>
@@ -2017,6 +2122,9 @@ fixture-film · 0.4 · Unknown</string>
               </property>
               <property name="visible">
                <bool>false</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>code</string>
               </property>
              </widget>
             </item>
