@@ -15,10 +15,11 @@ class RunControl(QAbstractButton):
     """Render global execution state without owning generation or queue behavior."""
 
     SEGMENTS = 12
+    SIZE = 40  # painted in a 30-unit space and scaled, so geometry stays proportional
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(30, 30)
+        self.setFixedSize(self.SIZE, self.SIZE)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName("Execution control")
         self._phase = "idle"
@@ -33,6 +34,7 @@ class RunControl(QAbstractButton):
             "idle": QColor(tokens["color.borderStrong"]),
             "ready": QColor(tokens["color.secondary"]),
             "running": QColor(tokens["color.accentHover"]),
+            "running_end": QColor(tokens["color.connectionAccent"]),
             "paused": QColor(tokens["color.warning"]),
             "complete": QColor(tokens["color.success"]),
             "error": QColor(tokens["color.error"]),
@@ -125,7 +127,7 @@ class RunControl(QAbstractButton):
             font.setBold(True)
             painter.setFont(font)
             painter.setPen(color)
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "!")
+            painter.drawText(QRectF(0.0, 0.0, 30.0, 30.0), Qt.AlignmentFlag.AlignCenter, "!")
             return
         if self._completed is None:
             self._draw_pause(painter, color)
@@ -135,14 +137,23 @@ class RunControl(QAbstractButton):
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(color)
-        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, str(self._completed))
+        painter.drawText(QRectF(0.0, 0.0, 30.0, 30.0), Qt.AlignmentFlag.AlignCenter, str(self._completed))
+
+    def _progress_color(self) -> QColor:
+        """Running color moves from the accent blue to cyan as the queue or generation completes."""
+        start, end = self._colors["running"], self._colors["running_end"]
+        if self._completed is None or self._total is None:
+            return QColor(start)
+        mix = min(1.0, max(0.0, self._completed / self._total))
+        return QColor(*(round(a + (b - a) * mix) for a, b in zip(start.getRgb()[:3], end.getRgb()[:3], strict=True)))
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.scale(self.width() / 30.0, self.height() / 30.0)
 
         ring = QRectF(3.5, 3.5, 23.0, 23.0)
-        base = self._colors[self._phase]
+        base = self._progress_color() if self._phase == "running" else self._colors[self._phase]
         if self._phase == "complete":
             # Soft pulsing halo while the control shows it is finishing; the ring itself stays in its own color.
             strength = 0.5 - 0.5 * math.cos(self._pulse)
