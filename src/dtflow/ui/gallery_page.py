@@ -42,6 +42,9 @@ PAGE_SIZE = 80
 THUMBNAIL_SIDE = 320
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 5000
+STANDARD_THUMBNAIL_PX = 160
+MIN_THUMBNAIL_PERCENT = 25
+MAX_THUMBNAIL_PERCENT = 250
 
 SORT_LABELS = {
     "Newest first": "newest",
@@ -366,9 +369,17 @@ class GalleryPage(QObject):
         self.mode = str(document.get("view", "Detail"))
         if self.mode not in self.modes:
             self.mode = "Detail"
-        density = document.get("density")
-        if type(density) is int and self.slider.minimum() <= density <= self.slider.maximum():
-            self.slider.setValue(density)
+        scale_percent = document.get("thumbnail_scale_percent")
+        if type(scale_percent) is int and MIN_THUMBNAIL_PERCENT <= scale_percent <= MAX_THUMBNAIL_PERCENT:
+            self.slider.setValue(scale_percent)
+        else:
+            # PR #34 initially persisted the raw pixel size under "density".
+            # Preserve those local smoke-test preferences while moving the UI
+            # contract to a percentage based on the 160 px standard size.
+            legacy_density = document.get("density")
+            if type(legacy_density) is int and legacy_density > 0:
+                migrated = round(legacy_density * 100 / STANDARD_THUMBNAIL_PX)
+                self.slider.setValue(max(MIN_THUMBNAIL_PERCENT, min(MAX_THUMBNAIL_PERCENT, migrated)))
         selected = document.get("selected")
         self.selected_id = selected if isinstance(selected, str) and selected else None
         self.auto_button.setChecked(bool(document.get("auto_refresh", True)))
@@ -940,45 +951,57 @@ class GalleryPage(QObject):
         button.setFocus(Qt.FocusReason.OtherFocusReason)
         self.grid_scroll.ensureWidgetVisible(button)
 
+    @staticmethod
+    def _thumbnail_pixels(scale_percent: int) -> int:
+        """Convert the user-facing percentage to the internal logical-pixel thumbnail size."""
+
+        return max(1, round(STANDARD_THUMBNAIL_PX * scale_percent / 100))
+
     def _density_changed(self, *_args) -> None:
-        density = self.slider.value()
+        scale_percent = self.slider.value()
+        density = self._thumbnail_pixels(scale_percent)
+
+        # CoverPainter owns the visible pixels. One shared transparent icon
+        # preserves QPushButton's content size hint across asynchronous relayouts
+        # without allocating one full-size placeholder pixmap per Grid card.
+        grid_placeholder = QPixmap(density, density)
+        grid_placeholder.fill(Qt.GlobalColor.transparent)
+        grid_icon = QIcon(grid_placeholder)
         for identity, button in self._grid_buttons.items():
             card = button.parentWidget()
             card.setFixedWidth(density + 16)
             button.setFixedSize(density + 16, density + 16)
-            # CoverPainter owns the visible pixels, but the transparent icon gives
-            # QPushButton a stable content size hint when the scroll-area/grid
-            # layout is recalculated after asynchronous thumbnail delivery.
-            placeholder = QPixmap(density, density)
-            placeholder.fill(Qt.GlobalColor.transparent)
-            button.setIcon(QIcon(placeholder))
-            button.setIconSize(placeholder.size())
+            button.setIcon(grid_icon)
+            button.setIconSize(grid_placeholder.size())
             painter = self._grid_painters.get(identity)
             if painter is not None:
                 painter.widget.update()
-        height = max(36, min(84, round(density * 0.35)))
-        self.table.verticalHeader().setDefaultSectionSize(height)
-        self.table.setIconSize(QSize(height, max(24, height - 10)))
+
+        row_height = max(36, min(84, round(density * 0.35)))
+        self.table.verticalHeader().setDefaultSectionSize(row_height)
+        self.table.setIconSize(QSize(row_height, max(24, row_height - 10)))
         for row in range(self.table.rowCount()):
-            self.table.setRowHeight(row, height)
-        self._widget("galleryThumbnailSizeValue", QLabel).setText(
-            f"{height} px" if self.mode == "List" else f"{density} px"
-        )
+            self.table.setRowHeight(row, row_height)
+
+        self._widget("galleryThumbnailSizeValue", QLabel).setText(f"{scale_percent}%")
+
         self.film_scroll.setFixedWidth(density + 20)
+        film_width, film_height = density + 8, round((density + 8) * 0.63)
+        film_placeholder = QPixmap(max(1, film_width - 8), max(1, film_height - 8))
+        film_placeholder.fill(Qt.GlobalColor.transparent)
+        film_icon = QIcon(film_placeholder)
         for button in self._film_buttons:
-            width, height = density + 8, round((density + 8) * 0.63)
-            button.setFixedSize(width, height)
-            placeholder = QPixmap(max(1, width - 8), max(1, height - 8))
-            placeholder.fill(Qt.GlobalColor.transparent)
-            button.setIcon(QIcon(placeholder))
-            button.setIconSize(placeholder.size())
+            button.setFixedSize(film_width, film_height)
+            button.setIcon(film_icon)
+            button.setIconSize(film_placeholder.size())
+
         self.reflow_timer.start(0)
         self._schedule_save()
 
     def _layout_cards(self) -> None:
         if not self._grid_buttons:
             return
-        width = self.slider.value() + 16
+        width = self._thumbnail_pixels(self.slider.value()) + 16
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
         cards = [button.parentWidget() for button in self._grid_buttons.values()]
         for card in cards:
@@ -1151,7 +1174,7 @@ class GalleryPage(QObject):
                 "sort": self.sort.currentText(),
             },
             "view": self.mode,
-            "density": self.slider.value(),
+            "thumbnail_scale_percent": self.slider.value(),
             "selected": self.selected_id,
             "auto_refresh": self.auto_button.isChecked(),
             "scroll": dict(self._scroll),
