@@ -86,60 +86,167 @@
            <item>
             <widget class="QGroupBox" name="connectionBox">
              <property name="title">
+              <string />
+             </property>
+             <property name="role" stdset="0">
+              <string>sectionCard</string>
+             </property>
+             <property name="accessibleName">
               <string>Backend</string>
              </property>
-             <layout class="QFormLayout" name="connectionForm">
-              <property name="fieldGrowthPolicy">
-               <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+             <layout class="QVBoxLayout" name="connectionBoxCardLayout">
+              <property name="leftMargin">
+               <number>0</number>
               </property>
-              <property name="horizontalSpacing">
-               <number>8</number>
+              <property name="topMargin">
+               <number>0</number>
               </property>
-              <property name="verticalSpacing">
-               <number>8</number>
+              <property name="rightMargin">
+               <number>0</number>
               </property>
-              <item row="0" column="0">
-               <widget class="QLabel" name="backendLabel">
-                <property name="text">
-                 <string>Provider</string>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
+              <property name="spacing">
+               <number>0</number>
+              </property>
+              <item>
+               <widget class="QFrame" name="connectionBoxHeader">
+                <property name="role" stdset="0">
+                 <string>sectionHeader</string>
                 </property>
+                <layout class="QHBoxLayout" name="connectionBoxHeaderLayout" stretch="0,1">
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>7</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>7</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="connectionBoxIcon">
+                   <property name="role" stdset="0">
+                    <string>sectionIcon</string>
+                   </property>
+                   <property name="iconKey" stdset="0">
+                    <string>refresh</string>
+                   </property>
+                   <property name="text">
+                    <string />
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>16</width>
+                     <height>16</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16</width>
+                     <height>16</height>
+                    </size>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="connectionBoxHeading">
+                   <property name="text">
+                    <string>Backend</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>panelHeading</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
                </widget>
               </item>
-              <item row="0" column="1">
-               <widget class="QComboBox" name="backendCombo">
-                <property name="accessibleName">
-                 <string>Generation backend</string>
+              <item>
+               <widget class="QWidget" name="connectionBoxContents">
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
                 </property>
-               </widget>
-              </item>
-              <item row="1" column="0">
-               <widget class="QLabel" name="endpointLabel">
-                <property name="text">
-                 <string>Endpoint</string>
-                </property>
-               </widget>
-              </item>
-              <item row="1" column="1">
-               <widget class="QLineEdit" name="endpointEdit">
-                <property name="placeholderText">
-                 <string>HOST:PORT</string>
-                </property>
-                <property name="clearButtonEnabled">
-                 <bool>true</bool>
-                </property>
-                <property name="accessibleName">
-                 <string>Local Draw Things endpoint</string>
-                </property>
-               </widget>
-              </item>
-              <item row="2" column="0" colspan="2">
-               <widget class="QPushButton" name="checkButton">
-                <property name="text">
-                 <string>Check connection</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Check selected backend connection</string>
-                </property>
+                <layout class="QFormLayout" name="connectionForm">
+                 <property name="fieldGrowthPolicy">
+                  <enum>QFormLayout::AllNonFixedFieldsGrow</enum>
+                 </property>
+                 <property name="horizontalSpacing">
+                  <number>8</number>
+                 </property>
+                 <property name="verticalSpacing">
+                  <number>8</number>
+                 </property>
+                 <item row="0" column="0">
+                  <widget class="QLabel" name="backendLabel">
+                   <property name="text">
+                    <string>Provider</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="1">
+                  <widget class="QComboBox" name="backendCombo">
+                   <property name="accessibleName">
+                    <string>Generation backend</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="0">
+                  <widget class="QLabel" name="endpointLabel">
+                   <property name="text">
+                    <string>Endpoint</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="1">
+                  <widget class="QLineEdit" name="endpointEdit">
+                   <property name="placeholderText">
+                    <string>HOST:PORT</string>
+                   </property>
+                   <property name="clearButtonEnabled">
+                    <bool>true</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Local Draw Things endpoint</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="2" column="0" colspan="2">
+                  <widget class="QPushButton" name="checkButton">
+                   <property name="text">
+                    <string>Check connection</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Check selected backend connection</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>10</number>
+                 </property>
+                </layout>
                </widget>
               </item>
              </layout>
@@ -148,70 +255,174 @@
            <item>
             <widget class="QGroupBox" name="credentialBox">
              <property name="title">
+              <string />
+             </property>
+             <property name="role" stdset="0">
+              <string>sectionCard</string>
+             </property>
+             <property name="accessibleName">
               <string>DT+ credentials</string>
              </property>
-             <layout class="QVBoxLayout" name="credentialLayout">
+             <layout class="QVBoxLayout" name="credentialBoxCardLayout">
+              <property name="leftMargin">
+               <number>0</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <property name="rightMargin">
+               <number>0</number>
+              </property>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
               <property name="spacing">
-               <number>8</number>
+               <number>0</number>
               </property>
               <item>
-               <widget class="QLabel" name="credentialHelpLabel">
-                <property name="text">
-                 <string>Saved securely in Windows Credential Manager. An environment key keeps precedence.</string>
-                </property>
-                <property name="wordWrap">
-                 <bool>true</bool>
-                </property>
+               <widget class="QFrame" name="credentialBoxHeader">
                 <property name="role" stdset="0">
-                 <string>secondary</string>
+                 <string>sectionHeader</string>
                 </property>
+                <layout class="QHBoxLayout" name="credentialBoxHeaderLayout" stretch="0,1">
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>7</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>7</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="credentialBoxIcon">
+                   <property name="role" stdset="0">
+                    <string>sectionIcon</string>
+                   </property>
+                   <property name="iconKey" stdset="0">
+                    <string>document</string>
+                   </property>
+                   <property name="text">
+                    <string />
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>16</width>
+                     <height>16</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16</width>
+                     <height>16</height>
+                    </size>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="credentialBoxHeading">
+                   <property name="text">
+                    <string>DT+ credentials</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>panelHeading</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
                </widget>
               </item>
               <item>
-               <widget class="QLineEdit" name="keyEdit">
-                <property name="placeholderText">
-                 <string>DT+ API key</string>
+               <widget class="QWidget" name="credentialBoxContents">
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
                 </property>
-                <property name="echoMode">
-                 <enum>QLineEdit::Password</enum>
-                </property>
-                <property name="clearButtonEnabled">
-                 <bool>true</bool>
-                </property>
-                <property name="accessibleName">
-                 <string>DT plus API key</string>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <layout class="QHBoxLayout" name="keyButtons">
-                <property name="spacing">
-                 <number>6</number>
-                </property>
-                <item>
-                 <widget class="QPushButton" name="saveKeyButton">
-                  <property name="text">
-                   <string>Save key</string>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QPushButton" name="removeKeyButton">
-                  <property name="text">
-                   <string>Remove</string>
-                  </property>
-                 </widget>
-                </item>
-               </layout>
-              </item>
-              <item>
-               <widget class="QLabel" name="credentialStatusLabel">
-                <property name="text">
-                 <string>No API key available.</string>
-                </property>
-                <property name="wordWrap">
-                 <bool>true</bool>
-                </property>
+                <layout class="QVBoxLayout" name="credentialLayout">
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="credentialHelpLabel">
+                   <property name="text">
+                    <string>Saved securely in Windows Credential Manager. An environment key keeps precedence.</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>secondary</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLineEdit" name="keyEdit">
+                   <property name="placeholderText">
+                    <string>DT+ API key</string>
+                   </property>
+                   <property name="echoMode">
+                    <enum>QLineEdit::Password</enum>
+                   </property>
+                   <property name="clearButtonEnabled">
+                    <bool>true</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>DT plus API key</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="keyButtons">
+                   <property name="spacing">
+                    <number>6</number>
+                   </property>
+                   <item>
+                    <widget class="QPushButton" name="saveKeyButton">
+                     <property name="text">
+                      <string>Save key</string>
+                     </property>
+                    </widget>
+                   </item>
+                   <item>
+                    <widget class="QPushButton" name="removeKeyButton">
+                     <property name="text">
+                      <string>Remove</string>
+                     </property>
+                    </widget>
+                   </item>
+                  </layout>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="credentialStatusLabel">
+                   <property name="text">
+                    <string>No API key available.</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>value</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>10</number>
+                 </property>
+                </layout>
                </widget>
               </item>
              </layout>
@@ -426,23 +637,124 @@
            <item>
             <widget class="QGroupBox" name="safetyBox">
              <property name="title">
+              <string />
+             </property>
+             <property name="role" stdset="0">
+              <string>sectionCard</string>
+             </property>
+             <property name="accessibleName">
               <string>Connection check</string>
              </property>
-             <layout class="QVBoxLayout" name="safetyLayout">
+             <layout class="QVBoxLayout" name="safetyBoxCardLayout">
+              <property name="leftMargin">
+               <number>0</number>
+              </property>
+              <property name="topMargin">
+               <number>0</number>
+              </property>
+              <property name="rightMargin">
+               <number>0</number>
+              </property>
+              <property name="bottomMargin">
+               <number>0</number>
+              </property>
+              <property name="spacing">
+               <number>0</number>
+              </property>
               <item>
-               <widget class="QLabel" name="safetyLabel">
-                <property name="text">
-                 <string>• No generation request
+               <widget class="QFrame" name="safetyBoxHeader">
+                <property name="role" stdset="0">
+                 <string>sectionHeader</string>
+                </property>
+                <layout class="QHBoxLayout" name="safetyBoxHeaderLayout" stretch="0,1">
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>7</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>7</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="safetyBoxIcon">
+                   <property name="role" stdset="0">
+                    <string>sectionIcon</string>
+                   </property>
+                   <property name="iconKey" stdset="0">
+                    <string>json</string>
+                   </property>
+                   <property name="text">
+                    <string />
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>16</width>
+                     <height>16</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16</width>
+                     <height>16</height>
+                    </size>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="safetyBoxHeading">
+                   <property name="text">
+                    <string>Connection check</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>panelHeading</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="safetyBoxContents">
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
+                </property>
+                <layout class="QVBoxLayout" name="safetyLayout">
+                 <item>
+                  <widget class="QLabel" name="safetyLabel">
+                   <property name="text">
+                    <string>• No generation request
 • No automatic backend fallback
 • Credentials are never shown or logged
 • Failures retain explicit provider evidence</string>
-                </property>
-                <property name="wordWrap">
-                 <bool>true</bool>
-                </property>
-                <property name="role" stdset="0">
-                 <string>secondary</string>
-                </property>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>secondary</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>10</number>
+                 </property>
+                </layout>
                </widget>
               </item>
              </layout>

@@ -77,6 +77,9 @@
           <property name="text">
            <string>Items</string>
           </property>
+          <property name="textRole" stdset="0">
+           <string>caption</string>
+          </property>
          </widget>
         </item>
         <item>
@@ -123,40 +126,144 @@
       <item>
        <widget class="QGroupBox" name="concurrencyBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Dispatch policy</string>
         </property>
-        <layout class="QFormLayout" name="concurrencyForm">
-         <item row="0" column="0">
-          <widget class="QLabel" name="concurrencyLabel">
-           <property name="text">
-            <string>Cloud max</string>
-           </property>
-          </widget>
-         </item>
-         <item row="0" column="1">
-          <widget class="QSpinBox" name="concurrencySpinBox">
-           <property name="minimum">
-            <number>1</number>
-           </property>
-           <property name="maximum">
-            <number>4</number>
-           </property>
-           <property name="value">
-            <number>4</number>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0" colspan="2">
-          <widget class="QLabel" name="concurrencyHintLabel">
-           <property name="text">
-            <string>Local Draw Things remains one effective lane.</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
+        <layout class="QVBoxLayout" name="concurrencyBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="concurrencyBoxHeader">
            <property name="role" stdset="0">
-            <string>secondary</string>
+            <string>sectionHeader</string>
            </property>
+           <layout class="QHBoxLayout" name="concurrencyBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="concurrencyBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>detail</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="concurrencyBoxHeading">
+              <property name="text">
+               <string>Dispatch policy</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="concurrencyBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+           <layout class="QFormLayout" name="concurrencyForm">
+            <item row="0" column="0">
+             <widget class="QLabel" name="concurrencyLabel">
+              <property name="text">
+               <string>Cloud max</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QSpinBox" name="concurrencySpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>4</number>
+              </property>
+              <property name="value">
+               <number>4</number>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0" colspan="2">
+             <widget class="QLabel" name="concurrencyHintLabel">
+              <property name="text">
+               <string>Local Draw Things remains one effective lane.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
          </item>
         </layout>
@@ -167,7 +274,7 @@
    </item>
    <item>
     <widget class="QFrame" name="queueWorkspace">
-     <layout class="QVBoxLayout" name="queueWorkspaceLayout">
+     <layout class="QVBoxLayout" name="queueWorkspaceLayout" stretch="0,0,0,0,1,1,0">
       <item>
        <widget class="QLabel" name="ownershipBadgeLabel">
         <property name="sizePolicy">
@@ -253,6 +360,9 @@
           <property name="state" stdset="0">
            <string>warning</string>
           </property>
+          <property name="textRole" stdset="0">
+           <string>value</string>
+          </property>
          </widget>
         </item>
        </layout>
@@ -276,7 +386,7 @@
       <item>
        <widget class="QGroupBox" name="planBox">
         <property name="title">
-         <string>Plan batch (pair or cross)</string>
+         <string />
         </property>
         <property name="checkable">
          <bool>true</bool>
@@ -287,299 +397,442 @@
         <property name="toolTip">
          <string>Vary dimensions of the Generate form instead of repeating it. Blank fields stay fixed from the form.</string>
         </property>
-        <layout class="QVBoxLayout" name="planBoxLayout">
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
+         <string>Plan batch (pair or cross)</string>
+        </property>
+        <layout class="QVBoxLayout" name="planBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
          <item>
-          <widget class="QFrame" name="planBody">
-           <layout class="QVBoxLayout" name="planBodyLayout">
+          <widget class="QFrame" name="planBoxHeader">
+           <property name="role" stdset="0">
+            <string>sectionHeader</string>
+           </property>
+           <layout class="QHBoxLayout" name="planBoxHeaderLayout" stretch="0,1">
             <property name="leftMargin">
-             <number>0</number>
+             <number>10</number>
             </property>
             <property name="topMargin">
-             <number>0</number>
+             <number>7</number>
             </property>
             <property name="rightMargin">
-             <number>0</number>
+             <number>10</number>
             </property>
             <property name="bottomMargin">
-             <number>0</number>
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
             </property>
             <item>
-             <layout class="QFormLayout" name="planForm">
-              <item row="0" column="0">
-               <widget class="QLabel" name="planModeLabel">
-                <property name="text">
-                 <string>Mode</string>
-                </property>
-               </widget>
-              </item>
-              <item row="0" column="1">
-               <widget class="QComboBox" name="planModeCombo">
-                <property name="accessibleName">
-                 <string>Plan mode</string>
-                </property>
-                <item>
-                 <property name="text">
-                  <string>Cross</string>
-                 </property>
-                </item>
-                <item>
-                 <property name="text">
-                  <string>Pair</string>
-                 </property>
-                </item>
-               </widget>
-              </item>
-              <item row="1" column="0">
-               <widget class="QLabel" name="planPromptsLabel">
-                <property name="text">
-                 <string>Prompts</string>
-                </property>
-               </widget>
-              </item>
-              <item row="1" column="1">
-               <widget class="QPlainTextEdit" name="planPromptsEdit">
-                <property name="placeholderText">
-                 <string>One prompt per line</string>
-                </property>
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>42</height>
-                 </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>16777215</width>
-                  <height>54</height>
-                 </size>
-                </property>
-                <property name="toolTip">
-                 <string>One prompt per line.</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan prompts</string>
-                </property>
-               </widget>
-              </item>
-              <item row="2" column="0">
-               <widget class="QLabel" name="planModelsLabel">
-                <property name="text">
-                 <string>Models</string>
-                </property>
-               </widget>
-              </item>
-              <item row="2" column="1">
-               <widget class="QLineEdit" name="planModelsEdit">
-                <property name="placeholderText">
-                 <string>e.g. model-a.ckpt; model-b.ckpt</string>
-                </property>
-                <property name="toolTip">
-                 <string>Exact model identifiers separated by ;</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan models</string>
-                </property>
-               </widget>
-              </item>
-              <item row="3" column="0">
-               <widget class="QLabel" name="planSeedsLabel">
-                <property name="text">
-                 <string>Seeds</string>
-                </property>
-               </widget>
-              </item>
-              <item row="3" column="1">
-               <widget class="QLineEdit" name="planSeedsEdit">
-                <property name="placeholderText">
-                 <string>e.g. 1; 2; 10..20</string>
-                </property>
-                <property name="toolTip">
-                 <string>Integers or LOW..HIGH ranges separated by ;</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan seeds</string>
-                </property>
-               </widget>
-              </item>
-              <item row="4" column="0">
-               <widget class="QLabel" name="planStepsLabel">
-                <property name="text">
-                 <string>Steps</string>
-                </property>
-               </widget>
-              </item>
-              <item row="4" column="1">
-               <widget class="QLineEdit" name="planStepsEdit">
-                <property name="placeholderText">
-                 <string>e.g. 20; 30</string>
-                </property>
-                <property name="toolTip">
-                 <string>Integers separated by ;</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan steps</string>
-                </property>
-               </widget>
-              </item>
-              <item row="5" column="0">
-               <widget class="QLabel" name="planGuidanceLabel">
-                <property name="text">
-                 <string>Guidance</string>
-                </property>
-               </widget>
-              </item>
-              <item row="5" column="1">
-               <widget class="QLineEdit" name="planGuidanceEdit">
-                <property name="placeholderText">
-                 <string>e.g. 4.5; 7</string>
-                </property>
-                <property name="toolTip">
-                 <string>Numbers separated by ;</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan guidance</string>
-                </property>
-               </widget>
-              </item>
-              <item row="6" column="0">
-               <widget class="QLabel" name="planSamplersLabel">
-                <property name="text">
-                 <string>Samplers</string>
-                </property>
-               </widget>
-              </item>
-              <item row="6" column="1">
-               <widget class="QLineEdit" name="planSamplersEdit">
-                <property name="placeholderText">
-                 <string>e.g. euler_a; dpmpp_2m_karras</string>
-                </property>
-                <property name="toolTip">
-                 <string>Sampler names separated by ;</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan samplers</string>
-                </property>
-               </widget>
-              </item>
-              <item row="7" column="0">
-               <widget class="QLabel" name="planSizesLabel">
-                <property name="text">
-                 <string>Sizes</string>
-                </property>
-               </widget>
-              </item>
-              <item row="7" column="1">
-               <widget class="QLineEdit" name="planSizesEdit">
-                <property name="placeholderText">
-                 <string>e.g. 512x512; 768x512</string>
-                </property>
-                <property name="toolTip">
-                 <string>WIDTHxHEIGHT pairs separated by ;, for example 512x512; 768x512</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan sizes</string>
-                </property>
-               </widget>
-              </item>
-              <item row="8" column="0">
-               <widget class="QLabel" name="planLorasLabel">
-                <property name="text">
-                 <string>LoRA weights</string>
-                </property>
-               </widget>
-              </item>
-              <item row="8" column="1">
-               <widget class="QPlainTextEdit" name="planLorasEdit">
-                <property name="placeholderText">
-                 <string>IDENTIFIER: 0.6; 1.0 (one LoRA per line)</string>
-                </property>
-                <property name="minimumSize">
-                 <size>
-                  <width>0</width>
-                  <height>42</height>
-                 </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>16777215</width>
-                  <height>54</height>
-                 </size>
-                </property>
-                <property name="toolTip">
-                 <string>One LoRA per line: IDENTIFIER: 0.6; 0.8. The LoRA must already be on the Generate form.</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Plan LoRA weights</string>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-            <item>
-             <widget class="QCheckBox" name="planIncrementCheck">
+             <widget class="QLabel" name="planBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>grid</string>
+              </property>
               <property name="text">
-               <string>Increment the seed per item (otherwise the base seed is kept)</string>
+               <string />
               </property>
-              <property name="accessibleName">
-               <string>Increment seed per item</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <layout class="QHBoxLayout" name="planActionLayout">
-              <item>
-               <widget class="QPushButton" name="planDryRunButton">
-                <property name="text">
-                 <string>Dry run</string>
-                </property>
-                <property name="toolTip">
-                 <string>Shows the exact items without creating anything.</string>
-                </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QLabel" name="planCountLabel">
-                <property name="text">
-                 <string>Fill at least one dimension.</string>
-                </property>
-                <property name="wordWrap">
-                 <bool>true</bool>
-                </property>
-                <property name="state" stdset="0">
-                 <string>unknown</string>
-                </property>
-                <property name="accessibleName">
-                 <string>Planned item count</string>
-                </property>
-               </widget>
-              </item>
-             </layout>
-            </item>
-            <item>
-             <widget class="QTableView" name="planTableView">
               <property name="minimumSize">
                <size>
-                <width>0</width>
-                <height>110</height>
+                <width>16</width>
+                <height>16</height>
                </size>
               </property>
               <property name="maximumSize">
                <size>
-                <width>16777215</width>
-                <height>170</height>
+                <width>16</width>
+                <height>16</height>
                </size>
-              </property>
-              <property name="alternatingRowColors">
-               <bool>true</bool>
-              </property>
-              <property name="editTriggers">
-               <set>QAbstractItemView::NoEditTriggers</set>
-              </property>
-              <property name="accessibleName">
-               <string>Dry-run items</string>
               </property>
              </widget>
             </item>
+            <item>
+             <widget class="QCheckBox" name="planBoxToggle">
+              <property name="text">
+               <string>Plan batch (pair or cross)</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+              <property name="accessibleName">
+               <string>Enable batch plan</string>
+              </property>
+              <property name="toolTip">
+               <string>Enable a Pair or Cross batch plan; turn off to return to the item-count shortcut.</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="planBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+           <layout class="QVBoxLayout" name="planBoxLayout">
+            <item>
+             <widget class="QFrame" name="planBody">
+              <layout class="QVBoxLayout" name="planBodyLayout">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <item>
+                <layout class="QFormLayout" name="planForm">
+                 <item row="0" column="0">
+                  <widget class="QLabel" name="planModeLabel">
+                   <property name="text">
+                    <string>Mode</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="0" column="1">
+                  <widget class="QComboBox" name="planModeCombo">
+                   <property name="accessibleName">
+                    <string>Plan mode</string>
+                   </property>
+                   <item>
+                    <property name="text">
+                     <string>Cross</string>
+                    </property>
+                   </item>
+                   <item>
+                    <property name="text">
+                     <string>Pair</string>
+                    </property>
+                   </item>
+                  </widget>
+                 </item>
+                 <item row="1" column="0">
+                  <widget class="QLabel" name="planPromptsLabel">
+                   <property name="text">
+                    <string>Prompts</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="1" column="1">
+                  <widget class="QPlainTextEdit" name="planPromptsEdit">
+                   <property name="placeholderText">
+                    <string>One prompt per line</string>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>42</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>54</height>
+                    </size>
+                   </property>
+                   <property name="toolTip">
+                    <string>One prompt per line.</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan prompts</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="2" column="0">
+                  <widget class="QLabel" name="planModelsLabel">
+                   <property name="text">
+                    <string>Models</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="2" column="1">
+                  <widget class="QLineEdit" name="planModelsEdit">
+                   <property name="placeholderText">
+                    <string>e.g. model-a.ckpt; model-b.ckpt</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Exact model identifiers separated by ;</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan models</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="3" column="0">
+                  <widget class="QLabel" name="planSeedsLabel">
+                   <property name="text">
+                    <string>Seeds</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="3" column="1">
+                  <widget class="QLineEdit" name="planSeedsEdit">
+                   <property name="placeholderText">
+                    <string>e.g. 1; 2; 10..20</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Integers or LOW..HIGH ranges separated by ;</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan seeds</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="4" column="0">
+                  <widget class="QLabel" name="planStepsLabel">
+                   <property name="text">
+                    <string>Steps</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="4" column="1">
+                  <widget class="QLineEdit" name="planStepsEdit">
+                   <property name="placeholderText">
+                    <string>e.g. 20; 30</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Integers separated by ;</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan steps</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="5" column="0">
+                  <widget class="QLabel" name="planGuidanceLabel">
+                   <property name="text">
+                    <string>Guidance</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="5" column="1">
+                  <widget class="QLineEdit" name="planGuidanceEdit">
+                   <property name="placeholderText">
+                    <string>e.g. 4.5; 7</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Numbers separated by ;</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan guidance</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="6" column="0">
+                  <widget class="QLabel" name="planSamplersLabel">
+                   <property name="text">
+                    <string>Samplers</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="6" column="1">
+                  <widget class="QLineEdit" name="planSamplersEdit">
+                   <property name="placeholderText">
+                    <string>e.g. euler_a; dpmpp_2m_karras</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Sampler names separated by ;</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan samplers</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="7" column="0">
+                  <widget class="QLabel" name="planSizesLabel">
+                   <property name="text">
+                    <string>Sizes</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="7" column="1">
+                  <widget class="QLineEdit" name="planSizesEdit">
+                   <property name="placeholderText">
+                    <string>e.g. 512x512; 768x512</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>WIDTHxHEIGHT pairs separated by ;, for example 512x512; 768x512</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan sizes</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="8" column="0">
+                  <widget class="QLabel" name="planLorasLabel">
+                   <property name="text">
+                    <string>LoRA weights</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="8" column="1">
+                  <widget class="QPlainTextEdit" name="planLorasEdit">
+                   <property name="placeholderText">
+                    <string>IDENTIFIER: 0.6; 1.0 (one LoRA per line)</string>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>0</width>
+                     <height>42</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>16777215</width>
+                     <height>54</height>
+                    </size>
+                   </property>
+                   <property name="toolTip">
+                    <string>One LoRA per line: IDENTIFIER: 0.6; 0.8. The LoRA must already be on the Generate form.</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan LoRA weights</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+               <item>
+                <widget class="QCheckBox" name="planIncrementCheck">
+                 <property name="text">
+                  <string>Increment the seed per item (otherwise the base seed is kept)</string>
+                 </property>
+                 <property name="accessibleName">
+                  <string>Increment seed per item</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <layout class="QHBoxLayout" name="planActionLayout">
+                 <item>
+                  <widget class="QPushButton" name="planDryRunButton">
+                   <property name="text">
+                    <string>Dry run</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Shows the exact items without creating anything.</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="planCountLabel">
+                   <property name="text">
+                    <string>Fill at least one dimension.</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="state" stdset="0">
+                    <string>unknown</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Planned item count</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>value</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </item>
+               <item>
+                <widget class="QTableView" name="planTableView">
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>110</height>
+                  </size>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>16777215</width>
+                   <height>170</height>
+                  </size>
+                 </property>
+                 <property name="alternatingRowColors">
+                  <bool>true</bool>
+                 </property>
+                 <property name="editTriggers">
+                  <set>QAbstractItemView::NoEditTriggers</set>
+                 </property>
+                 <property name="accessibleName">
+                  <string>Dry-run items</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
            </layout>
           </widget>
          </item>
@@ -625,7 +878,20 @@
       </item>
       <item>
        <widget class="QFrame" name="emptyStateCard">
-        <layout class="QVBoxLayout" name="emptyStateLayout">
+        <layout class="QVBoxLayout" name="emptyStateLayout" stretch="1,0,0,1">
+         <item>
+          <spacer name="queueEmptyTopSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint">
+            <size>
+             <width>0</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
          <item>
           <widget class="QLabel" name="emptyStateTitleLabel">
            <property name="text">
@@ -634,12 +900,15 @@
            <property name="alignment">
             <set>Qt::AlignCenter</set>
            </property>
+           <property name="textRole" stdset="0">
+            <string>section</string>
+           </property>
           </widget>
          </item>
          <item>
           <widget class="QLabel" name="emptyStateBodyLabel">
            <property name="text">
-            <string>Create or select a durable queue to inspect stable item identity, attempts, and dispatch evidence.</string>
+            <string>Select a queue from the left, or create one from the Generate form.</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>
@@ -651,6 +920,22 @@
             <string>secondary</string>
            </property>
           </widget>
+         </item>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <spacer name="queueEmptyBottomSpacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint">
+            <size>
+             <width>0</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
          </item>
         </layout>
        </widget>
@@ -699,84 +984,209 @@
       <item>
        <widget class="QGroupBox" name="itemIdentityBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Selected item</string>
         </property>
-        <layout class="QFormLayout" name="itemIdentityForm">
-         <item row="0" column="0">
-          <widget class="QLabel" name="itemIdCaption">
-           <property name="text">
-            <string>Item</string>
+        <layout class="QVBoxLayout" name="itemIdentityBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="itemIdentityBoxHeader">
+           <property name="role" stdset="0">
+            <string>sectionHeader</string>
            </property>
+           <layout class="QHBoxLayout" name="itemIdentityBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="itemIdentityBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>json</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="itemIdentityBoxHeading">
+              <property name="text">
+               <string>Selected item</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
-         <item row="0" column="1">
-          <widget class="QLabel" name="itemIdLabel">
-           <property name="text">
-            <string>—</string>
+         <item>
+          <widget class="QWidget" name="itemIdentityBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
            </property>
+           <layout class="QFormLayout" name="itemIdentityForm">
+            <item row="0" column="0">
+             <widget class="QLabel" name="itemIdCaption">
+              <property name="text">
+               <string>Item</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLabel" name="itemIdLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>identifier</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="attemptIdCaption">
+              <property name="text">
+               <string>Attempt</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QLabel" name="attemptIdLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>identifier</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="backendCaption">
+              <property name="text">
+               <string>Backend</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QLabel" name="itemBackendLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="outputsCaption">
+              <property name="text">
+               <string>Outputs</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <layout class="QHBoxLayout" name="itemOutputsRow">
+              <item>
+               <widget class="QLabel" name="itemOutputsLabel">
+                <property name="text">
+                 <string>—</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="textRole" stdset="0">
+                 <string>value</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="itemOpenFolderButton">
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="text">
+                 <string>Open folder</string>
+                </property>
+                <property name="toolTip">
+                 <string>Open the folder holding this attempt's saved files.</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="attemptIdCaption">
-           <property name="text">
-            <string>Attempt</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QLabel" name="attemptIdLabel">
-           <property name="text">
-            <string>—</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="0">
-          <widget class="QLabel" name="backendCaption">
-           <property name="text">
-            <string>Backend</string>
-           </property>
-          </widget>
-         </item>
-         <item row="2" column="1">
-          <widget class="QLabel" name="itemBackendLabel">
-           <property name="text">
-            <string>—</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0">
-          <widget class="QLabel" name="outputsCaption">
-           <property name="text">
-            <string>Outputs</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="1">
-          <layout class="QHBoxLayout" name="itemOutputsRow">
-           <item>
-            <widget class="QLabel" name="itemOutputsLabel">
-             <property name="text">
-              <string>—</string>
-             </property>
-             <property name="wordWrap">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPushButton" name="itemOpenFolderButton">
-             <property name="enabled">
-              <bool>false</bool>
-             </property>
-             <property name="text">
-              <string>Open folder</string>
-             </property>
-             <property name="toolTip">
-              <string>Open the folder holding this attempt's saved files.</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
          </item>
         </layout>
        </widget>
@@ -784,30 +1194,131 @@
       <item>
        <widget class="QGroupBox" name="uncertaintyBox">
         <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
          <string>Uncertainty</string>
         </property>
-        <layout class="QVBoxLayout" name="uncertaintyLayout">
+        <layout class="QVBoxLayout" name="uncertaintyBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
          <item>
-          <widget class="QLabel" name="uncertaintyLabel">
-           <property name="text">
-            <string>No unresolved reservation selected.</string>
+          <widget class="QFrame" name="uncertaintyBoxHeader">
+           <property name="role" stdset="0">
+            <string>sectionHeader</string>
            </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="state" stdset="0">
-            <string>unknown</string>
-           </property>
+           <layout class="QHBoxLayout" name="uncertaintyBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="uncertaintyBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>document</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="uncertaintyBoxHeading">
+              <property name="text">
+               <string>Uncertainty</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="overrideReservationButton">
-           <property name="text">
-            <string>Acknowledge and override</string>
+          <widget class="QWidget" name="uncertaintyBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
            </property>
-           <property name="enabled">
-            <bool>false</bool>
-           </property>
+           <layout class="QVBoxLayout" name="uncertaintyLayout">
+            <item>
+             <widget class="QLabel" name="uncertaintyLabel">
+              <property name="text">
+               <string>No unresolved reservation selected.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="state" stdset="0">
+               <string>unknown</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="overrideReservationButton">
+              <property name="text">
+               <string>Acknowledge and override</string>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+           </layout>
           </widget>
          </item>
         </layout>
@@ -820,6 +1331,9 @@
         </property>
         <property name="accessibleName">
          <string>Queue event evidence</string>
+        </property>
+        <property name="textRole" stdset="0">
+         <string>code</string>
         </property>
        </widget>
       </item>

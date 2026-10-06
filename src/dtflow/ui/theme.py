@@ -32,7 +32,12 @@ def load_theme() -> str:
         except KeyError:
             raise OSError(f"The DTFlow Qt stylesheet uses an unknown token: {match.group(1)}.") from None
 
-    return re.sub(r"\$\{([\w.]+)\}", token, source)
+    resolved = re.sub(r"\$\{([\w.]+)\}", token, source)
+    return re.sub(
+        r"url\((\.\./images/gallery/[^)]+)\)",
+        lambda match: f'url("{(THEME_FILE.parent / match.group(1)).resolve().as_posix()}")',
+        resolved,
+    )
 
 
 def apply_theme(application: QApplication) -> None:

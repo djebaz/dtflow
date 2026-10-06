@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Selected scope recorded; owner mockups and text wireframes under review; implementation not started.
+**Status:** Selected saved-output scope recorded; PR #33 implements offline Grid/List/Detail presentation only. Saved-output query, filtering, persistence and service acceptance remain unimplemented. The [preview plan](2026-10-05-phase-8a-ui-preview.md) records the implemented UI boundary.
 
 **Position:** First delivery phase within Phase 8, not initial-plan Phase 1.
 
@@ -41,17 +41,17 @@ Owner Grid, List and Detail mockups define the current layout direction. The [te
 ## Current view-template decisions
 
 - **Modes:** Grid · List · Detail. A2 Masonry is withdrawn; the original feature IDs remain unchanged for traceability.
-- **Shared header:** two compact rows; no title/subtitle or filename/tag/note search. View buttons, thumbnail-size control, auto-refresh, refresh and result count above positive-prompt search, model, LoRA, date and aspect-ratio filters. Negative-prompt search is absent from the visible header; its optional-filter versus removal policy remains open.
+- **Shared header:** two compact rows; no title/subtitle or filename/tag/note search. View buttons, thumbnail-size control, auto-refresh and refresh above positive-prompt search, model, LoRA, date and aspect-ratio filters. Negative-prompt search is absent from the visible header; its optional-filter versus removal policy remains open.
 - **Grid activation:** hover outline and distinct keyboard focus; click or Enter opens that image in Detail. Return restores Grid scroll position and originating thumbnail focus. No persistent Grid selection or per-thumbnail action buttons.
-- **Detail geometry:** large near-square canvas at the reference window size, right-hand filmstrip, metadata below. Keep this arrangement stable across image proportions; no automatic portrait-specific sidebar relocation.
+- **Detail geometry:** large near-square canvas at the reference window size; right-hand filmstrip extending to the workspace bottom beside the image and its metadata/prompt/inline panels. Overlays have a 10px interior inset. Keep this arrangement stable across image proportions; no automatic portrait-specific sidebar relocation.
 - **Image overlays:** position in filtered results and source dimensions. Cover fills proportionally with cropping; Fit shows the whole image. Keep pan/zoom, true 100% and fullscreen available. Near-square canvas does not mean square images.
 - **Visible metadata band:** model/checkpoint and LoRAs with weights/recorded compatibility first, followed by steps, guidance, sampler and generation date/time. Compact, with wrapping or bounded scrolling for longer content.
-- **Prompt band:** positive prompt visible and wrapping. Buttons for Additional details and Raw metadata JSON alongside it replace the earlier two permanently stacked accordion rows.
+- **Prompt band:** positive prompt visible and wrapping, without a redundant visible caption; retain an explicit accessible name. Buttons for Additional details and Raw metadata JSON alongside it replace the earlier two permanently stacked accordion rows.
 - **Additional details:** negative prompt, filename, file size, actual resolved seed, provider, recorded duration, image path and copy/open-folder actions; closed until requested.
 - **Raw inspection:** full safe metadata JSON, request/attempt IDs, DTFlow version/commit, detailed recorded timings and resolution/preflight provenance; closed until requested. Never expose credentials or tokens.
 - **Reference:** latest owner-approved `DTFlow Portrait Gallery Viewer_proc.png`; see the linked text wireframes for the schematic. Desktop mockup paths are discussion references, not repository assets.
 
-Exact button expansion mechanics, initial Cover/Fit policy, long-content limits and smaller-window handling remain to be resolved. A draggable preview/metadata divider was a suggestion, not an approved requirement. Sorting and dimension filtering remain in scope despite their placement being unresolved.
+The additional/raw reference mockups resolve the buttons to mutually exclusive inline sections beneath the prompt. The preview starts in Cover with Fit available, uses horizontal header/metadata scrolling and omits the sample-count pill and redundant visible search/filter labels. These presentation choices do not resolve saved-output loading or query policy. Long-content limits and smaller-window acceptance still require review. A draggable preview/metadata divider was a suggestion, not an approved requirement. Sorting and dimension filtering remain in scope despite their placement being unresolved.
 
 ## Ordered implementation checkpoints
 
@@ -81,3 +81,6 @@ Saved originals and durable state remain unchanged by browsing; disposable cache
 No presets, reuse/regeneration, organisation, destructive file actions or cache-management controls are introduced by 8A.
 No live inference, training or potentially billable action is needed for viewer acceptance.
 Then proceed to [8B preset interchange](2026-10-05-phase-8-gallery-presets.md#8b--draw-things-compatible-presets).
+
+
+Preview-only Detail forms and styling are tracked separately in [the PR #33 implementation plan](2026-10-05-phase-8a-ui-preview.md). They do not mark gallery services or Phase 8A acceptance complete.
