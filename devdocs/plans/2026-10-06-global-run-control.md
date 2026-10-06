@@ -18,7 +18,7 @@ The control must remain useful while navigating between Connection, Generate, Qu
 
 ## Approved interaction
 
-The control occupies the same compact header position as the current Inspector toggle.
+The control stays in the same compact header area, but it is intentionally positioned slightly to the left of the current Inspector toggle rather than occupying its exact former coordinates.
 
 ### Queue ready
 
@@ -75,7 +75,7 @@ Use the existing DTFlow design tokens and shared QSS. Do not introduce an isolat
 
 Edit `workspace_shell.ui` rather than creating the header control ad hoc in Python.
 
-- Replace `inspectorToggle` with a stable presentation seam for the run control at the same size/location.
+- Remove `inspectorToggle` and add a stable presentation seam for the run control at the same compact size, positioned slightly farther left in the brand/header row rather than as a pixel-for-pixel replacement.
 - Remove user-facing right-panel show/hide behavior.
 - Keep the right inspector itself; it remains part of the normal workspace layout.
 - Revisit narrow-window behavior separately: responsive layout may still hide the right rail automatically if required, but there is no manual header toggle.
@@ -145,7 +145,7 @@ After the replacement is functional:
 
 ## Implementation sequence
 
-1. Canonical Designer/QSS change: replace the 30×30 Inspector toggle with the run-control presentation seam; keep the rest of the header geometry unchanged.
+1. Canonical Designer/QSS change: remove the 30×30 Inspector toggle and add the same-size run-control presentation seam slightly farther left in the header; preserve the rest of the header geometry.
 2. Implement the segmented-ring widget with static presentation states first.
 3. Wire generation progress into shared activity projection.
 4. Wire selected queue ready/running/paused projection.
@@ -157,7 +157,7 @@ After the replacement is functional:
 ## Acceptance
 
 - The old right-panel show/hide header button is gone.
-- The replacement occupies approximately the same header footprint; it is not enlarged to logo scale.
+- The replacement remains approximately 30×30 px and is not enlarged to logo scale; it sits slightly left of the former Inspector-toggle position rather than exactly replacing its coordinates.
 - A startable selected queue shows Play and starts through the existing queue dispatch path.
 - A running queue shows the active segmented treatment; click posts Pause through the existing control path.
 - A paused queue shows Resume/Play; click posts Resume through the existing control path.
