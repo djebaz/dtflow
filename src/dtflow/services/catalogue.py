@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from dtflow.core.models import InventorySnapshot
 
@@ -157,9 +159,26 @@ def import_user_loras(source: Path, state_dir: Path) -> int:
     validated = validate_user_loras_document(document)
     target = Path(state_dir) / USER_CATALOGUE_DIR / USER_LORAS_FILE
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_suffix(".tmp")
-    temporary.write_text(json.dumps(validated, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    temporary.replace(target)
+    temporary = None
+    try:
+        with NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=target.parent,
+            prefix=".custom-loras-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(validated, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return len(validated)
 
 
