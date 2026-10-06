@@ -1,6 +1,6 @@
 # Desktop guide
 
-DTFlow's desktop application has Connection, Generate and Queues pages. The shared shell keeps navigation on the left, the workspace in the center and an Inspector on the right. The panel icon beside the brand toggles details; tab switches preserve splitter geometry and the shared Inspector choice.
+DTFlow's desktop application has Connection, Generate, Queues and Images pages. Connection, Generate and Queues share navigation on the left, the workspace in the center and an Inspector on the right. The panel icon beside the brand toggles details. Images uses the same logo/navigation in two aligned header rows and hides the content rails; returning restores splitter geometry and the shared Inspector choice.
 
 ## Launch
 
@@ -55,6 +55,25 @@ Development attempts use `.dtflow/attempts.sqlite3`; final outputs and reproduci
 The Queues page creates paused seed sweeps or Pair/Cross batches from the Generate form. Review the count and Dry run table before creation. See [queues and batch plans](queues.md) for controls, concurrency, restart and unknown-outcome handling.
 
 During generation or queue dispatch, the window owns the state directory. Generate is disabled during dispatch and competing CLI owners fail clearly as busy; another CLI operation can own generation between desktop operations. Reading and posting queue controls do not require ownership. Closing during dispatch asks first and does not imply remote cancellation.
+
+## Images preview
+
+Images currently displays bundled illustrative samples, not this machine's saved
+outputs. Grid, List and Detail keep the same header. Click a tile or row to open
+Detail; returning preserves the mounted browse view's scroll position. The size
+slider adjusts grid thumbnails, list row density or Detail filmstrip thumbnails.
+Browse views have hover feedback without multi-selection or bulk actions.
+
+Detail provides Cover/Fit, 100%, zoom/pan, previous/next, keyboard navigation and
+fullscreen/Escape. Its right filmstrip extends beside the image and lower panels
+to the workspace bottom. Model and LoRA facts remain separate from Unknown
+compatibility status. The prompt is visible without a redundant caption;
+Additional details and Raw metadata reveal mutually exclusive inline panels.
+
+Search/filter controls, refresh and saved-file actions remain disabled. Sample
+metadata is illustrative, including Detail's sample timestamp; it is not
+recorded generation evidence. No gallery persistence, real-output query or
+provider execution is provided by this preview.
 
 ## Remembered settings and diagnostics
 

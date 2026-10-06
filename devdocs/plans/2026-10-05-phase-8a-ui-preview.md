@@ -1,210 +1,64 @@
 # Phase 8A — Preview-only Designer forms and shared styling
 
-**Status:** Grid/List/Detail presentations and offline preview implemented in draft PR #33; gallery services remain unimplemented; the fixture-only Detail preview is mounted in Images.
+**Reviewed:** 2026-10-06, PR #33 at `e922bfd` before documentation consolidation.
 
-**Base:** Phase 8 documentation PR #32 squash-merged on main (`5d9c476`).
+**Status:** Offline Grid/List/Detail presentation is implemented in draft PR #33. Saved-output discovery, queries, filtering, persistence and Phase 8A service acceptance remain unimplemented.
 
-**Sources:** [viewer plan](2026-10-05-phase-8a-viewer.md), [text templates](examples/phase-8a-viewer-wireframes.txt), [DESIGN.md](../../DESIGN.md), [Qt contract](../architecture/qt-design-tokens.md).
+**Base:** Phase 8 documentation PR #32, `5d9c476`.
 
-## Scope
+**Sources:** [viewer scope](2026-10-05-phase-8a-viewer.md), [DESIGN.md](../../DESIGN.md), [Qt token contract](../architecture/qt-design-tokens.md). Earlier text wireframes and reference crops record the design discussion; this document describes the final implementation of this preview PR.
 
-Build an offline presentation preview of Grid, List and Detail, following the agreed compact header and stable Detail layout. Canonical Designer forms belong in `src/dtflow/ui/forms/`; necessary styling belongs in the existing shared QSS. Reuse shared tokens and handwritten preview widgets at presentation seams, not generated-Python business logic.
+## Implemented presentation
 
-No gallery query/index implementation, new backend access, generation, preset/reuse, cache-management controls, durable mutations or billable operations in this PR. The owner subsequently approved compact Connection navigation and an Images placeholder as the first shell-integration step. Fixture labels must not be mistaken for real saved outputs or compatibility evidence. Unwired application actions remain visibly disabled.
+| Area | Current behavior |
+| --- | --- |
+| Shell | Images hides both content rails, mounts the existing brand/navigation widgets in two aligned header slots and hides the Inspector toggle while retaining its layout space. Leaving Images restores parents, splitter sizes and Inspector preference. |
+| Header | Logo beside view controls; navigation beside filters. Header controls scroll independently of the chrome slots. No extra outer/header inset, sample-count pill or redundant search/filter labels. Explicit defaults/placeholders, accessible names and tooltips remain. |
+| Modes | Grid, List and Detail share one header above `galleryContentStack`. Grid uses uniform aspect-fit tiles; List has metadata columns, row-wide hover and no selection/bulk controls. Tile/row activation opens its fixture in Detail. Mounted browse views retain scroll positions. |
+| Density | The shared slider changes Grid thumbnail size, List row density or Detail filmstrip size. |
+| Detail | Flexible Cover/Fit preview with a right filmstrip spanning the entire content height. Metadata, prompt and mutually exclusive Additional/Raw panels sit below the main image, to the filmstrip's left. Overlay spacers inset badges, navigation and zoom controls by 10px. |
+| Inspection | Presentation-only Cover/Fit, 100%, zoom/pan, previous/next, keyboard navigation and fullscreen/Escape are enabled. |
+| Metadata | Accent model glyph, emphasized name and secondary identifier; neutral LoRA rows separate name, weight and explicit Unknown badges. The 108px metadata band scrolls horizontally. No redundant Positive prompt caption. Expanded disclosure buttons use shared accent states; Additional values have subtle separators. Raw JSON remains a read-only monospace text region, not a folding/syntax-highlighted tree. |
+| Shared styling | Charcoal surfaces, blue accent and muted navy selection use `color.*`; no `gallery.*` token family remains. Typography roles and section cards apply across Connection, Generate, Queues and Images. Unknown/availability text is neutral gray with explicit wording. |
+| Connection navigation | 58×34px power-icon tab before Generate, with a 12px arc and 6px status dot. Shared mint/teal connection tokens are distinct from general success semantics. Dot/border report the last explicit check; tooltip/accessibility provide text. No polling; provider/endpoint changes invalidate status and obsolete completions are ignored. |
+| Batch-plan card | A visible header checkbox synchronizes with the existing checkable `planBox`; the unchecked header remains operable and the full contents wrapper hides. This restores expansion without changing planning/services. |
+| Lifecycle | The gallery controller owns deferred layout timers, caches viewports and guards deleted Qt objects during event-filter teardown. The owner confirmed the shutdown error is resolved. |
 
-## Ordered work
+Canonical structure is `src/dtflow/ui/forms/gallery_detail_page.ui`. Shared QSS/tokens live in `src/dtflow/resources/styles/`. `ui/gallery_detail_preview.py` owns offline presentation for both shell and launcher; it does not own application services or provider protocols. Section cards retain their QGroupBox identities, accessible names and enable/disable behavior. Stable business-control names remain intact.
 
-1. Inspect the existing shell/form and image-preview integration seams. Decide standalone preview composition without changing shipped tabs.
-2. Create canonical page form(s) for the common header and Grid/List/Detail presentation; no Masonry.
-3. Add only necessary shared-QSS selectors, stable object names and interaction states; avoid a second styling system.
-4. Add an offline preview harness with clearly identified fixtures, including portrait, landscape, long prompts, many LoRAs and incomplete metadata.
-5. Verify view changes and presentation-only detail controls without services; preserve Grid focus/position when switching to Detail and back in the preview.
-6. Inspect bounded wide/narrow captures for clipping, stable geometry and accessible focus. Keep Cover/Fit and true pixel viewing semantics distinct.
-7. Record checks actually run and owner Windows feedback, then update the viewer/status documentation. Do not mark Phase 8A implemented from a preview.
+## Fixture and service boundary
 
-## Open decisions
+- Bundled generated illustrative portrait, reference thumbnail crops and synthetic metadata are explicitly fixtures. No owner source photo, real model weights or inference evidence is claimed.
+- LoRA compatibility remains Unknown. Detail's displayed date and prompt are illustrative; browse views show no recorded generation date. Bundled dimensions/file sizes describe fixture assets, not saved outputs.
+- Search/filters, refresh and saved-file actions remain visibly disabled. No saved-output query/index, gallery preferences persistence, provider access, presets, reuse, regeneration or cache-management service is added.
+- Cover and Fit remain distinct: Cover crops proportionally, Fit shows the complete image. The selected read-only viewer capabilities remain in the [viewer plan](2026-10-05-phase-8a-viewer.md); this preview does not reduce or complete them.
 
-- Form composition inside the established context/work/evidence shell versus a standalone preview host; canonical form ownership must stay clear.
-- Additional-details/raw-data buttons now reveal mutually exclusive inline sections beneath the prompt, following the supplied `add_detail.png` and `raw_meta.png`. Long-content ergonomics still require owner review.
-- Placement of sorting/dimension filters, optional negative-prompt search and new-result semantics.
-- Initial Cover/Fit policy and minimum useful preview size.
-
-## Validation boundary
-
-Compile/load canonical `.ui` files and check necessary imports/help/syntax for the preview harness. Reuse existing tokens, logging and network-guard conventions. Use offline visual fixtures; no live inference or uploads. Windows DPI, keyboard ergonomics and final layout acceptance remain owner checks. Runtime service acceptance remains a later implementation PR.
-
-## Detail checkpoint — 2026-10-06
-
-- Canonical `src/dtflow/ui/forms/gallery_detail_page.ui` defines the compact header, preview host/overlays, right-hand filmstrip, metadata band, prompt and inline additional/raw panels.
-- Shared `dtflow_dark.qss` uses existing token references and scoped gallery selectors; no palette/token values or Generate preview behaviour changed. The teal mockup is translated to DTFlow's existing charcoal/blue identity.
-- `tools/ui/preview_gallery_detail.py` loads the canonical form with QUiLoader and applies the shared theme once. Uses only bundled illustrative lighthouse artwork and synthetic metadata; no owner photo/model data was copied into the repository.
-- Preview enables Cover/Fit, thumbnail-size changes, fixture selection and mutually exclusive inline panels. Grid/List, real filters/refresh, zoom/fullscreen and saved-file actions are visibly unwired/disabled. This is not a working gallery.
-- Reference layouts: `DTFlow Portrait Gallery Viewer_proc.png`, `add_detail.png`, `raw_meta.png`. Raw JSON is a read-only fixed-width text region, not yet a syntax-highlighted/folding tree.
-- Checks: Designer compilation, Python compilation/help, Ruff and shared-token resolution. Actual closed/additional/raw and 800×680 layout captures were made; offscreen Windows font rendering produced missing glyphs, so readable captures used the native platform. This is bounded fixture inspection, not owner DPI/accessibility acceptance or service testing.
-- Owner should review narrow-header scrolling, metadata scroll limits and overlay/navigation positioning. Final tests/smoke and native-DPI interaction acceptance remain pending. No inference, uploads, training or billable operations ran.
-
-### Preview commands
+## Preview commands
 
 ```bash
+uv run dtflow gui
 uv run python tools/ui/preview_gallery_detail.py
 uv run python tools/ui/preview_gallery_detail.py --state details
 uv run python tools/ui/preview_gallery_detail.py --state raw
+uv run python tools/ui/preview_gallery_detail.py --view grid
+uv run python tools/ui/preview_gallery_detail.py --view list
 uv run python tools/ui/preview_gallery_detail.py --size 800x680
 ```
 
-## Shell navigation checkpoint — 2026-10-06 (approved scope extension)
+## Validation and acceptance evidence
 
-- Compact power-icon Connection tab before Generate; its dot reflects the selected provider's last explicit check. Status remains distinct from active-tab selection.
-- Token-based unknown/checking/connected/warning/error states; tooltip and accessible name include textual status. No polling or extra backend requests.
-- Add Images at the end of Connection / Generate / Queues / Images. Images is a disabled placeholder until the preview is mounted; no extra empty workspace.
-- Preserve the existing Connection workspace and click/keyboard navigation path. Compact navigation widths keep all four controls within the permanent left rail.
-- Invalidate status on provider/endpoint changes; ignore older check completion after a selection change. This is connection-evidence presentation safety, not generation/retry policy.
-- Owner Windows navigation and native-DPI validation remain pending. No tests or live connection checks are authorized by the layout request.
+Before the owner's instruction to commit without tests, recorded validation included locked uv synchronization, Ruff/import/Designer checks, actual Qt captures and focused shell/theme checks (9 passed; one original-logo lifecycle check excluded because the connector could not materialize that existing binary resource locally). Existing branch logo assets were preserved. A drafted test was removed at the owner's request; this PR adds no tests.
 
-Implemented canonical compact navigation and shared-token power/status icon. Images remains disabled. Syntax/import, Designer compilation and Ruff checks recorded; owner visual/interaction acceptance remains pending.
+Subsequent refinements used source inspection and Python formatting. The final import fix at `e922bfd` passed the targeted Ruff import-order check and format check. On 2026-10-06 the owner reported tests passed; no command, count or CI run was supplied in that message, and the assistant did not rerun tests. The owner also confirmed the Windows close error no longer occurs.
 
-### Navigation polish — 2026-10-06
+This documentation review checks tracked token values/references, documented roles and canonical composition only. It does not establish exact pixel equality, complete Windows DPI/accessibility acceptance or packaged visual acceptance. No training, inference, uploads, live connection checks or billable operations ran during these styling/documentation follow-ups.
 
-- Matched row heights (40 px), enlarged the power glyph/status dot and kept a 52 px Connection target. Other tabs use quiet transparent text styling, including disabled Images; selected workspace remains distinct.
-- Added shared `color.successSurface` (`#203b2b`) and matching DESIGN.md snapshot for the connected control's green-tinted fill. All status/focus colors remain token-based; no glow or inline widget styles.
-- Explicit vertical scrollbar page backgrounds remove the native checkerboard track seen in the owner's screenshot.
-- Captured the actual shell with temporary state and network guard installed at 1182×792 and 800×680, plus fixture unknown/checking/error states. No real connection checks/generation or state writes to the user's application folder. Reviewed connected and narrow Generate captures; all four navigation targets remain available within the row (Images intentionally disabled).
-- Ruff, Designer compilation and whitespace checks passed. Native DPI, hover/focus ergonomics and owner final acceptance remain pending; no automated test suite was run.
+## Remaining acceptance and next work
 
-### Reference-proportion correction
+Review native Windows font metrics, long-content clipping, keyboard focus, narrow-header scrolling and high-DPI behavior separately. Retain the approved logo/navigation coordinates, compact gutters, full-height filmstrip and overlay inset during further refinement.
 
-The previous 52×40 control approximated rather than matched the supplied reference. Connection is now 74×44 logical pixels with a 48×30 icon box, a 22 px open power arc with rounded 2.6 px stroke, and an 8 px dot separated to the upper right. Removed the QSS minimum-width override that defeated Designer sizing. Native guarded fixture capture confirms the actual 74×44 target; the three text tabs remain in the left-rail row. Palette remains DTFlow's shared success/text tokens, not the reference's teal. No live requests or test suite run.
+Implement saved-output services through the ordered checkpoints in the viewer plan: source/provenance discovery, stable bounded query/loading, browsing state, search/filter/sort, inspection and recorded metadata. Missing/corrupt outputs and unknown fields require honest handling; fixture UI success is not service acceptance.
 
-### Latest cropped-reference match
+## Superseded design checkpoints
 
-Supersedes the earlier 74×44 approximation: the supplied cropped design measures approximately 58×34. Connection now renders at 58×34, with a 16 px rounded power arc, 6 px dot and reference-like padding. Dedicated shared mint/teal Connection tokens reproduce the supplied visual identity without changing general success colors. Mouse focus no longer replaces the status border with a thick blue frame; Tab/Backtab/shortcut focus retains an explicit dashed focus cue. Guarded native fixture captures confirm 58×34 and show the connected design in the real shell. Unchecked status remains neutral rather than falsely green. No live checks, inference or automated tests ran.
-
-Owner follow-up: reduce only the power glyph to a 12 px arc with 1.6 px rounded stroke; retain the 58×34 button, status dot and layout.
-
-## Images shell integration — 2026-10-06
-
-- Images is enabled and opens the canonical Detail form inside the persistent center stack. A canonical `gallery_context.ui` supplies an explicit offline-preview explanation in the left rail.
-- Moved fixture presentation into `ui/gallery_detail_preview.py`; both the standalone launcher and real shell use the same controller. No application import from developer tools and no duplicate fixture implementation.
-- Images uses its own inline metadata, so the global right Inspector is hidden and its toggle disabled while Images is active. Returning to another workspace restores the existing toggle preference; page content remains mounted across switches.
-- No real output discovery, query/index, persistence or provider work added. Grid/List, filters/refresh, zoom/fullscreen and file actions stay disabled; fixture selection, Cover/Fit and inline panels remain usable.
-- Designer compilation, Python compilation, imports/help and Ruff passed. Guarded actual-shell fixture captures at 1182×792 and 800×680 were inspected; narrow header/metadata scrolling and cramped prompt/toolbar controls still need layout refinement. This is integration, not pixel-perfect or native-DPI acceptance.
-- No automated test suite, real connection checks, inference, uploads or billable actions ran. Owner navigation/panel review remains pending.
-
-
-
-## Approved reference replacement — 2026-10-06
-
-Supersedes the earlier lighthouse/charcoal presentation checkpoints. The owner
-approved the adapted Qt code and requested its replacement directly in PR #33,
-then requested removal of the Images left content column while retaining logo
-and tabs. Images now uses the canonical compact top chrome and the full-width
-Detail form; other tabs restore their existing chrome/rails and splitter widths.
-
-The existing shared stylesheet contains the reference gallery rules and scoped
-`gallery.*` tokens; the global palette remains unchanged. The shell and standalone
-preview share the same fixture controller, generated illustrative portrait,
-reference thumbnail crops and icons. Fixture designation remains visible and
-compatibility remains Unknown. Presentation-only zoom/pan/100%, navigation and
-fullscreen are enabled; filters, refresh, Grid/List and saved-file actions remain
-unwired. No gallery services, inference or billable provider operations were added.
-
-Validation before the owner's stop request: locked `uv sync`, Ruff checks/format,
-actual Qt standalone render, and focused shell/theme checks (9 passed, one logo
-resource lifecycle check excluded because the connector could not retrieve the
-existing binary logo into this local workspace). Existing repository logo assets
-are preserved on the branch. A newly drafted test was removed at the owner's
-request; no new tests are included. No further tests are run after the request to
-commit immediately. Windows/native-DPI and packaged visual acceptance remain
-unverified; exact pixel equality is not claimed.
-
-
-### Header row alignment and full-width footer — 2026-10-06
-
-Owner follow-up: retain the logo on the view-controls row and the navigation tabs
-on the filters row, matching the supplied crops. Chrome slots now live directly
-in those canonical gallery header rows instead of a separate strip. Metadata,
-positive prompt and expandable Additional/Raw panels span the full content width
-beneath the image and filmstrip. Other tabs retain their restored left-column
-chrome. No tests added or run for this follow-up, per the owner's instruction.
-
-Header density follow-up: view controls are 34 px high, utility controls 36 px,
-filter fields 30 px, with shared 9pt small text. Logo/title retain their established
-identity scale. Header widths are reduced so aligned branding and navigation do
-not crowd the controls. No tests added or run.
-
-
-## Shared-header Grid and List integration — 2026-10-06
-
-The canonical gallery form now contains a content stack beneath the unchanged
-two-row header. Detail retains its image/filmstrip and full-width bottom panels;
-Grid uses responsive uniform tiles with aspect-fit artwork; List uses compact
-metadata columns, row-wide hover and no selection or bulk controls. Clicking a
-tile or row opens its fixture in Detail. Header widgets and mounted browse views
-remain the same objects, preserving scroll positions across view switches.
-
-The shared slider becomes row density in List, thumbnail size in Grid and
-filmstrip size in Detail. The standalone launcher accepts `--view grid` or
-`--view list`; disclosure states always show Detail. All data remains explicitly
-illustrative, with actual bundled file sizes/dimensions and no recorded generation
-date. Filters, refresh, file actions and real saved-output query services remain
-unimplemented. No tests added or run, per owner instruction.
-
-
-## Shared gallery styling refinement (2026-10-06)
-
-Supersedes the scoped teal/blue palette above. Removed duplicate `gallery.*`
-tokens; gallery QSS and custom painting now use the existing `color.*` palette.
-Headers, panels, inputs, buttons, selected modes, overlays and browsing views
-match the charcoal surfaces and muted blue state language of the other tabs.
-Sliders and scrollbars inherit the shared application rules. Current Designer
-geometry, compact typography, two header rows, full-width lower panels, mounted
-Grid/List/Detail views and all presentation behavior remain in place. No tests
-added or run; native Windows visual acceptance remains unverified.
-
-
-## Gallery spacing and chrome alignment (2026-10-06)
-
-Removed the gallery's extra outer and header insets. Brand/navigation slots now
-sit beside, rather than inside, scrolling header controls. The shell controller
-preserves their mounted dimensions before reparenting; the hidden Inspector
-toggle retains its layout space. Header rows use the shared 8 px gap, keeping
-logo/title/navigation aligned with the other tabs. Tightened gallery gaps, canvas
-inset, filmstrip gutter and nested metadata padding. Shared Grid/List/Detail
-header, full-width lower panels, palette and presentation behavior remain.
-No tests added or run; Windows coordinate parity awaits owner review.
-
-
-## Detail filmstrip height and overlay inset (2026-10-06)
-
-The owner's follow-up moves metadata, prompt and disclosure panels beneath the
-main image within its column, superseding the earlier panels spanning beneath
-the filmstrip. The filmstrip now spans the whole content height to the workspace
-bottom. Canonical Designer spacers give badges, previous/next and zoom controls
-a 10 px interior inset without enlarging the canvas frame. Header chrome, Grid
-and List remain unchanged. No tests added or run; Windows visual review pending.
-
-The header sample-count pill is removed; sample designation remains on the image.
-
-
-## Shared typography hierarchy (2026-10-06)
-
-Applied caption, value, supporting, section and identifier/code roles across
-Connection, Generate, Queues and Images. Shared font family/weight tokens drive
-QSS and custom-painted thumbnail badges. Gallery model names and identifiers
-use separate labels. The hierarchy reuses the approved charcoal palette and
-existing geometry, preserves status/action roles and does not add services.
-No tests added or run; native Windows font metrics and line wrapping await
-owner review.
-
-
-## Shared section-card presentation (2026-10-06)
-
-The owner authorized abandoning the earlier Generate styling for the more
-structured mockup presentation. Connection, Generate and Queues now use shared
-section cards with icon/title headers and content regions, preserving QGroupBox
-identities and enable/disable behavior. Gallery information rows use matching
-glyphs; reading/disclosure emphasis and list/table surfaces complete the shared
-presentation. New neutral surface tokens extend the current charcoal palette.
-Shell logo/navigation placement and gallery gutters remain unchanged. No
-provider or service behavior added; no tests or application execution. Source
-token references and form names reviewed; native Windows appearance pending.
+Earlier PR commits used a lighthouse, a separate teal gallery palette, disabled Images/Grid/List controls and information panels spanning underneath the filmstrip. Those are historical iterations, superseded by the current presentation above. The earlier 52×40 and 74×44 Connection approximations are also superseded by the 58×34 control. Use DESIGN, current canonical forms/QSS and this implementation snapshot when extending the UI rather than copying an old checkpoint.

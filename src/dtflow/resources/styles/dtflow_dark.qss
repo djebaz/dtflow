@@ -1087,7 +1087,8 @@ QWidget[role="sectionContents"] {
   background: transparent;
   border: 0;
 }
-QLabel[textRole="panelHeading"] {
+QLabel[textRole="panelHeading"],
+QCheckBox[textRole="panelHeading"] {
   color: ${color.text};
   font-size: ${type.small};
   font-weight: ${type.weightEmphasis};
@@ -1103,7 +1104,8 @@ QGroupBox[role="sectionCard"]:disabled,
 QGroupBox[role="sectionCard"]:disabled QFrame[role="sectionHeader"] {
   border-color: ${color.disabledBorder};
 }
-QLabel[textRole="panelHeading"]:disabled { color: ${color.disabled}; }
+QLabel[textRole="panelHeading"]:disabled,
+QCheckBox[textRole="panelHeading"]:disabled { color: ${color.disabled}; }
 QWidget#GalleryDetailPage QPlainTextEdit[textRole="reading"] {
   font-weight: ${type.weightLabel};
 }

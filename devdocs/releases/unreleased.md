@@ -2,93 +2,35 @@
 
 ## Highlights
 
+- PR #33 adds an offline Images presentation and consolidates shared styling across Connection, Generate, Queues and Images. Saved-output gallery services remain outside this PR; no release/version bump is introduced.
+
 ## Added
 
 - Manual Windows build/draft-release workflow (PR #31): one fresh canonical GUI build with locked runtime dependencies, uv/managed-Python caching across version-only bumps, bundled identity checks, checksum/manifest and a downloadable Actions artifact. Optional PR-number mode resolves the same-repository head SHA, isolates its cache and is strictly artifact-only; PR plus release tag is rejected before checkout. Optional existing tag mode attaches only to a draft; it checks merged/tag/version provenance, refuses published releases/asset replacement and verifies downloaded uploads. Owner target-Windows smoke and explicit publication remain required. No new release/version bump, build-run acceptance or PyInstaller speedup is claimed.
 
 - Recorded the Phase 8 delivery sequence and selected read-only viewer scope, with a sample-derived Draw Things preset interchange contract and an anonymised representative configuration. Planning only; no gallery or preset runtime support is added.
 
-- Draft PR #33 adds the canonical Detail Designer form, token-based shared QSS and an offline fixture preview for the compact header, filmstrip, metadata and inline additional/raw panels. This is a fixture-only Images tab; no saved-output query service or generation behaviour is added.
-
-- Draft PR #33 mounts the fixture-only Detail preview in Images, preserving the shared logo/navigation in a compact strip and hiding both content rails for this page. The standalone launcher and app reuse one presentation controller. No saved-output browsing service or live operations are added.
+- PR #33 adds canonical fixture Grid/List/Detail views and an offline launcher using the same gallery controller as the application. Grid uses uniform aspect-fit tiles; List has metadata columns, row-wide hover and density control. Activation opens Detail, with mounted browse scroll positions preserved. No bulk selection or real-output query is added.
+- Detail offers Cover/Fit, 100%, zoom/pan, previous/next, keyboard navigation and fullscreen/Escape. Bundled portrait/reference assets and synthetic metadata remain explicitly illustrative; LoRA compatibility remains Unknown. Search/filters, refresh and saved-file actions remain disabled.
 
 ## Changed
 
-- Draft PR #33 compacts Connection navigation into a power-icon button with last-check status and accessible text, and reserves an Images button after Queues (disabled until mounted). No polling or extra connection requests; obsolete check completions do not recolor a changed selection.
+- Images hides the content rails and reuses the logo/navigation in two aligned header rows outside the scrolling controls. Leaving Images restores chrome, splitter widths and Inspector preference. No extra outer/header padding or sample-count pill; search/filter labels are replaced by explicit placeholders/defaults and accessible names/tooltips.
+- Detail's right filmstrip spans the content height to the workspace bottom. Metadata, prompt and Additional/Raw panels remain beneath the main image to its left; image overlays have a 10px interior inset. Additional/Raw panels are mutually exclusive.
+- Shared charcoal tokens and muted blue states replace the superseded gallery palette. Repeated neutral-control colors use named tokens; obsolete/repeated QSS declarations are removed. No separate gallery token family remains.
+- Connection, Generate and Queues use section cards with compact icon/title headers and separate content regions while preserving QGroupBox identities, accessibility and business-control wiring. Shared caption/value/supporting/section/identifier/code typography, panel headings and information surfaces establish a consistent hierarchy across all tabs.
+- Unknown/availability text uses neutral secondary gray, compact regular weight and explicit wording. Gallery model identity uses an accent glyph tile; LoRA names, weights and Unknown badges are distinct compact elements. The prompt has no redundant visible caption; expanded disclosure controls use shared accent states.
+- Connection navigation is a compact power-icon button with token-colored last-explicit-check status and accessible text. Images is enabled after Queues. No polling or new connection requests; obsolete completions do not recolor a changed provider/endpoint selection.
 
 ## Fixed
 
-- PR #33 styling pass aligns the compact navigation row, adds a token-based connected fill and removes the native checkerboard vertical-scrollbar page track. Actual guarded fixture shell captures reviewed; owner visual acceptance remains pending.
+- Restores the Queues batch-plan card toggle after section-card conversion removed its usable native title. A visible keyboard-accessible header checkbox synchronizes with the existing group state; collapsed contents hide without disabling the custom toggle. Planning/queue semantics remain unchanged.
 
-## Release audit
+- Prevents the gallery shutdown event filter from accessing deleted QTableWidget objects by caching viewport identities, guarding Qt lifetime and parenting deferred layout timers. The owner confirmed the closing error is resolved.
+- Removes the native checkerboard vertical-scrollbar page track and corrects gallery-preview import ordering for Ruff I001.
 
-- PRs: #31.
-- Scope: Since v0.3.0, opt-in cached Windows build and draft-release automation, artifact provenance/checksums and owner acceptance workflow documentation.
+## Validation and release audit
 
-
-- PR #33 replaces the lighthouse Detail presentation with the approved reference
-  layout, scoped gallery palette, illustrative portrait/filmstrip assets and
-  presentation-only cover/fit/100%, zoom/pan, navigation and fullscreen controls.
-  Leaving Images restores the other workspaces' rails and splitter widths.
-
-- Images aligns logo/view controls and navigation/filters on the same two header
-  rows. Its bottom metadata, prompt and additional/raw panels span the full width
-  beneath the image and filmstrip. No tests added or run for this layout follow-up.
-
-- Images adds fixture Grid and compact List views beneath the same Detail header,
-  with uniform aspect-fit tiles, metadata columns, row hover, density control and
-  click-to-Detail navigation. No checkboxes, multi-selection or real gallery
-  service integration is added. No tests added or run for this follow-up.
-
-- Fix the Images controller's shutdown event filter accessing an already-deleted
-  QTableWidget. Cache viewport identities, ignore unrelated teardown events,
-  guard deleted Qt objects and own deferred layout timers under the controller.
-  No tests added or run; Windows close behavior awaits owner confirmation.
-
-- Images restores the shared charcoal palette and muted blue selection states
-  across Detail, Grid and List, including common sliders and scrollbars.
-  Removes duplicate gallery color tokens while preserving the current compact
-  header, full-width lower panels and presentation behavior. No tests added or run.
-
-- Images removes extra outer/header padding and anchors shared logo/navigation
-  slots outside the scrolling controls with shell dimensions and row spacing.
-  Tightens image, filmstrip and metadata gutters while retaining the current
-  full-width gallery composition. No tests added or run.
-
-- Detail extends its filmstrip to the workspace bottom beside the main image
-  and its lower information panels. Adds a 10 px interior inset for image
-  badges, navigation arrows and zoom toolbar. No tests added or run.
-
-The header sample-count pill is removed; sample designation remains on the image.
-
-- Gallery removes redundant visible search/filter labels from its shared header;
-  explicit placeholders/defaults, accessible names and tooltips identify fields.
-  No tests added or run.
-
-- Consolidates shared QSS declarations and removes superseded gallery states
-  and obsolete chrome selectors. Repeated control/selection colors now use
-  named tokens with unchanged values. Source token references reviewed; no
-  tests added or run and runtime visual equivalence remains unverified.
-
-- Adds a shared typography hierarchy to Connection, Generate, Queues and Images:
-  quieter captions, emphasized values/actions, section titles, supporting text
-  and monospace IDs/evidence/raw data. Designer text roles preserve semantic
-  status roles; shared tokens drive QSS and thumbnail badge painting. Existing
-  chrome and layout spacing remain. No tests added or run; Windows font/line-wrap
-  acceptance remains unverified.
-
-- Replaces the older Generate/Connection/Queues group-box framing with shared
-  section cards, compact icon headers and separate content surfaces. Gallery
-  metadata adopts matching glyph rows, reading emphasis and disclosure weights;
-  lists/tables gain consistent item surfaces and separators. Business-control
-  names and shell chrome remain. No tests added or run; Windows render pending.
-
-- Removes violet Unknown/informational styling across the application, using
-  neutral secondary gray and compact regular text for LoRA uncertainty and
-  availability hints. Status wording and success/warning/error semantics remain.
-  No tests added or run.
-
-- Refines gallery metadata with an accent model-identity tile and separate
-  LoRA name/weight/Unknown chips. Removes the redundant Positive prompt caption
-  and emphasizes expanded disclosure actions with shared accent states. No
-  compatibility evidence inferred; no tests added or run.
+- Pending scope: PR #31 build/draft automation and Phase 8 planning; draft PR #33 offline UI presentation and shared styling. No real gallery service completion or executable release acceptance is claimed.
+- The owner reported tests passed on 2026-10-06 after the import fix; no command/count or CI run was supplied. The assistant did not rerun tests. Earlier bounded checks and limitations are recorded in the [preview plan](../plans/2026-10-05-phase-8a-ui-preview.md).
+- This follow-up reviews source/documentation alignment only. Exact native-DPI and packaged Windows visual acceptance remain separate. No live provider operations, inference, training or uploads ran.

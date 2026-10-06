@@ -12,15 +12,15 @@ colors:
   disabled: "#777777"
   border: "#3a3a3a"
   accent: "#0068b8"
-  accent-hover: "#0078d4"
-  accent-pressed: "#005a9e"
+  accentHover: "#0078d4"
+  accentPressed: "#005a9e"
   focus: "#60b6f6"
   selection: "#173852"
-  selection-text: "#d5ecff"
+  selectionText: "#d5ecff"
   success: "#78c97c"
-  connection-accent: "#00d8b0"
-  connection-surface: "#123e36"
-  connection-glyph: "#d9f7ef"
+  connectionAccent: "#00d8b0"
+  connectionSurface: "#123e36"
+  connectionGlyph: "#d9f7ef"
   warning: "#ffbf59"
   error: "#ff8179"
   unknown: "#b2b2b2"
@@ -57,6 +57,12 @@ font-weights:
   emphasis: "600"
   title: "650"
   strong: "700"
+font-families:
+  body: "Segoe UI"
+  mono: "Consolas"
+control-sizes:
+  content-minimum: "22px"
+  scrollbar: "12px"
 rounded:
   input: "5px"
   button: "6px"
@@ -74,7 +80,7 @@ spacing:
 
 DTFlow is a compact, image-first native desktop workspace. The generated image gets the largest flexible region; the controls that create and inspect it remain nearby. The interface uses charcoal surfaces, one blue action language, restrained corners and precise state text. It is a Qt Widgets application, not a web skin.
 
-This file describes the implemented Generate design and the shared rules to use when changing Connection, Queues or a later tab. The frontmatter is a readable snapshot of the reusable tokens; the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. The QSS contains some local, one-off colors; do not turn each into a global token without a second use.
+This file describes the shared design implemented across Connection, Generate, Queues and the fixture-only Images presentation, and the rules to use when adding a tab. The frontmatter is a readable snapshot of the reusable tokens and selected component dimensions; color keys use the exact suffix of `color.*`, while component-only spacing/radii remain Designer/QSS values. the **runtime authority** is [`tokens.json`](src/dtflow/resources/styles/tokens.json). Change that file and [`dtflow_dark.qss`](src/dtflow/resources/styles/dtflow_dark.qss) as needed, then update this snapshot in the same PR. The QSS contains some local, one-off colors; do not turn each into a global token without a second use.
 
 The canonical files and responsibilities are:
 
@@ -87,9 +93,10 @@ The canonical files and responsibilities are:
 | Persistent geometry | [`ui/forms/workspace_shell.ui`](src/dtflow/ui/forms/workspace_shell.ui) |
 | Shared shell, navigation and responsive placement | [`ui/main_window.py`](src/dtflow/ui/main_window.py) |
 | Aspect-fit image inspection and floating controls | [`ui/image_preview.py`](src/dtflow/ui/image_preview.py) |
+| Images structure and shared offline presentation | [`ui/forms/gallery_detail_page.ui`](src/dtflow/ui/forms/gallery_detail_page.ui), [`ui/gallery_detail_preview.py`](src/dtflow/ui/gallery_detail_preview.py) |
 | Offline state capture | [`tools/ui/render_states.py`](tools/ui/render_states.py) |
 
-The existing [Qt token and interaction contract](devdocs/architecture/qt-design-tokens.md) records the renderer command and fixture boundaries. The [Generate refinement plan](devdocs/plans/2026-10-05-preview-workspace.md) records the scope of this PR. Earlier plans are historical decisions; the current implementation and these sources govern new work.
+The existing [Qt token and interaction contract](devdocs/architecture/qt-design-tokens.md) records the renderer command and fixture boundaries. The [Generate refinement plan](devdocs/plans/2026-10-05-preview-workspace.md) records the earlier workspace work; the [Images preview plan](devdocs/plans/2026-10-05-phase-8a-ui-preview.md) records PR #33. Earlier plans are historical decisions; the current implementation and these sources govern new work.
 
 ## Colors
 
@@ -104,7 +111,7 @@ Existing body, secondary and placeholder color pairs were checked for at least 4
 
 ## Typography
 
-The shared QSS uses Segoe UI with a sans-serif fallback. Body controls are 10pt, small evidence and preview designations 9pt, section headings 11pt, and shell titles 17pt. These are point sizes so Qt can follow DPI scaling. Some existing one-off roles, such as 8pt eyebrow labels and the 15pt product mark fallback, live in QSS; they are not a general page-heading scale.
+The shared QSS uses Segoe UI with a sans-serif fallback. Body controls are 10pt, small evidence and preview designations 9pt, section headings 11pt, and shell titles 17pt. These shared sizes use points so Qt can follow DPI scaling. Scoped gallery rules retain logical-pixel sizes (including the 14px prompt and 12px disclosure buttons); these are component exceptions, not an alternative global scale. Some existing one-off roles, such as 8pt eyebrow labels and the 15pt product mark fallback, live in QSS; they are not a general page-heading scale.
 
 Use short labels and specific status text. Keep long paths, model identifiers, timestamps and request evidence in scrolling or expandable regions rather than truncating the identity needed for diagnosis. Placeholders describe the expected input and never stand in for a persistent field label when the field's meaning would disappear on entry.
 
@@ -120,23 +127,27 @@ Use the same text hierarchy in Connection, Generate, Queues and Images. Designer
 | `supporting` / secondary | 9pt, regular 400 | Model identifiers, hints and evidence |
 | `section` | 11pt, semibold 600 | Prompt and empty-state headings |
 | `identifier` / `code` | Consolas, 9pt, regular 400 | Stable IDs, effective request, events and raw JSON |
+| `panelHeading` | 9pt, semibold 600 | Section-card header titles |
+| `reading` | Component size, medium 500 | Gallery prompt |
+| `loraName` | 9pt, medium 500 | Gallery LoRA names |
 
 Group titles, primary actions and active tabs use emphasis weight; ordinary
 buttons use medium weight. Thumbnail badges use the same family, small size and
-emphasis tokens in custom painting. Keep Unknown/status colors distinct.
+emphasis tokens in custom painting. Unknown intentionally shares secondary gray; success, warning and error remain distinct semantic outcomes.
 Gallery model names and model identifiers are separate labels to preserve their
-hierarchy without inline HTML styles. Existing layout margins and chrome remain
-unchanged; Windows font metrics and resulting line wraps need owner review.
+hierarchy without inline HTML styles. Gallery Additional-detail values use regular
+body weight and subtle bottom separators as a scoped exception to `value`.
+Windows font metrics and resulting line wraps still need target-machine review.
 
 ## Layout
 
-All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. Branding, navigation, rail scroll areas and splitter remain mounted across tab switches. Only context, primary workspace and evidence content change. The shell owns the global Inspector toggle and responsive state; page controllers retain their content references and service wiring.
+All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. The splitter, rails and page content remain mounted across tab switches. Connection, Generate and Queues change context, primary workspace and evidence stacks. Images reparents the same branding/navigation widgets into its two header slots and hides both content rails; leaving Images restores their parents and splitter geometry. The shell owns the global Inspector toggle and responsive state; page controllers retain their content references and service wiring.
 
-Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a collapsible right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays permanently below the brand in the shared left rail at every width. A compact panel-outline toggle beside the brand shows or hides right-side details; its tooltip and accessible name explain the action. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Queues uses durable queue selection/policy, items and dispatch in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
+Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a collapsible right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact panel-outline toggle beside the brand shows or hides right-side details; its tooltip and accessible name explain the action. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Queues uses durable queue selection/policy, items and dispatch in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
 
 The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral drag gutter between panels, with a subtle border-colored hover affordance. Internal panel padding is unchanged.
 
-The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. At a window width below 1100, the inspector initially collapses and navigation remains in the left rail. The panel icon can reopen it. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
+The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. For Connection, Generate and Queues, at a window width below 1100 the inspector initially collapses and navigation remains in the left rail. The panel icon can reopen it. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
 
 The prompt starts at 76 px and expands to 180 px on request. The negative prompt stays compact. The canvas takes the remaining center height and fits the whole image, whether portrait 1:2 or landscape 16:9, without crop or distortion. Its 12 px fit inset and 10 px floating-control inset are implemented in the preview widget. At 100% or manual zoom, overflow gets scrollbars; drag pans and Control-wheel zoom anchors at the pointer. Expand temporarily gives the preview its own window and restores its original parent on Escape or close.
 
@@ -156,7 +167,7 @@ Inputs use gently rounded 5 px corners, buttons 6 px, and panels 8 px. The reusa
 
 Neutral buttons have distinct rest, hover, pressed, focus and disabled states. Primary actions use the accent family and lose that accent when disabled. Destructive actions use warning red only while actionable; disabled destructive controls return to the neutral disabled treatment. Checkable navigation shares the navy selection language with item views. Maintain stable `role` properties and object names instead of adding inline widget styles.
 
-Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and opens the explicitly labelled offline Detail preview. Its inline metadata replaces the right Inspector while Images is active; other workspaces retain their Inspector preference. Compact labels preserve the permanent left-rail navigation width.
+Connection navigation is a compact 58×34 px power-icon button before Generate, with a token-colored last-check dot and textual tooltip/accessibility status. Unknown is neutral, checking/inconclusive is warning, connected is success and failed is error. Border/dot status is independent of the checked tab; focus remains visibly distinct. It does not poll or imply continuous reachability. Images is placed after Queues and opens the explicitly labelled offline Detail preview. Its inline metadata replaces the right Inspector while Images is active; other workspaces retain their Inspector preference. Compact labels preserve the shared navigation width, including when mounted in Images.
 
 ### Fields and selection
 
@@ -263,8 +274,8 @@ Lists use compact rounded item surfaces; table rows use fine separators and a
 shared hover fill. Selected and disabled states retain the existing semantics.
 Keep the approved shell chrome and gallery gutters; deeper section hierarchy
 comes from headers/surfaces rather than extra external padding. These styles
-replace the earlier Generate group-box treatment. Windows visual acceptance
-remains pending; no runtime or native-DPI render is claimed.
+replace the earlier Generate group-box treatment. Exact native-DPI and packaged Windows visual acceptance is not established by
+source review or the owner-reported test pass.
 
 
 Unknown/informational notices use the neutral secondary palette, small body
@@ -277,3 +288,14 @@ identifier) from LoRA rows (neutral chip, name, numeric weight, explicit Unknown
 badge). Status does not tint the full identifier. The positive prompt has no
 redundant visible caption; its accessible name remains explicit. Expanded
 disclosure controls use shared accent rest/hover/pressed states.
+
+The metadata band is 108 logical pixels high, with compact LoRA row padding
+and horizontal scrolling for long identifiers. This is a scoped Designer
+dimension, not a new shared token. Preserve the 28px model mark, separate
+name/weight/status widgets and explicit Unknown wording when adding live data.
+
+Checkable section cards require an operable header control. Queues uses
+`planBoxToggle` (a keyboard-accessible checkbox) synchronized with the existing
+checkable `planBox`; the controller re-enables the custom header when unchecked
+and hides the entire contents wrapper. A passive label cannot replace a native
+group-box toggle. Parent activity disabling still applies.

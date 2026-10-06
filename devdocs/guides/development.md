@@ -37,6 +37,24 @@ Read [DESIGN.md](../../DESIGN.md) before adding or changing a desktop tab. Canon
 
 Use the [Windows desktop build guide](building.md) for the canonical GUI build and owner acceptance steps. [Windows packaging findings](../research/windows-packaging.md) retain historical console trials and target-machine evidence. Source execution does not establish packaged compatibility. The initial distribution target is the Qt application, not a separate packaged CLI.
 
+## Offline Images presentation
+
+The Images tab and standalone launcher load the same canonical gallery form and
+fixture controller. Use the shared QSS/token pipeline; do not create a separate
+palette or copy presentation behavior into a developer-only implementation.
+
+```bash
+uv run python tools/ui/preview_gallery_detail.py --view grid
+uv run python tools/ui/preview_gallery_detail.py --view list
+uv run python tools/ui/preview_gallery_detail.py --state details
+uv run python tools/ui/preview_gallery_detail.py --state raw
+```
+
+These commands show bundled illustrative samples without output discovery or
+provider execution. The [preview plan](../plans/2026-10-05-phase-8a-ui-preview.md)
+records implemented controls and validation limits. Actual saved-output services
+remain governed by the [viewer plan](../plans/2026-10-05-phase-8a-viewer.md).
+
 ## Working directories
 
 Application state and durable outputs use `.dtflow/`; retained live evidence uses `test-runs/`; diagnostics use `logs/`; disposable scratch uses `tmp/`. These repository-development paths are ignored by Git. See [runtime layout](../architecture/runtime-layout.md) before changing ownership or cleanup behavior.

@@ -466,12 +466,18 @@
              </widget>
             </item>
             <item>
-             <widget class="QLabel" name="planBoxHeading">
+             <widget class="QCheckBox" name="planBoxToggle">
               <property name="text">
                <string>Plan batch (pair or cross)</string>
               </property>
               <property name="textRole" stdset="0">
                <string>panelHeading</string>
+              </property>
+              <property name="accessibleName">
+               <string>Enable batch plan</string>
+              </property>
+              <property name="toolTip">
+               <string>Enable a Pair or Cross batch plan; turn off to return to the item-count shortcut.</string>
               </property>
              </widget>
             </item>

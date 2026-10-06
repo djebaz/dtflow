@@ -2,7 +2,7 @@
 
 For the design rules and a page-building checklist, start with the root [`DESIGN.md`](../../DESIGN.md). This document records the implementation-specific interaction and offline fixture contract. The tracked `tokens.json` remains the runtime source for shared values; the `DESIGN.md` frontmatter is kept in sync as an agent-readable snapshot.
 
-The native Windows-oriented charcoal/blue identity is preserved. `tokens.json` beside `dtflow_dark.qss` owns the shared palette and scale. `load_theme()` resolves `${token.name}` references once at startup; the custom canvas reads that same palette. Designer `.ui` files remain canonical for geometry and layout. `workspace_shell.ui` owns the single persistent splitter, rails, scroll containers, branding and navigation. Page forms supply only context, work and evidence content; switching tabs changes three coordinated stacks without moving chrome or resetting splitter sizes. QSS is not generated Python and there is no separate web implementation.
+The native Windows-oriented charcoal/blue identity is preserved. `tokens.json` beside `dtflow_dark.qss` owns the shared palette and scale. `load_theme()` resolves `${token.name}` references once at startup; the custom canvas reads that same palette. Designer `.ui` files remain canonical for geometry and layout. `workspace_shell.ui` owns the single persistent splitter, rails, scroll containers, branding and navigation. Connection, Generate and Queues page forms supply context, work and evidence content through three coordinated stacks. Images is the explicit composition exception: the same brand/navigation widgets move into gallery header slots, both rails hide, and leaving Images restores parents, chrome dimensions and splitter sizes. QSS is not generated Python and there is no separate web implementation.
 
 ## Palette and geometry
 
@@ -14,7 +14,7 @@ The native Windows-oriented charcoal/blue identity is preserved. `tokens.json` b
 | Body / title / small | 10pt / 17pt / 9pt | Native Segoe UI scale; point sizes respect DPI |
 | Control content minimum | 22px | Plus QSS padding and border; not the total widget height |
 | Input / button radius | 5px / 6px | Consistent component families |
-| Outer / rail margins | 8px / 12px | Designer layout spacing |
+| Standard outer / rail margins | 8px / 12px | Designer layout spacing; Images outer/header inset is 0px |
 | Rails | 248–300px | Independently scrolling settings and inspector |
 | Prompt | 76px / 180px | Compact or explicitly expanded editor |
 | Canvas fit inset | 12px | Entire image remains visible, no crop/stretch |
@@ -27,7 +27,7 @@ Primary, secondary and placeholder text contrast is checked against all four sur
 - Buttons have hover, pressed, selected, disabled and keyboard-focus rules.
 - Inputs expose placeholders, focus, hover, disabled and invalid states.
 - Lists expose empty hints, hover and selected rows. Scrollbars and sliders have idle/hover/pressed/disabled states. Status colors preserve warning, unknown, error and success distinctions.
-- At widths below 1100px the inspector initially collapses and navigation stays permanently in the left rail. It can be reopened explicitly. Hiding the right details panel at any width never hides Connection/Generate/Queues.
+- At widths below 1100px the inspector initially collapses and navigation stays in the left rail for Connection, Generate and Queues; Images keeps the same widgets in its header. It can be reopened explicitly. Hiding the right details panel at any width never hides Connection/Generate/Queues.
 - Fit shows complete portrait/landscape output; Control-wheel zoom is cursor anchored, drag pans, overflow adds scrollbars. `F`, `+`, `-` and Escape support keyboard inspection. Idle toolbars hide; focusing the canvas restores them.
 - Expand restores on Escape, close, or owner-window close. Saved-output actions are disabled for empty/interim previews; no watermark is written to artifacts.
 - The empty canvas offers an illustrative portrait sample. Its badge explicitly says it is a sample with no inference; file and metadata actions remain disabled because there is no saved output. The sample button must be enabled when the Generate page leaves the shell's preview-only control state.
@@ -84,3 +84,28 @@ Images. Forms retain business-control names and the controller boundary.
 `color.unknown` now shares the neutral secondary gray. Unknown/availability
 text uses small regular typography and explicit wording rather than violet
 emphasis; compatibility remains Unknown until evidenced.
+
+## Metadata and typography exceptions
+
+`panelHeading` is small semibold text, `reading` gives the gallery prompt medium
+weight, and `loraName` uses small medium text. Additional-detail `value` labels
+use regular weight and subtle separators. Shared sizes are point-based; scoped
+gallery prompt/disclosure and overlay dimensions remain logical-pixel rules.
+
+The model identity uses a 28px accent glyph tile beside its name and secondary
+identifier. Two neutral LoRA rows separate name, numeric weight and explicit
+Unknown badge; the status does not tint the whole name. The metadata band is
+108px high with horizontal overflow. The prompt has no redundant visible caption
+but retains its accessible name. Expanded Additional/Raw controls use shared
+accent rest/hover/pressed colors and remain mutually exclusive.
+
+`color.unknown` and `color.secondary` intentionally have the same value: their
+semantic names preserve independent future state styling. All runtime token
+values are documented in the root DESIGN snapshot; component-only dimensions
+stay in Designer/QSS rather than becoming duplicate tokens.
+
+Checkable section cards require an operable header control. Queues uses
+`planBoxToggle` (a keyboard-accessible checkbox) synchronized with the existing
+checkable `planBox`; the controller re-enables the custom header when unchecked
+and hides the entire contents wrapper. A passive label cannot replace a native
+group-box toggle. Parent activity disabling still applies.

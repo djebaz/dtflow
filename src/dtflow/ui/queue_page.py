@@ -144,6 +144,7 @@ class QueuePage:
         page.concurrencySpinBox.valueChanged.connect(self._cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
+        page.planBoxToggle.toggled.connect(page.planBox.setChecked)
         page.planBox.toggled.connect(self._plan_toggled)
         page.planDryRunButton.clicked.connect(self.dry_run)
         for name in PLAN_WIDGETS:
@@ -412,6 +413,11 @@ class QueuePage:
             widget.style().polish(widget)
 
     def _plan_toggled(self, enabled: bool) -> None:
+        # An unchecked QGroupBox disables children; its custom header must stay operable.
+        self.page.planBoxHeader.setEnabled(True)
+        self.page.planBoxToggle.setEnabled(True)
+        self.page.planBoxToggle.setChecked(enabled)
+        self.page.planBoxContents.setVisible(enabled)
         self.page.planBody.setVisible(enabled)
         self.page.queueCountSpinBox.setEnabled(not enabled)  # the count box is the seed-sweep shortcut
         self._plan_changed()
