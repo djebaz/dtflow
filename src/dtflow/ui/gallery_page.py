@@ -63,7 +63,7 @@ PAGE_SIZE = 80
 THUMBNAIL_SIDE = 320
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 5000
-STANDARD_THUMBNAIL_PX = 160
+STANDARD_THUMBNAIL_PX = 320
 MIN_THUMBNAIL_PERCENT = 25
 MAX_THUMBNAIL_PERCENT = 250
 
@@ -947,7 +947,7 @@ class GalleryPage(QObject):
         else:
             # PR #34 initially persisted the raw pixel size under "density".
             # Preserve those local smoke-test preferences while moving the UI
-            # contract to a percentage based on the 160 px standard size.
+            # contract to a percentage based on the current standard size.
             legacy_density = document.get("density")
             if type(legacy_density) is int and legacy_density > 0:
                 migrated = round(legacy_density * 100 / STANDARD_THUMBNAIL_PX)
@@ -1753,8 +1753,14 @@ class GalleryPage(QObject):
                 painter.widget.update()
 
         row_height = max(36, round(density * 0.35))
+        thumbnail_width = max(48, round(row_height * 4 / 3))
+        thumbnail_size = QSize(thumbnail_width, max(24, row_height - 10))
         self.table.verticalHeader().setDefaultSectionSize(row_height)
-        self.table.setIconSize(QSize(row_height, max(24, row_height - 10)))
+        if self.table.iconSize() != thumbnail_size:
+            # The Image column must grow alongside the thumbnail, not clip it.
+            # Leave an individually resized column alone until zoom changes.
+            self.table.setIconSize(thumbnail_size)
+            self.table.setColumnWidth(1, thumbnail_width + 16)
         for row in range(self.table.rowCount()):
             self.table.setRowHeight(row, row_height)
 

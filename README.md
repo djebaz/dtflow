@@ -58,7 +58,7 @@ The fake provider lets you explore the same forms, progress, outputs and queue c
 offline. Fixture images and configurable simulation outcomes require no model inference.
 
 The Images tab browses committed saved outputs in Grid, List and Detail views with a
-shared compact header, 25–250% thumbnail scaling and a full-height Detail filmstrip.
+shared compact header, 25–250% thumbnail scaling (100% now uses the old 200% / 320 px size), List thumbnails whose width and height follow zoom, and a full-height Detail filmstrip.
 Positive-prompt search, model/LoRA/date/dimensions/aspect filters, deterministic sorting
 and refresh use the same bounded read-only gallery services as the CLI. Detail exposes
 recorded provenance and safe raw metadata without inventing unavailable values. Saved settings can populate Generate without dispatch, or be explicitly regenerated as a fresh lineage-linked attempt. Draw Things `custom_configs.json` presets are durable and globally imported/exported from Connection, while Generate can save/load named presets. Connection also measures and clears only disposable cache categories; inventory snapshots and source image computations use disk cache, while gallery thumbnails remain in memory. Cleanup is confirmed and coordinated with active cache operations; saved originals and exported copies are never cache-cleanup targets.

@@ -66,7 +66,7 @@ The additional/raw reference mockups resolve the buttons to mutually exclusive i
 ## Implementation decisions resolved in PR #34
 
 - **Loading:** Qt uses 80-output pages; the shared service hard limit is 200. Grid/List page transitions are bounded and image/thumbnail decoding runs off the GUI thread with six concurrent thumbnail decodes.
-- **Thumbnail scale:** the user-facing control is 25–250%; 100% maps to the established 160 logical-pixel standard. Grid, List and Detail filmstrip follow the same percentage.
+- **Thumbnail scale:** the user-facing control is 25–250%. Originally 100% mapped to 160 logical pixels; PR #58 raises the baseline to 320 logical pixels (the old 200% size). Grid and Detail filmstrip follow it; List row height, image width and Image-column width all scale together, without clipping. Saved percentage choices remain percentages. The decode cap remains 320 px; zooming past this may upscale cached previews.
 - **Sorting:** `size` means pixel area with deterministic dimension/tie ordering. Multi-LoRA sort uses a canonical identifier/weight sequence.
 - **Search/filter:** prompt matching is case-insensitive literal substring; filters compose with AND. Desktop exposes positive prompt only, while shared service/CLI also supports negative-prompt search.
 - **Dates/ratios:** desktop dates use local calendar boundaries normalized to UTC with date-specific DST rules; CLI accepts UTC dates or offset-aware timestamps. Ratios support orientation or exact W:H.

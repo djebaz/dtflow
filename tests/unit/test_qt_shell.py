@@ -143,6 +143,37 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
     window.progress_strip.finish("trash")
 
 
+def test_images_grid_and_list_thumbnails_use_320px_standard_and_scale_column(window):
+    """100% matches the former 200% Grid size; List scales image width, not only height."""
+    gallery = window.gallery
+    assert gallery._thumbnail_pixels(25) == 80
+    assert gallery._thumbnail_pixels(100) == 320
+    assert gallery._thumbnail_pixels(200) == 640
+    assert gallery.slider.value() == 100
+
+    gallery.show_view("List", persist=False)
+    normal_row_height = gallery.table.verticalHeader().defaultSectionSize()
+    normal_icon = gallery.table.iconSize()
+    normal_column = gallery.table.columnWidth(1)
+    assert normal_row_height == 112
+    assert normal_icon.width() == 149
+    assert normal_column >= normal_icon.width() + 16
+
+    gallery.slider.setValue(200)
+    enlarged = gallery.table.iconSize()
+    assert gallery.table.verticalHeader().defaultSectionSize() == 224
+    assert enlarged.width() == 299
+    assert enlarged.height() > normal_icon.height()
+    assert gallery.table.columnWidth(1) >= enlarged.width() + 16
+    assert gallery.table.columnWidth(1) > normal_column
+
+    gallery.slider.setValue(25)
+    assert gallery.table.iconSize().width() == 48
+    assert gallery.table.columnWidth(1) >= 64
+    gallery.slider.setValue(100)
+    assert gallery.table.columnWidth(1) == normal_column
+
+
 def test_images_export_toggle_opens_without_selection_and_tracks_panel(window):
     """Opening the export card needs no checked image, but export submission still does."""
     from dtflow.core.models import ValidationError

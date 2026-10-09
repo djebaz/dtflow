@@ -286,11 +286,14 @@ List and Detail share one compact header above `galleryContentStack`. With no
 valid saved viewer preference, Images opens in Grid. A saved view preference
 restores Grid, List or Detail on later launches.
 
-The shared thumbnail control is user-facing percentage, not pixels: 100% is the
-standard 160 logical-pixel Grid/filmstrip baseline, with a 25–250% range. List
-row thumbnails follow the same percentage through the full range. The internal
-pixel conversion is a presentation detail and must not leak into the control
-label. Grid keeps uniform aspect-fit tiles; List has metadata columns and
+The shared thumbnail control is user-facing percentage, not pixels: 100% is now
+the former 200% size, a 320 logical-pixel Grid/filmstrip baseline, with a
+25–250% range. List rows scale their image *width and height* and the entire
+Image column as the percentage changes; a fixed narrow column must never clip
+larger thumbnails. The 320 px thumbnail decode limit is unchanged, so high zoom
+levels can enlarge cached previews without implying full-resolution decoding.
+The internal pixel conversion is a presentation detail and must not leak into
+the control label. Grid keeps uniform aspect-fit tiles; List has metadata columns and
 row-wide hover. Original shipped viewer behavior was single-focus browsing; Phase 8E's draft branch adds checkboxes and a checked-image selection layer without changing Detail focus or tile geometry.
 
 Detail defaults to Fit so the complete saved image is visible on entry. Cover

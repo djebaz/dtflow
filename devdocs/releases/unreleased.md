@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 enlarges the default Images Grid/Detail-filmstrip thumbnails to the previous 200% size (320 logical pixels at 100%). List now scales thumbnail width and Image-column width along with row height when the 25–250% slider changes, preventing the old 80 px column from clipping thumbnails. Existing saved zoom percentages and bounded decoding remain unchanged.
+
+
 - PR #58 fixes single-generation Run-ring step updates: stage-only Draw Things signposts and preview notifications no longer erase the last actually reported sampler step from the header ring or shared progress row. Tooltips identify retained counts as last reported; a new run resets them, and no percentage is invented.
 
 
