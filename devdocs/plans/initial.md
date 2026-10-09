@@ -384,7 +384,7 @@ Testing is capability-driven rather than an upfront exhaustive matrix. Each adva
 Add output browsing, generation metadata inspection, reusable presets, and regeneration/reuse flows.
 
 The [JPEG export follow-up](2026-10-09-jpeg-image-export.md) adds a copy-only export
-hub in Connection's middle panel. All JPGs live at the selected folder root, with
+hub in Connection's middle panel. Normal JPGs live at the selected folder root, with
 portable/Explorer metadata and prompt privacy. This is daily-use output access, not
 a change to internal attempt storage, provider behavior or gallery organisation.
 Final acceptance remains with the owner; no agent feature tests/smoke tests
@@ -567,3 +567,5 @@ The first setup PR is intentionally small:
 - establish `uv` as the canonical Python project/environment/dependency workflow and add the initial `pyproject.toml`; generate and commit `uv.lock` when the environment is first resolved with `uv`
 
 The skeleton establishes ownership boundaries only; it does not add speculative runtime implementation.
+
+The [noise-routing follow-up](2026-10-09-export-noise-routing.md) adds an optional default-on advisory exception: detected copies only in noise/blank subfolders, never job-status changes. Disabling it restores flat export; owner routing acceptance remains pending.

@@ -11,9 +11,9 @@ Generate and Images expose identities/query snapshots, not export or backend rul
 All export controls live in the canonical `main_window.ui` Connection workspace.
 Its existing cards are scrollable so the new card does not force a taller window.
 
-## Flat destination and file safety
+## Destination routing and file safety
 
-Every JPG and optional same-basename JSON is directly in the user-selected folder.
+Normal JPGs and optional same-basename JSON are directly in the user-selected folder. Default-on `ExportOptions.separate_noise_blank` routes flagged copies only into `noise/` or `blank/`; disabling it restores flat export without analysis. Sidecars always follow their image. Category folders are created on demand and must not redirect elsewhere.
 Do not introduce attempt/provider/date subfolders. The service rejects destinations
 inside application state or the source attempt folder. Originals and their durable
 references are read-only. It uses exclusive filename reservations for both image
@@ -29,6 +29,12 @@ removed/unreadable outputs are item failures. Images are processed sequentially,
 with encoded input capped at 64 MiB and decoded dimensions capped at 32 million
 pixels. Progress includes failures; cancellation is checked between images.
 Async cancellation signals the worker and settles an in-flight write before exit.
+
+## Advisory pixel classification
+
+`services/image_quality.py` owns the shared v2 metrics/classification used by both export and `tools/images/detect_noise.py`; runtime code never imports developer tools. `assess_rgb` analyzes a copy of normalized RGB pixels and changes neither images nor job state. Export analyzes the white-composited source before JPEG encoding, off the GUI thread and inside existing decode limits. The developer CLI normalizes EXIF orientation and alpha before calling the same function. JPEG-based owner-labelled evidence is not automatic acceptance of PNG export routing.
+
+When enabled, portable metadata records the advisory label, reasons, normalized metrics, thumbnail dimensions, algorithm identity and input semantics. When disabled, this assessment is absent. Existing request/effective configuration fields and prompt privacy are unchanged. `ExportResult.noise` and `.blank` count successfully written category exports, included in `.exported`, not `.failed`. Unreadable images remain ordinary per-item export failures, not noise/blank guesses. Labels are heuristic and cannot establish aesthetic or prompt correctness; see [detector limitations](../../tools/images/README.md).
 
 ## Encoding and metadata
 
@@ -60,8 +66,8 @@ sidecars. Camera Make/Model, authorship and copyright are not fabricated.
 
 ## Preferences and acceptance
 
-`export_preferences.json` (schema 1) stores only destination and privacy/sidecar
-choices under the state root. It is durable convenience data, not cache;
+`export_preferences.json` (schema 1) stores destination and privacy/sidecar/routing
+choices under the state root. The additive `separate_noise_blank` boolean defaults to true for older schema-1 files; a present non-boolean is rejected. It is durable convenience data, not cache;
 `--no-cache` and cache cleanup do not remove it. Unsupported/unreadable preferences
 are not overwritten; exports can still proceed with a warning.
 

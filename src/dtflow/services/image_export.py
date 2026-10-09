@@ -1,4 +1,4 @@
-"""Flat JPEG export of committed saved outputs; no Qt, providers or execution writes."""
+"""JPEG export of committed saved outputs; no Qt, providers or execution writes."""
 
 import asyncio
 import hashlib
@@ -22,6 +22,7 @@ from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
+from dtflow.services.image_quality import assess_rgb
 
 MAX_EXPORT_IMAGES = 10_000
 MAX_IMAGE_BYTES = 64 * 1024 * 1024
@@ -239,7 +240,7 @@ def _reserve(destination: Path, stem: str):
     raise ValidationError("Too many filename collisions in the export folder.")
 
 
-def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) -> tuple[str, ...]:
+def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) -> tuple[tuple[str, ...], str]:
     source = Path(item.path).resolve()
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
@@ -249,6 +250,7 @@ def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) ->
         original = handle.read(MAX_IMAGE_BYTES + 1)
     if len(original) > MAX_IMAGE_BYTES:
         raise ValidationError("Image exceeds the 64 MiB export limit.")
+    category = "root"
     document, notes = _portable(item, options)
     document.update(
         source_png_sha256=hashlib.sha256(original).hexdigest(),
@@ -272,7 +274,23 @@ def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) ->
                 rgb = decoded.convert("RGB")
             try:
                 stem = _filename(item, document)
-                image, sidecar, image_handle, sidecar_handle = _reserve(destination, stem)
+                target = destination
+                if options.separate_noise_blank:
+                    assessment = assess_rgb(rgb)
+                    document["image_quality_assessment"] = {
+                        **assessment,
+                        "advisory": True,
+                        "input": "white-composited source RGB before JPEG encoding",
+                    }
+                    category = {"possible_noise": "noise", "possible_blank": "blank"}.get(assessment["label"], "root")
+                    if category != "root":
+                        target = destination / category
+                        if target.resolve() != target:
+                            raise ValidationError(
+                                "Detected-image export subfolders must not redirect to another location."
+                            )
+                        target.mkdir(exist_ok=True)
+                image, sidecar, image_handle, sidecar_handle = _reserve(target, stem)
                 keep_sidecar = options.json_sidecars
                 try:
                     embedded = _exif(document)
@@ -312,7 +330,7 @@ def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) ->
                         sidecar.unlink()
             finally:
                 rgb.close()
-    return tuple(notes)
+    return tuple(notes), category
 
 
 def _run_export(state, destination, options, query, identities, cancel, progress):
@@ -329,7 +347,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     if not total or cancel.is_set():
         return ExportResult(str(destination), total, 0, 0, cancel.is_set())
     destination.mkdir(parents=True, exist_ok=True)
-    exported, failed = 0, 0
+    exported, failed, noise, blank = 0, 0, 0, 0
     notes, failures = set(), []
     if progress:
         progress(0, total)
@@ -340,7 +358,10 @@ def _run_export(state, destination, options, query, identities, cancel, progress
             record = storage.get_record(state, identity)
             if record is None:
                 raise ValidationError("Saved output is no longer available.")
-            notes.update(_export_one(item_from_record(record), destination, options))
+            item_notes, category = _export_one(item_from_record(record), destination, options)
+            notes.update(item_notes)
+            noise += category == "noise"
+            blank += category == "blank"
             exported += 1
         except (
             OSError,
@@ -365,7 +386,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
         if progress:
             progress(index + 1, total)
     return ExportResult(
-        str(destination), total, exported, failed, cancel.is_set(), tuple(sorted(notes)), tuple(failures)
+        str(destination), total, exported, failed, cancel.is_set(), tuple(sorted(notes)), tuple(failures), noise, blank
     )
 
 
@@ -381,7 +402,7 @@ async def export_outputs(
 ) -> ExportResult:
     """Snapshot a filter or explicit committed identities, then export sequentially off-thread.
 
-    All JPGs/optional JSONs are directly in destination, never grouped in subfolders.
+    JPGs/optional JSONs are at root, except optional advisory noise/blank routing.
     Cancel cooperatively between images; settle an in-flight file write before shutdown.
     """
     stop = cancel if cancel is not None else threading.Event()

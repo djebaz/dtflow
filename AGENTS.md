@@ -85,7 +85,7 @@ These instructions apply throughout `dtflow`.
 
 - Keep export controls in the middle panel of Connection, in the canonical `main_window.ui`.
 - Use `services/image_export.export_outputs` for single and bulk exports; UI controllers must not duplicate encoding or metadata rules.
-- Every exported JPG and optional JSON sidecar goes directly in the selected folder, without attempt/provider/date subfolders. Never move originals or overwrite existing files.
+- Export JPGs and matching JSON sidecars at the selected root except when the default-on noise/blank checkbox routes flagged copies only into noise/ or blank/. With it off, keep exports completely flat. No attempt/provider/date subfolders, original moves or overwrites. Use services/image_quality.py as the shared advisory detector; no job-status changes.
 - Preserve prompt privacy across filenames, visible EXIF, full portable metadata and sidecars; never copy credentials, private paths or prepared cloud-asset references. Keep request/effective settings and saved-time/per-image-seed semantics explicit.
 - `export_preferences.json` is durable convenience state, not cache. Follow [image export architecture](devdocs/architecture/image-export.md) and the [desktop export guide](devdocs/guides/desktop.md#export-saved-images).
 

@@ -60,7 +60,7 @@ The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement 
 
 ## JPEG export follow-up (branch scope, 2026-10-09)
 
-PR #55 adds a local-only JPEG export hub in the middle panel of Connection: one flat
+PR #55 adds a local-only JPEG export hub in the middle panel of Connection: one
 folder, readable filenames, Windows-friendly EXIF, portable generation metadata,
 prompt privacy, optional sidecars and cancel/progress. Generate/Images expose only
 read-only selection/filter seams; originals and durable references remain untouched.
@@ -69,7 +69,7 @@ See the [plan](plans/2026-10-09-jpeg-image-export.md) and
 release declaration. No tests or smoke tests were added/run under fast-implement;
 the owner reports a source smoke export (345 JPGs at the folder root, no subfolders), but remaining scenario/packaged acceptance stays separate. See [smoke evidence](research/jpeg-export-smoke-2026-10-09.md). No inference or billable actions.
 
-The owner-requested [pixel-statistics detector PoC](../tools/images/README.md) is an isolated developer tool, not a Phase 8 quality gate. Its [plan](plans/2026-10-09-noise-detector-poc.md) records owner-requested labelled sample runs and the version-2 spatial rule for two confirmed misses; thresholds are sample-fitted, with independent validation pending and no general accuracy claim.
+The owner-requested [pixel-statistics detector PoC](../tools/images/README.md) now shares its v2 pixel service with optional default-on export routing into noise/blank subfolders, not a Phase 8 quality gate. Its [plan](plans/2026-10-09-noise-detector-poc.md) records owner-requested labelled sample runs and the version-2 spatial rule for two confirmed misses; thresholds are sample-fitted, with independent validation pending and no general accuracy claim.
 
 ## Maintenance
 
@@ -78,3 +78,5 @@ Update this short snapshot when implementation scope changes, with the reviewed 
 ## Inventory continuity follow-up
 
 PR #51 restores identity-matching provider inventory observations and per-provider form selections; keeps model/LoRA counts, provenance and observation time visible across refresh errors and cache-only launches. Live generation validation is unchanged. Static checks only locally; tests are delegated to GitHub Actions by the owner. The owner reports source smoke tests OK (2026-10-06); exact build/scenarios were not supplied, and packaged acceptance remains separate. See [the plan](plans/2026-10-06-retain-provider-inventory.md).
+
+The [routing follow-up](plans/2026-10-09-export-noise-routing.md) adds the canonical Connection checkbox, saved preference and routed completion counts. Static checks only for this integration; owner GUI/export smoke acceptance remains pending.

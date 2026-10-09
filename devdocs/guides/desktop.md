@@ -33,13 +33,15 @@ filtered export, set filters in Images first, then return to Connection. Selecti
 Generate's metadata entry is not selecting an image. Export freezes the selection
 when started; new outputs arriving afterward do not expand that operation.
 
-Click **Export JPEGs**. Every image goes directly into the chosen folder: **no
+Click **Export JPEGs**. Normal images go directly into the chosen folder: **no
 attempt, provider or date subfolders**. Filenames use saved-at UTC time, a short
 prompt label, request seed, short attempt ID and output index, for example:
 `20261009-143025Z_red-fox-in-snow_s12345_a1b2c3d4_01.jpg`.
 Existing files are never overwritten; collisions add a suffix. The timestamp is
 saved time, not a claimed generation start time. The seed is the recorded request
 seed, not an independently verified per-image seed.
+
+**Separate detected noise and blank images into subfolders** is checked by default and remembered. Flagged copies go only into `noise/` or `blank/`, with any JSON metadata beside them; they are not also written at root. Folders are created only when used. Uncheck for a completely flat export and no detector analysis. The shared v2 detector uses pixel statistics on the white-composited source before JPEG encoding; flags are provisional, not aesthetics/prompt checks or job-status changes. Review them manually. The completion summary includes routed counts.
 
 JPEG quality 95 / 4:4:4 is **lossy**; transparency is composited on white. Original
 PNGs, metadata and history stay untouched. Right-click an exported JPG in Windows
@@ -55,7 +57,7 @@ cloud-asset references are never deliberately copied into export metadata.
 **Also save JSON metadata beside each image** is optional; a JSON sidecar becomes
 mandatory if full portable metadata exceeds EXIF capacity, with a reported warning.
 
-The folder and privacy/sidecar choices are remembered independently of cache.
+The folder and privacy/sidecar/routing choices are remembered independently of cache.
 **Open folder** opens the last successful destination. **Cancel export** stops after
 the current image and keeps completed exports. The final summary reports exported,
 failed and unprocessed images; hover over it for the first 100 failure details.

@@ -52,9 +52,11 @@ Future disposable-cache readers must treat a missing or mismatched version as a 
 
 ## User-selected image exports
 
-Connection's middle-panel export hub copies committed outputs into one flat
+Connection's middle-panel export hub copies committed outputs into one
 user-selected folder, independent of `.dtflow/outputs/<attempt-id>/`. JPGs and
 optional JSONs are all at that folder root. Export never moves originals or changes
 durable references; cache cleanup does not own these user files. See
 [image export architecture](image-export.md) for metadata/privacy, bounded snapshots,
 collision safety and cancellation; runtime/packaged acceptance remains separate.
+
+Noise/blank export routing is a default-on advisory option: flagged copies and matching sidecars go only into noise/ or blank/ below the chosen export folder; normal copies stay at root. Disable it for flat export. Original attempt outputs remain untouched.

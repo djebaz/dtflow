@@ -106,3 +106,7 @@ None blocking. User/runtime acceptance remains separate from implementation.
 - No new export, GUI launch, pixel decode, tests or agent smoke invocation.
   Remaining privacy-off/scenario/packaged gates remain with the owner. See
   [updated evidence](../research/jpeg-export-smoke-2026-10-09.md).
+
+## Noise/blank routing follow-up
+
+Owner now requests a checked-by-default sorting checkbox, intentionally superseding the earlier root-only requirement for detected copies. Normal images remain at root; noise/blank and their sidecars go only in category folders. Checkbox off restores flat export. See the [routing plan](2026-10-09-export-noise-routing.md); no job-status or source changes, export/GUI acceptance pending.

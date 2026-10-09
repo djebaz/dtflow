@@ -40,6 +40,7 @@ class ImageExportPanel(QObject):
             form.imageExportBrowseButton,
             form.imageExportPromptsCheck,
             form.imageExportSidecarsCheck,
+            form.imageExportSeparateCheck,
         )
         for label, value in (
             ("All saved images", "all"),
@@ -55,6 +56,7 @@ class ImageExportPanel(QObject):
         form.imageExportFolderEdit.textChanged.connect(self._mark_dirty)
         form.imageExportPromptsCheck.toggled.connect(self._mark_dirty)
         form.imageExportSidecarsCheck.toggled.connect(self._mark_dirty)
+        form.imageExportSeparateCheck.toggled.connect(self._mark_dirty)
         form.imageExportProgress.hide()
         self.progress.connect(self._progress, Qt.ConnectionType.QueuedConnection)
         form.installEventFilter(self)
@@ -78,10 +80,11 @@ class ImageExportPanel(QObject):
             self.form.imageExportFolderEdit.setText(document["destination"])
             self.form.imageExportPromptsCheck.setChecked(document["include_prompts"])
             self.form.imageExportSidecarsCheck.setChecked(document["json_sidecars"])
+            self.form.imageExportSeparateCheck.setChecked(document.get("separate_noise_blank", True))
 
     def browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self.form, "Choose flat image export folder", self.form.imageExportFolderEdit.text() or str(Path.home())
+            self.form, "Choose image export folder", self.form.imageExportFolderEdit.text() or str(Path.home())
         )
         if folder:
             self.form.imageExportFolderEdit.setText(folder)
@@ -103,6 +106,7 @@ class ImageExportPanel(QObject):
         options = ExportOptions(
             include_prompts=self.form.imageExportPromptsCheck.isChecked(),
             json_sidecars=self.form.imageExportSidecarsCheck.isChecked(),
+            separate_noise_blank=self.form.imageExportSeparateCheck.isChecked(),
         )
         self._preferences_dirty = True
         self._stop = threading.Event()
@@ -121,6 +125,7 @@ class ImageExportPanel(QObject):
                 str(destination),
                 options.include_prompts,
                 options.json_sidecars,
+                options.separate_noise_blank,
             )
         except (OSError, ValueError, ValidationError):
             preference_warning = True
@@ -175,6 +180,8 @@ class ImageExportPanel(QObject):
             text = "No saved images match this export scope."
         else:
             text = f"{prefix} {result.exported} exported, {result.failed} failed, {result.total - result.exported - result.failed} not processed."
+        if result.noise or result.blank:
+            text += f" Sorted into subfolders: {result.noise} noise, {result.blank} blank (advisory)."
         if result.warnings:
             text += " " + " ".join(result.warnings)
         self.form.imageExportStatusLabel.setText(text)

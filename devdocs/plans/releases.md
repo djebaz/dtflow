@@ -70,7 +70,7 @@ Consume the Phase 6 planner and Phase 8 gallery/preset scenario groups from the 
 Validate preset round trips, gallery provenance, metadata reuse, explicit regeneration and cache cleanup through local fixtures/services. Cache cleanup must preserve durable outputs, queue records, credentials and model assets. Basic bounded logging and cache separation remain requirements of earlier releases. No new live generation is required merely because batching, gallery or presets are usable; separately authorize a live run only when a new composition boundary genuinely needs inference evidence.
 
 The separately scoped [JPEG export follow-up](2026-10-09-jpeg-image-export.md)
-provides Connection-centered flat-folder exports. Owner acceptance must check Windows
+provides Connection-centered exports, flat when advisory noise/blank sorting is disabled. The default-on sorting follow-up additionally requires owner acceptance of routing, sidecars, persisted choices and false-positive review. Owner acceptance must check Windows
 Properties, privacy, collisions, filter snapshots/cancellation and untouched originals
 before claiming this feature accepted; it does not require new live generation.
 

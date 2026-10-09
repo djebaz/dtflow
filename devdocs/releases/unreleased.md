@@ -2,7 +2,7 @@
 
 ## Highlights
 
-- Export saved images from Connection into a flat JPEG folder with readable names and Windows-friendly properties.
+- Export saved images from Connection into a JPEG folder with optional noise/blank sorting with readable names and Windows-friendly properties.
 
 ## Added
 
@@ -10,7 +10,9 @@
 - Shared local-only JPEG quality-95 / 4:4:4 export with prompt privacy, rich portable EXIF generation metadata, optional JSON sidecars, collision-safe naming and background progress/cancel. Full portable metadata exceeding EXIF capacity uses a reported mandatory sidecar instead of silent truncation.
 - Durable export folder/privacy preferences, independent of cache; original PNGs, metadata and saved history remain untouched.
 
-- Standalone developer-only pixel-statistics detector PoC under tools/images; advisory, provisional noise/blank flags with JSON metrics and a version-2 joint spatial rule for owner-confirmed noise misses, no export/job integration.
+- Standalone developer-only pixel-statistics detector PoC under tools/images; advisory, provisional noise/blank flags with JSON metrics and a version-2 joint spatial rule for owner-confirmed noise misses, shared with optional export sorting, never job-status changes.
+
+- Default-checked Connection export option to sort advisory detected noise/blank images and matching sidecars only into noise/ or blank/; normal images stay at root. Saved routing choice, shared v2 detector and completion counts; disable for flat export.
 
 ## Changed
 
@@ -24,4 +26,4 @@
 ## Release audit
 
 - PRs: #54, #55
-- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #55 adds Connection-centered flat JPEG/EXIF exports with portable metadata, privacy and background progress/cancel; no agent tests or smoke tests added/run under fast-implement; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions.
+- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #55 adds Connection-centered JPEG/EXIF exports with optional default-on advisory noise/blank sorting with portable metadata, privacy and background progress/cancel; no agent tests or smoke tests added/run under fast-implement; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions.

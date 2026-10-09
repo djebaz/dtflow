@@ -1,6 +1,6 @@
 # Pixel-statistics detector PoC
 
-`detect_noise.py` is a standalone, offline diagnostic, not part of DTFlow export or job handling. It uses the existing Pillow dependency, no model or network service.
+`detect_noise.py` is a standalone, offline diagnostic, with the same pixel-statistics service as DTFlow export sorting; it does not own export or job handling. It uses the existing Pillow dependency, no model or network service.
 
 From the repository root in PowerShell:
 
@@ -32,6 +32,6 @@ Labels are `possible_noise`, `possible_blank`, `no_obvious_failure`, and `unread
 
 ## Safety and limits
 
-No source writes, deletion, regeneration, job-status updates or provider calls. Inputs are limited to 10000 unique files, 64 MiB encoded per file and 32 million pixels; limits/read failures produce `unreadable`, not evidence of a failed generation. Existing report files are never overwritten. An interrupted run may leave an incomplete report; choose a new name for the next run. Exit code 0 means processing completed (including advisory flags), 1 means at least one unreadable input, and 2 means CLI/input/report-path error.
+The CLI makes no source writes, deletion, regeneration, job-status updates or provider calls. The Connection export checkbox optionally uses the shared service to route newly exported copies only into noise/blank folders; it does not modify originals. Inputs are limited to 10000 unique files, 64 MiB encoded per file and 32 million pixels; limits/read failures produce `unreadable`, not evidence of a failed generation. Existing report files are never overwritten. An interrupted run may leave an incomplete report; choose a new name for the next run. Exit code 0 means processing completed (including advisory flags), 1 means at least one unreadable input, and 2 means CLI/input/report-path error.
 
 No automated tests were added or run under fast-implement. Subsequent image detector runs were explicitly requested by the owner; independent validation of version 2 remains pending. Static syntax/import/ruff/help checks do not establish detection accuracy.

@@ -26,10 +26,14 @@ def load_export_preferences(state: Path) -> dict:
     for key in ("include_prompts", "json_sidecars"):
         if type(value.get(key)) is not bool:
             raise ValidationError("Invalid export privacy preference.")
+    if type(value.get("separate_noise_blank", True)) is not bool:
+        raise ValidationError("Invalid export routing preference.")
     return value
 
 
-def save_export_preferences(state: Path, destination: str, include_prompts: bool, json_sidecars: bool) -> None:
+def save_export_preferences(
+    state: Path, destination: str, include_prompts: bool, json_sidecars: bool, separate_noise_blank: bool = True
+) -> None:
     load_export_preferences(state)  # refuse unreadable/newer schemas, without reset
     if len(destination) > 4096:
         raise ValidationError("Export destination is too long to remember.")
@@ -38,6 +42,7 @@ def save_export_preferences(state: Path, destination: str, include_prompts: bool
         "destination": destination,
         "include_prompts": include_prompts,
         "json_sidecars": json_sidecars,
+        "separate_noise_blank": separate_noise_blank,
     }
     encoded = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     if len(encoded) > 8192:

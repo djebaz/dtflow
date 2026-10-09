@@ -26,3 +26,6 @@
 - [x] Static AST/import, scoped Ruff formatting/lint and CLI help passed; initial implementation had no image analysis executed; subsequent owner-requested runs analyzed failed/tests/smoke3.
 - [ ] Final tests and smoke tests deferred to user. No automated tests added or run. Owner explicitly requested subsequent detector image runs; independent validation of version 2 remains pending.
 - Packaging is not applicable to this standalone developer PoC. No inference or billable actions.
+
+## Shared-service follow-up
+Owner requested production export sorting after labelled sample review. Pixel rules now live in services/image_quality.py, reused by the CLI and optional Connection export routing; this supersedes the original developer-only boundary only for copy routing. See [routing plan](2026-10-09-export-noise-routing.md). No job-status changes or independent accuracy claim.

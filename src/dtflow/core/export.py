@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class ExportOptions:
     include_prompts: bool = True
     json_sidecars: bool = False
+    separate_noise_blank: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,3 +19,5 @@ class ExportResult:
     cancelled: bool
     warnings: tuple[str, ...] = ()
     failures: tuple[str, ...] = ()
+    noise: int = 0
+    blank: int = 0
