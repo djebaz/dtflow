@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
-from dtflow.persistence.original_io import original_images_lock
+from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
 from dtflow.services.windows_recycle import RecycleUnavailable, recycle_file
 
 _ATTEMPT_ID = re.compile(r"^[a-f0-9]{32}$")
@@ -140,10 +140,11 @@ def recycle_outputs(
     *,
     recycle_adapter=recycle_file,
 ) -> RecycleResult:
-    """Execute only confirmed targets; checkpoint each intent/outcome durably.
+    """Perform only confirmed Recycle Bin operations with durable item checkpoints.
 
-    The shared original-files lease excludes participating exports and other
-    recycle processes. Revalidation occurs under that lease before each item.
+    Batch ownership prevents simultaneous Delete flows while the original-file
+    lock is held only around each item. This allows generation saves between
+    items instead of blocking them for an entire large recycle batch.
     """
     recycled: list[str] = []
     failed: list[str] = []
@@ -152,51 +153,45 @@ def recycle_outputs(
     ineligible = plan.ineligible
     processed = 0
     operation_id = uuid4().hex
-    with original_images_lock(state):
+    with recycle_batch_lock(state):
         ledger.start_operation(state, operation_id, len(plan.targets))
         for target in plan.targets:
             if stop.is_set():
                 break
-            record = gallery_storage.get_record(state, target.identity)
-            if record is None or not _unchanged(target):
-                # A changed, replaced, shared or missing source must never be moved.
-                if not Path(target.path).is_file():
-                    missing += 1
+            with original_images_lock(state):
+                record = gallery_storage.get_record(state, target.identity)
+                if record is None or not _unchanged(target):
+                    if not Path(target.path).is_file():
+                        missing += 1
+                    else:
+                        ineligible += 1
                 else:
-                    ineligible += 1
-                processed += 1
-                if progress:
-                    progress(processed, len(plan.targets))
-                continue
-            confirmed = _regular_managed_file(state, record)
-            if confirmed != target:
-                ineligible += 1
-                processed += 1
-                if progress:
-                    progress(processed, len(plan.targets))
-                continue
-            ledger.record_outcome(
-                state, operation_id, target.identity, target.path, "pending",
-                target.size, target.mtime_ns,
-            )
-            try:
-                recycle_adapter(Path(target.path))
-            except (OSError, RecycleUnavailable):
-                # The Shell may have completed before signaling an error.
-                # Never assume a missing original was successfully recycled.
-                state_value = "failed" if _unchanged(target) else "uncertain"
-            else:
-                state_value = "recycled" if not Path(target.path).exists() else "uncertain"
-            ledger.record_outcome(
-                state, operation_id, target.identity, target.path, state_value,
-                target.size, target.mtime_ns,
-            )
-            if state_value == "recycled":
-                recycled.append(target.identity)
-            elif state_value == "uncertain":
-                uncertain.append(target.identity)
-            else:
-                failed.append(target.identity)
+                    confirmed = _regular_managed_file(state, record)
+                    if confirmed != target:
+                        ineligible += 1
+                    else:
+                        ledger.record_outcome(
+                            state, operation_id, target.identity, target.path, "pending",
+                            target.size, target.mtime_ns,
+                        )
+                        try:
+                            recycle_adapter(Path(target.path))
+                        except (OSError, RecycleUnavailable):
+                            # A Shell error after a disappearing original is uncertain.
+                            # Never assume that it was successfully recycled.
+                            state_value = "failed" if _unchanged(target) else "uncertain"
+                        else:
+                            state_value = "recycled" if not Path(target.path).exists() else "uncertain"
+                        ledger.record_outcome(
+                            state, operation_id, target.identity, target.path, state_value,
+                            target.size, target.mtime_ns,
+                        )
+                        if state_value == "recycled":
+                            recycled.append(target.identity)
+                        elif state_value == "uncertain":
+                            uncertain.append(target.identity)
+                        else:
+                            failed.append(target.identity)
             processed += 1
             if progress:
                 progress(processed, len(plan.targets))
