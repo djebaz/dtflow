@@ -36,6 +36,11 @@ EXTRAS = {
     "guidanceEmbed": "guidance_embed",
     "speedUpWithGuidanceEmbed": "speed_up_with_guidance_embed",
     "t5TextEncoder": "t5_text_encoder",
+    "clipSkip": "clip_skip",
+    "teaCacheThreshold": "tea_cache_threshold",
+    "teaCacheStart": "tea_cache_start",
+    "teaCacheEnd": "tea_cache_end",
+    "teaCacheMaxSkipSteps": "tea_cache_max_skip_steps",
 }
 
 

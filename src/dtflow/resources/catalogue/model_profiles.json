@@ -10,8 +10,13 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -28,8 +33,13 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 4,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -46,11 +56,16 @@
    "steps": 28,
    "guidance": 4.5,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 4.5,
     "resolution_dependent_shift": true,
     "shift": 1,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -67,11 +82,16 @@
    "steps": 28,
    "guidance": 4.5,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 4.5,
     "resolution_dependent_shift": true,
     "shift": 1,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -88,10 +108,15 @@
    "steps": 4,
    "guidance": 1,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
     "shift": 3,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -108,10 +133,15 @@
    "steps": 4,
    "guidance": 1,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
     "shift": 3,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -128,11 +158,16 @@
    "steps": 28,
    "guidance": 4.5,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 4.5,
     "resolution_dependent_shift": true,
     "shift": 1,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -149,8 +184,13 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -167,8 +207,13 @@
    "steps": 40,
    "guidance": 5,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
-    "shift": 3
+    "shift": 3,
+    "tea_cache_threshold": 0.25,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -185,11 +230,16 @@
    "steps": 30,
    "guidance": 6,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 6,
     "resolution_dependent_shift": false,
     "shift": 7,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.15,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -206,8 +256,13 @@
    "steps": 48,
    "guidance": 7,
    "extras": {
+    "clip_skip": 1,
     "shift": 1,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -224,8 +279,13 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 3,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -242,6 +302,7 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
+    "clip_skip": 1,
     "shift": 5
    },
    "samplers": [
@@ -259,6 +320,7 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
+    "clip_skip": 1,
     "shift": 5
    },
    "samplers": [
@@ -276,6 +338,7 @@
    "steps": 50,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "resolution_dependent_shift": false,
     "shift": 12
    },
@@ -294,7 +357,12 @@
    "steps": 40,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 1,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
     "resolution_dependent_shift": true
    },
    "samplers": [
@@ -312,7 +380,12 @@
    "steps": 40,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 1,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
     "resolution_dependent_shift": true
    },
    "samplers": [
@@ -422,7 +495,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "shift": 8
+    "clip_skip": 1,
+    "shift": 8,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -439,7 +517,12 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
-    "shift": 5
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -456,7 +539,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "resolution_dependent_shift": true
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -475,8 +563,13 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -493,8 +586,13 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -511,7 +609,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "resolution_dependent_shift": true
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -528,8 +631,13 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 4,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -546,11 +654,16 @@
    "steps": 28,
    "guidance": 4.5,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 4.5,
     "resolution_dependent_shift": true,
     "shift": 1,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -567,6 +680,7 @@
    "steps": 28,
    "guidance": 50,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 50,
     "resolution_dependent_shift": true,
     "shift": 1,
@@ -588,6 +702,7 @@
    "steps": 4,
    "guidance": 4.5,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 3.5,
     "resolution_dependent_shift": false,
     "shift": 1,
@@ -609,11 +724,16 @@
    "steps": 28,
    "guidance": 4.5,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 4.5,
     "resolution_dependent_shift": true,
     "shift": 1,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -630,10 +750,15 @@
    "steps": 4,
    "guidance": 1,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
     "shift": 3,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -650,10 +775,15 @@
    "steps": 4,
    "guidance": 1,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
     "shift": 3,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -670,10 +800,15 @@
    "steps": 4,
    "guidance": 1,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
     "shift": 3,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -690,8 +825,13 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -708,8 +848,13 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -726,6 +871,7 @@
    "steps": 28,
    "guidance": 1,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
     "shift": 6
    },
@@ -744,6 +890,7 @@
    "steps": 16,
    "guidance": 1,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
     "shift": 3
    },
@@ -762,8 +909,13 @@
    "steps": 40,
    "guidance": 5,
    "extras": {
+    "clip_skip": 2,
     "resolution_dependent_shift": false,
-    "shift": 3
+    "shift": 3,
+    "tea_cache_threshold": 0.25,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -780,11 +932,16 @@
    "steps": 30,
    "guidance": 6,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 6,
     "resolution_dependent_shift": false,
     "shift": 7,
     "speed_up_with_guidance_embed": true,
-    "t5_text_encoder": true
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.15,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -801,8 +958,13 @@
    "steps": 48,
    "guidance": 7,
    "extras": {
+    "clip_skip": 1,
     "shift": 1,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -819,8 +981,13 @@
    "steps": 20,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 1,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -837,8 +1004,13 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 1,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -855,7 +1027,12 @@
    "steps": 52,
    "guidance": 3.5,
    "extras": {
-    "resolution_dependent_shift": true
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -872,8 +1049,13 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 3,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -890,6 +1072,7 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
+    "clip_skip": 1,
     "shift": 5
    },
    "samplers": [
@@ -907,6 +1090,7 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 5
    },
    "samplers": [
@@ -924,6 +1108,7 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
+    "clip_skip": 1,
     "shift": 5
    },
    "samplers": [
@@ -941,6 +1126,7 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 5
    },
    "samplers": [
@@ -958,6 +1144,7 @@
    "steps": 50,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "resolution_dependent_shift": false,
     "shift": 12
    },
@@ -976,6 +1163,7 @@
    "steps": 50,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "resolution_dependent_shift": false,
     "shift": 12
    },
@@ -994,7 +1182,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "shift": 2
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1011,7 +1204,12 @@
    "steps": 40,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 1,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
     "resolution_dependent_shift": true
    },
    "samplers": [
@@ -1029,7 +1227,12 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 6.5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
     "resolution_dependent_shift": false
    },
    "samplers": [
@@ -1047,7 +1250,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "shift": 2
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1064,7 +1272,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "shift": 2
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1081,7 +1294,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "shift": 2
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1098,7 +1316,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "shift": 2
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1161,6 +1384,7 @@
    "steps": 30,
    "guidance": 6,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 1,
     "resolution_dependent_shift": false,
     "shift": 7,
@@ -1182,6 +1406,7 @@
    "steps": 30,
    "guidance": 6,
    "extras": {
+    "clip_skip": 2,
     "guidance_embed": 1,
     "resolution_dependent_shift": false,
     "shift": 7,
@@ -1203,7 +1428,12 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
-    "shift": 5
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.15,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1220,7 +1450,12 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
-    "shift": 5
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1237,6 +1472,7 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
+    "clip_skip": 1,
     "shift": 3
    },
    "samplers": [
@@ -1254,6 +1490,7 @@
    "steps": 30,
    "guidance": 5,
    "extras": {
+    "clip_skip": 1,
     "shift": 5
    },
    "samplers": [
@@ -1271,7 +1508,12 @@
    "steps": 30,
    "guidance": 3.5,
    "extras": {
-    "shift": 5
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1288,7 +1530,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "shift": 8
+    "clip_skip": 1,
+    "shift": 8,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1305,7 +1552,12 @@
    "steps": 30,
    "guidance": 4,
    "extras": {
-    "resolution_dependent_shift": true
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
@@ -1322,8 +1574,13 @@
    "steps": 8,
    "guidance": 1,
    "extras": {
+    "clip_skip": 1,
     "shift": 3,
-    "resolution_dependent_shift": false
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
    },
    "samplers": [
     "euler_a_trailing",
