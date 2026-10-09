@@ -402,8 +402,8 @@ class DetailFixture(QObject):
             icon = QTableWidgetItem()
             icon.setIcon(QIcon(record["pixmap"]))
             check = QTableWidgetItem()
-            check.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsSelectable)
-            check.setCheckState(Qt.Unchecked)
+            check.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
+            check.setCheckState(Qt.CheckState.Unchecked)
             fields = [
                 check,
                 icon,
@@ -425,7 +425,7 @@ class DetailFixture(QObject):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.itemClicked.connect(
-            lambda item: self.toggle_sample(item.data(Qt.ItemDataRole.UserRole), item.checkState() == Qt.Checked)
+            lambda item: self.toggle_sample(item.data(Qt.ItemDataRole.UserRole), item.checkState() == Qt.CheckState.Checked)
             if item.column() == 0 else self.open_detail(item.data(Qt.ItemDataRole.UserRole))
         )
         self.table.itemActivated.connect(
@@ -485,7 +485,7 @@ class DetailFixture(QObject):
 
     def sample_table_changed(self, item):
         if item.column() == 0 and not self._sample_sync:
-            self.toggle_sample(item.data(Qt.UserRole), item.checkState() == Qt.Checked)
+            self.toggle_sample(item.data(Qt.ItemDataRole.UserRole), item.checkState() == Qt.CheckState.Checked)
 
     def sync_sample_selection(self):
         self._sample_sync = True
@@ -501,7 +501,7 @@ class DetailFixture(QObject):
                 image.setProperty("checkedSelection", value)
                 image.update()
                 cell = self.table.item(index - 1, 0)
-                cell.setCheckState(Qt.Checked if value else Qt.Unchecked)
+                cell.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
             self.sample_detail_check.setChecked(self.sample_focus in self.sample_checked)
         finally:
             self._sample_sync = False
