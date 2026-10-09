@@ -6,6 +6,7 @@ attempt/queue audit tables. Windows operations and SQLite commits are not atomic
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
@@ -20,6 +21,7 @@ from dtflow.persistence.original_io import original_images_lock, recycle_batch_l
 from dtflow.services.windows_recycle import RecycleUnavailable, recycle_file
 
 _ATTEMPT_ID = re.compile(r"^[a-f0-9]{32}$")
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +58,7 @@ class RecycleResult:
     ineligible: int
     unprocessed: int
     canceled: bool
+    failure_details: tuple[tuple[str, str], ...] = ()
 
 
 def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
@@ -162,6 +165,7 @@ def recycle_outputs(
     recycled: list[str] = []
     failed: list[str] = []
     uncertain: list[str] = []
+    failure_details: list[tuple[str, str]] = []
     missing = plan.missing
     ineligible = plan.ineligible
     processed = 0
@@ -189,10 +193,26 @@ def recycle_outputs(
                         )
                         try:
                             recycle_adapter(Path(target.path))
-                        except (OSError, RecycleUnavailable):
+                        except (OSError, RecycleUnavailable) as exc:
                             # A Shell error after a disappearing original is uncertain.
                             # Never assume that it was successfully recycled.
                             state_value = "failed" if _unchanged(target) else "uncertain"
+                            if isinstance(exc, RecycleUnavailable):
+                                detail = exc.diagnostic
+                            else:
+                                windows_code = getattr(exc, "winerror", None)
+                                detail = (
+                                    f"os_error_{windows_code}"
+                                    if isinstance(windows_code, int) else "os_error"
+                                )
+                            # Stable output identities and sanitized Shell stages
+                            # are safe; do not log full paths or raw OS exceptions.
+                            log.warning(
+                                "image recycle outcome=%s identity=%s reason=%s",
+                                state_value, target.identity, detail,
+                            )
+                            if len(failure_details) < 100:
+                                failure_details.append((target.identity, detail))
                         else:
                             state_value = "recycled" if not Path(target.path).exists() else "uncertain"
                         ledger.record_outcome(
@@ -213,4 +233,5 @@ def recycle_outputs(
     return RecycleResult(
         tuple(recycled), tuple(failed), tuple(uncertain),
         missing, ineligible, len(plan.targets) - processed, canceled,
+        tuple(failure_details),
     )
