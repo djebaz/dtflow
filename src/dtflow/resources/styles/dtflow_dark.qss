@@ -1299,3 +1299,70 @@ QWidget#galleryAdditionalScrollContents QLabel[textRole="value"] {
   border-bottom: 1px solid ${color.sectionBorder};
   padding-bottom: 3px;
 }
+
+
+/* Phase 8E — one-row Images selection/action toolbar. The Designer layout owns spacing. */
+QFrame#gallerySelectionBar {
+  background: ${color.toolbar};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.panelRadius};
+}
+QFrame#gallerySelectionBar QLabel {
+  color: ${color.text};
+  background: transparent;
+  border: 0;
+}
+QFrame#gallerySelectionBar QLabel#gallerySelectedCountLabel {
+  background: ${color.selection};
+  color: ${color.selectionText};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.inputRadius};
+  padding: 5px 9px;
+  font-weight: ${type.weightEmphasis};
+}
+QFrame#gallerySelectionBar QLabel#galleryHiddenCountLabel {
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QFrame#gallerySelectionBar QPushButton {
+  min-height: 22px;
+  padding: 4px 9px;
+  border-radius: ${size.radius};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton {
+  background: ${color.selection};
+  border-color: ${color.accent};
+  color: ${color.selectionText};
+  font-weight: ${type.weightEmphasis};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton:hover {
+  background: ${color.selectionHover};
+}
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled {
+  background: ${color.button};
+  color: ${color.dangerText};
+  border: 1px solid ${color.dangerBorder};
+}
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled:hover {
+  background: ${color.dangerSurface};
+}
+QFrame#gallerySelectionBar QPushButton:disabled {
+  background: ${color.buttonPressed};
+  border-color: ${color.disabledEdge};
+  color: ${color.disabled};
+}
+QCheckBox#galleryCardCheck {
+  background: ${color.surface};
+  border: 1px solid ${color.buttonBorder};
+  border-radius: ${size.radiusSm};
+  padding: 4px 4px;
+  spacing: 0;
+}
+QCheckBox#galleryCardCheck:checked {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
+QFrame[role="galleryCard"][checkedSelection="true"] {
+  border-color: ${color.selectionBorder};
+  background: ${color.selectionPressed};
+}
