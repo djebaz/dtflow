@@ -1,10 +1,10 @@
-<!-- VERSION$00003$ | Edited: 09/10 | TIME: 22:23 -->
+<!-- VERSION$00004$ | Edited: 10/10 | TIME: 01:14 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DTFlow — Inline Actions UI Preview</title>
+<title>DTFlow — Inline Interaction Reference (PR #58)</title>
 <style>
 :root {
   color-scheme: dark;
@@ -144,6 +144,50 @@ button:disabled{opacity:.4;cursor:not-allowed} [hidden]{display:none!important}
 #recycle-btn,#cache-clear-btn,#connection-export-btn{flex-shrink:0}
 @media(max-width:770px){.activity-dock{padding:7px;bottom:25px}.dock-row{gap:6px}.dock-icon{display:none}.dock-subtitle{max-width:100%}.dock-details{padding:0 7px}.progress{width:15%;min-width:45px}.dock-stop{font-size:11px;padding:0 7px}}
 
+
+/* PR #58 parity: canonical Qt states illustrated, never provider or filesystem actions. */
+.activity-dock.stopped,.activity-dock.warning,.activity-dock.partial{background:linear-gradient(115deg,#423525,#242423 70%);border-color:#9a6700}
+.stopped .dock-icon,.warning .dock-icon,.partial .dock-icon{background:#61441d;color:#ffbf59}
+.countdown{color:#00d8b0;font-weight:700;min-width:32px;text-align:right;font-variant-numeric:tabular-nums}
+.stopped .countdown,.warning .countdown,.partial .countdown{color:#ffbf59}
+.stopped .lifetime,.warning .lifetime,.partial .lifetime{background:#ffbf59}
+.recycle-symbol{background:#59272a!important;color:#ff9d97!important}
+.gallery-content-row{display:flex;flex:1;gap:8px;min-height:0}
+.gallery-content-row>.gallery-view{flex:1;min-width:0}
+.export-panel{width:274px;max-width:42%;flex:none;border:1px solid #454545;border-radius:7px;background:#242424;padding:12px;overflow:auto}
+.export-panel .panel-top{display:flex;align-items:center;justify-content:space-between}
+.export-panel h3{margin:0;font-size:13px}
+.export-panel label{display:block;margin:12px 0;color:#bcbcbc;font-size:11px}
+.export-panel input:not([type="checkbox"]){display:block;width:100%;height:34px;margin-top:5px;color:#e4e4e4;background:#1b1b1b;border:1px solid #444;border-radius:5px;padding:0 8px}
+#export-btn[aria-pressed="true"]{background:#173852;border-color:#0068b8;color:#f2f6ff}
+#export-btn[aria-pressed="false"]{background:var(--button);border-color:var(--buttonEdge)}
+.grid-view{grid-template-columns:repeat(auto-fill,minmax(var(--thumb-demo,208px),1fr))}
+.list-head,.list-row{grid-template-columns:38px var(--list-col,125px) minmax(90px,1fr) minmax(120px,1.3fr) minmax(70px,1.5fr) 90px 70px 130px}
+.list-row{min-height:calc(var(--list-height,108px) + 12px)}
+.list-row img{width:var(--list-width,108px);height:var(--list-height,108px);object-fit:contain}
+.generate-shell{flex:1;min-height:0;display:flex;gap:9px}
+.generate-rail{flex:none;width:205px;border:1px solid #373737;border-radius:7px;background:#232323;padding:12px}
+.generate-center{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px;border:1px solid #373737;border-radius:7px;padding:13px;background:#222}
+.generate-title{display:flex;gap:8px;align-items:center}.generate-title strong{margin-right:auto}
+.prompt-toggle{width:38px;height:38px;border:1px solid #494949;border-radius:6px;background:#303030;display:grid;place-items:center}
+.prompt-cta{height:38px;border:1px solid #0878c8;border-radius:6px;background:#0068b8;color:white;padding:0 13px;display:flex;gap:7px;align-items:center;font-weight:650}
+#prompt-editor{height:52px;min-height:52px;max-height:52px;resize:none;background:#1e1e1e;color:#eee;border:1px solid #454545;border-radius:6px;padding:9px;line-height:16px}
+#prompt-editor.expanded{height:180px;min-height:180px;max-height:180px}
+.negative-demo{height:44px;resize:none;background:#1e1e1e;border:1px solid #454545;color:#ccc;border-radius:5px;padding:8px}
+.generate-canvas{flex:1;min-height:120px;display:grid;place-items:center;background:#151515;border-radius:6px;position:relative}
+.generate-canvas img{max-width:100%;max-height:100%;object-fit:contain}
+.generate-canvas small{position:absolute;top:9px;left:9px;padding:5px 7px;background:#171717da;color:#ccd2d8;border-radius:4px}
+.generate-status{color:#b2bac5;font-size:11px}
+.run-icon{width:32px;height:32px;border-width:2px;font-size:12px;font-variant-numeric:tabular-nums}
+.run-icon.running{border-color:#218bcd;color:#d9f1ff}
+.activity-dock.editor{z-index:14;background:linear-gradient(105deg,#1c3140,#202426);border-color:#3186c5}
+.editor-scrim{position:absolute;inset:0;background:#10171ccc;z-index:12}
+.editor-fields{display:flex;align-items:end;gap:9px;margin-top:12px;flex-wrap:wrap}
+.editor-fields label{display:flex;flex-direction:column;gap:4px;flex:1;min-width:126px;font-size:11px;color:#bed0de}
+.editor-fields input{height:33px;background:#1e1e1e;border:1px solid #435263;border-radius:5px;padding:0 9px;color:#eee}
+.editor-actions{display:flex;gap:7px;margin-left:auto}
+.background-notice{position:absolute;left:8px;right:8px;bottom:106px;z-index:15;padding:9px 12px;border:1px solid #31668b;border-radius:6px;background:linear-gradient(105deg,#1d2935,#202426);font-size:11px}
+@media(max-width:900px){.generate-rail{display:none}.export-panel{width:208px}.list-head,.list-row{min-width:810px}}
 </style>
 </head>
 <body>
@@ -162,14 +206,18 @@ button:disabled{opacity:.4;cursor:not-allowed} [hidden]{display:none!important}
   <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 17l9 5 9-5"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 11v6M12 7h.01"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 2 7 7 2-7 2-2 7-2-7-7-2 7-2 2-7zm8 0v4m-2-2h4"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+  <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M3 8h5V3m13 5h-5V3M3 16h5v5m13-5v5h-5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
 </svg>
 <div id="page">
   <div class="demo-toolbar" aria-label="Prototype controls">
-    <div><div class="demo-title">DTFlow / Inline actions</div><div class="demo-kicker">Interactive design preview · no files or remote services are touched</div></div>
-    <div class="demo-control"><span class="demo-label">Workspace</span><button class="active" data-preview-workflow="recycle">Images · Recycle Bin</button><button data-preview-workflow="cache">Connection · Cache</button><button data-preview-workflow="export">Export</button></div>
+    <div><div class="demo-title">DTFlow / Inline actions</div><div class="demo-kicker">Illustrative Qt reference · no real files, providers, or credits involved</div></div>
+    <div class="demo-control"><span class="demo-label">Workspace</span><button class="active" data-preview-workflow="recycle">Images · Recycle Bin</button><button data-preview-workflow="cache">Connection · Cache</button><button data-preview-workflow="export">Images · Export panel</button><button data-preview-workflow="generation">Generate</button></div>
     <div class="demo-control" id="state-selector" aria-label="Choose a prototype state">
       <span class="demo-label">State</span>
-      <button data-preview-state="empty">Empty</button><button class="active" data-preview-state="ready">Ready</button><button data-preview-state="confirm">Confirm</button><button data-preview-state="running">Progress</button><button data-preview-state="success">Success</button><button data-preview-state="error">Error</button><button data-preview-state="partial">Partial failure</button><button data-preview-state="stopped">Stopped</button>
+      <button data-preview-state="empty">Empty</button><button class="active" data-preview-state="ready">Ready</button><button data-preview-state="confirm">Confirm</button><button data-preview-state="running">Progress</button><button data-preview-state="success">Success</button><button data-preview-state="error">Error</button><button data-preview-state="partial">Partial failure</button><button data-preview-state="stopped">Stopped</button><button data-preview-state="warning">Warning</button><button data-preview-state="info">Information</button><button data-preview-state="editor">Editor</button>
     </div>
     <button class="demo-run" id="play-flow">▶ Play workflow</button>
   </div>
@@ -179,24 +227,33 @@ button:disabled{opacity:.4;cursor:not-allowed} [hidden]{display:none!important}
     <div class="app-body">
       <div class="header-1" id="gallery-header">
         <div class="brand"><img class="brand-logo demo-logo" alt="DTFlow logo"><span class="brand-text">DTFlow</span></div>
-        <div class="run-icon" title="Run / Queue control — unchanged">▶</div>
+        <div class="run-icon" id="run-indicator" title="Run ring reports observed sampler steps only">▶</div>
         <div class="mode-group" role="group" aria-label="Gallery view"><button class="mode-btn active" data-view="grid"><svg class="glyph"><use href="#i-grid"/></svg>Grid</button><button class="mode-btn" data-view="list"><svg class="glyph"><use href="#i-list"/></svg>List</button><button class="mode-btn" data-view="detail"><svg class="glyph"><use href="#i-image"/></svg>Detail</button></div>
-        <span class="size-label" id="size-label">Thumbnail size</span><input class="thumb-range" id="thumb-range" type="range" min="100" max="250" value="214" aria-label="Thumbnail size"><span class="size-readout" id="size-readout">214%</span>
+        <span class="size-label" id="size-label">Thumbnail size</span><input class="thumb-range" id="thumb-range" type="range" min="25" max="250" value="100" aria-label="Thumbnail zoom percentage"><span class="size-readout" id="size-readout">100%</span>
         <button class="auto-btn"><span class="auto-dot">●</span>Auto-refresh: On</button><button class="refresh-btn" title="Refresh"><svg class="glyph"><use href="#i-refresh"/></svg></button>
       </div>
       <div class="header-2" id="gallery-navigation">
-        <nav class="navigation" aria-label="DTFlow navigation"><button class="connection-btn" data-nav="cache" aria-label="Connection"><svg class="glyph"><use href="#i-power"/></svg><span class="dot"></span></button><button class="nav-btn">Generate</button><button class="nav-btn">Queues</button><button class="nav-btn active" data-nav="recycle">Images</button></nav>
+        <nav class="navigation" aria-label="DTFlow navigation"><button class="connection-btn" data-nav="cache" aria-label="Connection"><svg class="glyph"><use href="#i-power"/></svg><span class="dot"></span></button><button class="nav-btn" data-nav="generation">Generate</button><button class="nav-btn">Queues</button><button class="nav-btn active" data-nav="recycle">Images</button></nav>
         <div class="filters"><input class="search" placeholder="Search positive prompts…" aria-label="Search positive prompts"><select class="filter" aria-label="Model"><option>All models</option></select><select class="filter" aria-label="LoRA"><option>All LoRAs</option></select><select class="filter" aria-label="Time"><option>All time</option></select><select class="filter" aria-label="Size"><option>Any size</option></select><select class="filter" aria-label="Sort"><option>Newest first</option></select><select class="filter" aria-label="Ratio"><option>Square</option></select></div>
       </div>
       <section class="gallery-shell" id="gallery-shell">
         <div class="bulkbar"><div style="display:flex;align-items:center"><span class="count-badge" id="selection-count">3 selected</span><span id="hidden-selected" class="hidden-count" hidden></span></div>
-          <div class="bulk-actions"><button id="select-all-btn" class="basic-btn"><svg class="glyph"><use href="#i-layers"/></svg>Select page</button>
+          <div class="bulk-actions"><button id="select-all-btn" class="basic-btn"><svg class="glyph"><use href="#i-check"/></svg><span id="select-label">Select all</span></button>
             <div class="menu-wrap"><button id="more-btn" class="basic-btn" aria-expanded="false">··· More <svg class="glyph"><use href="#i-chevron"/></svg></button><div id="more-menu" class="drop-menu" hidden><button data-menu="filtered">Select all filtered</button><button data-menu="paths">Copy paths</button><button data-menu="clear-hidden">Clear hidden</button><button data-menu="clear">Clear all</button></div></div>
-            <button class="basic-btn primary-btn" id="export-btn"><svg class="glyph"><use href="#i-upload"/></svg>Export selected…</button>
-            <button class="basic-btn danger-btn" id="recycle-btn"><svg class="glyph"><use href="#i-trash"/></svg><span id="recycle-label">Move to Recycle Bin…</span></button>
+            <button class="basic-btn" id="export-btn" aria-pressed="false"><svg class="glyph"><use href="#i-upload"/></svg>Export</button>
+            <button class="basic-btn danger-btn" id="recycle-btn"><svg class="glyph"><use href="#i-trash"/></svg><span id="recycle-label">Delete</span></button>
           </div>
         </div>
-        <div class="gallery-view" id="gallery-view"><div class="grid-view" id="grid-view"></div><div class="list-view" id="list-view" hidden></div><div class="detail-view" id="detail-view" hidden></div></div>
+        <div class="gallery-content-row"><div class="gallery-view" id="gallery-view"><div class="grid-view" id="grid-view"></div><div class="list-view" id="list-view" hidden></div><div class="detail-view" id="detail-view" hidden></div></div>
+        <aside class="export-panel" id="export-panel" hidden aria-label="Images export settings">
+          <div class="panel-top"><h3>Export saved images</h3><button class="close-tiny" id="close-export" aria-label="Hide export panel" title="Hide export panel">×</button></div>
+          <p class="muted">Same export card as Connection. Opening the panel never starts work.</p>
+          <label>Destination folder<input readonly value="C:\\Exports"></label>
+          <label><input type="checkbox" checked> Sort flagged noise / blank copies</label>
+          <p class="muted" id="export-scope">No images checked</p>
+          <button class="basic-btn primary-btn" id="export-start" disabled><svg class="glyph"><use href="#i-upload"/></svg>Export JPEGs</button>
+          <p class="muted">In Images, export requires checked identities. Originals stay unchanged.</p>
+        </aside></div>
       </section>
       <div class="connection-contents" id="connection-contents" hidden>
         <div class="connection-shell">
@@ -215,6 +272,18 @@ button:disabled{opacity:.4;cursor:not-allowed} [hidden]{display:none!important}
           <aside class="connection-inspector"><div class="eyebrow">SAFETY &amp; EVIDENCE</div><div class="section-card"><div class="section-title">♧ &nbsp; Connection check</div><div class="section-content muted">• No generation request<br>• No automatic backend fallback<br>• Credentials are never shown or logged<br>• Failures retain explicit provider evidence</div></div></aside>
         </div>
       </div>
+      <section class="generate-shell" id="generate-shell" hidden aria-label="Generate workspace">
+        <aside class="generate-rail"><div class="eyebrow">PARAMETERS</div><div class="section-card"><div class="section-title">Model</div><div class="section-content muted">Z-Image Turbo<br>Steps: 9 · Seed: 42<br>Sampler: default</div></div></aside>
+        <div class="generate-center"><div class="generate-title"><strong>Prompt</strong><button class="prompt-toggle" id="expand-prompt" aria-label="Expand prompt" title="Expand prompt" aria-pressed="false"><svg class="glyph"><use id="expand-icon" href="#i-expand"/></svg></button><button class="prompt-cta" id="generate-image"><svg class="glyph"><use href="#i-sparkles"/></svg>Generate image</button></div>
+          <textarea id="prompt-editor" rows="2" aria-label="Positive prompt">A lake at sunrise, cinematic natural light</textarea>
+          <textarea class="negative-demo" placeholder="Negative prompt (optional)" aria-label="Negative prompt"></textarea>
+          <div class="generate-canvas"><small>Illustrative example · no inference</small><img id="generate-preview" alt="Illustrative image"></div>
+          <div class="generate-status" id="generate-status">Ready. No generation submitted.</div>
+        </div>
+        <aside class="generate-rail"><div class="eyebrow">INSPECTOR</div><div class="section-card"><div class="section-title">LoRAs</div><div class="section-content muted">One identifier and weight editor.<br><button class="basic-btn" id="lora-add" style="margin-top:9px">Add LoRA</button></div></div><div class="section-card"><div class="section-title">Evidence</div><div class="section-content muted" id="generate-evidence">Last reported step persists through preview updates.</div></div></aside>
+      </section>
+      <div class="editor-scrim" id="editor-scrim" hidden></div>
+      <div class="background-notice" id="background-notice" hidden>Unrelated information remains separately dismissible; it does not replace pending consent or editor input. <button class="close-tiny" id="background-dismiss" aria-label="Dismiss background information" style="float:right">×</button></div>
       <section class="activity-dock" id="activity-dock" hidden role="status" aria-live="polite">
         <div class="dock-row"><span class="dock-icon" id="dock-symbol"><svg class="glyph"><use id="dock-symbol-use" href="#i-layers"/></svg></span>
           <div class="dock-text"><div class="dock-title" id="dock-title">Move to Recycle Bin</div><div class="dock-subtitle" id="dock-subtitle">Processing original image 2 of 3</div></div>
@@ -223,12 +292,14 @@ button:disabled{opacity:.4;cursor:not-allowed} [hidden]{display:none!important}
           <button class="basic-btn dock-stop" id="dock-stop" data-action="stop">Stop after current</button>
           <span class="countdown" id="dock-countdown" hidden>6s</span><button class="close-tiny" id="dock-close" data-action="dismiss" aria-label="Dismiss notification" title="Dismiss"><svg class="glyph"><use href="#i-close"/></svg></button>
         </div>
-        <div class="dock-detail" id="dock-detail" hidden></div><div class="lifetime" id="dock-lifetime" hidden></div>
+        <div class="dock-detail" id="dock-detail" hidden></div>
+        <div class="editor-fields" id="editor-fields" hidden><label>LoRA identifier<input id="lora-identifier" value="illustrative-style-lora"></label><label>Weight (0.0–3.0)<input id="lora-weight" type="number" min="0" max="3" step=".1" value="1.0"></label><div class="editor-actions"><button class="basic-btn" id="editor-cancel">Cancel</button><button class="basic-btn primary-btn" id="editor-add">Add</button></div></div>
+        <div class="lifetime" id="dock-lifetime" hidden></div>
       </section>
-      <div class="statusline">DTFlow 0.3.8 | revision 2026-10-09 21:59 | source: dev &nbsp; · &nbsp; Interactive preview only</div>
+      <div class="statusline">DTFlow · synchronized PR #58 reference · 2026-10-10 &nbsp; · &nbsp; Sample data only</div>
     </div>
   </section>
-  <div class="demo-guide">Switch workspace and state above, or use the in-app actions: <b>Move to Recycle Bin → Confirm</b>, <b>Clear all → Confirm</b>, and <b>Export selected…</b>. All feedback uses one thin bottom overlay; it never resizes the content. Confirm stays on the original red action; Cancel is in the overlay. Essential information is shown directly; longer messages wrap within the overlay. Export starts directly, without confirmation. Confirm has no timer. A completed success counts down and fades away after six seconds; hovering the result pauses the timer. Warnings do not automatically disappear. No files are recycled or exported.</div>
+  <div class="demo-guide">Owner-smoke-tested Qt behavior reference: Images <b>Export</b> toggles its panel even with nothing selected; only <b>Export JPEGs</b> submits checked images. Delete/Clear use in-place red Confirm with Cancel in the bottom overlay. Generate has a compact two-line prompt and its own icon CTA, while live progress and Stop waiting remain exclusively in the overlay. Teal success and <b>all amber warnings, partial and stopped results</b> fade after six seconds, paused by hovering/focusing; red errors and informational inspections persist. The prototype uses illustrative photos, counts, and metadata only and never touches saved output files or providers.</div>
 </div>
 <script>
 'use strict';
