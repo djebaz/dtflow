@@ -61,8 +61,8 @@ def window(qtbot, tmp_path):
     shell.runner.shutdown()
 
 
-def settled(page):
-    return lambda: page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
+def settled(window):
+    return lambda: window.generation_page.generateButton.isEnabled() and not window.activity.generating
 
 
 def add_lora(window, qtbot, name, weight=0.5):
@@ -102,7 +102,7 @@ def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window,
     assert label.property("state") == "error"
 
     page.generateButton.click()  # the shared service rejects before any attempt exists; the page shows its codes
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     assert page.generationStatusLabel.text().startswith("Request rejected")
     assert "bad: architecture_mismatch" in page.generationStatusLabel.text()
     assert not (window.state_dir / "outputs").exists()
