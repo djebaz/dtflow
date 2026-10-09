@@ -17,7 +17,6 @@ from support.fake_vault import Vault  # noqa: E402
 from dtflow.build import display_identity  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
-from dtflow.ui.inline_feedback import InlineNotice, edit_text  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.runner import AsyncRunner  # noqa: E402
 
@@ -62,6 +61,8 @@ def test_feedback_child_deleted_before_activity_strip_remains_safe(window, qtbot
 
 
 def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window):
+    from dtflow.ui.inline_feedback import edit_text
+
     window.show()
     strip = window.progress_strip
     edit_text(window.form, "Edit caption", "Caption", lambda value: None)
