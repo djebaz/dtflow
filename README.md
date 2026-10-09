@@ -119,6 +119,14 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
 - [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
 
+### Desktop interaction mockup
+
+The [PR #58 inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)
+illustrates main-window confirmations, activity overlays, the Generate prompt,
+and Images selection/export behavior. Its example images and state transitions
+are illustrative only: the mockup cannot read saved outputs, export files,
+delete originals, or contact Draw Things.
+
 ## Contributing
 
 Read [AGENTS.md](AGENTS.md) and the [current development status](devdocs/current_dev_status.md)

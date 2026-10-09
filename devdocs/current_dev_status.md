@@ -209,3 +209,15 @@ The Generate controller now retains the last real sampler count across those
 events, labels it as the last reported step, and resets it each new request.
 An existing Qt generation test now exercises this sequence. Fresh CI and
 native Windows/provider visual acceptance remain separate.
+
+PR #58 owner final acceptance and prototype synchronization (2026-10-10):
+the owner reports having smoke-tested the current UI workflows and that all
+look good. The owner-approved HTML source (historical SHA documented in the
+inline-actions plan) has been imported and synchronized as the standalone
+illustrative reference at devdocs/mockups/dtflow_inline_panels.html. Qt source
+remains authoritative; the prototype has illustrative media and demo-only
+state transitions, not actual saved-output reads, provider actions, exports,
+deletes or remote cancellation. GitHub CI on the implementation head
+ad0f09c passed 434 offline tests with 3 skipped; the documentation-only
+commit requires its own CI check. Packaging and final squash merge remain
+separate actions. No agent-run native GUI test or billable work.

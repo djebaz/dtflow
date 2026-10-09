@@ -420,6 +420,16 @@ Grid and Detail selection indicators share List's explicit white tick/partial SV
 
 ## Inline actions and shared progress
 
+The standalone [inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)
+is the synchronized **illustrative reference** for PR #58's owner-smoke-tested Qt
+workflows (2026-10-10). It retains the approved original embedded images and
+covers Recycle Bin/Delete, Cache, Export panel toggle, Generate header and
+progress, editor/notification coexistence, and the teal/amber six-second notice
+lifetime. Its photos, metadata, step counts and generated outcomes are **demo
+fixtures**, not actual saved outputs, live service calls, or pixel-perfect proof.
+Current Qt Designer forms, Python controllers and shared QSS remain authoritative.
+
+
 Application-owned dialogs are replaced by the canonical `inline_feedback.ui` surface,
 with `ui/inline_feedback.py` handling presentation only. Keep native file/folder pickers
 and ordinary menus. Only Confirm occupies the original action slot, preserving its width;

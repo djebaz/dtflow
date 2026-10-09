@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 adds the synchronized, standalone [inline interaction reference](../mockups/dtflow_inline_panels.html), preserving the approved prototype's illustrative assets while reflecting the current Qt overlay lifetimes, red Trash consent, Generate prompt/Run ring, LoRA editor, and Images Export panel toggle. The owner reports final interactive smoke acceptance on 2026-10-10. This HTML demo does not execute application services or modify saved outputs.
+
+
 - PR #58 separates thumbnail display size from decoded resolution: Grid, List and the Detail filmstrip share a single 600 px maximum-side thumbnail of each saved original at every zoom instead of the old 320 px decode. No per-zoom thumbnail variants or persistent derivatives are generated. The main Detail viewer continues loading the native-resolution saved original without resizing it.
 
 

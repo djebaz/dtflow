@@ -279,3 +279,24 @@ acceptance; no visual parity is claimed from source inspection.
 - Refine the relocated Generate action to match the accepted mockup: 16 px sparkles SVG in the existing blue primary button, and a 38 px icon-only Expand prompt button with separate expanded/collapsed SVGs and accessible stateful labels.
 - Use the Images SVG/QIcon convention and the existing shared QSS palette. Preserve the Generate action, 52/180 px prompt sizing, and native single-generation/overlay operation semantics.
 - Extend the existing Generate Qt layout assertion to cover icon presence, toggle state and accessibility. CI and native Windows visual acceptance remain separate.
+
+## Mockup synchronization and owner acceptance (2026-10-10)
+
+- The owner reports completing an interactive smoke test of the entire current
+  PR #58 UI and reports **all good**; this is owner-reported native acceptance,
+  not an agent-run Windows/packaged test.
+- Import the approved original HTML (historical SHA-256 retained above) to
+  [devdocs/mockups/dtflow_inline_panels.html](../mockups/dtflow_inline_panels.html)
+  and synchronize it with the approved implementation. Keep the accepted
+  colors/layout and embedded illustrative images, but update the modern Qt
+  interactions: red Delete/Clear consent, persistent error/info, timed
+  success/amber notifications, LoRA editor, Generate compact prompt and
+  status-only Run ring, and Images Export's independent panel toggle.
+- The prototype **does not simulate durable provider behavior**. Example
+  photo pixels, backend counts, sampling progression, file paths, and status
+  messages remain explicitly demonstrative. The actual Qt code is the source
+  of truth for remote cancellation, retries, original-file leases,
+  preservation and generation evidence.
+- CI checks for the resulting documentation commit are separate from the
+  previously verified Python/Qt CI at `ad0f09c`; no inference, export,
+  recycling, training or potentially billable operation is run by the agent.
