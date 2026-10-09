@@ -138,7 +138,7 @@ def test_credential_entry_wiring_never_echoes_secret(window):
     assert "saved" in form.credentialStatusLabel.text().lower()
     InlineNotice.information(form, "Background notice", "Unrelated status")
     assert form.removeKeyButton.property("confirmationPending") is True
-    assert window.inline.form.inlineTitleLabel.text() == "Remove API key"
+    assert window.inline.form.inlineTitleLabel.text() == "Remove saved key"
     assert any(row.activityLabel.text() == "Background notice" for row in window.progress_strip.rows.values())
     window.inline.form.inlineDismissButton.click()  # declining keeps the key
     assert not form.removeKeyButton.property("confirmationPending")
