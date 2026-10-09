@@ -108,3 +108,116 @@ The [PR #57 source-review follow-up](plans/2026-10-09-pr57-review-followup.md) r
 Gallery checkbox glyph parity: Grid and Detail now reuse List's shared white tick/partial SVG indicator rules. No layout, tokens, selection logic or unrelated checkbox styling changed; static checks passed and owner reports style smoke passed at 8ec3a55 on 2026-10-09. Broader DPI/platform/packaged coverage remains separate.
 
 The reviewer accepts aa1fd2e's restoration/preflight/header source fixes. A further stale-plan race is closed through an atomic latest-outcome/pending-intent claim under batch/original leases: only new/failed identities proceed, blocked or unknown outcomes stay untouched and require manual review without a Trash call. No schema/Qt changes; static checks only, cross-process crash/stale-plan runtime acceptance pending. Partial header-checkbox clipping remains GUI polish, not changed by this safety follow-up.
+
+
+## Inline desktop enhancement (PR #58, 2026-10-09)
+
+Source implementation replaces application-owned dialogs with inline notices/editors and
+in-place Confirm buttons (red for Delete/Clear, mint/teal like Auto-refresh ON otherwise); Cancel is separate, with no timeout. Native file/folder
+pickers stay. LoRA selection and 0.0–3.0/0.1-step weight entry commit in one step. Active
+progress uses a bottom overlay hidden when idle, with separate concurrent-operation rows.
+Existing destructive/upload/credit safeguards remain; no release/version change.
+See the [live plan](plans/2026-10-09-inline-actions.md). Static checks only; no tests added/run
+or smoke tests run under fast-implement. Owner runtime/visual/packaged acceptance remains.
+
+
+PR #58 CI follow-up: run 37982792491 at 314d927 reported 8 failed, 417 passed,
+3 skipped and 1 error. Existing Qt contracts are adapted to real inline editor/consent
+interactions rather than removed dialog mocks. Shutdown stops desktop timers and suppresses
+late GUI deliveries; programmatic close now obtains consent before stopping dispatch.
+No new tests or local test/smoke execution; fresh CI confirmation remains pending.
+The approved progress-overlay redesign is implemented in the follow-up below.
+
+PR #58 follow-up CI at `cc1d371`: 426 passed, 3 skipped, 40 teardown errors from
+an incorrectly scoped shutdown callback. The callback is now a window-owned Qt
+slot, automatically disconnected at window destruction. Follow-up CI remains
+pending; no local tests/smoke or new tests.
+
+PR #58 lifecycle repair passed automatic CI at `6cf931c`: 426 passed, 3 gated live
+skips, no errors. The owner then approved the updated HTML feedback mockup. Source
+now mounts confirmation/editors and concurrent progress/results in one thin bottom
+overlay with visible wrapping information, no Details button and no main-content
+resizing. Export has no additional confirmation; success results expire after six
+seconds (hover/focus pauses), while errors/partial/uncertain/stopped results persist.
+No new tests/local tests/smoke; new CI and owner native visual/packaged acceptance
+are separate from the previous green commit. No release, inference or billable work.
+
+PR #58 teardown follow-up after `fe6f05e`: two CI teardown errors traced to
+activity-strip event filters and progress subscriptions surviving Qt child-widget
+destruction. Source now retires the strip on main-window destruction, disconnects
+its event filters/timer, and removes plain-Python main-window activity listeners.
+No local tests or GUI smoke; new CI and owner native acceptance remain pending.
+
+CI at `a4cf45e` reported 35 failures, 391 passed, 3 skipped. Most failures
+shared a Qt teardown regression: `window.destroyed` reached the activity overlay
+after its central-widget host was deleted, causing an invalid
+`removeEventFilter` call. The activity strip now retires on its own
+`form.destroyed` signal, leaving Qt to remove filters and stop child timers;
+main-window activity listeners unsubscribe at that earlier boundary.
+Cloud LoRA Prepare now starts after file selection without another Confirm,
+while its upload/credit disclosure, busy/backend revalidation and receipt safety
+remain. The integration queue test also reached its separate five-second
+timeout; it has not been investigated or attributed to the presentation change.
+No local tests or smoke run; new CI/owner acceptance are pending.
+
+PR #58 review closeout: Preserve the owner-approved direct cloud LoRA Prepare
+workflow and bounded 0.0–3.0 Add editor; make the out-of-range catalogue
+default fallback visible. Unrelated notices now occupy separate feedback rows
+rather than canceling pending consent, and Queues/Generate activity listeners
+unsubscribe on page destruction. The PR description is brought up to date;
+new CI and native GUI acceptance remain separate.
+
+PR #58 overlay parity follow-up: The HTML mockup revealed missing success
+lifetime-bar/fade presentation, a contradictory blue outer border and red
+partial/stopped backgrounds. The Qt overlay now uses a full-width teal
+six-second draining line with 450 ms fade (hover/focus pause), amber
+partial/stopped/warnings, separate blue task progress and explicit
+destructive call-site classification. Background notices no longer discard
+active text/LoRA editors. Escape dismisses standalone notices. The existing
+Qt shell suite gains focused presentation assertions; CI and native Qt
+acceptance are pending. Refresh the HTML prototype only after the code
+behavior is verified and stabilized.
+
+PR #58 Export cancellation follow-up: a clean user-cancelled Export result
+remains a stopped/amber outcome but explicitly opts into the same six-second
+lifetime countdown, draining bar and 450 ms fade as success. Cancellations
+with failures or warnings remain persistent partial outcomes. The shared
+activity-strip expiry remains opt-in for stopped states; other stopped
+workflows are unchanged. Native GUI rendering acceptance is still pending.
+
+PR #58 overlay semantic-lifetime follow-up: Every amber warning, partial or
+stopped notification now receives the six-second amber countdown/draining bar
+and fade, whether it comes from a result or a nonfatal standalone notice.
+Red errors and informational inspection remain until dismissed. The Recycle
+Bin destructive confirmation uses a drawn monochrome red trash icon instead
+of the green recycling emoji. The underlying generation/queue/Trash attempt
+records and uncertainty/retry semantics are unaffected. Qt CI and native GUI
+acceptance must be checked for this revision.
+
+PR #58 Generate workspace consolidation: place Generate image in the prompt header
+beside Expand prompt; default prompt is 52 px, expanded prompt remains 180 px.
+Remove the duplicate Stop waiting and synthetic progress bar from the center;
+keep the shared overlay as the single progress/local-stop interface, reporting
+only observed stage/step evidence. The durable generation status/evidence remains.
+Existing Qt generation tests are adapted. CI and native visual acceptance pending.
+
+PR #58 single-generation Run-ring progress follow-up: a source-level regression
+was found after the center-panel progress consolidation. Non-sampling stage or
+preview events had overwritten the valid sampling count with None in shared
+RunState, causing the header indicator to return to indeterminate animation.
+The Generate controller now retains the last real sampler count across those
+events, labels it as the last reported step, and resets it each new request.
+An existing Qt generation test now exercises this sequence. Fresh CI and
+native Windows/provider visual acceptance remain separate.
+
+PR #58 owner final acceptance and prototype synchronization (2026-10-10):
+the owner reports having smoke-tested the current UI workflows and that all
+look good. The owner-approved HTML source (historical SHA documented in the
+inline-actions plan) has been imported and synchronized as the standalone
+illustrative reference at devdocs/mockups/dtflow_inline_panels.html. Qt source
+remains authoritative; the prototype has illustrative media and demo-only
+state transitions, not actual saved-output reads, provider actions, exports,
+deletes or remote cancellation. GitHub CI on the implementation head
+ad0f09c passed 434 offline tests with 3 skipped; the documentation-only
+commit requires its own CI check. Packaging and final squash merge remain
+separate actions. No agent-run native GUI test or billable work.

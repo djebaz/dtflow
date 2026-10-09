@@ -43,6 +43,11 @@ class Activity:
     def listen(self, listener: Callable[[], None]) -> None:
         self._listeners.append(listener)
 
+    def unlisten(self, listener: Callable[[], None]) -> None:
+        """Idempotently detach a presentation listener before its Qt owner dies."""
+        if listener in self._listeners:
+            self._listeners.remove(listener)
+
     def _notify(self) -> None:
         for listener in tuple(self._listeners):
             listener()

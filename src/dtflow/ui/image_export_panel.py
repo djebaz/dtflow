@@ -16,6 +16,7 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence.export_preferences import load_export_preferences, save_export_preferences
 from dtflow.services.image_export import export_outputs
+from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ class ImageExportPanel(QObject):
         if index >= 0:
             self.form.imageExportScopeCombo.setCurrentIndex(index)
             self.form.imageExportStatusLabel.setText(
-                "Checked images are selected. Choose a destination and start export."
+                "Check the images to export, then choose a destination and start export."
             )
 
     def browse(self) -> None:
@@ -122,6 +123,7 @@ class ImageExportPanel(QObject):
             selection = self.selection(self.form.imageExportScopeCombo.currentData())
         except ValidationError as exc:
             self.form.imageExportStatusLabel.setText(str(exc))
+            activity_strip(self.form).complete("export", "Export not started", str(exc), "error")
             return
         options = ExportOptions(
             include_prompts=self.form.imageExportPromptsCheck.isChecked(),
@@ -169,13 +171,24 @@ class ImageExportPanel(QObject):
             widget.setEnabled(not value)
         self.form.imageExportStartButton.setEnabled(not value)
         self.form.imageExportCancelButton.setEnabled(value)
-        self.form.imageExportProgress.setVisible(value)
+        self.form.imageExportProgress.hide()
+        strip = activity_strip(self.form)
+        if strip is not None:
+            if value:
+                strip.start(
+                    "export", "Exporting saved images", self.cancel, detail="Collecting saved image identities…"
+                )
+            else:
+                strip.finish("export")
 
     @Slot(int, int)
     def _progress(self, completed: int, total: int) -> None:
         if self._running:
             self.form.imageExportProgress.setRange(0, max(1, total))
             self.form.imageExportProgress.setValue(completed)
+            strip = activity_strip(self.form)
+            if strip is not None:
+                strip.update("export", completed, total)
             if not self._stop.is_set():
                 self.form.imageExportStatusLabel.setText(f"Processed {completed} of {total} images…")
 
@@ -196,6 +209,7 @@ class ImageExportPanel(QObject):
                 else "Export stopped; check destination permissions and saved outputs."
             )
             self.form.imageExportStatusLabel.setText(message)
+            activity_strip(self.form).complete("export", "Export failed", message, "error")
             return
         prefix = "Export cancelled." if result.cancelled else "Export finished."
         if result.total == 0:
@@ -207,6 +221,8 @@ class ImageExportPanel(QObject):
         if result.warnings:
             text += " " + " ".join(result.warnings)
         self.form.imageExportStatusLabel.setText(text)
+        state = "partial" if result.failed or result.warnings else "stopped" if result.cancelled else "success"
+        activity_strip(self.form).complete("export", prefix, text, state)
         self.form.imageExportStatusLabel.setToolTip("\n".join(result.failures))
         if result.exported or result.skipped:
             self._exported_folder = Path(result.destination)

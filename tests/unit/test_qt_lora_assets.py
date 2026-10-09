@@ -13,6 +13,7 @@ import pytest
 pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtWidgets import QDoubleSpinBox, QLineEdit, QListWidget  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -60,14 +61,16 @@ def window(qtbot, tmp_path):
     shell.runner.shutdown()
 
 
-def settled(page):
-    return lambda: page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
+def settled(window):
+    return lambda: window.generation_page.generateButton.isEnabled() and not window.activity.generating
 
 
 def add_lora(window, qtbot, name, weight=0.5):
-    panel = window.generation.lora
-    panel.choose_lora = lambda parent, candidates: (name, weight)
     window.generation_page.addLoraButton.click()
+    editor = window.inline._editor
+    editor.findChild(QLineEdit, "inlineSelectionIdentifier").setText(name)
+    editor.findChild(QDoubleSpinBox, "inlineSelectionWeight").setValue(weight)
+    window.inline.form.inlineEditorAcceptButton.click()
 
 
 def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window, qtbot, monkeypatch):
@@ -75,10 +78,17 @@ def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window,
     page, panel = window.generation_page, window.generation.lora
     page.refreshInventoryButton.click()
     qtbot.waitUntil(lambda: page.refreshInventoryButton.isEnabled(), timeout=5000)
-    seen = []
-    panel.choose_lora = lambda parent, candidates: seen.append(dict(candidates)) or ("ok", 0.7)
     page.addLoraButton.click()
-    assert seen[0]["ok"] == 0.7 and set(seen[0]) == {"ok", "bad", "unk"}  # inventory suggestions with default weights
+    editor = window.inline._editor
+    choices = editor.findChild(QListWidget, "inlineSelectionChoices")
+    assert {choices.item(i).text() for i in range(choices.count())} == {"ok", "bad", "unk"}
+    choices.setCurrentRow(next(i for i in range(choices.count()) if choices.item(i).text() == "ok"))
+    weight = editor.findChild(QDoubleSpinBox, "inlineSelectionWeight")
+    assert weight.value() == 0.7  # inventory suggestion, alongside identifier rather than a second dialog
+    assert (weight.minimum(), weight.maximum(), weight.singleStep(), weight.decimals()) == (0.0, 3.0, 0.1, 1)
+    assert not panel.loras  # selection alone does not commit
+    window.inline.form.inlineEditorAcceptButton.click()
+    assert panel.loras[0].weight == 0.7
     for name in ("bad", "unk"):
         add_lora(window, qtbot, name)
     assert page.loraList.count() == 3
@@ -92,7 +102,7 @@ def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window,
     assert label.property("state") == "error"
 
     page.generateButton.click()  # the shared service rejects before any attempt exists; the page shows its codes
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     assert page.generationStatusLabel.text().startswith("Request rejected")
     assert "bad: architecture_mismatch" in page.generationStatusLabel.text()
     assert not (window.state_dir / "outputs").exists()
@@ -123,24 +133,33 @@ def cloud(window, monkeypatch):
     return fixture
 
 
-def prepare(window, qtbot, file, confirm=True):
+def prepare(window, qtbot, file, *, choose=True):
     panel, page = window.generation.lora, window.generation_page
     asked = []
-    panel.choose_asset_file = lambda parent, directory: str(file)
-    panel.confirm_upload = lambda parent, path: asked.append(path.name) or confirm
+
+    def select_file(parent, directory):
+        asked.append(file.name)
+        return str(file) if choose else ""
+
+    panel.choose_asset_file = select_file
+    original = page.prepareAssetButton.text()
     page.prepareAssetButton.click()
-    if confirm:
+    assert page.prepareAssetButton.text() == original
+    assert not page.prepareAssetButton.property("confirmationPending")
+    if choose:
         qtbot.waitUntil(lambda: page.generateButton.isEnabled(), timeout=5000)
     return asked
 
 
-def test_prepare_requires_confirmation_then_lists_a_local_receipt(window, cloud, qtbot, tmp_path):
+def test_prepare_starts_after_file_selection_and_lists_a_local_receipt(window, cloud, qtbot, tmp_path):
     page = window.generation_page
     assert "upload" in UPLOAD_NOTICE and "credits" in UPLOAD_NOTICE and "consume credits" in UPLOAD_NOTICE
+    assert UPLOAD_NOTICE == page.prepareAssetButton.toolTip()
     assert "not DT+ account inventory" in page.assetNoteLabel.text()
+    assert "does not consume credits" in page.assetNoteLabel.text()
     file = lora_file(tmp_path)
-    assert prepare(window, qtbot, file, confirm=False) == ["style.ckpt"]
-    assert cloud.puts == [] and cloud.api_calls == [] and page.assetList.count() == 0  # declined: nothing happened
+    assert prepare(window, qtbot, file, choose=False) == ["style.ckpt"]
+    assert cloud.puts == [] and cloud.api_calls == [] and page.assetList.count() == 0  # picker cancelled
 
     prepare(window, qtbot, file)
     qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=5000)

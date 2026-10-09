@@ -16,6 +16,7 @@ from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.build import display_identity  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.runner import AsyncRunner  # noqa: E402
 
@@ -28,13 +29,209 @@ def window(qtbot, tmp_path):
     shell.runner.shutdown()
 
 
-def test_lifecycle_from_designer_file_and_clean_shutdown(window):
+def test_lifecycle_from_designer_file_and_clean_shutdown(window, qtbot):
     assert window.form.objectName() == "MainWindow"
     assert not window.form.windowIcon().isNull()
     window.show()
     assert window.runner._thread.is_alive()
+    window.queue._timer.start(1)
+    delivered = []
+    window.runner._done.emit(lambda result, error: delivered.append(result), "stale", None)
     window.runner.shutdown()
-    assert not window.runner._thread.is_alive()
+    assert window.runner.closed and not window.runner._thread.is_alive()
+    assert not window.queue._timer.isActive()
+    qtbot.wait(20)  # drain the callback queued before shutdown, without reviving polling
+    assert delivered == [] and not window.queue._timer.isActive()
+
+
+def test_feedback_child_deleted_before_activity_strip_remains_safe(window, qtbot):
+    """A dying inline child must not leave the strip with a stale Qt pointer."""
+    window.show()
+    strip = window.progress_strip
+    window.inline.show("Details", "Preview confirmation information")
+    strip.start("fixture-progress", "Still working")
+    assert strip.feedback is window.inline
+
+    window.inline.form.deleteLater()
+    qtbot.waitUntil(lambda: strip.feedback is None, timeout=2000)
+    assert not strip.retired and "fixture-progress" in strip.rows
+    strip._position()
+    strip.update("fixture-progress", 1, 2)
+    strip.finish("fixture-progress")
+
+
+def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbot):
+    from dtflow.ui.inline_feedback import edit_text
+
+    window.show()
+    strip = window.progress_strip
+    edit_text(window.form, "Edit caption", "Caption", lambda value: None)
+    editor = window.inline._editor
+    editor.setText("Keep this text")
+    InlineNotice.information(window.form, "Background information", "Unrelated notification")
+    assert window.inline._editor is editor
+    assert editor.text() == "Keep this text"
+    assert any(row.activityLabel.text() == "Background information" for row in strip.rows.values())
+
+    window.inline.dismiss()
+    strip.complete("example", "Finished", "Saved successfully", "success")
+    row = strip.rows["example"]
+    assert row.activityProgress.isHidden()
+    qtbot.waitUntil(row.activityLifetimeBar.isVisible, timeout=1000)
+    assert row.activityLifetimeBar.value() == 6000
+    assert strip._expiry["example"] == 6.0
+    strip.finish("example")
+
+    for state in ("stopped", "partial", "warning"):
+        strip.complete("example", state.title(), "Detailed outcome stays in the page history.", state)
+        row = strip.rows["example"]
+        assert row.activityLifetime.text() == "6s"
+        assert row.activityLifetimeBar.value() == 6000
+        assert strip._expiry["example"] == 6.0
+        assert row.property("feedbackState") == state
+        strip.finish("example")
+
+    # Nonfatal warning notices use the same amber lifetime row, not the persistent editor panel.
+    InlineNotice.warning(window.form, "Busy", "Try again later")
+    amber_notices = [(key, row) for key, row in strip.rows.items() if row.activityLabel.text() == "Busy"]
+    assert len(amber_notices) == 1
+    key, row = amber_notices[0]
+    assert row.property("feedbackState") == "warning"
+    assert strip._expiry[key] == 6.0
+    strip.finish(key)
+
+    # Red errors and informational inspection remain persistent.
+    strip.complete("failure", "Export failed", "Review the file errors", "error")
+    assert "failure" not in strip._expiry
+    strip.finish("failure")
+    InlineNotice.information(window.form, "Details", "Persistent metadata")
+    assert window.inline.form.property("feedbackState") == "info"
+    window.inline.escape.activated.emit()
+    assert window.inline.form.isHidden()
+
+
+def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
+    from dtflow.ui.theme import load_tokens
+    from dtflow.ui.trash_icon import trash_icon_pixmap
+
+    window.show()
+    button = window.gallery.delete_button
+    window.inline.arm(
+        button, "Move 2 selected originals to Recycle Bin?", "Confirm the scope", lambda: None, danger=True
+    )
+    symbol = window.inline.form.inlineSymbol
+    icon = symbol.pixmap()
+    assert icon is not None and not icon.isNull()
+    assert icon.toImage() == trash_icon_pixmap().toImage()
+    assert symbol.text() == ""
+    assert symbol.property("feedbackState") == "error"
+    danger_rgb = load_tokens()["color.dangerText"].lower()
+    pixels = icon.toImage()
+    assert any(
+        pixels.pixelColor(x, y).name().lower() == danger_rgb
+        for y in range(pixels.height())
+        for x in range(pixels.width())
+    )
+    window.inline.dismiss()
+
+    # Running Trash also uses the same canonical Delete pictogram, never an emoji.
+    window.progress_strip.start("trash", "Moving originals to Recycle Bin")
+    progress_symbol = window.progress_strip.rows["trash"].activitySymbol
+    assert progress_symbol.pixmap() is not None
+    assert progress_symbol.pixmap().toImage() == icon.toImage()
+    assert progress_symbol.text() == ""
+    window.progress_strip.finish("trash")
+
+
+def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_path):
+    """All thumbnail views share one 600 px decode; Detail retains original pixels."""
+    from PySide6.QtGui import QImage
+
+    from dtflow.ui.gallery_page import THUMBNAIL_SIDE, _image
+
+    path = tmp_path / "saved-output.png"
+    source = QImage(1200, 900, QImage.Format.Format_RGB32)
+    source.fill(0xFF497AA3)
+    assert source.save(str(path))
+    assert THUMBNAIL_SIDE == 600
+
+    thumb, issue = _image(str(path), THUMBNAIL_SIDE)
+    assert issue == ""
+    assert thumb is not None
+    assert (thumb.width(), thumb.height()) == (600, 450)
+
+    full, issue = _image(str(path), 0)
+    assert issue == ""
+    assert full is not None
+    assert (full.width(), full.height()) == (1200, 900)
+    assert path.read_bytes()  # No derivative is created or written beside the source.
+    assert tuple(tmp_path.iterdir()) == (path,)
+
+
+def test_images_grid_and_list_thumbnails_use_320px_standard_and_scale_column(window):
+    """100% matches the former 200% Grid size; List scales image width, not only height."""
+    gallery = window.gallery
+    assert gallery._thumbnail_pixels(25) == 80
+    assert gallery._thumbnail_pixels(100) == 320
+    assert gallery._thumbnail_pixels(200) == 640
+    assert gallery.slider.value() == 100
+
+    gallery.show_view("List", persist=False)
+    normal_row_height = gallery.table.verticalHeader().defaultSectionSize()
+    normal_icon = gallery.table.iconSize()
+    normal_column = gallery.table.columnWidth(1)
+    assert normal_row_height == 112
+    assert normal_icon.width() == 149
+    assert normal_column >= normal_icon.width() + 16
+
+    gallery.slider.setValue(200)
+    enlarged = gallery.table.iconSize()
+    assert gallery.table.verticalHeader().defaultSectionSize() == 224
+    assert enlarged.width() == 299
+    assert enlarged.height() > normal_icon.height()
+    assert gallery.table.columnWidth(1) >= enlarged.width() + 16
+    assert gallery.table.columnWidth(1) > normal_column
+
+    gallery.slider.setValue(25)
+    assert gallery.table.iconSize().width() == 48
+    assert gallery.table.columnWidth(1) >= 64
+    gallery.slider.setValue(100)
+    assert gallery.table.columnWidth(1) == normal_column
+
+
+def test_images_export_toggle_opens_without_selection_and_tracks_panel(window):
+    """Opening the export card needs no checked image, but export submission still does."""
+    from dtflow.core.models import ValidationError
+
+    window.show()
+    window.form.imagesNavigationButton.click()
+    button = window.gallery.export_button
+    assert not window.gallery.selection.checked
+    assert button.isEnabled() and button.isCheckable() and not button.isChecked()
+    assert window.gallery_detail.galleryExportScroll.isHidden()
+
+    button.click()
+    assert button.isChecked()
+    assert button.accessibleName() == "Hide export panel"
+    assert not window.gallery_detail.galleryExportScroll.isHidden()
+    assert window.form.imageExportBox.parentWidget() is window.gallery_detail.galleryExportHost
+    assert not window.image_export.running
+    with pytest.raises(ValidationError, match="Check at least one saved image"):
+        window._export_selection("checked")
+
+    window.gallery_detail.galleryExportCloseButton.click()
+    assert not button.isChecked()
+    assert window.gallery_detail.galleryExportScroll.isHidden()
+
+    button.click()
+    assert button.isChecked()
+    window.form.connectionNavigationButton.click()
+    assert not button.isChecked()  # not visible here; shared card returns to Connection
+    assert window._gallery_export_open  # reopen beside Images on return
+    window.form.imagesNavigationButton.click()
+    assert button.isChecked()
+    assert not window.gallery_detail.galleryExportScroll.isHidden()
+    assert not window.image_export.running
 
 
 def test_shutdown_before_the_loop_starts_is_not_lost(qtbot):
@@ -110,10 +307,18 @@ def test_credential_entry_wiring_never_echoes_secret(window):
     assert form.keyEdit.text() == ""
     assert "saved" in form.credentialStatusLabel.text().lower()
     assert "private-key" not in form.credentialStatusLabel.text()
-    window.confirm = lambda *_: False  # declining keeps the key
     form.removeKeyButton.click()
+    assert form.removeKeyButton.property("confirmationPending") is True
+    assert "saved" in form.credentialStatusLabel.text().lower()
+    InlineNotice.information(form, "Background notice", "Unrelated status")
+    assert form.removeKeyButton.property("confirmationPending") is True
+    assert window.inline.form.inlineTitleLabel.text() == "Remove saved key"
+    assert any(row.activityLabel.text() == "Background notice" for row in window.progress_strip.rows.values())
+    window.inline.form.inlineDismissButton.click()  # declining keeps the key
+    assert not form.removeKeyButton.property("confirmationPending")
     assert "saved" in form.credentialStatusLabel.text().lower() and form.removeKeyButton.isEnabled()
-    window.confirm = lambda *_: True
+    form.removeKeyButton.click()
+    assert "saved" in form.credentialStatusLabel.text().lower()
     form.removeKeyButton.click()
     assert form.credentialStatusLabel.text().startswith("No API key") and not form.removeKeyButton.isEnabled()
     form.saveKeyButton.click()  # empty entry is refused

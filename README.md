@@ -18,6 +18,11 @@ Inventory choices return with their provider; last-observed model/LoRA counts an
 remain visible through refresh failures and cache-only startup.
 Windows Credential Manager stores a saved cloud API key outside ordinary configuration files.
 
+Action confirmations and notices stay inside the main window. Confirm changes the original
+button to red for Delete/Clear and mint/teal (matching Auto-refresh ON) otherwise; Cancel stays in the shared bottom overlay. Searchable checkpoint and one-step
+LoRA/weight editors avoid extra windows, while file/folder pickers remain native.
+Confirmations, progress and results share one thin bottom overlay without resizing content. Success and amber warning/partial/stopped overlays fade after six seconds with state-colored countdowns and draining bars, paused by overlay hover or focus; red errors and informational inspection remain until dismissed. Essential information stays visible; Export and cloud LoRA Prepare (after file selection) start without a second confirmation. The overlay lifetime only hides its presentation; it never changes saved operation evidence or remote execution state.
+
 ### Image generation and inspection
 
 Compose prompts and control the model, seed, dimensions, steps, guidance and sampler.
@@ -30,7 +35,7 @@ checkpoint, the Add chooser is narrowed to available LoRAs with known family/mod
 compatibility feedback still distinguishes confirmed mismatches from unknown metadata rather
 than guessing.
 
-Follow progress and previews in an image-first workspace, then inspect saved results with
+Write prompts in a compact two-line field with Generate image in its header; track real steps and Stop waiting locally through the shared overlay while the preview has no duplicate controls. Follow previews in an image-first workspace, then inspect saved results with
 fit, zoom and pan. Output details link images to their generation metadata and provide
 folder/path actions. Save and load generation configurations to reuse a setup.
 
@@ -53,11 +58,11 @@ The fake provider lets you explore the same forms, progress, outputs and queue c
 offline. Fixture images and configurable simulation outcomes require no model inference.
 
 The Images tab browses committed saved outputs in Grid, List and Detail views with a
-shared compact header, 25–250% thumbnail scaling and a full-height Detail filmstrip.
+shared compact header, 25–250% thumbnail scaling (100% uses a 320 px display size), List thumbnails whose width and height follow zoom, and a full-height Detail filmstrip. Grid, List and the filmstrip share one 600 px maximum thumbnail decode per image; the main Detail viewer reads the original saved output at native resolution.
 Positive-prompt search, model/LoRA/date/dimensions/aspect filters, deterministic sorting
 and refresh use the same bounded read-only gallery services as the CLI. Detail exposes
 recorded provenance and safe raw metadata without inventing unavailable values. Saved settings can populate Generate without dispatch, or be explicitly regenerated as a fresh lineage-linked attempt. Draw Things `custom_configs.json` presets are durable and globally imported/exported from Connection, while Generate can save/load named presets. Connection also measures and clears only disposable cache categories; inventory snapshots and source image computations use disk cache, while gallery thumbnails remain in memory. Cleanup is confirmed and coordinated with active cache operations; saved originals and exported copies are never cache-cleanup targets.
-Connection and Images share one saved-image export hub; Images opens it in a toggled right-hand column beside the listing. Copy checked images, one image or a filtered batch into one folder as JPEGs with readable filenames and Windows-visible generation properties. Prompt privacy and optional JSON sidecars keep sharing explicit; original PNGs and saved history stay untouched. A default-on checkbox sorts pixel-statistics-flagged copies into `noise/` and `blank/`; turn it off for a completely flat folder. These are advisory flags, not generation-status verdicts. Full output identities in filenames let repeat exports skip existing copies before image processing, with bounded recycle-aware availability checks; source computations are cached centrally across destinations, without an export-folder index; new Windows files retain the saved generation-completion date in their creation time and EXIF.
+Connection and Images share one saved-image export hub; Images opens it with an always-enabled Export panel toggle (blue while open), independent of checked images, in a right-hand column beside the listing. Starting an Images export still requires checked images. Copy checked images, one image or a filtered batch into one folder as JPEGs with readable filenames and Windows-visible generation properties. Prompt privacy and optional JSON sidecars keep sharing explicit; original PNGs and saved history stay untouched. A default-on checkbox sorts pixel-statistics-flagged copies into `noise/` and `blank/`; turn it off for a completely flat folder. These are advisory flags, not generation-status verdicts. Full output identities in filenames let repeat exports skip existing copies before image processing, with bounded recycle-aware availability checks; source computations are cached centrally across destinations, without an export-folder index; new Windows files retain the saved generation-completion date in their creation time and EXIF.
 Checked managed originals can be moved through a confirmed system Trash action (Recycle Bin on Windows), preserving exported copies and generation history. Execution checks durable intent so stale deletion plans cannot replay uncertain moves. Recovered files are not automatically reintroduced from path/timestamp matches; verified recovery remains future work. Platform runtime acceptance remains separate; see the [Trash architecture](devdocs/architecture/image-recycling.md).
 See the [desktop guide](devdocs/guides/desktop.md#images) and
 [image export guide](devdocs/guides/desktop.md#export-saved-images).
@@ -113,6 +118,14 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Architecture](devdocs/architecture/), [runtime layout](devdocs/architecture/runtime-layout.md) and the [design system reference](devdocs/design-system/README.md).
 - [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
 - [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
+
+### Desktop interaction mockup
+
+The [PR #58 inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)
+illustrates main-window confirmations, activity overlays, the Generate prompt,
+and Images selection/export behavior. Its example images and state transitions
+are illustrative only: the mockup cannot read saved outputs, export files,
+delete originals, or contact Draw Things.
 
 ## Contributing
 

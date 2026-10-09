@@ -4,6 +4,7 @@ description: Native Qt workspace design system for generation and queue workflow
 colors:
   background: "#1f1f1f"
   surface: "#252525"
+  editorScrim: "rgba(32, 32, 32, 128)"
   input: "#1e1e1e"
   canvas: "#151515"
   text: "#e6e6e6"
@@ -191,7 +192,7 @@ The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral dr
 
 The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. For Connection, Generate and Queues, at a window width below 1100 the inspector is hidden automatically and navigation remains in the left rail; there is no manual Inspector toggle in the header. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
 
-The prompt starts at 76 px and expands to 180 px on request. The negative prompt stays compact. The canvas takes the remaining center height and fits the whole image, whether portrait 1:2 or landscape 16:9, without crop or distortion. Its 12 px fit inset and 10 px floating-control inset are implemented in the preview widget. At 100% or manual zoom, overflow gets scrollbars; drag pans and Control-wheel zoom anchors at the pointer. Expand temporarily gives the preview its own window and restores its original parent on Escape or close.
+The prompt starts at a compact 52 px (approximately two lines) and expands to 180 px on request. The prompt header holds a compact 38 px icon-only Expand/Collapse prompt toggle (with stateful icon, tooltip and accessible label) and the primary blue Generate image action with a 16 px sparkles SVG side by side; there is no duplicate action row below the preview. The negative prompt stays compact. The canvas takes the remaining center height and fits the whole image, whether portrait 1:2 or landscape 16:9, without crop or distortion. Its 12 px fit inset and 10 px floating-control inset are implemented in the preview widget. At 100% or manual zoom, overflow gets scrollbars; drag pans and Control-wheel zoom anchors at the pointer. Expand temporarily gives the preview its own window and restores its original parent on Escape or close.
 
 For a new tab, establish its primary work object first, then give its details scrolling rails or collapsible sections. Reuse shell navigation and the shared QSS; do not copy Generate's image canvas into a page where the primary object is a queue table or connection state. Check an 800×680 narrow window and a normal desktop window with representative long data before fixing widths.
 
@@ -221,7 +222,7 @@ The `ImagePreview` widget keeps original pixels and handles Fit, 100%, zoom, pan
 
 ### Status and progress
 
-Use a short outcome heading plus concrete evidence. A progress bar reflects only known progress. `Outcome unknown`, interruption and failure remain different states. The effective request and attempt details may collapse, but their content remains reachable for reproducibility. Do not infer remote cancellation or a finished result from a local Stop waiting action. The global Run control is a compact summary, not a second execution authority: single generation may show its reported step number; a queue with one unambiguous running item shows that item's queue position in the center and keeps backend step detail in the tooltip; concurrent queue work does not invent a single item number. Finished, cancelled and blocked queue selections do not leave persistent completion/error badges in the header.
+Use a short outcome heading plus concrete evidence. A progress bar reflects only known progress. `Outcome unknown`, interruption and failure remain different states. The effective request and attempt details may collapse, but their content remains reachable for reproducibility. Do not infer remote cancellation or a finished result from a local Stop waiting action. The global Run control is a compact summary, not a second execution authority: single generation shows its latest actually reported sampler step, preserving that observation through subsequent stage-only and preview events (rather than reverting to an indeterminate ring); a new generation resets the observation. a queue with one unambiguous running item shows that item's queue position in the center and keeps backend step detail in the tooltip; concurrent queue work does not invent a single item number. Finished, cancelled and blocked queue selections do not leave persistent completion/error badges in the header.
 
 ### Page implementation checklist
 
@@ -285,10 +286,20 @@ List and Detail share one compact header above `galleryContentStack`. With no
 valid saved viewer preference, Images opens in Grid. A saved view preference
 restores Grid, List or Detail on later launches.
 
-The shared thumbnail control is user-facing percentage, not pixels: 100% is the
-standard 160 logical-pixel Grid/filmstrip baseline, with a 25–250% range. List
-row thumbnails follow the same percentage through the full range. The internal
-pixel conversion is a presentation detail and must not leak into the control
+The shared thumbnail control is user-facing percentage, not pixels: 100% is now
+the former 200% size, a 320 logical-pixel Grid/filmstrip baseline, with a
+25–250% range. List rows scale their image *width and height* and the entire
+Image column as the percentage changes; a fixed narrow column must never clip
+larger thumbnails. Grid, List and the Detail filmstrip reuse one thumbnail
+decode per saved output with a fixed maximum side of **600 source pixels**
+(smaller originals retain their actual size). Changing zoom adjusts only
+presentation geometry; it does not trigger separate 320/640/1024 px versions
+or write derived thumbnails to disk. The 25–250% slider may still upscale
+above the 600 px source at its highest settings. Decoding is asynchronous and
+bounded to six concurrent tasks, with no unbounded full-resolution gallery
+loads. The Detail preview alone reads the original image at native resolution
+(`max_side=0`) under the original-file read lease. The internal pixel
+conversion is a presentation detail and must not leak into the control
 label. Grid keeps uniform aspect-fit tiles; List has metadata columns and
 row-wide hover. Original shipped viewer behavior was single-focus browsing; Phase 8E's draft branch adds checkboxes and a checked-image selection layer without changing Detail focus or tile geometry.
 
@@ -332,7 +343,7 @@ the shared query/CLI service but is intentionally absent from the visible Images
 header. Detail shows recorded provenance and uses explicit `Not recorded` or
 `Unknown` text when evidence is absent.
 
-The Phase 8E gallery selection toolbar is one reserved 52 px-high row immediately below the shared header/filter rows. It uses `color.toolbar` with `color.selectionBorder`, muted checked-state blues from `color.selection`, `color.selectionText` and `color.selectionBorder`, and the existing danger treatment for Delete. **Select all** is an independent always-visible button in Grid/List/Detail, never an overflow action; it adds matching outputs across all pages up to the combined 10,000 checked-ID limit. When all current filtered results are checked it becomes **Unselect all**, clearing every checked ID including hidden checks. A partial fill must not show Unselect all. Narrow layouts collapse secondary Unselect/Copy paths controls into More rather than wrapping or truncating Select all, Export or Delete. Grid and List checks share stable output identities; Detail focus remains separate. Export toggles a scrollable right-hand column beside gallery content, using the same canonical export card and controller as Connection; Delete opens a confirmed system Trash action through the shared durable service. Owner reports smoke acceptance of deletion, checkbox appearance and Select all / Unselect all behavior (2026-10-09); broader platform/packaged acceptance remains separate.
+The Phase 8E gallery selection toolbar is one reserved 52 px-high row immediately below the shared header/filter rows. It uses `color.toolbar` with `color.selectionBorder`, muted checked-state blues from `color.selection`, `color.selectionText` and `color.selectionBorder`, and the existing danger treatment for Delete. **Select all** is an independent always-visible button in Grid/List/Detail, never an overflow action; it adds matching outputs across all pages up to the combined 10,000 checked-ID limit. When all current filtered results are checked it becomes **Unselect all**, clearing every checked ID including hidden checks. A partial fill must not show Unselect all. Narrow layouts collapse secondary Unselect/Copy paths controls into More rather than wrapping or truncating Select all, Export or Delete. Grid and List checks share stable output identities; Detail focus remains separate. Export is a true checkable toolbar toggle, always enabled even with no checked images: neutral when the column is closed, blue selected when open, with accessible expanded-state semantics. It toggles a scrollable right-hand column beside gallery content, using the same canonical export card and controller as Connection; no export is submitted on panel opening and Export JPEGs still requires checked identities. The close button and tab navigation must synchronize its checked visual state, while reopening Images restores an open column. Delete opens a confirmed system Trash action through the shared durable service. Owner reports smoke acceptance of deletion, checkbox appearance and Select all / Unselect all behavior (2026-10-09); broader platform/packaged acceptance remains separate.
 
 The standalone `DetailFixture` and preview tools continue to use bundled
 illustrative artwork. They are development presentation fixtures only and do not
@@ -393,6 +404,10 @@ height; empty-state title and guidance stay together in its center. Hide queue
 progress when no queue is selected rather than presenting “0 of 0” as work.
 The Plan header has a fixed vertical size policy, while expanded contents retain
 their natural layout. Avoid distributing spare height among action rows.
+In the left context rail, the Durable Queues list is capped at 120 logical pixels
+(approximately 30% of its previously expanded desktop height); it remains
+scrollable while a trailing spacer keeps Create/Refresh/Clear and Dispatch policy
+at their natural heights near the list.
 
 ### Inventory continuity and statistics
 
@@ -401,3 +416,101 @@ Provider switches restore each provider's last-successful matching observation w
 The Images export column is page-local, not the shell inspector or a List-side preview. The canonical gallery form owns its scroll container, close action and empty card host; the Connection form owns the single shared vertical export card. Reparent the card on navigation, preserve settings/progress and never cancel merely because the panel is hidden. Keep the listing flexible beside the column; both remain keyboard-accessible and the export controls scroll at smaller heights. Owner reports column smoke passed for 5772f54. The subsequent checked-only Images context hides the scope label/dropdown, retaining Connection scope choices; that small follow-up remains owner-smoke-pending.
 
 Grid and Detail selection indicators share List's explicit white tick/partial SVGs, 14 px indicator size and token-based rest/hover/checked/disabled states. Scope the same QSS selector groups to gallery object names; preserve the Grid checkbox wrapper and independent focus/check state. Owner reports style smoke passed for the glyph-parity fix at 8ec3a55 on 2026-10-09; broader DPI/platform/packaged coverage remains separate.
+
+
+## Inline actions and shared progress
+
+The standalone [inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)
+is the synchronized **illustrative reference** for PR #58's owner-smoke-tested Qt
+workflows (2026-10-10). It retains the approved original embedded images and
+covers Recycle Bin/Delete, Cache, Export panel toggle, Generate header and
+progress, editor/notification coexistence, and the teal/amber six-second notice
+lifetime. Its photos, metadata, step counts and generated outcomes are **demo
+fixtures**, not actual saved outputs, live service calls, or pixel-perfect proof.
+Current Qt Designer forms, Python controllers and shared QSS remain authoritative.
+
+
+Application-owned dialogs are replaced by the canonical `inline_feedback.ui` surface,
+with `ui/inline_feedback.py` handling presentation only. Keep native file/folder pickers
+and ordinary menus. Only Confirm occupies the original action slot, preserving its width;
+its non-destructive styling reuses Auto-refresh ON's `color.connectionSurface`,
+`color.connectionAccent` and `color.connectionGlyph` tokens; Delete/Clear override
+with `color.dangerBorder` and `color.onAccent` for a red confirmation. Cancel is in the shared bottom overlay, not the original action row. No timer;
+Cancel/Escape/navigation/relevant scope edits disarm pending consent. Do not count a mouse
+double-click as two independent consent activations. Preserve the full destructive/credit
+consent safeguards. Cloud LoRA Prepare is an explicit file-upload action but does not
+need a second Confirm after the native file picker: show its possible DT+ upload and
+later-generation credit implications in the asset note and Prepare tooltip instead.
+Cancelling the picker does nothing; reject a changed backend or newly busy state
+before starting asynchronous preparation. Service-level receipt/retry safeguards remain.
+
+Checkpoint and LoRA choices use inline substring search and custom-identifier entry.
+LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step. In the
+inline editor, Cancel and Add appear beneath the fields, right-aligned; Add uses the
+same `role="primary"` button treatment as Create queue, while Cancel stays neutral.
+Other confirmations retain their header controls. Existing saved requests are not silently clamped; if a catalogue LoRA suggests a weight outside 0.0–3.0, the Add editor visibly explains its 1.0 initial value. Preset names and explicit metadata/About inspection
+use the same main-window surface, with scrollable text for long notices.
+While an inline input editor is open, a 50%-alpha charcoal scrim covers the central
+workspace behind the bottom editor, intercepting background mouse interactions
+without resizing the preview. The editor remains fully opaque, and keyboard focus
+stays inside it until Add/Apply, Cancel or Escape closes it. The scrim follows
+window resizing and is removed when the editor closes or is replaced. It does
+not apply to confirmation, progress or result messages.
+
+`activity_strip.ui`, `inline_feedback.ui` and `activity_progress_row.ui` compose one
+bottom feedback overlay, matching the owner-approved HTML interaction structure. It
+never joins the main content layout: showing it does not resize previews, thumbnails
+or scroll containers. A normal row is compact (48 px baseline, 28 px symbol, title and
+small body copy, 5 px progress track with separate count and Stop). Long essential
+messages wrap directly; no Details toggle. Expanded selection/name editors and explicit
+metadata inspection stay in the same overlay; long metadata remains scrollable.
+
+Use existing selection/blue tokens for progress/info, connection/mint-teal for
+success and non-destructive confirmation, danger/red for errors and Delete/Clear
+confirmation, and warning/amber for partial/stopped and ordinary nonfatal warnings.
+Amber outcomes use `color.warningSurface` and `color.warningGlyphSurface`
+with `color.statusWarningBorder`; red is reserved for failures and destructive
+consent. The outer activity-strip frame is transparent and borderless, so the
+actual feedback row supplies a single semantic surface and border. Non-destructive
+confirmation reuses Auto-refresh ON's connectionSurface-to-surface treatment,
+connectionAccent border and connectionGlyph icon; Cancel remains neutral. The
+warning text still explicitly describes possible uploads or charges; confirmation
+does not imply successful completion. Repolish the inline icon as well as the form
+when its feedback state changes, avoiding a stale blue icon. Reuse shared fonts,
+radius and native DPI
+rather than hardcoding the HTML's pixel font sizes. Confirm remains on the original
+button with stable width; Cancel is in the overlay. Export has no extra confirmation.
+
+Concurrent tasks and unrelated informational/error notices have separate labelled
+rows inside this one surface and must not replace one another or dismiss pending
+consent. An unrelated InlineNotice shown during an armed confirmation is a
+separately dismissible row; only direct Cancel/Escape, relevant scope changes,
+or another explicit editor/confirmation may disarm it. Unrelated notices
+also use their own rows while an inline input editor is active, so partially
+typed values remain untouched. Success and all amber (warning, partial,
+stopped) overlay rows last six seconds, with a 2 px full-width lifetime
+line draining along the bottom edge and a small right-aligned countdown
+before Dismiss; success uses teal and amber states use warning amber.
+A 450 ms fade-out follows expiry. The timer and line pause while the
+overlay is hovered or keyboard-focused. The 5 px blue task progress
+track is distinct and reflects actual completed work only.
+Amber informational warnings use the timed row even without another active
+editor/confirmation. Red errors and neutral informational inspection stay
+until dismissed. Amber overlay expiry only hides the notification: it
+never erases durable outcome records, uncertainty indicators, failure
+details, or changes stop/retry behavior. Escape dismisses a standalone
+notice, while Cancel/Escape disarm a pending confirmation/editor;
+dismissing any row never stops work.
+Recycle Bin Delete confirmation and in-progress Trash rows reuse the exact
+Images Delete button SVG (\`resources/images/gallery/delete.svg\`), tinted
+with the shared danger-red token; neither shows a recycling emoji. Stopped
+shows a stop-square glyph; progress uses operation-specific glyphs
+for Trash, Export, Cache, Queue, selection and generation. Destructive
+classification is explicit at the confirmation call site (`danger=True`),
+rather than inferred from button object names. Dismiss never stops work;
+Stop delegates to the owning controller.
+Keep generation preview/Run controls and existing uncertainty semantics. The shared bottom overlay owns live Generate progress and Stop waiting locally; never duplicate the stop button or a synthetic 0–100% bar inside the Generate workspace. Show real backend stage text and step counts when reported, not invented percentages. Keep a discreet persistent Generation status label beneath the preview for durable failures and uncertain outcomes. All filters,
+slots, expiry timers and deferred positioning are Qt-owned by their overlay widgets.
+No idle layout space is reserved. Native DPI, clipping/overlap, resize, focus, scroll
+continuity and packaged acceptance require owner verification; static/CI checks do
+not establish pixel-perfect parity with a web mockup.

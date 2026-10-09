@@ -251,6 +251,16 @@ QPushButton:disabled {
   border-color: ${color.disabledEdge};
   color: ${color.disabled};
 }
+QPushButton#expandPromptButton {
+  padding: 0;
+}
+QPushButton#expandPromptButton:checked {
+  background-color: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
+QPushButton#expandPromptButton:checked:hover {
+  background-color: ${color.selectionHover};
+}
 QPushButton#checkButton,
 QPushButton#generateButton,
 QPushButton#createQueueButton,
@@ -1380,12 +1390,20 @@ QFrame#gallerySelectionBar QPushButton {
   border-radius: ${size.radius};
 }
 QFrame#gallerySelectionBar QPushButton#galleryExportButton {
-  background: ${color.selection};
-  border-color: ${color.accent};
-  color: ${color.selectionText};
+  background: ${color.button};
+  border-color: ${color.buttonBorder};
+  color: ${color.buttonText};
   font-weight: ${type.weightEmphasis};
 }
 QFrame#gallerySelectionBar QPushButton#galleryExportButton:hover {
+  background: ${color.buttonHover};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton:checked {
+  background: ${color.selection};
+  border-color: ${color.accent};
+  color: ${color.selectionText};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton:checked:hover {
   background: ${color.selectionHover};
 }
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled {
@@ -1415,4 +1433,181 @@ QCheckBox#galleryCardCheck:checked {
 QFrame[role="galleryCard"][checkedSelection="true"] {
   border-color: ${color.selectionBorder};
   background: ${color.selectionPressed};
+}
+
+/* Inline input editor scrim: alpha-blended and mouse-blocking, never used for notices. */
+QFrame#inlineEditorScrim {
+  background-color: ${color.editorScrim};
+  border: none;
+}
+
+/* Shared bottom feedback overlay: no reserved space, no Details control. */
+QFrame#activityStrip {
+  background: transparent;
+  border: none;
+}
+QFrame#inlineFeedback, QWidget#activityProgressRow {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.selection}, stop:1 ${color.surface});
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.radius};
+}
+/* Non-destructive consent reuses the Auto-refresh ON mint/teal palette.
+   Red danger tint remains reserved for Delete/Clear and errors. */
+QFrame#inlineFeedback[feedbackState="confirm"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.connectionSurface}, stop:1 ${color.surface});
+  border-color: ${color.connectionAccent};
+}
+QFrame#inlineFeedback[feedbackState="partial"],
+QFrame#inlineFeedback[feedbackState="stopped"],
+QFrame#inlineFeedback[feedbackState="warning"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.warningSurface}, stop:1 ${color.surface});
+  border-color: ${color.statusWarningBorder};
+}
+QWidget#activityProgressRow[feedbackState="partial"],
+QWidget#activityProgressRow[feedbackState="stopped"],
+QWidget#activityProgressRow[feedbackState="warning"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.warningSurface}, stop:1 ${color.surface});
+  border-color: ${color.statusWarningBorder};
+}
+QFrame#inlineFeedback[feedbackState="error"], QWidget#activityProgressRow[feedbackState="error"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.dangerSurface}, stop:1 ${color.surface});
+  border-color: ${color.dangerBorder};
+}
+QFrame#inlineFeedback[feedbackState="success"],
+QWidget#activityProgressRow[feedbackState="success"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.connectionSurface}, stop:1 ${color.surface});
+  border-color: ${color.connectionAccent};
+}
+QLabel#inlineTitleLabel, QLabel#activityLabel {
+  background: transparent;
+  color: ${color.title};
+  font-weight: ${type.weightEmphasis};
+}
+QTextBrowser#inlineTextBrowser {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel#activityDetail, QLabel#activityCount {
+  background: transparent;
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel#activityLifetime {
+  background: transparent;
+  color: ${color.connectionAccent};
+  font-size: ${type.small};
+  font-weight: ${type.weightEmphasis};
+}
+QWidget#activityProgressRow[feedbackState="warning"] QLabel#activityLifetime,
+QWidget#activityProgressRow[feedbackState="partial"] QLabel#activityLifetime,
+QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activityLifetime {
+  color: ${color.warning};
+}
+QLabel#inlineSymbol, QLabel#activitySymbol {
+  background: ${color.selection};
+  color: ${color.focus};
+  border-radius: ${size.radiusChip};
+  font-weight: ${type.weightStrong};
+}
+QWidget#activityProgressRow[feedbackState="success"] QLabel#activitySymbol {
+  background: ${color.connectionSurface};
+  color: ${color.connectionAccent};
+}
+QWidget#activityProgressRow[feedbackState="partial"] QLabel#activitySymbol,
+QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activitySymbol,
+QWidget#activityProgressRow[feedbackState="warning"] QLabel#activitySymbol {
+  background: ${color.warningGlyphSurface};
+  color: ${color.warning};
+}
+QLabel#inlineSymbol[feedbackState="confirm"] {
+  background: ${color.connectionSurface};
+  color: ${color.connectionGlyph};
+}
+QLabel#inlineSymbol[feedbackState="partial"],
+QLabel#inlineSymbol[feedbackState="stopped"],
+QLabel#inlineSymbol[feedbackState="warning"] {
+  background: ${color.warningGlyphSurface};
+  color: ${color.warning};
+}
+QLabel#inlineSymbol[feedbackState="success"] {
+  background: ${color.connectionSurface};
+  color: ${color.connectionAccent};
+}
+QWidget#activityProgressRow[feedbackState="error"] QLabel#activitySymbol,
+QLabel#inlineSymbol[feedbackState="error"] {
+  background: ${color.dangerSurface};
+  color: ${color.dangerText};
+}
+QProgressBar#activityProgress {
+  min-height: 5px;
+  max-height: 5px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: ${color.buttonBorder};
+}
+QProgressBar#activityProgress::chunk {
+  background: ${color.accentHover};
+  border-radius: 2px;
+}
+QProgressBar#activityLifetimeBar {
+  min-height: 2px;
+  max-height: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+QProgressBar#activityLifetimeBar::chunk {
+  background: ${color.connectionAccent};
+}
+QWidget#activityProgressRow[feedbackState="warning"] QProgressBar#activityLifetimeBar::chunk,
+QWidget#activityProgressRow[feedbackState="partial"] QProgressBar#activityLifetimeBar::chunk,
+QWidget#activityProgressRow[feedbackState="stopped"] QProgressBar#activityLifetimeBar::chunk {
+  background: ${color.warning};
+}
+QPushButton#activityDismissButton {
+  min-width: 22px;
+  max-width: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: ${color.secondary};
+}
+
+/* Non-destructive Confirm reuses Auto-refresh ON; Cancel stays neutral in feedback. */
+QPushButton[confirmationPending="true"]:enabled,
+QPushButton#importPresetsButton[confirmationPending="true"]:enabled,
+QPushButton#clearInventoryCacheButton[confirmationPending="true"]:enabled,
+QPushButton#clearThumbnailCacheButton[confirmationPending="true"]:enabled,
+QPushButton#clearDerivedCacheButton[confirmationPending="true"]:enabled,
+QPushButton#clearAllCacheButton[confirmationPending="true"]:enabled,
+QPushButton#galleryRegenerateButton[confirmationPending="true"]:enabled,
+QPushButton#clearCustomLorasButton[confirmationPending="true"]:enabled,
+QPushButton#removeKeyButton[confirmationPending="true"]:enabled,
+QPushButton#prepareAssetButton[confirmationPending="true"]:enabled,
+QPushButton#cancelQueueButton[confirmationPending="true"]:enabled,
+QPushButton#clearQueuesButton[confirmationPending="true"]:enabled,
+QPushButton#overrideReservationButton[confirmationPending="true"]:enabled,
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"]:enabled {
+  background: ${color.connectionSurface};
+  color: ${color.connectionGlyph};
+  border: 1px solid ${color.connectionAccent};
+  font-weight: ${type.weightEmphasis};
+}
+
+/* Delete/Clear consent has the owner-selected red treatment. */
+QPushButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearInventoryCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearThumbnailCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearDerivedCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearAllCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearCustomLorasButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearQueuesButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"][confirmationDanger="true"]:enabled {
+  background: ${color.dangerBorder};
+  color: ${color.onAccent};
+  border-color: ${color.dangerBorder};
 }
