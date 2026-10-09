@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>InlineFeedback</class>
+ <widget class="QFrame" name="inlineFeedback">
+  <property name="accessibleName"><string>Action details and inline editor</string></property>
+  <layout class="QVBoxLayout" name="inlineLayout">
+   <property name="spacing"><number>8</number></property>
+   <property name="leftMargin"><number>8</number></property>
+   <property name="topMargin"><number>8</number></property>
+   <property name="rightMargin"><number>8</number></property>
+   <property name="bottomMargin"><number>8</number></property>
+   <item><widget class="QLabel" name="inlineTitleLabel"><property name="text"><string>Action details</string></property></widget></item>
+   <item><widget class="QTextBrowser" name="inlineTextBrowser"><property name="maximumHeight"><number>150</number></property><property name="openExternalLinks"><bool>false</bool></property></widget></item>
+   <item><layout class="QVBoxLayout" name="inlineEditorLayout"/></item>
+   <item><layout class="QHBoxLayout" name="inlineActionLayout">
+    <item><widget class="QPushButton" name="inlineAcceptButton"><property name="text"><string>Apply</string></property></widget></item>
+    <item><widget class="QPushButton" name="inlineDismissButton"><property name="text"><string>Dismiss</string></property></widget></item>
+    <item><spacer name="inlineSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+   </layout></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

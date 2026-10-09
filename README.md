@@ -18,6 +18,11 @@ Inventory choices return with their provider; last-observed model/LoRA counts an
 remain visible through refresh failures and cache-only startup.
 Windows Credential Manager stores a saved cloud API key outside ordinary configuration files.
 
+Action confirmations and notices stay inside the main window. Confirm changes the original
+button to red for Delete/Clear and amber otherwise; Cancel stays in the details panel. Searchable checkpoint and one-step
+LoRA/weight editors avoid extra windows, while file/folder pickers remain native.
+Active operations share a labelled bottom progress overlay that hides when idle.
+
 ### Image generation and inspection
 
 Compose prompts and control the model, seed, dimensions, steps, guidance and sampler.

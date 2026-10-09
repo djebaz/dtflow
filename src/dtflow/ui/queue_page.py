@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QListWidgetItem, QMessageBox, QWidget
+from PySide6.QtWidgets import QListWidgetItem, QWidget
 
 from dtflow.core.models import BackendEvent, ValidationError
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
@@ -32,6 +32,7 @@ from dtflow.services.queue_session import (
 from dtflow.services.session import bind_prepared
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.generation_presenter import FormError
+from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
     PlanForm,
@@ -101,17 +102,6 @@ class _QueueBackendEvent:
         return self.event.sequence
 
 
-def ask_confirmation(parent: QWidget, title: str, text: str) -> bool:
-    answer = QMessageBox.question(
-        parent,
-        title,
-        text,
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        QMessageBox.StandardButton.No,
-    )
-    return answer == QMessageBox.StandardButton.Yes
-
-
 class QueuePage:
     def __init__(
         self,
@@ -130,7 +120,6 @@ class QueuePage:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
-        self.confirm = ask_confirmation
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
         self._select_after: str | None = None
@@ -203,17 +192,6 @@ class QueuePage:
     @property
     def dispatching_here(self) -> bool:
         return self._dispatching is not None
-
-    def confirm_close(self) -> bool:
-        """Window close while this window dispatches needs an explicit yes: active attempts stop waiting locally."""
-        if not self.dispatching_here:
-            return True
-        return self.confirm(
-            self.page,
-            "Stop dispatching?",
-            "Closing stops dispatch. Active attempts stop waiting locally and may end as outcome unknown; remote "
-            "cancellation is not confirmed.",
-        )
 
     # -- reading ---------------------------------------------------------------------------------------------------
     def refresh(self) -> None:
@@ -481,6 +459,8 @@ class QueuePage:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._output_folder)))
 
     def _select_row(self, row: int) -> None:
+        if feedback(self.page)._armed:
+            feedback(self.page).dismiss()
         item = self.page.queueList.item(row) if row >= 0 else None
         self._selected = item.data(ITEM_ID_ROLE) if item is not None else None
         self._detail = None
@@ -687,13 +667,32 @@ class QueuePage:
         return done
 
     def cancel(self) -> None:
-        if self._view() is not None and self.confirm(self.page, "Cancel queue", CANCEL_TEXT):
-            self._post("cancel")
+        self._confirm_control(self.page.cancelQueueButton, "Cancel queue", CANCEL_TEXT, "cancel")
 
     def clear_queues(self) -> None:
-        if self.confirm(self.page, "Clear queues", CLEAR_TEXT):
+        panel = feedback(self.page)
+        if panel.commit(self.page.clearQueuesButton):
+            return
+
+        def proceed():
             keep = (self._dispatching,) if self._dispatching else ()
             self._runner.submit(clear_queues(self._state, keep), self._cleared)
+
+        confirm_action(self.page, self.page.clearQueuesButton, "Clear queues", CLEAR_TEXT, proceed)
+
+    def _confirm_control(self, button, title, text, action):
+        panel = feedback(self.page)
+        if panel.commit(button):
+            return
+        if self._view() is None:
+            return
+        selected = self._selected
+
+        def proceed():
+            if selected == self._selected and self._view() is not None:
+                self._post(action)
+
+        confirm_action(self.page, button, title, text, proceed)
 
     def _cleared(self, removed, failure) -> None:
         if failure is not None:
@@ -704,8 +703,9 @@ class QueuePage:
         self.refresh()
 
     def override(self) -> None:
-        if self._view() is not None and self.confirm(self.page, "Acknowledge uncertain reservation", OVERRIDE_TEXT):
-            self._post("override")
+        self._confirm_control(
+            self.page.overrideReservationButton, "Acknowledge uncertain reservation", OVERRIDE_TEXT, "override"
+        )
 
     # -- concurrency -----------------------------------------------------------------------------------------------
     def _cap_changed(self, value: int) -> None:

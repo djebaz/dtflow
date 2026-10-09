@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QLineEdit,
     QMainWindow,
-    QMessageBox,
     QPlainTextEdit,
     QWidget,
 )
@@ -35,6 +34,7 @@ from dtflow.services.connection import Presentation, check_connection, present_f
 from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
+from dtflow.ui.activity_strip import ActivityStrip
 from dtflow.ui.brand import connection_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
@@ -42,7 +42,8 @@ from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.image_recycle_panel import ImageRecyclePanel
-from dtflow.ui.queue_page import QueuePage, ask_confirmation
+from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
+from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
@@ -144,7 +145,6 @@ class MainWindow:
         self.runner = runner or AsyncRunner(self.form)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
-        self.confirm = ask_confirmation
         self.activity = Activity()
         form = self.form
         self.shell = load_ui(FORMS_DIR / "workspace_shell.ui")
@@ -177,6 +177,8 @@ class MainWindow:
         self.shell.rightStack.addWidget(QWidget())
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
+        self.inline = InlineFeedback(form)
+        self.progress_strip = ActivityStrip(form)
         # Preserve the connection controller's established chrome references.
         for name in (
             "brandFrame",
@@ -287,6 +289,7 @@ class MainWindow:
         self._run_settle.setInterval(RUN_SETTLE_MS)
         self._run_settle.timeout.connect(self._sync_run_control)
         self.activity.listen(self._sync_run_control)
+        self.activity.listen(self._sync_activity_progress)
         self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         for frame in (self.shell.brandFrame, self.shell.navigationFrame):
@@ -332,6 +335,8 @@ class MainWindow:
 
     def _workspace_changed(self, index: int) -> None:
         """Switch content and use the compact full-width chrome for Images only."""
+        self.gallery.recycle_scope_revision += 1
+        self.inline.dismiss()
         if index == 0:
             self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
@@ -415,6 +420,16 @@ class MainWindow:
         self._align_run_control()
         shell.rightRail.setVisible(not images and not narrow)
 
+    def _sync_activity_progress(self):
+        state = self.activity.run_state
+        if not (self.activity.generating or self.activity.dispatching):
+            self.progress_strip.finish("run")
+            return
+        if "run" not in self.progress_strip.rows:
+            label = "Generation" if self.activity.generating else "Queue · settled items"
+            self.progress_strip.start("run", label)
+        self.progress_strip.update("run", state.completed or 0, state.total or 0)
+
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
         self.form.show()
@@ -476,6 +491,7 @@ class MainWindow:
 
     def _selection_changed(self, *_) -> None:
         """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
+        self.inline.dismiss()
         self._selection_revision = getattr(self, "_selection_revision", 0) + 1
         self._present(
             Presentation("unknown", "Not checked", f"Check the {self.form.backendCombo.currentText()} connection.")
@@ -533,25 +549,31 @@ class MainWindow:
             self.form.exportPresetsButton.setEnabled(False)
 
     def import_presets(self) -> None:
+        if self.inline.commit(self.form.importPresetsButton):
+            return
         chosen, _ = QFileDialog.getOpenFileName(
             self.form, "Import Draw Things presets", str(self.state_dir), "Draw Things presets (*.json)"
         )
         if not chosen:
             return
-        if not self.confirm(
+
+        def proceed():
+            try:
+                count = import_presets(Path(chosen), self.state_dir)
+            except (ValidationError, OSError) as exc:
+                InlineNotice.warning(self.form, "Presets not imported", str(exc))
+                return
+            self.refresh_presets()
+            self.generation.refresh_presets()
+            self.form.statusBar().showMessage(f"Imported {count} Draw Things preset(s).", 5000)
+
+        confirm_action(
             self.form,
+            self.form.importPresetsButton,
             "Replace preset library?",
             "Importing replaces the entire durable preset library, including presets saved from Generate. Continue?",
-        ):
-            return
-        try:
-            count = import_presets(Path(chosen), self.state_dir)
-        except (ValidationError, OSError) as exc:
-            QMessageBox.warning(self.form, "Presets not imported", str(exc))
-            return
-        self.refresh_presets()
-        self.generation.refresh_presets()
-        self.form.statusBar().showMessage(f"Imported {count} Draw Things preset(s).", 5000)
+            proceed,
+        )
 
     def export_presets(self) -> None:
         chosen, _ = QFileDialog.getSaveFileName(
@@ -562,7 +584,7 @@ class MainWindow:
         try:
             count = export_presets(self.state_dir, Path(chosen))
         except (ValidationError, OSError) as exc:
-            QMessageBox.warning(self.form, "Presets not exported", str(exc))
+            InlineNotice.warning(self.form, "Presets not exported", str(exc))
             return
         self.form.statusBar().showMessage(f"Exported {count} Draw Things preset(s).", 5000)
 
@@ -600,28 +622,44 @@ class MainWindow:
         )
 
     def clear_cache(self, categories: tuple[str, ...]) -> None:
+        button = {
+            ("inventory",): self.form.clearInventoryCacheButton,
+            ("thumbnails",): self.form.clearThumbnailCacheButton,
+            ("derived",): self.form.clearDerivedCacheButton,
+        }.get(categories, self.form.clearAllCacheButton)
+        if self.inline.commit(button):
+            return
         if self.activity.generating or self.activity.dispatching or self.image_export.running:
-            QMessageBox.warning(
+            InlineNotice.warning(
                 self.form, "Cache is busy", "Stop the active generation, queue dispatch or image export before cleanup."
             )
             return
         names = ", ".join(categories)
-        if not self.confirm(
+
+        def proceed():
+            if self.activity.generating or self.activity.dispatching or self.image_export.running:
+                InlineNotice.warning(
+                    self.form, "Action is busy", "Wait for generation, queue dispatch or image export to finish."
+                )
+                return
+
+            async def purge():
+                return await asyncio.to_thread(purge_cache, self.state_dir, categories)
+
+            self.runner.submit(purge(), lambda _, failure: self._cache_cleared(names, failure))
+
+        confirm_action(
             self.form,
+            button,
             "Clear disposable cache?",
             f"Delete disposable {names} cache? Outputs, attempts, queues, presets, settings, credentials and model assets are preserved.",
-        ):
-            return
-
-        async def purge():
-            return await asyncio.to_thread(purge_cache, self.state_dir, categories)
-
-        self.runner.submit(purge(), lambda _, failure: self._cache_cleared(names, failure))
+            proceed,
+        )
 
     def _cache_cleared(self, names: str, failure) -> None:
         if failure is not None:
             log.warning("cache cleanup failed reason=%s", type(failure).__name__)
-            QMessageBox.warning(
+            InlineNotice.warning(
                 self.form,
                 "Cache not cleared",
                 str(failure)
@@ -638,20 +676,29 @@ class MainWindow:
         self._show_generation()
 
     def _regenerate_output(self, request: dict, identity: str) -> None:
+        if self.inline.commit(self.gallery.regenerate_button):
+            return
         if self.activity.generating or self.activity.dispatching:
-            QMessageBox.warning(
+            InlineNotice.warning(
                 self.form, "Generation is busy", "Stop the active generation or queue dispatch before regenerating."
             )
             return
-        if not self.confirm(
+
+        def proceed():
+            if self.activity.generating or self.activity.dispatching:
+                InlineNotice.warning(self.form, "Action is busy", "Wait for generation or queue dispatch to finish.")
+                return
+            self._show_generation()
+            if not self.generation.regenerate_saved_request(request, identity):
+                self.form.statusBar().showMessage("Regeneration was not submitted; Generate was left unchanged.", 5000)
+
+        confirm_action(
             self.form,
+            self.gallery.regenerate_button,
             "Regenerate saved output?",
             "This creates a fresh request and may consume provider generation credits. The original output is preserved.",
-        ):
-            return
-        self._show_generation()
-        if not self.generation.regenerate_saved_request(request, identity):
-            self.form.statusBar().showMessage("Regeneration was not submitted; Generate was left unchanged.", 5000)
+            proceed,
+        )
 
     def refresh_custom_loras(self) -> None:
         count = len(Catalogue(self.state_dir).user_loras())
@@ -669,7 +716,7 @@ class MainWindow:
         try:
             count = import_user_loras(Path(chosen), self.state_dir)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self.form, "Custom LoRAs not imported", str(exc))
+            InlineNotice.warning(self.form, "Custom LoRAs not imported", str(exc))
             return
         self.refresh_custom_loras()
         self.generation.reload_custom_loras()
@@ -679,23 +726,29 @@ class MainWindow:
         )
 
     def clear_custom_loras(self) -> None:
+        if self.inline.commit(self.form.clearCustomLorasButton):
+            return
         catalogue = Catalogue(self.state_dir)
         if not catalogue.user_loras_path.exists():
             self.refresh_custom_loras()
             return
-        if not self.confirm(
+
+        def proceed():
+            try:
+                catalogue.user_loras_path.unlink()
+            except OSError as exc:
+                InlineNotice.warning(self.form, "Custom LoRAs not cleared", type(exc).__name__)
+                return
+            self.refresh_custom_loras()
+            self.generation.reload_custom_loras()
+
+        confirm_action(
             self.form,
+            self.form.clearCustomLorasButton,
             "Clear custom LoRAs",
             "Remove the imported custom LoRA definitions? Bundled DTFlow catalogue data is not affected.",
-        ):
-            return
-        try:
-            catalogue.user_loras_path.unlink()
-        except OSError as exc:
-            QMessageBox.warning(self.form, "Custom LoRAs not cleared", type(exc).__name__)
-            return
-        self.refresh_custom_loras()
-        self.generation.reload_custom_loras()
+            proceed,
+        )
 
     def check(self) -> None:
         if self._busy:
@@ -739,22 +792,28 @@ class MainWindow:
         self.generation.credentials_changed()
 
     def remove_key(self) -> None:
-        if not self.confirm(
+        if self.inline.commit(self.form.removeKeyButton):
+            return
+
+        def proceed():
+            try:
+                self._saved.remove()
+            except BackendError as exc:
+                log.warning("api key not removed code=%s", exc.failure.code)
+                self.form.credentialStatusLabel.setText(f"Key not removed: {exc.failure.code}")
+                return
+            log.info("api key removed")
+            self.refresh_credentials()
+            self.generation.credentials_changed()
+
+        confirm_action(
             self.form,
+            self.form.removeKeyButton,
             "Remove saved key",
             "Remove the DT+ API key saved in Windows Credential Manager? Cloud checks and generations will need a key "
             "again.",
-        ):
-            return
-        try:
-            self._saved.remove()
-        except BackendError as exc:
-            log.warning("api key not removed code=%s", exc.failure.code)
-            self.form.credentialStatusLabel.setText(f"Key not removed: {exc.failure.code}")
-            return
-        log.info("api key removed")
-        self.refresh_credentials()
-        self.generation.credentials_changed()
+            proceed,
+        )
 
     def _recycle_busy(self) -> bool:
         """Keep UI-generated exports and local dispatch from racing with recycling."""
@@ -772,13 +831,31 @@ class MainWindow:
     def _confirm_close(self) -> bool:
         if self.image_recycle.running:
             self.image_recycle.cancel()
-            QMessageBox.information(
+            InlineNotice.information(
                 self.form,
                 "Image recycling in progress",
                 "Stop requested. Wait for the current image and result summary before closing.",
             )
             return False
-        return self.queue.confirm_close()
+        if self.inline._close_allowed:
+            return True
+        if not self.queue.dispatching_here:
+            return True
+        if self.inline._armed:
+            return False
+
+        def close_confirmed():
+            self.inline._close_allowed = True
+            self.form.close()
+
+        self.inline.show(
+            "Close DTFlow?",
+            "Closing stops dispatch. Active attempts stop waiting locally and may end as outcome unknown; remote cancellation is not confirmed.",
+        )
+        self.inline.escape.setEnabled(True)
+        self.inline.form.inlineDismissButton.setText("Cancel")
+        self.inline.set_accept("Confirm close", close_confirmed)
+        return False
 
     def _request_recycle_reconciliation(self) -> None:
         """Settle interrupted intent without inferring restored content from file stats."""
@@ -858,7 +935,7 @@ class MainWindow:
         return (identity,)
 
     def about(self) -> None:
-        QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
+        InlineNotice.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
 
     def close(self) -> None:
         self.remember(background=False)

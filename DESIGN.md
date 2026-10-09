@@ -401,3 +401,28 @@ Provider switches restore each provider's last-successful matching observation w
 The Images export column is page-local, not the shell inspector or a List-side preview. The canonical gallery form owns its scroll container, close action and empty card host; the Connection form owns the single shared vertical export card. Reparent the card on navigation, preserve settings/progress and never cancel merely because the panel is hidden. Keep the listing flexible beside the column; both remain keyboard-accessible and the export controls scroll at smaller heights. Owner reports column smoke passed for 5772f54. The subsequent checked-only Images context hides the scope label/dropdown, retaining Connection scope choices; that small follow-up remains owner-smoke-pending.
 
 Grid and Detail selection indicators share List's explicit white tick/partial SVGs, 14 px indicator size and token-based rest/hover/checked/disabled states. Scope the same QSS selector groups to gallery object names; preserve the Grid checkbox wrapper and independent focus/check state. Owner reports style smoke passed for the glyph-parity fix at 8ec3a55 on 2026-10-09; broader DPI/platform/packaged coverage remains separate.
+
+
+## Inline actions and shared progress
+
+Application-owned dialogs are replaced by the canonical `inline_feedback.ui` surface,
+with `ui/inline_feedback.py` handling presentation only. Keep native file/folder pickers
+and ordinary menus. Only Confirm occupies the original action slot, preserving its width;
+its amber background reuses `color.warning`, `color.background` and
+`color.statusWarningBorder`; Delete/Clear override with `color.dangerBorder` and
+`color.onAccent` for a red confirmation. Cancel is deported to the separate details panel. No timer;
+Cancel/Escape/navigation/relevant scope edits disarm pending consent. Do not count a mouse
+double-click as two independent consent activations. Preserve the full destructive/upload/
+credit warning and all service-level safety checks.
+
+Checkpoint and LoRA choices use inline substring search and custom-identifier entry.
+LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step. Existing
+saved requests are not silently clamped. Preset names and explicit metadata/About inspection
+use the same main-window surface, with scrollable text for long notices.
+
+`activity_strip.ui` and the reusable `activity_progress_row.ui` define a bottom progress
+overlay above content. It appears only while operations are active, across navigation;
+labelled rows prevent concurrent operations from overwriting progress. It owns no service
+behavior. Keep cancel/stop semantics and the existing generation preview/Run control.
+No idle space is reserved. Native-DPI, overlap/resize, keyboard and packaged acceptance
+remain owner work; source/static checks do not establish visual quality.

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>ActivityStrip</class>
+ <widget class="QFrame" name="activityStrip">
+  <property name="accessibleName"><string>Active operation progress</string></property>
+  <layout class="QVBoxLayout" name="activityRowsLayout">
+   <property name="leftMargin"><number>8</number></property><property name="topMargin"><number>8</number></property>
+   <property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property>
+   <property name="spacing"><number>4</number></property>
+  </layout>
+ </widget>
+ <resources/><connections/>
+</ui>

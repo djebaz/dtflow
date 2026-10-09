@@ -16,9 +16,7 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
-    QInputDialog,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QWidget,
 )
@@ -62,6 +60,7 @@ from dtflow.ui.generation_presenter import (
     snap_dimension,
     values_from_request,
 )
+from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -801,15 +800,11 @@ class GenerationPage:
             with self._metadata_path.open(encoding="utf-8") as handle:
                 content = handle.read(METADATA_LIMIT + 1)
         except (OSError, UnicodeError):
-            QMessageBox.warning(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
+            InlineNotice.warning(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
             return
         if len(content) > METADATA_LIMIT:
             content = content[:METADATA_LIMIT] + "\n… (truncated: the saved file is longer)"
-        dialog = QMessageBox(self.page)
-        dialog.setWindowTitle("Saved generation metadata")
-        dialog.setText("Reproducibility metadata from the saved attempt.")
-        dialog.setDetailedText(content)
-        dialog.exec()
+        InlineNotice.information(self.page, "Saved generation metadata", content)
 
     def _result_path(self) -> str | None:
         """The selected saved path, else the first one (the first output)."""
@@ -1006,7 +1001,7 @@ class GenerationPage:
         unknown = self._catalogue.view().unclassified_checkpoints
         if not unknown:
             return
-        QMessageBox.information(
+        InlineNotice.information(
             self.page,
             "Unclassified checkpoints",
             "These checkpoints are available on the active provider but are not classified by the DTFlow catalogue. "
@@ -1191,19 +1186,19 @@ class GenerationPage:
             self.page.generationStatusLabel.setToolTip("Preserved-only fields: " + ", ".join(application.preserved))
 
     def save_preset(self) -> None:
-        name, accepted = QInputDialog.getText(self.page, "Save preset", "Preset name")
-        if not accepted or not name.strip():
-            return
-        document = form_to_document(self._values())
-        try:
-            save_preset(self._state, name, document)
-        except (ValidationError, OSError, ValueError) as exc:
-            self._status(Presentation("error", "Preset not saved", str(exc)))
-            return
-        self._status(
-            Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library.")
-        )
-        self._scan_configs()
+        def save(name):
+            document = form_to_document(self._values())
+            try:
+                save_preset(self._state, name, document)
+            except (ValidationError, OSError, ValueError) as exc:
+                self._status(Presentation("error", "Preset not saved", str(exc)))
+                return
+            self._status(
+                Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library.")
+            )
+            self._scan_configs()
+
+        edit_text(self.page, "Save preset", "Preset name", save)
 
     def refresh_presets(self) -> None:
         self._scan_configs()

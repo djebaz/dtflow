@@ -2,6 +2,38 @@
 
 DTFlow's desktop application has Connection, Generate, Queues and Images pages. Connection, Generate and Queues share navigation on the left, the workspace in the center and an Inspector on the right. The panel icon beside the brand toggles details. Images uses the same logo/navigation in two aligned header rows and hides the content rails; returning restores splitter geometry and the shared Inspector choice.
 
+## Inline actions and progress
+
+DTFlow-owned confirmations, errors, results, About, metadata inspection, preset naming and
+checkpoint/LoRA editors stay inside the main window. Native file/folder pickers and ordinary
+menus remain available. No confirmation opens a separate window or nested dialog event loop.
+
+A guarded action first displays its explanation and changes only its original button to
+**Confirm**, red for Delete/Clear and amber otherwise, without adding Cancel to the action row. **Cancel** is in the separate
+inline details panel. Nothing executes on the first activation. Cancel, Escape, navigation,
+provider changes and relevant selection/filter changes discard pending consent; there is no
+timer. Confirm keeps frozen file/queue/Trash scope, with busy checks and destructive-service
+revalidation still applied. A double-click does not count as two consent activations.
+Closing during queue dispatch uses an inline **Confirm close** action because the native
+window close button cannot change its label; closing during recycling requests a safe stop
+and waits for the result instead of exiting mid-file.
+
+Checkpoint search and exact custom identifiers use one expanded editor. **Add LoRA** shows
+search, identifier and weight together and commits once with **Add**. New UI selections use
+0.0–3.0 weights in 0.1 steps (one decimal); 0.0 is preserved. A catalogue default outside
+this range starts the editor at 1.0, not a silently clipped default. Existing imported/saved
+requests retain their recorded weights and existing validation; this does not change the
+CLI or provider weight contract.
+
+Active operations appear in a dedicated bottom overlay above the content, across tabs;
+it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
+concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
+indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
+Stop/Cancel delegates to the original controller, preserving completed copies/moves and
+existing uncertainty semantics. Generation preview and the compact Run control remain.
+Inline results remain inspectable after progress ends; dismissing a notice never cancels work.
+This implementation still requires owner runtime/visual and packaged acceptance.
+
 ## Launch
 
 From the repository root after `uv sync`:
@@ -82,7 +114,7 @@ Progress and previews are not final results. A result is successful only after t
 
 ## LoRAs and cloud assets
 
-For a classified checkpoint, Add LoRA offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose exact inventory identifiers and explicit weights. Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
+For a classified checkpoint, Add LoRA offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose the exact inventory identifier and a weight together in the one-step inline Add editor (0.0–3.0, 0.1 steps). Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
 
 Trigger prefixes are added only when you explicitly choose that option; otherwise the prompt is unchanged.
 
@@ -154,7 +186,7 @@ The Images action bar keeps **Select all** visible at every width. It selects ma
 
 ### Move checked originals to system Trash
 
-In the Phase 8E source implementation, **Delete** opens a confirmation, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. Cancel is the default. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.
+In the Phase 8E source implementation, **Delete** displays inline confirmation details and becomes red **Confirm**, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. The first activation does not authorize a move; Cancel in the details panel discards consent. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.
 
 Moves run in the background one image at a time. Stop after current image preserves completed moves. Results distinguish confirmed moves, failures and Qt-reported success with an unverifiable destination. Failed and uncertain selections remain checked for manual review; never retry an uncertain result without inspecting the files. Manually recovering a file to its recorded path does **not** currently make it available in DTFlow again: Refresh cannot prove content identity from the path, size or timestamp. Recycled records remain hidden until a future explicit content-verified recovery workflow; old heuristic restoration records are also withdrawn without removing files. There is no DTFlow Undo or guaranteed restoration (including no macOS Finder Put Back integration). No permanent-delete fallback exists. See [architecture and platform limitations](../architecture/image-recycling.md). Owner platform runtime/packaged acceptance is pending; the Qt adapter does not establish full Debian app support.
 

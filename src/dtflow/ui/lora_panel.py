@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QInputDialog, QListWidgetItem, QMessageBox, QWidget
+from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QWidget
 
 from dtflow.core.models import LoRASelection, ResolvedGenerationRequest, ValidationError
 from dtflow.services.connection import (
@@ -21,6 +21,7 @@ from dtflow.services.connection import (
     present_reconciliation,
 )
 from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
+from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import choose_searchable
 
@@ -28,34 +29,12 @@ UPLOAD_NOTICE = (
     "Preparing this file may upload its bytes to DT+ if the server does not already have it. Uploading itself does "
     "not consume credits, but a later generation that uses the file may. Nothing else in DTFlow uploads. Continue?"
 )
-CLOUD_ONLY = "Asset actions need the cloud backend (choose it on the Connection page)."
 DEFAULT_LORA_WEIGHT = 1.0
-LORA_WEIGHT_RANGE = (-100.0, 100.0)  # a dialog bound only; the shared request model requires a finite weight
-
-
-def _choose_lora(parent: QWidget, candidates: list[tuple[str, float | None]]) -> tuple[str, float] | None:
-    names = [name for name, _ in candidates]
-    name = choose_searchable(
-        parent,
-        title="Add LoRA",
-        items=names,
-        custom_label="Add custom identifier…",
-        custom_prompt="Exact LoRA identifier",
-    )
-    if name is None:
-        return None
-    default = dict(candidates).get(name) or DEFAULT_LORA_WEIGHT
-    weight, accepted = QInputDialog.getDouble(parent, "LoRA weight", "Weight", default, *LORA_WEIGHT_RANGE, 2)
-    return (name, weight) if accepted else None
+CLOUD_ONLY = "Asset actions need the cloud backend (choose it on the Connection page)."
 
 
 def _choose_asset_file(parent: QWidget, directory: Path) -> str:
     return QFileDialog.getOpenFileName(parent, "Prepare converted LoRA file", str(directory), "LoRA files (*.ckpt)")[0]
-
-
-def _confirm_upload(parent: QWidget, path: Path) -> bool:
-    answer = QMessageBox.question(parent, "Prepare cloud asset", f"{path.name}\n\n{UPLOAD_NOTICE}")
-    return answer == QMessageBox.StandardButton.Yes
 
 
 class LoraAssetPanel:
@@ -74,11 +53,7 @@ class LoraAssetPanel:
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
-        self.choose_lora, self.choose_asset_file, self.confirm_upload = (
-            _choose_lora,
-            _choose_asset_file,
-            _confirm_upload,
-        )
+        self.choose_asset_file = _choose_asset_file
         self.loras: tuple[LoRASelection, ...] = ()
         self._receipts: dict[str, str] = {}  # selected LoRA identifier -> local receipt id (never exported)
         self._candidates: list[tuple[str, float | None]] = []
@@ -175,16 +150,27 @@ class LoraAssetPanel:
         candidates += [
             (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
         ]
-        choice = self.choose_lora(self.page, candidates)
-        if choice is None:
-            return
-        try:
-            selection = LoRASelection(*choice)
-        except ValidationError as exc:
-            self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRA not added", str(exc)))
-            return
-        self.set_loras((*[x for x in self.loras if x.identifier != selection.identifier], selection))
-        self._auto_bind(selection.identifier)
+
+        def add_selection(choice):
+            if self._is_busy():
+                return
+            try:
+                selection = LoRASelection(*choice)
+            except ValidationError as exc:
+                self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRA not added", str(exc)))
+                return
+            self.set_loras((*[x for x in self.loras if x.identifier != selection.identifier], selection))
+            self._auto_bind(selection.identifier)
+
+        choose_searchable(
+            self.page,
+            title="Add LoRA",
+            items=[name for name, _ in candidates],
+            custom_label="Add custom identifier",
+            custom_prompt="Exact LoRA identifier",
+            weights=dict(candidates),
+            callback=add_selection,
+        )
 
     def remove(self) -> None:
         row = self.page.loraList.currentRow()
@@ -263,15 +249,31 @@ class LoraAssetPanel:
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
     def prepare(self) -> None:
+        panel = feedback(self.page)
+        if panel.commit(self.page.prepareAssetButton):
+            return
         if self._is_busy() or self._backend()[0] != "cloud":
             return
         chosen = self.choose_asset_file(self.page, self._state)
-        if not chosen or not self.confirm_upload(self.page, Path(chosen)):
+        if not chosen:
             return
-        self._set_busy(True)
-        self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", "This may upload the file."))
-        self._runner.submit(
-            prepare_asset(self._state, Path(chosen), provenance="gui", saved=self._saved()), self._prepared
+        backend = self._backend()
+
+        def proceed():
+            if self._is_busy() or self._backend() != backend or backend[0] != "cloud":
+                return
+            self._set_busy(True)
+            self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", "This may upload the file."))
+            self._runner.submit(
+                prepare_asset(self._state, Path(chosen), provenance="gui", saved=self._saved()), self._prepared
+            )
+
+        confirm_action(
+            self.page,
+            self.page.prepareAssetButton,
+            "Prepare cloud asset",
+            f"{Path(chosen).name}\n\n{UPLOAD_NOTICE}",
+            proceed,
         )
 
     def _prepared(self, record, failure) -> None:

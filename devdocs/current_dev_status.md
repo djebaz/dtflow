@@ -108,3 +108,14 @@ The [PR #57 source-review follow-up](plans/2026-10-09-pr57-review-followup.md) r
 Gallery checkbox glyph parity: Grid and Detail now reuse List's shared white tick/partial SVG indicator rules. No layout, tokens, selection logic or unrelated checkbox styling changed; static checks passed and owner reports style smoke passed at 8ec3a55 on 2026-10-09. Broader DPI/platform/packaged coverage remains separate.
 
 The reviewer accepts aa1fd2e's restoration/preflight/header source fixes. A further stale-plan race is closed through an atomic latest-outcome/pending-intent claim under batch/original leases: only new/failed identities proceed, blocked or unknown outcomes stay untouched and require manual review without a Trash call. No schema/Qt changes; static checks only, cross-process crash/stale-plan runtime acceptance pending. Partial header-checkbox clipping remains GUI polish, not changed by this safety follow-up.
+
+
+## Inline desktop enhancement (PR #58, 2026-10-09)
+
+Source implementation replaces application-owned dialogs with inline notices/editors and
+in-place Confirm buttons (red for Delete/Clear, amber otherwise); Cancel is separate, with no timeout. Native file/folder
+pickers stay. LoRA selection and 0.0–3.0/0.1-step weight entry commit in one step. Active
+progress uses a bottom overlay hidden when idle, with separate concurrent-operation rows.
+Existing destructive/upload/credit safeguards remain; no release/version change.
+See the [live plan](plans/2026-10-09-inline-actions.md). Static checks only; no tests added/run
+or smoke tests run under fast-implement. Owner runtime/visual/packaged acceptance remains.

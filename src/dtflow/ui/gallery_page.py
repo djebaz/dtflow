@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QPlainTextEdit,
-    QProgressDialog,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -51,8 +50,10 @@ from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
+from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_detail_preview import ASSETS, CoverPainter, RowHoverDelegate, apply_gallery
+from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
@@ -182,6 +183,7 @@ class GalleryPage(QObject):
         self.state_dir = Path(state_dir)
         self._reuse_callback = reuse_callback
         self._regenerate_callback = regenerate_callback
+        self.recycle_scope_revision = 0
         self._export_callback = export_callback
         self._recycle_callback = recycle_callback
         self._recycle_busy = False
@@ -195,7 +197,6 @@ class GalleryPage(QObject):
         self._selection_busy = False
         self._selection_query: GalleryQuery | None = None
         self._syncing_selection = False
-        self._selection_progress: QProgressDialog | None = None
         self._check_boxes: dict[str, QCheckBox] = {}
         self._active = False
         self._loading = False
@@ -547,7 +548,11 @@ class GalleryPage(QObject):
         self.selection_count.setText(f"{count} selected")
         self.hidden_count_label.setText(f"{self._hidden_checks} hidden by filters")
         self.hidden_count_label.setVisible(self._hidden_checks > 0)
-        label = "Unselect all" if self._all_filtered_checked else "Select all"
+        label = (
+            "Cancel selection"
+            if self._selection_busy
+            else ("Unselect all" if self._all_filtered_checked else "Select all")
+        )
         self.select_filtered_button.setText(label)
         self.select_filtered_button.setAccessibleName(label)
         self.select_filtered_button.setToolTip(
@@ -555,7 +560,7 @@ class GalleryPage(QObject):
             if self._all_filtered_checked
             else "Select matching images across all pages, up to 10,000 checked in total."
         )
-        self.select_filtered_button.setEnabled(self.total > 0 and not self._selection_busy)
+        self.select_filtered_button.setEnabled(self.total > 0 or self._selection_busy)
         self.clear_selection_button.setEnabled(count > 0)
         self.copy_paths_button.setEnabled(count > 0)
         self.export_button.setEnabled(count > 0 and self._export_callback is not None)
@@ -622,6 +627,9 @@ class GalleryPage(QObject):
         self.table.viewport().update(first.united(last))
 
     def _after_selection_edit(self) -> None:
+        self.recycle_scope_revision += 1
+        if hasattr(self.page.window(), "_inline_feedback") and feedback(self.page)._armed:
+            feedback(self.page).dismiss()
         if self._selection_busy:
             self._cancel_selection_scan()
         self._selection_generation += 1
@@ -729,13 +737,12 @@ class GalleryPage(QObject):
         generation = self._selection_generation
         self._selection_query = query
         self._selection_busy = True
-        self.select_filtered_button.setEnabled(False)
-        self._selection_progress = QProgressDialog("Resolving saved output identities…", "Cancel", 0, 0, self.page)
-        self._selection_progress.setWindowTitle("Gallery selection")
-        self._selection_progress.setWindowModality(Qt.WindowModality.NonModal)
-        self._selection_progress.setMinimumDuration(0)
-        self._selection_progress.canceled.connect(self._cancel_selection_scan)
-        self._selection_progress.show()
+        self.select_filtered_button.setText("Cancel selection")
+        self.select_filtered_button.setEnabled(True)
+        self._selection_notice("Resolving saved output identities… Click Cancel selection to retain previous checks.")
+        strip = activity_strip(self.page)
+        if strip is not None:
+            strip.start("selection", "Gallery selection", self._cancel_selection_scan, stop_text="Cancel selection")
         self.runner.submit(
             asyncio.to_thread(
                 gallery_storage.selection_candidates,
@@ -752,11 +759,11 @@ class GalleryPage(QObject):
         self._selection_generation += 1
         self._selection_busy = False
         self._selection_query = None
+        strip = activity_strip(self.page)
+        if strip is not None:
+            strip.finish("selection")
         self.select_filtered_button.setEnabled(True)
-        if self._selection_progress is not None:
-            self._selection_progress.blockSignals(True)
-            self._selection_progress.close()
-            self._selection_progress = None
+        self._sync_selection_ui()
         self._selection_notice("Selection operation canceled; previous checks are retained.")
 
     def _selection_scan_done(self, generation, mode, result, error) -> None:
@@ -765,11 +772,11 @@ class GalleryPage(QObject):
         self._selection_busy = False
         used_query = self._selection_query
         self._selection_query = None
+        strip = activity_strip(self.page)
+        if strip is not None:
+            strip.finish("selection")
         self.select_filtered_button.setEnabled(True)
-        if self._selection_progress is not None:
-            self._selection_progress.blockSignals(True)
-            self._selection_progress.close()
-            self._selection_progress = None
+        self._sync_selection_ui()
         if error is not None:
             self._selection_notice(f"Selection query failed: {type(error).__name__}")
             return
@@ -793,6 +800,9 @@ class GalleryPage(QObject):
 
     def _toggle_all_filtered(self) -> None:
         """Toggle the permanent toolbar action, without changing Ctrl+A semantics."""
+        if self._selection_busy:
+            self._cancel_selection_scan()
+            return
         try:
             same_filter = self._hidden_query == self.export_query()
         except ValidationError:
@@ -958,6 +968,9 @@ class GalleryPage(QObject):
         self._schedule_save()
 
     def _filter_edited(self, *_args) -> None:
+        self.recycle_scope_revision += 1
+        if hasattr(self.page.window(), "_inline_feedback") and feedback(self.page)._armed:
+            feedback(self.page).dismiss()
         if self._restoring:
             return
         self.filter_timer.start()
@@ -1435,6 +1448,12 @@ class GalleryPage(QObject):
         self.select(identity)
 
     def select(self, identity: str, *, open_detail: bool = True) -> None:
+        if (
+            identity != self.selected_id
+            and hasattr(self.page.window(), "_inline_feedback")
+            and feedback(self.page)._armed
+        ):
+            feedback(self.page).dismiss()
         item = next((record for record in self.items if record.identity == identity), None)
         if item is None:
             return

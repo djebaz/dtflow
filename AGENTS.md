@@ -80,6 +80,8 @@ These instructions apply throughout `dtflow`.
 - Keep the shared application QSS under `src/dtflow/resources/styles/`; apply it once at startup and prefer stable object names or dynamic properties over scattered inline styles.
 - Do not put business logic or backend access into generated Designer Python.
 - Treat `previewHost`, `queueItemsView` and similar Designer objects as presentation seams for handwritten widgets/models; promoted/custom widgets must not own backend protocols or service rules.
+- Keep DTFlow-owned confirmations, notices, result/progress presentation and text/selection editors inside the main window; native file/folder pickers remain allowed. Use `ui/inline_feedback.py` and its canonical Designer form. Only Confirm replaces the original action button, using shared confirmation styling (red for Delete/Clear, amber otherwise) and preserving its width; Cancel lives in the separate details surface. No expiration timer; Escape/navigation/relevant scope changes discard pending consent. LoRA Add combines searchable identifier and weight (0.0–3.0 in 0.1 steps) in one editor; do not silently clamp imported/saved configuration values.
+- Use `ui/activity_strip.py` and canonical activity forms for labelled concurrent progress at the bottom of the main window, overlaid above content and hidden when idle. Keep task ownership/cancel semantics in existing controllers/services; hiding notices or changing tabs must not stop work.
 - Do not block the Qt event loop with network, generation, or other long-running work.
 
 ## Saved-image export

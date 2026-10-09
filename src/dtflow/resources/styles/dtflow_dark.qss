@@ -1416,3 +1416,54 @@ QFrame[role="galleryCard"][checkedSelection="true"] {
   border-color: ${color.selectionBorder};
   background: ${color.selectionPressed};
 }
+
+/* Main-window-only feedback and expanded editors share existing surfaces/tokens. */
+QFrame#inlineFeedback {
+  background: ${color.surface};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.radiusSm};
+}
+QLabel#inlineTitleLabel {
+  font-weight: ${type.weightEmphasis};
+}
+
+QFrame#activityStrip {
+  background: ${color.surface};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.radiusSm};
+}
+
+/* Explicit consent is amber; Cancel stays in the separate inline details panel. */
+QPushButton[confirmationPending="true"]:enabled,
+QPushButton#importPresetsButton[confirmationPending="true"]:enabled,
+QPushButton#clearInventoryCacheButton[confirmationPending="true"]:enabled,
+QPushButton#clearThumbnailCacheButton[confirmationPending="true"]:enabled,
+QPushButton#clearDerivedCacheButton[confirmationPending="true"]:enabled,
+QPushButton#clearAllCacheButton[confirmationPending="true"]:enabled,
+QPushButton#galleryRegenerateButton[confirmationPending="true"]:enabled,
+QPushButton#clearCustomLorasButton[confirmationPending="true"]:enabled,
+QPushButton#removeKeyButton[confirmationPending="true"]:enabled,
+QPushButton#prepareAssetButton[confirmationPending="true"]:enabled,
+QPushButton#cancelQueueButton[confirmationPending="true"]:enabled,
+QPushButton#clearQueuesButton[confirmationPending="true"]:enabled,
+QPushButton#overrideReservationButton[confirmationPending="true"]:enabled,
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"]:enabled {
+  background: ${color.warning};
+  color: ${color.background};
+  border: 1px solid ${color.statusWarningBorder};
+  font-weight: ${type.weightEmphasis};
+}
+
+/* Delete/Clear consent has the owner-selected red treatment. */
+QPushButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearInventoryCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearThumbnailCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearDerivedCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearAllCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearCustomLorasButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#clearQueuesButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"][confirmationDanger="true"]:enabled {
+  background: ${color.dangerBorder};
+  color: ${color.onAccent};
+  border-color: ${color.dangerBorder};
+}
