@@ -62,6 +62,10 @@ class CoverPainter(QObject):
                 w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
                 dest = QRectF((rect.width() - w) / 2 + self.offset[0], (rect.height() - h) / 2 + self.offset[1], w, h)
                 painter.drawPixmap(dest, self.pixmap, QRectF(self.pixmap.rect()))
+            if obj.property("role") == "galleryCardImage" and obj.property("checkedSelection"):
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QColor(self.tokens["color.selectionBorder"]))
+                painter.drawRoundedRect(rect.adjusted(1.5, 1.5, -1.5, -1.5), 9, 9)
             if obj.property("role") == "galleryCardImage" and (obj.underMouse() or obj.hasFocus()):
                 painter.setBrush(Qt.NoBrush)
                 painter.setPen(QColor(self.tokens["color.focus"]))
