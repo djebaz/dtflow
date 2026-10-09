@@ -162,6 +162,7 @@ class MainWindow:
             state_dir=self.state_dir,
             reuse_callback=self._reuse_output,
             regenerate_callback=self._regenerate_output,
+            export_callback=self._open_checked_export,
         )
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
@@ -736,12 +737,23 @@ class MainWindow:
         self.refresh_credentials()
         self.generation.credentials_changed()
 
+    def _open_checked_export(self) -> None:
+        """Activate the one authoritative Connection export form for checked gallery IDs."""
+        self.form.workspaceStack.setCurrentIndex(0)
+        self.image_export.select_scope("checked")
+        self.form.imageExportScopeCombo.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def _export_selection(self, scope: str) -> GalleryQuery | tuple[str, ...]:
         """Freeze presentation choices; export service rechecks committed evidence."""
         if scope == "all":
             return GalleryQuery()
         if scope == "filter":
             return self.gallery.export_query()
+        if scope == "checked":
+            identities = self.gallery.export_checked()
+            if not identities:
+                raise ValidationError("Check at least one saved image in Images first.")
+            return identities
         identity = self.gallery.export_identity() if scope == "selected" else self.generation.export_identity()
         if identity is None:
             raise ValidationError("Select a saved image in Images or a PNG output in Generate first.")
