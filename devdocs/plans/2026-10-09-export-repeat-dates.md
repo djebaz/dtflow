@@ -34,3 +34,6 @@
 
 ## Early-skip index follow-up
 Owner reports skip is slow and requests a destination index. [The index plan](2026-10-09-export-index.md) supersedes per-run source hashing on recognized hits with quick exported-file checks and durable identity lookup. Existing-source mutation detection is intentionally no longer part of the fast path.
+
+## Superseded destination records
+The owner now explicitly rejects persistent destination records. [Source-computation cache plan](2026-10-09-image-computation-cache.md) replaces the folder index with transient full-filename identities plus legacy EXIF fallback, and centrally caches only per-source computations. Previously generated user-folder index files are not touched.

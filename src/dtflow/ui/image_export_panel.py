@@ -26,10 +26,13 @@ class ImageExportPanel(QObject):
 
     progress = Signal(int, int)
 
-    def __init__(self, form: QWidget, *, runner: AsyncRunner, state_dir: Path, selection: Callable):
+    def __init__(
+        self, form: QWidget, *, runner: AsyncRunner, state_dir: Path, selection: Callable, no_cache: bool = False
+    ):
         super().__init__(form)
         self.form, self.runner, self.state_dir = form, runner, Path(state_dir)
         self.selection = selection
+        self.no_cache = no_cache
         self._running = False
         self._preferences_dirty = False
         self._stop = threading.Event()
@@ -136,6 +139,7 @@ class ImageExportPanel(QObject):
             options,
             cancel=stop,
             progress=self.progress.emit,
+            no_cache=self.no_cache,
             **kwargs,
         )
         if preference_warning:

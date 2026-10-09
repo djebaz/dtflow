@@ -20,10 +20,10 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
-from dtflow.persistence.export_index import load_export_index, save_export_index
+from dtflow.persistence.image_analysis_cache import load_image_analysis, save_image_analysis
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
-from dtflow.services.image_quality import assess_rgb
+from dtflow.services.image_quality import ALGORITHM, assess_rgb
 
 MAX_EXPORT_IMAGES = 10_000
 MAX_IMAGE_BYTES = 64 * 1024 * 1024
@@ -143,23 +143,22 @@ def _read_export_identity(path: Path) -> tuple[str, str] | None:
     return None
 
 
-def _sidecar_fingerprint(path: Path) -> dict | None:
+def _complete_jpeg(path: Path) -> bool:
+    """Cheap interruption check, not a pixel-integrity verification."""
     try:
-        stat = path.with_suffix(".json").stat()
-        return {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
-    except FileNotFoundError:
-        return None
+        with path.open("rb") as stream:
+            if stream.read(2) != b"\xff\xd8":
+                return False
+            stream.seek(-2, os.SEEK_END)
+            return stream.read(2) == b"\xff\xd9"
+    except OSError:
+        return False
 
 
-def _existing_exports(destination: Path, cancel: threading.Event) -> tuple[dict, set[str]]:
-    """Stat unchanged indexed copies; only inspect metadata for new/changed files."""
-    notes = set()
-    try:
-        cached = load_export_index(destination)
-    except (OSError, ValueError, TypeError, RecursionError):
-        cached = {}
-        notes.add("Export index could not be read; rebuilt from existing image metadata.")
-    files = {}
+def _existing_exports(destination: Path, cancel: threading.Event) -> set[str]:
+    """Build transient membership from full-ID names; legacy/renamed files use EXIF."""
+    identities = set()
+    count = 0
     for folder in (destination, destination / "noise", destination / "blank"):
         if not folder.exists():
             continue
@@ -167,51 +166,27 @@ def _existing_exports(destination: Path, cancel: threading.Event) -> tuple[dict,
             raise ValidationError("Detected-image export subfolders must not redirect to another location.")
         for path in folder.iterdir():
             if cancel.is_set():
-                return files, notes
+                return identities
             if path.suffix.lower() not in (".jpg", ".jpeg") or not path.is_file():
                 continue
-            if len(files) >= MAX_EXPORT_IMAGES:
+            count += 1
+            if count > MAX_EXPORT_IMAGES:
                 raise ValidationError("Export folder scan exceeds 10,000 JPEG files; choose a narrower destination.")
-            name = path.relative_to(destination).as_posix()
-            stat = path.stat()
-            sidecar = _sidecar_fingerprint(path)
-            old = cached.get(name)
-            if (
-                old
-                and old["size"] == stat.st_size
-                and old["mtime_ns"] == stat.st_mtime_ns
-                and old.get("sidecar") == sidecar
-            ):
-                files[name] = old
-                continue
-            identity = _read_export_identity(path)
-            # Cache unrecognized candidates too, but they never supply a skip identity.
-            files[name] = {
-                "size": stat.st_size,
-                "mtime_ns": stat.st_mtime_ns,
-                "identity": identity[0] if identity else None,
-                "source_png_sha256": identity[1] if identity else None,
-                "sidecar": sidecar,
-            }
-    return files, notes
+            marker = re.search(r"_dtf-([a-f0-9]{32})-(\d+)(?:_\d{2,})?$", path.stem)
+            if marker and int(marker[2]) > 0 and _complete_jpeg(path):
+                identities.add(f"{marker[1]}:{int(marker[2]) - 1}")
+            else:
+                recorded = _read_export_identity(path)
+                if recorded:
+                    identities.add(recorded[0])
+    return identities
 
 
-def _checkpoint_index(destination: Path, files: dict, notes: set[str]) -> None:
+def _checkpoint_computations(state: Path, computations: dict, notes: set[str]) -> None:
     try:
-        save_export_index(destination, files)
+        save_image_analysis(state, computations)
     except (OSError, ValueError, TypeError):
-        notes.add("Export index could not be saved; completed image copies were retained.")
-
-
-def _remember_export(files: dict, destination: Path, image: Path, identity: str, checksum: str) -> None:
-    stat = image.stat()
-    files[image.relative_to(destination).as_posix()] = {
-        "identity": identity,
-        "source_png_sha256": checksum,
-        "sidecar": _sidecar_fingerprint(image),
-        "size": stat.st_size,
-        "mtime_ns": stat.st_mtime_ns,
-    }
+        notes.add("Image computation cache could not be saved; completed image copies were retained.")
 
 
 def _identifier(value) -> str:
@@ -317,10 +292,9 @@ def _filename(item: GalleryItem, document: dict) -> str:
     request = document["requested_configuration"]
     seed = request.get("seed")
     seed_text = str(seed) if type(seed) is int else "unknown"
-    attempt = re.sub(r"[^a-zA-Z0-9]", "", item.attempt_id)[:8] or "attempt"
-    return (
-        f"{stamp}_{_slug(request.get('prompt', ''))}_s{seed_text}_{attempt}_{document['artifact']['output_index']:02d}"
-    )
+    if not re.fullmatch(r"[a-f0-9]{32}", item.attempt_id):
+        raise ValidationError("Saved output has no stable export filename identity.")
+    return f"{stamp}_{_slug(request.get('prompt', ''))}_s{seed_text}_dtf-{item.attempt_id}-{document['artifact']['output_index']:02d}"
 
 
 def _exif(document: dict, sidecar_name: str | None = None) -> bytes:
@@ -409,18 +383,31 @@ def _reserve(destination: Path, stem: str):
 
 
 def _export_one(
-    item: GalleryItem, destination: Path, options: ExportOptions, existing: dict
+    item: GalleryItem, destination: Path, options: ExportOptions, computations: dict
 ) -> tuple[tuple[str, ...], str]:
     source = Path(item.path).resolve()
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
     if not source.is_file() or source.stat().st_size > MAX_IMAGE_BYTES:
         raise ValidationError("Image is missing, unreadable or exceeds the 64 MiB export limit.")
+    source_stat = source.stat()
+    fingerprint = {
+        "size": source_stat.st_size,
+        "mtime_ns": source_stat.st_mtime_ns,
+        "path_sha256": hashlib.sha256(str(source).encode("utf-8")).hexdigest(),
+    }
+    cached = computations.get(item.identity)
+    if not cached or cached["fingerprint"] != fingerprint:
+        cached = None
     with source.open("rb") as handle:
         original = handle.read(MAX_IMAGE_BYTES + 1)
     if len(original) > MAX_IMAGE_BYTES:
         raise ValidationError("Image exceeds the 64 MiB export limit.")
-    checksum = hashlib.sha256(original).hexdigest()
+    after_read = source.stat()
+    if (after_read.st_size, after_read.st_mtime_ns) != (source_stat.st_size, source_stat.st_mtime_ns):
+        raise ValidationError("Source image changed while exporting; retry export without modifying originals.")
+    checksum = cached["source_png_sha256"] if cached else hashlib.sha256(original).hexdigest()
+    assessment = cached.get("assessment") if cached else None
     category = "root"
     document, notes = _portable(item, options)
     document.update(
@@ -447,7 +434,8 @@ def _export_one(
                 stem = _filename(item, document)
                 target = destination
                 if options.separate_noise_blank:
-                    assessment = assess_rgb(rgb)
+                    if not assessment or assessment["algorithm"] != ALGORITHM:
+                        assessment = assess_rgb(rgb)
                     document["image_quality_assessment"] = {
                         **assessment,
                         "advisory": True,
@@ -515,11 +503,12 @@ def _export_one(
                         sidecar.unlink()
             finally:
                 rgb.close()
-    _remember_export(existing, destination, image, item.identity, checksum)
+    computations.pop(item.identity, None)
+    computations[item.identity] = {"fingerprint": fingerprint, "source_png_sha256": checksum, "assessment": assessment}
     return tuple(notes), category
 
 
-def _run_export(state, destination, options, query, identities, cancel, progress):
+def _run_export(state, destination, options, query, identities, cancel, progress, no_cache):
     destination = Path(destination).expanduser().resolve()
     if destination == Path(state).resolve() or destination.is_relative_to(Path(state).resolve()):
         raise ValidationError("Choose an export folder outside the application state directory.")
@@ -533,10 +522,13 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     if not total or cancel.is_set():
         return ExportResult(str(destination), total, 0, 0, cancel.is_set())
     destination.mkdir(parents=True, exist_ok=True)
-    existing, notes = _existing_exports(destination, cancel)
-    if not cancel.is_set():
-        _checkpoint_index(destination, existing, notes)
-    skipped_identities = {record["identity"] for record in existing.values() if record["identity"]}
+    skipped_identities = _existing_exports(destination, cancel)
+    computations = (
+        {}
+        if no_cache or all(identity in skipped_identities for identity in identities)
+        else load_image_analysis(Path(state))
+    )
+    notes = set()
     exported, failed, noise, blank, skipped = 0, 0, 0, 0, 0
     failures = []
     if progress:
@@ -553,14 +545,14 @@ def _run_export(state, destination, options, query, identities, cancel, progress
             record = storage.get_record(state, identity)
             if record is None:
                 raise ValidationError("Saved output is no longer available.")
-            item_notes, category = _export_one(item_from_record(record), destination, options, existing)
+            item_notes, category = _export_one(item_from_record(record), destination, options, computations)
             notes.update(item_notes)
             noise += category == "noise"
             blank += category == "blank"
             exported += 1
             skipped_identities.add(identity)
-            if exported % 25 == 0:
-                _checkpoint_index(destination, existing, notes)
+            if not no_cache and exported % 25 == 0:
+                _checkpoint_computations(Path(state), computations, notes)
         except (
             OSError,
             ValueError,
@@ -583,7 +575,8 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                 failures.append(f"{identity}: {reason}")
         if progress:
             progress(index + 1, total)
-    _checkpoint_index(destination, existing, notes)
+    if not no_cache and exported:
+        _checkpoint_computations(Path(state), computations, notes)
     return ExportResult(
         str(destination),
         total,
@@ -607,6 +600,7 @@ async def export_outputs(
     identities: tuple[str, ...] | None = None,
     cancel: threading.Event | None = None,
     progress: Callable[[int, int], None] | None = None,
+    no_cache: bool = False,
 ) -> ExportResult:
     """Snapshot a filter or explicit committed identities, then export sequentially off-thread.
 
@@ -624,6 +618,7 @@ async def export_outputs(
             identities,
             stop,
             progress,
+            no_cache,
         )
     )
     try:

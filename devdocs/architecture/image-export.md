@@ -18,24 +18,28 @@ Do not introduce attempt/provider/date subfolders. The service rejects destinati
 inside application state or the source attempt folder. Originals and their durable
 references are read-only. It uses exclusive filename reservations for both image
 and sidecar, adding numeric collision suffixes rather than replacing any file.
-A rebuildable `.dtflow-export-index.json` under the destination stores a versioned map of relative JPEG names to saved identities, source PNG checksums and exported-file and JSON-sidecar size/mtime fingerprints. `persistence/export_index.py` bounds JSON to 8 MiB/10,000 entries and validates paths, identities and fingerprints. There are no source paths, credentials or full prompts; relative names can retain an already exported prompt slug. Atomic replacement keeps checkpoints complete but is not a cross-process deduplication lock.
+No destination records are persisted. Each run lists root/noise/blank once, bounded to 10,000 JPEG candidates. New filenames carry `_dtf-<full-attempt-id>-<one-based-output>` followed only by an optional numeric collision suffix. That unambiguous marker and a cheap JPEG start/end-marker check populate an in-memory identity set. Legacy short-ID names or renamed files without the marker use bounded EXIF/mandatory-sidecar identity inspection. This is practical presence detection, not cryptographic integrity or complete sidecar verification for fast-path names. Source outputs are treated as immutable for already-existing-copy skips; changed originals require a new folder if a new copy is wanted. Skipped files/options/dates are never rewritten. Missing copies are exported again. Prior `.dtflow-export-index.json` files are ignored, not deleted or updated.
 
-Every run enumerates only root/noise/blank and compares quick JPEG and JSON-sidecar fingerprints. Changed/missing mandatory metadata is rechecked rather than silently accepted from a stale entry. Unchanged indexed copies need no JPEG metadata reads. New or changed candidates receive bounded EXIF/mandatory-sidecar inspection; unknown files never supply skip identities. Missing entries are pruned. Absent/corrupt/version-mismatched indexes rebuild from existing exports, so the first run on an old folder needs a metadata scan. Missing destination directories and parents are created before scanning/writing; permission errors do not redirect exports.
-
-Recognized saved-output identities are skipped before per-item SQLite lookup, PNG reads/hashing, detection or encoding. This deliberately treats committed originals as immutable: external source modifications under the same identity are not rehashed on a hit. Use a new folder to export intentionally altered originals or apply changed privacy/routing/sidecar options. Skipped copies are not rewritten or retimestamped. File fingerprints are a practical cache check, not cryptographic proof of current contents.
-
-Index checkpoints follow initial discovery, every 25 completed copies, and end/cancel. A crash before checkpoint leaves unindexed new JPEGs, discovered next run. Index-write failures warn without invalidating completed copies. Scans remain capped at 10,000 JPEG candidates. `ExportResult.skipped` is separate from exported/failed and included in processed counts.
+Recognized identities skip before per-item database lookup, source reads/hashing, analysis or encoding. A fully skipped run does not even load the computation cache. `ExportResult.skipped` is separate from exported/failed and included in processed counts. No persistent destination index or cross-process deduplication lock exists; exclusive reservations still prevent overwrites. Missing destination directories and parents are created before writing; permission errors do not redirect exports.
 Caught write/encode errors clean up only the files reserved by that operation.
 Successful completed images remain after cancellation; a crash/power loss can leave
 an incomplete newly reserved export, but never replaces an original or existing file.
 
 Bulk export captures at most 10,000 identities in one read transaction, then closes
 it before conversion. It ignores gallery pagination but retains filters and order.
-Each identity is rechecked against committed evidence. Later arrivals are excluded;
+Non-skipped identities are rechecked against committed evidence. Later arrivals are excluded;
 removed/unreadable outputs are item failures. Images are processed sequentially,
 with encoded input capped at 64 MiB and decoded dimensions capped at 32 million
 pixels. Progress includes failures; cancellation is checked between images.
 Async cancellation signals the worker and settles an in-flight write before exit.
+
+## Destination-independent computation cache
+
+`persistence/image_analysis_cache.py` owns `<state>/cache/derived/image_analysis.json`, a flat disposable JSON cache (integer cache_version 1), bounded to 16 MiB and 10,000 source identities. Only source path digest/size/mtime, PNG SHA256 and reviewed advisory assessment fields are stored; no source paths, prompts, credentials, filenames or destinations. Completed-image updates move entries to the end; oldest entries are evicted when bounded capacity is exceeded. Atomic writes checkpoint every 25 newly exported copies and at end/cancel; failures warn and preserve copies. Cache is not success evidence.
+
+New destinations still require PNG reading/decoding and JPEG encoding, but valid source fingerprints reuse the source checksum and detector output instead of hashing/analysing again. Source path-digest/size/mtime changes invalidate both. Detector algorithm changes invalidate assessment only, recomputing it when routing is enabled; checksum can still be reused. Missing/corrupt/version-mismatched caches are misses, never migrations or export failures. Fingerprints are a practical cache heuristic, not protection against modifications preserving size/mtime. Mid-read source size/mtime changes are rejected clearly.
+
+The existing Derived/all-cache cleanup removes this file without touching outputs or exports. `export_outputs(..., no_cache=True)` skips persistent cache reads/writes; MainWindow passes the runtime flag through ImageExportPanel. In-run reuse requires no disk cache. Turning routing off skips analysis and embedded assessment, while allowing checksum reuse. Legacy destination files still require EXIF inspection on each run; no hidden destination history is retained to accelerate them.
 
 ## Advisory pixel classification
 
@@ -50,7 +54,7 @@ Transparency is composited onto white; existing color profiles are retained.
 Source EXIF/XMP is not blindly copied. JPEG is lossy, unlike the original PNG.
 
 Readable Windows-safe names use the durable saved-at UTC time, a short ASCII prompt
-label, request seed, short attempt ID and output ordinal. Timestamp and seed
+label, request seed, full attempt ID marker and output ordinal. Timestamp and seed
 semantics are explicit: saved time is not generation start time, and request/effective
 seed is not proof of an independently reported per-image seed. Missing timestamps
 use `undated`. Prompt-free export uses `image`, not a derived private prompt label.

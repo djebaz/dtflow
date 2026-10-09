@@ -85,4 +85,4 @@ Owner reports noise/blank routing works (2026-10-09); no exact packaged build wa
 
 Owner-requested branch validation: Ruff lint/format passed; full offline pytest rerun 426 passed, 3 gated live skips (109.46s), after updating the existing Pillow import boundary for the two headless image services. Repeat/date GUI smoke and packaged acceptance remain separate; no real inference or billable actions.
 
-The [export-index follow-up](plans/2026-10-09-export-index.md) moves repeat skips before source reads and per-item lookups, with bounded destination-local recovery and cheap exported-file checks. Static implementation checks only; owner repeat-speed/recovery acceptance and a fresh suite run remain pending.
+The [source-computation follow-up](plans/2026-10-09-image-computation-cache.md) supersedes destination indexes: full-ID filenames and transient folder membership drive early skips; a central Derived cache reuses source-only checksums/detection across destinations, honoring no-cache and cleanup. Legacy filenames retain EXIF fallback. Static implementation checks only; owner speed/cache/recovery acceptance and a fresh suite run remain pending.

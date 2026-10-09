@@ -24,3 +24,6 @@
 - [x] Whole-repo Ruff lint/format, AST/imports, dtflow help and diff checks passed. No new tests or export invocation.
 - No new tests or export/GUI smoke under fast-implement; owner repeat-speed, index rebuild, changed/missing-file and privacy acceptance remains pending.
 - The previous turn's 426-pass full suite is historical, not validation of this index change. No generation, inference, provider calls or billable actions.
+
+## Superseded destination records
+The owner now explicitly rejects persistent destination records. [Source-computation cache plan](2026-10-09-image-computation-cache.md) replaces the folder index with transient full-filename identities plus legacy EXIF fallback, and centrally caches only per-source computations. Previously generated user-folder index files are not touched.

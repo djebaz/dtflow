@@ -37,16 +37,17 @@ You can type an absolute folder path that does not yet exist; export creates it 
 
 Click **Export JPEGs**. Normal images go directly into the chosen folder: **no
 attempt, provider or date subfolders**. Filenames use saved-at UTC time, a short
-prompt label, request seed, short attempt ID and output index, for example:
-`20261009-143025Z_red-fox-in-snow_s12345_a1b2c3d4_01.jpg`.
+prompt label, request seed, full attempt ID marker and output index, for example:
+`20261009-143025Z_red-fox-in-snow_s12345_dtf-0123456789abcdef0123456789abcdef-01.jpg`.
 Existing files are never overwritten; collisions add a suffix. The timestamp is
 saved time, not a claimed generation start time. The seed is the recorded request
 seed, not an independently verified per-image seed.
 
 **Separate detected noise and blank images into subfolders** is checked by default and remembered. Flagged copies go only into `noise/` or `blank/`, with any JSON metadata beside them; they are not also written at root. Folders are created only when used. Uncheck for a completely flat export and no detector analysis. The shared v2 detector uses pixel statistics on the white-composited source before JPEG encoding; flags are provisional, not aesthetics/prompt checks or job-status changes. Review them manually. The completion summary includes routed counts.
 
-Re-exporting to the same folder skips saved outputs already present at root, `noise/` or `blank/`, using a small `.dtflow-export-index.json` in the destination and quick exported-file checks. The first run on an older folder reads JPEG metadata to build it; subsequent runs read metadata only for new/changed files. Saved-output identity is checked before source PNG reads, hashing or detection. Deleted copies are exported again, and deleting/corrupting the index causes a safe rebuild. Original checksums remain recorded, but immutable source images are not rehashed on index hits. Intentionally altered originals require a fresh export folder. Existing files are never rewritten: changed privacy, routing or sidecar choices do not apply to skipped copies. Use a new folder to apply changed choices. Unrecognized or incomplete files are not counted as prior exports; unrelated name collisions still use numeric suffixes.
+Re-exporting lists root, `noise/` and `blank/` once. New full-ID filenames skip matching copies before processing; older/renamed files use EXIF fallback. No destination index is written. Missing copies are exported again; existing files are never rewritten, so changed privacy/routing/sidecar choices require a new folder. The fast presence check checks JPEG framing, not every pixel or sidecar. Old `.dtflow-export-index.json` files are unused and left untouched; you can delete them manually.
 
+Source checksums and advisory detection results are centrally cached at `<state>/cache/derived/image_analysis.json`, independent of export folder. New destinations reuse these computations when source fingerprints/detector version match, but still need JPEG conversion. Cache contains no prompts or destination records; **Clear derived cache**, **Clear all cache** and `--no-cache` apply to it. Cache misses recompute locally without provider calls.
 New Windows copies have **Date created** set to the recorded successful saved-output time; EXIF **Date taken** uses the same UTC date with its offset. This is a generation-completion proxy: exact generation start/end was not recorded, so export cannot recreate it. Filename dates keep the same saved-time basis. Skipped/existing files are not retimestamped. Timestamp-setting failures warn without discarding written copies; JSON sidecars receive the same creation time when written.
 
 JPEG quality 95 / 4:4:4 is **lossy**; transparency is composited on white. Original

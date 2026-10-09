@@ -28,6 +28,7 @@ The derived LoRA cache writer is implemented. A successful `dtflow models` or de
 | `.dtflow/cache/inventory/cloud_inventory.json` | Disposable cloud inventory cache |
 | `.dtflow/cache/inventory/lora_inventory.json` | Derived local-gRPC + DT+ LoRA availability cache; rebuildable from live evidence |
 | `.dtflow/cache/thumbnails/<artifact-id>.webp` | Regenerable thumbnail |
+| `.dtflow/cache/derived/image_analysis.json` | Implemented disposable source-only checksum/advisory pixel-analysis cache, reused across export destinations; bounded/versioned, no prompts, source paths or destination records; included in Derived cleanup and no-cache |
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
 | `logs/dtflow-<session>.log` | Rotating application diagnostics, one file set per process; the newest 20 sessions are kept |
 | `.dtflow/settings.json` | Versioned, credential-free shared settings (currently the cloud concurrency maximum); durable, not cache |
@@ -54,7 +55,7 @@ Future disposable-cache readers must treat a missing or mismatched version as a 
 
 Connection's middle-panel export hub copies committed outputs into one
 user-selected folder, independent of `.dtflow/outputs/<attempt-id>/`. JPGs and
-optional JSONs are all at that folder root. Export never moves originals or changes
+optional JSONs use that folder root except the optional advisory noise/blank sorting below. No destination index is written; full output-ID filenames supply transient membership, with EXIF fallback for legacy/renamed files. Export never moves originals or changes
 durable references; cache cleanup does not own these user files. See
 [image export architecture](image-export.md) for metadata/privacy, bounded snapshots,
 collision safety and cancellation; runtime/packaged acceptance remains separate.

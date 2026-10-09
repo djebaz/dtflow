@@ -214,6 +214,7 @@ class MainWindow:
             runner=self.runner,
             state_dir=self.state_dir,
             selection=self._export_selection,
+            no_cache=no_cache,
         )
         self.queue = QueuePage(
             self.queue_page,
