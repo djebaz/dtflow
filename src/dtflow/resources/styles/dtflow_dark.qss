@@ -1380,12 +1380,20 @@ QFrame#gallerySelectionBar QPushButton {
   border-radius: ${size.radius};
 }
 QFrame#gallerySelectionBar QPushButton#galleryExportButton {
-  background: ${color.selection};
-  border-color: ${color.accent};
-  color: ${color.selectionText};
+  background: ${color.button};
+  border-color: ${color.buttonBorder};
+  color: ${color.buttonText};
   font-weight: ${type.weightEmphasis};
 }
 QFrame#gallerySelectionBar QPushButton#galleryExportButton:hover {
+  background: ${color.buttonHover};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton:checked {
+  background: ${color.selection};
+  border-color: ${color.accent};
+  color: ${color.selectionText};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton:checked:hover {
   background: ${color.selectionHover};
 }
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled {

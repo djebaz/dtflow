@@ -23,3 +23,9 @@ Static checks passed in the locked environment. No tests, GUI smoke, packaging, 
 
 ## Checked-only Images follow-up
 - 2026-10-09: Owner reports smoke passed for 5772f54, then requests removal of the Images scope dropdown. Hide the scope label/dropdown only in Images; keep every scope in Connection. New exports started from the Images panel always capture checked IDs, even after a Connection-started operation settles there; never change an already-running snapshot. Focus the destination rather than the hidden selector. This small follow-up remains owner-smoke-pending; static checks only.
+
+## Always-available Export panel toggle (2026-10-10)
+- Make the Images Export toolbar button a checkable panel toggle, enabled independently of checked-image count. Neutral Off and selected-blue On use the existing gallery tokens.
+- Synchronize the checked state after the toolbar click, the panel's Close button and navigation between Images and Connection; preserve open-panel intent when returning to Images.
+- Keep the shared export card/controller and checked-only Images submission validation. Opening the panel alone must not start an export, and changing the panel visibility must not cancel an active operation.
+- Extend an existing Qt shell test for empty-selection opening, checked states, Close and navigation. GitHub CI and native visual acceptance remain separate.

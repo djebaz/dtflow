@@ -21,6 +21,8 @@
 
 ## Changed
 
+- Images **Export** is now a genuine checkable panel toggle, enabled even without checked images. Closed uses neutral styling; open uses selected blue. Closing or navigating away synchronizes the button state, reopening Images restores panel visibility, and Export JPEGs still validates checked identities without automatically starting work.
+
 - PR #58 reuses the canonical Images Delete SVG, tinted danger red, in both the Recycle Bin confirmation and in-progress Trash overlay instead of separate drawn/emoji icons. Other operation glyphs and behavior are unchanged.
 
 

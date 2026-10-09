@@ -100,7 +100,7 @@ class ImageExportPanel(QObject):
         if index >= 0:
             self.form.imageExportScopeCombo.setCurrentIndex(index)
             self.form.imageExportStatusLabel.setText(
-                "Checked images are selected. Choose a destination and start export."
+                "Check the images to export, then choose a destination and start export."
             )
 
     def browse(self) -> None:

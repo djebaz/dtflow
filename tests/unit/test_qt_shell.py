@@ -143,6 +143,41 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
     window.progress_strip.finish("trash")
 
 
+def test_images_export_toggle_opens_without_selection_and_tracks_panel(window):
+    """Opening the export card needs no checked image, but export submission still does."""
+    from dtflow.core.models import ValidationError
+
+    window.show()
+    window.form.imagesNavigationButton.click()
+    button = window.gallery.export_button
+    assert not window.gallery.selection.checked
+    assert button.isEnabled() and button.isCheckable() and not button.isChecked()
+    assert window.gallery_detail.galleryExportScroll.isHidden()
+
+    button.click()
+    assert button.isChecked()
+    assert button.accessibleName() == "Hide export panel"
+    assert not window.gallery_detail.galleryExportScroll.isHidden()
+    assert window.form.imageExportBox.parentWidget() is window.gallery_detail.galleryExportHost
+    assert not window.image_export.running
+    with pytest.raises(ValidationError, match="Check at least one saved image"):
+        window._export_selection("checked")
+
+    window.gallery_detail.galleryExportCloseButton.click()
+    assert not button.isChecked()
+    assert window.gallery_detail.galleryExportScroll.isHidden()
+
+    button.click()
+    assert button.isChecked()
+    window.form.connectionNavigationButton.click()
+    assert not button.isChecked()  # not visible here; shared card returns to Connection
+    assert window._gallery_export_open  # reopen beside Images on return
+    window.form.imagesNavigationButton.click()
+    assert button.isChecked()
+    assert not window.gallery_detail.galleryExportScroll.isHidden()
+    assert not window.image_export.running
+
+
 def test_shutdown_before_the_loop_starts_is_not_lost(qtbot):
     import warnings
 

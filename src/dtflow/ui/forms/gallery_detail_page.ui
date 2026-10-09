@@ -730,10 +730,12 @@
      <item>
       <widget class="QPushButton" name="galleryExportButton">
        <property name="text"><string>Export</string></property>
-       <property name="accessibleName"><string>Export</string></property>
-       <property name="toolTip"><string>Show or hide the export panel beside the listing for checked images.</string></property>
+       <property name="accessibleName"><string>Show export panel</string></property>
+       <property name="toolTip"><string>Show export settings beside Images. Check images before starting Export JPEGs.</string></property>
        <property name="role" stdset="0"><string>galleryExportAction</string></property>
-       <property name="enabled"><bool>false</bool></property>
+       <property name="checkable"><bool>true</bool></property>
+       <property name="checked"><bool>false</bool></property>
+       <property name="enabled"><bool>true</bool></property>
       </widget>
      </item>
      <item>

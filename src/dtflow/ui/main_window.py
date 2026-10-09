@@ -919,8 +919,8 @@ class MainWindow:
             self.gallery.refresh(preserve=True)
 
     def _open_checked_export(self) -> None:
-        """Toggle the shared export card beside Images, without changing tabs."""
-        self._gallery_export_open = not self._gallery_export_open
+        """Follow the Images Export toggle without changing tabs or submitting work."""
+        self._gallery_export_open = self.gallery.export_button.isChecked()
         self._place_export_panel()
         if self._gallery_export_open:
             target = (
@@ -954,10 +954,13 @@ class MainWindow:
         self.form.imageExportScopeLabel.setVisible(not inline)
         self.form.imageExportScopeCombo.setVisible(not inline)
         self.gallery_detail.galleryExportScroll.setVisible(inline)
-        self.gallery.export_button.setToolTip(
+        button = self.gallery.export_button
+        button.setChecked(inline)
+        button.setAccessibleName("Hide export panel" if inline else "Show export panel")
+        button.setToolTip(
             "Hide the export panel without cancelling an active export."
             if inline
-            else "Show the export panel beside the listing for checked images."
+            else "Show export settings beside Images. Check images before starting Export JPEGs."
         )
 
     def _export_selection(self, scope: str) -> GalleryQuery | tuple[str, ...]:

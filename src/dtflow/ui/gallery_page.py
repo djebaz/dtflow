@@ -563,7 +563,7 @@ class GalleryPage(QObject):
         self.select_filtered_button.setEnabled(self.total > 0 or self._selection_busy)
         self.clear_selection_button.setEnabled(count > 0)
         self.copy_paths_button.setEnabled(count > 0)
-        self.export_button.setEnabled(count > 0 and self._export_callback is not None)
+        self.export_button.setEnabled(self._export_callback is not None)
         self.delete_button.setEnabled(count > 0 and not self._recycle_busy and self._recycle_callback is not None)
         self._sync_detail_checkbox()
         for row, item in enumerate(self.items):
@@ -890,7 +890,8 @@ class GalleryPage(QObject):
         self._selection_notice(f"Copied {len(paths)} paths; {missing} records unavailable.")
 
     def _open_checked_export(self) -> None:
-        if self.selection.checked and self._export_callback is not None:
+        """Opening export settings is independent of the number of checked images."""
+        if self._export_callback is not None:
             self._export_callback()
 
     def _request_recycle(self) -> None:
