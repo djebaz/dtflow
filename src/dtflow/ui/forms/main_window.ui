@@ -708,6 +708,11 @@
             </widget>
            </item>
            <item>
+            <widget class="QWidget" name="imageExportConnectionHost">
+             <layout class="QVBoxLayout" name="imageExportConnectionLayout">
+              <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+              <item>
             <widget class="QGroupBox" name="imageExportBox">
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>
@@ -725,15 +730,15 @@
                 <item><widget class="QLabel" name="imageExportHint"><property name="text"><string>JPEG quality 95 with Windows-readable properties. Images go into your chosen folder; detected noise/blank can be sorted into subfolders. Originals stay untouched; JPEG is lossy and transparency becomes white.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
                 <item><layout class="QGridLayout" name="imageExportOptionsLayout">
                  <item row="0" column="0"><widget class="QLabel" name="imageExportScopeLabel"><property name="text"><string>Images</string></property><property name="buddy"><cstring>imageExportScopeCombo</cstring></property></widget></item>
-                 <item row="0" column="1" colspan="2"><widget class="QComboBox" name="imageExportScopeCombo"><property name="accessibleName"><string>Images to export</string></property></widget></item>
-                 <item row="1" column="0"><widget class="QLabel" name="imageExportFolderLabel"><property name="text"><string>Folder</string></property><property name="buddy"><cstring>imageExportFolderEdit</cstring></property></widget></item>
-                 <item row="1" column="1"><widget class="QLineEdit" name="imageExportFolderEdit"><property name="placeholderText"><string>Choose an export folder…</string></property><property name="accessibleName"><string>Export destination folder</string></property></widget></item>
-                 <item row="1" column="2"><widget class="QPushButton" name="imageExportBrowseButton"><property name="text"><string>Browse…</string></property></widget></item>
+                 <item row="1" column="0" colspan="3"><widget class="QComboBox" name="imageExportScopeCombo"><property name="accessibleName"><string>Images to export</string></property></widget></item>
+                 <item row="2" column="0"><widget class="QLabel" name="imageExportFolderLabel"><property name="text"><string>Folder</string></property><property name="buddy"><cstring>imageExportFolderEdit</cstring></property></widget></item>
+                 <item row="3" column="0" colspan="2"><widget class="QLineEdit" name="imageExportFolderEdit"><property name="placeholderText"><string>Choose an export folder…</string></property><property name="accessibleName"><string>Export destination folder</string></property></widget></item>
+                 <item row="3" column="2"><widget class="QPushButton" name="imageExportBrowseButton"><property name="text"><string>Browse…</string></property></widget></item>
                 </layout></item>
-                <item><widget class="QCheckBox" name="imageExportPromptsCheck"><property name="text"><string>Include prompts in filenames and metadata</string></property><property name="checked"><bool>true</bool></property><property name="toolTip"><string>Prompts can contain sensitive information. Uncheck to remove them from every export field.</string></property></widget></item>
-                <item><widget class="QCheckBox" name="imageExportSidecarsCheck"><property name="text"><string>Also save JSON metadata beside each image</string></property></widget></item>
-                <item><widget class="QCheckBox" name="imageExportSeparateCheck"><property name="text"><string>Separate detected noise and blank images into subfolders</string></property><property name="checked"><bool>true</bool></property><property name="toolTip"><string>Advisory pixel statistics, not a quality guarantee. Flagged copies and their metadata go only into noise/ or blank/. Uncheck for a completely flat export. Originals and job status are unchanged.</string></property><property name="accessibleName"><string>Separate detected noise and blank exports</string></property></widget></item>
-                <item><layout class="QHBoxLayout" name="imageExportButtonsLayout">
+                <item><widget class="QCheckBox" name="imageExportPromptsCheck"><property name="text"><string>Include prompts in filenames&#10;and metadata</string></property><property name="checked"><bool>true</bool></property><property name="toolTip"><string>Prompts can contain sensitive information. Uncheck to remove them from every export field.</string></property></widget></item>
+                <item><widget class="QCheckBox" name="imageExportSidecarsCheck"><property name="text"><string>Also save JSON metadata&#10;beside each image</string></property></widget></item>
+                <item><widget class="QCheckBox" name="imageExportSeparateCheck"><property name="text"><string>Separate detected noise and blank images&#10;into subfolders</string></property><property name="checked"><bool>true</bool></property><property name="toolTip"><string>Advisory pixel statistics, not a quality guarantee. Flagged copies and their metadata go only into noise/ or blank/. Uncheck for a completely flat export. Originals and job status are unchanged.</string></property><property name="accessibleName"><string>Separate detected noise and blank exports</string></property></widget></item>
+                <item><layout class="QVBoxLayout" name="imageExportButtonsLayout">
                  <item><widget class="QPushButton" name="imageExportStartButton"><property name="text"><string>Export JPEGs</string></property><property name="role" stdset="0"><string>primary</string></property></widget></item>
                  <item><widget class="QPushButton" name="imageExportCancelButton"><property name="text"><string>Cancel export</string></property><property name="enabled"><bool>false</bool></property></widget></item>
                  <item><widget class="QPushButton" name="imageExportOpenButton"><property name="text"><string>Open folder</string></property><property name="enabled"><bool>false</bool></property></widget></item>
@@ -741,6 +746,9 @@
                 <item><widget class="QProgressBar" name="imageExportProgress"><property name="value"><number>0</number></property><property name="accessibleName"><string>Image export progress</string></property></widget></item>
                 <item><widget class="QLabel" name="imageExportStatusLabel"><property name="text"><string>Export copies only committed final images; no generation or provider access.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
                </layout></widget></item>
+             </layout>
+            </widget>
+              </item>
              </layout>
             </widget>
            </item>

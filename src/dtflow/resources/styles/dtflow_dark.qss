@@ -1119,6 +1119,56 @@ QTableWidget#galleryListTable::item {
 QTableWidget#galleryListTable::item:hover {
   background: ${color.surface};
 }
+QTableWidget#galleryListTable::item:selected {
+  background: ${color.selection};
+  color: ${color.selectionText};
+}
+QTableWidget#galleryListTable::item:selected:hover {
+  background: ${color.selectionHover};
+  color: ${color.selectionText};
+}
+/* Grid, Detail, model-backed List checks and its tri-state header share indicator glyphs/states. */
+QTableWidget#galleryListTable::indicator,
+QTableWidget#galleryListTable QCheckBox::indicator,
+QCheckBox#galleryCardCheck::indicator,
+QCheckBox#galleryDetailSelectionCheck::indicator {
+  width: 14px;
+  height: 14px;
+  border: 1px solid ${color.checkBorder};
+  border-radius: ${size.radiusXs};
+  background: ${color.input};
+  image: none;
+}
+QTableWidget#galleryListTable::indicator:hover,
+QTableWidget#galleryListTable QCheckBox::indicator:hover,
+QCheckBox#galleryCardCheck::indicator:hover,
+QCheckBox#galleryDetailSelectionCheck::indicator:hover {
+  border-color: ${color.focus};
+}
+QTableWidget#galleryListTable::indicator:checked,
+QTableWidget#galleryListTable QCheckBox::indicator:checked,
+QCheckBox#galleryCardCheck::indicator:checked,
+QCheckBox#galleryDetailSelectionCheck::indicator:checked {
+  background: ${color.accent};
+  border-color: ${color.focus};
+  image: url(../images/controls/check.svg);
+}
+QTableWidget#galleryListTable::indicator:indeterminate,
+QTableWidget#galleryListTable QCheckBox::indicator:indeterminate,
+QCheckBox#galleryCardCheck::indicator:indeterminate,
+QCheckBox#galleryDetailSelectionCheck::indicator:indeterminate {
+  background: ${color.accent};
+  border-color: ${color.focus};
+  image: url(../images/controls/check-partial.svg);
+}
+QTableWidget#galleryListTable::indicator:disabled,
+QTableWidget#galleryListTable QCheckBox::indicator:disabled,
+QCheckBox#galleryCardCheck::indicator:disabled,
+QCheckBox#galleryDetailSelectionCheck::indicator:disabled {
+  background: ${color.disabledBorder};
+  border-color: ${color.checkDisabledBorder};
+}
+
 QTableWidget#galleryListTable QHeaderView::section {
   font-weight: ${type.weightLabel};
   background: ${color.surface};
@@ -1298,4 +1348,71 @@ QWidget#galleryAdditionalScrollContents QLabel[textRole="value"] {
   font-weight: ${type.weightBody};
   border-bottom: 1px solid ${color.sectionBorder};
   padding-bottom: 3px;
+}
+
+
+/* Phase 8E — one-row Images selection/action toolbar. The Designer layout owns spacing. */
+QFrame#gallerySelectionBar {
+  background: ${color.toolbar};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.panelRadius};
+}
+QFrame#gallerySelectionBar QLabel {
+  color: ${color.text};
+  background: transparent;
+  border: 0;
+}
+QFrame#gallerySelectionBar QLabel#gallerySelectedCountLabel {
+  background: ${color.selection};
+  color: ${color.selectionText};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.inputRadius};
+  padding: 5px 9px;
+  font-weight: ${type.weightEmphasis};
+}
+QFrame#gallerySelectionBar QLabel#galleryHiddenCountLabel {
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QFrame#gallerySelectionBar QPushButton {
+  min-height: 22px;
+  padding: 4px 9px;
+  border-radius: ${size.radius};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton {
+  background: ${color.selection};
+  border-color: ${color.accent};
+  color: ${color.selectionText};
+  font-weight: ${type.weightEmphasis};
+}
+QFrame#gallerySelectionBar QPushButton#galleryExportButton:hover {
+  background: ${color.selectionHover};
+}
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled {
+  background: ${color.button};
+  color: ${color.dangerText};
+  border: 1px solid ${color.dangerBorder};
+}
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled:hover {
+  background: ${color.dangerSurface};
+}
+QFrame#gallerySelectionBar QPushButton:disabled {
+  background: ${color.buttonPressed};
+  border-color: ${color.disabledEdge};
+  color: ${color.disabled};
+}
+QCheckBox#galleryCardCheck {
+  background: ${color.surface};
+  border: 1px solid ${color.buttonBorder};
+  border-radius: ${size.radiusSm};
+  padding: 4px 4px;
+  spacing: 0;
+}
+QCheckBox#galleryCardCheck:checked {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
+QFrame[role="galleryCard"][checkedSelection="true"] {
+  border-color: ${color.selectionBorder};
+  background: ${color.selectionPressed};
 }

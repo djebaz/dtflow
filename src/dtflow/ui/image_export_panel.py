@@ -1,4 +1,4 @@
-"""Connection middle-panel export hub; presentation only, no provider access."""
+"""Shared Connection/Images export hub; presentation only, no provider access."""
 
 import asyncio
 import logging
@@ -49,6 +49,7 @@ class ImageExportPanel(QObject):
         for label, value in (
             ("All saved images", "all"),
             ("Current Images filter (all pages)", "filter"),
+            ("Checked images in Images", "checked"),
             ("Selected image in Images", "selected"),
             ("Selected Generate result", "generate"),
         ):
@@ -89,6 +90,17 @@ class ImageExportPanel(QObject):
             self.form.imageExportPromptsCheck.setChecked(document["include_prompts"])
             self.form.imageExportSidecarsCheck.setChecked(document["json_sidecars"])
             self.form.imageExportSeparateCheck.setChecked(document.get("separate_noise_blank", True))
+
+    def select_scope(self, scope: str) -> None:
+        """Select the export scope without changing an active operation."""
+        if self._running:
+            return
+        index = self.form.imageExportScopeCombo.findData(scope)
+        if index >= 0:
+            self.form.imageExportScopeCombo.setCurrentIndex(index)
+            self.form.imageExportStatusLabel.setText(
+                "Checked images are selected. Choose a destination and start export."
+            )
 
     def browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(
