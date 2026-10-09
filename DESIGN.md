@@ -394,6 +394,10 @@ height; empty-state title and guidance stay together in its center. Hide queue
 progress when no queue is selected rather than presenting “0 of 0” as work.
 The Plan header has a fixed vertical size policy, while expanded contents retain
 their natural layout. Avoid distributing spare height among action rows.
+In the left context rail, the Durable Queues list is capped at 120 logical pixels
+(approximately 30% of its previously expanded desktop height); it remains
+scrollable while a trailing spacer keeps Create/Refresh/Clear and Dispatch policy
+at their natural heights near the list.
 
 ### Inventory continuity and statistics
 
