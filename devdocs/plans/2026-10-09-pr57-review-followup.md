@@ -21,3 +21,8 @@
 - Static source checks only. No tests, GUI smoke, Trash/export operations, training/inference, provider calls, benchmarks or billable actions. Prior owner smokes do not accept this follow-up; recovery/preflight/header-scroll smoke remains pending.
 
 Historical heuristic restored records are excluded by gallery/export discovery and preflight even before reconciliation withdraws them. The ledger schema and original files remain unchanged. Static Ruff lint/format, Python syntax/import/API linkage and Git diff checks passed; no runtime or benchmark claim.
+
+## Gallery checkbox glyph parity follow-up
+- 2026-10-09: Owner reports checked List indicators show a white tick, but Grid and Detail do not. Extend the shared gallery-specific indicator selector groups to the existing `galleryCardCheck` and `galleryDetailSelectionCheck` object names, reusing the same checked/partial SVG assets and token-based states. Preserve Grid wrapper/geometry, Detail layout, selection/controller behavior and unrelated application checkboxes. Perform theme/resource/static checks only; owner visual smoke remains pending.
+
+Glyph parity static checks passed: shared selector groups, token expansion, absolute SVG resource resolution, SVG XML, Ruff and diff checks. No GUI, tests, smoke, export/Trash operation, inference or billable action; owner visual acceptance remains pending.
