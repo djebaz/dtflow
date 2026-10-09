@@ -53,3 +53,7 @@
 - Owner reports the targeted cache-prefill test passed after 9cf3883; this is not a full-suite rerun.
 - Owner smoke: inventory dropped from about 500 KB to zero after cleanup, but the displayed size stayed zero after inventory refresh. Read-only inspection found cloud_inventory.json rebuilt at 533,044 bytes: disk persistence worked, the size label was stale.
 - Connection now requests asynchronous remeasurement after inventory refresh, generation settlement, export completion/cancellation/failure and when returning to Connection. Superseded measurement callbacks cannot overwrite newer requests. Owner display smoke/rerun pending; no agent tests or smoke.
+
+## Startup size-measurement follow-up
+- Owner reports Cache is busy at launch; logs confirm measurement contention concurrent with inventory restore. The UI previously retained this short-lived busy error until another refresh.
+- UI size measurement now retries only CacheBusyError asynchronously for up to one second; cleanup remains immediate and genuine prolonged contention remains visible. No agent tests/smoke; owner launch/display acceptance pending.

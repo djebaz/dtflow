@@ -550,7 +550,15 @@ class MainWindow:
         token = self._cache_measure_token = object()
 
         async def measure():
-            return await asyncio.to_thread(cache_usage, self.state_dir)
+            # Startup cache reads may briefly own the lease. Do not leave a transient
+            # busy warning on screen; retry off the GUI thread for at most one second.
+            for attempt in range(11):
+                try:
+                    return await asyncio.to_thread(cache_usage, self.state_dir)
+                except CacheBusyError:
+                    if attempt == 10:
+                        raise
+                    await asyncio.sleep(0.1)
 
         self.runner.submit(
             measure(),

@@ -26,6 +26,9 @@
 
 ## Fixed
 
+- UI cache measurement retries transient startup contention asynchronously for up to one second, avoiding a stale busy warning during ordinary inventory restoration. Cleanup remains nonblocking and prolonged cache use still reports busy.
+
+
 - Cache sizes remeasure after inventory refresh, generation settlement, export completion/cancellation and Connection entry; superseded callbacks are ignored so a cleared zero-size display does not stay stale after cache rebuild.
 
 
