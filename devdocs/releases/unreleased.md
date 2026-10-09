@@ -21,7 +21,7 @@
 
 ## Changed
 
-- Images keeps Select all as a standalone action at every width; it becomes Unselect all only when all current filtered results are checked. Unselect all clears hidden checks too; partial 10,000-ID fills retain Select all. Toolbar owner smoke remains pending.
+- Images keeps Select all as a standalone action at every width; it becomes Unselect all only when all current filtered results are checked. Unselect all clears hidden checks too; partial 10,000-ID fills retain Select all. Owner reports Select all / Unselect all smoke passed (2026-10-09, follow-up to f3bc285).
 
 - Images List row/header checkboxes now use shared dark/blue styling with explicit checked and partial glyphs rather than native white boxes. Owner reports deletion smoke passed (2026-10-09); owner also reports checkbox styling smoke passed (2026-10-09, follow-up to ceb8e26); remaining recovery/platform/packaged gates are separate.
 
