@@ -447,7 +447,11 @@ metadata inspection stay in the same overlay; long metadata remains scrollable.
 
 Use existing selection/blue tokens for progress/info, connection/mint-teal for
 success and non-destructive confirmation, danger/red for errors and Delete/Clear
-confirmation, and warning/amber for partial/stopped results. Non-destructive
+confirmation, and warning/amber for partial/stopped and ordinary nonfatal warnings.
+Amber outcomes use `color.warningSurface` and `color.warningGlyphSurface`
+with `color.statusWarningBorder`; red is reserved for failures and destructive
+consent. The outer activity-strip frame is transparent and borderless, so the
+actual feedback row supplies a single semantic surface and border. Non-destructive
 confirmation reuses Auto-refresh ON's connectionSurface-to-surface treatment,
 connectionAccent border and connectionGlyph icon; Cancel remains neutral. The
 warning text still explicitly describes possible uploads or charges; confirmation
@@ -461,9 +465,21 @@ Concurrent tasks and unrelated informational/error notices have separate labelle
 rows inside this one surface and must not replace one another or dismiss pending
 consent. An unrelated InlineNotice shown during an armed confirmation is a
 separately dismissible row; only direct Cancel/Escape, relevant scope changes,
-or another explicit editor/confirmation may disarm it. Success results last six seconds,
-paused while hovered or keyboard-focused. Error/partial/uncertain/stopped results stay
-until dismissed. Dismiss never stops work; Stop delegates to the owning controller.
+or another explicit editor/confirmation may disarm it. Unrelated notices
+also use their own rows while an inline input editor is active, so partially
+typed values remain untouched. Success results last six seconds with a 2 px
+full-width teal lifetime line that drains along the bottom edge, a small
+remaining-seconds label, and a 450 ms fade-out. The timer and bar pause
+when hovering or focusing anywhere inside the overlay; the 5 px blue
+progress track is separate and represents actual processed work only.
+Error/partial/uncertain/stopped results and informational notices stay
+until dismissed. Escape dismisses a standalone notice, while Cancel/Escape
+disarm a pending confirmation/editor; dismissing any row never stops work.
+Stopped shows a stop-square glyph; progress uses operation-specific glyphs
+for Trash, Export, Cache, Queue, selection and generation. Destructive
+classification is explicit at the confirmation call site (`danger=True`),
+rather than inferred from button object names. Dismiss never stops work;
+Stop delegates to the owning controller.
 Keep generation preview/Run controls and existing uncertainty semantics. All filters,
 slots, expiry timers and deferred positioning are Qt-owned by their overlay widgets.
 No idle layout space is reserved. Native DPI, clipping/overlap, resize, focus, scroll

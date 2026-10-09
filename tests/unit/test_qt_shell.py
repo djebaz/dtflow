@@ -17,6 +17,7 @@ from support.fake_vault import Vault  # noqa: E402
 from dtflow.build import display_identity  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
+from dtflow.ui.inline_feedback import InlineNotice, edit_text  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.runner import AsyncRunner  # noqa: E402
 
@@ -58,6 +59,37 @@ def test_feedback_child_deleted_before_activity_strip_remains_safe(window, qtbot
     strip._position()
     strip.update("fixture-progress", 1, 2)
     strip.finish("fixture-progress")
+
+
+def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window):
+    window.show()
+    strip = window.progress_strip
+    edit_text(window.form, "Edit caption", "Caption", lambda value: None)
+    editor = window.inline._editor
+    editor.setText("Keep this text")
+    InlineNotice.information(window.form, "Background information", "Unrelated notification")
+    assert window.inline._editor is editor
+    assert editor.text() == "Keep this text"
+    assert any(row.activityLabel.text() == "Background information" for row in strip.rows.values())
+
+    window.inline.dismiss()
+    strip.complete("example", "Finished", "Saved successfully", "success")
+    row = strip.rows["example"]
+    assert row.activityProgress.isHidden()
+    assert row.activityLifetimeBar.isVisible()
+    assert row.activityLifetimeBar.value() == 6000
+    assert strip._expiry["example"] == 6.0
+    strip.finish("example")
+
+    strip.complete("example", "Stopped", "Work was stopped", "stopped")
+    assert strip.rows["example"].activitySymbol.text() == "■"
+    assert "example" not in strip._expiry
+    strip.finish("example")
+
+    InlineNotice.warning(window.form, "Busy", "Try again later")
+    assert window.inline.form.property("feedbackState") == "warning"
+    window.inline.escape.activated.emit()
+    assert window.inline.form.isHidden()
 
 
 def test_shutdown_before_the_loop_starts_is_not_lost(qtbot):

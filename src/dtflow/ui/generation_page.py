@@ -815,7 +815,7 @@ class GenerationPage:
             with self._metadata_path.open(encoding="utf-8") as handle:
                 content = handle.read(METADATA_LIMIT + 1)
         except (OSError, UnicodeError):
-            InlineNotice.warning(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
+            InlineNotice.error(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
             return
         if len(content) > METADATA_LIMIT:
             content = content[:METADATA_LIMIT] + "\n… (truncated: the saved file is longer)"

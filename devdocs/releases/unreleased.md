@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 overlay parity: successful result rows retain the numeric timer and gain a 2 px full-width teal draining bar and 450 ms fade; hovering or focusing the overlay pauses expiry. Partial/stopped/nonfatal warnings use amber surfaces; actual failures stay red; the outer strip no longer adds a conflicting blue border. Stopped and progress icons are differentiated. Unrelated notices cannot discard an active editor, Escape dismisses standalone notices, and destructive confirmation intent is explicit at call sites. HTML prototype synchronization follows implementation acceptance.
+
+
 - PR #58 removes the second Confirm step from cloud LoRA Prepare: selecting a converted file starts the existing async prepare/receipt workflow, cancelling the picker does nothing, and the asset note/tooltip disclose uploads and possible later-generation credits. Backend/busy checks and no-retry/uncertain-receipt behavior remain. A teardown correction retires the activity strip on its own Qt form's destruction, rather than attempting to access an already-deleted main-window host; Qt still owns filter and child-timer cleanup. Updated the existing LoRA presentation test expectations; fresh CI and owner smoke remain pending.
 
 

@@ -166,3 +166,14 @@ default fallback visible. Unrelated notices now occupy separate feedback rows
 rather than canceling pending consent, and Queues/Generate activity listeners
 unsubscribe on page destruction. The PR description is brought up to date;
 new CI and native GUI acceptance remain separate.
+
+PR #58 overlay parity follow-up: The HTML mockup revealed missing success
+lifetime-bar/fade presentation, a contradictory blue outer border and red
+partial/stopped backgrounds. The Qt overlay now uses a full-width teal
+six-second draining line with 450 ms fade (hover/focus pause), amber
+partial/stopped/warnings, separate blue task progress and explicit
+destructive call-site classification. Background notices no longer discard
+active text/LoRA editors. Escape dismisses standalone notices. The existing
+Qt shell suite gains focused presentation assertions; CI and native Qt
+acceptance are pending. Refresh the HTML prototype only after the code
+behavior is verified and stabilized.

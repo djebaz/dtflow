@@ -592,7 +592,7 @@ class MainWindow:
             try:
                 count = import_presets(Path(chosen), self.state_dir)
             except (ValidationError, OSError) as exc:
-                InlineNotice.warning(self.form, "Presets not imported", str(exc))
+                InlineNotice.error(self.form, "Presets not imported", str(exc))
                 return
             self.refresh_presets()
             self.generation.refresh_presets()
@@ -615,7 +615,7 @@ class MainWindow:
         try:
             count = export_presets(self.state_dir, Path(chosen))
         except (ValidationError, OSError) as exc:
-            InlineNotice.warning(self.form, "Presets not exported", str(exc))
+            InlineNotice.error(self.form, "Presets not exported", str(exc))
             return
         self.form.statusBar().showMessage(f"Exported {count} Draw Things preset(s).", 5000)
 
@@ -753,7 +753,7 @@ class MainWindow:
         try:
             count = import_user_loras(Path(chosen), self.state_dir)
         except (OSError, ValueError) as exc:
-            InlineNotice.warning(self.form, "Custom LoRAs not imported", str(exc))
+            InlineNotice.error(self.form, "Custom LoRAs not imported", str(exc))
             return
         self.refresh_custom_loras()
         self.generation.reload_custom_loras()
@@ -774,7 +774,7 @@ class MainWindow:
             try:
                 catalogue.user_loras_path.unlink()
             except OSError as exc:
-                InlineNotice.warning(self.form, "Custom LoRAs not cleared", type(exc).__name__)
+                InlineNotice.error(self.form, "Custom LoRAs not cleared", type(exc).__name__)
                 return
             self.refresh_custom_loras()
             self.generation.reload_custom_loras()

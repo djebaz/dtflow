@@ -125,8 +125,13 @@ class InlineFeedback(QObject):
         self.reset()
         self._set_feedback_state(state)
         self.form.inlineSymbol.setText(
-            "✓" if state == "success" else "■" if state == "stopped" else "!"
-            if state in {"error", "partial", "warning"} else "i"
+            "✓"
+            if state == "success"
+            else "■"
+            if state == "stopped"
+            else "!"
+            if state in {"error", "partial", "warning"}
+            else "i"
         )
         self.escape.setEnabled(True)
         self.form.inlineTitleLabel.setText(title)

@@ -131,6 +131,27 @@
   on their respective Qt page destruction. Extend an existing Qt consent test
   to cover the unrelated-notice case. No actual generation/upload performed.
 
+## Overlay parity and safety closeout (2026-10-09)
+- Compare the accepted HTML mockup's progress, success, partial, stopped,
+  error and confirmation states with the actual Designer forms and QSS.
+  Implement the 2 px full-width mint lifetime line and 450 ms fade for six-second
+  success rows, retaining the numeric countdown and pausing the entire
+  overlay on hover/focus. Keep blue task progress separate and honest.
+- Eliminate the duplicate blue outer border; reuse red for errors and
+  destructive confirmations, amber surfaces/glyphs/borders for partial,
+  stopped and nonfatal warning, and teal for success/non-destructive consent.
+  Complete semantic feedback states and distinguish stopped/operation glyphs.
+- Preserve unsaved inline editor input when a background notice arrives.
+  Enable Escape on standalone informational notices; warnings remain
+  persistent. Do not make notices cancel running work.
+- Remove hardcoded button-object-name danger detection from Python; pass
+  `danger=True` from destructive call sites. QSS retains higher-specificity
+  Qt style overrides where named buttons require them.
+- Extend existing Qt shell assertions for editor coexistence, lifetime state,
+  stopped glyph, and Escape dismissal. Do not run real generation or uploads.
+- After code and CI acceptance, update the separate HTML prototype to
+  represent all validated Qt states, workflows and later decisions.
+
 ## Open questions
 - None.
 

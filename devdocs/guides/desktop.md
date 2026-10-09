@@ -42,7 +42,7 @@ concurrent export, Trash, gallery selection and generation/queue work. Unknown t
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
 Stop/Cancel delegates to the original controller, preserving completed copies/moves and
 existing uncertainty semantics. Generation preview and the compact Run control remain.
-Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results dismiss after six seconds, paused on hover or keyboard focus; errors, partial/uncertain and stopped results persist until dismissed. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
+Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results show a teal 2 px draining lifetime line, an optional seconds label and a 450 ms fade after six seconds, paused while any overlay row is hovered or focused. Blue 5 px task progress remains a separate measure of actual completed work; errors, partial/uncertain and stopped results persist until dismissed. Unrelated notices cannot discard an active editor; Escape dismisses a plain notice. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
 This implementation still requires owner runtime/visual and packaged acceptance.
 
 ## Launch
