@@ -190,6 +190,7 @@ def export_identities(state: Path, query: GalleryQuery, maximum: int) -> tuple[s
         )
         return tuple(row[0] for row in rows)
 
+
 def selection_candidates(
     state: Path,
     query: GalleryQuery,

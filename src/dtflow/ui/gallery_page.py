@@ -13,7 +13,17 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QDesktopServices,
+    QIcon,
+    QImage,
+    QImageReader,
+    QKeySequence,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
@@ -158,8 +168,15 @@ class GalleryPage(QObject):
     """Bind saved-output services to the existing Designer gallery without owning generation."""
 
     def __init__(
-        self, page: QWidget, *, runner: AsyncRunner, state_dir: Path, reuse_callback=None,
-        regenerate_callback=None, export_callback=None, recycle_callback=None
+        self,
+        page: QWidget,
+        *,
+        runner: AsyncRunner,
+        state_dir: Path,
+        reuse_callback=None,
+        regenerate_callback=None,
+        export_callback=None,
+        recycle_callback=None,
     ):
         super().__init__(page)
         self.page = page
@@ -414,7 +431,6 @@ class GalleryPage(QObject):
         self.folder_button.clicked.connect(self._open_folder)
         self.external_button.clicked.connect(self._open_external)
 
-
     def _setup_selection_actions(self) -> None:
         """Wire the canonical single-row contextual toolbar and keyboard affordances."""
         self.selection_bar = self._widget("gallerySelectionBar", QFrame)
@@ -481,10 +497,16 @@ class GalleryPage(QObject):
     def _selection_shortcut(self, callback) -> None:
         """Do not steal standard editing, pop-up or global generation shortcuts."""
         focus = QApplication.focusWidget()
-        if focus is None or isinstance(focus, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QCheckBox)):
+        if focus is None or isinstance(
+            focus, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QCheckBox)
+        ):
             return
         # Shortcuts never operate from navigation/toolbar buttons or dialogs.
-        if isinstance(focus, QPushButton) and focus not in self._grid_buttons.values() and focus not in self._film_buttons:
+        if (
+            isinstance(focus, QPushButton)
+            and focus not in self._grid_buttons.values()
+            and focus not in self._film_buttons
+        ):
             return
         if self.page.findChild(QWidget, "galleryPromptSearch").hasFocus():
             return
@@ -548,8 +570,11 @@ class GalleryPage(QObject):
         total = len(self.items)
         selected = sum(item.identity in self.selection.checked for item in self.items)
         state = (
-            Qt.CheckState.Unchecked if selected == 0 else
-            Qt.CheckState.Checked if selected == total else Qt.CheckState.PartiallyChecked
+            Qt.CheckState.Unchecked
+            if selected == 0
+            else Qt.CheckState.Checked
+            if selected == total
+            else Qt.CheckState.PartiallyChecked
         )
         blocked = self._header_check.blockSignals(True)
         self._header_check.setCheckState(state)
@@ -621,7 +646,7 @@ class GalleryPage(QObject):
             self._set_checked(identity, True)
             return
         a, b = ids.index(anchor), ids.index(identity)
-        self.selection.add(ids[min(a, b): max(a, b) + 1])
+        self.selection.add(ids[min(a, b) : max(a, b) + 1])
         self._after_selection_edit()
 
     def _table_item_changed(self, cell: QTableWidgetItem) -> None:
@@ -682,9 +707,7 @@ class GalleryPage(QObject):
         self._selection_query = query
         self._selection_busy = True
         self.select_filtered_button.setEnabled(False)
-        self._selection_progress = QProgressDialog(
-            "Resolving saved output identities…", "Cancel", 0, 0, self.page
-        )
+        self._selection_progress = QProgressDialog("Resolving saved output identities…", "Cancel", 0, 0, self.page)
         self._selection_progress.setWindowTitle("Gallery selection")
         self._selection_progress.setWindowModality(Qt.WindowModality.NonModal)
         self._selection_progress.setMinimumDuration(0)
@@ -693,8 +716,11 @@ class GalleryPage(QObject):
         self.runner.submit(
             asyncio.to_thread(
                 gallery_storage.selection_candidates,
-                self.state_dir, query, checked,
-                add=mode == "add", maximum=MAX_CHECKED_IMAGES,
+                self.state_dir,
+                query,
+                checked,
+                add=mode == "add",
+                maximum=MAX_CHECKED_IMAGES,
             ),
             lambda result, error: self._selection_scan_done(generation, mode, result, error),
         )
@@ -731,7 +757,8 @@ class GalleryPage(QObject):
             self._hidden_checks = hidden
             self._selection_notice(
                 f"{added} added; {omitted} matching images not added at the 10,000-image limit."
-                if omitted else f"{added} images added to the checked selection."
+                if omitted
+                else f"{added} images added to the checked selection."
             )
         elif mode == "clear-hidden":
             self.selection.checked.intersection_update(matching)
@@ -1227,8 +1254,12 @@ class GalleryPage(QObject):
                 self.table.setItem(row, column, cell)
             cell.setText(value)
             if column == 0:
-                cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable)
-                cell.setCheckState(Qt.CheckState.Checked if item.identity in self.selection.checked else Qt.CheckState.Unchecked)
+                cell.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                cell.setCheckState(
+                    Qt.CheckState.Checked if item.identity in self.selection.checked else Qt.CheckState.Unchecked
+                )
             cell.setToolTip(tooltip if column == 1 else value)
         film_button, film_painter = self._film_entries[item.identity]
         film_button.setAccessibleName(f"Open {filename}")
@@ -1471,8 +1502,10 @@ class GalleryPage(QObject):
             return
         item = self._selected()
         if item is not None:
+
             async def read_again():
                 return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
+
             self.runner.submit(
                 read_again(),
                 lambda result, error: self._image_done(generation, identity, result, error),

@@ -425,8 +425,11 @@ class DetailFixture(QObject):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.itemClicked.connect(
-            lambda item: self.toggle_sample(item.data(Qt.ItemDataRole.UserRole), item.checkState() == Qt.CheckState.Checked)
-            if item.column() == 0 else self.open_detail(item.data(Qt.ItemDataRole.UserRole))
+            lambda item: (
+                self.toggle_sample(item.data(Qt.ItemDataRole.UserRole), item.checkState() == Qt.CheckState.Checked)
+                if item.column() == 0
+                else self.open_detail(item.data(Qt.ItemDataRole.UserRole))
+            )
         )
         self.table.itemActivated.connect(
             lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)) if item.column() != 0 else None
@@ -436,20 +439,14 @@ class DetailFixture(QObject):
         self.show_view("Detail")
         self.initial_density_timer.start(0)
 
-
     def setup_selection_preview(self):
         """Demonstrate selection parity using illustrative records, never saved outputs."""
         self.sample_checked: set[int] = set()
         self.sample_focus = 1
         self._sample_sync = False
-        self.sample_checks = [
-            button.findChild(QCheckBox, "galleryCardCheck")
-            for _, button in self.cards
-        ]
+        self.sample_checks = [button.findChild(QCheckBox, "galleryCardCheck") for _, button in self.cards]
         self.sample_detail_check = self.page.findChild(QCheckBox, "galleryDetailSelectionCheck")
-        self.sample_detail_check.toggled.connect(
-            lambda checked: self.toggle_sample(self.sample_focus, checked)
-        )
+        self.sample_detail_check.toggled.connect(lambda checked: self.toggle_sample(self.sample_focus, checked))
         self.sample_select_filtered = self.page.findChild(QPushButton, "gallerySelectFilteredButton")
         self.sample_clear = self.page.findChild(QPushButton, "galleryUnselectButton")
         self.sample_select_filtered.clicked.connect(lambda: self.sample_select_all())

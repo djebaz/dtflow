@@ -45,7 +45,8 @@ class ImageRecyclePanel(QObject):
             return
         if self.busy_source():
             QMessageBox.information(
-                self.parent_widget, "Images are busy",
+                self.parent_widget,
+                "Images are busy",
                 "Wait for generation, queue dispatch or image export to finish before moving originals.",
             )
             return
@@ -68,7 +69,8 @@ class ImageRecyclePanel(QObject):
             self._running = False
             self.gallery.set_recycle_busy(False)
             QMessageBox.information(
-                self.parent_widget, "Nothing to recycle",
+                self.parent_widget,
+                "Nothing to recycle",
                 f"No eligible managed original images. {plan.missing} missing; "
                 f"{plan.ineligible} ineligible or require manual review.",
             )
@@ -100,7 +102,10 @@ class ImageRecyclePanel(QObject):
         self._stop = threading.Event()
         self._dialog = QProgressDialog(
             "Moving eligible originals to Windows Recycle Bin…",
-            "Stop after current image", 0, eligible, self.parent_widget,
+            "Stop after current image",
+            0,
+            eligible,
+            self.parent_widget,
         )
         self._dialog.setWindowTitle("Image recycling")
         self._dialog.setMinimumDuration(0)
@@ -109,7 +114,11 @@ class ImageRecyclePanel(QObject):
         self._dialog.show()
         self.runner.submit(
             asyncio.to_thread(
-                recycle_outputs, self.state_dir, plan, self._stop, self.progress.emit,
+                recycle_outputs,
+                self.state_dir,
+                plan,
+                self._stop,
+                self.progress.emit,
             ),
             self._completed,
         )
@@ -159,8 +168,10 @@ class ImageRecyclePanel(QObject):
         if isinstance(error, OriginalImagesBusyError):
             message = str(error)
         else:
-            message = "The operation could not be completed or its durable outcome could not be verified. " \
-                      "Inspect the original files and retry only after checking their status."
+            message = (
+                "The operation could not be completed or its durable outcome could not be verified. "
+                "Inspect the original files and retry only after checking their status."
+            )
         QMessageBox.warning(self.parent_widget, "Recycle Bin unavailable", message)
 
     def cancel(self) -> None:

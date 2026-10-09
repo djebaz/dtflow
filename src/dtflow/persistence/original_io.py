@@ -43,7 +43,9 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                 break
             except OSError as exc:
                 if time.monotonic() >= deadline:
-                    raise OriginalImagesBusyError("Original images are busy; wait for active export to finish.") from exc
+                    raise OriginalImagesBusyError(
+                        "Original images are busy; wait for active export to finish."
+                    ) from exc
                 time.sleep(0.05)
         try:
             yield

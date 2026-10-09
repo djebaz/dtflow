@@ -208,6 +208,7 @@ class GenerationService:
                 outcome = RemoteOutcome.SUCCEEDED
                 await self.store.transition(attempt_id, ("possibly_submitted",), "saving", stage, outcome)
                 state = "saving"
+
                 def commit_originals():
                     # Keep committed originals behind the same OS-released lease
                     # used by export and Recycle Bin; no provider code runs here.

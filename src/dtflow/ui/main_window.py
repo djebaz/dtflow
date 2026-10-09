@@ -226,8 +226,11 @@ class MainWindow:
         )
         self.image_export.cache_changed.connect(self.refresh_cache)
         self.image_recycle = ImageRecyclePanel(
-            form, runner=self.runner, state_dir=self.state_dir,
-            gallery=self.gallery, busy_source=self._recycle_busy,
+            form,
+            runner=self.runner,
+            state_dir=self.state_dir,
+            gallery=self.gallery,
+            busy_source=self._recycle_busy,
         )
         self.gallery.refresh_button.clicked.connect(self._request_recycle_reconciliation)
         self.queue = QueuePage(
@@ -765,7 +768,8 @@ class MainWindow:
         if self.image_recycle.running:
             self.image_recycle.cancel()
             QMessageBox.information(
-                self.form, "Image recycling in progress",
+                self.form,
+                "Image recycling in progress",
                 "Stop requested. Wait for the current image and result summary before closing.",
             )
             return False

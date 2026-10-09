@@ -72,7 +72,9 @@ def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
     metadata = root / attempt / "metadata.json"
     candidate = Path(record["path"])
     # A managed original has the exact canonical path written by save_artifacts.
-    if not candidate.is_absolute() or os.path.normcase(os.path.normpath(str(candidate))) != os.path.normcase(str(expected)):
+    if not candidate.is_absolute() or os.path.normcase(os.path.normpath(str(candidate))) != os.path.normcase(
+        str(expected)
+    ):
         return None
     if os.path.normcase(os.path.normpath(str(record["metadata_path"]))) != os.path.normcase(str(metadata)):
         return None
@@ -92,7 +94,12 @@ def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
     if gallery_storage.path_reference_count(state, str(expected)) != 1:
         return None
     return RecycleTarget(
-        str(record["identity"]), str(expected), info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev,
+        str(record["identity"]),
+        str(expected),
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ino,
+        info.st_dev,
     )
 
 
@@ -142,7 +149,10 @@ def _unchanged(source: RecycleTarget) -> bool:
             return False
         info = target.stat()
         return (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev) == (
-            source.size, source.mtime_ns, source.inode, source.device
+            source.size,
+            source.mtime_ns,
+            source.inode,
+            source.device,
         )
     except OSError:
         return False
@@ -188,8 +198,13 @@ def recycle_outputs(
                         ineligible += 1
                     else:
                         ledger.record_outcome(
-                            state, operation_id, target.identity, target.path, "pending",
-                            target.size, target.mtime_ns,
+                            state,
+                            operation_id,
+                            target.identity,
+                            target.path,
+                            "pending",
+                            target.size,
+                            target.mtime_ns,
                         )
                         try:
                             recycle_adapter(Path(target.path))
@@ -201,23 +216,27 @@ def recycle_outputs(
                                 detail = exc.diagnostic
                             else:
                                 windows_code = getattr(exc, "winerror", None)
-                                detail = (
-                                    f"os_error_{windows_code}"
-                                    if isinstance(windows_code, int) else "os_error"
-                                )
+                                detail = f"os_error_{windows_code}" if isinstance(windows_code, int) else "os_error"
                             # Stable output identities and sanitized Shell stages
                             # are safe; do not log full paths or raw OS exceptions.
                             log.warning(
                                 "image recycle outcome=%s identity=%s reason=%s",
-                                state_value, target.identity, detail,
+                                state_value,
+                                target.identity,
+                                detail,
                             )
                             if len(failure_details) < 100:
                                 failure_details.append((target.identity, detail))
                         else:
                             state_value = "recycled" if not Path(target.path).exists() else "uncertain"
                         ledger.record_outcome(
-                            state, operation_id, target.identity, target.path, state_value,
-                            target.size, target.mtime_ns,
+                            state,
+                            operation_id,
+                            target.identity,
+                            target.path,
+                            state_value,
+                            target.size,
+                            target.mtime_ns,
                         )
                         if state_value == "recycled":
                             recycled.append(target.identity)
@@ -231,7 +250,12 @@ def recycle_outputs(
         canceled = stop.is_set()
         ledger.finish_operation(state, operation_id, "canceled" if canceled else "complete")
     return RecycleResult(
-        tuple(recycled), tuple(failed), tuple(uncertain),
-        missing, ineligible, len(plan.targets) - processed, canceled,
+        tuple(recycled),
+        tuple(failed),
+        tuple(uncertain),
+        missing,
+        ineligible,
+        len(plan.targets) - processed,
+        canceled,
         tuple(failure_details),
     )

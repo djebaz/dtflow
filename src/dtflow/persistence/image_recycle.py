@@ -64,9 +64,7 @@ def attach_read_only(connection: sqlite3.Connection, state: Path) -> None:
             raise ValueError("Unsupported image-recycle ledger schema.")
     else:
         connection.execute("ATTACH DATABASE ':memory:' AS image_recycle")
-        connection.execute(
-            "CREATE TABLE image_recycle.records (identity TEXT PRIMARY KEY, outcome TEXT NOT NULL)"
-        )
+        connection.execute("CREATE TABLE image_recycle.records (identity TEXT PRIMARY KEY, outcome TEXT NOT NULL)")
 
 
 def start_operation(state: Path, operation_id: str, count: int) -> None:
@@ -145,9 +143,7 @@ def reconcile(state: Path) -> tuple[int, int]:
         )
         uncertain = pending.rowcount
         db.execute("UPDATE operations SET outcome='interrupted' WHERE outcome='running'")
-        records = db.execute(
-            "SELECT identity,path,size,mtime_ns FROM records WHERE outcome='recycled'"
-        ).fetchall()
+        records = db.execute("SELECT identity,path,size,mtime_ns FROM records WHERE outcome='recycled'").fetchall()
         for identity, name, size, mtime in records:
             path = Path(name)
             try:

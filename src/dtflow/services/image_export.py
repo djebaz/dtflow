@@ -551,9 +551,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                 if identity in skipped_identities:
                     skipped += 1
                 else:
-                    item_notes, category = _export_one(
-                        item_from_record(record), destination, options, computations
-                    )
+                    item_notes, category = _export_one(item_from_record(record), destination, options, computations)
                     notes.update(item_notes)
                     noise += category == "noise"
                     blank += category == "blank"

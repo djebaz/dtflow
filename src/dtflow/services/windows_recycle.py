@@ -100,20 +100,31 @@ def recycle_file(path: Path) -> None:
         clsid = _guid("3AD05575-8857-4850-9277-11B85BDB8E09")  # CLSID_FileOperation
         iid = _guid("947AAB5F-0A5C-4C13-B4D6-4BF7836FC9F8")  # IID_IFileOperation
         ole32.CoCreateInstance.argtypes = [
-            ctypes.POINTER(_GUID), ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(_GUID),
+            ctypes.POINTER(_GUID),
+            ctypes.c_void_p,
+            ctypes.c_ulong,
+            ctypes.POINTER(_GUID),
             ctypes.POINTER(ctypes.c_void_p),
         ]
         ole32.CoCreateInstance.restype = ctypes.c_long
-        _check(ole32.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(operation)),
-               "file operation creation", "operation_create")
+        _check(
+            ole32.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(operation)),
+            "file operation creation",
+            "operation_create",
+        )
         shell32.SHCreateItemFromParsingName.argtypes = [
-            ctypes.c_wchar_p, ctypes.c_void_p, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.c_wchar_p,
+            ctypes.c_void_p,
+            ctypes.POINTER(_GUID),
+            ctypes.POINTER(ctypes.c_void_p),
         ]
         shell32.SHCreateItemFromParsingName.restype = ctypes.c_long
         shell_item = _guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")  # IID_IShellItem
-        _check(shell32.SHCreateItemFromParsingName(
-            str(source), None, ctypes.byref(shell_item), ctypes.byref(item)
-        ), "source selection", "source_parse")
+        _check(
+            shell32.SHCreateItemFromParsingName(str(source), None, ctypes.byref(shell_item), ctypes.byref(item)),
+            "source selection",
+            "source_parse",
+        )
         # FOFX_RECYCLEONDELETE: require Windows 8+ Recycle Bin handling.
         # DTFlow has already obtained an explicit user confirmation; suppress
         # duplicate Shell prompts and show operation errors through the app.
@@ -124,8 +135,7 @@ def recycle_file(path: Path) -> None:
         FOF_NOERRORUI = 0x0400
         flags = FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
         _check(_invoke(operation, 5, [ctypes.c_uint32], flags), "recycle flags", "set_flags")
-        _check(_invoke(operation, 18, [ctypes.c_void_p, ctypes.c_void_p], item, None),
-               "delete queue", "queue_delete")
+        _check(_invoke(operation, 18, [ctypes.c_void_p, ctypes.c_void_p], item, None), "delete queue", "queue_delete")
         performed = _invoke(operation, 21, [])
         aborted = ctypes.c_int()
         completed = _invoke(operation, 22, [ctypes.POINTER(ctypes.c_int)], ctypes.byref(aborted))
