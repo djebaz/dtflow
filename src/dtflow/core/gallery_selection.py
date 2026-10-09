@@ -30,12 +30,14 @@ class GallerySelection:
     def add(self, identities: tuple[str, ...] | list[str]) -> int:
         """Add identities up to the shared operation limit, preserving earlier checks."""
         before = len(self.checked)
+        last_processed = None
         for identity in identities:
             if identity not in self.checked and len(self.checked) >= MAX_CHECKED_IMAGES:
                 break
             self.checked.add(identity)
-        if identities:
-            self.anchor = identities[-1]
+            last_processed = identity
+        if last_processed is not None:
+            self.anchor = last_processed
         return len(self.checked) - before
 
     def clear(self) -> None:
