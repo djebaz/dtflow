@@ -9,6 +9,11 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 FILENAME = "image_recycle.sqlite3"
+_RECORD_UPSERT = """INSERT INTO records(identity,path,outcome,operation_id,size,mtime_ns,updated_utc)
+    VALUES(?,?,?,?,?,?,?)
+    ON CONFLICT(identity) DO UPDATE SET
+      path=excluded.path, outcome=excluded.outcome, operation_id=excluded.operation_id,
+      size=excluded.size, mtime_ns=excluded.mtime_ns, updated_utc=excluded.updated_utc"""
 
 
 def _now() -> str:
@@ -88,11 +93,7 @@ def record_outcome(
     """Checkpoint each item independently; an unknown Shell result stays uncertain."""
     with writer(state) as db:
         db.execute(
-            """INSERT INTO records(identity,path,outcome,operation_id,size,mtime_ns,updated_utc)
-            VALUES(?,?,?,?,?,?,?)
-            ON CONFLICT(identity) DO UPDATE SET
-              path=excluded.path, outcome=excluded.outcome, operation_id=excluded.operation_id,
-              size=excluded.size, mtime_ns=excluded.mtime_ns, updated_utc=excluded.updated_utc""",
+            _RECORD_UPSERT,
             (identity, path, outcome, operation_id, size, mtime_ns, _now()),
         )
         if outcome != "pending":
@@ -100,6 +101,22 @@ def record_outcome(
                 "UPDATE operations SET completed_count=completed_count+1 WHERE operation_id=?",
                 (operation_id,),
             )
+
+
+def claim_recycle_intent(state: Path, operation_id: str, identity: str, path: str, size: int, mtime_ns: int) -> bool:
+    """Atomically claim new/known-failed originals; leave unsafe ledger evidence intact.
+
+    Called under the batch and original-file leases after filesystem revalidation.
+    The conditional conflict update observes the latest outcome in this write
+    transaction, rejecting pending/uncertain/recycled/restored and unknown states.
+    Return only after durable intent commits, before the external Trash call.
+    """
+    with writer(state) as db:
+        changed = db.execute(
+            _RECORD_UPSERT + " WHERE records.outcome='failed'",
+            (identity, path, "pending", operation_id, size, mtime_ns, _now()),
+        ).rowcount
+    return changed == 1
 
 
 def finish_operation(state: Path, operation_id: str, outcome: str) -> None:

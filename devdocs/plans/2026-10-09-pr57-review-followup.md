@@ -28,3 +28,9 @@ Historical heuristic restored records are excluded by gallery/export discovery a
 Glyph parity static checks passed: shared selector groups, token expansion, absolute SVG resource resolution, SVG XML, Ruff and diff checks. No GUI, tests, smoke, export/Trash operation, inference or billable action; owner visual acceptance remains pending.
 
 Owner reports smoke tests validate the checkbox style fix at 8ec3a55 (2026-10-09). Record glyph-parity visual acceptance only; recovery/preflight/header-scroll and broader DPI/platform/packaged acceptance are separate. This documentation update changes no source and runs no tests, GUI, file operations, inference or billable actions.
+
+## Execution-ledger race follow-up
+- 2026-10-09: Reviewer accepts the three aa1fd2e source fixes and reports CI passed for that commit; no new runtime acceptance is implied. A stale preflight plan must not overwrite later pending/uncertain/recycled/restored ledger evidence. Use a conditional pending-intent UPSERT in the existing BEGIN IMMEDIATE transaction, while execution holds batch and original-file leases. Only a new identity or known failed outcome may be claimed; blocked/unknown outcomes remain untouched and the item is ineligible without calling Trash. Commit intent before the external move. Share the record UPSERT with completion checkpoints; no Qt/receipt/schema changes or extra full-ledger reads.
+- [x] Implement atomic conditional intent and service rejection.
+- [x] Sync docs; locked Ruff lint/format, syntax/import/API linkage and diff checks passed. Commit/push checkpoint and synchronize PR body.
+- Header partial-clipping polish remains explicitly outside this safety follow-up and pending GUI acceptance. No tests, smoke, runtime mutation, inference or billable actions.

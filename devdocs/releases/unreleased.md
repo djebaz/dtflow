@@ -58,6 +58,8 @@
 
 - Grid and Detail checked-image checkboxes now share List's explicit white tick/partial SVGs and token-based indicator states, without changing geometry or selection behavior. Static theme/resource checks passed; owner reports style smoke passed at 8ec3a55 (2026-10-09), without implying broader DPI/platform/packaged acceptance.
 
+- Trash execution now atomically validates the latest durable outcome and commits pending intent under batch/original-file leases. Stale plans cannot overwrite pending/uncertain/recycled/restored or unknown evidence; only new/failed identities proceed, others become ineligible/manual review without another Trash call. Source/static checks only; cross-process crash/stale-plan acceptance pending.
+
 ## Release audit
 
 - PRs: #54, #55, #56, #57

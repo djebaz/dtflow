@@ -222,16 +222,16 @@ def recycle_outputs(
                     confirmed = _regular_managed_file(state, record)
                     if confirmed != target:
                         ineligible += 1
+                    elif not ledger.claim_recycle_intent(
+                        state, operation_id, target.identity, target.path, target.size, target.mtime_ns
+                    ):
+                        # A preflight plan may predate another process's intent.
+                        # Never overwrite pending/uncertain/removed evidence or
+                        # submit a second move, even if the file looks unchanged.
+                        ineligible += 1
+                        if len(failure_details) < 100:
+                            failure_details.append((target.identity, "ledger_requires_review"))
                     else:
-                        ledger.record_outcome(
-                            state,
-                            operation_id,
-                            target.identity,
-                            target.path,
-                            "pending",
-                            target.size,
-                            target.mtime_ns,
-                        )
                         try:
                             recycle_adapter(Path(target.path))
                         except (OSError, RecycleUnavailable) as exc:
