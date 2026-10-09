@@ -58,6 +58,19 @@ PR #49 is merged from `ui/global-run-control` and replaces the obsolete manual I
 
 The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). The owner selected interim 0.3.8 preparation with [versioned notes](releases/v0.3.8.md); 0.3.5 remains a draft candidate. Owner Windows acceptance of Phase 8B–8D and the exact final executable remain separate gates; this version choice does not declare 0.4.0 accepted. Recheck the roadmap and relevant phase plan before choosing work.
 
+## JPEG export follow-up (branch scope, 2026-10-09)
+
+PR #55 adds a local-only JPEG export hub in the middle panel of Connection: one
+folder, readable filenames, Windows-friendly EXIF, portable generation metadata,
+prompt privacy, optional sidecars and cancel/progress. Generate/Images expose only
+read-only selection/filter seams; originals and durable references remain untouched.
+See the [plan](plans/2026-10-09-jpeg-image-export.md) and
+[architecture](architecture/image-export.md). This is branch implementation, not a
+release declaration. No tests or smoke tests were added/run under fast-implement;
+the owner reports a source smoke export (345 JPGs at the folder root, no subfolders), but remaining scenario/packaged acceptance stays separate. See [smoke evidence](research/jpeg-export-smoke-2026-10-09.md). No inference or billable actions.
+
+The owner-requested [pixel-statistics detector PoC](../tools/images/README.md) now shares its v2 pixel service with optional default-on export routing into noise/blank subfolders, not a Phase 8 quality gate. Its [plan](plans/2026-10-09-noise-detector-poc.md) records owner-requested labelled sample runs and the version-2 spatial rule for two confirmed misses; thresholds are sample-fitted, with independent validation pending and no general accuracy claim.
+
 ## Maintenance
 
 Update this short snapshot when implementation scope changes, with the reviewed base revision/date and evidence links. Keep completed, remaining and added scope aligned with `initial.md`; retain detailed validation in plans/research/release notes. If this snapshot disagrees with source or verified evidence, those sources win: refresh the snapshot rather than assuming completion. Do not append a running changelog here.
@@ -65,3 +78,11 @@ Update this short snapshot when implementation scope changes, with the reviewed 
 ## Inventory continuity follow-up
 
 PR #51 restores identity-matching provider inventory observations and per-provider form selections; keeps model/LoRA counts, provenance and observation time visible across refresh errors and cache-only launches. Live generation validation is unchanged. Static checks only locally; tests are delegated to GitHub Actions by the owner. The owner reports source smoke tests OK (2026-10-06); exact build/scenarios were not supplied, and packaged acceptance remains separate. See [the plan](plans/2026-10-06-retain-provider-inventory.md).
+
+The [routing follow-up](plans/2026-10-09-export-noise-routing.md) adds the canonical Connection checkbox, saved preference and routed completion counts. Static checks only for this integration; owner GUI/export smoke acceptance remains pending.
+
+Owner reports noise/blank routing works (2026-10-09); no exact packaged build was supplied. The [repeat/date follow-up](plans/2026-10-09-export-repeat-dates.md) adds identity/checksum skip counts and Windows creation/EXIF dates based on recorded successful save time, not exact inference start/end. Owner repeat/date acceptance remains pending; the reference JPEG PoC is retained under tools/images without owner-local defaults.
+
+Owner-requested branch validation: Ruff lint/format passed; full offline pytest rerun 426 passed, 3 gated live skips (109.46s), after updating the existing Pillow import boundary for the two headless image services. Repeat/date GUI smoke and packaged acceptance remain separate; no real inference or billable actions.
+
+The [source-computation follow-up](plans/2026-10-09-image-computation-cache.md) supersedes destination indexes: full-ID filenames and transient folder membership drive early skips; a central Derived cache reuses source-only checksums/detection across destinations, honoring no-cache and cleanup. Legacy filenames retain EXIF fallback. Static implementation checks only; owner speed/cache/recovery acceptance and a fresh suite run remain pending.

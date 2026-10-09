@@ -1271,6 +1271,15 @@ class GalleryPage(QObject):
         if item is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(item.path))
 
+    def export_query(self) -> GalleryQuery:
+        """Capture current filters without changing selection, paging or viewer state."""
+        return replace(self._query(offset=0), limit=200)
+
+    def export_identity(self) -> str | None:
+        """Expose only the committed identity of the current single selection."""
+        item = self._selected()
+        return item.identity if item is not None else None
+
     def _selected(self) -> GalleryItem | None:
         return next((item for item in self.items if item.identity == self.selected_id), None)
 

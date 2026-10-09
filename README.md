@@ -57,7 +57,12 @@ shared compact header, 25–250% thumbnail scaling and a full-height Detail film
 Positive-prompt search, model/LoRA/date/dimensions/aspect filters, deterministic sorting
 and refresh use the same bounded read-only gallery services as the CLI. Detail exposes
 recorded provenance and safe raw metadata without inventing unavailable values. Saved settings can populate Generate without dispatch, or be explicitly regenerated as a fresh lineage-linked attempt. Draw Things `custom_configs.json` presets are durable and globally imported/exported from Connection, while Generate can save/load named presets. Connection also measures and clears only disposable cache categories; today only the inventory cache holds files, because gallery thumbnails are held in memory.
-See the [desktop guide](devdocs/guides/desktop.md#images).
+Connection provides a saved-image export hub: copy one image or a filtered batch into
+one folder as JPEGs with readable filenames and Windows-visible generation
+properties. Prompt privacy and optional JSON sidecars keep sharing explicit; original
+PNGs and saved history stay untouched. A default-on checkbox sorts pixel-statistics-flagged copies into `noise/` and `blank/`; turn it off for a completely flat folder. These are advisory flags, not generation-status verdicts. Full output identities in filenames let repeat exports skip existing copies before image processing; source computations are cached centrally across destinations, without an export-folder index; new Windows files retain the saved generation-completion date in their creation time and EXIF.
+See the [desktop guide](devdocs/guides/desktop.md#images) and
+[image export guide](devdocs/guides/desktop.md#export-saved-images).
 
 ## Design principles
 

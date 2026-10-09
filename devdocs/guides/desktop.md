@@ -24,6 +24,55 @@ On Windows, save or remove a DT+ API key through Credential Manager. `DRAWTHINGS
 
 Refresh inventory to populate model and LoRA choices. Startup and provider returns restore the last successful matching observation: first in-run memory, then the existing disk cache. The UI always shows model and LoRA counts, cached/remembered/refreshed provenance and the original observation time whenever an observation is known—even if no live refresh happened during this launch. Refreshing or a failed response adds status alongside those stats; a failure keeps the previous choices and selections with "Refresh failed · showing previous inventory". Switching providers preserves each provider's form before rebuilding discovery. Local endpoint or selected cloud credential changes invalidate mismatched evidence; saving the same key (or changing an unused saved key when the environment key is selected) does not erase it. Generation always refreshes live. Inventory listing alone does not prove workload compatibility. When the server supplies no model metadata, listed files are offered as model candidates, using the shared request gate.
 
+## Export saved images
+
+Use **Export saved images** in the **middle panel of Connection**. Choose a folder
+and one scope: all saved images; the current Images filter across every page; the
+single image selected in Images; or the selected PNG result in Generate. For a
+filtered export, set filters in Images first, then return to Connection. Selecting
+Generate's metadata entry is not selecting an image. Export freezes the selection
+when started; new outputs arriving afterward do not expand that operation.
+
+You can type an absolute folder path that does not yet exist; export creates it and missing parents before writing. Permission/path failures are reported, not redirected.
+
+Click **Export JPEGs**. Normal images go directly into the chosen folder: **no
+attempt, provider or date subfolders**. Filenames use saved-at UTC time, a short
+prompt label, request seed, full attempt ID marker and output index, for example:
+`20261009-143025Z_red-fox-in-snow_s12345_dtf-0123456789abcdef0123456789abcdef-01.jpg`.
+Existing files are never overwritten; collisions add a suffix. The timestamp is
+saved time, not a claimed generation start time. The seed is the recorded request
+seed, not an independently verified per-image seed.
+
+**Separate detected noise and blank images into subfolders** is checked by default and remembered. Flagged copies go only into `noise/` or `blank/`, with any JSON metadata beside them; they are not also written at root. Folders are created only when used. Uncheck for a completely flat export and no detector analysis. The shared v2 detector uses pixel statistics on the white-composited source before JPEG encoding; flags are provisional, not aesthetics/prompt checks or job-status changes. Review them manually. The completion summary includes routed counts.
+
+Re-exporting lists root, `noise/` and `blank/` once. New full-ID filenames skip matching copies before processing; older/renamed files use EXIF fallback. No destination index is written. Missing copies are exported again; existing files are never rewritten, so changed privacy/routing/sidecar choices require a new folder. The fast presence check checks JPEG framing, not every pixel or sidecar. Old `.dtflow-export-index.json` files are unused and left untouched; you can delete them manually.
+
+Source checksums and advisory detection results are centrally cached at `<state>/cache/derived/image_analysis.json`, independent of export folder. New destinations reuse these computations when source fingerprints/detector version match, but still need JPEG conversion. Cache contains no prompts or destination records; **Clear derived cache**, **Clear all cache** and `--no-cache` apply to it. Cache misses recompute locally without provider calls.
+New Windows copies have **Date created** set to the recorded successful saved-output time; EXIF **Date taken** uses the same UTC date with its offset. This is a generation-completion proxy: exact generation start/end was not recorded, so export cannot recreate it. Filename dates keep the same saved-time basis. Skipped/existing files are not retimestamped. Timestamp-setting failures warn without discarding written copies; JSON sidecars receive the same creation time when written.
+
+JPEG quality 95 / 4:4:4 is **lossy**; transparency is composited on white. Original
+PNGs, metadata and history stay untouched. Right-click an exported JPG in Windows
+Explorer → Properties → Details for Title, Subject, Comments and Tags. With prompts enabled, EXIF ImageDescription also includes a short ASCII-compatible prompt summary; full Unicode prompt text remains in the embedded JSON. EXIF also
+carries rich portable JSON generation metadata: requested/effective settings,
+model/LoRA identifiers and weights, provenance, dimensions, recorded timing and build
+identity when available. Some viewers/sharing services may hide or strip metadata.
+
+Prompts are included by default. Uncheck **Include prompts in filenames and
+metadata** before sharing if they are private; this removes prompts from all export
+fields, including JSON. Private paths, server identities, credentials and prepared
+cloud-asset references are never deliberately copied into export metadata.
+**Also save JSON metadata beside each image** is optional; a JSON sidecar becomes
+mandatory if full portable metadata exceeds EXIF capacity, with a reported warning.
+
+The folder and privacy/sidecar/routing choices are remembered independently of cache.
+**Open folder** opens the last successful destination. **Cancel export** stops after
+the current image and keeps completed exports. The final summary reports exported, skipped,
+failed and unprocessed images; hover over it for the first 100 failure details.
+Missing/corrupt images fail individually rather than hiding other saved outputs.
+A single operation is capped at 10,000 images, 64 MiB encoded input per image and
+32 million decoded pixels; narrow the Images filter to export larger libraries in
+separate operations. Export is local-only and never generates or contacts a provider.
+
 ## Generate
 
 Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and sampler. After inventory refresh, use All/Image/Video to narrow classified models, choose a base-model family, then choose the exact available checkpoint/quantization. Prime checkpoints are the default; `Include niche models` adds available Niche entries without replacing Prime. If the provider exposes a checkpoint DTFlow has not classified, the page reports it as unclassified and keeps the editable exact-ID field as the explicit escape hatch rather than guessing its family or mode. Width and height snap to the nearest multiple of 64 with an adjustment message. The CLI and loaded configurations remain strict.

@@ -17,6 +17,7 @@ def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
     # The session is remembered before the runner stops, so the last form values survive a normal quit.
     application.aboutToQuit.connect(lambda: window.remember(background=False))
     application.aboutToQuit.connect(window.gallery.save_now)
+    application.aboutToQuit.connect(window.image_export.cancel)
     application.aboutToQuit.connect(window.runner.shutdown)
     window.show()
     return application.exec()
