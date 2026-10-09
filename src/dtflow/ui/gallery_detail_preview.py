@@ -458,7 +458,7 @@ class DetailFixture(QObject):
         self.sample_detail_check.toggled.connect(lambda checked: self.toggle_sample(self.sample_focus, checked))
         self.sample_select_filtered = self.page.findChild(QPushButton, "gallerySelectFilteredButton")
         self.sample_clear = self.page.findChild(QPushButton, "galleryUnselectButton")
-        self.sample_select_filtered.clicked.connect(lambda: self.sample_select_all())
+        self.sample_select_filtered.clicked.connect(self.sample_toggle_all)
         menu = QMenu(self.sample_clear)
         menu.addAction("Unselect all", self.sample_unselect_all)
         self.sample_clear.setText("Unselect")
@@ -469,6 +469,12 @@ class DetailFixture(QObject):
             button.setToolTip("Disabled in the illustrative fixture; no saved outputs are available.")
         self.table.itemChanged.connect(self.sample_table_changed)
         self.sync_sample_selection()
+
+    def sample_toggle_all(self):
+        if len(self.sample_checked) == len(self.records):
+            self.sample_unselect_all()
+        else:
+            self.sample_select_all()
 
     def sample_select_all(self):
         self.sample_checked.update(range(1, len(self.records) + 1))
@@ -499,6 +505,10 @@ class DetailFixture(QObject):
             label = self.page.findChild(QLabel, "galleryHiddenCountLabel")
             label.setVisible(False)
             self.sample_clear.setEnabled(selected > 0)
+            label = "Unselect all" if selected == len(self.records) and selected else "Select all"
+            self.sample_select_filtered.setText(label)
+            self.sample_select_filtered.setAccessibleName(label)
+            self.sample_select_filtered.setToolTip(label + " illustrative images.")
             for index, ((_card, image), checkbox) in enumerate(zip(self.cards, self.sample_checks, strict=True), 1):
                 value = index in self.sample_checked
                 checkbox.setChecked(value)

@@ -153,6 +153,8 @@ outputs from being browsed. Browsing does not generate, modify or delete saved
 outputs.
 
 
+The Images action bar keeps **Select all** visible at every width. It selects matching results across all pages, up to 10,000 checked images in total. When every current matching result is checked, the same button becomes **Unselect all** and clears all checks, including hidden ones. Partial selections at the limit do not show Unselect all. Selection coverage is refreshed after checkbox edits and gallery refresh; this toolbar follow-up awaits owner smoke acceptance.
+
 ### Move checked originals to system Trash
 
 In the Phase 8E source implementation, **Delete** opens a confirmation, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. Cancel is the default. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.

@@ -685,8 +685,8 @@
      </item>
      <item>
       <widget class="QPushButton" name="gallerySelectFilteredButton">
-       <property name="text"><string>Select all filtered</string></property>
-       <property name="accessibleName"><string>Select all filtered</string></property>
+       <property name="text"><string>Select all</string></property>
+       <property name="accessibleName"><string>Select all</string></property>
        <property name="toolTip"><string>Add every matching output from the current filters, up to 10,000 checked in total.</string></property>
        <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
        <property name="enabled"><bool>true</bool></property>

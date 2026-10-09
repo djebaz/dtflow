@@ -188,6 +188,8 @@ class GalleryPage(QObject):
         self.selection = GallerySelection()
         self._tokens = load_tokens()
         self._hidden_checks = 0
+        self._all_filtered_checked = False
+        self._matching_checked: set[str] = set()
         self._hidden_query: GalleryQuery | None = None
         self._selection_generation = 0
         self._selection_busy = False
@@ -442,7 +444,7 @@ class GalleryPage(QObject):
         self.delete_button = self._widget("galleryDeleteButton", QPushButton)
         self.detail_check = self._widget("galleryDetailSelectionCheck", QCheckBox)
 
-        self.select_filtered_button.clicked.connect(self._select_all_filtered)
+        self.select_filtered_button.clicked.connect(self._toggle_all_filtered)
         self.copy_paths_button.clicked.connect(self._copy_checked_paths)
         self.export_button.clicked.connect(self._open_checked_export)
         self.delete_button.clicked.connect(self._request_recycle)
@@ -463,7 +465,6 @@ class GalleryPage(QObject):
         self.clear_selection_button.setText("Unselect")
         self.clear_selection_button.setMenu(clear_menu)
         more_menu = QMenu(self.more_button)
-        more_menu.addAction("Select all filtered", self._select_all_filtered)
         more_menu.addAction("Copy paths", self._copy_checked_paths)
         more_menu.addSeparator()
         more_menu.addAction("Unselect hidden", self._unselect_hidden)
@@ -518,8 +519,9 @@ class GalleryPage(QObject):
         """Keep one toolbar row: secondary actions collapse into a Qt menu."""
         width = self.selection_bar.width()
         compact = width < 1190
-        for button in (self.select_filtered_button, self.clear_selection_button, self.copy_paths_button):
+        for button in (self.clear_selection_button, self.copy_paths_button):
             button.setVisible(not compact)
+        self.select_filtered_button.setVisible(True)
         self.more_button.setVisible(compact)
         self._position_header_check()
 
@@ -543,6 +545,14 @@ class GalleryPage(QObject):
         self.selection_count.setText(f"{count} selected")
         self.hidden_count_label.setText(f"{self._hidden_checks} hidden by filters")
         self.hidden_count_label.setVisible(self._hidden_checks > 0)
+        label = "Unselect all" if self._all_filtered_checked else "Select all"
+        self.select_filtered_button.setText(label)
+        self.select_filtered_button.setAccessibleName(label)
+        self.select_filtered_button.setToolTip(
+            "Unselect every checked image, including hidden checks."
+            if self._all_filtered_checked
+            else "Select matching images across all pages, up to 10,000 checked in total."
+        )
         self.select_filtered_button.setEnabled(self.total > 0 and not self._selection_busy)
         self.clear_selection_button.setEnabled(count > 0)
         self.copy_paths_button.setEnabled(count > 0)
@@ -613,12 +623,24 @@ class GalleryPage(QObject):
         if self._selection_busy:
             self._cancel_selection_scan()
         self._selection_generation += 1
-        self._sync_selection_ui()
         try:
-            needs_update = self._hidden_query != self.export_query()
+            same_filter = self._hidden_query == self.export_query()
         except ValidationError:
-            needs_update = False
-        if needs_update:
+            same_filter = False
+        if same_filter:
+            # Ordinary checkbox edits stay local: loaded rows match this filter,
+            # and the last snapshot retains membership of off-page checked IDs.
+            self._matching_checked.intersection_update(self.selection.checked)
+            self._matching_checked.update(
+                item.identity for item in self.items if item.identity in self.selection.checked
+            )
+            self._hidden_checks = len(self.selection.checked) - len(self._matching_checked)
+            self._all_filtered_checked = self.total > 0 and len(self._matching_checked) == self.total
+        else:
+            self._hidden_query = None
+            self._all_filtered_checked = False
+        self._sync_selection_ui()
+        if not same_filter:
             self._refresh_hidden_count()
 
     def _set_checked(self, identity: str, value: bool) -> None:
@@ -751,6 +773,7 @@ class GalleryPage(QObject):
             return
         additions, hidden, omitted, matching = result
         self._hidden_query = used_query
+        self._matching_checked = set(matching) | set(additions)
         if mode == "add":
             added = self.selection.add(additions)
             self._hidden_checks = hidden
@@ -765,7 +788,17 @@ class GalleryPage(QObject):
                 self.selection.anchor = None
             self._hidden_checks = 0
         self._after_selection_edit()
-        self._refresh_hidden_count()
+
+    def _toggle_all_filtered(self) -> None:
+        """Toggle the permanent toolbar action, without changing Ctrl+A semantics."""
+        try:
+            same_filter = self._hidden_query == self.export_query()
+        except ValidationError:
+            same_filter = False
+        if self._all_filtered_checked and same_filter:
+            self._unselect_all()
+        else:
+            self._select_all_filtered()
 
     def _select_all_filtered(self) -> None:
         self._begin_selection_scan(mode="add")
@@ -808,6 +841,8 @@ class GalleryPage(QObject):
             self._selection_notice("Hidden checked-image count could not be refreshed.")
             return
         self._hidden_checks = result[1]
+        self._matching_checked = set(result[3])
+        self._all_filtered_checked = self.total > 0 and len(result[3]) == self.total
         self._hidden_query = query
         self._sync_selection_ui()
 
@@ -1023,6 +1058,9 @@ class GalleryPage(QObject):
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
+        # Refresh may add/remove outputs even when filters and visible cards match.
+        self._hidden_query = None
+        self._all_filtered_checked = False
         if self.mode == "Detail" and anchor == self.selected_id and anchor and not anchor_found:
             self.selected_id = None
         self._populate_facets(*choices)
