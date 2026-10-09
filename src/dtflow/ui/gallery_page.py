@@ -14,8 +14,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import (
-    QBrush,
-    QColor,
     QDesktopServices,
     QIcon,
     QImage,
@@ -599,16 +597,17 @@ class GalleryPage(QObject):
             card.style().unpolish(card)
             card.style().polish(card)
             card.update()
-        brush = QBrush(QColor(self._tokens["color.selection"] if checked else self._tokens["color.surface"]))
         for col in range(self.table.columnCount()):
             cell = self.table.item(row, col)
             if cell is None:
                 continue
-            cell.setBackground(brush)
             if col == 0:
                 blocked = self.table.blockSignals(True)
                 cell.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
                 self.table.blockSignals(blocked)
+        first = self.table.visualRect(self.table.model().index(row, 0))
+        last = self.table.visualRect(self.table.model().index(row, self.table.columnCount() - 1))
+        self.table.viewport().update(first.united(last))
 
     def _after_selection_edit(self) -> None:
         if self._selection_busy:

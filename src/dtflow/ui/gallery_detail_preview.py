@@ -115,6 +115,15 @@ class CoverPainter(QObject):
 class RowHoverDelegate(QStyledItemDelegate):
     """Apply the light hover state across one row without selecting records."""
 
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # Checked bulk selection is independent of the view's focused/current row.
+        checked = index.siblingAtColumn(0).data(Qt.ItemDataRole.CheckStateRole)
+        if checked == Qt.CheckState.Checked or checked == Qt.CheckState.Checked.value:
+            option.state |= QStyle.StateFlag.State_Selected
+        else:
+            option.state &= ~QStyle.StateFlag.State_Selected
+
     def paint(self, painter, option, index):
         style = QStyleOptionViewItem(option)
         if index.row() == self.parent().property("hoverRow"):
@@ -497,6 +506,7 @@ class DetailFixture(QObject):
                 image.update()
                 cell = self.table.item(index - 1, 0)
                 cell.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+            self.table.viewport().update()
             self.sample_detail_check.setChecked(self.sample_focus in self.sample_checked)
         finally:
             self._sample_sync = False

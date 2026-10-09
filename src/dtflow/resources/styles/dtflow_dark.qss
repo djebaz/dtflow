@@ -1119,6 +1119,14 @@ QTableWidget#galleryListTable::item {
 QTableWidget#galleryListTable::item:hover {
   background: ${color.surface};
 }
+QTableWidget#galleryListTable::item:selected {
+  background: ${color.selection};
+  color: ${color.selectionText};
+}
+QTableWidget#galleryListTable::item:selected:hover {
+  background: ${color.selectionHover};
+  color: ${color.selectionText};
+}
 QTableWidget#galleryListTable QHeaderView::section {
   font-weight: ${type.weightLabel};
   background: ${color.surface};
