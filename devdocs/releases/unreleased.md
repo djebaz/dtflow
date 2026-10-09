@@ -43,6 +43,9 @@
 
 ## Fixed
 
+- PR #58 follow-up keeps unrelated notices in separate dismissible rows while an inline Confirm is pending, avoiding implicit disarm; Qt page destruction unsubscribes Queues/Generate activity callbacks, with idempotent listener removal. The LoRA editor now explains any out-of-range catalogue weight default before initializing to 1.0. The PR description is synchronized to the approved no-second-Confirm cloud Prepare flow.
+
+
 - PR #58 guards the bottom overlay against inline-feedback child destruction before its parent strip: the child is forgotten on `destroyed`, layout checks Qt wrapper validity, and progress details are updated inside the owning strip. The existing Qt shell suite now includes a focused child-deletion lifecycle regression; CI and native acceptance are pending.
 
 

@@ -191,6 +191,7 @@ class GenerationPage:
         self._provider: str | None = None
         self._previewed_seed: int | None = None
         self._activity.listen(self._sync_activity)
+        page.destroyed.connect(self._unlisten_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
         self._relay = EventRelay(self._event, page)
@@ -566,6 +567,10 @@ class GenerationPage:
         self.page.refreshInventoryButton.setEnabled(not busy)
         self.page.cancelButton.setEnabled(busy and self._generating)
         self.lora.set_enabled(not busy)
+
+    def _unlisten_activity(self) -> None:
+        """Detach before Qt destroys the page and its generation controls."""
+        self._activity.unlisten(self._sync_activity)
 
     def _sync_activity(self) -> None:
         """A queue dispatch holds the state lock, so single generation waits for it (and vice versa)."""

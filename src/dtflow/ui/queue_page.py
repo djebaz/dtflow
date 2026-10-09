@@ -169,8 +169,13 @@ class QueuePage:
         page.planIncrementCheck.toggled.connect(self._plan_changed)
         self._plan_toggled(page.planBox.isChecked())
         activity.listen(self._sync)
+        page.destroyed.connect(self._unlisten_activity)
         self._render()
         self.refresh()
+
+    def _unlisten_activity(self) -> None:
+        """Keep late activity notifications away from destroyed page widgets."""
+        self._activity.unlisten(self._sync)
 
     # -- helpers ---------------------------------------------------------------------------------------------------
     @staticmethod

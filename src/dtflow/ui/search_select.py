@@ -51,6 +51,7 @@ def choose_searchable(
     row = QHBoxLayout()
     row.addWidget(value, 1)
     weight = None
+    weight_hint = None
     if weights is not None:
         weight = QDoubleSpinBox(editor)
         weight.setObjectName("inlineSelectionWeight")
@@ -62,6 +63,12 @@ def choose_searchable(
         row.addWidget(QLabel("Weight", editor))
         row.addWidget(weight)
     layout.addLayout(row)
+    if weight is not None:
+        weight_hint = QLabel("", editor)
+        weight_hint.setProperty("role", "secondary")
+        weight_hint.setWordWrap(True)
+        weight_hint.hide()
+        layout.addWidget(weight_hint)
     if custom_label:
         hint = QLabel(f"{custom_label}: enter the exact identifier below the list.", editor)
         hint.setWordWrap(True)
@@ -85,7 +92,15 @@ def choose_searchable(
         value.setText(item.text())
         if weight is not None:
             default = weights.get(item.text())
-            weight.setValue(default if default is not None and 0.0 <= default <= 3.0 else 1.0)
+            supported = default is not None and 0.0 <= default <= 3.0
+            weight.setValue(default if supported else 1.0)
+            if default is not None and not supported:
+                weight_hint.setText(
+                    f"Catalogue weight {default:g} is outside 0.0–3.0; starting at 1.0."
+                )
+                weight_hint.show()
+            else:
+                weight_hint.hide()
 
     panel = feedback(parent)
 

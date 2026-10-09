@@ -428,7 +428,7 @@ Checkpoint and LoRA choices use inline substring search and custom-identifier en
 LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step. In the
 inline editor, Cancel and Add appear beneath the fields, right-aligned; Add uses the
 same `role="primary"` button treatment as Create queue, while Cancel stays neutral.
-Other confirmations retain their header controls. Existing saved requests are not silently clamped. Preset names and explicit metadata/About inspection
+Other confirmations retain their header controls. Existing saved requests are not silently clamped; if a catalogue LoRA suggests a weight outside 0.0–3.0, the Add editor visibly explains its 1.0 initial value. Preset names and explicit metadata/About inspection
 use the same main-window surface, with scrollable text for long notices.
 While an inline input editor is open, a 50%-alpha charcoal scrim covers the central
 workspace behind the bottom editor, intercepting background mouse interactions
@@ -457,8 +457,11 @@ radius and native DPI
 rather than hardcoding the HTML's pixel font sizes. Confirm remains on the original
 button with stable width; Cancel is in the overlay. Export has no extra confirmation.
 
-Concurrent tasks have separate labelled rows inside this one surface and must not
-replace one another or dismiss pending consent. Success results last six seconds,
+Concurrent tasks and unrelated informational/error notices have separate labelled
+rows inside this one surface and must not replace one another or dismiss pending
+consent. An unrelated InlineNotice shown during an armed confirmation is a
+separately dismissible row; only direct Cancel/Escape, relevant scope changes,
+or another explicit editor/confirmation may disarm it. Success results last six seconds,
 paused while hovered or keyboard-focused. Error/partial/uncertain/stopped results stay
 until dismissed. Dismiss never stops work; Stop delegates to the owning controller.
 Keep generation preview/Run controls and existing uncertainty semantics. All filters,

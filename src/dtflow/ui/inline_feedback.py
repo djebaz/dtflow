@@ -39,6 +39,7 @@ class InlineFeedback(QObject):
         self._accept_callback = None
         self._accept_button = None
         self._close_allowed = False
+        self._notice_index = 0
         self.form.inlineAcceptButton.hide()
         self.form.inlineEditorActions.hide()
         window._inline_feedback = self
@@ -110,6 +111,14 @@ class InlineFeedback(QObject):
         for widget in (self.form, self.form.inlineSymbol):
             widget.style().unpolish(widget)
             widget.style().polish(widget)
+
+    def notice(self, title, text, state="info"):
+        """Keep unrelated notices visible without disarming a pending consent."""
+        if self._armed is not None:
+            self._notice_index += 1
+            self.strip.complete(f"notice-{self._notice_index}", title, text, state)
+            return
+        self.show(title, text, state)
 
     def show(self, title, text, state="info"):
         self.reset()
@@ -251,11 +260,11 @@ class InlineNotice:
 
     @staticmethod
     def information(parent, title, text):
-        feedback(parent).show(title, text)
+        feedback(parent).notice(title, text)
 
     @staticmethod
     def warning(parent, title, text):
-        feedback(parent).show(title, text, "error")
+        feedback(parent).notice(title, text, "error")
 
     about = information
 

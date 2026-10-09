@@ -159,3 +159,10 @@ while its upload/credit disclosure, busy/backend revalidation and receipt safety
 remain. The integration queue test also reached its separate five-second
 timeout; it has not been investigated or attributed to the presentation change.
 No local tests or smoke run; new CI/owner acceptance are pending.
+
+PR #58 review closeout: Preserve the owner-approved direct cloud LoRA Prepare
+workflow and bounded 0.0–3.0 Add editor; make the out-of-range catalogue
+default fallback visible. Unrelated notices now occupy separate feedback rows
+rather than canceling pending consent, and Queues/Generate activity listeners
+unsubscribe on page destruction. The PR description is brought up to date;
+new CI and native GUI acceptance remain separate.

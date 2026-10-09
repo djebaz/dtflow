@@ -13,7 +13,10 @@ A guarded action first displays its explanation and changes only its original bu
 bottom feedback overlay. Nothing executes on the first activation. Cancel, Escape, navigation,
 provider changes and relevant selection/filter changes discard pending consent; there is no
 timer. Confirm keeps frozen file/queue/Trash scope, with busy checks and destructive-service
-revalidation still applied. A double-click does not count as two consent activations.
+revalidation still applied. A double-click does not count as two consent activations. Unrelated notices
+do not discard an armed Confirm; they appear as separately dismissible
+feedback rows. Queue and Generate activity subscriptions are released when
+their Qt pages are destroyed.
 Closing during queue dispatch uses an inline **Confirm close** action because the native
 window close button cannot change its label; closing during recycling requests a safe stop
 and waits for the result instead of exiting mid-file. Programmatic closing follows the same

@@ -117,6 +117,20 @@
   semantics. Extend the existing Qt shell tests with a child-deletion
   regression; new CI and native runtime acceptance remain pending.
 
+## PR review closeout follow-up (2026-10-09)
+- LoRA Prepare intentionally starts after native file selection with no second
+  Confirm. Correct the stale PR summary to describe explicit file selection,
+  prior upload/credit disclosure and preserved receipt/no-retry validation.
+- Keep owner-approved LoRA Add range 0.0–3.0, leaving saved requests untouched.
+  When a catalogue default is outside range, visibly explain the 1.0 initial
+  value instead of silently substituting it.
+- An unrelated InlineNotice during pending consent appears as its own
+  dismissible activity row, without changing the armed button. Explicit
+  navigation/scope invalidation still cancels safely.
+- Make Activity.unlisten idempotent and unsubscribe Queues/Generation listeners
+  on their respective Qt page destruction. Extend an existing Qt consent test
+  to cover the unrelated-notice case. No actual generation/upload performed.
+
 ## Open questions
 - None.
 

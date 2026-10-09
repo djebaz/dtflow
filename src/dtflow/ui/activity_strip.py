@@ -181,7 +181,7 @@ class ActivityStrip(QObject):
         self.start(key, title)
         row = self.rows[key]
         row.setProperty("feedbackState", state)
-        row.activitySymbol.setText("✓" if state == "success" else "!")
+        row.activitySymbol.setText("✓" if state == "success" else "i" if state == "info" else "!")
         row.activityDetail.setText(text)
         row.activityProgress.hide()
         row.activityCount.hide()

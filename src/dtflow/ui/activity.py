@@ -44,8 +44,9 @@ class Activity:
         self._listeners.append(listener)
 
     def unlisten(self, listener: Callable[[], None]) -> None:
-        """Detach presentation listeners when their owning window is destroyed."""
-        self._listeners.remove(listener)
+        """Idempotently detach a presentation listener before its Qt owner dies."""
+        if listener in self._listeners:
+            self._listeners.remove(listener)
 
     def _notify(self) -> None:
         for listener in tuple(self._listeners):

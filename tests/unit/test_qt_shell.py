@@ -16,6 +16,7 @@ from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.build import display_identity  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.runner import AsyncRunner  # noqa: E402
 
@@ -135,6 +136,10 @@ def test_credential_entry_wiring_never_echoes_secret(window):
     form.removeKeyButton.click()
     assert form.removeKeyButton.property("confirmationPending") is True
     assert "saved" in form.credentialStatusLabel.text().lower()
+    InlineNotice.information(form, "Background notice", "Unrelated status")
+    assert form.removeKeyButton.property("confirmationPending") is True
+    assert window.inline.form.inlineTitleLabel.text() == "Remove API key"
+    assert any(row.activityLabel.text() == "Background notice" for row in window.progress_strip.rows.values())
     window.inline.form.inlineDismissButton.click()  # declining keeps the key
     assert not form.removeKeyButton.property("confirmationPending")
     assert "saved" in form.credentialStatusLabel.text().lower() and form.removeKeyButton.isEnabled()
