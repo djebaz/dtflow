@@ -498,7 +498,6 @@ class GalleryPage(QObject):
         """Keep one toolbar row: secondary actions collapse into a Qt menu."""
         width = self.selection_bar.width()
         compact = width < 1190
-        narrow = width < 790
         for button in (self.select_filtered_button, self.clear_selection_button, self.copy_paths_button):
             button.setVisible(not compact)
         self.more_button.setVisible(compact)
