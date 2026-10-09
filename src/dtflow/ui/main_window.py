@@ -757,9 +757,9 @@ class MainWindow:
             or self.activity.dispatching
         )
 
-    def _request_gallery_recycle(self, identities: tuple[str, ...], hidden: int) -> None:
+    def _request_gallery_recycle(self, identities: tuple[str, ...], hidden: int, query: GalleryQuery) -> None:
         """Only the confirmation service may move explicitly checked originals."""
-        self.image_recycle.request(identities, hidden)
+        self.image_recycle.request(identities, hidden, query)
 
     def _confirm_close(self) -> bool:
         if self.image_recycle.running:
