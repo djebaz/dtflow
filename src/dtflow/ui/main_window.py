@@ -27,7 +27,7 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
-from dtflow.persistence.original_io import original_images_lock
+from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
@@ -229,6 +229,7 @@ class MainWindow:
             form, runner=self.runner, state_dir=self.state_dir,
             gallery=self.gallery, busy_source=self._recycle_busy,
         )
+        self.gallery.refresh_button.clicked.connect(self._request_recycle_reconciliation)
         self.queue = QueuePage(
             self.queue_page,
             runner=self.runner,
@@ -770,10 +771,15 @@ class MainWindow:
             return False
         return self.queue.confirm_close()
 
+    def _request_recycle_reconciliation(self) -> None:
+        """Allow manual Windows restores to reappear after an explicit Refresh."""
+        self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
+
     def _reconcile_images(self):
         """Inspect interrupted file operations under the original-file lease."""
-        with original_images_lock(self.state_dir):
-            return reconcile_images(self.state_dir)
+        with recycle_batch_lock(self.state_dir):
+            with original_images_lock(self.state_dir):
+                return reconcile_images(self.state_dir)
 
     def _images_reconciled(self, outcome, error) -> None:
         if error is not None:
