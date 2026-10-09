@@ -43,6 +43,9 @@
 
 ## Fixed
 
+- PR #58 guards the bottom overlay against inline-feedback child destruction before its parent strip: the child is forgotten on `destroyed`, layout checks Qt wrapper validity, and progress details are updated inside the owning strip. The existing Qt shell suite now includes a focused child-deletion lifecycle regression; CI and native acceptance are pending.
+
+
 - Own the desktop timer-shutdown receiver as a window-parented Qt slot so it cannot access a deleted window during teardown. The shutdown receiver and progress-filter ownership repairs passed automatic CI at 6cf931c (426 passed, 3 gated live skips); the new unified-overlay follow-up has separate acceptance.
 
 - PR #58 follow-up stops desktop polling/save/debounce timers at runner shutdown and ignores queued GUI deliveries afterward, preventing polling from submitting to a closed loop. Programmatic close obtains the existing inline consent before shutdown. Adapted existing Qt metadata, LoRA, upload, queue, key-removal and lifecycle contracts to the real inline interactions; no new tests or local test/smoke execution, fresh CI pending.

@@ -43,6 +43,22 @@ def test_lifecycle_from_designer_file_and_clean_shutdown(window, qtbot):
     assert delivered == [] and not window.queue._timer.isActive()
 
 
+def test_feedback_child_deleted_before_activity_strip_remains_safe(window, qtbot):
+    """A dying inline child must not leave the strip with a stale Qt pointer."""
+    window.show()
+    strip = window.progress_strip
+    window.inline.show("Details", "Preview confirmation information")
+    strip.start("fixture-progress", "Still working")
+    assert strip.feedback is window.inline
+
+    window.inline.form.deleteLater()
+    qtbot.waitUntil(lambda: strip.feedback is None, timeout=2000)
+    assert not strip.retired and "fixture-progress" in strip.rows
+    strip._position()
+    strip.update("fixture-progress", 1, 2)
+    strip.finish("fixture-progress")
+
+
 def test_shutdown_before_the_loop_starts_is_not_lost(qtbot):
     import warnings
 

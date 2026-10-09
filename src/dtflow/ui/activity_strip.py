@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRect, Qt, QTimer, Slot
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFrame
+from shiboken6 import isValid
 
 
 def _load(name, parent):
@@ -51,8 +52,18 @@ class ActivityStrip(QObject):
 
     def mount_feedback(self, panel):
         self.feedback = panel
+        panel.form.destroyed.connect(self._feedback_destroyed)
         self.form.activityRowsLayout.insertWidget(0, panel.form)
         panel.form.hide()
+
+    @Slot()
+    def _feedback_destroyed(self):
+        """Forget the child before its parent receives more layout events."""
+        self.feedback = None
+
+    def _live(self) -> bool:
+        """Qt can invalidate a child wrapper before its parent's destroyed signal."""
+        return not self._retired and isValid(self.host) and isValid(self.form)
 
     @property
     def retired(self) -> bool:
@@ -75,7 +86,7 @@ class ActivityStrip(QObject):
 
     def set_editor_dimming(self, enabled: bool) -> None:
         """Dim and block only the workspace behind an active inline input editor."""
-        if self._retired:
+        if not self._live() or not isValid(self.scrim):
             return
         if enabled:
             self.scrim.setGeometry(self.host.rect())
@@ -87,21 +98,25 @@ class ActivityStrip(QObject):
 
     @Slot()
     def _position(self):
-        if self._retired or self._positioning:
+        if not self._live() or self._positioning:
             return
         self._positioning = True
         try:
-            if self.scrim.isVisible():
+            if isValid(self.scrim) and self.scrim.isVisible():
                 self.scrim.setGeometry(self.host.rect())
                 self.scrim.raise_()
-            visible_feedback = self.feedback is not None and not self.feedback.form.isHidden()
+            panel = self.feedback
+            if panel is not None and not isValid(panel.form):
+                self.feedback = None
+                panel = None
+            visible_feedback = panel is not None and not panel.form.isHidden()
             if not self.rows and not visible_feedback:
                 self.form.hide()
                 return
             width = max(1, self.host.width() - 16)
             self.form.resize(width, self.form.height())
             if visible_feedback:
-                self.feedback.fit_text(width)
+                panel.fit_text(width)
             layout = self.form.activityRowsLayout
             height = layout.heightForWidth(width) if layout.hasHeightForWidth() else layout.sizeHint().height()
             height = max(48, height)
@@ -114,7 +129,7 @@ class ActivityStrip(QObject):
             self._positioning = False
 
     def start(self, key, label, stop=None, stop_text="Stop after current image", total=0, detail=""):
-        if self._retired:
+        if not self._live():
             return
         self.finish(key)
         row = _load("activity_progress_row.ui", self.form)
@@ -142,20 +157,26 @@ class ActivityStrip(QObject):
         self._position()
         QTimer.singleShot(0, self, self._position)
 
-    def update(self, key, done, total):
-        if self._retired:
+    def update(self, key, done, total, *, detail=None):
+        if not self._live():
             return
         row = self.rows.get(key)
+        if row is not None and not isValid(row):
+            self.rows.pop(key, None)
+            self._expiry.pop(key, None)
+            return
         if row is not None and row.property("feedbackState") == "progress":
             row.activityProgress.setRange(0, max(1, total) if total else 0)
             row.activityProgress.setValue(done)
             row.activityCount.setText(f"{done} / {total}" if total else "")
             if row.activityStopButton.isEnabled() or row.activityStopButton.isHidden():
-                row.activityDetail.setText(f"{done} of {total} processed" if total else "Working…")
+                row.activityDetail.setText(
+                    detail if detail is not None else f"{done} of {total} processed" if total else "Working…"
+                )
 
     def complete(self, key, title, text, state="success"):
         """Display outcomes without disarming unrelated confirmation or replacing another task."""
-        if self._retired:
+        if not self._live():
             return
         self.start(key, title)
         row = self.rows[key]
@@ -180,11 +201,15 @@ class ActivityStrip(QObject):
 
     @Slot()
     def _tick_notices(self):
-        if self._retired:
+        if not self._live():
             return
         focused = QApplication.focusWidget()
         for key, remaining in tuple(self._expiry.items()):
-            row = self.rows[key]
+            row = self.rows.get(key)
+            if row is None or not isValid(row):
+                self._expiry.pop(key, None)
+                self.rows.pop(key, None)
+                continue
             if row.underMouse() or (focused is not None and (focused is row or row.isAncestorOf(focused))):
                 continue
             remaining -= 0.1
@@ -197,11 +222,11 @@ class ActivityStrip(QObject):
             self._notice_timer.stop()
 
     def finish(self, key):
-        if self._retired:
+        if not self._live():
             return
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
-        if row is not None:
+        if row is not None and isValid(row):
             self.form.activityRowsLayout.removeWidget(row)
             row.hide()
             row.deleteLater()

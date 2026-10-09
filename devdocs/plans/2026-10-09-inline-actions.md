@@ -104,6 +104,19 @@
 - Adapt the existing LoRA presentation test to the one-step workflow.
   No new or local tests were run; await CI and owner runtime acceptance.
 
+## Feedback child-lifetime follow-up (2026-10-09)
+- CI at `e4e3420` still reports 426 passed, 3 skipped and two Qt
+  teardown errors: the inline feedback child is deleted while the activity
+  strip can still receive layout events. Retiring the strip when its own
+  frame is destroyed does not protect a younger child.
+- Clear the feedback reference on the child's `destroyed` signal and check
+  Shiboken's Qt wrapper validity before using widgets during layout and
+  progress updates. Avoid catching/suppressing `RuntimeError`.
+- Keep progress-detail updates inside the strip rather than dereferencing
+  the progress row directly from MainWindow; preserve progress and Stop
+  semantics. Extend the existing Qt shell tests with a child-deletion
+  regression; new CI and native runtime acceptance remain pending.
+
 ## Open questions
 - None.
 

@@ -459,10 +459,7 @@ class MainWindow:
                 self.generation.cancel if self.activity.generating else None,
                 stop_text="Stop waiting locally",
             )
-        self.progress_strip.update("run", state.completed or 0, state.total or 0)
-        row = self.progress_strip.rows["run"]
-        if row.activityStopButton.isEnabled() or row.activityStopButton.isHidden():
-            row.activityDetail.setText(state.detail)
+        self.progress_strip.update("run", state.completed or 0, state.total or 0, detail=state.detail)
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
