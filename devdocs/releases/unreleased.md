@@ -56,7 +56,7 @@
 
 - PR #57 review follow-up: remove automatic restoration based on path/size/mtime and conservatively withdraw old unverified restored outcomes without deleting files; verified recovery remains future work. Batch Trash preflight selected records/path-reference counts in consistent snapshots of up to 128; retain per-file validation and execution revalidation. List header checkbox now tracks horizontal scroll/section movement. Static checks only; follow-up runtime/GUI acceptance pending.
 
-- Grid and Detail checked-image checkboxes now share List's explicit white tick/partial SVGs and token-based indicator states, without changing geometry or selection behavior. Static theme/resource checks only; owner visual smoke pending.
+- Grid and Detail checked-image checkboxes now share List's explicit white tick/partial SVGs and token-based indicator states, without changing geometry or selection behavior. Static theme/resource checks passed; owner reports style smoke passed at 8ec3a55 (2026-10-09), without implying broader DPI/platform/packaged acceptance.
 
 ## Release audit
 

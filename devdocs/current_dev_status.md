@@ -105,4 +105,4 @@ Owner reports the checked-only Images export refinement smoke passed at c7a8f70.
 
 The [PR #57 source-review follow-up](plans/2026-10-09-pr57-review-followup.md) removes heuristic restoration (including withdrawing older unverified restored records without deleting files), batches Trash preflight records/path counts in 128-ID snapshots and tracks the List header checkbox on horizontal scroll/section moves. Explicit content-verified recovery is not implemented, so manually recovered files stay hidden. Static checks only; new recovery/preflight/header GUI acceptance remains pending.
 
-Gallery checkbox glyph parity: Grid and Detail now reuse List's shared white tick/partial SVG indicator rules. No layout, tokens, selection logic or unrelated checkbox styling changed; theme/resource/static checks only, owner visual smoke pending.
+Gallery checkbox glyph parity: Grid and Detail now reuse List's shared white tick/partial SVG indicator rules. No layout, tokens, selection logic or unrelated checkbox styling changed; static checks passed and owner reports style smoke passed at 8ec3a55 on 2026-10-09. Broader DPI/platform/packaged coverage remains separate.
