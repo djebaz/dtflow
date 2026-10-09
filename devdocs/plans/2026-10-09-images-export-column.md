@@ -20,3 +20,6 @@
 - Tests and smoke tests are not run; final layout/export/cancel/navigation smoke remains with the owner. Earlier export smoke was owner-reported for the previous navigation behavior.
 
 Static checks passed in the locked environment. No tests, GUI smoke, packaging, actual export/Trash operation, training/inference or potentially billable action ran for this follow-up.
+
+## Checked-only Images follow-up
+- 2026-10-09: Owner reports smoke passed for 5772f54, then requests removal of the Images scope dropdown. Hide the scope label/dropdown only in Images; keep every scope in Connection. New exports started from the Images panel always capture checked IDs, even after a Connection-started operation settles there; never change an already-running snapshot. Focus the destination rather than the hidden selector. This small follow-up remains owner-smoke-pending; static checks only.

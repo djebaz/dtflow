@@ -800,14 +800,12 @@ class MainWindow:
     def _open_checked_export(self) -> None:
         """Toggle the shared export card beside Images, without changing tabs."""
         self._gallery_export_open = not self._gallery_export_open
-        if self._gallery_export_open and not self.image_export.running:
-            self.image_export.select_scope("checked")
         self._place_export_panel()
         if self._gallery_export_open:
             target = (
                 self.gallery_detail.galleryExportCloseButton
                 if self.image_export.running
-                else self.form.imageExportScopeCombo
+                else self.form.imageExportFolderEdit
             )
             target.setFocus(Qt.FocusReason.OtherFocusReason)
 
@@ -828,8 +826,12 @@ class MainWindow:
         host = self.gallery_detail.galleryExportHost if inline else self.form.imageExportConnectionHost
         card = self.form.imageExportBox
         if card.parentWidget() is not host:
+            if inline and not self.image_export.running:
+                self.image_export.select_scope("checked")
             host.layout().addWidget(card)
             card.show()  # Reparenting hides QWidget; the same controls and progress survive.
+        self.form.imageExportScopeLabel.setVisible(not inline)
+        self.form.imageExportScopeCombo.setVisible(not inline)
         self.gallery_detail.galleryExportScroll.setVisible(inline)
         self.gallery.export_button.setToolTip(
             "Hide the export panel without cancelling an active export."
@@ -839,6 +841,8 @@ class MainWindow:
 
     def _export_selection(self, scope: str) -> GalleryQuery | tuple[str, ...]:
         """Freeze presentation choices; export service rechecks committed evidence."""
+        if self._gallery_export_open and self.form.workspaceStack.currentWidget() is self.images_page:
+            scope = "checked"  # Images has no scope selector; never inherit a hidden Connection scope.
         if scope == "all":
             return GalleryQuery()
         if scope == "filter":

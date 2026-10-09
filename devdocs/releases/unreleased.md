@@ -50,7 +50,7 @@
 
 - Phase 8E PR #57 implements session-only Images multi-selection, a single-row action bar, checked-image export and durable system Trash with original-file coordination. Select all toggles to Unselect all only after full filtered coverage, within the 10,000 combined-check limit. Qt handles per-file Trash capability without permanent-delete fallback or OS/filesystem allowlists. Owner reports deletion, checkbox styling, Select all / Unselect all and earlier export action smoke passed; interrupted recovery and broader platform/packaged acceptance remain separate. Exported copies and audit history stay preserved.
 
-- Images Export no longer redirects to Connection: it toggles a scrollable right-hand column with all shared export controls. One card/controller preserves settings and active progress across navigation; hiding does not cancel. Owner reports earlier export action worked; new column layout/navigation/cancel smoke remains pending. No agent tests/smoke or provider calls.
+- Images Export no longer redirects to Connection: it toggles a scrollable right-hand column with all shared export controls. One card/controller preserves settings and active progress across navigation; hiding does not cancel. Owner reports column smoke passed for 5772f54; Images now hides the scope dropdown and starts checked-only exports, while Connection retains every scope. This checked-only refinement remains owner-smoke-pending. No agent tests/smoke or provider calls.
 
 ## Release audit
 
