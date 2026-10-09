@@ -1425,9 +1425,8 @@ QFrame#inlineEditorScrim {
 
 /* Shared bottom feedback overlay: no reserved space, no Details control. */
 QFrame#activityStrip {
-  background: ${color.surface};
-  border: 1px solid ${color.selectionBorder};
-  border-radius: ${size.radius};
+  background: transparent;
+  border: none;
 }
 QFrame#inlineFeedback, QWidget#activityProgressRow {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.selection}, stop:1 ${color.surface});
@@ -1440,19 +1439,23 @@ QFrame#inlineFeedback[feedbackState="confirm"] {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.connectionSurface}, stop:1 ${color.surface});
   border-color: ${color.connectionAccent};
 }
-QFrame#inlineFeedback[feedbackState="partial"] {
-  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.button}, stop:1 ${color.surface});
+QFrame#inlineFeedback[feedbackState="partial"],
+QFrame#inlineFeedback[feedbackState="stopped"],
+QFrame#inlineFeedback[feedbackState="warning"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.warningSurface}, stop:1 ${color.surface});
   border-color: ${color.statusWarningBorder};
 }
 QWidget#activityProgressRow[feedbackState="partial"],
-QWidget#activityProgressRow[feedbackState="stopped"] {
-  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.dangerSurface}, stop:1 ${color.surface});
+QWidget#activityProgressRow[feedbackState="stopped"],
+QWidget#activityProgressRow[feedbackState="warning"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.warningSurface}, stop:1 ${color.surface});
   border-color: ${color.statusWarningBorder};
 }
 QFrame#inlineFeedback[feedbackState="error"], QWidget#activityProgressRow[feedbackState="error"] {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.dangerSurface}, stop:1 ${color.surface});
   border-color: ${color.dangerBorder};
 }
+QFrame#inlineFeedback[feedbackState="success"],
 QWidget#activityProgressRow[feedbackState="success"] {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.connectionSurface}, stop:1 ${color.surface});
   border-color: ${color.connectionAccent};
@@ -1485,17 +1488,24 @@ QWidget#activityProgressRow[feedbackState="success"] QLabel#activitySymbol {
   color: ${color.connectionAccent};
 }
 QWidget#activityProgressRow[feedbackState="partial"] QLabel#activitySymbol,
-QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activitySymbol {
-  background: ${color.dangerSurface};
+QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activitySymbol,
+QWidget#activityProgressRow[feedbackState="warning"] QLabel#activitySymbol {
+  background: ${color.warningGlyphSurface};
   color: ${color.warning};
 }
 QLabel#inlineSymbol[feedbackState="confirm"] {
   background: ${color.connectionSurface};
   color: ${color.connectionGlyph};
 }
-QLabel#inlineSymbol[feedbackState="partial"] {
-  background: ${color.buttonPressed};
+QLabel#inlineSymbol[feedbackState="partial"],
+QLabel#inlineSymbol[feedbackState="stopped"],
+QLabel#inlineSymbol[feedbackState="warning"] {
+  background: ${color.warningGlyphSurface};
   color: ${color.warning};
+}
+QLabel#inlineSymbol[feedbackState="success"] {
+  background: ${color.connectionSurface};
+  color: ${color.connectionAccent};
 }
 QWidget#activityProgressRow[feedbackState="error"] QLabel#activitySymbol,
 QLabel#inlineSymbol[feedbackState="error"] {
@@ -1513,6 +1523,16 @@ QProgressBar#activityProgress {
 QProgressBar#activityProgress::chunk {
   background: ${color.accentHover};
   border-radius: 2px;
+}
+QProgressBar#activityLifetimeBar {
+  min-height: 2px;
+  max-height: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+QProgressBar#activityLifetimeBar::chunk {
+  background: ${color.connectionAccent};
 }
 QPushButton#activityDismissButton {
   min-width: 22px;

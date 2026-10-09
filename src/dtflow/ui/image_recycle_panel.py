@@ -104,6 +104,7 @@ class ImageRecyclePanel(QObject):
             message,
             lambda: self._execute(plan),
             self._cancel_confirmation,
+            danger=True,
         )
 
     def _cancel_confirmation(self):

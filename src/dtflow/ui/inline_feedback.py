@@ -65,7 +65,7 @@ class InlineFeedback(QObject):
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-            if self._armed or self._editor:
+            if self._armed or self._editor or self.form.isVisible():
                 self.dismiss()
                 return True
         return False
@@ -83,6 +83,7 @@ class InlineFeedback(QObject):
             button.setMinimumWidth(minimum)
             button.setMaximumWidth(maximum)
             button.setProperty("confirmationPending", False)
+            button.setProperty("confirmationDanger", False)
             button.style().unpolish(button)
             button.style().polish(button)
             if callback:
@@ -114,7 +115,7 @@ class InlineFeedback(QObject):
 
     def notice(self, title, text, state="info"):
         """Keep unrelated notices visible without disarming a pending consent."""
-        if self._armed is not None:
+        if self._armed is not None or self._editor is not None:
             self._notice_index += 1
             self.strip.complete(f"notice-{self._notice_index}", title, text, state)
             return
@@ -123,7 +124,11 @@ class InlineFeedback(QObject):
     def show(self, title, text, state="info"):
         self.reset()
         self._set_feedback_state(state)
-        self.form.inlineSymbol.setText("!" if state in {"error", "partial", "confirm"} else "i")
+        self.form.inlineSymbol.setText(
+            "✓" if state == "success" else "■" if state == "stopped" else "!"
+            if state in {"error", "partial", "warning"} else "i"
+        )
+        self.escape.setEnabled(True)
         self.form.inlineTitleLabel.setText(title)
         self.form.inlineTextBrowser.setPlainText(text)
         self.form.inlineTextBrowser.setVisible(bool(text))
@@ -172,7 +177,7 @@ class InlineFeedback(QObject):
         button.clicked.connect(callback)
         self.strip._position()
 
-    def arm(self, button, title, text, callback, canceled=None):
+    def arm(self, button, title, text, callback, canceled=None, *, danger=False):
         self.show(title, text, "confirm")
         self.form.inlineDismissButton.setText("Cancel")
         self.escape.setEnabled(True)
@@ -194,24 +199,15 @@ class InlineFeedback(QObject):
         button.setText("Confirm")
         button.setAccessibleName("Confirm " + title)
         button.setToolTip(title + " — see the inline details before confirming")
-        button.setProperty(
-            "confirmationDanger",
-            button.objectName()
-            in {
-                "galleryDeleteButton",
-                "clearInventoryCacheButton",
-                "clearThumbnailCacheButton",
-                "clearDerivedCacheButton",
-                "clearAllCacheButton",
-                "clearCustomLorasButton",
-                "clearQueuesButton",
-            },
-        )
+        button.setProperty("confirmationDanger", danger)
         button.setProperty("confirmationPending", True)
         button.style().unpolish(button)
         button.style().polish(button)
         button._inline_commit = callback
-        self._set_feedback_state("error" if button.property("confirmationDanger") else "confirm")
+        self._set_feedback_state("error" if danger else "confirm")
+        self.form.inlineSymbol.setText(
+            "♻" if title.startswith("Move ") else "▤" if "cache" in title.lower() else "!" if danger else "i"
+        )
         self.strip._position()
 
     def commit(self, button):
@@ -251,8 +247,8 @@ def feedback(parent):
     return window._inline_feedback
 
 
-def confirm_action(parent, button, title, text, callback: Callable, canceled=None):
-    feedback(parent).arm(button, title, text, callback, canceled)
+def confirm_action(parent, button, title, text, callback: Callable, canceled=None, *, danger=False):
+    feedback(parent).arm(button, title, text, callback, canceled, danger=danger)
 
 
 class InlineNotice:
@@ -264,6 +260,10 @@ class InlineNotice:
 
     @staticmethod
     def warning(parent, title, text):
+        feedback(parent).notice(title, text, "warning")
+
+    @staticmethod
+    def error(parent, title, text):
         feedback(parent).notice(title, text, "error")
 
     about = information

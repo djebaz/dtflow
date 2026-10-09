@@ -686,6 +686,7 @@ class MainWindow:
             "Clear disposable cache?",
             f"Delete disposable {names} cache? Outputs, attempts, queues, presets, settings, credentials and model assets are preserved.",
             proceed,
+            danger=True,
         )
 
     def _cache_cleared(self, names: str, failure) -> None:
@@ -784,6 +785,7 @@ class MainWindow:
             "Clear custom LoRAs",
             "Remove the imported custom LoRA definitions? Bundled DTFlow catalogue data is not affected.",
             proceed,
+            danger=True,
         )
 
     def check(self) -> None:

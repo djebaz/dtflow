@@ -3,9 +3,9 @@
 import math
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRect, Qt, QTimer, Slot
+from PySide6.QtCore import QEasingCurve, QEvent, QFile, QIODevice, QObject, QPropertyAnimation, QRect, Qt, QTimer, Slot
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QFrame
+from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect
 from shiboken6 import isValid
 
 
@@ -20,6 +20,17 @@ def _load(name, parent):
     if form is None:
         raise OSError(f"{name} could not be loaded")
     return form
+
+
+_OPERATION_ICONS = {
+    "trash": "♻",
+    "export": "⇧",
+    "asset": "⇧",
+    "cache": "▤",
+    "generation": "✦",
+    "queue": "▦",
+    "selection": "☑",
+}
 
 
 class ActivityStrip(QObject):
@@ -134,7 +145,7 @@ class ActivityStrip(QObject):
         self.finish(key)
         row = _load("activity_progress_row.ui", self.form)
         row.setProperty("feedbackState", "progress")
-        row.activitySymbol.setText("⋯")
+        row.activitySymbol.setText(_OPERATION_ICONS.get(key.split("-")[0], "⋯"))
         row.activityLabel.setText(label)
         row.activityDetail.setText(detail or "Preparing…")
         row.activityProgress.setAccessibleName(label + " progress")
@@ -143,6 +154,7 @@ class ActivityStrip(QObject):
         row.activityStopButton.setVisible(stop is not None)
         row.activityDismissButton.hide()
         row.activityLifetime.hide()
+        row.activityLifetimeBar.hide()
         if stop is not None:
             row.activityStopButton.setText(stop_text)
 
@@ -181,7 +193,9 @@ class ActivityStrip(QObject):
         self.start(key, title)
         row = self.rows[key]
         row.setProperty("feedbackState", state)
-        row.activitySymbol.setText("✓" if state == "success" else "i" if state == "info" else "!")
+        row.activitySymbol.setText(
+            "✓" if state == "success" else "i" if state == "info" else "■" if state == "stopped" else "!"
+        )
         row.activityDetail.setText(text)
         row.activityProgress.hide()
         row.activityCount.hide()
@@ -196,6 +210,8 @@ class ActivityStrip(QObject):
             self._expiry[key] = 6.0
             row.activityLifetime.setText("6s")
             row.activityLifetime.show()
+            row.activityLifetimeBar.setValue(6000)
+            row.activityLifetimeBar.show()
             self._notice_timer.start()
         self._position()
 
@@ -210,16 +226,34 @@ class ActivityStrip(QObject):
                 self._expiry.pop(key, None)
                 self.rows.pop(key, None)
                 continue
-            if row.underMouse() or (focused is not None and (focused is row or row.isAncestorOf(focused))):
+            if self.form.underMouse() or (
+                focused is not None and (focused is self.form or self.form.isAncestorOf(focused))
+            ):
                 continue
             remaining -= 0.1
             if remaining <= 0:
-                self.finish(key)
+                self._expiry.pop(key, None)
+                effect = QGraphicsOpacityEffect(row)
+                row.setGraphicsEffect(effect)
+                fade = QPropertyAnimation(effect, b"opacity", row)
+                fade.setDuration(450)
+                fade.setStartValue(1.0)
+                fade.setEndValue(0.0)
+                fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+                fade.finished.connect(lambda key=key, row=row: self._finish_if_row(key, row))
+                row._lifetime_fade = fade
+                fade.start()
             else:
                 self._expiry[key] = remaining
                 row.activityLifetime.setText(f"{math.ceil(remaining)}s")
+                row.activityLifetimeBar.setValue(max(0, round(remaining * 1000)))
         if not self._expiry:
             self._notice_timer.stop()
+
+    def _finish_if_row(self, key, row):
+        """Ignore an old fade callback if a new task has reused the same key."""
+        if self._live() and self.rows.get(key) is row:
+            self.finish(key)
 
     def finish(self, key):
         if not self._live():

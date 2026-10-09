@@ -698,7 +698,7 @@ class QueuePage:
             keep = (self._dispatching,) if self._dispatching else ()
             self._runner.submit(clear_queues(self._state, keep), self._cleared)
 
-        confirm_action(self.page, self.page.clearQueuesButton, "Clear queues", CLEAR_TEXT, proceed)
+        confirm_action(self.page, self.page.clearQueuesButton, "Clear queues", CLEAR_TEXT, proceed, danger=True)
 
     def _confirm_control(self, button, title, text, action):
         panel = feedback(self.page)
