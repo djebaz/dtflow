@@ -81,10 +81,16 @@ def recycle_file(path: Path) -> None:
         _check(shell32.SHCreateItemFromParsingName(
             str(source), None, ctypes.byref(shell_item), ctypes.byref(item)
         ), "source selection")
-        # FOFX_RECYCLEONDELETE: explicitly require Windows recycle handling.
-        # FOF_SILENT and FOF_NOERRORUI: report outcomes through DTFlow.
-        _check(_invoke(operation, 5, [ctypes.c_uint32], 0x00080000 | 0x0004 | 0x0400),
-               "recycle flags")
+        # FOFX_RECYCLEONDELETE: require Windows 8+ Recycle Bin handling.
+        # DTFlow has already obtained an explicit user confirmation; suppress
+        # duplicate Shell prompts and show operation errors through the app.
+        # No FOF_ALLOWUNDO-only or SHFileOperation fallback is permitted.
+        FOFX_RECYCLEONDELETE = 0x00080000
+        FOF_NOCONFIRMATION = 0x0010
+        FOF_SILENT = 0x0004
+        FOF_NOERRORUI = 0x0400
+        flags = FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
+        _check(_invoke(operation, 5, [ctypes.c_uint32], flags), "recycle flags")
         _check(_invoke(operation, 18, [ctypes.c_void_p, ctypes.c_void_p], item, None),
                "delete queue")
         _check(_invoke(operation, 21, []), "recycle execution")
