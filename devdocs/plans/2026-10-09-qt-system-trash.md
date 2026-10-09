@@ -27,3 +27,7 @@
 ## Validation
 - [x] Ruff check passed across the repo; changed Python syntax/imports and canonical Designer XML parsed; git diff --check passed. No Trash function was invoked.
 - [ ] Final tests and smoke tests deferred to user. No tests added/run, no trash operation, no inference or billable action.
+
+## Owner smoke and List indicators
+
+Owner reports deletion smoke passed on 2026-10-09. No exact executable identity or scenario details were supplied; this is owner-reported deletion acceptance, not agent verification or full platform/interruption/restore acceptance. List indicator styling follow-up uses shared QSS/tokens for dark unchecked boxes and blue checked/partial states with explicit tick/dash glyphs; visual acceptance remains pending.

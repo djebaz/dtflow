@@ -1127,6 +1127,38 @@ QTableWidget#galleryListTable::item:selected:hover {
   background: ${color.selectionHover};
   color: ${color.selectionText};
 }
+/* Model-backed List checks and its tri-state header share the same appearance. */
+QTableWidget#galleryListTable::indicator,
+QTableWidget#galleryListTable QCheckBox::indicator {
+  width: 14px;
+  height: 14px;
+  border: 1px solid ${color.checkBorder};
+  border-radius: ${size.radiusXs};
+  background: ${color.input};
+  image: none;
+}
+QTableWidget#galleryListTable::indicator:hover,
+QTableWidget#galleryListTable QCheckBox::indicator:hover {
+  border-color: ${color.focus};
+}
+QTableWidget#galleryListTable::indicator:checked,
+QTableWidget#galleryListTable QCheckBox::indicator:checked {
+  background: ${color.accent};
+  border-color: ${color.focus};
+  image: url(../images/controls/check.svg);
+}
+QTableWidget#galleryListTable::indicator:indeterminate,
+QTableWidget#galleryListTable QCheckBox::indicator:indeterminate {
+  background: ${color.accent};
+  border-color: ${color.focus};
+  image: url(../images/controls/check-partial.svg);
+}
+QTableWidget#galleryListTable::indicator:disabled,
+QTableWidget#galleryListTable QCheckBox::indicator:disabled {
+  background: ${color.disabledBorder};
+  border-color: ${color.checkDisabledBorder};
+}
+
 QTableWidget#galleryListTable QHeaderView::section {
   font-weight: ${type.weightLabel};
   background: ${color.surface};

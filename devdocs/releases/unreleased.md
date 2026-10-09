@@ -21,6 +21,8 @@
 
 ## Changed
 
+- Images List row/header checkboxes now use shared dark/blue styling with explicit checked and partial glyphs rather than native white boxes. Owner reports deletion smoke passed (2026-10-09); checkbox visual acceptance and remaining recovery/platform gates are separate.
+
 - Phase 8E system Trash adapter now uses locked Qt 6.11.2 instead of handwritten Windows COM, without a new dependency. Managed-original validation remains; Qt capability detection and per-file move results replace fixed-drive/filesystem/OS restrictions, with platform-aware wording. Qt-reported success with an unverifiable destination remains uncertain and is explicitly distinguished in results. Shared durable checkpoints/coordination remain Qt-free. Owner trash/recovery and platform acceptance remain pending; no agent tests or actual trash operations.
 
 - Connection middle-panel cards scroll within the shared shell to keep the export controls reachable on smaller windows.
