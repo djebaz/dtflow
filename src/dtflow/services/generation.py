@@ -211,7 +211,7 @@ class GenerationService:
                 def commit_originals():
                     # Keep committed originals behind the same OS-released lease
                     # used by export and Recycle Bin; no provider code runs here.
-                    with original_images_lock(self.store.directory):
+                    with original_images_lock(getattr(self.store, "directory", self.output.parent)):
                         return self.saver(self.output, attempt_id, request, result, identity(), caps.limits)
 
                 paths, metadata = await settle(asyncio.to_thread(commit_originals))
