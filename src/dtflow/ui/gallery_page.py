@@ -811,7 +811,12 @@ class GalleryPage(QObject):
     def _request_recycle(self) -> None:
         """Only the confirmation controller can authorize a Recycle Bin operation."""
         if self.selection.checked and not self._recycle_busy and self._recycle_callback is not None:
-            self._recycle_callback(self.selection.snapshot(), self._hidden_checks)
+            try:
+                query = self.export_query()
+            except ValidationError as exc:
+                self._selection_notice(str(exc))
+                return
+            self._recycle_callback(self.selection.snapshot(), self._hidden_checks, query)
 
     def set_recycle_busy(self, busy: bool) -> None:
         """Prevent overlapping deletion requests without blocking ordinary browsing."""
