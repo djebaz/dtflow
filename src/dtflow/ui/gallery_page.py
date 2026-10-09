@@ -40,6 +40,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import GallerySelection, MAX_CHECKED_IMAGES
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as gallery_storage
+from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.button_focus import KeyboardFocusGuard
@@ -69,19 +70,28 @@ DIMENSIONS = re.compile(r"^\s*(\d+)\s*[x×]\s*(\d+)\s*$")
 DATE_RANGE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})\s*$")
 
 
-def _image(path: str, max_side: int) -> tuple[QImage | None, str]:
-    """Decode one image off the GUI thread, optionally asking Qt for a bounded decode."""
+def _image(path: str, max_side: int, state: Path | None = None) -> tuple[QImage | None, str]:
+    """Decode one original while holding its shared cross-process read lease."""
 
-    reader = QImageReader(path)
-    reader.setAutoTransform(True)
-    if max_side:
-        source = reader.size()
-        if source.isValid() and (source.width() > max_side or source.height() > max_side):
-            reader.setScaledSize(source.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
-    value = reader.read()
-    if value.isNull():
-        return None, reader.errorString() or "Image could not be decoded."
-    return value, ""
+    def decode() -> tuple[QImage | None, str]:
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        if max_side:
+            source = reader.size()
+            if source.isValid() and (source.width() > max_side or source.height() > max_side):
+                reader.setScaledSize(source.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
+        value = reader.read()
+        if value.isNull():
+            return None, reader.errorString() or "Image could not be decoded."
+        return value, ""
+
+    if state is None:
+        return decode()
+    try:
+        with original_images_lock(state, timeout=12):
+            return decode()
+    except OriginalImagesBusyError:
+        return None, "Original temporarily busy"
 
 
 def _display_output_path(path: str) -> str:
@@ -1290,7 +1300,7 @@ class GalleryPage(QObject):
             self._thumb_active += 1
 
             async def work(filename=path):
-                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE)
+                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir)
 
             self.runner.submit(
                 work(),
@@ -1319,10 +1329,21 @@ class GalleryPage(QObject):
                         self._film_painters[row].pixmap = pixmap
                         self._film_buttons[row].update()
             elif issue:
-                button = self._grid_buttons.get(identity)
-                if button is not None:
-                    button.setToolTip(f"Image is corrupt or unreadable: {issue}")
+                if issue == "Original temporarily busy":
+                    QTimer.singleShot(2000, lambda: self._retry_thumbnail(generation, identity))
+                else:
+                    button = self._grid_buttons.get(identity)
+                    if button is not None:
+                        button.setToolTip(f"Image is corrupt or unreadable: {issue}")
         self._pump_thumbnails()
+
+    def _retry_thumbnail(self, generation: int, identity: str) -> None:
+        """Retry only the same visible identity after a transient original-file lease."""
+        if self._thumb_versions.get(identity) != generation:
+            return
+        item = next((entry for entry in self.items if entry.identity == identity), None)
+        if item is not None:
+            self._queue_thumbnails([item])
 
     def _open_from_grid(self, identity: str) -> None:
         modifiers = QApplication.keyboardModifiers()
@@ -1412,7 +1433,7 @@ class GalleryPage(QObject):
             image_generation = self._image_generation
 
             async def read_image():
-                return await asyncio.to_thread(_image, item.path, 0)
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
 
             self.runner.submit(
                 read_image(),
@@ -1431,12 +1452,27 @@ class GalleryPage(QObject):
         if error is not None or not result or result[0] is None:
             issue = type(error).__name__ if error is not None else (result[1] if result else "decode failed")
             self.surface_painter.pixmap = QPixmap()
+            if issue == "Original temporarily busy":
+                QTimer.singleShot(2000, lambda: self._retry_detail_image(generation, identity))
+                return
             self.surface.setToolTip(f"Image is corrupt or unreadable: {issue}")
             self.external_button.setEnabled(False)
             self.surface.update()
             return
         self.surface_painter.pixmap = QPixmap.fromImage(result[0])
         self.surface.update()
+
+    def _retry_detail_image(self, generation: int, identity: str) -> None:
+        if generation != self._image_generation or identity != self.selected_id:
+            return
+        item = self._selected()
+        if item is not None:
+            async def read_again():
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
+            self.runner.submit(
+                read_again(),
+                lambda result, error: self._image_done(generation, identity, result, error),
+            )
 
     def _detail_done(self, generation: int, identity: str, detail, error) -> None:
         if generation != self._detail_generation or identity != self.selected_id:
