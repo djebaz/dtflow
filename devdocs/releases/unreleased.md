@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 Generate workspace simplification moves the sole Generate image action into the prompt header beside Expand prompt, reduces the collapsed prompt to 52 px (roughly two lines), and removes the duplicated Stop waiting and synthetic 0–100% progress controls beneath the preview. The shared overlay now presents actual stages/steps and owns the existing local-stop action; the persistent status label retains uncertain outcome evidence.
+
+
 - Images **Export** is now a genuine checkable panel toggle, enabled even without checked images. Closed uses neutral styling; open uses selected blue. Closing or navigating away synchronizes the button state, reopening Images restores panel visibility, and Export JPEGs still validates checked identities without automatically starting work.
 
 - PR #58 reuses the canonical Images Delete SVG, tinted danger red, in both the Recycle Bin confirmation and in-progress Trash overlay instead of separate drawn/emoji icons. Other operation glyphs and behavior are unchanged.

@@ -873,7 +873,7 @@
    </item>
    <item>
     <widget class="QFrame" name="generationWorkspace">
-     <layout class="QVBoxLayout" name="generationWorkspaceLayout" stretch="0,0,0,1,0,0,0">
+     <layout class="QVBoxLayout" name="generationWorkspaceLayout" stretch="0,0,0,1,0">
       <property name="leftMargin">
        <number>0</number>
       </property>
@@ -918,7 +918,22 @@
           </property>
          </widget>
         </item>
-        <item />
+        <item>
+         <widget class="QPushButton" name="generateButton">
+          <property name="text">
+           <string>Generate image</string>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>38</height>
+           </size>
+          </property>
+          <property name="accessibleName">
+           <string>Submit generation request</string>
+          </property>
+         </widget>
+        </item>
        </layout>
       </item>
       <item>
@@ -926,13 +941,13 @@
         <property name="maximumSize">
          <size>
           <width>16777215</width>
-          <height>76</height>
+          <height>52</height>
          </size>
         </property>
         <property name="minimumSize">
          <size>
           <width>0</width>
-          <height>76</height>
+          <height>52</height>
          </size>
         </property>
         <property name="placeholderText">
@@ -987,55 +1002,7 @@
         </layout>
        </widget>
       </item>
-      <item>
-       <layout class="QHBoxLayout" name="generateButtons">
-        <item>
-         <widget class="QPushButton" name="generateButton">
-          <property name="text">
-           <string>Generate image</string>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>38</height>
-           </size>
-          </property>
-          <property name="accessibleName">
-           <string>Submit generation request</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="cancelButton">
-          <property name="text">
-           <string>Stop waiting</string>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>38</height>
-           </size>
-          </property>
-          <property name="toolTip">
-           <string>Stops DTFlow waiting locally. It does not confirm cancellation on the server.</string>
-          </property>
-          <property name="accessibleName">
-           <string>Stop waiting locally</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-      <item>
-       <widget class="QProgressBar" name="generationProgressBar">
-        <property name="value">
-         <number>0</number>
-        </property>
-        <property name="format">
-         <string>Idle</string>
-        </property>
-       </widget>
-      </item>
+
       <item>
        <widget class="QLabel" name="generationStatusLabel">
         <property name="text">
@@ -1051,7 +1018,7 @@
          <string>Generation status</string>
         </property>
         <property name="textRole" stdset="0">
-         <string>value</string>
+         <string>supporting</string>
         </property>
        </widget>
       </item>

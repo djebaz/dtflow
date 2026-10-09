@@ -192,7 +192,7 @@ The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral dr
 
 The shared left and right rails have 248–300 logical-pixel constraints in the Designer form. Their contents scroll independently. For Connection, Generate and Queues, at a window width below 1100 the inspector is hidden automatically and navigation remains in the left rail; there is no manual Inspector toggle in the header. If the inspector is hidden at *any* width, Connection, Generate and Queues remain reachable. The main splitter gives the center its flexible stretch; do not let long labels force a wider minimum.
 
-The prompt starts at 76 px and expands to 180 px on request. The negative prompt stays compact. The canvas takes the remaining center height and fits the whole image, whether portrait 1:2 or landscape 16:9, without crop or distortion. Its 12 px fit inset and 10 px floating-control inset are implemented in the preview widget. At 100% or manual zoom, overflow gets scrollbars; drag pans and Control-wheel zoom anchors at the pointer. Expand temporarily gives the preview its own window and restores its original parent on Escape or close.
+The prompt starts at a compact 52 px (approximately two lines) and expands to 180 px on request. The prompt header holds the Expand prompt control and the primary Generate image action side by side; there is no duplicate action row below the preview. The negative prompt stays compact. The canvas takes the remaining center height and fits the whole image, whether portrait 1:2 or landscape 16:9, without crop or distortion. Its 12 px fit inset and 10 px floating-control inset are implemented in the preview widget. At 100% or manual zoom, overflow gets scrollbars; drag pans and Control-wheel zoom anchors at the pointer. Expand temporarily gives the preview its own window and restores its original parent on Escape or close.
 
 For a new tab, establish its primary work object first, then give its details scrolling rails or collapsible sections. Reuse shell navigation and the shared QSS; do not copy Generate's image canvas into a page where the primary object is a queue table or connection state. Check an 800×680 narrow window and a normal desktop window with representative long data before fixing widths.
 
@@ -489,7 +489,7 @@ for Trash, Export, Cache, Queue, selection and generation. Destructive
 classification is explicit at the confirmation call site (`danger=True`),
 rather than inferred from button object names. Dismiss never stops work;
 Stop delegates to the owning controller.
-Keep generation preview/Run controls and existing uncertainty semantics. All filters,
+Keep generation preview/Run controls and existing uncertainty semantics. The shared bottom overlay owns live Generate progress and Stop waiting locally; never duplicate the stop button or a synthetic 0–100% bar inside the Generate workspace. Show real backend stage text and step counts when reported, not invented percentages. Keep a discreet persistent Generation status label beneath the preview for durable failures and uncertain outcomes. All filters,
 slots, expiry timers and deferred positioning are Qt-owned by their overlay widgets.
 No idle layout space is reserved. Native DPI, clipping/overlap, resize, focus, scroll
 continuity and packaged acceptance require owner verification; static/CI checks do

@@ -164,7 +164,11 @@ class ActivityStrip(QObject):
 
             def request_stop():
                 row.activityStopButton.setEnabled(False)
-                row.activityDetail.setText("Stopping after the current item; completed work remains.")
+                row.activityDetail.setText(
+                    "Stopping local wait; remote cancellation is not confirmed."
+                    if stop_text == "Stop waiting locally"
+                    else "Stopping after the current item; completed work remains."
+                )
                 stop()
 
             row.activityStopButton.clicked.connect(request_stop)

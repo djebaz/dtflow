@@ -59,8 +59,20 @@ def fake(monkeypatch):
     return use, gate
 
 
-def settled(page):
-    return lambda: page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
+def settled(window):
+    return lambda: window.generation_page.generateButton.isEnabled() and not window.activity.generating
+
+
+def test_generate_action_lives_in_compact_prompt_header(window):
+    page = window.generation_page
+    assert page.promptHeader.indexOf(page.generateButton) >= 0
+    assert page.promptEdit.minimumHeight() == page.promptEdit.maximumHeight() == 52
+    assert not hasattr(page, "generationProgressBar")
+    assert not hasattr(page, "cancelButton")
+    page.expandPromptButton.click()
+    assert page.promptEdit.minimumHeight() == page.promptEdit.maximumHeight() == 180
+    page.expandPromptButton.click()
+    assert page.promptEdit.minimumHeight() == page.promptEdit.maximumHeight() == 52
 
 
 def test_simulation_controls_exist_only_for_the_fake_provider(window):
@@ -81,11 +93,12 @@ def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(wind
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    assert not page.generateButton.isEnabled() and page.cancelButton.isEnabled()
+    assert not page.generateButton.isEnabled()
+    assert window.progress_strip.rows["run"].activityStopButton.isEnabled()
     qtbot.wait(50)  # the GUI thread keeps processing events while the generation is held open
     assert not page.generateButton.isEnabled()
     window.runner._loop.call_soon_threadsafe(gate.set)
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     assert page.generationStatusLabel.text().startswith("Saved")
     assert page.resultList.count() == 2  # one output plus its metadata
     page.copyOutputPathButton.click()  # with nothing selected, the first output is copied
@@ -106,15 +119,17 @@ def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: page.generationProgressBar.format().startswith("fake"), timeout=5000)  # held at the gate
+    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("fake"), timeout=5000)  # held at gate
     png = fixture_png(64, 64, 1)
     preview = ImageArtifact("p", Designation.PREVIEW, "image/png", png, 64, 64)
     window.generation._relay(BackendEvent("r", 99, "preview", "t", artifact=preview))
     qtbot.waitUntil(lambda: page.resultPreviewLabel.property("designation") == "preview", timeout=3000)
     assert page.resultList.count() == 0
-    assert "not the final image" in page.generationProgressBar.format()
+    qtbot.waitUntil(
+        lambda: "Preview shown (not the final image)" in window.activity.run_state.detail, timeout=3000
+    )
     window.runner._loop.call_soon_threadsafe(gate.set)
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
 
 
 def test_unknown_outcome_is_not_presented_as_a_plain_failure(window, qtbot, fake):
@@ -122,10 +137,10 @@ def test_unknown_outcome_is_not_presented_as_a_plain_failure(window, qtbot, fake
     use(scenario="lost")
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     text = page.generationStatusLabel.text()
     assert text.startswith("Outcome unknown") and "not replayed" in text
-    assert page.generationProgressBar.maximum() > 0  # a settled failure never leaves the busy animation running
+    assert "run" not in window.progress_strip.rows  # no stale progress display after failure
     assert page.resultList.count() == 0
 
 
@@ -134,13 +149,12 @@ def test_local_stop_reports_recorded_evidence_not_remote_cancellation(window, qt
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: page.generationProgressBar.format().startswith("fake"), timeout=5000)  # submission possible
-    page.cancelButton.click()
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("fake"), timeout=5000)
+    window.progress_strip.rows["run"].activityStopButton.click()
+    qtbot.waitUntil(settled(window), timeout=5000)
     text = page.generationStatusLabel.text()
     assert text.startswith("Local stop requested") and "Outcome unknown" in text
-    bar = page.generationProgressBar
-    assert bar.format().startswith("Stopped locally") and bar.maximum() == 100  # determinate, no busy animation
+    assert "run" not in window.progress_strip.rows  # stop removes the active progress row
     assert "cancelled on" not in text.lower() and "Remote cancellation is not confirmed" in text
 
 
@@ -160,7 +174,7 @@ def test_state_busy_is_reported_without_dispatch(window, qtbot):
     qtbot.wait(200)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     assert page.generationStatusLabel.text().startswith("State is busy")
     window.runner.submit(owner.aclose(), lambda *_: None)
     qtbot.wait(100)
@@ -275,7 +289,7 @@ def test_gui_logs_actions_and_results_without_prompts_or_inventory(window, qtbot
     page.refreshInventoryButton.click()
     qtbot.waitUntil(lambda: page.refreshInventoryButton.isEnabled(), timeout=5000)
     page.generateButton.click()
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     logs.close()
     text = logs.path.read_text(encoding="utf-8")
     assert "inventory refresh ok backend=fake" in text and "generate submitted backend=fake" in text
@@ -291,7 +305,7 @@ def test_a_failed_generation_logs_the_backend_code_not_just_the_exception_type(w
     logs = configure_logging(directory=tmp_path / "logs", session="fail")
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     logs.close()
     line = next(x for x in logs.path.read_text(encoding="utf-8").splitlines() if "generate failed" in x)
     assert "BackendError code=" in line and "category=" in line
@@ -306,7 +320,7 @@ def test_a_size_that_is_not_a_multiple_of_64_is_adjusted_and_shown(window, qtbot
     page.generateButton.click()
     assert (page.widthSpinBox.value(), page.heightSpinBox.value()) == (704, 512)
     assert "Size adjusted from 700x500 to 704x512" in page.generationStatusLabel.text()
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     assert "size: 704x512" in page.effectiveRequestBrowser.toPlainText()
 
 
@@ -386,7 +400,7 @@ def test_saved_actions_use_attempt_identity_and_metadata_file(window, qtbot, fak
     use()
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(settled(page), timeout=5000)
+    qtbot.waitUntil(settled(window), timeout=5000)
     window.form.backendCombo.setCurrentText("cloud")
     assert "Fixture" in page.resultPreviewLabel._badge.text()
     window.generation.metadataButton.click()

@@ -193,3 +193,10 @@ Bin destructive confirmation uses a drawn monochrome red trash icon instead
 of the green recycling emoji. The underlying generation/queue/Trash attempt
 records and uncertainty/retry semantics are unaffected. Qt CI and native GUI
 acceptance must be checked for this revision.
+
+PR #58 Generate workspace consolidation: place Generate image in the prompt header
+beside Expand prompt; default prompt is 52 px, expanded prompt remains 180 px.
+Remove the duplicate Stop waiting and synthetic progress bar from the center;
+keep the shared overlay as the single progress/local-stop interface, reporting
+only observed stage/step evidence. The durable generation status/evidence remains.
+Existing Qt generation tests are adapted. CI and native visual acceptance pending.

@@ -35,7 +35,7 @@ checkpoint, the Add chooser is narrowed to available LoRAs with known family/mod
 compatibility feedback still distinguishes confirmed mismatches from unknown metadata rather
 than guessing.
 
-Follow progress and previews in an image-first workspace, then inspect saved results with
+Write prompts in a compact two-line field with Generate image in its header; track real steps and Stop waiting locally through the shared overlay while the preview has no duplicate controls. Follow previews in an image-first workspace, then inspect saved results with
 fit, zoom and pan. Output details link images to their generation metadata and provide
 folder/path actions. Save and load generation configurations to reuse a setup.
 

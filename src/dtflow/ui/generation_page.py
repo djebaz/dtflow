@@ -97,7 +97,6 @@ WIRED_CONTROLS = (
     "unclassifiedModelsButton",
     "refreshInventoryButton",
     "generateButton",
-    "cancelButton",
     "configurationCombo",
     "loadConfigurationButton",
     "saveConfigurationButton",
@@ -199,7 +198,6 @@ class GenerationPage:
         self._generating = False
         self._request = None
         self._busy = False
-        self._progress_pct = 0
         self._config_name: str | None = None
         self._reuse_source_identity: str | None = None
         self._metadata_path: Path | None = None
@@ -236,9 +234,7 @@ class GenerationPage:
             page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
-        page.cancelButton.setEnabled(False)
         page.generateButton.clicked.connect(self.generate)
-        page.cancelButton.clicked.connect(self.cancel)
         page.refreshInventoryButton.clicked.connect(self.refresh)
         page.saveConfigurationButton.clicked.connect(self.save)
         page.savePresetButton.setEnabled(True)
@@ -270,7 +266,7 @@ class GenerationPage:
         page.attemptDetails.hide()
         page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)
         page.expandPromptButton.toggled.connect(
-            lambda expanded: page.promptEdit.setFixedHeight(180 if expanded else 76)
+            lambda expanded: page.promptEdit.setFixedHeight(180 if expanded else 52)
         )
         page.resultPreviewLabel.enable_inspection()
         self.sync_backend()
@@ -565,7 +561,6 @@ class GenerationPage:
         self._busy = busy
         self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
-        self.page.cancelButton.setEnabled(busy and self._generating)
         self.lora.set_enabled(not busy)
 
     def _unlisten_activity(self) -> None:
@@ -607,24 +602,22 @@ class GenerationPage:
             self._reuse_source_identity = None
         return request, name, endpoint, self.lora.receipt_ids()
 
-    # Overall progress is a determinate 0-100 bar that only grows: sampling steps fill the middle, the other stages
-    # only set floors, so a stage without a step count never turns the bar into a busy animation.
-    PROGRESS_FLOORS = {"preparing": 5, "submission_possible": 10, "terminal": 95}
-    SAMPLING_SPAN = (10, 90)
-
-    def _progress(self, text: str, completed: int | None = None, total: int | None = None, *, floor: int = 0) -> None:
-        if total:
-            low, high = self.SAMPLING_SPAN
-            floor = max(floor, low + (high - low) * min(completed or 0, total) // total)
-        self._progress_pct = max(self._progress_pct, floor)
-        bar = self.page.generationProgressBar
-        bar.setRange(0, 100)
-        bar.setValue(self._progress_pct)
-        bar.setFormat(f"{text} · %p%")
-
-    def _progress_stopped(self, text: str) -> None:
-        """A settled non-success end: the bar stays where it stopped, never animating."""
-        self._progress(text)
+    def _present_progress(self, stage: str, completed: int | None = None, total: int | None = None) -> None:
+        """Show reported stages and real sampler steps in the shared overlay, never guessed percentages."""
+        if not self._generating:
+            return
+        detail = stage
+        if type(completed) is int and type(total) is int and total > 0:
+            detail = f"{detail} · step {completed}/{total}"
+        self._activity.present_run(
+            RunState(
+                owner="generation",
+                phase="running",
+                completed=completed,
+                total=total,
+                detail=detail + ". Pause is not supported for single generation.",
+            )
+        )
 
     def _show_image(self, encoded: bytes, designation: str, backend_id: str | None = None) -> None:
         pixmap = QPixmap()
@@ -674,8 +667,6 @@ class GenerationPage:
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
-        self._progress_pct = 0
-        self._progress("Preparing", floor=self.PROGRESS_FLOORS["preparing"])
         self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
         self._generating = True
         self._activity.set(
@@ -683,7 +674,7 @@ class GenerationPage:
             run_state=RunState(
                 owner="generation",
                 phase="running",
-                detail="Single generation is running. Pause is not supported for single generation.",
+                detail="Preparing generation. Pause is not supported for single generation.",
             ),
         )
         self._set_busy(True)
@@ -721,24 +712,17 @@ class GenerationPage:
         if not self._busy:
             return  # a late event after completion never changes the settled view
         if event.kind == "progress":
-            self._progress(event.stage or "Generating", event.completed, event.total)
-            detail = event.stage or "Single generation is running"
-            if type(event.completed) is int and type(event.total) is int and event.total > 0:
-                detail = f"{detail} · step {event.completed}/{event.total}"
-            self._activity.present_run(
-                RunState(
-                    owner="generation",
-                    phase="running",
-                    completed=event.completed,
-                    total=event.total,
-                    detail=detail + ". Pause is not supported for single generation.",
-                )
-            )
+            self._present_progress(event.stage or "Generating", event.completed, event.total)
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
             self._show_image(event.artifact.encoded, "preview")
-            self._progress("Preview shown (not the final image)")
-        elif event.kind in self.PROGRESS_FLOORS:
-            self._progress(event.stage or event.kind, floor=self.PROGRESS_FLOORS[event.kind])
+            self._present_progress("Preview shown (not the final image)")
+        elif event.kind in {"preparing", "submission_possible", "terminal"}:
+            stage = {
+                "preparing": "Preparing",
+                "submission_possible": "Submitting to backend",
+                "terminal": "Finalizing",
+            }[event.kind]
+            self._present_progress(event.stage or stage)
 
     def _generated(self, outcome, failure) -> None:
         self._cache_changed()
@@ -751,14 +735,12 @@ class GenerationPage:
         self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
         if failure is not None:
-            self._progress_stopped("Failed")
             log.warning("generate failed reason=%s", failure_reason(failure))
             presentation = present_generation_failure(failure)
             self._status(presentation)
             activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
             return
         log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
-        self._progress("Saved", floor=100)
         presentation = present_outcome(outcome)
         self._status(presentation)
         activity_strip(self.page).complete(
@@ -840,14 +822,12 @@ class GenerationPage:
     def cancel(self) -> None:
         """Stop waiting locally through the shared interruption path; the server is never claimed cancelled."""
         if self._future is not None and self._generating:
-            self.page.cancelButton.setEnabled(False)
             self._future.cancel()
 
     def _interrupted(self, evidence, failure) -> None:
         self._generating = False
         self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
-        self._progress_stopped("Stopped locally")
         presentation = present_generation_failure(failure) if failure else present_interruption(evidence)
         self._status(presentation)
         activity_strip(self.page).complete(

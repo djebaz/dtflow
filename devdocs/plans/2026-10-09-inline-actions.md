@@ -262,3 +262,10 @@ controls, simulated counts, provider behavior or service safety rules are copied
 The previous lifecycle CI at `6cf931c` passed (426 passed, 3 gated live skips).
 The unified-overlay change requires its own CI and owner mounted-window visual
 acceptance; no visual parity is claimed from source inspection.
+
+## Generate center simplification (2026-10-10)
+- Move the existing Generate image button into the prompt header at the right of Expand prompt, preserving the original single controller and primary QSS styling.
+- Reduce the default prompt height from 76 to 52 logical pixels (about two lines), keeping Expand prompt at 180 and its existing toggle behavior.
+- Remove the redundant Stop waiting button and synthetic percentage bar from the Generate center form/controller. The shared activity overlay remains the single stopping/progress surface; its stop calls the unchanged local cancellation controller.
+- Preserve the discreet persistent status line, saved attempt evidence, preview and result actions. Show only backend-reported stages and step counts in the overlay, without inventing completion percentages; uncertainty remains durable.
+- Adapt existing Qt generation tests to the canonical overlay controls and new prompt geometry; GitHub CI and native Windows visual acceptance remain separate. No live generation or billable action.
