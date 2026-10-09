@@ -165,6 +165,7 @@ class GalleryPage(QObject):
         self._hidden_query: GalleryQuery | None = None
         self._selection_generation = 0
         self._selection_busy = False
+        self._selection_query: GalleryQuery | None = None
         self._syncing_selection = False
         self._selection_progress: QProgressDialog | None = None
         self._check_boxes: dict[str, QCheckBox] = {}
@@ -643,6 +644,7 @@ class GalleryPage(QObject):
         checked = self.selection.snapshot()
         self._selection_generation += 1
         generation = self._selection_generation
+        self._selection_query = query
         self._selection_busy = True
         self.select_filtered_button.setEnabled(False)
         self._selection_progress = QProgressDialog(
@@ -665,6 +667,7 @@ class GalleryPage(QObject):
     def _cancel_selection_scan(self) -> None:
         self._selection_generation += 1
         self._selection_busy = False
+        self._selection_query = None
         self.select_filtered_button.setEnabled(True)
         if self._selection_progress is not None:
             self._selection_progress.blockSignals(True)
@@ -676,6 +679,8 @@ class GalleryPage(QObject):
         if generation != self._selection_generation:
             return
         self._selection_busy = False
+        used_query = self._selection_query
+        self._selection_query = None
         self.select_filtered_button.setEnabled(True)
         if self._selection_progress is not None:
             self._selection_progress.blockSignals(True)
@@ -685,7 +690,7 @@ class GalleryPage(QObject):
             self._selection_notice(f"Selection query failed: {type(error).__name__}")
             return
         additions, hidden, omitted, matching = result
-        self._hidden_query = self.export_query()
+        self._hidden_query = used_query
         if mode == "add":
             added = self.selection.add(additions)
             self._hidden_checks = hidden
@@ -699,6 +704,7 @@ class GalleryPage(QObject):
                 self.selection.anchor = None
             self._hidden_checks = 0
         self._after_selection_edit()
+        self._refresh_hidden_count()
 
     def _select_all_filtered(self) -> None:
         self._begin_selection_scan(mode="add")
