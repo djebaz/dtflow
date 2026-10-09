@@ -14,10 +14,15 @@
 - Metrics use a bounded RGB thumbnail, colour clipping/saturation, neighbour differences, luminance entropy and coarse-scale residual. Thresholds are uncalibrated heuristics, not confidence or quality ratings.
 - Source files are never modified. Existing report files are never overwritten. No new dependencies.
 
+## Version 2 follow-up
+- [x] Add independent spatial-noise rule: neighbour difference >=0.08, residual RMS >=0.18 and residual/stddev >=0.65, all required; retain existing rules and blank priority.
+- [x] Update algorithm identity and documentation; scoped Ruff, AST/import and help checks passed. Delivery remains in PR #55. No new image run performed for this code follow-up.
+- Owner-labelled evidence: 262 good images had no flags; original failed set detected 11/12. Smoke3 review identified two misses. Cached-metric exploration adds exactly those two with zero flags among the 262 good images. This is sample fitting, not independent validation.
+
 ## Open questions
 - None blocking. Calibration against owner-labelled examples is future work.
 
 ## Validation
-- [x] Static AST/import, scoped Ruff formatting/lint and CLI help passed; no image analysis executed.
-- [ ] Final tests and smoke tests deferred to user. No tests added or run; no detector run on images by the agent.
+- [x] Static AST/import, scoped Ruff formatting/lint and CLI help passed; initial implementation had no image analysis executed; subsequent owner-requested runs analyzed failed/tests/smoke3.
+- [ ] Final tests and smoke tests deferred to user. No automated tests added or run. Owner explicitly requested subsequent detector image runs; independent validation of version 2 remains pending.
 - Packaging is not applicable to this standalone developer PoC. No inference or billable actions.

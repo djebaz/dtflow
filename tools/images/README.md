@@ -24,12 +24,14 @@ Analysis uses the first frame, EXIF orientation, alpha composited onto white, an
 
 Four noise signals are saturation >=0.30, extreme channels >=0.20, neighbour difference >=0.12, and a joint residual test (RMS >=0.10 and residual/stddev >=0.75). `possible_noise` requires at least three signals plus neighbour difference >=0.08. `possible_blank` takes priority when luminance standard deviation <0.01. `noise_signal_count` counts rules, **not confidence, probability or an aesthetic score**.
 
+**Version 2** also flags noise when all three spatial conditions hold: neighbour difference >=0.08, residual RMS >=0.18 and residual/stddev >=0.65. This independent route reports `joint_spatial_noise_rule` when the original route did not flag the image. `noise_signal_count` still counts only the original four signals; it is not a threshold for this alternate route. Blank detection retains priority. Reports use algorithm identity `dtflow-pixel-statistics-poc-v2`.
+
 Labels are `possible_noise`, `possible_blank`, `no_obvious_failure`, and `unreadable`. Review flagged images manually. A clean flag does not establish a great or correct generation: anatomy errors, unwanted composition and prompt mismatch can pass. Foliage, textures, sharp patterns, artwork and intentional solid colours can trigger false positives. Resize, image dimensions, compression and white alpha compositing affect metrics.
 
-**Thresholds are uncalibrated.** They have not been validated on the supplied pair or a labelled corpus. Next step: owner review of flags across known-good and known-bad examples before considering production use.
+**Thresholds are provisional and sample-fitted, not independently validated.** Owner-labelled runs found zero flags in 262 good images and 11/12 noise detections in the failed folder. Smoke3 review identified two noise misses; cached-statistics evaluation of the added spatial rule catches exactly those two additional images while still flagging zero of the 262 good examples. These reused samples do not establish general accuracy. Independent examples and owner review remain necessary before production use.
 
 ## Safety and limits
 
 No source writes, deletion, regeneration, job-status updates or provider calls. Inputs are limited to 10000 unique files, 64 MiB encoded per file and 32 million pixels; limits/read failures produce `unreadable`, not evidence of a failed generation. Existing report files are never overwritten. An interrupted run may leave an incomplete report; choose a new name for the next run. Exit code 0 means processing completed (including advisory flags), 1 means at least one unreadable input, and 2 means CLI/input/report-path error.
 
-Tests and image smoke runs are deferred to the owner under fast-implement. Static syntax/import/ruff/help checks do not establish detection accuracy.
+No automated tests were added or run under fast-implement. Subsequent image detector runs were explicitly requested by the owner; independent validation of version 2 remains pending. Static syntax/import/ruff/help checks do not establish detection accuracy.

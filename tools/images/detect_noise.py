@@ -26,6 +26,9 @@ THRESHOLDS = {
     "noise_min_signals": 3,
     "noise_neighbor_gate": 0.08,
     "blank_luma_stddev": 0.01,
+    "spatial_neighbor_min": 0.08,
+    "spatial_residual_rms_min": 0.18,
+    "spatial_residual_ratio_min": 0.65,
 }
 
 
@@ -81,6 +84,13 @@ def classify(metrics: dict[str, float]) -> tuple[str, list[str], int]:
         metrics["neighbor_rgb_difference"] >= THRESHOLDS["noise_neighbor_gate"]
     ):
         return "possible_noise", signals, len(signals)
+    if (
+        metrics["neighbor_rgb_difference"] >= THRESHOLDS["spatial_neighbor_min"]
+        and metrics["coarse_residual_rms"] >= THRESHOLDS["spatial_residual_rms_min"]
+        and metrics["coarse_residual_to_rgb_stddev"] >= THRESHOLDS["spatial_residual_ratio_min"]
+    ):
+        # Preserve the original four-signal count; this is a separate decision route.
+        return "possible_noise", [*signals, "joint_spatial_noise_rule"], len(signals)
     return "no_obvious_failure", signals, len(signals)
 
 
@@ -160,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         records = [analyze(path) for path in paths]
         report = {
-            "algorithm": "dtflow-pixel-statistics-poc-v1",
+            "algorithm": "dtflow-pixel-statistics-poc-v2",
             "warning": "Uncalibrated advisory flags; not aesthetics, prompt alignment or generation status. Review manually.",
             "analysis": {
                 "max_side": ANALYSIS_SIDE,
