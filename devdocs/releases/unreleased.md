@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 removes the second Confirm step from cloud LoRA Prepare: selecting a converted file starts the existing async prepare/receipt workflow, cancelling the picker does nothing, and the asset note/tooltip disclose uploads and possible later-generation credits. Backend/busy checks and no-retry/uncertain-receipt behavior remain. A teardown correction retires the activity strip on its own Qt form's destruction, rather than attempting to access an already-deleted main-window host; Qt still owns filter and child-timer cleanup. Updated the existing LoRA presentation test expectations; fresh CI and owner smoke remain pending.
+
+
 - PR #58 teardown lifecycle follow-up retires the bottom activity strip before Qt destroys its child widgets, detaches its central-widget/form filters, stops the notice timer, and removes main-window activity listeners so late progress events cannot target destroyed widgets. No generation/provider behavior changes; CI/owner acceptance pending.
 
 - The Queues page limits the left-rail Durable Queues list to 120 logical pixels rather than letting it consume the available rail height; the list retains scrolling and the actions/policy remain grouped directly below it.

@@ -20,6 +20,12 @@ and waits for the result instead of exiting mid-file. Programmatic closing follo
 consent; a refused close does not shut down the runner. Once shutdown begins, polling timers
 stop and already-queued UI results cannot restart background work.
 
+Prepare a converted cloud LoRA by choosing the file; preparation begins immediately
+after selection, with no second Confirm. Cancelling the picker does nothing.
+The asset note and Prepare tooltip warn that DT+ upload may occur without upload
+credits, while subsequent generation may consume credits. The existing backend
+identity/busy checks, receipt verification and uncertain-upload no-retry policy remain.
+
 Checkpoint search and exact custom identifiers use one expanded editor. **Add LoRA** shows
 search, identifier and weight together and commits once with **Add**. New UI selections use
 0.0–3.0 weights in 0.1 steps (one decimal); 0.0 is preserved. A catalogue default outside
@@ -120,7 +126,7 @@ For a classified checkpoint, Add LoRA offers the active provider's available bun
 
 Trigger prefixes are added only when you explicitly choose that option; otherwise the prompt is unchanged.
 
-The cloud asset list contains this machine's local receipts, not complete DT+ account inventory. Prepare is the only action that can upload and requires confirmation. Reconcile is metadata-only. A confirmed receipt may be bound to a selected LoRA, then revalidated before dispatch; receipt bindings are not exported in configurations. See the [CLI asset reference](cli.md#cloud-asset-receipts) and [cloud integration](../architecture/cloud-integration.md).
+The cloud asset list contains this machine's local receipts, not complete DT+ account inventory. Prepare may upload a LoRA after explicit file selection (without another confirmation). Reconcile is metadata-only. A confirmed receipt may be bound to a selected LoRA, then revalidated before dispatch; receipt bindings are not exported in configurations. See the [CLI asset reference](cli.md#cloud-asset-receipts) and [cloud integration](../architecture/cloud-integration.md).
 
 ## Configurations and outputs
 

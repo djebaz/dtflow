@@ -87,6 +87,23 @@
 - Preserve all non-teardown operation and shutdown semantics. No tests added or
   run locally; await new CI and owner runtime/packaged visual acceptance.
 
+## Prepare simplification and Qt teardown correction (2026-10-09)
+- Owner removed the redundant second confirmation for cloud LoRA Prepare:
+  explicit file selection starts the existing preparation workflow, while
+  cancelling the picker remains a no-op. The asset note/tooltip disclose
+  possible DT+ upload and later-generation credits. Recheck busy/backend
+  identity after the picker; preserve receipt validation and no-retry rules.
+- CI at `a4cf45e` reported 35 failures, 391 passed, 3 skipped; repeated Qt
+  errors arose because `window.destroyed` fired after the overlay's central
+  host was deleted. Retire on the activity strip's own `form.destroyed`
+  instead, without invoking methods on dying Qt objects; Qt owns filter and
+  child timer cleanup. Unsubscribe main-window activity listeners at the
+  same earlier boundary.
+- One integration queue test separately reached its five-second timeout.
+  Avoid speculative changes to durable scheduling until reproduced.
+- Adapt the existing LoRA presentation test to the one-step workflow.
+  No new or local tests were run; await CI and owner runtime acceptance.
+
 ## Open questions
 - None.
 

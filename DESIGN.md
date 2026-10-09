@@ -417,8 +417,12 @@ its non-destructive styling reuses Auto-refresh ON's `color.connectionSurface`,
 `color.connectionAccent` and `color.connectionGlyph` tokens; Delete/Clear override
 with `color.dangerBorder` and `color.onAccent` for a red confirmation. Cancel is in the shared bottom overlay, not the original action row. No timer;
 Cancel/Escape/navigation/relevant scope edits disarm pending consent. Do not count a mouse
-double-click as two independent consent activations. Preserve the full destructive/upload/
-credit warning and all service-level safety checks.
+double-click as two independent consent activations. Preserve the full destructive/credit
+consent safeguards. Cloud LoRA Prepare is an explicit file-upload action but does not
+need a second Confirm after the native file picker: show its possible DT+ upload and
+later-generation credit implications in the asset note and Prepare tooltip instead.
+Cancelling the picker does nothing; reject a changed backend or newly busy state
+before starting asynchronous preparation. Service-level receipt/retry safeguards remain.
 
 Checkpoint and LoRA choices use inline substring search and custom-identifier entry.
 LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step. In the

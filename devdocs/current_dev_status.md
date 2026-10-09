@@ -147,3 +147,15 @@ activity-strip event filters and progress subscriptions surviving Qt child-widge
 destruction. Source now retires the strip on main-window destruction, disconnects
 its event filters/timer, and removes plain-Python main-window activity listeners.
 No local tests or GUI smoke; new CI and owner native acceptance remain pending.
+
+CI at `a4cf45e` reported 35 failures, 391 passed, 3 skipped. Most failures
+shared a Qt teardown regression: `window.destroyed` reached the activity overlay
+after its central-widget host was deleted, causing an invalid
+`removeEventFilter` call. The activity strip now retires on its own
+`form.destroyed` signal, leaving Qt to remove filters and stop child timers;
+main-window activity listeners unsubscribe at that earlier boundary.
+Cloud LoRA Prepare now starts after file selection without another Confirm,
+while its upload/credit disclosure, busy/backend revalidation and receipt safety
+remain. The integration queue test also reached its separate five-second
+timeout; it has not been investigated or attributed to the presentation change.
+No local tests or smoke run; new CI/owner acceptance are pending.
