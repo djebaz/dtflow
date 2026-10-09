@@ -450,14 +450,12 @@ class DetailFixture(QObject):
         self.sample_detail_check.toggled.connect(
             lambda checked: self.toggle_sample(self.sample_focus, checked)
         )
-        self.sample_select_page = self.page.findChild(QPushButton, "gallerySelectPageButton")
         self.sample_select_filtered = self.page.findChild(QPushButton, "gallerySelectFilteredButton")
-        self.sample_clear = self.page.findChild(QPushButton, "galleryClearButton")
-        self.sample_select_page.clicked.connect(lambda: self.sample_select_all())
+        self.sample_clear = self.page.findChild(QPushButton, "galleryUnselectButton")
         self.sample_select_filtered.clicked.connect(lambda: self.sample_select_all())
         menu = QMenu(self.sample_clear)
-        menu.addAction("Clear all", self.sample_clear_all)
-        self.sample_clear.setText("Clear")
+        menu.addAction("Unselect all", self.sample_unselect_all)
+        self.sample_clear.setText("Unselect")
         self.sample_clear.setMenu(menu)
         for name in ("galleryCopyPathsButton", "galleryExportButton", "galleryDeleteButton", "galleryMoreButton"):
             button = self.page.findChild(QPushButton, name)
@@ -470,7 +468,7 @@ class DetailFixture(QObject):
         self.sample_checked.update(range(1, len(self.records) + 1))
         self.sync_sample_selection()
 
-    def sample_clear_all(self):
+    def sample_unselect_all(self):
         self.sample_checked.clear()
         self.sync_sample_selection()
 
