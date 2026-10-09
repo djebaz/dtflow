@@ -69,6 +69,8 @@ See the [plan](plans/2026-10-09-jpeg-image-export.md) and
 release declaration. No tests or smoke tests were added/run under fast-implement;
 the owner reports a source smoke export (345 JPGs at the folder root, no subfolders), but remaining scenario/packaged acceptance stays separate. See [smoke evidence](research/jpeg-export-smoke-2026-10-09.md). No inference or billable actions.
 
+The owner-requested [pixel-statistics detector PoC](../tools/images/README.md) is an isolated developer tool, not a Phase 8 quality gate. Its [plan](plans/2026-10-09-noise-detector-poc.md) records provisional thresholds and pending owner calibration; no image detector smoke run or accuracy claim.
+
 ## Maintenance
 
 Update this short snapshot when implementation scope changes, with the reviewed base revision/date and evidence links. Keep completed, remaining and added scope aligned with `initial.md`; retain detailed validation in plans/research/release notes. If this snapshot disagrees with source or verified evidence, those sources win: refresh the snapshot rather than assuming completion. Do not append a running changelog here.

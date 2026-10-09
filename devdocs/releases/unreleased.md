@@ -10,6 +10,8 @@
 - Shared local-only JPEG quality-95 / 4:4:4 export with prompt privacy, rich portable EXIF generation metadata, optional JSON sidecars, collision-safe naming and background progress/cancel. Full portable metadata exceeding EXIF capacity uses a reported mandatory sidecar instead of silent truncation.
 - Durable export folder/privacy preferences, independent of cache; original PNGs, metadata and saved history remain untouched.
 
+- Standalone developer-only pixel-statistics detector PoC under tools/images; advisory, uncalibrated noise/blank flags with JSON metrics, no export/job integration.
+
 ## Changed
 
 - Connection middle-panel cards scroll within the shared shell to keep the export controls reachable on smaller windows.
