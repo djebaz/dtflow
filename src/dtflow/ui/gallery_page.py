@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.gallery import GalleryItem, GalleryQuery
-from dtflow.core.gallery_selection import GallerySelection, MAX_CHECKED_IMAGES
+from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock

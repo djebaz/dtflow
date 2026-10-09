@@ -41,8 +41,8 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
-from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.image_preview import ImagePreview
+from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner

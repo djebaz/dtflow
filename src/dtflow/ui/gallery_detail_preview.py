@@ -490,7 +490,7 @@ class DetailFixture(QObject):
             label = self.page.findChild(QLabel, "galleryHiddenCountLabel")
             label.setVisible(False)
             self.sample_clear.setEnabled(selected > 0)
-            for index, ((card, image), checkbox) in enumerate(zip(self.cards, self.sample_checks, strict=True), 1):
+            for index, ((_card, image), checkbox) in enumerate(zip(self.cards, self.sample_checks, strict=True), 1):
                 value = index in self.sample_checked
                 checkbox.setChecked(value)
                 image.setProperty("checkedSelection", value)
