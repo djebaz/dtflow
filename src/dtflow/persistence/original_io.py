@@ -18,11 +18,11 @@ class OriginalImagesBusyError(RuntimeError):
 
 
 @contextmanager
-def original_images_lock(state: Path, *, timeout: float = 5.0):
+def _file_lock(state: Path, filename: str, *, timeout: float):
     """Acquire an OS-released file lock; never delete the lock file during cleanup."""
     directory = Path(state).resolve()
     directory.mkdir(parents=True, exist_ok=True)
-    with (directory / "original_images.lock").open("a+b") as handle:
+    with (directory / filename).open("a+b") as handle:
         if os.name == "nt":
             import msvcrt
 
@@ -53,3 +53,17 @@ def original_images_lock(state: Path, *, timeout: float = 5.0):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def original_images_lock(state: Path, *, timeout: float = 5.0):
+    """Serialize real original-file reads and writes across participating processes."""
+    with _file_lock(state, "original_images.lock", timeout=timeout):
+        yield
+
+
+@contextmanager
+def recycle_batch_lock(state: Path, *, timeout: float = 5.0):
+    """Serialize recycle operations without monopolizing generation saves per batch."""
+    with _file_lock(state, "image_recycle_operation.lock", timeout=timeout):
+        yield
