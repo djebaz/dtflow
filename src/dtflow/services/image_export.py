@@ -22,7 +22,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
-from dtflow.persistence.original_io import original_images_lock
+from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.cache_coordination import cache_access
 from dtflow.persistence.image_analysis_cache import load_image_analysis, save_image_analysis
 from dtflow.persistence.store import PersistenceError
@@ -540,32 +540,27 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     for index, identity in enumerate(identities):
         if cancel.is_set():
             break
-        # Availability must be checked even if a matching destination JPEG exists.
-        # A recycled original must not be reported as an available skipped export.
-        if storage.get_record(state, identity) is None:
-            failed += 1
-            if len(failures) < 100:
-                failures.append(f"{identity}: saved original is not available.")
-            if progress:
-                progress(index + 1, total)
-            continue
-        if identity in skipped_identities:
-            skipped += 1
-            if progress:
-                progress(index + 1, total)
-            continue
         try:
-            record = storage.get_record(state, identity)
-            if record is None:
-                raise ValidationError("Saved output is no longer available.")
-            item_notes, category = _export_one(item_from_record(record), destination, options, computations)
-            notes.update(item_notes)
-            noise += category == "noise"
-            blank += category == "blank"
-            exported += 1
-            skipped_identities.add(identity)
-            if not no_cache and exported % 25 == 0:
-                _checkpoint_computations(Path(state), computations, notes)
+            # A short original-file lease covers each identity's availability,
+            # source read and conversion. Long exports do not block generation
+            # saves or recycling of unrelated images for the entire batch.
+            with original_images_lock(state, timeout=30):
+                record = storage.get_record(state, identity)
+                if record is None:
+                    raise ValidationError("Saved original is not available.")
+                if identity in skipped_identities:
+                    skipped += 1
+                else:
+                    item_notes, category = _export_one(
+                        item_from_record(record), destination, options, computations
+                    )
+                    notes.update(item_notes)
+                    noise += category == "noise"
+                    blank += category == "blank"
+                    exported += 1
+                    skipped_identities.add(identity)
+                    if not no_cache and exported % 25 == 0:
+                        _checkpoint_computations(Path(state), computations, notes)
         except (
             OSError,
             ValueError,
@@ -574,6 +569,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
             AttributeError,
             RecursionError,
             PersistenceError,
+            OriginalImagesBusyError,
             Image.DecompressionBombError,
             Image.DecompressionBombWarning,
         ) as exc:
@@ -582,7 +578,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                 # Never expose decoder/OS exception strings, which can contain paths or source data.
                 reason = (
                     str(exc)
-                    if isinstance(exc, (ValidationError, PersistenceError))
+                    if isinstance(exc, (ValidationError, PersistenceError, OriginalImagesBusyError))
                     else f"could not export ({type(exc).__name__})"
                 )
                 failures.append(f"{identity}: {reason}")
@@ -615,10 +611,9 @@ def _coordinated_export(state, destination, options, query, identities, cancel, 
             except OSError:
                 no_cache = True
                 warning = "Persistent cache unavailable/busy; exported without cache reads or writes."
-        # Cache (if any) -> original files. Recycle takes only the latter;
-        # all exports/readers/savers share this independent cross-process lease.
-        with original_images_lock(state):
-            result = _run_export(state, destination, options, query, identities, cancel, progress, no_cache)
+        # Cache ownership protects optional computations; each exported original
+        # obtains its own short-lived lease in _run_export.
+        result = _run_export(state, destination, options, query, identities, cancel, progress, no_cache)
     if warning:
         result = replace(result, warnings=(*result.warnings, warning))
     return result
