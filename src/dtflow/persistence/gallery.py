@@ -192,7 +192,7 @@ def selection_candidates(
     *,
     add: bool = False,
     maximum: int = 10_000,
-) -> tuple[tuple[str, ...], int, int]:
+) -> tuple[tuple[str, ...], int, int, tuple[str, ...]]:
     """Return new matching identities, hidden checked count and omitted matches.
 
     Read only stable IDs in a single bounded SQLite snapshot. Existing checked
@@ -203,19 +203,34 @@ def selection_candidates(
     existing = set(checked)
     capacity = max(0, maximum - len(existing)) if add else 0
     additions: list[str] = []
-    matched_checked = 0
+    matched_checked: list[str] = []
     omitted = 0
     with reader(state) as db:
         if db is None:
-            return (), len(existing), 0
+            return (), len(existing), 0, ()
         rows = db.execute(BASE + f"SELECT identity FROM records WHERE {where} ORDER BY {order}", values)
         for row in rows:
             identity = row[0]
             if identity in existing:
-                matched_checked += 1
+                matched_checked.append(identity)
             elif add:
                 if len(additions) < capacity:
                     additions.append(identity)
                 else:
                     omitted += 1
-    return tuple(additions), len(existing) - matched_checked, omitted
+    return tuple(additions), len(existing) - len(matched_checked), omitted, tuple(matched_checked)
+
+
+def selection_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
+    """Read source paths for checked recorded originals without Qt or image decodes."""
+    targets = set(identities)
+    if not targets:
+        return (), 0
+    found = {}
+    with reader(state) as db:
+        if db is None:
+            return (), len(targets)
+        for row in db.execute(BASE + "SELECT identity, path FROM records"):
+            if row["identity"] in targets:
+                found[row["identity"]] = row["path"]
+    return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
