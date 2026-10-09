@@ -30,4 +30,4 @@
 
 ## Owner smoke and List indicators
 
-Owner reports deletion smoke passed on 2026-10-09. No exact executable identity or scenario details were supplied; this is owner-reported deletion acceptance, not agent verification or full platform/interruption/restore acceptance. List indicator styling follow-up uses shared QSS/tokens for dark unchecked boxes and blue checked/partial states with explicit tick/dash glyphs; visual acceptance remains pending.
+Owner reports deletion smoke passed on 2026-10-09. No exact executable identity or scenario details were supplied; this is owner-reported deletion acceptance, not agent verification or full platform/interruption/restore acceptance. List indicator styling follow-up uses shared QSS/tokens for dark unchecked boxes and blue checked/partial states with explicit tick/dash glyphs; owner reports checkbox styling smoke passed on 2026-10-09 for the follow-up to ceb8e26. This does not establish high-DPI, other-platform or packaged acceptance.
