@@ -80,7 +80,10 @@ def recycle_file(path: Path) -> None:
             "The original is not on a local fixed drive.",
             stage=f"drive_type_{drive_type}",
         )
-    ole32, shell32 = ctypes.OleDLL("ole32"), ctypes.OleDLL("shell32")
+    # WinDLL returns the raw HRESULT for explicit stage-aware _check calls.
+    # OleDLL automatically converts failed HRESULTs to OSError and loses the
+    # precise COM operation stage needed for safe diagnostics.
+    ole32, shell32 = ctypes.WinDLL("ole32"), ctypes.WinDLL("shell32")
     # CoInitializeEx(NULL, COINIT_APARTMENTTHREADED): COM objects cannot be
     # shared with or operated from the GUI thread.
     ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
