@@ -162,6 +162,7 @@ class GalleryPage(QObject):
         self.selection = GallerySelection()
         self._tokens = load_tokens()
         self._hidden_checks = 0
+        self._hidden_query: GalleryQuery | None = None
         self._selection_generation = 0
         self._selection_busy = False
         self._syncing_selection = False
@@ -559,7 +560,6 @@ class GalleryPage(QObject):
             self._cancel_selection_scan()
         self._selection_generation += 1
         self._sync_selection_ui()
-        self._refresh_hidden_count()
 
     def _set_checked(self, identity: str, value: bool) -> None:
         if self._syncing_selection or (identity in self.selection.checked) == value:
@@ -685,6 +685,7 @@ class GalleryPage(QObject):
             self._selection_notice(f"Selection query failed: {type(error).__name__}")
             return
         additions, hidden, omitted, matching = result
+        self._hidden_query = self.export_query()
         if mode == "add":
             added = self.selection.add(additions)
             self._hidden_checks = hidden
@@ -718,20 +719,23 @@ class GalleryPage(QObject):
             query = self.export_query()
         except ValidationError:
             return
+        if query == self._hidden_query:
+            return
         self._selection_generation += 1
         generation = self._selection_generation
         self.runner.submit(
             asyncio.to_thread(gallery_storage.selection_candidates, self.state_dir, query, checked),
-            lambda result, error: self._hidden_count_done(generation, result, error),
+            lambda result, error: self._hidden_count_done(generation, query, result, error),
         )
 
-    def _hidden_count_done(self, generation, result, error) -> None:
+    def _hidden_count_done(self, generation, query, result, error) -> None:
         if generation != self._selection_generation:
             return
         if error is not None:
             self._selection_notice("Hidden checked-image count could not be refreshed.")
             return
         self._hidden_checks = result[1]
+        self._hidden_query = query
         self._sync_selection_ui()
 
     def _copy_checked_paths(self) -> None:
