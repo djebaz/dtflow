@@ -22,9 +22,9 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
-from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.cache_coordination import cache_access
 from dtflow.persistence.image_analysis_cache import load_image_analysis, save_image_analysis
+from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
 from dtflow.services.image_quality import ALGORITHM, assess_rgb
