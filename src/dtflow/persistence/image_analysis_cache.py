@@ -5,6 +5,7 @@ import math
 import re
 from pathlib import Path
 
+from dtflow.persistence.cache_coordination import cache_io, category_path, check_path
 from dtflow.services.artifacts import atomic_write
 
 CACHE_VERSION = 1
@@ -58,9 +59,12 @@ def _assessment(value) -> dict | None:
     }
 
 
-def load_image_analysis(state: Path) -> dict:
+@cache_io("derived")
+def _load_image_analysis(state: Path) -> dict:
     try:
-        with (state / "cache" / "derived" / FILENAME).open("rb") as stream:
+        target = category_path(state, "derived") / FILENAME
+        check_path(target)
+        with target.open("rb") as stream:
             data = stream.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:
             return {}
@@ -102,6 +106,7 @@ def load_image_analysis(state: Path) -> dict:
         return {}
 
 
+@cache_io("derived")
 def save_image_analysis(state: Path, images: dict) -> None:
     while len(images) > MAX_ENTRIES:
         images.pop(next(iter(images)))
@@ -116,6 +121,14 @@ def save_image_analysis(state: Path, images: dict) -> None:
     ).encode("utf-8")
     if len(encoded) > MAX_BYTES:
         raise ValueError("Image analysis cache exceeds its size limit.")
-    root = state / "cache" / "derived"
+    root = category_path(state, "derived")
+    check_path(root / FILENAME)
     root.mkdir(parents=True, exist_ok=True)
     atomic_write(root / FILENAME, encoded)
+
+
+def load_image_analysis(state: Path) -> dict:
+    try:
+        return _load_image_analysis(state)
+    except OSError:
+        return {}

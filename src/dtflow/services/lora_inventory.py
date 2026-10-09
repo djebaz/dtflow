@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
@@ -113,4 +114,4 @@ async def refresh_lora_inventory(
         refresh=refresh,
         lookup_identifiers=lookup_identifiers,
     )
-    return snapshot, save_lora_inventory(cache_root, snapshot)
+    return snapshot, await asyncio.to_thread(save_lora_inventory, cache_root, snapshot)

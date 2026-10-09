@@ -34,7 +34,7 @@ See [queues and batch plans](queues.md) for queue commands and JSON plans. These
 
 Generation: `-p/--prompt`, `-n/--negative`, `-m/--model`, `-s/--seed`, `-w/--width`, `-y/--height`, `-i/--steps`, `-g/--guidance`, `-a/--sampler`, `-l/--lora ID:WEIGHT` (repeatable, explicit weight required), `-r/--prefix`, `-o/--out`, `-t/--timeout`.
 
-Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local), `-d/--state`, `-nc/--no-cache` (bypasses inventory cache reads and writes; also on `dtflow gui`).
+Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local), `-d/--state`, `-nc/--no-cache` (bypasses persistent disposable-cache reads and writes; also on `dtflow gui`).
 
 Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`.
 

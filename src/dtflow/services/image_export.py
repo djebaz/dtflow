@@ -10,6 +10,8 @@ import threading
 import unicodedata
 import warnings
 from collections.abc import Callable
+from contextlib import ExitStack
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path, PureWindowsPath
 
@@ -20,6 +22,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
+from dtflow.persistence.cache_coordination import cache_access
 from dtflow.persistence.image_analysis_cache import load_image_analysis, save_image_analysis
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
@@ -591,6 +594,23 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     )
 
 
+def _coordinated_export(state, destination, options, query, identities, cancel, progress, no_cache):
+    # Hold cache ownership across read/compute/checkpoints, not just individual file writes.
+    # Contention never stops image export: run without persistent cache instead.
+    warning = None
+    with ExitStack() as stack:
+        if not no_cache:
+            try:
+                stack.enter_context(cache_access(state))
+            except OSError:
+                no_cache = True
+                warning = "Persistent cache unavailable/busy; exported without cache reads or writes."
+        result = _run_export(state, destination, options, query, identities, cancel, progress, no_cache)
+    if warning:
+        result = replace(result, warnings=(*result.warnings, warning))
+    return result
+
+
 async def export_outputs(
     state: Path,
     destination: Path,
@@ -610,7 +630,7 @@ async def export_outputs(
     stop = cancel if cancel is not None else threading.Event()
     worker = asyncio.create_task(
         asyncio.to_thread(
-            _run_export,
+            _coordinated_export,
             Path(state),
             Path(destination),
             options or ExportOptions(),

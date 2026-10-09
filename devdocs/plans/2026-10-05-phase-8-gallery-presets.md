@@ -81,7 +81,7 @@ The upstream version that produced the sample and exact enum meanings remain unv
 
 ## 8D — Disposable cache management
 
-- Measure cache by type and expose confirmed category-specific purge operations, with `inventory`, `thumbnails` and `derived` categories. PR #46 ships the management surface; only inventory currently has files, because gallery thumbnails are in-memory and no disk thumbnail or derived cache is written yet.
+- Measure cache by type and expose confirmed category-specific purge operations, with `inventory`, `thumbnails` and `derived` categories. PR #46 ships the management surface; inventory snapshots and PR #55 source image computations now use disk cache. Gallery thumbnails remain in-memory. The [8D completion plan](2026-10-09-phase-8d-cache-completion.md) adds shared cleanup coordination and path-safety boundaries; owner/runtime acceptance remains separate.
 - Preserve outputs, attempts, queues, presets, organisation, settings, last session, credentials, model assets and retained live-test evidence.
 - Respect `-nc` / `--no-cache`; make rebuilding possible without treating cache as authoritative provenance.
 - Define safe coordination with active readers/writers before implementation. Test preservation and category boundaries at one authoritative layer (`8-O4`).
@@ -90,7 +90,7 @@ The upstream version that produced the sample and exact enum meanings remain unv
 
 Choose favourites, ratings, tags, notes, collections and any bulk operations separately; these are candidates, not all approved requirements.
 Store selected organisation data durably outside disposable indexes and native Draw Things preset exports.
-Destructive file actions, if ever selected, require a separate explicit policy; none are approved by this viewer plan.
+The owner selected planned multi-selection/bulk deletion in the [8E image-management plan](2026-10-09-phase-8e-image-management.md). It is not implemented here; deletion/recovery policy and selection lifetime must be settled before runtime work.
 
 ## Implementation checkpoints
 

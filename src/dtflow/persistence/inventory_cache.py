@@ -17,13 +17,16 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from dtflow.core.models import InventoryEntry, InventorySnapshot, LoRAInventorySnapshot
+from dtflow.persistence.cache_coordination import cache_io, category_path, check_path
 
 CACHE_VERSION = 2
 KINDS = ("local", "cloud")
 
 
 def _target(root: Path, name: str) -> Path:
-    return Path(root) / "cache" / "inventory" / name
+    target = category_path(root, "inventory") / name
+    check_path(target)
+    return target
 
 
 def _write_json(target: Path, payload: dict, prefix: str) -> Path:
@@ -45,6 +48,7 @@ def _write_json(target: Path, payload: dict, prefix: str) -> Path:
     return target
 
 
+@cache_io("inventory")
 def save_lora_inventory(root: Path, snapshot: LoRAInventorySnapshot) -> Path:
     """Atomically persist the derived cross-backend LoRA inventory."""
     return _write_json(
@@ -56,6 +60,7 @@ def _fingerprint(salt: str, key: str) -> str:
     return hashlib.sha256(f"{salt}\0{key}".encode()).hexdigest()
 
 
+@cache_io("inventory")
 def save_inventory(
     root: Path, kind: str, snapshot: InventorySnapshot, *, credential: tuple[str, str] | None = None
 ) -> Path:
@@ -70,7 +75,8 @@ def save_inventory(
     return _write_json(_target(root, f"{kind}_inventory.json"), payload, f".{kind}-")
 
 
-def load_inventory(
+@cache_io("inventory")
+def _load_inventory(
     root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
 ) -> InventorySnapshot | None:
     """The cached snapshot, or ``None`` for any kind of miss.
@@ -105,4 +111,13 @@ def load_inventory(
             endpoint=document.get("endpoint"),
         )
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def load_inventory(
+    root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
+) -> InventorySnapshot | None:
+    try:
+        return _load_inventory(root, kind, endpoint=endpoint, credential=credential)
+    except OSError:
         return None

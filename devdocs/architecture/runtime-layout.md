@@ -61,3 +61,7 @@ durable references; cache cleanup does not own these user files. See
 collision safety and cancellation; runtime/packaged acceptance remains separate.
 
 Noise/blank export routing is a default-on advisory option: flagged copies and matching sidecars go only into noise/ or blank/ below the chosen export folder; normal copies stay at root. Disable it for flat export. Original attempt outputs remain untouched.
+
+## Disposable-cache coordination
+
+`<state>/cache.lock` is the shared OS-lock coordination file for cache readers/writers and cleanup. It is outside `cache/` categories, not durable generation ownership, and must not be deleted to clear active ownership. Inventory/image-analysis persistence, export computation/checkpoints and bounded category measurement/purge use the common nonblocking lease. No-cache export bypasses persistent cache; busy cache export falls back to uncached work. See [cache-management architecture](cache-management.md) for redirected-path refusal, partial-failure semantics and acceptance boundaries.

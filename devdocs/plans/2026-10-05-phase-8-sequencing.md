@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Phase 8A is implemented. PR #46 implements 8B presets, 8C reuse/regeneration and 8D disposable-cache management for the proposed 0.4.0 gate; owner/runtime acceptance remains pending.
+**Status:** Phase 8A is implemented. PR #46 implements 8B presets, 8C reuse/regeneration and 8D disposable-cache management for the proposed 0.4.0 gate; 8D source/runtime scope was owner-accepted on 2026-10-09 after green CI and smoke (see the [8D completion ledger](2026-10-09-phase-8d-cache-completion.md)); other phase/packaged gates remain separate.
 
 **Target:** Proposed 0.4.0 daily-use refinement, subject to the [release roadmap](releases.md).
 
@@ -18,7 +18,7 @@ These are delivery phases within initial-plan Phase 8. “Phase 1” here means 
 | 2 | **8B — Presets** | Reusable named settings with native Draw Things `custom_configs.json` interchange; preserve unsupported fields and distinguish them from applied settings. See the [preset contract and example](2026-10-05-phase-8-gallery-presets.md#8b--draw-things-compatible-presets). Detailed library actions remain to be refined. | `8-O1` and necessary `8-O5`; verify enum mappings and upstream round trips before claiming interoperability. Loading never dispatches. |
 | 3 | **8C — Reuse/regeneration** | Populate Generate from recorded settings; explicitly create a fresh request/attempt for regeneration with source lineage, preserving originals. Exact actions remain to be refined. | `8-O3` and necessary `8-O5`; preserve existing preflight, dispatch and no-replay safety. |
 | 4 | **8D — Cache management** | Measure and confirm purge of disposable categories, including gallery derivatives, while retaining outputs and all durable state. | `8-O4`; coordinate with active readers/writers and respect no-cache mode. |
-| 5 | **8E — Organisation** | Separately choose favourites, ratings, tags, notes, collections and any bulk actions. These are candidates, not an approved full feature set. | Define acceptance after scope selection. Not automatically required for 0.4.0; destructive actions require a separate decision. |
+| 5 | **8E — Organisation** | Owner selected planned Images multi-selection and bulk deletion in the [8E image-management plan](2026-10-09-phase-8e-image-management.md). Favourites, ratings, tags, notes and collections remain separate candidates. | Not implemented or automatically required for 0.4.0; settle deletion/recovery and selection policy before runtime work. |
 
 ## Delivery rules
 
