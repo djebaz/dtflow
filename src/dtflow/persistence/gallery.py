@@ -184,3 +184,38 @@ def export_identities(state: Path, query: GalleryQuery, maximum: int) -> tuple[s
             [*values, maximum + 1],
         )
         return tuple(row[0] for row in rows)
+
+def selection_candidates(
+    state: Path,
+    query: GalleryQuery,
+    checked: tuple[str, ...],
+    *,
+    add: bool = False,
+    maximum: int = 10_000,
+) -> tuple[tuple[str, ...], int, int]:
+    """Return new matching identities, hidden checked count and omitted matches.
+
+    Read only stable IDs in a single bounded SQLite snapshot. Existing checked
+    IDs keep their place; additions follow the current deterministic query sort.
+    This does not silently limit or replace existing selections.
+    """
+    where, values, order = clauses(query)
+    existing = set(checked)
+    capacity = max(0, maximum - len(existing)) if add else 0
+    additions: list[str] = []
+    matched_checked = 0
+    omitted = 0
+    with reader(state) as db:
+        if db is None:
+            return (), len(existing), 0
+        rows = db.execute(BASE + f"SELECT identity FROM records WHERE {where} ORDER BY {order}", values)
+        for row in rows:
+            identity = row[0]
+            if identity in existing:
+                matched_checked += 1
+            elif add:
+                if len(additions) < capacity:
+                    additions.append(identity)
+                else:
+                    omitted += 1
+    return tuple(additions), len(existing) - matched_checked, omitted
