@@ -25,6 +25,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
+from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
@@ -208,6 +209,7 @@ class MainWindow:
             state_dir=self.state_dir,
             activity=self.activity,
             no_cache=no_cache,
+            cache_changed=self.refresh_cache,
         )
         self.image_export = ImageExportPanel(
             form,
@@ -216,6 +218,7 @@ class MainWindow:
             selection=self._export_selection,
             no_cache=no_cache,
         )
+        self.image_export.cache_changed.connect(self.refresh_cache)
         self.queue = QueuePage(
             self.queue_page,
             runner=self.runner,
@@ -288,7 +291,6 @@ class MainWindow:
         self.refresh_credentials()
         self.refresh_custom_loras()
         self.refresh_presets()
-        self.refresh_cache()
         self._workspace_changed(0)
         self._responsive_workspace()
 
@@ -311,6 +313,8 @@ class MainWindow:
 
     def _workspace_changed(self, index: int) -> None:
         """Switch content and use the compact full-width chrome for Images only."""
+        if index == 0:
+            self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         buttons = (
@@ -543,25 +547,42 @@ class MainWindow:
         self.form.statusBar().showMessage(f"Exported {count} Draw Things preset(s).", 5000)
 
     def refresh_cache(self) -> None:
-        async def measure():
-            return await asyncio.to_thread(cache_usage, self.state_dir)
+        token = self._cache_measure_token = object()
 
-        self.runner.submit(measure(), self._cache_measured)
+        async def measure():
+            # Startup cache reads may briefly own the lease. Do not leave a transient
+            # busy warning on screen; retry off the GUI thread for at most one second.
+            for attempt in range(11):
+                try:
+                    return await asyncio.to_thread(cache_usage, self.state_dir)
+                except CacheBusyError:
+                    if attempt == 10:
+                        raise
+                    await asyncio.sleep(0.1)
+
+        self.runner.submit(
+            measure(),
+            lambda usage, failure: self._cache_measured(usage, failure) if token is self._cache_measure_token else None,
+        )
 
     def _cache_measured(self, usage, failure) -> None:
         if failure is not None:
             log.warning("cache measurement failed reason=%s", type(failure).__name__)
-            self.form.cacheStatusLabel.setText("Disposable cache size unavailable.")
+            self.form.cacheStatusLabel.setText(
+                str(failure)
+                if isinstance(failure, (CacheBusyError, CacheCleanupError, CacheSafetyError))
+                else "Disposable cache size unavailable; refresh to retry."
+            )
             return
-        labels = {item.name: self._human_bytes(item.bytes) for item in usage}
+        labels = {item.name: f"{self._human_bytes(item.bytes)} ({item.files} files)" for item in usage}
         self.form.cacheStatusLabel.setText(
             f"Inventory {labels['inventory']} · Thumbnails {labels['thumbnails']} · Derived {labels['derived']}"
         )
 
     def clear_cache(self, categories: tuple[str, ...]) -> None:
-        if self.activity.generating or self.activity.dispatching:
+        if self.activity.generating or self.activity.dispatching or self.image_export.running:
             QMessageBox.warning(
-                self.form, "Cache is busy", "Stop the active generation or queue dispatch before cleanup."
+                self.form, "Cache is busy", "Stop the active generation, queue dispatch or image export before cleanup."
             )
             return
         names = ", ".join(categories)
@@ -580,7 +601,14 @@ class MainWindow:
     def _cache_cleared(self, names: str, failure) -> None:
         if failure is not None:
             log.warning("cache cleanup failed reason=%s", type(failure).__name__)
-            QMessageBox.warning(self.form, "Cache not cleared", type(failure).__name__)
+            QMessageBox.warning(
+                self.form,
+                "Cache not cleared",
+                str(failure)
+                if isinstance(failure, (CacheBusyError, CacheCleanupError, CacheSafetyError))
+                else "Cleanup may be partial; refresh sizes and retry. Check cache-folder permissions.",
+            )
+            self.refresh_cache()
             return
         self.refresh_cache()
         self.form.statusBar().showMessage(f"Cleared disposable cache: {names}.", 5000)

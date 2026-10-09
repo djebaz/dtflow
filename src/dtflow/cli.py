@@ -64,7 +64,7 @@ def parser() -> argparse.ArgumentParser:
     commands = command.add_subparsers(dest="command", required=True)
     gui = commands.add_parser("gui", help=COMMAND_HELP["gui"])
     gui.add_argument(
-        "-nc", "--no-cache", action="store_true", help="Bypass inventory cache reads and writes for this run."
+        "-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes for this run."
     )
     testing = commands.add_parser("test", help="Run repository tests through pytest.")
     testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
@@ -102,7 +102,7 @@ def parser() -> argparse.ArgumentParser:
                 "-nc",
                 "--no-cache",
                 action="store_true",
-                help="Bypass inventory cache reads and writes for this run.",
+                help="Bypass disposable cache reads and writes for this run.",
             )
         if name == "models":
             child.add_argument("-r", "--refresh", action="store_true", help="Refresh the inventory.")

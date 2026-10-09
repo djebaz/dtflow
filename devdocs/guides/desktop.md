@@ -12,7 +12,7 @@ uv run dtflow -x gui
 uv run dtflow gui -nc
 ```
 
-`-x/--dev` adds sanitized diagnostic detail only; `-nc/--no-cache` disables inventory cache reads and writes for that run. Logs use repository `logs/` in development. See [development tools](development.md) and [runtime layout](../architecture/runtime-layout.md).
+`-x/--dev` adds sanitized diagnostic detail only; `-nc/--no-cache` disables persistent disposable-cache reads and writes for that run. Logs use repository `logs/` in development. See [development tools](development.md) and [runtime layout](../architecture/runtime-layout.md).
 
 For a portable Windows executable that launches the GUI directly, see [the build guide](building.md).
 
@@ -157,7 +157,7 @@ outputs.
 
 `.dtflow/last_session.json` remembers the provider, local endpoint and Generate form on submission, a successful connection check and quit. Prompts are shared; generation domain, base-model family, Niche preference, exact model, LoRAs/weights and bound receipts, seed, dimensions, steps, guidance and sampler are remembered separately per provider. It is durable state, not cache, and cache bypass does not remove it.
 
-Connection reports disposable inventory, thumbnail and derived-cache sizes and offers confirmed category-specific or all-cache cleanup. Only the inventory category is written today: gallery thumbnails are held in memory, and nothing yet writes the `thumbnails` or `derived` directories, so those categories report zero until a feature uses them. Cleanup is blocked during an active generation or queue dispatch and never traverses outputs, attempts, queues, presets, settings, credentials, assets, custom catalogue data or model files.
+Connection reports disposable inventory, thumbnail and derived-cache sizes/file counts and offers confirmed category-specific or all-cache cleanup. Sizes refresh after inventory/export operations and when returning to Connection. Inventory snapshots and source image computations use disk cache; gallery thumbnails remain in memory, so the disk thumbnail category may be empty. Cleanup is blocked during active generation, queue dispatch or image export in this window. Shared nonblocking cache coordination also prevents cleanup racing actual cache I/O across threads/processes; a busy cache reports retry rather than waiting. If export starts while cache is unavailable, it continues without persistent cache and reports that fallback. New inventory observations can recreate cache after cleanup; cleanup is not a permanent caching disable. Redirected cache paths (including Windows junctions) are refused, and each category is bounded to 100,000 inspected entries. Failures can leave partial cleanup: refresh sizes, resolve permissions and retry. Cleanup never owns outputs, attempts, queues, presets, settings, credentials, assets, custom catalogue data, model files or user export folders.
 
 Raw local/cloud inventory snapshots live under `.dtflow/cache/inventory/`. Cache reads reject incompatible versions, changed endpoints and changed cloud credential identity; no account-dependent evidence is reused blindly. See [runtime layout](../architecture/runtime-layout.md) for the exact ownership contract.
 

@@ -44,6 +44,7 @@ These instructions apply throughout `dtflow`.
 - Keep outputs grouped by attempt, not backend. Create directories only when needed; cache cleanup must preserve outputs, durable state and retained test evidence.
 - Packaged Windows builds must use an appropriate per-user application-data location by default rather than writing beside the executable.
 - Keep disposable cache separate from durable state. Organize cache by type so categories can be measured and purged independently.
+- Use persistence/cache_coordination.py for cache file I/O and services/cache_management.py for bounded category measurement/purge. The shared nonblocking thread/process lease lives in <state>/cache.lock outside purge categories; never delete it to clear a busy owner. Reject redirected cache roots/categories/files and preflight selected category trees before purge. Export holds a lease across computation/checkpoints or falls back to no persistent cache; no-cache bypasses cache I/O. Keep owner/runtime acceptance separate from code presence.
 - Provide cache cleanup early enough to prevent generated images and derived assets from growing without bounds.
 - Support a cache-bypass launch option `-nc` / `--no-cache`; it must disable cache reads and writes for that run.
 

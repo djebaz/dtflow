@@ -25,6 +25,7 @@ class ImageExportPanel(QObject):
     """One shared export operation; selected scopes are captured on the GUI thread."""
 
     progress = Signal(int, int)
+    cache_changed = Signal()
 
     def __init__(
         self, form: QWidget, *, runner: AsyncRunner, state_dir: Path, selection: Callable, no_cache: bool = False
@@ -64,6 +65,10 @@ class ImageExportPanel(QObject):
         self.progress.connect(self._progress, Qt.ConnectionType.QueuedConnection)
         form.installEventFilter(self)
         self.runner.submit(asyncio.to_thread(load_export_preferences, self.state_dir), self._loaded)
+
+    @property
+    def running(self) -> bool:
+        return self._running
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.Close:
@@ -170,6 +175,7 @@ class ImageExportPanel(QObject):
 
     def _done(self, result, failure) -> None:
         self._set_running(False)
+        self.cache_changed.emit()
         if failure:
             log.warning("image export stopped reason=%s", type(failure).__name__)
             message = (
