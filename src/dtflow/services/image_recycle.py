@@ -80,7 +80,7 @@ def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
         info = expected.stat()
     except OSError:
         return None
-    if not expected.is_file() or not info.st_size:
+    if not expected.is_file() or not info.st_size or info.st_nlink != 1:
         return None
     if gallery_storage.path_reference_count(state, str(expected)) != 1:
         return None
