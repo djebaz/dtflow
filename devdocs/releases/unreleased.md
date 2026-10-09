@@ -52,7 +52,7 @@
 
 - Images Export no longer redirects to Connection: it toggles a scrollable right-hand column with all shared export controls. One card/controller preserves settings and active progress across navigation; hiding does not cancel. Owner reports column smoke passed for 5772f54; Images now hides the scope dropdown and starts checked-only exports, while Connection retains every scope. This checked-only refinement remains owner-smoke-pending. No agent tests/smoke or provider calls.
 
-- Repeat-export skips now validate committed/non-recycled identities in short batches of at most 128, avoiding a full gallery record and SQLite/lock setup for every skipped image. Actual exports retain per-image original-file leases; no destination index or safety bypass. Static checks only; owner speed/mixed/cancel smoke remains pending, with no measured benchmark.
+- Repeat-export skips now validate committed/non-recycled identities in short batches of at most 128, avoiding a full gallery record and SQLite/lock setup for every skipped image. Actual exports retain per-image original-file leases; no destination index or safety bypass. Owner reports repeat-export speed smoke passed at 314737b (2026-10-09); no measured benchmark or agent runtime check. Mixed/recycled/unavailable/cancel and packaged/platform acceptance remain separate.
 
 ## Release audit
 

@@ -18,3 +18,7 @@
 
 ## Validation
 - No tests, smoke or benchmarks run; owner repeat-export/mixed/missing/recycled/cancel smoke remains pending. No actual export/Trash operation, inference or billable action.
+
+## Owner smoke acceptance (2026-10-09)
+
+Owner reports smoke tested at runtime head 314737b and repeat-export skipping is very fast again. Record repeat-skip responsiveness as owner-accepted, not an agent test or measured benchmark. Mixed new/existing targets, recycled/unavailable records, cancellation and broader packaged/platform scenarios remain separate acceptance gates. This documentation follow-up changes no source and runs no tests, export/Trash operation, inference or billable action.
