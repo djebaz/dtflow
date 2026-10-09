@@ -177,3 +177,10 @@ active text/LoRA editors. Escape dismisses standalone notices. The existing
 Qt shell suite gains focused presentation assertions; CI and native Qt
 acceptance are pending. Refresh the HTML prototype only after the code
 behavior is verified and stabilized.
+
+PR #58 Export cancellation follow-up: a clean user-cancelled Export result
+remains a stopped/amber outcome but explicitly opts into the same six-second
+lifetime countdown, draining bar and 450 ms fade as success. Cancellations
+with failures or warnings remain persistent partial outcomes. The shared
+activity-strip expiry remains opt-in for stopped states; other stopped
+workflows are unchanged. Native GUI rendering acceptance is still pending.

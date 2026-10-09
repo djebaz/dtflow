@@ -152,6 +152,18 @@
 - After code and CI acceptance, update the separate HTML prototype to
   represent all validated Qt states, workflows and later decisions.
 
+## Export cancellation transient-result refinement (2026-10-09)
+- A clean, user-cancelled image Export retains amber `stopped` semantics but
+  explicitly opts into the existing six-second draining countdown/bar,
+  hover/focus pause and 450 ms fade. The timer/line use the amber stopped
+  accent rather than showing a success color.
+- Stopped queue/Trash outcomes remain persistent. Export cancellations
+  with failure or warning details are still partial and persistent.
+  Do not alter export interruption, retained-file, or retry behavior.
+- Extend existing Qt overlay assertions for opt-in stopped expiry, and
+  preserve the default persistent stopped/partial contracts.
+- CI and owner native Windows visual acceptance remain separately required.
+
 ## Open questions
 - None.
 

@@ -21,6 +21,8 @@
 
 ## Changed
 
+- PR #58 now auto-dismisses **clean, user-cancelled Export** results after six seconds using the existing draining lifetime bar, hover/focus pause and 450 ms fade. The result remains an amber stopped outcome with an amber countdown and bar; export failures/warnings and other stopped workflows remain persistent.
+
 - PR #58 aligns the success countdown text to the right, adjacent to Dismiss, and colors it mint/teal to match the draining lifetime bar instead of ordinary grey detail text. No expiry or task-progress behavior changed.
 
 

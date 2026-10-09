@@ -1483,6 +1483,9 @@ QLabel#activityLifetime {
   font-size: ${type.small};
   font-weight: ${type.weightEmphasis};
 }
+QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activityLifetime {
+  color: ${color.warning};
+}
 QLabel#inlineSymbol, QLabel#activitySymbol {
   background: ${color.selection};
   color: ${color.focus};
@@ -1539,6 +1542,9 @@ QProgressBar#activityLifetimeBar {
 }
 QProgressBar#activityLifetimeBar::chunk {
   background: ${color.connectionAccent};
+}
+QWidget#activityProgressRow[feedbackState="stopped"] QProgressBar#activityLifetimeBar::chunk {
+  background: ${color.warning};
 }
 QPushButton#activityDismissButton {
   min-width: 22px;

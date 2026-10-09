@@ -474,7 +474,10 @@ and a 450 ms fade-out. The timer and bar pause
 when hovering or focusing anywhere inside the overlay; the 5 px blue
 progress track is separate and represents actual processed work only.
 Error/partial/uncertain/stopped results and informational notices stay
-until dismissed. Escape dismisses a standalone notice, while Cancel/Escape
+until dismissed, except a clean user-cancelled image export: it stays an
+amber `stopped` result but opts into the same six-second lifetime bar and
+450 ms fade, with amber countdown and bar. Export cancellations that include
+failures or warnings remain persistent `partial` results for review. Escape dismisses a standalone notice, while Cancel/Escape
 disarm a pending confirmation/editor; dismissing any row never stops work.
 Stopped shows a stop-square glyph; progress uses operation-specific glyphs
 for Trash, Export, Cache, Queue, selection and generation. Destructive

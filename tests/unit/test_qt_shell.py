@@ -87,6 +87,21 @@ def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbo
     assert "example" not in strip._expiry
     strip.finish("example")
 
+    # A clean, user-cancelled export is a transient stopped result, not success.
+    strip.complete("export", "Export cancelled.", "Saved copies remain.", "stopped", auto_dismiss=True)
+    export_row = strip.rows["export"]
+    qtbot.waitUntil(export_row.activityLifetimeBar.isVisible, timeout=1000)
+    assert export_row.activitySymbol.text() == "■"
+    assert export_row.activityLifetime.text() == "6s"
+    assert export_row.activityLifetimeBar.value() == 6000
+    assert strip._expiry["export"] == 6.0
+    strip.finish("export")
+
+    # Failures or warnings still require acknowledgement, even on cancellation.
+    strip.complete("export", "Export cancelled.", "Two files failed.", "partial", auto_dismiss=True)
+    assert "export" not in strip._expiry
+    strip.finish("export")
+
     InlineNotice.warning(window.form, "Busy", "Try again later")
     assert window.inline.form.property("feedbackState") == "warning"
     window.inline.escape.activated.emit()
