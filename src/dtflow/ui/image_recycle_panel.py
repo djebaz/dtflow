@@ -10,6 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QMessageBox, QProgressDialog, QWidget
 
+from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence.original_io import OriginalImagesBusyError
 from dtflow.services.image_recycle import prepare_recycle, recycle_outputs
 from dtflow.ui.runner import AsyncRunner
@@ -38,7 +39,7 @@ class ImageRecyclePanel(QObject):
     def running(self) -> bool:
         return self._running
 
-    def request(self, identities: tuple[str, ...], hidden: int) -> None:
+    def request(self, identities: tuple[str, ...], hidden: int, query: GalleryQuery) -> None:
         """Freeze scope before confirmation; refuse concurrent destructive actions."""
         if self._running or not identities:
             return
@@ -51,7 +52,7 @@ class ImageRecyclePanel(QObject):
         self._running = True
         self.gallery.set_recycle_busy(True)
         self.runner.submit(
-            asyncio.to_thread(prepare_recycle, self.state_dir, identities, hidden),
+            asyncio.to_thread(prepare_recycle, self.state_dir, identities, hidden, query),
             self._prepared,
         )
 
