@@ -45,6 +45,7 @@ from dtflow.services.session import (
     selection_for,
 )
 from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.empty_hint import EmptyListHint
 from dtflow.ui.generation_presenter import (
     FAKE_MODEL,
@@ -747,11 +748,20 @@ class GenerationPage:
         if failure is not None:
             self._progress_stopped("Failed")
             log.warning("generate failed reason=%s", failure_reason(failure))
-            self._status(present_generation_failure(failure))
+            presentation = present_generation_failure(failure)
+            self._status(presentation)
+            activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
             return
         log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
         self._progress("Saved", floor=100)
-        self._status(present_outcome(outcome))
+        presentation = present_outcome(outcome)
+        self._status(presentation)
+        activity_strip(self.page).complete(
+            "generation-result",
+            "Generation " + presentation.headline,
+            presentation.detail,
+            "partial" if outcome.warnings else "success",
+        )
         self.lora.show_diagnostics(outcome.diagnostics)
         self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
         self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
@@ -833,10 +843,16 @@ class GenerationPage:
         self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
         self._progress_stopped("Stopped locally")
+        presentation = present_generation_failure(failure) if failure else present_interruption(evidence)
+        self._status(presentation)
+        activity_strip(self.page).complete(
+            "generation-result",
+            presentation.headline,
+            presentation.detail,
+            "error" if presentation.level == "error" else "success" if presentation.level == "ok" else "stopped",
+        )
         if failure is not None:
-            self._status(present_generation_failure(failure))
             return
-        self._status(present_interruption(evidence))
         if evidence is not None:
             self.page.attemptIdentityLabel.setText(
                 f"Attempt {evidence.attempt_id[:8]}: recorded state {evidence.state}."

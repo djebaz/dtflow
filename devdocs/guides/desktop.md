@@ -9,8 +9,8 @@ checkpoint/LoRA editors stay inside the main window. Native file/folder pickers 
 menus remain available. No confirmation opens a separate window or nested dialog event loop.
 
 A guarded action first displays its explanation and changes only its original button to
-**Confirm**, red for Delete/Clear and amber otherwise, without adding Cancel to the action row. **Cancel** is in the separate
-inline details panel. Nothing executes on the first activation. Cancel, Escape, navigation,
+**Confirm**, red for Delete/Clear and amber otherwise, without adding Cancel to the action row. **Cancel** is in the shared
+bottom feedback overlay. Nothing executes on the first activation. Cancel, Escape, navigation,
 provider changes and relevant selection/filter changes discard pending consent; there is no
 timer. Confirm keeps frozen file/queue/Trash scope, with busy checks and destructive-service
 revalidation still applied. A double-click does not count as two consent activations.
@@ -27,13 +27,13 @@ this range starts the editor at 1.0, not a silently clipped default. Existing im
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
-Active operations appear in a dedicated bottom overlay above the content, across tabs;
+Confirmations, editors, progress and results use one thin bottom overlay above content, across tabs;
 it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
 concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
 Stop/Cancel delegates to the original controller, preserving completed copies/moves and
 existing uncertainty semantics. Generation preview and the compact Run control remain.
-Inline results remain inspectable after progress ends; dismissing a notice never cancels work.
+Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results dismiss after six seconds, paused on hover or keyboard focus; errors, partial/uncertain and stopped results persist until dismissed. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
 This implementation still requires owner runtime/visual and packaged acceptance.
 
 ## Launch
@@ -188,7 +188,7 @@ The Images action bar keeps **Select all** visible at every width. It selects ma
 
 ### Move checked originals to system Trash
 
-In the Phase 8E source implementation, **Delete** displays inline confirmation details and becomes red **Confirm**, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. The first activation does not authorize a move; Cancel in the details panel discards consent. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.
+In the Phase 8E source implementation, **Delete** displays inline confirmation details and becomes red **Confirm**, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. The first activation does not authorize a move; Cancel in the bottom overlay discards consent. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.
 
 Moves run in the background one image at a time. Stop after current image preserves completed moves. Results distinguish confirmed moves, failures and Qt-reported success with an unverifiable destination. Failed and uncertain selections remain checked for manual review; never retry an uncertain result without inspecting the files. Manually recovering a file to its recorded path does **not** currently make it available in DTFlow again: Refresh cannot prove content identity from the path, size or timestamp. Recycled records remain hidden until a future explicit content-verified recovery workflow; old heuristic restoration records are also withdrawn without removing files. There is no DTFlow Undo or guaranteed restoration (including no macOS Finder Put Back integration). No permanent-delete fallback exists. See [architecture and platform limitations](../architecture/image-recycling.md). Owner platform runtime/packaged acceptance is pending; the Qt adapter does not establish full Debian app support.
 

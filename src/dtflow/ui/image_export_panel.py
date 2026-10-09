@@ -123,6 +123,7 @@ class ImageExportPanel(QObject):
             selection = self.selection(self.form.imageExportScopeCombo.currentData())
         except ValidationError as exc:
             self.form.imageExportStatusLabel.setText(str(exc))
+            activity_strip(self.form).complete("export", "Export not started", str(exc), "error")
             return
         options = ExportOptions(
             include_prompts=self.form.imageExportPromptsCheck.isChecked(),
@@ -174,7 +175,9 @@ class ImageExportPanel(QObject):
         strip = activity_strip(self.form)
         if strip is not None:
             if value:
-                strip.start("export", "Image export", self.cancel)
+                strip.start(
+                    "export", "Exporting saved images", self.cancel, detail="Collecting saved image identities…"
+                )
             else:
                 strip.finish("export")
 
@@ -206,6 +209,7 @@ class ImageExportPanel(QObject):
                 else "Export stopped; check destination permissions and saved outputs."
             )
             self.form.imageExportStatusLabel.setText(message)
+            activity_strip(self.form).complete("export", "Export failed", message, "error")
             return
         prefix = "Export cancelled." if result.cancelled else "Export finished."
         if result.total == 0:
@@ -217,6 +221,8 @@ class ImageExportPanel(QObject):
         if result.warnings:
             text += " " + " ".join(result.warnings)
         self.form.imageExportStatusLabel.setText(text)
+        state = "partial" if result.failed or result.warnings else "stopped" if result.cancelled else "success"
+        activity_strip(self.form).complete("export", prefix, text, state)
         self.form.imageExportStatusLabel.setToolTip("\n".join(result.failures))
         if result.exported or result.skipped:
             self._exported_folder = Path(result.destination)

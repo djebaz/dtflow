@@ -764,7 +764,10 @@ class GalleryPage(QObject):
             strip.finish("selection")
         self.select_filtered_button.setEnabled(True)
         self._sync_selection_ui()
-        self._selection_notice("Selection operation canceled; previous checks are retained.")
+        message = "Selection operation canceled; previous checks are retained."
+        self._selection_notice(message)
+        if strip is not None:
+            strip.complete("selection", "Gallery selection stopped", message, "stopped")
 
     def _selection_scan_done(self, generation, mode, result, error) -> None:
         if generation != self._selection_generation:
@@ -778,7 +781,10 @@ class GalleryPage(QObject):
         self.select_filtered_button.setEnabled(True)
         self._sync_selection_ui()
         if error is not None:
-            self._selection_notice(f"Selection query failed: {type(error).__name__}")
+            message = f"Selection query failed: {type(error).__name__}"
+            self._selection_notice(message)
+            if strip is not None:
+                strip.complete("selection", "Gallery selection failed", message, "error")
             return
         additions, hidden, omitted, matching = result
         self._hidden_query = used_query
@@ -797,6 +803,13 @@ class GalleryPage(QObject):
                 self.selection.anchor = None
             self._hidden_checks = 0
         self._after_selection_edit()
+        if strip is not None:
+            message = (
+                f"{added} added; {omitted} omitted at the 10,000-image limit."
+                if mode == "add"
+                else "Hidden checks cleared."
+            )
+            strip.complete("selection", "Gallery selection updated", message, "partial" if omitted else "success")
 
     def _toggle_all_filtered(self) -> None:
         """Toggle the permanent toolbar action, without changing Ctrl+A semantics."""

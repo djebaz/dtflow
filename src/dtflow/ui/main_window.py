@@ -190,8 +190,8 @@ class MainWindow:
         self.shell.rightStack.addWidget(QWidget())
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
-        self.inline = InlineFeedback(form)
         self.progress_strip = ActivityStrip(form)
+        self.inline = InlineFeedback(form)
         # Preserve the connection controller's established chrome references.
         for name in (
             "brandFrame",
@@ -440,8 +440,18 @@ class MainWindow:
             return
         if "run" not in self.progress_strip.rows:
             label = "Generation" if self.activity.generating else "Queue · settled items"
-            self.progress_strip.start("run", label)
+            self.progress_strip.finish("generation-result")
+            self.progress_strip.finish("queue-result")
+            self.progress_strip.start(
+                "run",
+                label,
+                self.generation.cancel if self.activity.generating else None,
+                stop_text="Stop waiting locally",
+            )
         self.progress_strip.update("run", state.completed or 0, state.total or 0)
+        row = self.progress_strip.rows["run"]
+        if row.activityStopButton.isEnabled() or row.activityStopButton.isHidden():
+            row.activityDetail.setText(state.detail)
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
@@ -659,6 +669,7 @@ class MainWindow:
             async def purge():
                 return await asyncio.to_thread(purge_cache, self.state_dir, categories)
 
+            self.progress_strip.start("cache", "Clearing disposable cache", detail=f"{names}; durable data preserved.")
             self.runner.submit(purge(), lambda _, failure: self._cache_cleared(names, failure))
 
         confirm_action(
@@ -670,19 +681,23 @@ class MainWindow:
         )
 
     def _cache_cleared(self, names: str, failure) -> None:
+        self.progress_strip.finish("cache")
         if failure is not None:
             log.warning("cache cleanup failed reason=%s", type(failure).__name__)
-            InlineNotice.warning(
-                self.form,
+            self.progress_strip.complete(
+                "cache",
                 "Cache not cleared",
                 str(failure)
                 if isinstance(failure, (CacheBusyError, CacheCleanupError, CacheSafetyError))
                 else "Cleanup may be partial; refresh sizes and retry. Check cache-folder permissions.",
+                "error",
             )
             self.refresh_cache()
             return
         self.refresh_cache()
-        self.form.statusBar().showMessage(f"Cleared disposable cache: {names}.", 5000)
+        self.progress_strip.complete(
+            "cache", "Disposable cache cleared", f"{names}; outputs, queues, settings and model assets preserved."
+        )
 
     def _reuse_output(self, request: dict, identity: str) -> None:
         self.generation.reuse_saved_request(request, identity)
@@ -869,6 +884,7 @@ class MainWindow:
         self.inline.show(
             "Close DTFlow?",
             "Closing stops dispatch. Active attempts stop waiting locally and may end as outcome unknown; remote cancellation is not confirmed.",
+            "confirm",
         )
         self.inline.escape.setEnabled(True)
         self.inline.form.inlineDismissButton.setText("Cancel")

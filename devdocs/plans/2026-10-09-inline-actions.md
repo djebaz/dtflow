@@ -91,3 +91,34 @@ No application launch or test execution. Fresh CI status is not presumed success
   scope its deferred positioning callback to that QObject. This is lifecycle
   repair only, not an overlay redesign. Static lint/format/syntax/import checks
   passed; automatic CI verification pending. No new/local tests or smoke.
+
+## Approved unified feedback overlay follow-up
+
+The owner approved the updated `dtflow_inline_panels.html` mockup: one thin
+bottom overlay for confirmations, progress, success, error, partial and stopped
+results. Essential information is directly visible and wraps; no Details control,
+no reserved layout space or main-content resizing. Confirm alone stays on the
+original action (red for Delete/Clear); Cancel is in the overlay. Export starts
+without additional consent. Successful operation results dismiss after six seconds,
+paused during hover/keyboard focus; errors/partial/stopped outcomes persist.
+
+- [x] Mount inline feedback/editors and concurrent progress in one Qt-owned overlay.
+- [x] Match compact row hierarchy, thin progress/count/Stop and state palette.
+- [x] Route Trash/export/cache/selection results to labelled overlay rows, retaining
+  all original leases, eligibility, frozen consent and cancellation semantics.
+- [ ] Synchronize docs and run static checks; no new tests or local tests/smoke.
+- [ ] Push PR #58 and observe automatic CI to completion; owner native visual and
+  packaged acceptance remain separate. No inference or billable operations.
+
+Prototype markup/images/demo-only state controls are not production content.
+Long metadata and selection editors must remain usable without opening popups.
+Concurrent tasks retain separate rows in the same overlay rather than overwriting
+one another or dismissing pending consent.
+
+Approved HTML reference SHA-256:
+`b05dffac0fd3b0d984f9ea47f9355f4f1ae3aa5bffe2e7e3f0a04fc11ec6461e`.
+Only native Qt presentation/controllers are changed; no prototype images, demo
+controls, simulated counts, provider behavior or service safety rules are copied.
+The previous lifecycle CI at `6cf931c` passed (426 passed, 3 gated live skips).
+The unified-overlay change requires its own CI and owner mounted-window visual
+acceptance; no visual parity is claimed from source inspection.

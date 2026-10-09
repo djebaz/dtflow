@@ -31,6 +31,7 @@ from dtflow.services.queue_session import (
 )
 from dtflow.services.session import bind_prepared
 from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.planning_presenter import (
@@ -635,17 +636,28 @@ class QueuePage:
         self._dispatch_started = False
         self._activity.set(dispatching=False)
         if isinstance(failure, StateBusyError):
-            self._message(
-                Presentation(
-                    "warning",
-                    "Dispatch is owned by another process",
-                    "Controls still work; Start is available when it stops. Nothing was dispatched.",
-                )
+            presentation = Presentation(
+                "warning",
+                "Dispatch is owned by another process",
+                "Controls still work; Start is available when it stops. Nothing was dispatched.",
             )
         elif failure is not None:
-            self._message(present_generation_failure(failure))
+            presentation = present_generation_failure(failure)
         else:
-            self._message(Presentation(*outcome_text(final)))
+            presentation = Presentation(*outcome_text(final))
+        self._message(presentation)
+        state = (
+            "error"
+            if failure
+            else "success"
+            if presentation.level == "ok"
+            else "partial"
+            if final["status"] == "finished"
+            else "stopped"
+        )
+        activity_strip(self.page).complete(
+            "queue-result", "Queue · " + presentation.headline, presentation.detail, state
+        )
         self._render()
         self.refresh()
 

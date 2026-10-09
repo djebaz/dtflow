@@ -1,5 +1,6 @@
 """Non-modal, main-window-only notices, editors and explicit two-click consent."""
 
+import math
 from collections.abc import Callable
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QLineEdit
+
+from dtflow.ui.activity_strip import activity_strip
 
 
 class InlineFeedback(QObject):
@@ -24,7 +27,9 @@ class InlineFeedback(QObject):
             file.close()
         if self.form is None:
             raise OSError("Inline feedback form could not be loaded")
-        window.rootLayout.addWidget(self.form)
+        self.setParent(self.form)
+        self.strip = activity_strip(window)
+        self.strip.mount_feedback(self)
         self.form.hide()
         self.form.inlineDismissButton.clicked.connect(self.dismiss)
         self._armed = None
@@ -34,7 +39,7 @@ class InlineFeedback(QObject):
         self.form.inlineAcceptButton.hide()
         window._inline_feedback = self
         window.installEventFilter(self)
-        self.escape = QShortcut(QKeySequence("Escape"), window)
+        self.escape = QShortcut(QKeySequence("Escape"), self.form)
         self.escape.activated.connect(self.dismiss)
         self.escape.setEnabled(False)
 
@@ -72,14 +77,34 @@ class InlineFeedback(QObject):
     def dismiss(self):
         self.reset()
         self.form.hide()
+        self.strip._position()
 
-    def show(self, title, text):
+    def show(self, title, text, state="info"):
         self.reset()
+        self.form.setProperty("feedbackState", state)
+        self.form.inlineSymbol.setText("!" if state in {"error", "partial", "confirm"} else "i")
+        self.form.style().unpolish(self.form)
+        self.form.style().polish(self.form)
         self.form.inlineTitleLabel.setText(title)
         self.form.inlineTextBrowser.setPlainText(text)
         self.form.inlineTextBrowser.setVisible(bool(text))
         self.form.inlineDismissButton.setText("Dismiss")
         self.form.show()
+        self.strip._position()
+
+    def fit_text(self, width):
+        """Fit short messages directly; retain scrolling for explicit long metadata inspection."""
+        browser = self.form.inlineTextBrowser
+        controls = self.form.inlineDismissButton.sizeHint().width()
+        if not self.form.inlineAcceptButton.isHidden():
+            controls += self.form.inlineAcceptButton.sizeHint().width() + 10
+        document = browser.document()
+        document.setDefaultFont(browser.font())
+        document.setDocumentMargin(0)
+        document.setTextWidth(max(40, width - controls - 90))
+        height = min(150, max(16, math.ceil(document.size().height()) + 2))
+        if browser.height() != height:
+            browser.setFixedHeight(height)
 
     def editor(self, title, widget, accept, callback):
         self.show(title, "")
@@ -89,15 +114,17 @@ class InlineFeedback(QObject):
         self.form.inlineDismissButton.setText("Cancel")
         self.set_accept(accept, callback)
         widget.show()
+        self.strip._position()
 
     def set_accept(self, text, callback):
         self._accept_callback = callback
         self.form.inlineAcceptButton.setText(text)
         self.form.inlineAcceptButton.show()
         self.form.inlineAcceptButton.clicked.connect(callback)
+        self.strip._position()
 
     def arm(self, button, title, text, callback, canceled=None):
-        self.show(title, text)
+        self.show(title, text, "confirm")
         self.form.inlineDismissButton.setText("Cancel")
         self.escape.setEnabled(True)
         # Only the label/color changes in the original slot; Cancel belongs to
@@ -135,6 +162,10 @@ class InlineFeedback(QObject):
         button.style().unpolish(button)
         button.style().polish(button)
         button._inline_commit = callback
+        self.form.setProperty("feedbackState", "error" if button.property("confirmationDanger") else "confirm")
+        self.form.style().unpolish(self.form)
+        self.form.style().polish(self.form)
+        self.strip._position()
 
     def commit(self, button):
         if not self._armed or self._armed[0] is not button:
@@ -184,7 +215,10 @@ class InlineNotice:
     def information(parent, title, text):
         feedback(parent).show(title, text)
 
-    warning = information
+    @staticmethod
+    def warning(parent, title, text):
+        feedback(parent).show(title, text, "error")
+
     about = information
 
 

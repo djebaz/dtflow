@@ -1417,20 +1417,87 @@ QFrame[role="galleryCard"][checkedSelection="true"] {
   background: ${color.selectionPressed};
 }
 
-/* Main-window-only feedback and expanded editors share existing surfaces/tokens. */
-QFrame#inlineFeedback {
-  background: ${color.surface};
-  border: 1px solid ${color.selectionBorder};
-  border-radius: ${size.radiusSm};
-}
-QLabel#inlineTitleLabel {
-  font-weight: ${type.weightEmphasis};
-}
-
+/* Shared bottom feedback overlay: no reserved space, no Details control. */
 QFrame#activityStrip {
   background: ${color.surface};
   border: 1px solid ${color.selectionBorder};
-  border-radius: ${size.radiusSm};
+  border-radius: ${size.radius};
+}
+QFrame#inlineFeedback, QWidget#activityProgressRow {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.selection}, stop:1 ${color.surface});
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.radius};
+}
+QFrame#inlineFeedback[feedbackState="confirm"], QWidget#activityProgressRow[feedbackState="partial"],
+QWidget#activityProgressRow[feedbackState="stopped"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.dangerSurface}, stop:1 ${color.surface});
+  border-color: ${color.statusWarningBorder};
+}
+QFrame#inlineFeedback[feedbackState="error"], QWidget#activityProgressRow[feedbackState="error"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.dangerSurface}, stop:1 ${color.surface});
+  border-color: ${color.dangerBorder};
+}
+QWidget#activityProgressRow[feedbackState="success"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.connectionSurface}, stop:1 ${color.surface});
+  border-color: ${color.connectionAccent};
+}
+QLabel#inlineTitleLabel, QLabel#activityLabel {
+  background: transparent;
+  color: ${color.title};
+  font-weight: ${type.weightEmphasis};
+}
+QTextBrowser#inlineTextBrowser {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel#activityDetail, QLabel#activityCount, QLabel#activityLifetime {
+  background: transparent;
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel#inlineSymbol, QLabel#activitySymbol {
+  background: ${color.selection};
+  color: ${color.focus};
+  border-radius: ${size.radiusChip};
+  font-weight: ${type.weightStrong};
+}
+QWidget#activityProgressRow[feedbackState="success"] QLabel#activitySymbol {
+  background: ${color.connectionSurface};
+  color: ${color.connectionAccent};
+}
+QWidget#activityProgressRow[feedbackState="partial"] QLabel#activitySymbol,
+QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activitySymbol,
+QFrame#inlineFeedback[feedbackState="confirm"] QLabel#inlineSymbol {
+  background: ${color.dangerSurface};
+  color: ${color.warning};
+}
+QWidget#activityProgressRow[feedbackState="error"] QLabel#activitySymbol,
+QFrame#inlineFeedback[feedbackState="error"] QLabel#inlineSymbol {
+  background: ${color.dangerSurface};
+  color: ${color.dangerText};
+}
+QProgressBar#activityProgress {
+  min-height: 5px;
+  max-height: 5px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: ${color.buttonBorder};
+}
+QProgressBar#activityProgress::chunk {
+  background: ${color.accentHover};
+  border-radius: 2px;
+}
+QPushButton#activityDismissButton {
+  min-width: 22px;
+  max-width: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: ${color.secondary};
 }
 
 /* Explicit consent is amber; Cancel stays in the separate inline details panel. */

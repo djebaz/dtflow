@@ -126,9 +126,18 @@ PR #58 CI follow-up: run 37982792491 at 314d927 reported 8 failed, 417 passed,
 interactions rather than removed dialog mocks. Shutdown stops desktop timers and suppresses
 late GUI deliveries; programmatic close now obtains consent before stopping dispatch.
 No new tests or local test/smoke execution; fresh CI confirmation remains pending.
-The owner's progress-overlay redesign discussion is separate and not implemented here.
+The approved progress-overlay redesign is implemented in the follow-up below.
 
 PR #58 follow-up CI at `cc1d371`: 426 passed, 3 skipped, 40 teardown errors from
 an incorrectly scoped shutdown callback. The callback is now a window-owned Qt
 slot, automatically disconnected at window destruction. Follow-up CI remains
 pending; no local tests/smoke or new tests.
+
+PR #58 lifecycle repair passed automatic CI at `6cf931c`: 426 passed, 3 gated live
+skips, no errors. The owner then approved the updated HTML feedback mockup. Source
+now mounts confirmation/editors and concurrent progress/results in one thin bottom
+overlay with visible wrapping information, no Details button and no main-content
+resizing. Export has no additional confirmation; success results expire after six
+seconds (hover/focus pauses), while errors/partial/uncertain/stopped results persist.
+No new tests/local tests/smoke; new CI and owner native visual/packaged acceptance
+are separate from the previous green commit. No release, inference or billable work.

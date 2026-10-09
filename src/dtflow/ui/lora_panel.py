@@ -21,6 +21,7 @@ from dtflow.services.connection import (
     present_reconciliation,
 )
 from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
+from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import choose_searchable
@@ -264,6 +265,9 @@ class LoraAssetPanel:
                 return
             self._set_busy(True)
             self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", "This may upload the file."))
+            activity_strip(self.page).start(
+                "asset", "Preparing cloud asset", detail="May upload the selected file; waiting for receipt."
+            )
             self._runner.submit(
                 prepare_asset(self._state, Path(chosen), provenance="gui", saved=self._saved()), self._prepared
             )
@@ -278,6 +282,22 @@ class LoraAssetPanel:
 
     def _prepared(self, record, failure) -> None:
         self._set_busy(False)
+        strip = activity_strip(self.page)
+        presentation = (
+            present_asset_failure(failure)
+            if failure
+            else Presentation(
+                "ok" if record["state"] == "confirmed" else "warning",
+                "Receipt " + record["state"],
+                f"{record['identifier']} ({record['evidence']}).",
+            )
+        )
+        strip.complete(
+            "asset",
+            presentation.headline,
+            presentation.detail,
+            "error" if failure else "success" if record["state"] == "confirmed" else "partial",
+        )
         status = self.page.assetStatusLabel
         if failure is not None:
             self._show(status, present_asset_failure(failure))

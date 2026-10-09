@@ -87,14 +87,11 @@ class ImageRecyclePanel(QObject):
             )
             return
         message = (
-            f"Move {eligible} selected original images to {TRASH_NAME}?\n\n"
-            f"{plan.hidden} checked images are hidden by the current filters and included "
-            f"in this request. {plan.missing} originals are missing and "
-            f"{plan.ineligible} are ineligible; these will not be moved.\n\n"
-            f"Files can normally be recovered manually from your system {TRASH_NAME}. "
-            "DTFlow does not provide Undo and cannot guarantee restoration. "
-            "Recovered files stay hidden in DTFlow until content-verified recovery is supported. "
-            "Exported copies and generation history will be preserved."
+            f"{eligible} eligible · {plan.hidden} checked images hidden by filters included · "
+            f"{plan.missing} missing · {plan.ineligible} ineligible (not moved). "
+            f"Restore manually through {TRASH_NAME}; no DTFlow Undo or restoration guarantee. "
+            "Recovered files stay hidden pending content-verified recovery. "
+            "Exports and generation history preserved."
         )
         # Keep scope editable while awaiting consent, but invalidate it on any
         # selection/filter/navigation change. The destructive worker still revalidates.
@@ -103,7 +100,7 @@ class ImageRecyclePanel(QObject):
         confirm_action(
             self.parent_widget,
             self.gallery.delete_button,
-            f"Move images to {TRASH_NAME}",
+            f"Move {eligible} selected originals to {TRASH_NAME}?",
             message,
             lambda: self._execute(plan),
             self._cancel_confirmation,
@@ -124,9 +121,9 @@ class ImageRecyclePanel(QObject):
         self._running = True
         self.gallery.set_recycle_busy(True)
         self._stop = threading.Event()
-        panel = feedback(self.parent_widget)
-        panel.show("Image recycling", f"Moving eligible originals to {TRASH_NAME}…")
-        activity_strip(self.parent_widget).start("trash", "Image recycling", self.cancel, total=len(plan.targets))
+        activity_strip(self.parent_widget).start(
+            "trash", f"Moving originals to {TRASH_NAME}", self.cancel, total=len(plan.targets)
+        )
         self.runner.submit(
             asyncio.to_thread(
                 recycle_outputs,
@@ -174,10 +171,8 @@ class ImageRecyclePanel(QObject):
                 summary += f"\n… and {len(result.failure_details) - 5} more (see DTFlow logs)."
         if result.canceled:
             summary += "\nStopped after the current image; completed moves remain."
-        if result.failed or result.uncertain:
-            InlineNotice.warning(self.parent_widget, f"{TRASH_NAME} result", summary)
-        else:
-            InlineNotice.information(self.parent_widget, f"{TRASH_NAME} result", summary)
+        state = "partial" if result.failed or result.uncertain else "stopped" if result.canceled else "success"
+        activity_strip(self.parent_widget).complete("trash", f"{TRASH_NAME} result", summary, state)
 
     def _finish_with_error(self, error) -> None:
         self._running = False
@@ -190,7 +185,7 @@ class ImageRecyclePanel(QObject):
                 "The operation could not be completed or its durable outcome could not be verified. "
                 "Inspect the original files and retry only after checking their status."
             )
-        InlineNotice.warning(self.parent_widget, f"{TRASH_NAME} unavailable", message)
+        activity_strip(self.parent_widget).complete("trash", f"{TRASH_NAME} unavailable", message, "error")
 
     def cancel(self) -> None:
         """Request a safe stop between files without undoing successful moves."""

@@ -410,7 +410,7 @@ with `ui/inline_feedback.py` handling presentation only. Keep native file/folder
 and ordinary menus. Only Confirm occupies the original action slot, preserving its width;
 its amber background reuses `color.warning`, `color.background` and
 `color.statusWarningBorder`; Delete/Clear override with `color.dangerBorder` and
-`color.onAccent` for a red confirmation. Cancel is deported to the separate details panel. No timer;
+`color.onAccent` for a red confirmation. Cancel is in the shared bottom overlay, not the original action row. No timer;
 Cancel/Escape/navigation/relevant scope edits disarm pending consent. Do not count a mouse
 double-click as two independent consent activations. Preserve the full destructive/upload/
 credit warning and all service-level safety checks.
@@ -420,9 +420,26 @@ LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step
 saved requests are not silently clamped. Preset names and explicit metadata/About inspection
 use the same main-window surface, with scrollable text for long notices.
 
-`activity_strip.ui` and the reusable `activity_progress_row.ui` define a bottom progress
-overlay above content. It appears only while operations are active, across navigation;
-labelled rows prevent concurrent operations from overwriting progress. It owns no service
-behavior. Keep cancel/stop semantics and the existing generation preview/Run control.
-No idle space is reserved. Native-DPI, overlap/resize, keyboard and packaged acceptance
-remain owner work; source/static checks do not establish visual quality.
+`activity_strip.ui`, `inline_feedback.ui` and `activity_progress_row.ui` compose one
+bottom feedback overlay, matching the owner-approved HTML interaction structure. It
+never joins the main content layout: showing it does not resize previews, thumbnails
+or scroll containers. A normal row is compact (48 px baseline, 28 px symbol, title and
+small body copy, 5 px progress track with separate count and Stop). Long essential
+messages wrap directly; no Details toggle. Expanded selection/name editors and explicit
+metadata inspection stay in the same overlay; long metadata remains scrollable.
+
+Use existing selection/blue tokens for progress/info, connection/teal for success,
+danger/red for errors and Delete/Clear confirmation, and warning/amber for other
+confirmation and partial/stopped results. Reuse shared fonts, radius and native DPI
+rather than hardcoding the HTML's pixel font sizes. Confirm remains on the original
+button with stable width; Cancel is in the overlay. Export has no extra confirmation.
+
+Concurrent tasks have separate labelled rows inside this one surface and must not
+replace one another or dismiss pending consent. Success results last six seconds,
+paused while hovered or keyboard-focused. Error/partial/uncertain/stopped results stay
+until dismissed. Dismiss never stops work; Stop delegates to the owning controller.
+Keep generation preview/Run controls and existing uncertainty semantics. All filters,
+slots, expiry timers and deferred positioning are Qt-owned by their overlay widgets.
+No idle layout space is reserved. Native DPI, clipping/overlap, resize, focus, scroll
+continuity and packaged acceptance require owner verification; static/CI checks do
+not establish pixel-perfect parity with a web mockup.
