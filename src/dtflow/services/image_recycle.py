@@ -1,7 +1,7 @@
-"""Safety-first, durable Windows Recycle Bin operations for committed saved images.
+"""Safety-first, durable system Trash operations for committed saved images.
 
 No provider interaction, no permanent-delete fallback, and no mutation of the
-attempt/queue audit tables. Windows operations and SQLite commits are not atomic.
+attempt/queue audit tables. Trash operations and SQLite commits are not atomic.
 """
 
 from __future__ import annotations
@@ -18,7 +18,19 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
 from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
-from dtflow.services.windows_recycle import RecycleUnavailable, recycle_file
+
+
+class RecycleUnavailable(RuntimeError):
+    """Sanitized system Trash failure; never includes a path or raw OS error."""
+
+    def __init__(self, message: str, *, stage: str = "unknown"):
+        super().__init__(message)
+        self.stage = stage
+
+    @property
+    def diagnostic(self) -> str:
+        return self.stage
+
 
 _ATTEMPT_ID = re.compile(r"^[a-f0-9]{32}$")
 log = logging.getLogger(__name__)
@@ -104,7 +116,7 @@ def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
 
 
 def prepare_recycle(
-    state: Path, identities: tuple[str, ...], hidden: int = 0, query: GalleryQuery | None = None
+    state: Path, identities: tuple[str, ...], hidden: int = 0, query: GalleryQuery | None = None, *, trash_check=None
 ) -> RecyclePlan:
     """Resolve exactly the checked identities, with no filesystem mutation.
 
@@ -114,8 +126,6 @@ def prepare_recycle(
     unique = tuple(dict.fromkeys(identities))
     if not 1 <= len(unique) <= 10_000:
         raise ValueError("Recycle selection must contain between 1 and 10,000 images.")
-    if os.name != "nt":
-        return RecyclePlan((), 0, len(unique), min(hidden, len(unique)), len(unique))
     # Derive the hidden count from the same explicit checked-ID snapshot, not
     # an eventually refreshed UI label that may reflect the previous filter.
     if query is not None:
@@ -138,6 +148,12 @@ def prepare_recycle(
             else:
                 ineligible += 1
             continue
+        if trash_check is not None:
+            try:
+                trash_check(Path(target.path))
+            except (OSError, RecycleUnavailable):
+                ineligible += 1
+                continue
         eligible.append(target)
     return RecyclePlan(tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique))
 
@@ -164,7 +180,7 @@ def recycle_outputs(
     stop: threading.Event,
     progress=None,
     *,
-    recycle_adapter=recycle_file,
+    recycle_adapter,
 ) -> RecycleResult:
     """Perform only confirmed Recycle Bin operations with durable item checkpoints.
 
@@ -209,7 +225,7 @@ def recycle_outputs(
                         try:
                             recycle_adapter(Path(target.path))
                         except (OSError, RecycleUnavailable) as exc:
-                            # A Shell error after a disappearing original is uncertain.
+                            # A Trash error after a disappearing original is uncertain.
                             # Never assume that it was successfully recycled.
                             state_value = "failed" if _unchanged(target) else "uncertain"
                             if isinstance(exc, RecycleUnavailable):
@@ -217,7 +233,7 @@ def recycle_outputs(
                             else:
                                 windows_code = getattr(exc, "winerror", None)
                                 detail = f"os_error_{windows_code}" if isinstance(windows_code, int) else "os_error"
-                            # Stable output identities and sanitized Shell stages
+                            # Stable output identities and sanitized adapter stages
                             # are safe; do not log full paths or raw OS exceptions.
                             log.warning(
                                 "image recycle outcome=%s identity=%s reason=%s",

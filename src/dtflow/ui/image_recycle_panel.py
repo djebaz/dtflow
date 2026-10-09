@@ -1,4 +1,4 @@
-"""Qt presentation for confirmed, durable Windows Recycle Bin operations."""
+"""Qt presentation for confirmed, durable system Trash operations."""
 
 from __future__ import annotations
 
@@ -14,12 +14,13 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence.original_io import OriginalImagesBusyError
 from dtflow.services.image_recycle import prepare_recycle, recycle_outputs
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.system_trash import TRASH_NAME, check_trash_source, recycle_file
 
 log = logging.getLogger(__name__)
 
 
 class ImageRecyclePanel(QObject):
-    """Confirm checked originals on the GUI thread and run Shell operations off-thread."""
+    """Confirm checked originals on the GUI thread and run system Trash operations off-thread."""
 
     progress = Signal(int, int)
 
@@ -53,7 +54,9 @@ class ImageRecyclePanel(QObject):
         self._running = True
         self.gallery.set_recycle_busy(True)
         self.runner.submit(
-            asyncio.to_thread(prepare_recycle, self.state_dir, identities, hidden, query),
+            asyncio.to_thread(
+                prepare_recycle, self.state_dir, identities, hidden, query, trash_check=check_trash_source
+            ),
             self._prepared,
         )
 
@@ -76,20 +79,20 @@ class ImageRecyclePanel(QObject):
             )
             return
         message = (
-            f"Move {eligible} selected original images to Windows Recycle Bin?\n\n"
+            f"Move {eligible} selected original images to {TRASH_NAME}?\n\n"
             f"{plan.hidden} checked images are hidden by the current filters and included "
             f"in this request. {plan.missing} originals are missing and "
             f"{plan.ineligible} are ineligible; these will not be moved.\n\n"
-            "Windows normally lets you restore recycled files from Recycle Bin. "
+            f"Files can normally be recovered manually from your system {TRASH_NAME}. "
             "DTFlow does not provide Undo and cannot guarantee restoration. "
             "Exported copies and generation history will be preserved."
         )
         box = QMessageBox(self.parent_widget)
-        box.setWindowTitle("Move images to Recycle Bin")
+        box.setWindowTitle(f"Move images to {TRASH_NAME}")
         box.setIcon(QMessageBox.Icon.Warning)
         box.setText(message)
         cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        move = box.addButton(f"Move {eligible} images to Recycle Bin", QMessageBox.ButtonRole.DestructiveRole)
+        move = box.addButton(f"Move {eligible} images to {TRASH_NAME}", QMessageBox.ButtonRole.DestructiveRole)
         box.setDefaultButton(cancel)
         box.setEscapeButton(cancel)
         box.exec()
@@ -101,7 +104,7 @@ class ImageRecyclePanel(QObject):
         # lease in the worker; preflight is not authorization to skip revalidation.
         self._stop = threading.Event()
         self._dialog = QProgressDialog(
-            "Moving eligible originals to Windows Recycle Bin…",
+            f"Moving eligible originals to {TRASH_NAME}…",
             "Stop after current image",
             0,
             eligible,
@@ -119,6 +122,7 @@ class ImageRecyclePanel(QObject):
                 plan,
                 self._stop,
                 self.progress.emit,
+                recycle_adapter=recycle_file,
             ),
             self._completed,
         )
@@ -141,7 +145,7 @@ class ImageRecyclePanel(QObject):
             return
         self.gallery.recycle_completed(result.recycled)
         summary = (
-            f"{len(result.recycled)} moved to Windows Recycle Bin.\n"
+            f"{len(result.recycled)} moved to {TRASH_NAME}.\n"
             f"{len(result.failed)} failed; {len(result.uncertain)} uncertain (manual review required).\n"
             f"{result.missing} missing; {result.ineligible} ineligible; "
             f"{result.unprocessed} unprocessed."
@@ -157,9 +161,9 @@ class ImageRecyclePanel(QObject):
         if result.canceled:
             summary += "\nStopped after the current image; completed moves remain."
         if result.failed or result.uncertain:
-            QMessageBox.warning(self.parent_widget, "Recycle Bin result", summary)
+            QMessageBox.warning(self.parent_widget, f"{TRASH_NAME} result", summary)
         else:
-            QMessageBox.information(self.parent_widget, "Recycle Bin result", summary)
+            QMessageBox.information(self.parent_widget, f"{TRASH_NAME} result", summary)
 
     def _finish_with_error(self, error) -> None:
         self._running = False
@@ -172,7 +176,7 @@ class ImageRecyclePanel(QObject):
                 "The operation could not be completed or its durable outcome could not be verified. "
                 "Inspect the original files and retry only after checking their status."
             )
-        QMessageBox.warning(self.parent_widget, "Recycle Bin unavailable", message)
+        QMessageBox.warning(self.parent_widget, f"{TRASH_NAME} unavailable", message)
 
     def cancel(self) -> None:
         """Request a safe stop between files without undoing successful moves."""

@@ -740,7 +740,7 @@
       <widget class="QPushButton" name="galleryDeleteButton">
        <property name="text"><string>Delete</string></property>
        <property name="accessibleName"><string>Delete</string></property>
-       <property name="toolTip"><string>Move eligible checked originals to Windows Recycle Bin after confirmation.</string></property>
+       <property name="toolTip"><string>Move eligible checked originals to system Trash after confirmation.</string></property>
        <property name="role" stdset="0"><string>danger</string></property>
        <property name="enabled"><bool>false</bool></property>
       </widget>

@@ -75,3 +75,13 @@ These are engineering audit tasks, not requests to reopen the approved UX: durab
 
 ## Validation and acceptance ledger
 The first incremental code slice now exists on this draft branch: selection model/query snapshots, canonical Qt Grid/List/Detail controls, single-row toolbar/icons/overflow, illustrative fixture and checked-scope export handoff to Connection. This is **source presence, not runtime verification or owner acceptance**. No new tests, agent smoke, Windows Recycle Bin calls, file deletion, inference, provider calls, packaging or billable actions were performed. 8E-4/8E-5 destructive work and the original-file concurrency/availability contracts remain open; Delete is disabled. Parent 8D acceptance does not establish 8E acceptance.
+
+## Qt system Trash follow-up (2026-10-09)
+
+The current adapter choice supersedes the earlier Windows-only implementation wording:
+see the [Qt implementation plan](2026-10-09-qt-system-trash.md) and [architecture](../architecture/image-recycling.md).
+Durable recycling, original-file coordination and UI wiring now exist in source;
+this does not settle the unchecked owner recovery/runtime acceptance gates above.
+The service remains Qt-free; the desktop injects the Qt adapter. Windows uses Recycle
+Bin wording and fixed-drive eligibility; Linux/macOS use Trash wording and conservative
+local-filesystem eligibility. No permanent deletion, dependencies or state schema changes.

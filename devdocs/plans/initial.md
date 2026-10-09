@@ -406,6 +406,8 @@ No live generation is required solely for gallery or preset acceptance.
 
 ### Phase 8E follow-up — Saved-image selection and bulk deletion
 
+The [Qt system Trash follow-up](2026-10-09-qt-system-trash.md) provides a source-level portable adapter without changing Phase 8E durable/recovery acceptance gates; Debian/macOS app certification remains separate.
+
 Planned separately from the implemented 8A–8D scope: add multi-image selection in Images and bulk deletion of selected saved originals or all images matching the current gallery filter across all pages. Require confirmation showing the affected count, preserve exported copies/unrelated outputs and execution audit history, reconcile artifact availability and report partial failures without regeneration or attempt replay. See the [8E image-management plan](2026-10-09-phase-8e-image-management.md); deletion/recovery policy and selection lifetime must be settled before implementation. Other organisation candidates are not implicitly approved.
 ### Phase 9 — Advanced image operations
 

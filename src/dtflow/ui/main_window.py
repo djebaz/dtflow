@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer
@@ -47,6 +46,7 @@ from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
+from dtflow.ui.system_trash import TRASH_NAME, trash_supported
 from dtflow.ui.theme import apply_native_dark_titlebar
 
 log = logging.getLogger(__name__)
@@ -167,8 +167,9 @@ class MainWindow:
             reuse_callback=self._reuse_output,
             regenerate_callback=self._regenerate_output,
             export_callback=self._open_checked_export,
-            recycle_callback=self._request_gallery_recycle if os.name == "nt" else None,
+            recycle_callback=self._request_gallery_recycle if trash_supported() else None,
         )
+        self.gallery.delete_button.setToolTip(f"Move eligible checked originals to {TRASH_NAME} after confirmation.")
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
@@ -776,7 +777,7 @@ class MainWindow:
         return self.queue.confirm_close()
 
     def _request_recycle_reconciliation(self) -> None:
-        """Allow manual Windows restores to reappear after an explicit Refresh."""
+        """Allow manual system Trash restores to reappear after an explicit Refresh."""
         self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
 
     def _reconcile_images(self):

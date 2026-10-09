@@ -92,6 +92,11 @@ These instructions apply throughout `dtflow`.
 - Preserve prompt privacy across filenames, visible EXIF, full portable metadata and sidecars; never copy credentials, private paths or prepared cloud-asset references. Keep request/effective settings and saved-time/per-image-seed semantics explicit.
 - `export_preferences.json` is durable convenience state, not cache. Follow [image export architecture](devdocs/architecture/image-export.md) and the [desktop export guide](devdocs/guides/desktop.md#export-saved-images).
 
+## Saved-image system Trash
+
+- Keep `services/image_recycle.py` and persistence Qt-free. Inject the desktop's `ui/system_trash.py` adapter and non-mutating eligibility check; use worker-local QFile instances off the GUI thread.
+- Preserve managed-original eligibility, per-image durable intent/outcomes, original-file leases and uncertain recovery. No permanent-delete fallback or automatic replay. Follow [image recycling architecture](devdocs/architecture/image-recycling.md); filesystem eligibility and code presence do not establish Windows/Debian/macOS acceptance.
+
 ## Generation safety
 
 - Do not assume LoRA, checkpoint, quantization, scheduler, sampler, or runtime compatibility without evidence.

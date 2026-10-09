@@ -61,6 +61,7 @@ Connection provides a saved-image export hub: copy one image or a filtered batch
 one folder as JPEGs with readable filenames and Windows-visible generation
 properties. Prompt privacy and optional JSON sidecars keep sharing explicit; original
 PNGs and saved history stay untouched. A default-on checkbox sorts pixel-statistics-flagged copies into `noise/` and `blank/`; turn it off for a completely flat folder. These are advisory flags, not generation-status verdicts. Full output identities in filenames let repeat exports skip existing copies before image processing; source computations are cached centrally across destinations, without an export-folder index; new Windows files retain the saved generation-completion date in their creation time and EXIF.
+Checked managed originals can be moved through a confirmed system Trash action (Recycle Bin on Windows), preserving exported copies and generation history. Platform runtime acceptance remains separate; see the [Trash architecture](devdocs/architecture/image-recycling.md).
 See the [desktop guide](devdocs/guides/desktop.md#images) and
 [image export guide](devdocs/guides/desktop.md#export-saved-images).
 

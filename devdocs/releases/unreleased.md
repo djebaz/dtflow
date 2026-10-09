@@ -21,6 +21,8 @@
 
 ## Changed
 
+- Phase 8E system Trash adapter now uses locked Qt 6.11.2 instead of handwritten Windows COM, without a new dependency. Windows retains fixed-drive eligibility; Linux/macOS have conservative local-filesystem checks and platform-aware wording. Shared durable checkpoints/coordination remain Qt-free. Owner trash/recovery and platform acceptance remain pending; no agent tests or actual trash operations.
+
 - Connection middle-panel cards scroll within the shared shell to keep the export controls reachable on smaller windows.
 - Pillow is declared as a runtime dependency through uv (it was already transitive).
 
