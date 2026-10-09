@@ -159,6 +159,7 @@ class GalleryPage(QObject):
         self._regenerate_callback = regenerate_callback
         self._export_callback = export_callback
         self._recycle_callback = recycle_callback
+        self._recycle_busy = False
         self.selection = GallerySelection()
         self._tokens = load_tokens()
         self._hidden_checks = 0
@@ -519,7 +520,7 @@ class GalleryPage(QObject):
         self.clear_selection_button.setEnabled(count > 0)
         self.copy_paths_button.setEnabled(count > 0)
         self.export_button.setEnabled(count > 0 and self._export_callback is not None)
-        self.delete_button.setEnabled(count > 0 and self._recycle_callback is not None)
+        self.delete_button.setEnabled(count > 0 and not self._recycle_busy and self._recycle_callback is not None)
         self._sync_detail_checkbox()
         for row, item in enumerate(self.items):
             self._paint_checked_item(row, item.identity)
@@ -798,9 +799,24 @@ class GalleryPage(QObject):
             self._export_callback()
 
     def _request_recycle(self) -> None:
-        """Never recycle from a bare click; the service must own confirmation and mutation."""
-        if self.selection.checked and self._recycle_callback is not None:
+        """Only the confirmation controller can authorize a Recycle Bin operation."""
+        if self.selection.checked and not self._recycle_busy and self._recycle_callback is not None:
             self._recycle_callback(self.selection.snapshot(), self._hidden_checks)
+
+    def set_recycle_busy(self, busy: bool) -> None:
+        """Prevent overlapping deletion requests without blocking ordinary browsing."""
+        self._recycle_busy = busy
+        self._sync_selection_ui()
+
+    def recycle_completed(self, recycled: tuple[str, ...]) -> None:
+        """Reconcile only proven recycled identities; retain failed/uncertain checks."""
+        if recycled:
+            self.selection.checked.difference_update(recycled)
+            if self.selection.anchor in recycled:
+                self.selection.anchor = None
+            self._hidden_query = None
+            self._after_selection_edit()
+        self.refresh(preserve=True)
 
     def _restore_preferences(self) -> None:
         document = load_viewer(self.state_dir)
