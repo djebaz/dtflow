@@ -65,17 +65,20 @@ def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
         return None
     root = Path(state).resolve() / "outputs"
     expected = root / attempt / f"final-{ordinal + 1}.png"
+    metadata = root / attempt / "metadata.json"
     candidate = Path(record["path"])
     # A managed original has the exact canonical path written by save_artifacts.
     if not candidate.is_absolute() or os.path.normcase(os.path.normpath(str(candidate))) != os.path.normcase(str(expected)):
         return None
+    if os.path.normcase(os.path.normpath(str(record["metadata_path"]))) != os.path.normcase(str(metadata)):
+        return None
     if not expected.is_file():
         return None
     try:
-        for component in (root, expected.parent, expected):
+        for component in (root, expected.parent, expected, metadata):
             if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
                 return None
-        if expected.resolve(strict=True) != expected:
+        if expected.resolve(strict=True) != expected or not metadata.is_file():
             return None
         info = expected.stat()
     except OSError:
@@ -113,7 +116,10 @@ def prepare_recycle(state: Path, identities: tuple[str, ...], hidden: int = 0) -
             continue
         target = _regular_managed_file(state, record)
         if target is None:
-            ineligible += 1
+            if not Path(record["path"]).is_file():
+                missing += 1
+            else:
+                ineligible += 1
             continue
         eligible.append(target)
     return RecyclePlan(tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique))
