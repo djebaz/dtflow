@@ -73,7 +73,9 @@ class RecycleResult:
     failure_details: tuple[tuple[str, str], ...] = ()
 
 
-def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
+def _regular_managed_file(
+    state: Path, record: dict, *, reference_counts: dict[str, int] | None = None
+) -> RecycleTarget | None:
     """Reject custom output roots, shared/redirected files and non-final images."""
     attempt = str(record["attempt_id"])
     ordinal = int(record["ordinal"])
@@ -103,7 +105,12 @@ def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
         return None
     if not expected.is_file() or not info.st_size or info.st_nlink != 1:
         return None
-    if gallery_storage.path_reference_count(state, str(expected)) != 1:
+    references = (
+        gallery_storage.path_reference_count(state, str(expected))
+        if reference_counts is None
+        else reference_counts.get(str(expected), 0)
+    )
+    if references != 1:
         return None
     return RecycleTarget(
         str(record["identity"]),
@@ -133,28 +140,31 @@ def prepare_recycle(
     states = ledger.outcomes(state)
     eligible = []
     missing = ineligible = 0
-    for identity in unique:
-        if identity in states and states[identity][0] in ("pending", "uncertain", "recycled"):
-            ineligible += 1
-            continue
-        record = gallery_storage.get_record(state, identity)
-        if record is None:
-            missing += 1
-            continue
-        target = _regular_managed_file(state, record)
-        if target is None:
-            if not Path(record["path"]).is_file():
-                missing += 1
-            else:
-                ineligible += 1
-            continue
-        if trash_check is not None:
-            try:
-                trash_check(Path(target.path))
-            except (OSError, RecycleUnavailable):
+    for offset in range(0, len(unique), gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH):
+        batch = unique[offset : offset + gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH]
+        records, reference_counts = gallery_storage.recycle_preflight_batch(state, batch)
+        for identity in batch:
+            if identity in states and states[identity][0] in ("pending", "uncertain", "recycled", "restored"):
                 ineligible += 1
                 continue
-        eligible.append(target)
+            record = records.get(identity)
+            if record is None:
+                missing += 1
+                continue
+            target = _regular_managed_file(state, record, reference_counts=reference_counts)
+            if target is None:
+                if not Path(record["path"]).is_file():
+                    missing += 1
+                else:
+                    ineligible += 1
+                continue
+            if trash_check is not None:
+                try:
+                    trash_check(Path(target.path))
+                except (OSError, RecycleUnavailable):
+                    ineligible += 1
+                    continue
+            eligible.append(target)
     return RecyclePlan(tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique))
 
 

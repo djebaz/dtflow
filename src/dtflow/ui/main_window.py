@@ -781,7 +781,7 @@ class MainWindow:
         return self.queue.confirm_close()
 
     def _request_recycle_reconciliation(self) -> None:
-        """Allow manual system Trash restores to reappear after an explicit Refresh."""
+        """Settle interrupted intent without inferring restored content from file stats."""
         self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
 
     def _reconcile_images(self):

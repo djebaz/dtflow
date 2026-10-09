@@ -54,6 +54,8 @@
 
 - Repeat-export skips now validate committed/non-recycled identities in short batches of at most 128, avoiding a full gallery record and SQLite/lock setup for every skipped image. Actual exports retain per-image original-file leases; no destination index or safety bypass. Owner reports repeat-export speed smoke passed at 314737b (2026-10-09); no measured benchmark or agent runtime check. Mixed/recycled/unavailable/cancel and packaged/platform acceptance remain separate.
 
+- PR #57 review follow-up: remove automatic restoration based on path/size/mtime and conservatively withdraw old unverified restored outcomes without deleting files; verified recovery remains future work. Batch Trash preflight selected records/path-reference counts in consistent snapshots of up to 128; retain per-file validation and execution revalidation. List header checkbox now tracks horizontal scroll/section movement. Static checks only; follow-up runtime/GUI acceptance pending.
+
 ## Release audit
 
 - PRs: #54, #55, #56, #57

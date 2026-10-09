@@ -91,3 +91,7 @@ The owner reports the prior export action works and clarified a right-hand colum
 ## Repeat-export skip batching follow-up
 
 See the [skip batching plan](2026-10-09-export-skip-batching.md). Keep the recycle-aware availability check but batch consecutive existing-copy identities (maximum 128) with an identity-only selected-attempt query and short original-file lease. Real exports retain per-image leases. Owner reports c7a8f70 panel smoke passed; this source-level performance fix has static checks only, with no tests, smoke or measured speedup.
+
+## Source-review correctness/scalability follow-up
+
+The [review follow-up](2026-10-09-pr57-review-followup.md) supersedes earlier automatic restoration wording. Path/size/mtime do not establish original identity; Refresh leaves recycled records hidden and withdraws historical heuristic restored outcomes. Explicit content-verified recovery is deferred, not simulated. Preflight uses 128-ID records/path-count snapshots while preserving per-file validation and fresh per-image execution checks; List header selection tracks horizontal scrolling and section movement. No tests or runtime checks run for this follow-up.

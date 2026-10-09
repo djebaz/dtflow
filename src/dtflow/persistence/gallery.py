@@ -13,6 +13,7 @@ from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_s
 # The saver commits image paths followed by metadata.json only after every durable write succeeds.
 # These references include non-default --out locations. Failed/orphaned files are not discovery sources.
 MAX_EXPORT_AVAILABILITY_BATCH = 128
+MAX_RECYCLE_PREFLIGHT_BATCH = 128
 
 BASE = """
 WITH outputs AS (
@@ -25,7 +26,7 @@ WITH outputs AS (
    AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
    AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
                    WHERE r.identity = a.attempt_id || ':' || CAST(p.key AS INTEGER)
-                     AND r.outcome='recycled')
+                     AND r.outcome IN ('recycled', 'restored'))
 ), records AS (
  SELECT *, attempt_id || ':' || ordinal AS identity,
    json_extract(request_json, '$.model_id') AS model,
@@ -192,7 +193,7 @@ def available_export_identities(state: Path, identities: tuple[str, ...]) -> fro
                  AND json_type(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END,
                                '$[' || s.ordinal || ']')='text'
                  AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
-                                 WHERE r.identity=s.identity AND r.outcome='recycled')""",
+                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored'))""",
             (json.dumps(selected),),
         )
         return frozenset(row[0] for row in rows)
@@ -288,6 +289,50 @@ def selection_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str
                 if source.is_file() and not source.is_symlink():
                     found[row["identity"]] = str(source)
     return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
+
+
+def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[dict[str, dict], dict[str, int]]:
+    """Read selected records and committed path ownership in one bounded snapshot.
+
+    Path counts include recycled references, just like execution revalidation.
+    Do not load request/metadata payloads or inspect original files here.
+    """
+    if len(identities) > MAX_RECYCLE_PREFLIGHT_BATCH:
+        raise ValueError("Recycle preflight batch exceeds its bounded limit.")
+    if not identities:
+        return {}, {}
+    attempts = tuple(dict.fromkeys(identity.partition(":")[0] for identity in identities))
+    attempt_slots = ",".join("?" for _ in attempts)
+    identity_slots = ",".join("?" for _ in identities)
+    with reader(state) as db:
+        if db is None:
+            return {}, {}
+        records = {
+            row["identity"]: dict(row)
+            for row in db.execute(
+                BASE
+                + "SELECT identity,attempt_id,ordinal,path,metadata_path FROM records "
+                + f"WHERE attempt_id IN ({attempt_slots}) AND identity IN ({identity_slots})",
+                (*attempts, *identities),
+            )
+        }
+        paths = tuple(dict.fromkeys(record["path"] for record in records.values()))
+        if not paths:
+            return records, {}
+        counts = {
+            row[0]: int(row[1])
+            for row in db.execute(
+                """SELECT p.value,count(*) FROM attempts a,
+                         json_each(CASE WHEN json_valid(a.artifacts_json)
+                           THEN a.artifacts_json ELSE '[]' END) p
+                   WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                     AND p.type='text' AND p.value IN (SELECT value FROM json_each(?))
+                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
+                   GROUP BY p.value""",
+                (json.dumps(paths),),
+            )
+        }
+        return records, counts
 
 
 def path_reference_count(state: Path, path: str) -> int:

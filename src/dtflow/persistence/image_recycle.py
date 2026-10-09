@@ -127,15 +127,16 @@ def outcomes(state: Path) -> dict[str, tuple[str, str, int, int]]:
 
 
 def reconcile(state: Path) -> tuple[int, int]:
-    """Mark interrupted operations uncertain, and exact-path restored originals available.
+    """Settle interrupted intent and withdraw unverified historical restorations.
 
-    Never retry a Shell operation. A different file at an old path does not
-    implicitly restore a prior generated artifact.
+    Return interrupted and withdrawn-restoration counts. No file at an old path
+    proves original content identity, even when size and timestamps match. Keep
+    these records recycled until an explicit content-verified recovery exists.
+    Never retry a Trash operation or remove any reappearing file.
     """
     file = Path(state).resolve() / FILENAME
     if not file.is_file():
         return 0, 0
-    uncertain = restored = 0
     with writer(state) as db:
         pending = db.execute(
             "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome='pending'",
@@ -143,19 +144,8 @@ def reconcile(state: Path) -> tuple[int, int]:
         )
         uncertain = pending.rowcount
         db.execute("UPDATE operations SET outcome='interrupted' WHERE outcome='running'")
-        records = db.execute("SELECT identity,path,size,mtime_ns FROM records WHERE outcome='recycled'").fetchall()
-        for identity, name, size, mtime in records:
-            path = Path(name)
-            try:
-                info = path.lstat()
-            except OSError:
-                continue
-            if path.is_symlink() or not path.is_file():
-                continue
-            if info.st_size == size and info.st_mtime_ns == mtime:
-                db.execute(
-                    "UPDATE records SET outcome='restored',updated_utc=? WHERE identity=?",
-                    (_now(), identity),
-                )
-                restored += 1
-    return uncertain, restored
+        withdrawn = db.execute(
+            "UPDATE records SET outcome='recycled',updated_utc=? WHERE outcome='restored'",
+            (_now(),),
+        ).rowcount
+    return uncertain, withdrawn

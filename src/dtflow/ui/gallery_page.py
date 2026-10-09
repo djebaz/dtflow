@@ -368,6 +368,8 @@ class GalleryPage(QObject):
         self._header_check.setGeometry(10, 6, 22, 22)
         self._header_check.clicked.connect(self._toggle_visible_rows)
         self.table.horizontalHeader().sectionResized.connect(lambda *_: self._position_header_check())
+        self.table.horizontalHeader().sectionMoved.connect(lambda *_: self._position_header_check())
+        self.table.horizontalScrollBar().valueChanged.connect(lambda *_: self._position_header_check())
 
         self.table_viewport.setMouseTracking(True)
         self.table_viewport.installEventFilter(self)

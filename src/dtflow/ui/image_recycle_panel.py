@@ -85,6 +85,7 @@ class ImageRecyclePanel(QObject):
             f"{plan.ineligible} are ineligible; these will not be moved.\n\n"
             f"Files can normally be recovered manually from your system {TRASH_NAME}. "
             "DTFlow does not provide Undo and cannot guarantee restoration. "
+            "Recovered files stay hidden in DTFlow until content-verified recovery is supported. "
             "Exported copies and generation history will be preserved."
         )
         box = QMessageBox(self.parent_widget)
