@@ -93,7 +93,7 @@ def recycle_file(path: Path) -> None:
     item = ctypes.c_void_p()
     try:
         clsid = _guid("3AD05575-8857-4850-9277-11B85BDB8E09")  # CLSID_FileOperation
-        iid = _guid("947AAB5F-0A5C-4C13-B4D6-4EBF7836FC9F")  # IID_IFileOperation
+        iid = _guid("947AAB5F-0A5C-4C13-B4D6-4BF7836FC9F8")  # IID_IFileOperation
         ole32.CoCreateInstance.argtypes = [
             ctypes.POINTER(_GUID), ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(_GUID),
             ctypes.POINTER(ctypes.c_void_p),
