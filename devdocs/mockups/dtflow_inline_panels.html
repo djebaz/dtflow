@@ -188,6 +188,9 @@ button:disabled{opacity:.4;cursor:not-allowed} [hidden]{display:none!important}
 .editor-actions{display:flex;gap:7px;margin-left:auto}
 .background-notice{position:absolute;left:8px;right:8px;bottom:106px;z-index:15;padding:9px 12px;border:1px solid #31668b;border-radius:6px;background:linear-gradient(105deg,#1d2935,#202426);font-size:11px}
 @media(max-width:900px){.generate-rail{display:none}.export-panel{width:208px}.list-head,.list-row{min-width:810px}}
+.app-body.is-generation .mode-group,.app-body.is-generation .size-label,.app-body.is-generation .thumb-range,.app-body.is-generation .size-readout,.app-body.is-generation .auto-btn,.app-body.is-generation .refresh-btn,.app-body.is-generation .filters{display:none}
+.app-body.is-generation .header-1{min-height:54px}
+.activity-dock.info{border-color:#31668b;background:linear-gradient(100deg,#1d2935,#202426)}
 </style>
 </head>
 <body>
@@ -315,162 +318,195 @@ const photos = [
   {name:'final-1.png',size:'241 KB',date:'Oct 09, 2026 18:07:46'},
   {name:'final-1.png',size:'225 KB',date:'Oct 09, 2026 18:07:38'}
 ];
-const state={workflow:'recycle',stage:'ready',view:'grid',selected:new Set([0,1,2]),recycled:new Set(),progress:2,total:3,noticeRemaining:6000,playTimer:null,noticeTimer:null,fadeTimer:null};
+const state={workflow:"recycle",stage:"ready",view:"grid",selected:new Set([0,1,2]),
+ recycled:new Set(),progress:0,total:3,step:0,exportOpen:false,expanded:false,
+ noticeRemaining:6000,playTimer:null,noticeTimer:null,fadeTimer:null,secondary:false,lastOutcome:""};
 const $=id=>document.getElementById(id);
-const svg=id=>`<svg class="glyph"><use href="#${id}"/></svg>`;
-function stopTimers(){clearInterval(state.playTimer);clearInterval(state.noticeTimer);clearTimeout(state.fadeTimer);state.playTimer=null;state.noticeTimer=null;state.fadeTimer=null;}
-function resetSelected(stage){
- if(stage==='empty'||stage==='success'){state.selected=new Set();}
- else if(stage==='partial'){state.selected=new Set([2]);}
- else if(state.selected.size===0){state.selected=new Set([0,1,2]);}
+const svg=id=>'<svg class="glyph"><use href="#'+id+'"></use></svg>';
+const timed=new Set(["success","warning","partial","stopped"]);
+function stopTimers(){clearInterval(state.playTimer);clearInterval(state.noticeTimer);clearTimeout(state.fadeTimer);state.playTimer=state.noticeTimer=state.fadeTimer=null;}
+function setWorkflow(workflow){
+ stopTimers();state.workflow=workflow;state.stage="ready";state.recycled.clear();
+ state.selected=new Set([0,1,2]);state.progress=state.step=0;state.exportOpen=workflow==="export";
+ state.secondary=false;render();
 }
-function setWorkflow(workflow){stopTimers();state.workflow=workflow;state.stage='ready';state.selected=new Set([0,1,2]);state.recycled=new Set();render();}
-function chooseStage(stage){if(stage==='confirm'&&state.workflow==='export')stage='ready';stopTimers();if(['ready','confirm','running'].includes(stage)){state.recycled.clear();}else if(state.workflow==='recycle'&&stage==='success'){state.recycled=new Set([0,1,2]);}else if(state.workflow==='recycle'&&['partial','stopped'].includes(stage)){state.recycled=new Set([0,1]);}state.stage=stage;resetSelected(stage);state.progress=stage==='running'?2:3;state.total=3;state.noticeRemaining=6000;render();if(stage==='success')startNoticeTimer();}
-function setView(view){state.view=view;renderGalleryContent();renderTop();}
-function setSelection(index){if(state.selected.has(index))state.selected.delete(index);else state.selected.add(index);if(state.stage==='confirm')state.stage='ready';if(state.stage==='ready'||state.stage==='empty')state.stage=state.selected.size?'ready':'empty';render();}
-function renderGalleryContent(){
- const grid=$('grid-view'),list=$('list-view'),detail=$('detail-view');
- const shown=photos.map((p,i)=>({p,i})).filter(({i})=>!state.recycled.has(i));
- grid.hidden=state.view!=='grid';list.hidden=state.view!=='list';detail.hidden=state.view!=='detail';
- const checked=i=>state.selected.has(i);
- grid.innerHTML=shown.map(({p,i})=>`<article class="image-card ${checked(i)?'selected':''}" data-open-image="${i}"><div class="image-frame"><img alt="Landscape photo ${i+1}" loading="lazy" src="${photoUrls[i]}"><button class="select-box" data-check="${i}" aria-label="${checked(i)?'Unselect':'Select'} image ${i+1}" aria-pressed="${checked(i)}"><span class="boxmark">✓</span></button><div class="image-badges"><span>384 × 384</span><span>${p.size}</span></div></div><div class="image-info">${p.name} · ${p.size}<small>z_image_turbo_1.0_q6p.ckpt</small></div></article>`).join('');
- list.innerHTML=`<div class="list-head"><span><input type="checkbox" id="header-checkbox" ${state.selected.size===photos.length?'checked':''} aria-label="Select loaded page"></span><span>Image</span><span>Filename</span><span>Model</span><span>LoRAs / weights / status</span><span>Dimensions</span><span>File size</span><span>Date / time</span></div>`+shown.map(({p,i})=>`<div class="list-row ${checked(i)?'selected':''}" data-open-image="${i}"><button class="list-check" data-check="${i}" aria-label="${checked(i)?'Unselect':'Select'} image ${i+1}">${checked(i)?'✓':''}</button><img alt="" src="${photoUrls[i]}"><span>${p.name}</span><span>z_image_turbo_1.0_q6p.ckpt</span><span>None</span><span>384 × 384</span><span>${p.size}</span><span>${p.date}</span></div>`).join('');
- detail.innerHTML=`<img class="detail-image" alt="Focused image" src="${photoUrls[shown[0]?.i??0]}"><div class="detail-side"><button data-check="0" aria-label="Toggle image selection">${svg(checked(0)?'i-checked':'i-image')} ${checked(0)?'Checked':'Select image'}</button>${shown.map(({i})=>`<button data-open-image="${i}" aria-label="Open image ${i+1}"><img src="${photoUrls[i]}" alt=""></button>`).join('')}</div>`;
- grid.style.setProperty('--gridcols',Number($('thumb-range').value)>190?3:4);
+function chooseStage(stage){
+ if(stage==="confirm"&&!["recycle","cache"].includes(state.workflow))stage="ready";
+ stopTimers();state.stage=stage;state.noticeRemaining=6000;state.total=state.workflow==="generation"?9:3;
+ if(state.workflow==="recycle"){
+  if(stage==="success")state.recycled=new Set([0,1,2]);
+  else if(["partial","stopped"].includes(stage))state.recycled=new Set([0,1]);
+  else if(["ready","confirm","running"].includes(stage))state.recycled.clear();
+ }
+ if(stage==="editor")state.secondary=true;
+ if(["success","warning","partial","stopped","error"].includes(stage))
+  state.lastOutcome=stage.toUpperCase()+" · saved attempt evidence remains accessible in DTFlow";
+ render();if(timed.has(stage))startNoticeTimer();
+}
+function setView(view){state.view=view;renderGallery();renderTop();}
+function setSelection(index){
+ if(state.selected.has(index))state.selected.delete(index);else state.selected.add(index);
+ if(state.stage==="confirm")state.stage="ready";
+ render();
+}
+function renderGallery(){
+ const shown=photos.map((p,i)=>({p,i})).filter(o=>!state.recycled.has(o.i));
+ const grid=$("grid-view"),list=$("list-view"),detail=$("detail-view"),checked=i=>state.selected.has(i);
+ grid.hidden=state.view!=="grid";list.hidden=state.view!=="list";detail.hidden=state.view!=="detail";
+ grid.innerHTML=shown.map(o=>'<article class="image-card '+(checked(o.i)?'selected':'')+'"><div class="image-frame"><img alt="Illustrative output '+(o.i+1)+'" src="'+photoUrls[o.i]+'"><button class="select-box" data-check="'+o.i+'" aria-label="Toggle checked image '+(o.i+1)+'" aria-pressed="'+checked(o.i)+'"><span class="boxmark">✓</span></button><div class="image-badges"><span>384 × 384</span><span>'+o.p.size+'</span></div></div><div class="image-info">'+o.p.name+' · '+o.p.size+'<small>Illustrative output · Z-Image Turbo</small></div></article>').join('');
+ list.innerHTML='<div class="list-head"><span><input type="checkbox" id="header-checkbox" aria-label="Check visible images" '+(shown.length&&shown.every(o=>checked(o.i))?'checked':'')+'></span><span>Image</span><span>Filename</span><span>Model</span><span>LoRAs</span><span>Dimensions</span><span>Size</span><span>Date / time</span></div>'+
+ shown.map(o=>'<div class="list-row '+(checked(o.i)?'selected':'')+'"><button class="list-check" data-check="'+o.i+'" aria-label="Toggle image '+(o.i+1)+'">'+(checked(o.i)?'✓':'')+'</button><img src="'+photoUrls[o.i]+'" alt=""><span>'+o.p.name+'</span><span>z_image_turbo_1.0_q6p.ckpt</span><span>None</span><span>384 × 384</span><span>'+o.p.size+'</span><span>'+o.p.date+'</span></div>').join('');
+ detail.innerHTML='<img class="detail-image" alt="Illustrative image. Native Qt Detail reads full saved original." src="'+photoUrls[shown[0]?.i??0]+'"><div class="detail-side">'+shown.map(o=>'<button data-open-image="'+o.i+'" title="Inspect image '+(o.i+1)+'"><img src="'+photoUrls[o.i]+'" alt=""></button>').join('')+'</div>';
+ const zoom=Number($("thumb-range").value),size=Math.round(320*zoom/100),row=Math.max(36,Math.round(size*.35)),w=Math.max(48,Math.round(row*4/3));
+ grid.style.setProperty("--thumb-demo",Math.max(80,size)+"px");
+ list.style.setProperty("--list-width",w+"px");list.style.setProperty("--list-height",Math.max(24,row-10)+"px");
+ list.style.setProperty("--list-col",(w+16)+"px");$("size-readout").textContent=zoom+"%";
 }
 function renderTop(){
- // Capture the action's original width before replacing its label.
- for(const id of ['recycle-btn','cache-clear-btn','connection-export-btn']){
-  const button=$(id);
-  if(!button.style.width && button.getBoundingClientRect().width){
-   button.style.width=button.getBoundingClientRect().width+'px';
-  }
- }
- const isGallery=state.workflow==='recycle';
- $('gallery-shell').hidden=!isGallery;$('connection-contents').hidden=isGallery;document.querySelector('.app-body').classList.toggle('is-connection',!isGallery);
- document.querySelectorAll('[data-preview-workflow]').forEach(b=>b.classList.toggle('active',b.dataset.previewWorkflow===state.workflow));
- document.querySelectorAll('[data-preview-state]').forEach(b=>b.classList.toggle('active',b.dataset.previewState===state.stage));
- document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));
- document.querySelectorAll('.demo-logo').forEach(im=>im.src=logoUrl);$('title-logo').src=logoUrl;
- const navGallery=document.querySelector('.nav-btn[data-nav="recycle"]');navGallery.classList.toggle('active',isGallery);
- const navConn=document.querySelector('.connection-btn');navConn.style.background=isGallery?'':'#173852';navConn.style.borderColor=isGallery?'':'#285d84';
- $('selection-count').textContent=`${state.selected.size} selected`;
- $('export-btn').disabled=state.selected.size===0||['running'].includes(state.stage);
- $('recycle-btn').disabled=state.selected.size===0||state.stage==='running';
- $('select-all-btn').disabled=state.stage==='running';
- $('recycle-label').textContent=state.stage==='confirm'?'Confirm':'Move to Recycle Bin…';
- $('recycle-btn').classList.toggle('confirm-btn',state.stage==='confirm');
- $('recycle-btn').classList.toggle('danger-btn',state.stage!=='confirm');
- $('cache-clear-btn').textContent=state.workflow==='cache'&&state.stage==='confirm'?'Confirm':'Clear all';
- $('cache-clear-btn').style.background=state.workflow==='cache'&&state.stage==='confirm'?'#bd2a30':'';
- $('cache-clear-btn').style.color=state.workflow==='cache'&&state.stage==='confirm'?'#fff':'#ff9995';
- $('cache-clear-btn').disabled=state.stage==='running';
- $('connection-export-btn').disabled=state.stage==='running';
- document.querySelector('[data-preview-state="confirm"]').hidden=state.workflow==='export';
- $('size-label').textContent=state.view==='list'?'Row density':'Thumbnail size';
+ const gallery=["recycle","export"].includes(state.workflow),generate=state.workflow==="generation";
+ const host=document.querySelector(".app-body");
+ host.classList.toggle("is-connection",!gallery&&!generate);host.classList.toggle("is-generation",generate);
+ $("gallery-shell").hidden=!gallery;$("connection-contents").hidden=gallery||generate;$("generate-shell").hidden=!generate;
+ document.querySelectorAll("[data-preview-workflow]").forEach(b=>b.classList.toggle("active",b.dataset.previewWorkflow===state.workflow));
+ document.querySelectorAll("[data-preview-state]").forEach(b=>b.classList.toggle("active",b.dataset.previewState===state.stage));
+ document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===state.view));
+ document.querySelectorAll(".demo-logo").forEach(img=>img.src=logoUrl);$("title-logo").src=logoUrl;
+ document.querySelectorAll(".nav-btn[data-nav]").forEach(b=>b.classList.toggle("active",b.dataset.nav===(gallery?"recycle":state.workflow)));
+ $("selection-count").textContent=state.selected.size+" selected";
+ $("select-label").textContent=state.selected.size===photos.length?"Unselect all":"Select all";
+ $("export-btn").disabled=false;$("export-btn").setAttribute("aria-pressed",String(state.exportOpen));
+ $("export-btn").setAttribute("aria-label",(state.exportOpen?"Hide":"Show")+" export panel");
+ $("export-panel").hidden=!gallery||!state.exportOpen;
+ $("export-start").disabled=!state.selected.size||state.stage==="running";
+ $("export-scope").textContent=state.selected.size?state.selected.size+" checked images":"No checked images · check some before exporting";
+ $("recycle-btn").disabled=!state.selected.size||state.stage==="running";
+ $("select-all-btn").disabled=state.stage==="running";
+ const destructive=state.stage==="confirm"&&state.workflow==="recycle";
+ $("recycle-label").textContent=destructive?"Confirm":"Delete";
+ $("recycle-btn").classList.toggle("confirm-btn",destructive);
+ $("recycle-btn").classList.toggle("danger-btn",!destructive);
+ const cacheConfirm=state.stage==="confirm"&&state.workflow==="cache";
+ $("cache-clear-btn").textContent=cacheConfirm?"Confirm":"Clear all";
+ $("cache-clear-btn").style.background=cacheConfirm?"#bd2a30":"";
+ $("cache-clear-btn").style.color=cacheConfirm?"#fff":"#ff9995";
+ $("cache-clear-btn").disabled=state.stage==="running";
+ $("connection-export-btn").disabled=state.stage==="running";
+ document.querySelector('[data-preview-state="confirm"]').hidden=!["cache","recycle"].includes(state.workflow);
+ $("size-label").textContent="Thumbnail size";
+ $("generate-preview").src=photoUrls[0];
+ $("generate-status").textContent=state.workflow==="generation"?(state.stage==="running"?"Generating · reported step "+state.step+"/"+state.total:state.lastOutcome||"Ready. No generation submitted."):"Ready.";
+ $("generate-evidence").textContent=state.lastOutcome||"Sampler steps shown in Run ring reflect actual reported steps only.";
+ const ring=$("run-indicator");ring.classList.toggle("running",generate&&state.stage==="running");
+ ring.textContent=generate&&state.stage==="running"?(state.step||"…"):"▶";
+ ring.title=generate?"Generation progress (status-only): "+(state.step?state.step+" / "+state.total:"no step reported"):"Queue Run control (illustrative)";
+ $("editor-scrim").hidden=state.stage!=="editor";
+ $("background-notice").hidden=!state.secondary||!["confirm","editor"].includes(state.stage);
 }
 function renderDock(){
- const dock=$('activity-dock'), stage=state.stage;
- const visible=['confirm','running','success','error','partial','stopped'].includes(stage);
+ const stage=state.stage,dock=$("activity-dock"),visible=["confirm","running","success","error","partial","stopped","warning","info","editor"].includes(stage);
  dock.hidden=!visible;
- for(const name of ['confirm','success','error','partial'])dock.classList.toggle(name,name===stage||(name==='partial'&&stage==='stopped'));
- const recycle=state.workflow==='recycle',cache=state.workflow==='cache';
- const operation=recycle?'Recycle Bin':cache?'Cache cleanup':'Image export';
- $('dock-close').hidden=['confirm','running'].includes(stage);
- $('dock-cancel').hidden=stage!=='confirm';
- $('dock-progress').hidden=stage!=='running';
- $('dock-count').hidden=stage!=='running';
- $('dock-stop').hidden=stage!=='running';
- $('dock-countdown').hidden=stage!=='success';
- $('dock-lifetime').hidden=stage!=='success';
- let title='',subtitle='',detail='',symbol='#i-layers';
- if(stage==='confirm'){
-  symbol=recycle?'#i-trash':cache?'#i-layers':'#i-upload';
-  title=recycle?`Move ${state.selected.size} selected originals to Recycle Bin?`:'Clear disposable cache?';
-  subtitle=recycle?`${state.selected.size} eligible · 0 hidden · 0 missing or ineligible`:cache?'Inventory, thumbnails and derived data only':'Original images stay untouched';
-  detail=recycle?'Windows normally allows restoration through Recycle Bin; DTFlow does not provide Undo. Confirm using the red original action button above. Selection or scope changes cancel this confirmation.':cache?'Outputs, attempts, queues, presets, settings, credentials and model assets are preserved. Confirm using the red Clear action above.':'Choose the destination and options in the export editor before starting.';
+ ["confirm","running","success","error","partial","stopped","warning","info","editor"].forEach(x=>dock.classList.toggle(x,stage===x));
+ const recycle=state.workflow==="recycle",cache=state.workflow==="cache",gen=state.workflow==="generation";
+ const operation=recycle?"Recycle Bin":cache?"Cache cleanup":gen?"Generation":"Image export";
+ $("dock-symbol").classList.toggle("recycle-symbol",recycle&&["confirm","running"].includes(stage));
+ $("dock-close").hidden=["confirm","running","editor"].includes(stage);$("dock-cancel").hidden=stage!=="confirm";
+ $("dock-progress").hidden=stage!=="running";$("dock-count").hidden=stage!=="running";$("dock-stop").hidden=stage!=="running";
+ $("dock-stop").textContent=gen?"Stop waiting locally":"Stop after current";
+ $("dock-countdown").hidden=!timed.has(stage);$("dock-lifetime").hidden=!timed.has(stage);
+ $("editor-fields").hidden=stage!=="editor";
+ let icon="#i-layers",title="",subtitle="";
+ if(stage==="confirm"){icon=recycle?"#i-trash":"#i-layers";title=recycle?"Move "+state.selected.size+" originals to Recycle Bin?":"Clear disposable cache?";
+  subtitle=recycle?"Confirm using the original red Delete action · no DTFlow Undo · restoration may be possible from Windows Recycle Bin.":"Inventory, thumbnails and derived cache only. Confirm with the original red Clear action; outputs, attempts and model assets remain.";}
+ if(stage==="editor"){icon="#i-info";title="Add LoRA · identifier and weight";subtitle="Search or enter an identifier; weight 0.0–3.0, in 0.1 steps. An invalid catalogue default starts at 1.0 with guidance.";}
+ if(stage==="info"){icon="#i-info";title="Information · inspection";subtitle="Persistent until dismissed; Escape also closes this notice.";}
+ if(stage==="running"){icon=recycle?"#i-trash":cache?"#i-layers":gen?"#i-sparkles":"#i-upload";
+  title=recycle?"Moving originals to Recycle Bin":cache?"Clearing disposable cache":gen?"Generating image":"Exporting checked images";
+  subtitle=gen?"Sampling · last actually reported step "+state.step+"/"+state.total:state.progress+" / "+state.total+" items processed";
+  $("dock-progress-fill").style.width=((gen?state.step:state.progress)/state.total*100)+"%";
+  $("dock-count").textContent=(gen?state.step:state.progress)+" / "+state.total;
  }
- if(stage==='running'){
-  symbol=recycle?'#i-trash':cache?'#i-layers':'#i-upload';
-  title=recycle?'Moving originals to Recycle Bin':cache?'Clearing disposable cache':'Exporting selected images';
-  subtitle=`${state.progress} of ${state.total} ${cache?'categories':'images'} processed`;
-  $('dock-progress-fill').style.width=(state.progress/state.total*100)+'%';
-  $('dock-count').textContent=`${state.progress} / ${state.total}`;
- }
- if(stage==='success'){
-  symbol='#i-checked';
-  title=recycle?'3 images moved to Recycle Bin':cache?'Disposable cache cleared':'3 images exported';
-  subtitle=recycle?'0 failed · 0 uncertain · 0 missing':cache?'3 categories cleared · durable data preserved':'3 completed · 0 skipped · 0 failed';
-  detail=recycle?'Files can normally be restored using Windows Recycle Bin. DTFlow does not provide Undo.':'Originals and durable state remain untouched.';
-  $('dock-countdown').textContent=Math.ceil(state.noticeRemaining/1000)+'s';
-  $('dock-lifetime').style.transform='scaleX('+(state.noticeRemaining/6000)+')';
- }
- if(stage==='error'){
-  symbol='#i-alert';title=operation+' · failed';subtitle='0 completed · operation requires attention';
-  detail=recycle?'No originals were moved. No permanent-delete fallback or automatic retry was used.':cache?'Cache cleanup could not start. Durable state and outputs remain untouched.':'Export could not start. Check the destination folder. Existing exports and originals remain unchanged.';
- }
- if(stage==='partial'){
-  symbol='#i-alert';title=operation+' · partial result';
-  subtitle=recycle?'2 recycled · 1 failed · 0 uncertain':cache?'2 categories cleared · 1 failed':'2 exported · 0 skipped · 1 failed';
-  detail=recycle?'One original could not be recycled and remains selected for review. No permanent-delete fallback was used.':cache?'Some disposable data could not be removed; outputs and settings remain untouched.':'One image failed to export. Existing exports and source images are unchanged.';
- }
- if(stage==='stopped'){
-  symbol='#i-alert';title=operation+' · stopped after current item';
-  subtitle=recycle?'2 recycled · 1 unprocessed':cache?'2 categories cleared · 1 unprocessed':'2 exported · 1 unprocessed';
-  detail='Completed items stay completed. Remaining items were not processed; no automatic retry was started.';
- }
- $('dock-title').textContent=title;$('dock-subtitle').textContent=subtitle;
- $('dock-symbol-use').setAttribute('href',symbol);
- // Essential information is visible, not hidden behind another interaction.
- if(stage==='confirm')subtitle+=recycle?' · Restore via Windows Recycle Bin; no DTFlow Undo.':' · Outputs, queues, settings and model assets preserved.';
- if(['error','partial','stopped'].includes(stage))subtitle+=' · '+detail;
- $('dock-subtitle').textContent=subtitle;
- $('dock-subtitle').title=subtitle;
- $('dock-detail').hidden=true;
+ if(stage==="success"){icon="#i-checked";title=recycle?"Images moved to Recycle Bin":cache?"Disposable cache cleared":gen?"Image saved":"Images exported";
+  subtitle="Completed successfully · durable results kept.";}
+ if(stage==="error"){icon="#i-alert";title=operation+" · failed";subtitle="Requires attention · durable error evidence remains visible after dismissal.";}
+ if(stage==="partial"){icon="#i-alert";title=operation+" · partial result";subtitle="Some completed, some failed. Recorded details remain inspectable after this notification fades.";}
+ if(stage==="stopped"){icon="#i-stop";title=gen?"Generation · stop requested":operation+" · stopped";
+  subtitle=gen?"Local waiting stopped. Remote cancellation is not confirmed.":"Completed work is retained; unprocessed items are not automatically retried.";}
+ if(stage==="warning"){icon="#i-alert";title=operation+" · warning";subtitle="Amber notice expires; recorded status and uncertainty remain available.";}
+ $("dock-title").textContent=title;$("dock-subtitle").textContent=subtitle;$("dock-subtitle").title=subtitle;
+ $("dock-symbol-use").setAttribute("href",icon);$("dock-detail").hidden=true;
+ $("dock-countdown").textContent=Math.ceil(state.noticeRemaining/1000)+"s";
+ $("dock-lifetime").style.transform="scaleX("+(state.noticeRemaining/6000)+")";
 }
-function render(){renderTop();renderGalleryContent();renderDock();}
+function render(){renderTop();renderGallery();renderDock();}
 function startNoticeTimer(){
- clearInterval(state.noticeTimer);
- let last=performance.now();
+ clearInterval(state.noticeTimer);let last=performance.now();
  state.noticeTimer=setInterval(()=>{
-  if(state.stage!=='success'){clearInterval(state.noticeTimer);return;}
-  const now=performance.now(); const dock=$('activity-dock'); const paused=dock.matches(':hover,:focus-within');
-  if(!paused)state.noticeRemaining=Math.max(0,state.noticeRemaining-(now-last));last=now;
-  $('dock-countdown').textContent=Math.ceil(state.noticeRemaining/1000)+'s';
-  $('dock-lifetime').style.transform=`scaleX(${state.noticeRemaining/6000})`;
-  if(state.noticeRemaining<=0){clearInterval(state.noticeTimer);dock.style.transition='opacity .45s ease,transform .45s ease';dock.style.opacity='0';dock.style.transform='translateY(6px)';state.fadeTimer=setTimeout(()=>{dock.style.opacity='';dock.style.transform='';dock.style.transition='';chooseStage(state.workflow==='recycle'?'empty':'ready');},470);}
+  if(!timed.has(state.stage)){clearInterval(state.noticeTimer);return;}
+  const now=performance.now(),dock=$("activity-dock");
+  if(!dock.matches(":hover,:focus-within"))state.noticeRemaining=Math.max(0,state.noticeRemaining-(now-last));
+  last=now;$("dock-countdown").textContent=Math.ceil(state.noticeRemaining/1000)+"s";
+  $("dock-lifetime").style.transform="scaleX("+(state.noticeRemaining/6000)+")";
+  if(state.noticeRemaining<=0){clearInterval(state.noticeTimer);
+   dock.style.transition="opacity .45s ease,transform .45s ease";dock.style.opacity="0";dock.style.transform="translateY(6px)";
+   state.fadeTimer=setTimeout(()=>{dock.style.opacity="";dock.style.transform="";dock.style.transition="";state.stage="ready";render();},470);
+  }
  },80);
 }
-function autoPlay(){stopTimers();if(state.workflow!=='recycle'&&state.workflow!=='cache'&&state.workflow!=='export')return;
- if(state.workflow==='export'){startOperation();return;}
- chooseStage('confirm');
- // Wait for an explicit second click on the original action. No confirmation timer.
+function startOperation(){
+ if(["cache","recycle"].includes(state.workflow)&&state.stage!=="confirm")return;
+ stopTimers();state.stage="running";state.progress=0;state.step=0;state.total=state.workflow==="generation"?9:3;render();
+ state.playTimer=setInterval(()=>{state.progress++;if(state.workflow==="generation")state.step=state.progress;
+  if(state.progress>=state.total){clearInterval(state.playTimer);state.playTimer=null;chooseStage("success");}
+  else render();},650);
 }
-function startOperation(){stopTimers();state.stage='running';state.progress=0;state.total=3;render();state.playTimer=setInterval(()=>{state.progress+=1;if(state.progress>=3){clearInterval(state.playTimer);state.playTimer=null;chooseStage('success');}else renderDock();},800);}
-function cancelOperation(){if(state.stage==='confirm'){chooseStage('ready');return;}if(state.stage==='running'){stopTimers();chooseStage('stopped');return;}}
-function dismiss(){stopTimers();chooseStage(state.workflow==='recycle'?'empty':'ready');}
-$('play-flow').addEventListener('click',autoPlay);
-document.addEventListener('click',e=>{
- const t=e.target.closest('button');if(!t)return;
+function cancelOperation(){
+ if(["confirm","editor"].includes(state.stage)){chooseStage("ready");return;}
+ if(state.stage==="running"){stopTimers();chooseStage("stopped");}
+}
+function dismiss(){stopTimers();state.stage="ready";render();}
+function autoPlay(){if(["cache","recycle"].includes(state.workflow)){chooseStage("confirm");return;}startOperation();}
+$("play-flow").addEventListener("click",autoPlay);
+document.addEventListener("click",e=>{
+ const t=e.target.closest("button");if(!t)return;
  if(t.dataset.previewWorkflow){setWorkflow(t.dataset.previewWorkflow);return;}
  if(t.dataset.previewState){chooseStage(t.dataset.previewState);return;}
  if(t.dataset.view){setView(t.dataset.view);return;}
  if(t.dataset.nav){setWorkflow(t.dataset.nav);return;}
  if(t.dataset.check!==undefined){setSelection(Number(t.dataset.check));return;}
- if(t.dataset.action==='cancel'){cancelOperation();return;}
- if(t.dataset.action==='stop'){cancelOperation();return;}
- if(t.dataset.action==='dismiss'){dismiss();return;}
- if(t.id==='select-all-btn'){if(state.stage==='confirm')state.stage='ready';state.selected=new Set(photos.map((_,i)=>i).filter(i=>!state.recycled.has(i)));if(state.stage==='empty')state.stage='ready';render();return;}
- if(t.id==='more-btn'){const menu=$('more-menu');menu.hidden=!menu.hidden;t.setAttribute('aria-expanded',String(!menu.hidden));return;}
- if(t.dataset.menu){$('more-menu').hidden=true;$('more-btn').setAttribute('aria-expanded','false');if(t.dataset.menu==='clear'||t.dataset.menu==='clear-hidden'){if(t.dataset.menu==='clear')chooseStage('empty');return;}if(t.dataset.menu==='filtered'){if(state.stage==='confirm')state.stage='ready';state.selected=new Set(photos.map((_,i)=>i));render();return;}if(t.dataset.menu==='paths'){const strings=[...state.selected].map(i=>`<saved output ${i+1}>`);if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(strings.join('\n')).catch(()=>{});return;}}
- if(t.id==='recycle-btn'){if(t.disabled)return;if(state.stage==='confirm'){startOperation();}else chooseStage('confirm');return;}
- if(t.id==='cache-clear-btn'){if(state.stage==='confirm')startOperation();else chooseStage('confirm');return;}
- if(t.id==='export-btn'||t.id==='connection-export-btn'){setWorkflow('export');startOperation();return;}
+ if(t.dataset.action==="cancel"||t.dataset.action==="stop"){cancelOperation();return;}
+ if(t.dataset.action==="dismiss"){dismiss();return;}
+ if(t.id==="background-dismiss"){state.secondary=false;$("background-notice").hidden=true;return;}
+ if(t.id==="editor-cancel"){cancelOperation();return;}
+ if(t.id==="editor-add"){chooseStage("success");return;}
+ if(t.id==="lora-add"){state.secondary=true;chooseStage("editor");return;}
+ if(t.id==="expand-prompt"){state.expanded=!state.expanded;$("prompt-editor").classList.toggle("expanded",state.expanded);
+  const label=state.expanded?"Collapse prompt":"Expand prompt";t.setAttribute("aria-label",label);t.setAttribute("aria-pressed",String(state.expanded));t.title=label;
+  $("expand-icon").setAttribute("href",state.expanded?"#i-collapse":"#i-expand");return;}
+ if(t.id==="generate-image"){state.workflow="generation";startOperation();return;}
+ if(t.id==="export-btn"){state.exportOpen=!state.exportOpen;renderTop();return;}
+ if(t.id==="close-export"){state.exportOpen=false;renderTop();return;}
+ if(t.id==="export-start"){if(!state.selected.size)return;state.workflow="export";startOperation();return;}
+ if(t.id==="connection-export-btn"){setWorkflow("export");startOperation();return;}
+ if(t.id==="select-all-btn"){const visible=photos.map((_,i)=>i).filter(i=>!state.recycled.has(i));
+  state.selected=visible.every(i=>state.selected.has(i))?new Set():new Set(visible);if(state.stage==="confirm")state.stage="ready";render();return;}
+ if(t.id==="more-btn"){const menu=$("more-menu");menu.hidden=!menu.hidden;t.setAttribute("aria-expanded",String(!menu.hidden));return;}
+ if(t.dataset.menu){$("more-menu").hidden=true;$("more-btn").setAttribute("aria-expanded","false");
+  if(t.dataset.menu==="clear")state.selected.clear();else if(t.dataset.menu==="filtered")state.selected=new Set(photos.map((_,i)=>i));render();return;}
+ if(t.id==="recycle-btn"){if(t.disabled)return;if(state.stage==="confirm")startOperation();else chooseStage("confirm");return;}
+ if(t.id==="cache-clear-btn"){if(state.stage==="confirm")startOperation();else chooseStage("confirm");return;}
+ if(t.dataset.openImage!==undefined){setView("detail");return;}
 });
-document.addEventListener('change',e=>{if(e.target.id==='header-checkbox'){if(state.stage==='confirm')state.stage='ready';state.selected=new Set(photos.map((_,i)=>i).filter(i=>!state.recycled.has(i)));if(state.stage==='empty')state.stage='ready';render();}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.stage==='confirm'){cancelOperation();}});
-document.querySelectorAll('.filters input,.filters select').forEach(el=>el.addEventListener('change',()=>{if(state.stage==='confirm')chooseStage('ready');}));
-$('thumb-range').addEventListener('input',e=>{$('size-readout').textContent=e.target.value+'%';renderGalleryContent();});
+document.addEventListener("change",e=>{
+ if(e.target.id==="header-checkbox"){const visible=photos.map((_,i)=>i).filter(i=>!state.recycled.has(i));
+  state.selected=e.target.checked?new Set(visible):new Set();if(state.stage==="confirm")state.stage="ready";render();}
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&["confirm","editor","info"].includes(state.stage)){
+ if(state.stage==="info")dismiss();else cancelOperation();
+}});
+document.querySelectorAll(".filters input,.filters select").forEach(el=>el.addEventListener("change",()=>{
+ if(state.stage==="confirm")chooseStage("ready");
+}));
+$("thumb-range").addEventListener("input",renderGallery);
 render();
 </script>
 </body>
