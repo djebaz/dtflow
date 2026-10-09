@@ -24,6 +24,46 @@ On Windows, save or remove a DT+ API key through Credential Manager. `DRAWTHINGS
 
 Refresh inventory to populate model and LoRA choices. Startup and provider returns restore the last successful matching observation: first in-run memory, then the existing disk cache. The UI always shows model and LoRA counts, cached/remembered/refreshed provenance and the original observation time whenever an observation is known—even if no live refresh happened during this launch. Refreshing or a failed response adds status alongside those stats; a failure keeps the previous choices and selections with "Refresh failed · showing previous inventory". Switching providers preserves each provider's form before rebuilding discovery. Local endpoint or selected cloud credential changes invalidate mismatched evidence; saving the same key (or changing an unused saved key when the environment key is selected) does not erase it. Generation always refreshes live. Inventory listing alone does not prove workload compatibility. When the server supplies no model metadata, listed files are offered as model candidates, using the shared request gate.
 
+## Export saved images
+
+Use **Export saved images** in the **middle panel of Connection**. Choose a folder
+and one scope: all saved images; the current Images filter across every page; the
+single image selected in Images; or the selected PNG result in Generate. For a
+filtered export, set filters in Images first, then return to Connection. Selecting
+Generate's metadata entry is not selecting an image. Export freezes the selection
+when started; new outputs arriving afterward do not expand that operation.
+
+Click **Export JPEGs**. Every image goes directly into the chosen folder: **no
+attempt, provider or date subfolders**. Filenames use saved-at UTC time, a short
+prompt label, request seed, short attempt ID and output index, for example:
+`20261009-143025Z_red-fox-in-snow_s12345_a1b2c3d4_01.jpg`.
+Existing files are never overwritten; collisions add a suffix. The timestamp is
+saved time, not a claimed generation start time. The seed is the recorded request
+seed, not an independently verified per-image seed.
+
+JPEG quality 95 / 4:4:4 is **lossy**; transparency is composited on white. Original
+PNGs, metadata and history stay untouched. Right-click an exported JPG in Windows
+Explorer → Properties → Details for Title, Subject, Comments and Tags. EXIF also
+carries rich portable JSON generation metadata: requested/effective settings,
+model/LoRA identifiers and weights, provenance, dimensions, recorded timing and build
+identity when available. Some viewers/sharing services may hide or strip metadata.
+
+Prompts are included by default. Uncheck **Include prompts in filenames and
+metadata** before sharing if they are private; this removes prompts from all export
+fields, including JSON. Private paths, server identities, credentials and prepared
+cloud-asset references are never deliberately copied into export metadata.
+**Also save JSON metadata beside each image** is optional; a JSON sidecar becomes
+mandatory if full portable metadata exceeds EXIF capacity, with a reported warning.
+
+The folder and privacy/sidecar choices are remembered independently of cache.
+**Open folder** opens the last successful destination. **Cancel export** stops after
+the current image and keeps completed exports. The final summary reports exported,
+failed and unprocessed images; hover over it for the first 100 failure details.
+Missing/corrupt images fail individually rather than hiding other saved outputs.
+A single operation is capped at 10,000 images, 64 MiB encoded input per image and
+32 million decoded pixels; narrow the Images filter to export larger libraries in
+separate operations. Export is local-only and never generates or contacts a provider.
+
 ## Generate
 
 Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and sampler. After inventory refresh, use All/Image/Video to narrow classified models, choose a base-model family, then choose the exact available checkpoint/quantization. Prime checkpoints are the default; `Include niche models` adds available Niche entries without replacing Prime. If the provider exposes a checkpoint DTFlow has not classified, the page reports it as unclassified and keeps the editable exact-ID field as the explicit escape hatch rather than guessing its family or mode. Width and height snap to the nearest multiple of 64 with an adjustment message. The CLI and loaded configurations remain strict.

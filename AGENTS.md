@@ -81,6 +81,14 @@ These instructions apply throughout `dtflow`.
 - Treat `previewHost`, `queueItemsView` and similar Designer objects as presentation seams for handwritten widgets/models; promoted/custom widgets must not own backend protocols or service rules.
 - Do not block the Qt event loop with network, generation, or other long-running work.
 
+## Saved-image export
+
+- Keep export controls in the middle panel of Connection, in the canonical `main_window.ui`.
+- Use `services/image_export.export_outputs` for single and bulk exports; UI controllers must not duplicate encoding or metadata rules.
+- Every exported JPG and optional JSON sidecar goes directly in the selected folder, without attempt/provider/date subfolders. Never move originals or overwrite existing files.
+- Preserve prompt privacy across filenames, visible EXIF, full portable metadata and sidecars; never copy credentials, private paths or prepared cloud-asset references. Keep request/effective settings and saved-time/per-image-seed semantics explicit.
+- `export_preferences.json` is durable convenience state, not cache. Follow [image export architecture](devdocs/architecture/image-export.md) and the [desktop export guide](devdocs/guides/desktop.md#export-saved-images).
+
 ## Generation safety
 
 - Do not assume LoRA, checkpoint, quantization, scheduler, sampler, or runtime compatibility without evidence.

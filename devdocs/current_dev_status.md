@@ -58,6 +58,17 @@ PR #49 is merged from `ui/global-run-control` and replaces the obsolete manual I
 
 The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). The owner selected interim 0.3.8 preparation with [versioned notes](releases/v0.3.8.md); 0.3.5 remains a draft candidate. Owner Windows acceptance of Phase 8B–8D and the exact final executable remain separate gates; this version choice does not declare 0.4.0 accepted. Recheck the roadmap and relevant phase plan before choosing work.
 
+## JPEG export follow-up (branch scope, 2026-10-09)
+
+PR #55 adds a local-only JPEG export hub in the middle panel of Connection: one flat
+folder, readable filenames, Windows-friendly EXIF, portable generation metadata,
+prompt privacy, optional sidecars and cancel/progress. Generate/Images expose only
+read-only selection/filter seams; originals and durable references remain untouched.
+See the [plan](plans/2026-10-09-jpeg-image-export.md) and
+[architecture](architecture/image-export.md). This is branch implementation, not a
+release declaration. No tests or smoke tests were added/run under fast-implement;
+the owner reports a source smoke export (345 JPGs at the folder root, no subfolders), but remaining scenario/packaged acceptance stays separate. See [smoke evidence](research/jpeg-export-smoke-2026-10-09.md). No inference or billable actions.
+
 ## Maintenance
 
 Update this short snapshot when implementation scope changes, with the reviewed base revision/date and evidence links. Keep completed, remaining and added scope aligned with `initial.md`; retain detailed validation in plans/research/release notes. If this snapshot disagrees with source or verified evidence, those sources win: refresh the snapshot rather than assuming completion. Do not append a running changelog here.

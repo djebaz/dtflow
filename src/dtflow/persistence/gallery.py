@@ -167,3 +167,20 @@ def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
             )
         )
         return models, loras
+
+
+def export_identities(state: Path, query: GalleryQuery, maximum: int) -> tuple[str, ...]:
+    """Snapshot filtered identities only; close the read transaction before image conversion.
+
+    A maximum+1 sentinel lets the export service reject over-budget selections without
+    silently exporting a partial page. Query offset/limit do not restrict bulk export.
+    """
+    where, values, order = clauses(query)
+    with reader(state) as db:
+        if db is None:
+            return ()
+        rows = db.execute(
+            BASE + f"SELECT identity FROM records WHERE {where} ORDER BY {order} LIMIT ?",
+            [*values, maximum + 1],
+        )
+        return tuple(row[0] for row in rows)

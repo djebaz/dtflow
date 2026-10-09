@@ -383,6 +383,13 @@ Testing is capability-driven rather than an upfront exhaustive matrix. Each adva
 
 Add output browsing, generation metadata inspection, reusable presets, and regeneration/reuse flows.
 
+The [JPEG export follow-up](2026-10-09-jpeg-image-export.md) adds a copy-only export
+hub in Connection's middle panel. All JPGs live at the selected folder root, with
+portable/Explorer metadata and prompt privacy. This is daily-use output access, not
+a change to internal attempt storage, provider behavior or gallery organisation.
+Final acceptance remains with the owner; no agent feature tests/smoke tests
+were added or run under fast-implement.
+
 Follow the [Phase 8 delivery plan](2026-10-05-phase-8-sequencing.md): read-only viewer, Draw Things-compatible presets, reuse/regeneration, cache management, then separately scoped organisation. Native preset interchange uses the observed `custom_configs.json` envelope; enum mappings and upstream round-trip acceptance must be verified before claiming compatibility.
 
 Keep acceptance local and service-focused:
