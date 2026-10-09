@@ -14,7 +14,19 @@ from pathlib import Path
 
 
 class RecycleUnavailable(RuntimeError):
-    """Windows could not confirm a requested Recycle Bin operation."""
+    """A sanitized Windows Shell failure, with no source path or private data."""
+
+    def __init__(self, message: str, *, stage: str = "unknown", hresult: int | None = None):
+        super().__init__(message)
+        self.stage = stage
+        self.hresult = hresult
+
+    @property
+    def diagnostic(self) -> str:
+        """Stable, path-free explanation for the operation result and application log."""
+        if self.hresult is not None:
+            return f"{self.stage} (HRESULT 0x{self.hresult & 0xFFFFFFFF:08X})"
+        return self.stage
 
 
 class _GUID(ctypes.Structure):
@@ -36,9 +48,13 @@ def _invoke(instance, index, signature, *arguments):
     return method(instance, *arguments)
 
 
-def _check(value: int, label: str) -> None:
+def _check(value: int, label: str, stage: str) -> None:
     if value < 0:
-        raise RecycleUnavailable(f"Windows Shell {label} failed (HRESULT 0x{value & 0xffffffff:08X}).")
+        raise RecycleUnavailable(
+            f"Windows Shell {label} failed (HRESULT 0x{value & 0xFFFFFFFF:08X}).",
+            stage=stage,
+            hresult=value,
+        )
 
 
 def recycle_file(path: Path) -> None:
@@ -51,16 +67,25 @@ def recycle_file(path: Path) -> None:
         raise RecycleUnavailable("Windows Recycle Bin is only supported on Windows.")
     source = Path(path)
     if not source.is_absolute() or not source.is_file() or source.is_symlink():
-        raise RecycleUnavailable("The recorded original is not a regular local file.")
+        raise RecycleUnavailable(
+            "The recorded original is not a regular local file.",
+            stage="source_not_regular",
+        )
     root = source.anchor
-    if not root or ctypes.windll.kernel32.GetDriveTypeW(ctypes.c_wchar_p(root)) != 3:
-        raise RecycleUnavailable("The original is not on a local fixed drive.")
+    if not root:
+        raise RecycleUnavailable("The original has no local drive.", stage="source_no_drive")
+    drive_type = ctypes.windll.kernel32.GetDriveTypeW(ctypes.c_wchar_p(root))
+    if drive_type != 3:
+        raise RecycleUnavailable(
+            "The original is not on a local fixed drive.",
+            stage=f"drive_type_{drive_type}",
+        )
     ole32, shell32 = ctypes.OleDLL("ole32"), ctypes.OleDLL("shell32")
     # CoInitializeEx(NULL, COINIT_APARTMENTTHREADED): COM objects cannot be
     # shared with or operated from the GUI thread.
     ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
     ole32.CoInitializeEx.restype = ctypes.c_long
-    _check(ole32.CoInitializeEx(None, 2), "COM initialization")
+    _check(ole32.CoInitializeEx(None, 2), "COM initialization", "com_initialize")
     operation = ctypes.c_void_p()
     item = ctypes.c_void_p()
     try:
@@ -72,7 +97,7 @@ def recycle_file(path: Path) -> None:
         ]
         ole32.CoCreateInstance.restype = ctypes.c_long
         _check(ole32.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(operation)),
-               "file operation creation")
+               "file operation creation", "operation_create")
         shell32.SHCreateItemFromParsingName.argtypes = [
             ctypes.c_wchar_p, ctypes.c_void_p, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p),
         ]
@@ -80,7 +105,7 @@ def recycle_file(path: Path) -> None:
         shell_item = _guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")  # IID_IShellItem
         _check(shell32.SHCreateItemFromParsingName(
             str(source), None, ctypes.byref(shell_item), ctypes.byref(item)
-        ), "source selection")
+        ), "source selection", "source_parse")
         # FOFX_RECYCLEONDELETE: require Windows 8+ Recycle Bin handling.
         # DTFlow has already obtained an explicit user confirmation; suppress
         # duplicate Shell prompts and show operation errors through the app.
@@ -90,17 +115,20 @@ def recycle_file(path: Path) -> None:
         FOF_SILENT = 0x0004
         FOF_NOERRORUI = 0x0400
         flags = FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
-        _check(_invoke(operation, 5, [ctypes.c_uint32], flags), "recycle flags")
+        _check(_invoke(operation, 5, [ctypes.c_uint32], flags), "recycle flags", "set_flags")
         _check(_invoke(operation, 18, [ctypes.c_void_p, ctypes.c_void_p], item, None),
-               "delete queue")
-        _check(_invoke(operation, 21, []), "recycle execution")
+               "delete queue", "queue_delete")
+        _check(_invoke(operation, 21, []), "recycle execution", "perform_operations")
         aborted = ctypes.c_int()
         _check(_invoke(operation, 22, [ctypes.POINTER(ctypes.c_int)], ctypes.byref(aborted)),
-               "recycle completion")
+               "recycle completion", "operation_status")
         if aborted.value:
-            raise RecycleUnavailable("Windows aborted the Recycle Bin operation.")
+            raise RecycleUnavailable("Windows aborted the Recycle Bin operation.", stage="shell_aborted")
         if source.exists():
-            raise RecycleUnavailable("Windows did not remove the original from its source location.")
+            raise RecycleUnavailable(
+                "Windows did not remove the original from its source location.",
+                stage="source_still_present",
+            )
     finally:
         if item.value:
             _invoke(item, 2, [])
