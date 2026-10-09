@@ -43,7 +43,7 @@ seed, not an independently verified per-image seed.
 
 JPEG quality 95 / 4:4:4 is **lossy**; transparency is composited on white. Original
 PNGs, metadata and history stay untouched. Right-click an exported JPG in Windows
-Explorer → Properties → Details for Title, Subject, Comments and Tags. EXIF also
+Explorer → Properties → Details for Title, Subject, Comments and Tags. With prompts enabled, EXIF ImageDescription also includes a short ASCII-compatible prompt summary; full Unicode prompt text remains in the embedded JSON. EXIF also
 carries rich portable JSON generation metadata: requested/effective settings,
 model/LoRA identifiers and weights, provenance, dimensions, recorded timing and build
 identity when available. Some viewers/sharing services may hide or strip metadata.

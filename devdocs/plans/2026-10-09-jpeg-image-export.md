@@ -86,3 +86,14 @@ None blocking. User/runtime acceptance remains separate from implementation.
 - Implementation/docs/owner-smoke evidence committed as `b345e4e` and pushed to origin.
 - PR description updated with scope, static checks, owner smoke evidence and remaining gates.
 - PR remains draft for owner final validation; not merged. No version/tag/release or packaged artifact.
+
+## ImageDescription follow-up
+
+- Owner-requested read-only comparison of the same source in PoC and both smoke exports found
+  identical decoded pixels and identical JPEG bytes excluding EXIF. Both implementation exports
+  omitted ImageDescription; the prompt was retained in Title, Comments and portable JSON.
+- [x] Restore EXIF ImageDescription when prompts are included, matching the PoC's bounded
+  160-character ASCII-compatible summary; omit the tag entirely for prompt-free export.
+- Full Unicode prompts remain in XP fields and portable JSON; no original or existing export is rewritten.
+- Final tests and smoke checks for this follow-up remain with the owner; no tests added/run and
+  no new agent export/smoke invocation. Static checks only; no inference or billable actions.

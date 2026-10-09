@@ -17,6 +17,8 @@
 
 ## Fixed
 
+- Restored the PoC-compatible EXIF ImageDescription prompt summary when Include prompts is checked; omit it entirely when unchecked. Newly exported copies gain the field; existing export files are not rewritten.
+
 ## Release audit
 
 - PRs: #54, #55

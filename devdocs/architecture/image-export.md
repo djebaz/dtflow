@@ -42,7 +42,7 @@ semantics are explicit: saved time is not generation start time, and request/eff
 seed is not proof of an independently reported per-image seed. Missing timestamps
 use `undated`. Prompt-free export uses `image`, not a derived private prompt label.
 
-Windows XPTitle/XPSubject/XPComment/XPKeywords provide readable fields. Unicode
+Windows XPTitle/XPSubject/XPComment/XPKeywords provide readable fields. When prompts are included, ImageDescription also carries an ASCII-compatible prompt summary capped at 160 characters, matching the PoC; privacy-off omits that tag. Full Unicode prompts remain in XP fields and portable JSON. Unicode
 EXIF UserComment contains the versioned portable JSON document; requested and
 recorded effective settings remain separate. Explorer summaries are bounded; full
 portable JSON is not silently truncated. If it exceeds the JPEG APP1/EXIF size limit,

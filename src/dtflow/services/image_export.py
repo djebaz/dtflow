@@ -191,6 +191,10 @@ def _exif(document: dict, sidecar_name: str | None = None) -> bytes:
         ),
     ):
         exif[tag] = value.encode("utf-16-le") + b"\0\0"
+    if document["prompts_included"]:
+        # Match the PoC's bounded ASCII-compatible description. Full Unicode prompts
+        # remain in XP fields and portable JSON; privacy-off omits this tag entirely.
+        exif[270] = request.get("prompt", "")[:160].encode("ascii", "replace").decode("ascii")
     # Camera, author and copyright tags are deliberately not repurposed.
     exif[305] = "DTFlow " + str(document.get("generation_build", {}).get("version", "unknown"))
     full = (
