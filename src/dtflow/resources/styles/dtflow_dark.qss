@@ -1472,10 +1472,16 @@ QTextBrowser#inlineTextBrowser {
   color: ${color.secondary};
   font-size: ${type.small};
 }
-QLabel#activityDetail, QLabel#activityCount, QLabel#activityLifetime {
+QLabel#activityDetail, QLabel#activityCount {
   background: transparent;
   color: ${color.secondary};
   font-size: ${type.small};
+}
+QLabel#activityLifetime {
+  background: transparent;
+  color: ${color.connectionAccent};
+  font-size: ${type.small};
+  font-weight: ${type.weightEmphasis};
 }
 QLabel#inlineSymbol, QLabel#activitySymbol {
   background: ${color.selection};

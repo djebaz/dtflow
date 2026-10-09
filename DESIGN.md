@@ -469,7 +469,8 @@ or another explicit editor/confirmation may disarm it. Unrelated notices
 also use their own rows while an inline input editor is active, so partially
 typed values remain untouched. Success results last six seconds with a 2 px
 full-width teal lifetime line that drains along the bottom edge, a small
-remaining-seconds label, and a 450 ms fade-out. The timer and bar pause
+mint/teal remaining-seconds label right-aligned immediately before Dismiss,
+and a 450 ms fade-out. The timer and bar pause
 when hovering or focusing anywhere inside the overlay; the 5 px blue
 progress track is separate and represents actual processed work only.
 Error/partial/uncertain/stopped results and informational notices stay

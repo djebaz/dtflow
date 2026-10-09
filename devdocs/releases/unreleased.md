@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 aligns the success countdown text to the right, adjacent to Dismiss, and colors it mint/teal to match the draining lifetime bar instead of ordinary grey detail text. No expiry or task-progress behavior changed.
+
+
 - PR #58 overlay parity: successful result rows retain the numeric timer and gain a 2 px full-width teal draining bar and 450 ms fade; hovering or focusing the overlay pauses expiry. Partial/stopped/nonfatal warnings use amber surfaces; actual failures stay red; the outer strip no longer adds a conflicting blue border. Stopped and progress icons are differentiated. Unrelated notices cannot discard an active editor, Escape dismisses standalone notices, and destructive confirmation intent is explicit at call sites. HTML prototype synchronization follows implementation acceptance.
 
 
