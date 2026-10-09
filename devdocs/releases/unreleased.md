@@ -42,7 +42,7 @@
 
 ## Planned scope
 
-- Phase 8E Images multi-selection, contextual gallery **Export** using the existing Connection export workflow, plus a one-row selection toolbar with **Delete** (opens the full Recycle Bin confirmation), and checked-image export from Connection are planned, not implemented. Session-only cross-filter checks show hidden counts; Select all filtered adds up to 10,000 combined checks and reports omitted matches. Every removal requires a clear **Move to Windows Recycle Bin** confirmation; no permanent-delete fallback. Exported copies and audit history remain preserved. Durable eligibility, coordination and interrupted-recycle recovery remain to be designed and accepted.
+- Phase 8E draft PR #57 now contains an **unverified source implementation** of Images multi-selection, one-row contextual gallery **Export** (opens the existing Connection workflow), and checked-image export from Connection. The gallery **Delete** action is present but **disabled**, pending a durable, owner-accepted Recycle Bin implementation. Session-only cross-filter checks show hidden counts; Select all filtered adds up to 10,000 combined checks and reports omitted matches. Every removal requires a clear **Move to Windows Recycle Bin** confirmation; no permanent-delete fallback. Exported copies and audit history remain preserved. Durable eligibility, coordination and interrupted-recycle recovery remain to be designed and accepted.
 
 ## Release audit
 
