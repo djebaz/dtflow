@@ -16,8 +16,8 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QAbstractSpinBox,
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -443,7 +443,6 @@ class GalleryPage(QObject):
             ("Ctrl+A", self._select_page),
             ("Escape", self._clear_all),
             ("Delete", self._request_recycle),
-            ("Space", self._toggle_focused_check),
         ):
             shortcut = QShortcut(QKeySequence(key), self.page)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -455,6 +454,9 @@ class GalleryPage(QObject):
         """Do not steal standard editing, pop-up or global generation shortcuts."""
         focus = QApplication.focusWidget()
         if focus is None or isinstance(focus, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QCheckBox)):
+            return
+        # Shortcuts never operate from navigation/toolbar buttons or dialogs.
+        if isinstance(focus, QPushButton) and focus not in self._grid_buttons.values() and focus not in self._film_buttons:
             return
         if self.page.findChild(QWidget, "galleryPromptSearch").hasFocus():
             return
@@ -477,7 +479,10 @@ class GalleryPage(QObject):
 
     def _position_header_check(self) -> None:
         header = self.table.horizontalHeader()
-        self._header_check.setGeometry(max(3, header.sectionViewportPosition(0) + 9), 5, 24, 24)
+        position = header.sectionViewportPosition(0)
+        self._header_check.setVisible(position >= 0 and position < header.viewport().width())
+        if position >= 0:
+            self._header_check.setGeometry(position + 9, 5, 24, 24)
 
     def _selection_notice(self, text: str) -> None:
         self.selection_count.setToolTip(text)
@@ -572,10 +577,6 @@ class GalleryPage(QObject):
     def _detail_check_toggled(self, value: bool) -> None:
         if self.selected_id:
             self._set_checked(self.selected_id, value)
-
-    def _toggle_focused_check(self) -> None:
-        if self.selected_id:
-            self._toggle_checked(self.selected_id)
 
     def _select_range(self, identity: str) -> None:
         ids = [item.identity for item in self.items]
