@@ -22,6 +22,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
+from dtflow.persistence.original_io import original_images_lock
 from dtflow.persistence.cache_coordination import cache_access
 from dtflow.persistence.image_analysis_cache import load_image_analysis, save_image_analysis
 from dtflow.persistence.store import PersistenceError
@@ -539,6 +540,15 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     for index, identity in enumerate(identities):
         if cancel.is_set():
             break
+        # Availability must be checked even if a matching destination JPEG exists.
+        # A recycled original must not be reported as an available skipped export.
+        if storage.get_record(state, identity) is None:
+            failed += 1
+            if len(failures) < 100:
+                failures.append(f"{identity}: saved original is not available.")
+            if progress:
+                progress(index + 1, total)
+            continue
         if identity in skipped_identities:
             skipped += 1
             if progress:
@@ -605,7 +615,10 @@ def _coordinated_export(state, destination, options, query, identities, cancel, 
             except OSError:
                 no_cache = True
                 warning = "Persistent cache unavailable/busy; exported without cache reads or writes."
-        result = _run_export(state, destination, options, query, identities, cancel, progress, no_cache)
+        # Cache (if any) -> original files. Recycle takes only the latter;
+        # all exports/readers/savers share this independent cross-process lease.
+        with original_images_lock(state):
+            result = _run_export(state, destination, options, query, identities, cancel, progress, no_cache)
     if warning:
         result = replace(result, warnings=(*result.warnings, warning))
     return result
