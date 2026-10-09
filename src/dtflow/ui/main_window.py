@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
+from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
 from dtflow.persistence.last_session import load_last_session, save_last_session
@@ -35,6 +36,7 @@ from dtflow.ui.brand import connection_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
+from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.run_control import RunControl
@@ -205,6 +207,13 @@ class MainWindow:
             saved_source=lambda: self._saved if self._saved.available() else None,
             state_dir=self.state_dir,
             activity=self.activity,
+            no_cache=no_cache,
+        )
+        self.image_export = ImageExportPanel(
+            form,
+            runner=self.runner,
+            state_dir=self.state_dir,
+            selection=self._export_selection,
             no_cache=no_cache,
         )
         self.queue = QueuePage(
@@ -699,11 +708,23 @@ class MainWindow:
         self.refresh_credentials()
         self.generation.credentials_changed()
 
+    def _export_selection(self, scope: str) -> GalleryQuery | tuple[str, ...]:
+        """Freeze presentation choices; export service rechecks committed evidence."""
+        if scope == "all":
+            return GalleryQuery()
+        if scope == "filter":
+            return self.gallery.export_query()
+        identity = self.gallery.export_identity() if scope == "selected" else self.generation.export_identity()
+        if identity is None:
+            raise ValidationError("Select a saved image in Images or a PNG output in Generate first.")
+        return (identity,)
+
     def about(self) -> None:
         QMessageBox.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
 
     def close(self) -> None:
         self.remember(background=False)
+        self.image_export.cancel()
         self.gallery.save_now()
         log.info("window closed")
         self.runner.shutdown()

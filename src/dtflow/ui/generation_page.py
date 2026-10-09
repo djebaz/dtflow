@@ -200,6 +200,7 @@ class GenerationPage:
         self._config_name: str | None = None
         self._reuse_source_identity: str | None = None
         self._metadata_path: Path | None = None
+        self._saved_output_identities: dict[str, str] = {}
         self._submitted_backend: str | None = None
         self._empty_hints = (
             EmptyListHint(page.loraList, "No LoRAs selected\nAdd an adapter to this request."),
@@ -759,6 +760,9 @@ class GenerationPage:
             item = QListWidgetItem(f"{label}: {path}")
             item.setData(RESULT_PATH_ROLE, str(path))
             self.page.resultList.addItem(item)
+        self._saved_output_identities = {
+            str(path): f"{outcome.attempt_id}:{index}" for index, path in enumerate(outcome.output_paths)
+        }
         self._set_result_actions(True)
         self._metadata_path = Path(outcome.metadata_path)
         if len(outcome.output_paths) > 1:
@@ -775,6 +779,11 @@ class GenerationPage:
         self.metadataButton.setEnabled(available)
         if not available:
             self._metadata_path = None
+            self._saved_output_identities.clear()
+
+    def export_identity(self) -> str | None:
+        """Selected committed output only; metadata/preview selections are not images."""
+        return self._saved_output_identities.get(self._result_path())
 
     def open_output_file(self) -> None:
         path = self._result_path()

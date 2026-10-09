@@ -145,6 +145,7 @@ dependencies = [
     { name = "grpclib" },
     { name = "httpx" },
     { name = "keyring" },
+    { name = "pillow" },
     { name = "pyside6-essentials" },
 ]
 
@@ -163,6 +164,7 @@ requires-dist = [
     { name = "grpclib", specifier = ">=0.4.9,<0.5.0" },
     { name = "httpx", specifier = ">=0.28.1,<0.29.0" },
     { name = "keyring", specifier = ">=25.7.0" },
+    { name = "pillow", specifier = ">=12.1,<13" },
     { name = "pyside6-essentials", specifier = ">=6.8" },
 ]
 

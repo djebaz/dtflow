@@ -55,6 +55,10 @@ provider execution. The [preview plan](../plans/2026-10-05-phase-8a-ui-preview.m
 records implemented controls and validation limits. Actual saved-output services
 remain governed by the [viewer plan](../plans/2026-10-05-phase-8a-viewer.md).
 
+## Pixel-statistics detector PoC
+
+The standalone [image detector tool](../../tools/images/README.md) reports provisional noise/blank flags and colour/spatial statistics from local images. It is read-only, uncalibrated and separate from export and job status; owner-labelled evaluation remains pending.
+
 ## Working directories
 
 Application state and durable outputs use `.dtflow/`; retained live evidence uses `test-runs/`; diagnostics use `logs/`; disposable scratch uses `tmp/`. These repository-development paths are ignored by Git. See [runtime layout](../architecture/runtime-layout.md) before changing ownership or cleanup behavior.
