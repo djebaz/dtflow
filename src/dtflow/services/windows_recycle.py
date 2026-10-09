@@ -121,12 +121,15 @@ def recycle_file(path: Path) -> None:
         _check(_invoke(operation, 5, [ctypes.c_uint32], flags), "recycle flags", "set_flags")
         _check(_invoke(operation, 18, [ctypes.c_void_p, ctypes.c_void_p], item, None),
                "delete queue", "queue_delete")
-        _check(_invoke(operation, 21, []), "recycle execution", "perform_operations")
+        performed = _invoke(operation, 21, [])
         aborted = ctypes.c_int()
-        _check(_invoke(operation, 22, [ctypes.POINTER(ctypes.c_int)], ctypes.byref(aborted)),
-               "recycle completion", "operation_status")
-        if aborted.value:
+        completed = _invoke(operation, 22, [ctypes.POINTER(ctypes.c_int)], ctypes.byref(aborted))
+        # Microsoft recommends reading the aborted flag even after
+        # PerformOperations reports a failed HRESULT.
+        if completed >= 0 and aborted.value:
             raise RecycleUnavailable("Windows aborted the Recycle Bin operation.", stage="shell_aborted")
+        _check(performed, "recycle execution", "perform_operations")
+        _check(completed, "recycle completion", "operation_status")
         if source.exists():
             raise RecycleUnavailable(
                 "Windows did not remove the original from its source location.",
