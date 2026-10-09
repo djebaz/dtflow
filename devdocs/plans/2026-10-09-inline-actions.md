@@ -75,3 +75,12 @@ Disk exhaustion interrupted documentation writes; owner freed space before hando
 Follow-up static checks: Ruff lint/format passed for all eight changed Python files; AST and
 module imports passed; existing test-function inventory unchanged; git diff whitespace passed.
 No application launch or test execution. Fresh CI status is not presumed successful.
+
+### CI teardown follow-up
+
+- CI at `cc1d371`: 426 passed, 3 skipped, 40 teardown errors. Functional inline
+  interactions passed, but the plain Python shutdown receiver outlived the Qt form.
+- Move timer shutdown into a window-parented QObject with a decorated Qt slot.
+  Window destruction removes its signal connection; do not suppress invalid-widget
+  exceptions or restore dialogs. No new tests or local test/smoke execution.
+- Static checks and automatic CI verification of the follow-up are pending.

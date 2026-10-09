@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -108,6 +108,17 @@ class _CloseGuard(QObject):
         return False
 
 
+class _ShutdownGuard(QObject):
+    """Stop desktop timers only while their owning Qt window still exists."""
+
+    @Slot()
+    def stop_timers(self) -> None:
+        window = self.parent()
+        if window is not None:
+            for timer in window.findChildren(QTimer):
+                timer.stop()
+
+
 class _LayoutGuard(QObject):
     def __init__(self, callback, parent, events=(QEvent.Type.Resize,)):
         super().__init__(parent)
@@ -143,7 +154,8 @@ class MainWindow:
         self._saved = saved or SavedCredentials()
         self._environ = environ
         self.runner = runner or AsyncRunner(self.form)
-        self.runner.shutdown_started.connect(self._stop_ui_timers)
+        self._shutdown_guard = _ShutdownGuard(self.form)
+        self.runner.shutdown_started.connect(self._shutdown_guard.stop_timers)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
         self.activity = Activity()
@@ -942,11 +954,6 @@ class MainWindow:
 
     def about(self) -> None:
         InlineNotice.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
-
-    def _stop_ui_timers(self) -> None:
-        """No poll/save/debounce timer may submit work after runner shutdown."""
-        for timer in self.form.findChildren(QTimer):
-            timer.stop()
 
     def close(self) -> None:
         # Request consent before saving/stopping: a refused close leaves the

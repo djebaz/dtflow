@@ -127,3 +127,8 @@ interactions rather than removed dialog mocks. Shutdown stops desktop timers and
 late GUI deliveries; programmatic close now obtains consent before stopping dispatch.
 No new tests or local test/smoke execution; fresh CI confirmation remains pending.
 The owner's progress-overlay redesign discussion is separate and not implemented here.
+
+PR #58 follow-up CI at `cc1d371`: 426 passed, 3 skipped, 40 teardown errors from
+an incorrectly scoped shutdown callback. The callback is now a window-owned Qt
+slot, automatically disconnected at window destruction. Follow-up CI remains
+pending; no local tests/smoke or new tests.

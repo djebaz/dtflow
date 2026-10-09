@@ -34,6 +34,8 @@
 
 ## Fixed
 
+- Own the desktop timer-shutdown receiver as a window-parented Qt slot so it cannot access a deleted window during teardown. Previous follow-up CI had 426 passing tests and 40 teardown errors; replacement CI pending.
+
 - PR #58 follow-up stops desktop polling/save/debounce timers at runner shutdown and ignores queued GUI deliveries afterward, preventing polling from submitting to a closed loop. Programmatic close obtains the existing inline consent before shutdown. Adapted existing Qt metadata, LoRA, upload, queue, key-removal and lifecycle contracts to the real inline interactions; no new tests or local test/smoke execution, fresh CI pending.
 
 - UI cache measurement retries transient startup contention asynchronously for up to one second, avoiding a stale busy warning during ordinary inventory restoration. Cleanup remains nonblocking and prolonged cache use still reports busy.
