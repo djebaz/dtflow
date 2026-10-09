@@ -24,3 +24,13 @@ Static implementation evidence only. No tests, GUI smoke, actual recycling, infe
 
 ## Atomic execution intent
 After fresh per-image filesystem/ownership checks, while holding both the operation batch lease and original-file lease, execution calls `persistence/image_recycle.claim_recycle_intent`. The shared record UPSERT has a conditional conflict update permitting only a previous `failed` outcome; a new identity can be inserted. This checks the latest durable outcome and writes `pending` atomically in the existing `BEGIN IMMEDIATE` transaction, without a separate read/write race or full-ledger scan. Pending, uncertain, recycled, historical restored and unknown outcomes are not overwritten. A rejected claim becomes ineligible/manual review (`ledger_requires_review`) and never calls the adapter. Intent commits before the external Trash operation; completion still uses per-image durable checkpoints. No schema, Qt receipt or export-controller changes. Cross-process stale-plan/crash acceptance remains pending; source/static checks are not runtime verification.
+
+
+## Inline desktop presentation
+
+The desktop freezes preflight scope and presents eligibility/hidden-count/recovery warnings
+in the shared inline details surface. Only the existing Delete button becomes red Confirm;
+Cancel is separate. Selection/filter/navigation revisions invalidate preflight/consent.
+A fresh busy check precedes worker execution; leases, per-file revalidation and atomic durable
+intent claims remain unchanged. Trash progress and safe stop live in the shared bottom
+activity overlay; results are inline. No new actual Trash/platform acceptance is implied.

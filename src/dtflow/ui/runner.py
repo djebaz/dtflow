@@ -12,6 +12,7 @@ TRANSIENT_EVENTS = ("progress", "preview")
 class AsyncRunner(QObject):
     """One owned event-loop thread. Results return on the GUI thread through a queued signal."""
 
+    shutdown_started = Signal()
     _done = Signal(object, object, object)  # callback, result, exception
 
     def __init__(self, parent: QObject | None = None):
@@ -38,9 +39,14 @@ class AsyncRunner(QObject):
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    @staticmethod
-    def _deliver(callback, result, exception) -> None:
-        callback(result, exception)
+    @property
+    def closed(self) -> bool:
+        """True once shutdown starts; no new work or GUI delivery is permitted."""
+        return self._closed
+
+    def _deliver(self, callback, result, exception) -> None:
+        if not self._closed:
+            callback(result, exception)
 
     def submit(self, coroutine: Coroutine, callback: Callable[[object, Exception | None], None]):
         """Run ``coroutine`` in the background; ``callback(result, exception)`` runs on the GUI thread."""
@@ -80,7 +86,9 @@ class AsyncRunner(QObject):
 
     def shutdown(self, timeout: float = 5.0) -> None:
         """Cancel outstanding work, stop the loop and join its thread; safe at any time and idempotent."""
-        self._closed = True
+        if not self._closed:
+            self._closed = True
+            self.shutdown_started.emit()
         if self._loop.is_closed():
             return
         self._loop.call_soon_threadsafe(self._stop.set)

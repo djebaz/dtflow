@@ -2,6 +2,49 @@
 
 DTFlow's desktop application has Connection, Generate, Queues and Images pages. Connection, Generate and Queues share navigation on the left, the workspace in the center and an Inspector on the right. The panel icon beside the brand toggles details. Images uses the same logo/navigation in two aligned header rows and hides the content rails; returning restores splitter geometry and the shared Inspector choice.
 
+## Inline actions and progress
+
+DTFlow-owned confirmations, errors, results, About, metadata inspection, preset naming and
+checkpoint/LoRA editors stay inside the main window. Native file/folder pickers and ordinary
+menus remain available. No confirmation opens a separate window or nested dialog event loop.
+
+A guarded action first displays its explanation and changes only its original button to
+**Confirm**, red for Delete/Clear and mint/teal (matching Auto-refresh ON) otherwise, without adding Cancel to the action row. **Cancel** is in the shared
+bottom feedback overlay. Nothing executes on the first activation. Cancel, Escape, navigation,
+provider changes and relevant selection/filter changes discard pending consent; there is no
+timer. Confirm keeps frozen file/queue/Trash scope, with busy checks and destructive-service
+revalidation still applied. A double-click does not count as two consent activations. Unrelated notices
+do not discard an armed Confirm; they appear as separately dismissible
+feedback rows. Queue and Generate activity subscriptions are released when
+their Qt pages are destroyed.
+Closing during queue dispatch uses an inline **Confirm close** action because the native
+window close button cannot change its label; closing during recycling requests a safe stop
+and waits for the result instead of exiting mid-file. Programmatic closing follows the same
+consent; a refused close does not shut down the runner. Once shutdown begins, polling timers
+stop and already-queued UI results cannot restart background work.
+
+Prepare a converted cloud LoRA by choosing the file; preparation begins immediately
+after selection, with no second Confirm. Cancelling the picker does nothing.
+The asset note and Prepare tooltip warn that DT+ upload may occur without upload
+credits, while subsequent generation may consume credits. The existing backend
+identity/busy checks, receipt verification and uncertain-upload no-retry policy remain.
+
+Checkpoint search and exact custom identifiers use one expanded editor. **Add LoRA** shows
+search, identifier and weight together and commits once with **Add**. New UI selections use
+0.0–3.0 weights in 0.1 steps (one decimal); 0.0 is preserved. A catalogue default outside
+this range starts the editor at 1.0, not a silently clipped default. Existing imported/saved
+requests retain their recorded weights and existing validation; this does not change the
+CLI or provider weight contract.
+
+Confirmations, editors, progress and results use one thin bottom overlay above content, across tabs;
+it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
+concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
+indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
+Stop/Cancel delegates to the original controller, preserving completed copies/moves and
+existing uncertainty semantics. Generation preview and the compact Run control remain.
+Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results show a teal 2 px draining lifetime line, an optional seconds label and a 450 ms fade after six seconds, paused while any overlay row is hovered or focused. Blue 5 px task progress remains a separate measure of actual completed work; amber warning/partial/stopped overlays use the same six-second countdown, amber 2 px draining line and fade; red errors and informational inspections remain persistent. Dismissing an amber notification does not modify an uncertain attempt, its recorded evidence or its recovery/retry rules. Unrelated notices cannot discard an active editor; Escape dismisses a plain notice. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
+This implementation still requires owner runtime/visual and packaged acceptance.
+
 ## Launch
 
 From the repository root after `uv sync`:
@@ -26,7 +69,7 @@ Refresh inventory to populate model and LoRA choices. Startup and provider retur
 
 ## Export saved images
 
-In Images, check images and click **Export** to toggle the export panel beside the listing on the right. It exports checked images, including checks hidden by filters; there is no scope dropdown in Images. Connection retains the scope dropdown. No tab switch or export happens until you click **Export JPEGs**. You can also use **Export saved images** in Connection's middle panel: these are the same controls, settings and running operation. Other scopes are all saved images, the current Images filter across every page, the single image selected in Images, or the selected PNG result in Generate. Selecting Generate's metadata entry is not selecting an image. Export freezes identities when started; new outputs or changed checks afterward do not expand that operation.
+In Images, click **Export** to toggle the export panel beside the listing on the right, even if no images are checked. The button is neutral when closed and blue/selected when open; it is always available for opening settings. Before starting **Export JPEGs**, check at least one image. Exports include checks hidden by filters; there is no scope dropdown in Images. Connection retains the scope dropdown. No tab switch or export happens until you click **Export JPEGs**. You can also use **Export saved images** in Connection's middle panel: these are the same controls, settings and running operation. Other scopes are all saved images, the current Images filter across every page, the single image selected in Images, or the selected PNG result in Generate. Selecting Generate's metadata entry is not selecting an image. Export freezes identities when started; new outputs or changed checks afterward do not expand that operation.
 
 Click **Export** again or **Close export panel** to hide the Images column. Hiding it does not cancel export; use **Cancel export** to stop after the current image. Switching to Connection shows the same progress and controls; returning to Images remembers its open column. Destination/privacy settings and active progress are preserved across navigation.
 
@@ -78,15 +121,15 @@ Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and 
 
 Local/cloud Generate submits real work and may consume subscription credits. Initial DT+ generation does not enable PAYG, and failures never switch provider or credential automatically. Use fake for an offline tour.
 
-Progress and previews are not final results. A result is successful only after terminal success, final-output validation and durable saving. Stop waiting interrupts local waiting; it does not confirm remote cancellation. An uncertain remote attempt remains unknown and is never automatically replayed.
+The primary blue Generate image button includes a sparkles icon and sits in the Prompt header beside a compact icon-only Expand/Collapse toggle; the prompt defaults to a compact two-line, 52 px field and can still expand to 180 px. The shared bottom overlay shows actual backend stages and step counts and owns the single Stop waiting locally action. The preview has no duplicate stop button or synthetic percentage bar; a subdued status line preserves the last outcome. Progress and previews are not final results. A result is successful only after terminal success, final-output validation and durable saving. Stop waiting interrupts local waiting; it does not confirm remote cancellation. An uncertain remote attempt remains unknown and is never automatically replayed.
 
 ## LoRAs and cloud assets
 
-For a classified checkpoint, Add LoRA offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose exact inventory identifiers and explicit weights. Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
+For a classified checkpoint, Add LoRA offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose the exact inventory identifier and a weight together in the one-step inline Add editor (0.0–3.0, 0.1 steps). Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
 
 Trigger prefixes are added only when you explicitly choose that option; otherwise the prompt is unchanged.
 
-The cloud asset list contains this machine's local receipts, not complete DT+ account inventory. Prepare is the only action that can upload and requires confirmation. Reconcile is metadata-only. A confirmed receipt may be bound to a selected LoRA, then revalidated before dispatch; receipt bindings are not exported in configurations. See the [CLI asset reference](cli.md#cloud-asset-receipts) and [cloud integration](../architecture/cloud-integration.md).
+The cloud asset list contains this machine's local receipts, not complete DT+ account inventory. Prepare may upload a LoRA after explicit file selection (without another confirmation). Reconcile is metadata-only. A confirmed receipt may be bound to a selected LoRA, then revalidated before dispatch; receipt bindings are not exported in configurations. See the [CLI asset reference](cli.md#cloud-asset-receipts) and [cloud integration](../architecture/cloud-integration.md).
 
 ## Configurations and outputs
 
@@ -154,7 +197,7 @@ The Images action bar keeps **Select all** visible at every width. It selects ma
 
 ### Move checked originals to system Trash
 
-In the Phase 8E source implementation, **Delete** opens a confirmation, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. Cancel is the default. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.
+In the Phase 8E source implementation, **Delete** displays inline confirmation details and becomes red **Confirm**, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. The first activation does not authorize a move; Cancel in the bottom overlay discards consent. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.
 
 Moves run in the background one image at a time. Stop after current image preserves completed moves. Results distinguish confirmed moves, failures and Qt-reported success with an unverifiable destination. Failed and uncertain selections remain checked for manual review; never retry an uncertain result without inspecting the files. Manually recovering a file to its recorded path does **not** currently make it available in DTFlow again: Refresh cannot prove content identity from the path, size or timestamp. Recycled records remain hidden until a future explicit content-verified recovery workflow; old heuristic restoration records are also withdrawn without removing files. There is no DTFlow Undo or guaranteed restoration (including no macOS Finder Put Back integration). No permanent-delete fallback exists. See [architecture and platform limitations](../architecture/image-recycling.md). Owner platform runtime/packaged acceptance is pending; the Qt adapter does not establish full Debian app support.
 

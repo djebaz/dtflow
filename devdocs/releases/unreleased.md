@@ -21,6 +21,50 @@
 
 ## Changed
 
+- PR #58 adds the synchronized, standalone [inline interaction reference](../mockups/dtflow_inline_panels.html), preserving the approved prototype's illustrative assets while reflecting the current Qt overlay lifetimes, red Trash consent, Generate prompt/Run ring, LoRA editor, and Images Export panel toggle. The owner reports final interactive smoke acceptance on 2026-10-10. This HTML demo does not execute application services or modify saved outputs.
+
+
+- PR #58 separates thumbnail display size from decoded resolution: Grid, List and the Detail filmstrip share a single 600 px maximum-side thumbnail of each saved original at every zoom instead of the old 320 px decode. No per-zoom thumbnail variants or persistent derivatives are generated. The main Detail viewer continues loading the native-resolution saved original without resizing it.
+
+
+- PR #58 enlarges the default Images Grid/Detail-filmstrip thumbnails to the previous 200% size (320 logical pixels at 100%). List now scales thumbnail width and Image-column width along with row height when the 25–250% slider changes, preventing the old 80 px column from clipping thumbnails. Existing saved zoom percentages and bounded decoding remain unchanged.
+
+
+- PR #58 fixes single-generation Run-ring step updates: stage-only Draw Things signposts and preview notifications no longer erase the last actually reported sampler step from the header ring or shared progress row. Tooltips identify retained counts as last reported; a new run resets them, and no percentage is invented.
+
+
+- PR #58 polishes the compact Generate prompt header to match the approved mockup: a 38 px icon-only Expand/Collapse toggle with stateful SVG, accessible name and tooltip, beside the blue Generate image CTA with a sparkles SVG. Uses Qt icons and existing QSS tokens rather than emoji; generator and prompt-height behavior remain unchanged.
+
+
+- PR #58 Generate workspace simplification moves the sole Generate image action into the prompt header beside Expand prompt, reduces the collapsed prompt to 52 px (roughly two lines), and removes the duplicated Stop waiting and synthetic 0–100% progress controls beneath the preview. The shared overlay now presents actual stages/steps and owns the existing local-stop action; the persistent status label retains uncertain outcome evidence.
+
+
+- Images **Export** is now a genuine checkable panel toggle, enabled even without checked images. Closed uses neutral styling; open uses selected blue. Closing or navigating away synchronizes the button state, reopening Images restores panel visibility, and Export JPEGs still validates checked identities without automatically starting work.
+
+- PR #58 reuses the canonical Images Delete SVG, tinted danger red, in both the Recycle Bin confirmation and in-progress Trash overlay instead of separate drawn/emoji icons. Other operation glyphs and behavior are unchanged.
+
+
+- PR #58 unifies all amber warning/partial/stopped overlay results and nonfatal notices under the six-second state-colored countdown, draining bar, hover/focus pause and fade. Persistent red errors and informational inspections are unchanged; hiding a notification does not change durable outcome/uncertainty semantics. Recycle Bin Delete confirmation now uses a monochrome danger-red trash-can icon instead of a green recycling emoji.
+
+- PR #58 now auto-dismisses **clean, user-cancelled Export** results after six seconds using the existing draining lifetime bar, hover/focus pause and 450 ms fade. The result remains an amber stopped outcome with an amber countdown and bar; export failures/warnings and other stopped workflows remain persistent.
+
+- PR #58 aligns the success countdown text to the right, adjacent to Dismiss, and colors it mint/teal to match the draining lifetime bar instead of ordinary grey detail text. No expiry or task-progress behavior changed.
+
+
+- PR #58 overlay parity: successful result rows retain the numeric timer and gain a 2 px full-width teal draining bar and 450 ms fade; hovering or focusing the overlay pauses expiry. Partial/stopped/nonfatal warnings use amber surfaces; actual failures stay red; the outer strip no longer adds a conflicting blue border. Stopped and progress icons are differentiated. Unrelated notices cannot discard an active editor, Escape dismisses standalone notices, and destructive confirmation intent is explicit at call sites. HTML prototype synchronization follows implementation acceptance.
+
+
+- PR #58 removes the second Confirm step from cloud LoRA Prepare: selecting a converted file starts the existing async prepare/receipt workflow, cancelling the picker does nothing, and the asset note/tooltip disclose uploads and possible later-generation credits. Backend/busy checks and no-retry/uncertain-receipt behavior remain. A teardown correction retires the activity strip on its own Qt form's destruction, rather than attempting to access an already-deleted main-window host; Qt still owns filter and child-timer cleanup. Updated the existing LoRA presentation test expectations; fresh CI and owner smoke remain pending.
+
+
+- PR #58 teardown lifecycle follow-up retires the bottom activity strip before Qt destroys its child widgets, detaches its central-widget/form filters, stops the notice timer, and removes main-window activity listeners so late progress events cannot target destroyed widgets. No generation/provider behavior changes; CI/owner acceptance pending.
+
+- The Queues page limits the left-rail Durable Queues list to 120 logical pixels rather than letting it consume the available rail height; the list retains scrolling and the actions/policy remain grouped directly below it.
+
+- PR #58 approved-mockup follow-up unifies confirmation, editors, concurrent progress and results in one thin bottom overlay without resizing content. Essential messages wrap directly, with no Details control; Confirm alone stays on the original button and Cancel in the overlay. Export starts without extra confirmation. Short successes dismiss after six seconds, paused on hover/focus; errors, partial/uncertain and stopped results persist. Trash/export/cache/selection/cloud-asset/generation/queue outcomes retain existing service and uncertainty semantics. Native visual/packaged acceptance remains pending.
+
+- PR #58 replaces DTFlow-owned confirmation/error/result/progress and selection/input dialogs with main-window UI; native file/folder pickers stay. Only the original action button becomes Confirm (red for Delete/Clear, mint/teal like Auto-refresh ON otherwise); Cancel is separate, with no timer and scope/navigation invalidation. LoRA selection and bounded 0.0–3.0/0.1-step weight entry share one Add step; saved requests are not clamped. Labelled concurrent progress appears in a bottom overlay only while active. Existing Trash/cache/queue/upload/credit safeguards remain; owner tests/smoke and runtime/visual/packaged acceptance are deferred.
+
 - Images keeps Select all as a standalone action at every width; it becomes Unselect all only when all current filtered results are checked. Unselect all clears hidden checks too; partial 10,000-ID fills retain Select all. Owner reports Select all / Unselect all smoke passed (2026-10-09, follow-up to f3bc285).
 
 - Images List row/header checkboxes now use shared dark/blue styling with explicit checked and partial glyphs rather than native white boxes. Owner reports deletion smoke passed (2026-10-09); owner also reports checkbox styling smoke passed (2026-10-09, follow-up to ceb8e26); remaining recovery/platform/packaged gates are separate.
@@ -31,6 +75,16 @@
 - Pillow is declared as a runtime dependency through uv (it was already transitive).
 
 ## Fixed
+
+- PR #58 follow-up keeps unrelated notices in separate dismissible rows while an inline Confirm is pending, avoiding implicit disarm; Qt page destruction unsubscribes Queues/Generate activity callbacks, with idempotent listener removal. The LoRA editor now explains any out-of-range catalogue weight default before initializing to 1.0. The PR description is synchronized to the approved no-second-Confirm cloud Prepare flow.
+
+
+- PR #58 guards the bottom overlay against inline-feedback child destruction before its parent strip: the child is forgotten on `destroyed`, layout checks Qt wrapper validity, and progress details are updated inside the owning strip. The existing Qt shell suite now includes a focused child-deletion lifecycle regression; CI and native acceptance are pending.
+
+
+- Own the desktop timer-shutdown receiver as a window-parented Qt slot so it cannot access a deleted window during teardown. The shutdown receiver and progress-filter ownership repairs passed automatic CI at 6cf931c (426 passed, 3 gated live skips); the new unified-overlay follow-up has separate acceptance.
+
+- PR #58 follow-up stops desktop polling/save/debounce timers at runner shutdown and ignores queued GUI deliveries afterward, preventing polling from submitting to a closed loop. Programmatic close obtains the existing inline consent before shutdown. Adapted existing Qt metadata, LoRA, upload, queue, key-removal and lifecycle contracts to the real inline interactions; no new tests or local test/smoke execution, fresh CI pending.
 
 - UI cache measurement retries transient startup contention asynchronously for up to one second, avoiding a stale busy warning during ordinary inventory restoration. Cleanup remains nonblocking and prolonged cache use still reports busy.
 
@@ -62,5 +116,5 @@
 
 ## Release audit
 
-- PRs: #54, #55, #56, #57
-- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #56 implements cache coordination/cleanup safety and adds the planned-only 8E image-management scope; owner cache/source-runtime acceptance recorded 2026-10-09 after passing CI and smoke tests, no new agent tests/smoke under fast-implement. PR #55 adds Connection-centered JPEG/EXIF exports with optional default-on advisory noise/blank sorting with portable metadata, privacy and background progress/cancel; initial development deferred tests/smoke under fast-implement; owner later requested full offline pytest (426 passed, 3 skipped) and Ruff (passed), with the existing boundary guard narrowed only for the two Pillow image services; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions. PR #57 adds checked-image management and Qt-backed system Trash; Images now toggles the shared export card beside the listing, with new placement/navigation/cancel smoke pending.
+- PRs: #54, #55, #56, #57, #58
+- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #56 implements cache coordination/cleanup safety and adds the planned-only 8E image-management scope; owner cache/source-runtime acceptance recorded 2026-10-09 after passing CI and smoke tests, no new agent tests/smoke under fast-implement. PR #55 adds Connection-centered JPEG/EXIF exports with optional default-on advisory noise/blank sorting with portable metadata, privacy and background progress/cancel; initial development deferred tests/smoke under fast-implement; owner later requested full offline pytest (426 passed, 3 skipped) and Ruff (passed), with the existing boundary guard narrowed only for the two Pillow image services; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions. PR #57 adds checked-image management and Qt-backed system Trash; Images now toggles the shared export card beside the listing, with new placement/navigation/cancel smoke pending. PR #58 replaces application dialogs with inline consent/notices/editors and a bottom active-only progress overlay; one-step bounded LoRA entry; static checks only, owner tests/smoke and visual/packaged acceptance pending; no release, inference or billable operations. PR #58 CI follow-up adapts existing inline-interaction contracts and fixes timer/late-result shutdown handling; original CI had 8 failed, 417 passed, 3 skipped and 1 error; fresh CI pending, no local test/smoke execution.

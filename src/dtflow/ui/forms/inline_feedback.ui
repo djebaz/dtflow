@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>InlineFeedback</class>
+ <widget class="QFrame" name="inlineFeedback">
+  <property name="accessibleName"><string>Action confirmation, message or inline editor</string></property>
+  <layout class="QVBoxLayout" name="inlineLayout">
+   <property name="spacing"><number>6</number></property>
+   <property name="leftMargin"><number>8</number></property><property name="topMargin"><number>7</number></property>
+   <property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>7</number></property>
+   <item><layout class="QHBoxLayout" name="inlineRowLayout"><property name="spacing"><number>10</number></property>
+    <item><widget class="QLabel" name="inlineSymbol"><property name="minimumSize"><size><width>28</width><height>28</height></size></property><property name="maximumSize"><size><width>28</width><height>28</height></size></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="text"><string>i</string></property></widget></item>
+    <item><layout class="QVBoxLayout" name="inlineCopyLayout"><property name="spacing"><number>2</number></property>
+     <item><widget class="QLabel" name="inlineTitleLabel"><property name="text"><string>Action details</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+     <item><widget class="QTextBrowser" name="inlineTextBrowser"><property name="minimumSize"><size><width>0</width><height>16</height></size></property><property name="maximumHeight"><number>150</number></property><property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><property name="openExternalLinks"><bool>false</bool></property></widget></item>
+    </layout></item>
+    <item><widget class="QPushButton" name="inlineAcceptButton"><property name="text"><string>Apply</string></property></widget></item>
+    <item><widget class="QPushButton" name="inlineDismissButton"><property name="text"><string>Dismiss</string></property></widget></item>
+   </layout></item>
+   <item><layout class="QVBoxLayout" name="inlineEditorLayout"/></item>
+   <item><widget class="QWidget" name="inlineEditorActions">
+    <layout class="QHBoxLayout" name="inlineEditorActionsLayout">
+     <property name="spacing"><number>8</number></property>
+     <property name="leftMargin"><number>0</number></property>
+     <property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property>
+     <property name="bottomMargin"><number>0</number></property>
+     <item><spacer name="inlineEditorActionsSpacer">
+      <property name="orientation"><enum>Qt::Horizontal</enum></property>
+      <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+      <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+     </spacer></item>
+     <item><widget class="QPushButton" name="inlineEditorCancelButton"><property name="text"><string>Cancel</string></property></widget></item>
+     <item><widget class="QPushButton" name="inlineEditorAcceptButton"><property name="text"><string>Apply</string></property></widget></item>
+    </layout>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources/><connections/>
+</ui>

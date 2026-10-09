@@ -34,7 +34,6 @@ def window(qtbot, tmp_path):
     qtbot.addWidget(shell.form)
     shell.form.backendCombo.setCurrentText("fake")
     shell.generation_page.promptEdit.setPlainText("a cat")
-    shell.queue.confirm = lambda parent, title, text: True
     yield shell
     shell.runner.shutdown()
 
@@ -131,12 +130,16 @@ def test_pause_resume_and_cancel_post_shared_controls_with_honest_wording(window
     qtbot.waitUntil(lambda: states(window) == ["succeeded"] * 3, timeout=10000)
 
     create_second(window, qtbot)
-    window.queue.confirm = lambda parent, title, text: False
     page.cancelQueueButton.click()
+    assert page.cancelQueueButton.property("confirmationPending") is True
+    assert "cancel" not in cancel_controls(window)
+    window.inline.form.inlineDismissButton.click()
+    assert not page.cancelQueueButton.property("confirmationPending")
     qtbot.wait(300)
     assert "cancel" not in cancel_controls(window)  # declined: nothing was posted
-    window.queue.confirm = lambda parent, title, text: True
-    page.cancelQueueButton.click()
+    page.cancelQueueButton.click()  # review
+    assert "cancel" not in cancel_controls(window)
+    page.cancelQueueButton.click()  # explicit confirmation
     qtbot.waitUntil(lambda: "cancel" in cancel_controls(window), timeout=5000)
 
 
@@ -159,6 +162,9 @@ def test_cancel_stops_waiting_locally_and_leaves_unknown_not_a_remote_claim(wind
     create(window, qtbot, count=3, cap=1)
     page.startQueueButton.click()
     qtbot.waitUntil(lambda: states(window)[:1] == ["running"], timeout=5000)
+    page.cancelQueueButton.click()
+    assert page.cancelQueueButton.property("confirmationPending") is True
+    assert window.queue.dispatching_here and "cancel" not in cancel_controls(window)
     page.cancelQueueButton.click()
     qtbot.waitUntil(
         lambda: state_text(window).startswith("Cancelled") and not window.queue.dispatching_here, timeout=10000
@@ -196,11 +202,14 @@ def test_unresolved_reservation_blocks_and_override_never_replays(window, qtbot,
     page.queueItemsView.selectRow(0)
     assert "Resume does not clear it" in page.uncertaintyLabel.text()
 
-    window.queue.confirm = lambda parent, title, text: False
     page.overrideReservationButton.click()
+    assert page.overrideReservationButton.property("confirmationPending") is True
+    assert "override" not in cancel_controls(window)
+    window.inline.form.inlineDismissButton.click()
     qtbot.wait(200)
     assert "override" not in cancel_controls(window)  # declined: nothing recorded
-    window.queue.confirm = lambda parent, title, text: True
+    page.overrideReservationButton.click()
+    assert "override" not in cancel_controls(window)
     page.overrideReservationButton.click()
     qtbot.waitUntil(lambda: "override" in cancel_controls(window), timeout=5000)
     qtbot.waitUntil(lambda: page.startQueueButton.isEnabled(), timeout=5000)
@@ -259,12 +268,19 @@ def test_closing_during_dispatch_asks_first_and_records_the_local_stop(window, q
     create(window, qtbot, count=2, cap=1)
     page.startQueueButton.click()
     qtbot.waitUntil(lambda: states(window)[:1] == ["running"], timeout=5000)
-    window.queue.confirm = lambda parent, title, text: False
+    window.show()
+    window.close()  # programmatic close must also wait for consent before shutting down
+    assert window.queue.dispatching_here and not window.runner.closed
+    assert window.form.isVisible()
+    assert window.inline.form.inlineAcceptButton.text() == "Confirm close"
+    window.inline.form.inlineDismissButton.click()
+    assert window.queue.dispatching_here and not window.runner.closed  # declined: still dispatching
     window.form.close()
-    assert window.queue.dispatching_here  # declined: still dispatching
-    window.queue.confirm = lambda parent, title, text: True
-    window.form.close()
+    window.inline.form.inlineAcceptButton.click()
+    assert not window.form.isVisible()
     window.runner.shutdown()
+    assert not window.queue._timer.isActive()
+    window.queue.refresh()  # a late queued poll must not submit to the closed runner
     with sqlite3.connect(window.state_dir / "attempts.sqlite3") as db:
         rows = db.execute("SELECT state, remote_outcome FROM attempts").fetchall()
     assert [outcome for _, outcome in rows] == ["unknown"]  # recorded as unknown, never claimed cancelled

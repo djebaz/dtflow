@@ -12,13 +12,11 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
+from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
-    QInputDialog,
     QListWidgetItem,
-    QMessageBox,
     QPushButton,
     QWidget,
 )
@@ -47,6 +45,7 @@ from dtflow.services.session import (
     selection_for,
 )
 from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.empty_hint import EmptyListHint
 from dtflow.ui.generation_presenter import (
     FAKE_MODEL,
@@ -62,6 +61,7 @@ from dtflow.ui.generation_presenter import (
     snap_dimension,
     values_from_request,
 )
+from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -97,7 +97,6 @@ WIRED_CONTROLS = (
     "unclassifiedModelsButton",
     "refreshInventoryButton",
     "generateButton",
-    "cancelButton",
     "configurationCombo",
     "loadConfigurationButton",
     "saveConfigurationButton",
@@ -191,6 +190,7 @@ class GenerationPage:
         self._provider: str | None = None
         self._previewed_seed: int | None = None
         self._activity.listen(self._sync_activity)
+        page.destroyed.connect(self._unlisten_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
         self._relay = EventRelay(self._event, page)
@@ -198,7 +198,6 @@ class GenerationPage:
         self._generating = False
         self._request = None
         self._busy = False
-        self._progress_pct = 0
         self._config_name: str | None = None
         self._reuse_source_identity: str | None = None
         self._metadata_path: Path | None = None
@@ -235,9 +234,7 @@ class GenerationPage:
             page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
-        page.cancelButton.setEnabled(False)
         page.generateButton.clicked.connect(self.generate)
-        page.cancelButton.clicked.connect(self.cancel)
         page.refreshInventoryButton.clicked.connect(self.refresh)
         page.saveConfigurationButton.clicked.connect(self.save)
         page.savePresetButton.setEnabled(True)
@@ -261,6 +258,13 @@ class GenerationPage:
         page.modelCombo.custom_prompt = "Exact checkpoint identifier"
         page.modelCombo.setToolTip("Select a checkpoint. Search matches any part of its name.")
         page.promptEdit.setTabChangesFocus(True)
+        icons = Path(__file__).parents[1] / "resources" / "images" / "gallery"
+        self._expand_icon = QIcon(str(icons / "fullscreen.svg"))
+        self._collapse_icon = QIcon(str(icons / "minimize.svg"))
+        page.generateButton.setIcon(QIcon(str(icons / "sparkles.svg")))
+        page.generateButton.setIconSize(QSize(16, 16))
+        page.expandPromptButton.setIconSize(QSize(16, 16))
+        self._set_prompt_expanded(page.expandPromptButton.isChecked())
         page.seedEdit.setToolTip(
             "0 picks a random seed for each submission; the seed used is recorded with the output."
         )
@@ -268,12 +272,20 @@ class GenerationPage:
             control.setEnabled(True)
         page.attemptDetails.hide()
         page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)
-        page.expandPromptButton.toggled.connect(
-            lambda expanded: page.promptEdit.setFixedHeight(180 if expanded else 76)
-        )
+        page.expandPromptButton.toggled.connect(self._set_prompt_expanded)
         page.resultPreviewLabel.enable_inspection()
         self.sync_backend()
         self._scan_configs()
+
+    def _set_prompt_expanded(self, expanded: bool) -> None:
+        """Match prompt height, icon and accessible label to the toggle state."""
+        page = self.page
+        page.promptEdit.setFixedHeight(180 if expanded else 52)
+        button = page.expandPromptButton
+        button.setIcon(self._collapse_icon if expanded else self._expand_icon)
+        label = "Collapse prompt" if expanded else "Expand prompt"
+        button.setAccessibleName(label)
+        button.setToolTip(label)
 
     # -- context ---------------------------------------------------------------------------------------------------
     def sync_backend(self) -> None:
@@ -564,8 +576,11 @@ class GenerationPage:
         self._busy = busy
         self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
-        self.page.cancelButton.setEnabled(busy and self._generating)
         self.lora.set_enabled(not busy)
+
+    def _unlisten_activity(self) -> None:
+        """Detach before Qt destroys the page and its generation controls."""
+        self._activity.unlisten(self._sync_activity)
 
     def _sync_activity(self) -> None:
         """A queue dispatch holds the state lock, so single generation waits for it (and vice versa)."""
@@ -602,24 +617,30 @@ class GenerationPage:
             self._reuse_source_identity = None
         return request, name, endpoint, self.lora.receipt_ids()
 
-    # Overall progress is a determinate 0-100 bar that only grows: sampling steps fill the middle, the other stages
-    # only set floors, so a stage without a step count never turns the bar into a busy animation.
-    PROGRESS_FLOORS = {"preparing": 5, "submission_possible": 10, "terminal": 95}
-    SAMPLING_SPAN = (10, 90)
-
-    def _progress(self, text: str, completed: int | None = None, total: int | None = None, *, floor: int = 0) -> None:
-        if total:
-            low, high = self.SAMPLING_SPAN
-            floor = max(floor, low + (high - low) * min(completed or 0, total) // total)
-        self._progress_pct = max(self._progress_pct, floor)
-        bar = self.page.generationProgressBar
-        bar.setRange(0, 100)
-        bar.setValue(self._progress_pct)
-        bar.setFormat(f"{text} · %p%")
-
-    def _progress_stopped(self, text: str) -> None:
-        """A settled non-success end: the bar stays where it stopped, never animating."""
-        self._progress(text)
+    def _present_progress(self, stage: str, completed: int | None = None, total: int | None = None) -> None:
+        """Keep the last observed sampler step across stage-only events; never synthesize progress."""
+        if not self._generating:
+            return
+        reported = type(completed) is int and type(total) is int and total > 0 and 0 <= completed <= total
+        if not reported:
+            current = self._activity.run_state
+            if current.owner == "generation" and current.phase == "running":
+                completed, total = current.completed, current.total
+            else:
+                completed, total = None, None
+        detail = stage
+        if completed is not None and total is not None:
+            qualifier = "step" if reported else "last reported step"
+            detail = f"{detail} · {qualifier} {completed}/{total}"
+        self._activity.present_run(
+            RunState(
+                owner="generation",
+                phase="running",
+                completed=completed,
+                total=total,
+                detail=detail + ". Pause is not supported for single generation.",
+            )
+        )
 
     def _show_image(self, encoded: bytes, designation: str, backend_id: str | None = None) -> None:
         pixmap = QPixmap()
@@ -669,8 +690,6 @@ class GenerationPage:
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
-        self._progress_pct = 0
-        self._progress("Preparing", floor=self.PROGRESS_FLOORS["preparing"])
         self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
         self._generating = True
         self._activity.set(
@@ -678,7 +697,7 @@ class GenerationPage:
             run_state=RunState(
                 owner="generation",
                 phase="running",
-                detail="Single generation is running. Pause is not supported for single generation.",
+                detail="Preparing generation. Pause is not supported for single generation.",
             ),
         )
         self._set_busy(True)
@@ -716,24 +735,17 @@ class GenerationPage:
         if not self._busy:
             return  # a late event after completion never changes the settled view
         if event.kind == "progress":
-            self._progress(event.stage or "Generating", event.completed, event.total)
-            detail = event.stage or "Single generation is running"
-            if type(event.completed) is int and type(event.total) is int and event.total > 0:
-                detail = f"{detail} · step {event.completed}/{event.total}"
-            self._activity.present_run(
-                RunState(
-                    owner="generation",
-                    phase="running",
-                    completed=event.completed,
-                    total=event.total,
-                    detail=detail + ". Pause is not supported for single generation.",
-                )
-            )
+            self._present_progress(event.stage or "Generating", event.completed, event.total)
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
             self._show_image(event.artifact.encoded, "preview")
-            self._progress("Preview shown (not the final image)")
-        elif event.kind in self.PROGRESS_FLOORS:
-            self._progress(event.stage or event.kind, floor=self.PROGRESS_FLOORS[event.kind])
+            self._present_progress("Preview shown (not the final image)")
+        elif event.kind in {"preparing", "submission_possible", "terminal"}:
+            stage = {
+                "preparing": "Preparing",
+                "submission_possible": "Submitting to backend",
+                "terminal": "Finalizing",
+            }[event.kind]
+            self._present_progress(event.stage or stage)
 
     def _generated(self, outcome, failure) -> None:
         self._cache_changed()
@@ -746,13 +758,20 @@ class GenerationPage:
         self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
         if failure is not None:
-            self._progress_stopped("Failed")
             log.warning("generate failed reason=%s", failure_reason(failure))
-            self._status(present_generation_failure(failure))
+            presentation = present_generation_failure(failure)
+            self._status(presentation)
+            activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
             return
         log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
-        self._progress("Saved", floor=100)
-        self._status(present_outcome(outcome))
+        presentation = present_outcome(outcome)
+        self._status(presentation)
+        activity_strip(self.page).complete(
+            "generation-result",
+            "Generation " + presentation.headline,
+            presentation.detail,
+            "partial" if outcome.warnings else "success",
+        )
         self.lora.show_diagnostics(outcome.diagnostics)
         self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
         self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
@@ -801,15 +820,11 @@ class GenerationPage:
             with self._metadata_path.open(encoding="utf-8") as handle:
                 content = handle.read(METADATA_LIMIT + 1)
         except (OSError, UnicodeError):
-            QMessageBox.warning(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
+            InlineNotice.error(self.page, "Metadata unavailable", "The saved metadata file could not be read.")
             return
         if len(content) > METADATA_LIMIT:
             content = content[:METADATA_LIMIT] + "\n… (truncated: the saved file is longer)"
-        dialog = QMessageBox(self.page)
-        dialog.setWindowTitle("Saved generation metadata")
-        dialog.setText("Reproducibility metadata from the saved attempt.")
-        dialog.setDetailedText(content)
-        dialog.exec()
+        InlineNotice.information(self.page, "Saved generation metadata", content)
 
     def _result_path(self) -> str | None:
         """The selected saved path, else the first one (the first output)."""
@@ -830,18 +845,22 @@ class GenerationPage:
     def cancel(self) -> None:
         """Stop waiting locally through the shared interruption path; the server is never claimed cancelled."""
         if self._future is not None and self._generating:
-            self.page.cancelButton.setEnabled(False)
             self._future.cancel()
 
     def _interrupted(self, evidence, failure) -> None:
         self._generating = False
         self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
-        self._progress_stopped("Stopped locally")
+        presentation = present_generation_failure(failure) if failure else present_interruption(evidence)
+        self._status(presentation)
+        activity_strip(self.page).complete(
+            "generation-result",
+            presentation.headline,
+            presentation.detail,
+            "error" if presentation.level == "error" else "success" if presentation.level == "ok" else "stopped",
+        )
         if failure is not None:
-            self._status(present_generation_failure(failure))
             return
-        self._status(present_interruption(evidence))
         if evidence is not None:
             self.page.attemptIdentityLabel.setText(
                 f"Attempt {evidence.attempt_id[:8]}: recorded state {evidence.state}."
@@ -1006,7 +1025,7 @@ class GenerationPage:
         unknown = self._catalogue.view().unclassified_checkpoints
         if not unknown:
             return
-        QMessageBox.information(
+        InlineNotice.information(
             self.page,
             "Unclassified checkpoints",
             "These checkpoints are available on the active provider but are not classified by the DTFlow catalogue. "
@@ -1191,19 +1210,19 @@ class GenerationPage:
             self.page.generationStatusLabel.setToolTip("Preserved-only fields: " + ", ".join(application.preserved))
 
     def save_preset(self) -> None:
-        name, accepted = QInputDialog.getText(self.page, "Save preset", "Preset name")
-        if not accepted or not name.strip():
-            return
-        document = form_to_document(self._values())
-        try:
-            save_preset(self._state, name, document)
-        except (ValidationError, OSError, ValueError) as exc:
-            self._status(Presentation("error", "Preset not saved", str(exc)))
-            return
-        self._status(
-            Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library.")
-        )
-        self._scan_configs()
+        def save(name):
+            document = form_to_document(self._values())
+            try:
+                save_preset(self._state, name, document)
+            except (ValidationError, OSError, ValueError) as exc:
+                self._status(Presentation("error", "Preset not saved", str(exc)))
+                return
+            self._status(
+                Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library.")
+            )
+            self._scan_configs()
+
+        edit_text(self.page, "Save preset", "Preset name", save)
 
     def refresh_presets(self) -> None:
         self._scan_configs()
