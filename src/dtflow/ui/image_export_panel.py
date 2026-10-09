@@ -1,4 +1,4 @@
-"""Connection middle-panel export hub; presentation only, no provider access."""
+"""Shared Connection/Images export hub; presentation only, no provider access."""
 
 import asyncio
 import logging
@@ -92,7 +92,9 @@ class ImageExportPanel(QObject):
             self.form.imageExportSeparateCheck.setChecked(document.get("separate_noise_blank", True))
 
     def select_scope(self, scope: str) -> None:
-        """Select the same export scope used by Connection's existing controls."""
+        """Select the export scope without changing an active operation."""
+        if self._running:
+            return
         index = self.form.imageExportScopeCombo.findData(scope)
         if index >= 0:
             self.form.imageExportScopeCombo.setCurrentIndex(index)

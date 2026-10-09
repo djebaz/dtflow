@@ -26,12 +26,9 @@ Refresh inventory to populate model and LoRA choices. Startup and provider retur
 
 ## Export saved images
 
-Use **Export saved images** in the **middle panel of Connection**. Choose a folder
-and one scope: all saved images; the current Images filter across every page; the
-single image selected in Images; or the selected PNG result in Generate. For a
-filtered export, set filters in Images first, then return to Connection. Selecting
-Generate's metadata entry is not selecting an image. Export freezes the selection
-when started; new outputs arriving afterward do not expand that operation.
+In Images, check images and click **Export** to toggle the export panel beside the listing on the right. It opens with **Checked images in Images** selected, including checks hidden by filters. No tab switch or export happens until you click **Export JPEGs**. You can also use **Export saved images** in Connection's middle panel: these are the same controls, settings and running operation. Other scopes are all saved images, the current Images filter across every page, the single image selected in Images, or the selected PNG result in Generate. Selecting Generate's metadata entry is not selecting an image. Export freezes identities when started; new outputs or changed checks afterward do not expand that operation.
+
+Click **Export** again or **Close export panel** to hide the Images column. Hiding it does not cancel export; use **Cancel export** to stop after the current image. Switching to Connection shows the same progress and controls; returning to Images remembers its open column. Destination/privacy settings and active progress are preserved across navigation.
 
 You can type an absolute folder path that does not yet exist; export creates it and missing parents before writing. Permission/path failures are reported, not redirected.
 

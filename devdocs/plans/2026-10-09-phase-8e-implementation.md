@@ -1,16 +1,16 @@
 # Subplan: Phase 8E multi-selection, checked-image export and Recycle Bin
 
 **Date:** 2026-10-09
-**Status:** In-progress draft implementation PR. Session-only selection, Grid/List/Detail controls, one-row toolbar and Connection checked-ID export handoff are implemented in source but not agent/owner runtime-verified. Recycle Bin deletion remains disabled pending durable safety service and owner acceptance.
+**Status:** In-progress PR #57. Selection, shared export and durable system Trash are implemented in source. Owner reports deletion, checkbox styling, Select all / Unselect all and the earlier export action smoke passed; new inline export layout/navigation/cancel and broader recovery/platform/packaged acceptance remain pending. No agent tests or smoke run for these follow-ups.
 **Parent:** [8E image management](2026-10-09-phase-8e-image-management.md).
 **Reference:** [Owner UX specification and mockups](examples/phase-8e/owner-multiselect-ux-spec.md).
 
 ## Scope and approved decisions
-- Extend the existing Images Grid/List/Detail workspace, not its app shell. Always-visible top-left Grid checkboxes, leading List checkbox column, and a discreet Detail selection toggle. No separate Select mode, Masonry, new sidebar, List-side preview or new negative-prompt desktop filter.
+- Extend the existing Images Grid/List/Detail workspace, not its app shell. Always-visible top-left Grid checkboxes, leading List checkbox column, and a discreet Detail selection toggle. No separate Select mode, Masonry, List-side preview or new negative-prompt desktop filter. The owner-approved export column is the explicit page-local sidebar exception.
 - Focus/preview and checked set are independent stable output identities. Ordinary image activation still opens Detail; checkbox/Ctrl-click toggles checks without opening it. Preview navigation/reuse/regeneration keep their single-focused-image behavior.
 - Keep checked IDs for the current app session across views, pages, sorting, filters, tabs and incremental refresh. Do not restore actionable bulk selection after restart. Display hidden-selection counts and offer Clear hidden/Clear all; no silently omitted or included hidden targets.
 - Selection commands: Select page, Clear, and explicit Select all filtered results across pages. Select all filtered **adds** matching IDs to existing checked IDs, including checks hidden by the active filter. Resolve it off-thread in deterministic current query/sort order (stable identity tie-break), with count/progress/cancel, and fill only the remaining capacity up to the **10,000 total checked-image limit**. Keep already checked IDs, stop adding at the limit, and explicitly report how many matches were not added; never claim all results are selected after a partial fill. Cancellation before commit leaves the previous checked set unchanged. Later matching generations are not automatically selected.
-- Export is available from **both Images and Connection**. Keep authoritative export settings, destination, preferences and progress in Connection; add a Checked images in Images scope there. The gallery's contextual **Export** action opens/activates that existing Connection export workflow with the checked-image scope selected, rather than creating a second exporter or settings dialog. Both entry points use the same frozen exact-ID shared exporter and its privacy/metadata/skip/sorting rules.
+- Export is available from **both Images and Connection**. Images **Export** toggles a scrollable right-hand column beside the listing with checked-image scope selected when idle, without redirecting tabs. Reparent the same canonical Connection card into that column: one controller, settings, preferences, progress, frozen exact-ID operation and privacy/metadata/skip/sorting rules. Hiding never cancels an active export. This supersedes the earlier Connection navigation handoff; see the [column follow-up plan](2026-10-09-images-export-column.md).
 - Delete means **Move to Windows Recycle Bin** only. Every operation opens a clear confirmation showing the eligible image count, hidden checks, ineligible count and destination (Windows Recycle Bin); explain that users can normally restore recycled files using Windows, without promising DTFlow Undo or guaranteed restoration. Cancel is the default. No permanent-delete fallback; unsupported or failed recycling must fail safely and report affected items.
 - Preserve exported copies, unrelated outputs, execution audit history, shared metadata, cache ownership and provider behavior. Do not regenerate or replay attempts.
 
@@ -38,7 +38,7 @@
 
 ### 8E-3 — Shared checked-image export and both entry points
 - [x] Expose a read-only checked-ID snapshot seam; keep the existing single-focused-image export scope.
-- [x] Add Checked images in Images to Connection's export scope; empty selection produces an honest message. The Images contextual **Export** action activates the existing Connection workflow with this scope selected (no duplicate configuration/dialog). Source-only; owner export smoke pending.
+- [x] Add Checked images in Images to the shared export scope; empty selection produces an honest message. Images **Export** toggles the same card in its right-hand column, selecting checked scope when idle (no duplicate configuration/dialog). Owner reports earlier export action worked; inline placement/navigation/cancel smoke pending.
 - [ ] Freeze exact identities at export start from either entry point; explicitly include/count hidden checks, and reuse services/image_export.py without duplicating export rules. Preserve the other Connection scopes and destination/privacy preferences.
 - [ ] Keep export and recycle operations coordinated; checking or copying paths must never trigger generation or mutation.
 
@@ -83,3 +83,7 @@ The current adapter choice supersedes the earlier Windows-only implementation wo
 ## Select all toolbar follow-up
 
 The owner requested an independent, always-visible **Select all** action (2026-10-09). It selects the current filtered results across all pages within the existing 10,000 total limit, then becomes **Unselect all** only when every matching result is checked; Unselect all clears the entire checked set, including hidden checks. Loaded checkbox edits reconcile cached matching IDs locally; filter and refresh snapshots re-evaluate coverage off-thread. Partial fills remain Select all, and Ctrl+A keeps its existing select-only behavior. Secondary actions alone move into More. Source/static evidence only; owner reports Select all / Unselect all smoke passed on 2026-10-09 (follow-up to f3bc285); broader platform/packaged acceptance remains separate. No tests, smoke, Trash operation, inference or billable action ran for this follow-up.
+
+## Inline export placement follow-up
+
+The owner reports the prior export action works and clarified a right-hand column **beside** the listing (2026-10-09). Source now toggles that column and moves the exact existing Connection card between canonical hosts, preserving one controller/operation and settings/progress. No tab redirect, duplicate exporter, service change or automatic export. Connection remains a complete entry point. This supersedes earlier handoff/sidebar wording above; new layout/navigation/cancel smoke is pending, distinct from the owner-reported earlier export smoke.

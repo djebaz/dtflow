@@ -226,6 +226,9 @@ class MainWindow:
             no_cache=no_cache,
         )
         self.image_export.cache_changed.connect(self.refresh_cache)
+        self._gallery_export_open = False
+        self.gallery_detail.galleryExportScroll.hide()
+        self.gallery_detail.galleryExportCloseButton.clicked.connect(self._close_gallery_export)
         self.image_recycle = ImageRecyclePanel(
             form,
             runner=self.runner,
@@ -341,6 +344,7 @@ class MainWindow:
         )
         buttons[index].setChecked(True)
         self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)
+        self._place_export_panel()
         self._responsive_workspace()
 
     def _sync_run_control(self) -> None:
@@ -794,10 +798,44 @@ class MainWindow:
             self.gallery.refresh(preserve=True)
 
     def _open_checked_export(self) -> None:
-        """Activate the one authoritative Connection export form for checked gallery IDs."""
-        self.form.workspaceStack.setCurrentIndex(0)
-        self.image_export.select_scope("checked")
-        self.form.imageExportScopeCombo.setFocus(Qt.FocusReason.OtherFocusReason)
+        """Toggle the shared export card beside Images, without changing tabs."""
+        self._gallery_export_open = not self._gallery_export_open
+        if self._gallery_export_open and not self.image_export.running:
+            self.image_export.select_scope("checked")
+        self._place_export_panel()
+        if self._gallery_export_open:
+            target = (
+                self.gallery_detail.galleryExportCloseButton
+                if self.image_export.running
+                else self.form.imageExportScopeCombo
+            )
+            target.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _close_gallery_export(self) -> None:
+        """Hiding controls never cancels the shared export operation."""
+        self._gallery_export_open = False
+        self._place_export_panel()
+        target = (
+            self.gallery.export_button
+            if self.gallery.export_button.isEnabled()
+            else self.gallery.select_filtered_button
+        )
+        target.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _place_export_panel(self) -> None:
+        """Keep one card/controller/operation, mounting it in the active page's host."""
+        inline = self._gallery_export_open and self.form.workspaceStack.currentWidget() is self.images_page
+        host = self.gallery_detail.galleryExportHost if inline else self.form.imageExportConnectionHost
+        card = self.form.imageExportBox
+        if card.parentWidget() is not host:
+            host.layout().addWidget(card)
+            card.show()  # Reparenting hides QWidget; the same controls and progress survive.
+        self.gallery_detail.galleryExportScroll.setVisible(inline)
+        self.gallery.export_button.setToolTip(
+            "Hide the export panel without cancelling an active export."
+            if inline
+            else "Show the export panel beside the listing for checked images."
+        )
 
     def _export_selection(self, scope: str) -> GalleryQuery | tuple[str, ...]:
         """Freeze presentation choices; export service rechecks committed evidence."""

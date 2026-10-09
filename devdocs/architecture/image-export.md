@@ -2,14 +2,11 @@
 
 ## Ownership and scope
 
-`core/export.py` defines immutable options/results. `services/image_export.py` owns
-copy-only JPEG export and imports no Qt or provider APIs. `persistence/gallery.py`
-provides a bounded read-only snapshot of committed final output identities. The
-Connection middle-panel `ui/image_export_panel.py` captures the current scope and
-runs the service on the existing AsyncRunner; queued progress updates return to Qt.
-Generate and Images expose identities/query snapshots, not export or backend rules.
-The Phase 8E draft adds a checked-image identity snapshot from Images to the existing export scope menu and a gallery **Export** shortcut that navigates to Connection with this scope selected. The shared export destination/settings/progress and Start/Cancel controls remain in canonical `main_window.ui`, with no second exporter or dialog. The gallery's checked identity set is session-only and distinct from the focused image; hidden filtered checks are included and counted. Source implementation is not owner-smoke-validated.
-Its existing cards are scrollable so the new card does not force a taller window.
+`core/export.py` defines immutable options/results. `services/image_export.py` owns copy-only JPEG export and imports no Qt or provider APIs. `persistence/gallery.py` provides a bounded read-only snapshot of committed final output identities. The shared `ui/image_export_panel.py` captures the current scope and runs the service on the existing AsyncRunner; queued progress updates return to Qt. Generate and Images expose identities/query snapshots, not export or backend rules.
+
+Images **Export** toggles a scrollable right-hand column beside the Grid/List/Detail content, without navigating to Connection or starting export. Opening the panel selects checked-image scope when idle. All destination/settings/progress and Start/Cancel/Open controls are the exact same widget instances as Connection's middle-panel export card, canonical in `main_window.ui`. `main_window.py` moves that card between `imageExportConnectionHost` and the gallery's canonical `galleryExportHost`; one controller, preference load and running operation remain authoritative. Leaving Images restores it to Connection; returning to Images remembers whether the column was open. Closing or toggling the panel hides it without cancelling, and an active operation's scope/status are not reset. The separate close button remains available even after gallery checks are cleared. Both hosts scroll independently, and the shared card uses a vertical layout suitable for the column.
+
+The gallery's checked identity set is session-only and distinct from the focused image; hidden filtered checks are included in the frozen export snapshot. The owner reported that the earlier export action worked; this new inline layout/navigation/cancellation behavior still requires owner smoke acceptance. No second exporter or dialog, new dependency, encoding or metadata change is introduced.
 
 ## Destination routing and file safety
 

@@ -1871,7 +1871,7 @@ class GalleryPage(QObject):
         return item.identity if item is not None else None
 
     def export_checked(self) -> tuple[str, ...]:
-        """Freeze explicitly checked image identities for Connection export."""
+        """Freeze explicitly checked image identities for the shared exporter."""
         return self.selection.snapshot()
 
     def _selected(self) -> GalleryItem | None:

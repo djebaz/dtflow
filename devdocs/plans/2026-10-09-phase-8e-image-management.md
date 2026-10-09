@@ -17,7 +17,7 @@ In-progress draft implementation work, not a shipped/owner-accepted feature or p
 - Preserve provenance and prompt privacy; diagnostics should not expose raw prompts or private metadata.
 
 ## Action items
-- [x] Owner approved Windows Recycle Bin only (no permanent-delete fallback), clear confirmation for each move, a single-row selection toolbar with **Delete** as the gallery action label, and checked-image export initiated by gallery **Export** or from **Connection** through the same Connection workflow. Always-visible checkboxes, session-only cross-filter selection and the 10,000-item partial-fill rule follow the implementation subplan.
+- [x] Owner approved Windows Recycle Bin only (no permanent-delete fallback), clear confirmation for each move, a single-row selection toolbar with **Delete** as the gallery action label, and checked-image export initiated by gallery **Export** or from **Connection** through the same export workflow (Images now mounts the shared card beside the listing rather than navigating to Connection). Always-visible checkboxes, session-only cross-filter selection and the 10,000-item partial-fill rule follow the implementation subplan.
 - [ ] Finalize durable recovery/eligibility and concurrency details before enabling recycling.
 - [ ] Refine shared service/persistence boundaries and durable deletion/availability schema with a supported migration policy.
 - [x] Implement Images multiselection, contextual Export and disabled Delete controls in one row and zero-selection Select page/Select all filtered commands through canonical Designer/shared widgets without changing single-image preview/reuse semantics. Source-only; owner visual/runtime acceptance pending.
