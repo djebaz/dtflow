@@ -1,7 +1,7 @@
 # Plan: Phase 8E saved-image selection and bulk deletion
 
 ## Status and scope
-Planned, not implemented or part of Phase 8D completion. The owner selects multi-image selection and bulk deletion from the existing 8E organisation candidates. Favourites, ratings, tags, notes and collections remain unapproved separate scope.
+Plan-first implementation work, not implemented or part of Phase 8D completion. See the [approved implementation subplan/task list](2026-10-09-phase-8e-implementation.md) and [owner UX reference](examples/phase-8e/owner-multiselect-ux-spec.md). The owner selects multi-image selection and bulk deletion from the existing 8E organisation candidates. Favourites, ratings, tags, notes and collections remain unapproved separate scope.
 
 - In: multi-selection in the Images tab; bulk deletion of explicitly selected saved images or all saved images matching the current gallery filter across all pages.
 - Out: exported-copy deletion, provider-side deletion, regeneration/replay, deleting unrelated images from the same attempt, broad filesystem cleanup, and changes to cache-cleanup ownership.
@@ -17,7 +17,8 @@ Planned, not implemented or part of Phase 8D completion. The owner selects multi
 - Preserve provenance and prompt privacy; diagnostics should not expose raw prompts or private metadata.
 
 ## Action items
-- [ ] Confirm deletion policy (permanent deletion versus Windows Recycle Bin), confirmation UX, selection lifetime and partial-failure recovery contract before runtime implementation.
+- [x] Owner approved Windows Recycle Bin only (no permanent-delete fallback) and checked-image export through Connection; always-visible checkboxes follow the owner mockups. Session-only selection and exact confirmation follow the implementation subplan.
+- [ ] Finalize durable recovery/eligibility and concurrency details before enabling recycling.
 - [ ] Refine shared service/persistence boundaries and durable deletion/availability schema with a supported migration policy.
 - [ ] Implement Images multi-selection through canonical Designer/shared widgets without changing single-image preview/reuse semantics.
 - [ ] Implement selected/all-filtered snapshot deletion and reconciliation with explicit safety bounds.
