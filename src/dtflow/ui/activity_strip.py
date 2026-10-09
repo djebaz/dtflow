@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QTimer
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QTimer, Slot
 from PySide6.QtUiTools import QUiLoader
 
 
@@ -25,6 +25,9 @@ class ActivityStrip(QObject):
         self.window = window
         self.host = window.centralWidget()
         self.form = _load("activity_strip.ui", self.host)
+        # The filter must disappear with its frame, before the host processes
+        # layout events triggered by removing that frame during teardown.
+        self.setParent(self.form)
         self.rows = {}
         self.form.hide()
         self.host.installEventFilter(self)
@@ -35,6 +38,7 @@ class ActivityStrip(QObject):
             self._position()
         return False
 
+    @Slot()
     def _position(self):
         if not self.rows:
             self.form.hide()
@@ -68,7 +72,7 @@ class ActivityStrip(QObject):
         self.rows[key] = row
         self.form.activityRowsLayout.addWidget(row)
         self._position()
-        QTimer.singleShot(0, self._position)
+        QTimer.singleShot(0, self, self._position)
 
     def update(self, key, done, total):
         row = self.rows.get(key)

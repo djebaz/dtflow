@@ -84,3 +84,10 @@ No application launch or test execution. Fresh CI status is not presumed success
   Window destruction removes its signal connection; do not suppress invalid-widget
   exceptions or restore dialogs. No new tests or local test/smoke execution.
 - Static checks and automatic CI verification of the follow-up are pending.
+
+- CI at `b6c15b9`: 426 passed, 3 skipped, one teardown error. The shutdown
+  receiver errors are gone; the progress filter still outlived its frame.
+- Parent the progress controller to its own frame, not the main window, and
+  scope its deferred positioning callback to that QObject. This is lifecycle
+  repair only, not an overlay redesign. Static lint/format/syntax/import checks
+  passed; automatic CI verification pending. No new/local tests or smoke.
