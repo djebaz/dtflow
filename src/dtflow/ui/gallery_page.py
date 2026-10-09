@@ -12,17 +12,20 @@ from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, QSignalBlocker
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QButtonGroup,
     QComboBox,
+    QCheckBox,
     QFrame,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
+    QProgressDialog,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -31,8 +34,10 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.gallery import GalleryItem, GalleryQuery
+from dtflow.core.gallery_selection import GallerySelection, MAX_CHECKED_IMAGES
 from dtflow.core.models import ValidationError
 from dtflow.persistence.viewer import load_viewer, save_viewer
+from dtflow.persistence import gallery as gallery_storage
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_detail_preview import CoverPainter, RowHoverDelegate, apply_gallery
@@ -139,7 +144,8 @@ class GalleryPage(QObject):
     """Bind saved-output services to the existing Designer gallery without owning generation."""
 
     def __init__(
-        self, page: QWidget, *, runner: AsyncRunner, state_dir: Path, reuse_callback=None, regenerate_callback=None
+        self, page: QWidget, *, runner: AsyncRunner, state_dir: Path, reuse_callback=None,
+        regenerate_callback=None, export_callback=None, recycle_callback=None
     ):
         super().__init__(page)
         self.page = page
@@ -147,6 +153,15 @@ class GalleryPage(QObject):
         self.state_dir = Path(state_dir)
         self._reuse_callback = reuse_callback
         self._regenerate_callback = regenerate_callback
+        self._export_callback = export_callback
+        self._recycle_callback = recycle_callback
+        self.selection = GallerySelection()
+        self._hidden_checks = 0
+        self._selection_generation = 0
+        self._selection_busy = False
+        self._syncing_selection = False
+        self._selection_progress: QProgressDialog | None = None
+        self._check_boxes: dict[str, QCheckBox] = {}
         self._active = False
         self._loading = False
         self._pending_refresh: tuple[bool, bool] | None = None
@@ -215,6 +230,7 @@ class GalleryPage(QObject):
         self._setup_views()
         self._setup_filmstrip()
         self._setup_actions()
+        self._setup_selection_actions()
         self._restore_preferences()
         self._clear_detail()
         self.show_view(self.mode, persist=False)
@@ -285,9 +301,10 @@ class GalleryPage(QObject):
             button.clicked.connect(lambda checked=False, name=mode: self.show_view(name))
             self.modes[mode] = self._widget(f"gallery{mode}Content")
 
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels(
             [
+                "",
                 "Image",
                 "Filename",
                 "Model",
@@ -304,14 +321,16 @@ class GalleryPage(QObject):
         self.table.setIconSize(QSize(64, 48))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
-        for column, width in enumerate((80, 160, 180, 300, 120, 90, 145, 360)):
+        for column, width in enumerate((36, 80, 160, 180, 300, 120, 90, 145, 360)):
             self.table.setColumnWidth(column, width)
-        self.table.itemClicked.connect(lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole))))
-        self.table.itemActivated.connect(lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole))))
+        self.table.itemClicked.connect(self._table_clicked)
+        self.table.itemActivated.connect(self._table_activated)
+        self.table.itemChanged.connect(self._table_item_changed)
 
         self.table_viewport.setMouseTracking(True)
         self.table_viewport.installEventFilter(self)
         self.grid_viewport.installEventFilter(self)
+        self.page.installEventFilter(self)
         self.slider.valueChanged.connect(self._density_changed)
         self.grid_scroll.verticalScrollBar().valueChanged.connect(lambda value: self._scroll_changed("grid", value))
         self.table.verticalScrollBar().valueChanged.connect(lambda value: self._scroll_changed("list", value))
@@ -554,10 +573,12 @@ class GalleryPage(QObject):
                 )
                 self._widget("galleryPositionOverlay", QLabel).setText(f"{position} / {self.total}")
             self.refresh_button.setToolTip(self._page_summary())
+            self._refresh_hidden_count()
             self._schedule_save()
             return
         self._render_page()
         self._rendered_page = visible_page
+        self._refresh_hidden_count()
 
         pending = self._pending_page_selection
         self._pending_page_selection = None
@@ -625,6 +646,7 @@ class GalleryPage(QObject):
                 card.deleteLater()
                 del self._grid_painters[identity]
                 del self._grid_labels[identity]
+                self._check_boxes.pop(identity, None)
                 self._thumb_versions.pop(identity, None)
 
             self._reconcile_rows()
@@ -634,11 +656,12 @@ class GalleryPage(QObject):
                     self._create_card(item)
                 if previous.get(item.identity) != item:
                     self._update_entry(row, item)
+                self._paint_checked_item(row, item.identity)
             for item in image_changes:
                 self._grid_painters[item.identity].pixmap = QPixmap()
                 self._film_entries[item.identity][1].pixmap = QPixmap()
                 row = next(i for i, record in enumerate(self.items) if record.identity == item.identity)
-                self.table.item(row, 0).setIcon(QIcon())
+                self.table.item(row, 1).setIcon(QIcon())
 
             if self.items:
                 if self._grid_empty is not None:
@@ -671,6 +694,15 @@ class GalleryPage(QObject):
         button = QPushButton(card)
         button.setProperty("role", "galleryCardImage")
         button.clicked.connect(lambda checked=False, identity=item.identity: self._open_from_grid(identity))
+        check = QCheckBox(button)
+        check.setObjectName("galleryCardCheck")
+        check.setToolTip("Check image for bulk actions")
+        check.setAccessibleName(f"Check {Path(item.path).name}")
+        check.setGeometry(9, 9, 28, 28)
+        check.setChecked(item.identity in self.selection.checked)
+        check.toggled.connect(lambda value, identity=item.identity: self._set_checked(identity, value))
+        self._check_boxes[item.identity] = check
+        check.raise_()
         painter = CoverPainter(button, "", ("", ""))
         painter.mode = "Fit"
         self._grid_buttons[item.identity] = button
@@ -732,6 +764,7 @@ class GalleryPage(QObject):
         loras = "; ".join(f"{identifier} · {weight:g} · Unknown" for identifier, weight in item.loras) or "None"
         fields = (
             "",
+            "",
             filename,
             item.model or "Not recorded",
             loras,
@@ -747,7 +780,10 @@ class GalleryPage(QObject):
                 cell.setData(Qt.ItemDataRole.UserRole, item.identity)
                 self.table.setItem(row, column, cell)
             cell.setText(value)
-            cell.setToolTip(tooltip if column == 0 else value)
+            if column == 0:
+                cell.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable)
+                cell.setCheckState(Qt.CheckState.Checked if item.identity in self.selection.checked else Qt.CheckState.Unchecked)
+            cell.setToolTip(tooltip if column == 1 else value)
         film_button, film_painter = self._film_entries[item.identity]
         film_button.setAccessibleName(f"Open {filename}")
         film_button.setToolTip(tooltip)
@@ -844,7 +880,7 @@ class GalleryPage(QObject):
                 except StopIteration:
                     row = -1
                 if row >= 0:
-                    table_item = self.table.item(row, 0)
+                    table_item = self.table.item(row, 1)
                     if table_item is not None:
                         table_item.setIcon(QIcon(pixmap))
                     if row < len(self._film_painters):
@@ -857,6 +893,13 @@ class GalleryPage(QObject):
         self._pump_thumbnails()
 
     def _open_from_grid(self, identity: str) -> None:
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            self._select_range(identity)
+            return
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            self._toggle_checked(identity)
+            return
         self._origin_identity = identity
         self.select(identity)
 
@@ -869,6 +912,7 @@ class GalleryPage(QObject):
         if item is None:
             return
         self.selected_id = identity
+        self._sync_detail_checkbox()
         if open_detail:
             self.show_view("Detail")
         for index, record in enumerate(self.items):
@@ -1091,6 +1135,8 @@ class GalleryPage(QObject):
             else:
                 self._clear_detail()
         self._widget("galleryThumbnailSizeLabel", QLabel).setText("Row density" if mode == "List" else "Thumbnail size")
+        self.detail_check.setVisible(mode == "Detail")
+        self._responsive_selection()
         self._density_changed()
         if mode == "Grid" and self._origin_identity:
             button = self._grid_buttons.get(self._origin_identity)
@@ -1173,6 +1219,8 @@ class GalleryPage(QObject):
             elif kind == QEvent.Type.Leave:
                 self.table.setProperty("hoverRow", -1)
                 self.table_viewport.update()
+        if watched is self.page and kind == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._responsive_selection)
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
             self.reflow_timer.start(0)
         if kind == QEvent.Type.Wheel and watched in (self.grid_viewport, self.table_viewport):
@@ -1279,6 +1327,10 @@ class GalleryPage(QObject):
         """Expose only the committed identity of the current single selection."""
         item = self._selected()
         return item.identity if item is not None else None
+
+    def export_checked(self) -> tuple[str, ...]:
+        """Freeze explicitly checked image identities for Connection export."""
+        return self.selection.snapshot()
 
     def _selected(self) -> GalleryItem | None:
         return next((item for item in self.items if item.identity == self.selected_id), None)
