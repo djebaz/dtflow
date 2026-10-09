@@ -209,6 +209,7 @@ class MainWindow:
             state_dir=self.state_dir,
             activity=self.activity,
             no_cache=no_cache,
+            cache_changed=self.refresh_cache,
         )
         self.image_export = ImageExportPanel(
             form,
@@ -217,6 +218,7 @@ class MainWindow:
             selection=self._export_selection,
             no_cache=no_cache,
         )
+        self.image_export.cache_changed.connect(self.refresh_cache)
         self.queue = QueuePage(
             self.queue_page,
             runner=self.runner,
@@ -289,7 +291,6 @@ class MainWindow:
         self.refresh_credentials()
         self.refresh_custom_loras()
         self.refresh_presets()
-        self.refresh_cache()
         self._workspace_changed(0)
         self._responsive_workspace()
 
@@ -312,6 +313,8 @@ class MainWindow:
 
     def _workspace_changed(self, index: int) -> None:
         """Switch content and use the compact full-width chrome for Images only."""
+        if index == 0:
+            self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         buttons = (
@@ -544,10 +547,15 @@ class MainWindow:
         self.form.statusBar().showMessage(f"Exported {count} Draw Things preset(s).", 5000)
 
     def refresh_cache(self) -> None:
+        token = self._cache_measure_token = object()
+
         async def measure():
             return await asyncio.to_thread(cache_usage, self.state_dir)
 
-        self.runner.submit(measure(), self._cache_measured)
+        self.runner.submit(
+            measure(),
+            lambda usage, failure: self._cache_measured(usage, failure) if token is self._cache_measure_token else None,
+        )
 
     def _cache_measured(self, usage, failure) -> None:
         if failure is not None:

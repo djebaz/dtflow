@@ -164,6 +164,7 @@ class GenerationPage:
         state_dir: Path,
         activity: Activity | None = None,
         no_cache: bool = False,
+        cache_changed: Callable[[], None] | None = None,
         choose_save: Callable[[QWidget, Path], str] = _choose_save,
         choose_open: Callable[[QWidget, Path], str] = _choose_open,
     ):
@@ -174,6 +175,7 @@ class GenerationPage:
         self._state = Path(state_dir)
         self._activity = activity or Activity()
         self._no_cache = no_cache
+        self._cache_changed = cache_changed or (lambda: None)
         self._inventory_memory = InventoryDisplayMemory()
         self._inventory_source: tuple[str, str | None] | None = None
         self._inventory_revision = 0
@@ -734,6 +736,7 @@ class GenerationPage:
             self._progress(event.stage or event.kind, floor=self.PROGRESS_FLOORS[event.kind])
 
     def _generated(self, outcome, failure) -> None:
+        self._cache_changed()
         if isinstance(failure, asyncio.CancelledError):
             self._status(Presentation("warning", "Local stop requested", "Reading the recorded evidence."))
             request_id = self._request.request_id
@@ -862,6 +865,7 @@ class GenerationPage:
         )
 
     def _refresh_completed(self, source, revision, snapshot, failure):
+        self._cache_changed()
         if source != self._current_inventory_source() or revision != self._inventory_revision:
             self._set_busy(False)
             if self._inventory_notice == "Refreshing inventory…":

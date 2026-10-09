@@ -48,3 +48,8 @@
 ## Owner test feedback and startup contention fix
 - Owner ran the offline suite at 9397d03: 425 passed, 3 skipped, one failure in test_cache_prefills_the_model_list_and_a_bypass_ignores_it (cached model not restored within three seconds).
 - Source inspection identified transient ownership contention between startup cache measurement and simultaneous persistence reads: immediate busy-to-miss handling can discard the current valid observation. Persistence transactions now wait at most 0.5 seconds, including OS-lock contention; purge, measurement and export acquisition stay nonblocking. Owner rerun is required; no agent test execution or new tests.
+
+## Owner follow-up feedback
+- Owner reports the targeted cache-prefill test passed after 9cf3883; this is not a full-suite rerun.
+- Owner smoke: inventory dropped from about 500 KB to zero after cleanup, but the displayed size stayed zero after inventory refresh. Read-only inspection found cloud_inventory.json rebuilt at 533,044 bytes: disk persistence worked, the size label was stale.
+- Connection now requests asynchronous remeasurement after inventory refresh, generation settlement, export completion/cancellation/failure and when returning to Connection. Superseded measurement callbacks cannot overwrite newer requests. Owner display smoke/rerun pending; no agent tests or smoke.

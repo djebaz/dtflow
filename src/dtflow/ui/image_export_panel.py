@@ -25,6 +25,7 @@ class ImageExportPanel(QObject):
     """One shared export operation; selected scopes are captured on the GUI thread."""
 
     progress = Signal(int, int)
+    cache_changed = Signal()
 
     def __init__(
         self, form: QWidget, *, runner: AsyncRunner, state_dir: Path, selection: Callable, no_cache: bool = False
@@ -174,6 +175,7 @@ class ImageExportPanel(QObject):
 
     def _done(self, result, failure) -> None:
         self._set_running(False)
+        self.cache_changed.emit()
         if failure:
             log.warning("image export stopped reason=%s", type(failure).__name__)
             message = (

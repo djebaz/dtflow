@@ -26,6 +26,9 @@
 
 ## Fixed
 
+- Cache sizes remeasure after inventory refresh, generation settlement, export completion/cancellation and Connection entry; superseded callbacks are ignored so a cleared zero-size display does not stay stale after cache rebuild.
+
+
 - Short cache-persistence contention now waits up to 0.5 seconds off-thread rather than immediately discarding valid startup inventory evidence; cleanup/measurement/export ownership remain nonblocking. Owner suite reported 425 passed, 3 skipped and one cache-prefill timeout before this fix; rerun pending.
 
 
