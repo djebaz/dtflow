@@ -582,6 +582,12 @@ class GalleryPage(QObject):
             self._cancel_selection_scan()
         self._selection_generation += 1
         self._sync_selection_ui()
+        try:
+            needs_update = self._hidden_query != self.export_query()
+        except ValidationError:
+            needs_update = False
+        if needs_update:
+            self._refresh_hidden_count()
 
     def _set_checked(self, identity: str, value: bool) -> None:
         if self._syncing_selection or (identity in self.selection.checked) == value:
@@ -740,6 +746,10 @@ class GalleryPage(QObject):
         checked = self.selection.snapshot()
         if not checked:
             self._hidden_checks = 0
+            try:
+                self._hidden_query = self.export_query()
+            except ValidationError:
+                self._hidden_query = None
             self._sync_selection_ui()
             return
         try:
