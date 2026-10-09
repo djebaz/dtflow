@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 polishes the compact Generate prompt header to match the approved mockup: a 38 px icon-only Expand/Collapse toggle with stateful SVG, accessible name and tooltip, beside the blue Generate image CTA with a sparkles SVG. Uses Qt icons and existing QSS tokens rather than emoji; generator and prompt-height behavior remain unchanged.
+
+
 - PR #58 Generate workspace simplification moves the sole Generate image action into the prompt header beside Expand prompt, reduces the collapsed prompt to 52 px (roughly two lines), and removes the duplicated Stop waiting and synthetic 0–100% progress controls beneath the preview. The shared overlay now presents actual stages/steps and owns the existing local-stop action; the persistent status label retains uncertain outcome evidence.
 
 

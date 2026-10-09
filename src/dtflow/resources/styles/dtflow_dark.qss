@@ -251,6 +251,16 @@ QPushButton:disabled {
   border-color: ${color.disabledEdge};
   color: ${color.disabled};
 }
+QPushButton#expandPromptButton {
+  padding: 0;
+}
+QPushButton#expandPromptButton:checked {
+  background-color: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
+QPushButton#expandPromptButton:checked:hover {
+  background-color: ${color.selectionHover};
+}
 QPushButton#checkButton,
 QPushButton#generateButton,
 QPushButton#createQueueButton,

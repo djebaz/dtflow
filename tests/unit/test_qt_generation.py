@@ -66,13 +66,25 @@ def settled(window):
 def test_generate_action_lives_in_compact_prompt_header(window):
     page = window.generation_page
     assert page.promptHeader.indexOf(page.generateButton) >= 0
+    assert page.expandPromptButton.text() == ""
+    assert page.expandPromptButton.width() == 38
+    assert page.expandPromptButton.accessibleName() == "Expand prompt"
+    assert not page.expandPromptButton.icon().isNull()
+    assert not page.generateButton.icon().isNull()
+    assert page.generateButton.text() == "Generate image"
     assert page.promptEdit.minimumHeight() == page.promptEdit.maximumHeight() == 52
     assert not hasattr(page, "generationProgressBar")
     assert not hasattr(page, "cancelButton")
+    expand_icon = page.expandPromptButton.icon().pixmap(16, 16).toImage()
     page.expandPromptButton.click()
     assert page.promptEdit.minimumHeight() == page.promptEdit.maximumHeight() == 180
+    assert page.expandPromptButton.accessibleName() == "Collapse prompt"
+    assert page.expandPromptButton.isChecked()
+    assert page.expandPromptButton.icon().pixmap(16, 16).toImage() != expand_icon
     page.expandPromptButton.click()
     assert page.promptEdit.minimumHeight() == page.promptEdit.maximumHeight() == 52
+    assert page.expandPromptButton.accessibleName() == "Expand prompt"
+    assert not page.expandPromptButton.isChecked()
 
 
 def test_simulation_controls_exist_only_for_the_fake_provider(window):

@@ -12,8 +12,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QPixmap
+from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QListWidgetItem,
@@ -258,6 +258,13 @@ class GenerationPage:
         page.modelCombo.custom_prompt = "Exact checkpoint identifier"
         page.modelCombo.setToolTip("Select a checkpoint. Search matches any part of its name.")
         page.promptEdit.setTabChangesFocus(True)
+        icons = Path(__file__).parents[1] / "resources" / "images" / "gallery"
+        self._expand_icon = QIcon(str(icons / "fullscreen.svg"))
+        self._collapse_icon = QIcon(str(icons / "minimize.svg"))
+        page.generateButton.setIcon(QIcon(str(icons / "sparkles.svg")))
+        page.generateButton.setIconSize(QSize(16, 16))
+        page.expandPromptButton.setIconSize(QSize(16, 16))
+        self._set_prompt_expanded(page.expandPromptButton.isChecked())
         page.seedEdit.setToolTip(
             "0 picks a random seed for each submission; the seed used is recorded with the output."
         )
@@ -265,12 +272,20 @@ class GenerationPage:
             control.setEnabled(True)
         page.attemptDetails.hide()
         page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)
-        page.expandPromptButton.toggled.connect(
-            lambda expanded: page.promptEdit.setFixedHeight(180 if expanded else 52)
-        )
+        page.expandPromptButton.toggled.connect(self._set_prompt_expanded)
         page.resultPreviewLabel.enable_inspection()
         self.sync_backend()
         self._scan_configs()
+
+    def _set_prompt_expanded(self, expanded: bool) -> None:
+        """Match prompt height, icon and accessible label to the toggle state."""
+        page = self.page
+        page.promptEdit.setFixedHeight(180 if expanded else 52)
+        button = page.expandPromptButton
+        button.setIcon(self._collapse_icon if expanded else self._expand_icon)
+        label = "Collapse prompt" if expanded else "Expand prompt"
+        button.setAccessibleName(label)
+        button.setToolTip(label)
 
     # -- context ---------------------------------------------------------------------------------------------------
     def sync_backend(self) -> None:

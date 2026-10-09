@@ -269,3 +269,8 @@ acceptance; no visual parity is claimed from source inspection.
 - Remove the redundant Stop waiting button and synthetic percentage bar from the Generate center form/controller. The shared activity overlay remains the single stopping/progress surface; its stop calls the unchanged local cancellation controller.
 - Preserve the discreet persistent status line, saved attempt evidence, preview and result actions. Show only backend-reported stages and step counts in the overlay, without inventing completion percentages; uncertainty remains durable.
 - Adapt existing Qt generation tests to the canonical overlay controls and new prompt geometry; GitHub CI and native Windows visual acceptance remain separate. No live generation or billable action.
+
+## Prompt-header icon polish (2026-10-10)
+- Refine the relocated Generate action to match the accepted mockup: 16 px sparkles SVG in the existing blue primary button, and a 38 px icon-only Expand prompt button with separate expanded/collapsed SVGs and accessible stateful labels.
+- Use the Images SVG/QIcon convention and the existing shared QSS palette. Preserve the Generate action, 52/180 px prompt sizing, and native single-generation/overlay operation semantics.
+- Extend the existing Generate Qt layout assertion to cover icon presence, toggle state and accessibility. CI and native Windows visual acceptance remain separate.
