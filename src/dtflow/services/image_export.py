@@ -537,20 +537,37 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     failures = []
     if progress:
         progress(0, total)
-    for index, identity in enumerate(identities):
+    index = 0
+    while index < total:
         if cancel.is_set():
             break
+        identity = identities[index]
+        end = index + 1
+        existing = identity in skipped_identities
+        if existing:
+            # Bound each availability snapshot to consecutive skips only. Never
+            # retain it across a slow conversion or hold originals for a full run.
+            while (
+                end < min(total, index + storage.MAX_EXPORT_AVAILABILITY_BATCH)
+                and identities[end] in skipped_identities
+            ):
+                end += 1
+        batch = identities[index:end]
         try:
-            # A short original-file lease covers each identity's availability,
-            # source read and conversion. Long exports do not block generation
-            # saves or recycling of unrelated images for the entire batch.
+            # Real exports retain a per-image lease; skips share one short lease
+            # and identity-only read transaction, counted before releasing it.
             with original_images_lock(state, timeout=30):
-                record = storage.get_record(state, identity)
-                if record is None:
-                    raise ValidationError("Saved original is not available.")
-                if identity in skipped_identities:
-                    skipped += 1
+                if existing:
+                    available = storage.available_export_identities(state, batch)
+                    skipped += len(available)
+                    failed += len(batch) - len(available)
+                    for candidate in batch:
+                        if candidate not in available and len(failures) < 100:
+                            failures.append(f"{candidate}: Saved original is not available.")
                 else:
+                    record = storage.get_record(state, identity)
+                    if record is None:
+                        raise ValidationError("Saved original is not available.")
                     item_notes, category = _export_one(item_from_record(record), destination, options, computations)
                     notes.update(item_notes)
                     noise += category == "noise"
@@ -571,7 +588,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
             Image.DecompressionBombError,
             Image.DecompressionBombWarning,
         ) as exc:
-            failed += 1
+            failed += len(batch)
             if len(failures) < 100:
                 # Never expose decoder/OS exception strings, which can contain paths or source data.
                 reason = (
@@ -579,9 +596,10 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                     if isinstance(exc, (ValidationError, PersistenceError, OriginalImagesBusyError))
                     else f"could not export ({type(exc).__name__})"
                 )
-                failures.append(f"{identity}: {reason}")
+                failures.extend(f"{candidate}: {reason}" for candidate in batch[: 100 - len(failures)])
+        index = end
         if progress:
-            progress(index + 1, total)
+            progress(index, total)
     if not no_cache and exported:
         _checkpoint_computations(Path(state), computations, notes)
     return ExportResult(

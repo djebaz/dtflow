@@ -12,6 +12,8 @@ from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_s
 
 # The saver commits image paths followed by metadata.json only after every durable write succeeds.
 # These references include non-default --out locations. Failed/orphaned files are not discovery sources.
+MAX_EXPORT_AVAILABILITY_BATCH = 128
+
 BASE = """
 WITH outputs AS (
  SELECT a.attempt_id, a.request_id, a.backend_id, a.updated_at_utc AS saved_at_utc,
@@ -150,6 +152,50 @@ def get_record(state: Path, identity: str) -> dict | None:
             return None
         row = db.execute(BASE + "SELECT * FROM records WHERE identity=?", (identity,)).fetchone()
         return dict(row) if row else None
+
+
+def available_export_identities(state: Path, identities: tuple[str, ...]) -> frozenset[str]:
+    """Read only committed, non-recycled identities using selected attempt primary keys.
+
+    The exporter holds the original-file lease until these bounded skip outcomes
+    are counted. No original files, requests or metadata payloads are loaded.
+    """
+    if len(identities) > MAX_EXPORT_AVAILABILITY_BATCH:
+        raise ValueError("Export availability batch exceeds its bounded limit.")
+    selected = []
+    for identity in identities:
+        if not isinstance(identity, str):
+            continue
+        attempt, separator, output = identity.partition(":")
+        if not separator or not output.isascii() or not output.isdecimal():
+            continue
+        ordinal = int(output)
+        if output != str(ordinal):
+            continue
+        selected.append((attempt, ordinal, identity))
+    if not selected:
+        return frozenset()
+    with reader(state) as db:
+        if db is None:
+            return frozenset()
+        rows = db.execute(
+            """WITH selected AS (
+                 SELECT json_extract(value, '$[0]') AS attempt_id,
+                        json_extract(value, '$[1]') AS ordinal,
+                        json_extract(value, '$[2]') AS identity
+                 FROM json_each(?)
+               )
+               SELECT s.identity FROM selected s JOIN attempts a ON a.attempt_id=s.attempt_id
+               WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                 AND s.ordinal < json_array_length(CASE WHEN json_valid(a.artifacts_json)
+                                                       THEN a.artifacts_json ELSE '[]' END)-1
+                 AND json_type(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END,
+                               '$[' || s.ordinal || ']')='text'
+                 AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
+                                 WHERE r.identity=s.identity AND r.outcome='recycled')""",
+            (json.dumps(selected),),
+        )
+        return frozenset(row[0] for row in rows)
 
 
 def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:

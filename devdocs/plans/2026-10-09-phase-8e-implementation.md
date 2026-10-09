@@ -87,3 +87,7 @@ The owner requested an independent, always-visible **Select all** action (2026-1
 ## Inline export placement follow-up
 
 The owner reports the prior export action works and clarified a right-hand column **beside** the listing (2026-10-09). Source now toggles that column and moves the exact existing Connection card between canonical hosts, preserving one controller/operation and settings/progress. No tab redirect, duplicate exporter, service change or automatic export. Connection remains a complete entry point. This supersedes earlier handoff/sidebar wording above; new layout/navigation/cancel smoke is pending, distinct from the owner-reported earlier export smoke.
+
+## Repeat-export skip batching follow-up
+
+See the [skip batching plan](2026-10-09-export-skip-batching.md). Keep the recycle-aware availability check but batch consecutive existing-copy identities (maximum 128) with an identity-only selected-attempt query and short original-file lease. Real exports retain per-image leases. Owner reports c7a8f70 panel smoke passed; this source-level performance fix has static checks only, with no tests, smoke or measured speedup.
