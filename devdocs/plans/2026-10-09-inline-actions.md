@@ -75,6 +75,18 @@
 - Preserve two-click consent, upload/credit text, frozen scopes and controller
   safety. This changes presentation only; no new tokens or model/provider behavior.
 
+## Teardown lifecycle correction (2026-10-09)
+- CI at `fe6f05e` reports 426 passed, 3 skipped and 2 teardown errors:
+  delayed resize/layout events accessed deleted inline feedback, and a
+  generation progress event accessed a deleted progress row.
+- Retire the shared activity strip when its Qt main window is destroyed,
+  detach central-widget/form event filters and stop its notice timer before
+  child-widget teardown. Late position/progress calls do not access stale Qt
+  objects. Remove the main-window plain-Python activity listeners on window
+  destruction and stop the finishing timer.
+- Preserve all non-teardown operation and shutdown semantics. No tests added or
+  run locally; await new CI and owner runtime/packaged visual acceptance.
+
 ## Open questions
 - None.
 

@@ -303,6 +303,7 @@ class MainWindow:
         self._run_settle.timeout.connect(self._sync_run_control)
         self.activity.listen(self._sync_run_control)
         self.activity.listen(self._sync_activity_progress)
+        form.destroyed.connect(self._retire_activity_presentation)
         self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         for frame in (self.shell.brandFrame, self.shell.navigationFrame):
@@ -365,7 +366,15 @@ class MainWindow:
         self._place_export_panel()
         self._responsive_workspace()
 
+    def _retire_activity_presentation(self) -> None:
+        """Stop plain-Python activity listeners before the window's Qt children die."""
+        self.activity.unlisten(self._sync_run_control)
+        self.activity.unlisten(self._sync_activity_progress)
+        self._run_settle.stop()
+
     def _sync_run_control(self) -> None:
+        if self.progress_strip.retired:
+            return
         state = self.activity.run_state
         running = state.phase == "running"
         if running:
@@ -434,6 +443,8 @@ class MainWindow:
         shell.rightRail.setVisible(not images and not narrow)
 
     def _sync_activity_progress(self):
+        if self.progress_strip.retired:
+            return
         state = self.activity.run_state
         if not (self.activity.generating or self.activity.dispatching):
             self.progress_strip.finish("run")

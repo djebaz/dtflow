@@ -141,3 +141,9 @@ resizing. Export has no additional confirmation; success results expire after si
 seconds (hover/focus pauses), while errors/partial/uncertain/stopped results persist.
 No new tests/local tests/smoke; new CI and owner native visual/packaged acceptance
 are separate from the previous green commit. No release, inference or billable work.
+
+PR #58 teardown follow-up after `fe6f05e`: two CI teardown errors traced to
+activity-strip event filters and progress subscriptions surviving Qt child-widget
+destruction. Source now retires the strip on main-window destruction, disconnects
+its event filters/timer, and removes plain-Python main-window activity listeners.
+No local tests or GUI smoke; new CI and owner native acceptance remain pending.

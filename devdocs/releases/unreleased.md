@@ -21,6 +21,8 @@
 
 ## Changed
 
+- PR #58 teardown lifecycle follow-up retires the bottom activity strip before Qt destroys its child widgets, detaches its central-widget/form filters, stops the notice timer, and removes main-window activity listeners so late progress events cannot target destroyed widgets. No generation/provider behavior changes; CI/owner acceptance pending.
+
 - The Queues page limits the left-rail Durable Queues list to 120 logical pixels rather than letting it consume the available rail height; the list retains scrolling and the actions/policy remain grouped directly below it.
 
 - PR #58 approved-mockup follow-up unifies confirmation, editors, concurrent progress and results in one thin bottom overlay without resizing content. Essential messages wrap directly, with no Details control; Confirm alone stays on the original button and Cancel in the overlay. Export starts without extra confirmation. Short successes dismiss after six seconds, paused on hover/focus; errors, partial/uncertain and stopped results persist. Trash/export/cache/selection/cloud-asset/generation/queue outcomes retain existing service and uncertainty semantics. Native visual/packaged acceptance remains pending.

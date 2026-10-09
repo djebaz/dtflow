@@ -38,8 +38,10 @@ class ActivityStrip(QObject):
         self.rows = {}
         self._expiry = {}
         self._positioning = False
+        self._retired = False
         self.feedback = None
         self.form.hide()
+        window.destroyed.connect(self._retire)
         self.host.installEventFilter(self)
         self.form.installEventFilter(self)
         self._notice_timer = QTimer(self.form)
@@ -52,13 +54,32 @@ class ActivityStrip(QObject):
         self.form.activityRowsLayout.insertWidget(0, panel.form)
         panel.form.hide()
 
+    @property
+    def retired(self) -> bool:
+        return self._retired
+
+    @Slot()
+    def _retire(self):
+        """Detach from the central widget before Qt destroys its overlay children."""
+        if self._retired:
+            return
+        self._retired = True
+        self.host.removeEventFilter(self)
+        self.form.removeEventFilter(self)
+        self._notice_timer.stop()
+        self._expiry.clear()
+        self.rows.clear()
+        self.feedback = None
+
     def eventFilter(self, watched, event):
-        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
+        if not self._retired and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
             self._position()
         return False
 
     def set_editor_dimming(self, enabled: bool) -> None:
         """Dim and block only the workspace behind an active inline input editor."""
+        if self._retired:
+            return
         if enabled:
             self.scrim.setGeometry(self.host.rect())
             self.scrim.show()
@@ -69,7 +90,7 @@ class ActivityStrip(QObject):
 
     @Slot()
     def _position(self):
-        if self._positioning:
+        if self._retired or self._positioning:
             return
         self._positioning = True
         try:
@@ -96,6 +117,8 @@ class ActivityStrip(QObject):
             self._positioning = False
 
     def start(self, key, label, stop=None, stop_text="Stop after current image", total=0, detail=""):
+        if self._retired:
+            return
         self.finish(key)
         row = _load("activity_progress_row.ui", self.form)
         row.setProperty("feedbackState", "progress")
@@ -123,6 +146,8 @@ class ActivityStrip(QObject):
         QTimer.singleShot(0, self, self._position)
 
     def update(self, key, done, total):
+        if self._retired:
+            return
         row = self.rows.get(key)
         if row is not None and row.property("feedbackState") == "progress":
             row.activityProgress.setRange(0, max(1, total) if total else 0)
@@ -133,6 +158,8 @@ class ActivityStrip(QObject):
 
     def complete(self, key, title, text, state="success"):
         """Display outcomes without disarming unrelated confirmation or replacing another task."""
+        if self._retired:
+            return
         self.start(key, title)
         row = self.rows[key]
         row.setProperty("feedbackState", state)
@@ -156,6 +183,8 @@ class ActivityStrip(QObject):
 
     @Slot()
     def _tick_notices(self):
+        if self._retired:
+            return
         focused = QApplication.focusWidget()
         for key, remaining in tuple(self._expiry.items()):
             row = self.rows[key]
@@ -171,6 +200,8 @@ class ActivityStrip(QObject):
             self._notice_timer.stop()
 
     def finish(self, key):
+        if self._retired:
+            return
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
         if row is not None:

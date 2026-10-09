@@ -43,6 +43,10 @@ class Activity:
     def listen(self, listener: Callable[[], None]) -> None:
         self._listeners.append(listener)
 
+    def unlisten(self, listener: Callable[[], None]) -> None:
+        """Detach presentation listeners when their owning window is destroyed."""
+        self._listeners.remove(listener)
+
     def _notify(self) -> None:
         for listener in tuple(self._listeners):
             listener()
