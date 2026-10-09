@@ -26,10 +26,10 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
-from dtflow.persistence.image_recycle import reconcile as reconcile_images
-from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
+from dtflow.persistence.image_recycle import reconcile as reconcile_images
 from dtflow.persistence.last_session import load_last_session, save_last_session
+from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
