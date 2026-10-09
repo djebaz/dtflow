@@ -290,8 +290,7 @@ standard 160 logical-pixel Grid/filmstrip baseline, with a 25–250% range. List
 row thumbnails follow the same percentage through the full range. The internal
 pixel conversion is a presentation detail and must not leak into the control
 label. Grid keeps uniform aspect-fit tiles; List has metadata columns and
-row-wide hover. Neither browsing view exposes bulk selection or destructive
-actions.
+row-wide hover. Original shipped viewer behavior was single-focus browsing; Phase 8E's draft branch adds checkboxes and a checked-image selection layer without changing Detail focus or tile geometry.
 
 Detail defaults to Fit so the complete saved image is visible on entry. Cover
 remains available for a filled canvas; 100%, zoom, pan, previous/next,
@@ -332,6 +331,8 @@ accessible names and tooltips. Negative-prompt search remains available through
 the shared query/CLI service but is intentionally absent from the visible Images
 header. Detail shows recorded provenance and uses explicit `Not recorded` or
 `Unknown` text when evidence is absent.
+
+The Phase 8E gallery selection toolbar is one reserved 52 px-high row immediately below the shared header/filter rows. It uses `color.toolbar` with `color.selectionBorder`, muted checked-state blues from `color.selection`, `color.selectionText` and `color.selectionBorder`, and the existing `role="danger"` treatment for Delete. Full-width layout keeps Select page, Select all filtered, Clear, Copy paths, Export and Delete in that same line; narrow layouts collapse secondary actions into More rather than wrapping or truncating Export/Delete. Grid and List checks share stable output identities; Detail focus remains separate. The gallery's **Export** button opens the existing Connection export workflow, while **Delete** must remain disabled until a durable, owner-accepted Windows Recycle Bin service exists. The destructive confirmation, when implemented, must name Windows Recycle Bin and the exact eligible count.
 
 The standalone `DetailFixture` and preview tools continue to use bundled
 illustrative artwork. They are development presentation fixtures only and do not
