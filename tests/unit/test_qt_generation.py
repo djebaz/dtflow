@@ -125,9 +125,7 @@ def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
     window.generation._relay(BackendEvent("r", 99, "preview", "t", artifact=preview))
     qtbot.waitUntil(lambda: page.resultPreviewLabel.property("designation") == "preview", timeout=3000)
     assert page.resultList.count() == 0
-    qtbot.waitUntil(
-        lambda: "Preview shown (not the final image)" in window.activity.run_state.detail, timeout=3000
-    )
+    qtbot.waitUntil(lambda: "Preview shown (not the final image)" in window.activity.run_state.detail, timeout=3000)
     window.runner._loop.call_soon_threadsafe(gate.set)
     qtbot.waitUntil(settled(window), timeout=5000)
 
