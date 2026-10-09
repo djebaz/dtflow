@@ -137,9 +137,20 @@ class ImageRecyclePanel(QObject):
             f"{result.missing} missing; {result.ineligible} ineligible; "
             f"{result.unprocessed} unprocessed."
         )
+        if result.failure_details:
+            # Display only stable output IDs and sanitized operation stages.
+            # Shell/OS exception messages may contain private paths.
+            summary += "\n\nFailure details:"
+            for identity, reason in result.failure_details[:5]:
+                summary += f"\n{identity}: {reason}"
+            if len(result.failure_details) > 5:
+                summary += f"\n… and {len(result.failure_details) - 5} more (see DTFlow logs)."
         if result.canceled:
             summary += "\nStopped after the current image; completed moves remain."
-        QMessageBox.information(self.parent_widget, "Recycle Bin result", summary)
+        if result.failed or result.uncertain:
+            QMessageBox.warning(self.parent_widget, "Recycle Bin result", summary)
+        else:
+            QMessageBox.information(self.parent_widget, "Recycle Bin result", summary)
 
     def _finish_with_error(self, error) -> None:
         self._running = False
