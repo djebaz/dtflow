@@ -303,7 +303,7 @@ class MainWindow:
         self._run_settle.timeout.connect(self._sync_run_control)
         self.activity.listen(self._sync_run_control)
         self.activity.listen(self._sync_activity_progress)
-        form.destroyed.connect(self._retire_activity_presentation)
+        self.progress_strip.form.destroyed.connect(self._retire_activity_presentation)
         self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         for frame in (self.shell.brandFrame, self.shell.navigationFrame):
@@ -367,10 +367,10 @@ class MainWindow:
         self._responsive_workspace()
 
     def _retire_activity_presentation(self) -> None:
-        """Stop plain-Python activity listeners before the window's Qt children die."""
+        """Unsubscribe before Qt destroys the activity overlay's child widgets."""
         self.activity.unlisten(self._sync_run_control)
         self.activity.unlisten(self._sync_activity_progress)
-        self._run_settle.stop()
+        # The window owns the settling timer and stops it during destruction.
 
     def _sync_run_control(self) -> None:
         if self.progress_strip.retired:

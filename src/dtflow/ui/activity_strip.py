@@ -41,7 +41,7 @@ class ActivityStrip(QObject):
         self._retired = False
         self.feedback = None
         self.form.hide()
-        window.destroyed.connect(self._retire)
+        self.form.destroyed.connect(self._retire)
         self.host.installEventFilter(self)
         self.form.installEventFilter(self)
         self._notice_timer = QTimer(self.form)
@@ -60,13 +60,10 @@ class ActivityStrip(QObject):
 
     @Slot()
     def _retire(self):
-        """Detach from the central widget before Qt destroys its overlay children."""
-        if self._retired:
-            return
+        """Mark the strip retired before its Qt children are destroyed."""
         self._retired = True
-        self.host.removeEventFilter(self)
-        self.form.removeEventFilter(self)
-        self._notice_timer.stop()
+        # Qt removes event filters and stops child timers as their owners die.
+        # The destroyed signal must not call methods on a dying host or form.
         self._expiry.clear()
         self.rows.clear()
         self.feedback = None

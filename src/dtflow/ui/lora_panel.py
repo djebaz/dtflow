@@ -2,7 +2,7 @@
 
 Compatibility diagnostics come from the shared preflight service and receipts from the shared asset service; this
 module only collects choices and renders what those services return. The asset list is this machine's local registry,
-not DT+ account inventory, and Prepare is the one action that can upload (always behind a confirmation).
+not DT+ account inventory. Selecting a file through Prepare can upload it without a second confirmation.
 """
 
 import asyncio
@@ -22,13 +22,12 @@ from dtflow.services.connection import (
 )
 from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
 from dtflow.ui.activity_strip import activity_strip
-from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import choose_searchable
 
 UPLOAD_NOTICE = (
-    "Preparing this file may upload its bytes to DT+ if the server does not already have it. Uploading itself does "
-    "not consume credits, but a later generation that uses the file may. Nothing else in DTFlow uploads. Continue?"
+    "Prepare may upload the selected LoRA file to DT+ if the server does not already have it. "
+    "Uploading does not consume credits, but a later generation using this LoRA may."
 )
 DEFAULT_LORA_WEIGHT = 1.0
 CLOUD_ONLY = "Asset actions need the cloud backend (choose it on the Connection page)."
@@ -65,6 +64,7 @@ class LoraAssetPanel:
         page.removeLoraButton.clicked.connect(self.remove)
         page.checkLorasButton.clicked.connect(self.check)
         page.prepareAssetButton.clicked.connect(self.prepare)
+        page.prepareAssetButton.setToolTip(UPLOAD_NOTICE)
         self.sync_backend()
         self.refresh_assets()
 
@@ -250,34 +250,21 @@ class LoraAssetPanel:
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
     def prepare(self) -> None:
-        panel = feedback(self.page)
-        if panel.commit(self.page.prepareAssetButton):
-            return
-        if self._is_busy() or self._backend()[0] != "cloud":
-            return
-        chosen = self.choose_asset_file(self.page, self._state)
-        if not chosen:
+        if self._is_busy():
             return
         backend = self._backend()
-
-        def proceed():
-            if self._is_busy() or self._backend() != backend or backend[0] != "cloud":
-                return
-            self._set_busy(True)
-            self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", "This may upload the file."))
-            activity_strip(self.page).start(
-                "asset", "Preparing cloud asset", detail="May upload the selected file; waiting for receipt."
-            )
-            self._runner.submit(
-                prepare_asset(self._state, Path(chosen), provenance="gui", saved=self._saved()), self._prepared
-            )
-
-        confirm_action(
-            self.page,
-            self.page.prepareAssetButton,
-            "Prepare cloud asset",
-            f"{Path(chosen).name}\n\n{UPLOAD_NOTICE}",
-            proceed,
+        if backend[0] != "cloud":
+            return
+        chosen = self.choose_asset_file(self.page, self._state)
+        if not chosen or self._is_busy() or self._backend() != backend:
+            return  # Cancelled picker or backend/ownership changed while choosing.
+        self._set_busy(True)
+        self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", "This may upload the file."))
+        activity_strip(self.page).start(
+            "asset", "Preparing cloud asset", detail="May upload the selected file; waiting for receipt."
+        )
+        self._runner.submit(
+            prepare_asset(self._state, Path(chosen), provenance="gui", saved=self._saved()), self._prepared
         )
 
     def _prepared(self, record, failure) -> None:

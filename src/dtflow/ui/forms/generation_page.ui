@@ -1259,7 +1259,7 @@
                  <string>Prepare…</string>
                 </property>
                 <property name="toolTip">
-                 <string>The only action that can upload file bytes to DT+.</string>
+                 <string>May upload the chosen LoRA file to DT+. Uploading does not consume credits; later generation may.</string>
                 </property>
                </widget>
               </item>
@@ -1284,7 +1284,7 @@
             <item>
              <widget class="QLabel" name="assetNoteLabel">
               <property name="text">
-               <string>Local registry of receipts, not DT+ account inventory. Only Prepare uploads.</string>
+               <string>Local registry of receipts, not DT+ account inventory. Prepare may upload the chosen LoRA to DT+; uploading does not consume credits, but later generation may.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>

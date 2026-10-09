@@ -133,33 +133,33 @@ def cloud(window, monkeypatch):
     return fixture
 
 
-def prepare(window, qtbot, file, confirm=True):
+def prepare(window, qtbot, file, *, choose=True):
     panel, page = window.generation.lora, window.generation_page
     asked = []
-    panel.choose_asset_file = lambda parent, directory: asked.append(file.name) or str(file)
+
+    def select_file(parent, directory):
+        asked.append(file.name)
+        return str(file) if choose else ""
+
+    panel.choose_asset_file = select_file
     original = page.prepareAssetButton.text()
     page.prepareAssetButton.click()
-    assert page.prepareAssetButton.text() == "Confirm"
-    assert page.prepareAssetButton.property("confirmationPending") is True
-    details = window.inline.form.inlineTextBrowser.toPlainText()
-    assert file.name in details and UPLOAD_NOTICE in details
-    if confirm:
-        page.prepareAssetButton.click()
-        qtbot.waitUntil(lambda: page.generateButton.isEnabled(), timeout=5000)
-    else:
-        window.inline.form.inlineDismissButton.click()
     assert page.prepareAssetButton.text() == original
     assert not page.prepareAssetButton.property("confirmationPending")
+    if choose:
+        qtbot.waitUntil(lambda: page.generateButton.isEnabled(), timeout=5000)
     return asked
 
 
-def test_prepare_requires_confirmation_then_lists_a_local_receipt(window, cloud, qtbot, tmp_path):
+def test_prepare_starts_after_file_selection_and_lists_a_local_receipt(window, cloud, qtbot, tmp_path):
     page = window.generation_page
     assert "upload" in UPLOAD_NOTICE and "credits" in UPLOAD_NOTICE and "consume credits" in UPLOAD_NOTICE
+    assert UPLOAD_NOTICE == page.prepareAssetButton.toolTip()
     assert "not DT+ account inventory" in page.assetNoteLabel.text()
+    assert "does not consume credits" in page.assetNoteLabel.text()
     file = lora_file(tmp_path)
-    assert prepare(window, qtbot, file, confirm=False) == ["style.ckpt"]
-    assert cloud.puts == [] and cloud.api_calls == [] and page.assetList.count() == 0  # declined: nothing happened
+    assert prepare(window, qtbot, file, choose=False) == ["style.ckpt"]
+    assert cloud.puts == [] and cloud.api_calls == [] and page.assetList.count() == 0  # picker cancelled
 
     prepare(window, qtbot, file)
     qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=5000)
