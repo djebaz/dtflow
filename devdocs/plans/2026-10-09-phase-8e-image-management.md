@@ -1,7 +1,7 @@
 # Plan: Phase 8E saved-image selection and bulk deletion
 
 ## Status and scope
-Plan-first implementation work, not implemented or part of Phase 8D completion. See the [approved implementation subplan/task list](2026-10-09-phase-8e-implementation.md) and [owner UX reference](examples/phase-8e/owner-multiselect-ux-spec.md). The owner selects multi-image selection and bulk deletion from the existing 8E organisation candidates. Favourites, ratings, tags, notes and collections remain unapproved separate scope.
+In-progress draft implementation work, not a shipped/owner-accepted feature or part of Phase 8D completion. Selection, gallery controls and checked export handoff exist in source; durable recycling remains unimplemented and disabled. See the [approved implementation subplan/task list](2026-10-09-phase-8e-implementation.md) and [owner UX reference](examples/phase-8e/owner-multiselect-ux-spec.md). The owner selects multi-image selection and bulk deletion from the existing 8E organisation candidates. Favourites, ratings, tags, notes and collections remain unapproved separate scope.
 
 - In: multi-selection in the Images tab; checked-image export from both Images and Connection; Windows Recycle Bin actions for explicitly selected saved images, including a bounded, explicitly selected snapshot of images matching the current gallery filter across pages.
 - Out: exported-copy deletion, provider-side deletion, regeneration/replay, deleting unrelated images from the same attempt, broad filesystem cleanup, and changes to cache-cleanup ownership.
@@ -20,7 +20,7 @@ Plan-first implementation work, not implemented or part of Phase 8D completion. 
 - [x] Owner approved Windows Recycle Bin only (no permanent-delete fallback), clear confirmation for each move, a single-row selection toolbar with **Delete** as the gallery action label, and checked-image export initiated by gallery **Export** or from **Connection** through the same Connection workflow. Always-visible checkboxes, session-only cross-filter selection and the 10,000-item partial-fill rule follow the implementation subplan.
 - [ ] Finalize durable recovery/eligibility and concurrency details before enabling recycling.
 - [ ] Refine shared service/persistence boundaries and durable deletion/availability schema with a supported migration policy.
-- [ ] Implement Images multi-selection, contextual Export and Delete controls in one row and zero-selection Select page/Select all filtered commands through canonical Designer/shared widgets without changing single-image preview/reuse semantics.
+- [x] Implement Images multiselection, contextual Export and disabled Delete controls in one row and zero-selection Select page/Select all filtered commands through canonical Designer/shared widgets without changing single-image preview/reuse semantics. Source-only; owner visual/runtime acceptance pending.
 - [ ] Implement selected/all-filtered snapshot deletion and reconciliation with explicit safety bounds.
 - [ ] Extend authoritative offline selection/deletion contracts as separately authorized; validate preservation, cancellation and interrupted recovery without live generation.
 - [ ] Owner UI/runtime acceptance and relevant documentation/release-note synchronization.
