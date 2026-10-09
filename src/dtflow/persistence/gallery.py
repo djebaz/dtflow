@@ -232,5 +232,7 @@ def selection_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str
             return (), len(targets)
         for row in db.execute(BASE + "SELECT identity, path FROM records"):
             if row["identity"] in targets:
-                found[row["identity"]] = row["path"]
+                source = Path(row["path"])
+                if source.is_file() and not source.is_symlink():
+                    found[row["identity"]] = str(source)
     return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
