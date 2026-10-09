@@ -12,23 +12,26 @@ from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl, QSignalBlocker
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QColor, QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QAbstractSpinBox,
     QButtonGroup,
-    QComboBox,
     QCheckBox,
+    QComboBox,
     QFrame,
     QHeaderView,
     QLabel,
     QLineEdit,
     QMenu,
+    QPlainTextEdit,
     QProgressDialog,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -36,8 +39,8 @@ from PySide6.QtWidgets import (
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import GallerySelection, MAX_CHECKED_IMAGES
 from dtflow.core.models import ValidationError
-from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.persistence import gallery as gallery_storage
+from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_detail_preview import CoverPainter, RowHoverDelegate, apply_gallery
@@ -451,7 +454,7 @@ class GalleryPage(QObject):
     def _selection_shortcut(self, callback) -> None:
         """Do not steal standard editing, pop-up or global generation shortcuts."""
         focus = QApplication.focusWidget()
-        if focus is None or isinstance(focus, (QLineEdit, QComboBox)):
+        if focus is None or isinstance(focus, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QCheckBox)):
             return
         if self.page.findChild(QWidget, "galleryPromptSearch").hasFocus():
             return
@@ -547,6 +550,8 @@ class GalleryPage(QObject):
                 self.table.blockSignals(blocked)
 
     def _after_selection_edit(self) -> None:
+        if self._selection_busy:
+            self._cancel_selection_scan()
         self._selection_generation += 1
         self._sync_selection_ui()
         self._refresh_hidden_count()
@@ -613,7 +618,11 @@ class GalleryPage(QObject):
             self._select_page()
 
     def _select_page(self) -> None:
-        self.selection.add([item.identity for item in self.items])
+        wanted = [item.identity for item in self.items]
+        added = self.selection.add(wanted)
+        omitted = sum(identity not in self.selection.checked for identity in wanted)
+        if omitted:
+            self._selection_notice(f"{added} page images added; {omitted} omitted at the 10,000-image limit.")
         self._after_selection_edit()
 
     def _clear_all(self) -> None:
@@ -657,6 +666,7 @@ class GalleryPage(QObject):
         self._selection_busy = False
         self.select_filtered_button.setEnabled(True)
         if self._selection_progress is not None:
+            self._selection_progress.blockSignals(True)
             self._selection_progress.close()
             self._selection_progress = None
         self._selection_notice("Selection operation canceled; previous checks are retained.")
@@ -667,6 +677,7 @@ class GalleryPage(QObject):
         self._selection_busy = False
         self.select_filtered_button.setEnabled(True)
         if self._selection_progress is not None:
+            self._selection_progress.blockSignals(True)
             self._selection_progress.close()
             self._selection_progress = None
         if error is not None:
@@ -737,7 +748,7 @@ class GalleryPage(QObject):
             return
         paths, missing = result
         if paths:
-            QApplication.clipboard().setText("\\n".join(paths))
+            QApplication.clipboard().setText("\n".join(paths))
         self._selection_notice(f"Copied {len(paths)} paths; {missing} records unavailable.")
 
     def _open_checked_export(self) -> None:
