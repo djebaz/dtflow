@@ -511,8 +511,12 @@ class GalleryPage(QObject):
             self._header_check.setGeometry(position + 9, 5, 24, 24)
 
     def _selection_notice(self, text: str) -> None:
+        """Surface bulk-action results without adding another toolbar row."""
         self.selection_count.setToolTip(text)
         self.selection_bar.setToolTip(text)
+        window = self.page.window()
+        if hasattr(window, "statusBar"):
+            window.statusBar().showMessage(text, 8000)
 
     def _sync_selection_ui(self) -> None:
         count = len(self.selection.checked)
@@ -741,7 +745,9 @@ class GalleryPage(QObject):
         self._begin_selection_scan(mode="add")
 
     def _unselect_hidden(self) -> None:
-        if self._hidden_checks:
+        # Re-resolve the current filter even if an earlier hidden-count query
+        # has not completed. Never rely on a stale label to decide scope.
+        if self.selection.checked:
             self._begin_selection_scan(mode="clear-hidden")
 
     def _refresh_hidden_count(self) -> None:
