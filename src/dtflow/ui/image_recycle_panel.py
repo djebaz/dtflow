@@ -145,7 +145,7 @@ class ImageRecyclePanel(QObject):
             return
         self.gallery.recycle_completed(result.recycled)
         summary = (
-            f"{len(result.recycled)} moved to {TRASH_NAME}.\n"
+            f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.\n"
             f"{len(result.failed)} failed; {len(result.uncertain)} uncertain (manual review required).\n"
             f"{result.missing} missing; {result.ineligible} ineligible; "
             f"{result.unprocessed} unprocessed."
@@ -153,9 +153,16 @@ class ImageRecyclePanel(QObject):
         if result.failure_details:
             # Display only stable output IDs and sanitized operation stages.
             # Shell/OS exception messages may contain private paths.
-            summary += "\n\nFailure details:"
+            summary += "\n\nFailure / uncertainty details:"
             for identity, reason in result.failure_details[:5]:
-                summary += f"\n{identity}: {reason}"
+                if reason.startswith("trash_receipt_"):
+                    detail = (
+                        f"Qt reported a successful move to {TRASH_NAME}, but the destination could not "
+                        "be verified. Inspect system Trash; do not retry automatically."
+                    )
+                else:
+                    detail = reason
+                summary += f"\n{identity}: {detail}"
             if len(result.failure_details) > 5:
                 summary += f"\n… and {len(result.failure_details) - 5} more (see DTFlow logs)."
         if result.canceled:

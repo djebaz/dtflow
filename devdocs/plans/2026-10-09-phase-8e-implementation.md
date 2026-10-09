@@ -78,10 +78,4 @@ The first incremental code slice now exists on this draft branch: selection mode
 
 ## Qt system Trash follow-up (2026-10-09)
 
-The current adapter choice supersedes the earlier Windows-only implementation wording:
-see the [Qt implementation plan](2026-10-09-qt-system-trash.md) and [architecture](../architecture/image-recycling.md).
-Durable recycling, original-file coordination and UI wiring now exist in source;
-this does not settle the unchecked owner recovery/runtime acceptance gates above.
-The service remains Qt-free; the desktop injects the Qt adapter. Windows uses Recycle
-Bin wording and fixed-drive eligibility; Linux/macOS use Trash wording and conservative
-local-filesystem eligibility. No permanent deletion, dependencies or state schema changes.
+The current adapter choice supersedes the earlier Windows-only implementation wording: see the [Qt implementation plan](2026-10-09-qt-system-trash.md) and [architecture](../architecture/image-recycling.md). Durable recycling, original-file coordination and UI wiring now exist in source; this does not settle the unchecked owner recovery/runtime acceptance gates above. The service remains Qt-free; the desktop injects the Qt adapter. Windows uses Recycle Bin wording and other platforms use Trash. Qt capability detection and per-file move results replace OS/filesystem allowlists and fixed-drive gates; managed-original validation remains. Missing/unverifiable receipts remain uncertain, with explicit Qt-reported-success wording in results. No permanent deletion, dependencies or state schema changes.

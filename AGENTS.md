@@ -95,7 +95,7 @@ These instructions apply throughout `dtflow`.
 ## Saved-image system Trash
 
 - Keep `services/image_recycle.py` and persistence Qt-free. Inject the desktop's `ui/system_trash.py` adapter and non-mutating eligibility check; use worker-local QFile instances off the GUI thread.
-- Preserve managed-original eligibility, per-image durable intent/outcomes, original-file leases and uncertain recovery. No permanent-delete fallback or automatic replay. Follow [image recycling architecture](devdocs/architecture/image-recycling.md); filesystem eligibility and code presence do not establish Windows/Debian/macOS acceptance.
+- Preserve managed-original eligibility, per-image durable intent/outcomes, original-file leases and uncertain recovery. No permanent-delete fallback or automatic replay. Use Qt capability detection and let each move determine Trash usability; do not add OS/filesystem allowlists or fixed-drive gates. Keep missing/unverifiable receipts uncertain and distinguish Qt-reported success from confirmed availability. Follow [image recycling architecture](devdocs/architecture/image-recycling.md); capability detection and code presence do not establish Windows/Debian/macOS acceptance.
 
 ## Generation safety
 
