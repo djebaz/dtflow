@@ -155,20 +155,9 @@ outputs.
 
 ### Move checked originals to system Trash
 
-In the Phase 8E source implementation, **Delete** opens a confirmation, not permanent
-deletion. It includes hidden checked images and reports eligible/missing/ineligible
-counts. Cancel is the default. The destination is **Recycle Bin** on Windows and
-**Trash** on Linux/macOS. Only managed originals on eligible local filesystems are
-accepted; custom output roots and exported copies are excluded.
+In the Phase 8E source implementation, **Delete** opens a confirmation, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. Cancel is the default. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals on eligible local filesystems are accepted; custom output roots and exported copies are excluded.
 
-Moves run in the background one image at a time. Stop after current image preserves
-completed moves. Failed/uncertain selections remain checked for manual review; never
-retry an uncertain result without inspecting the files. Manually recovering a file
-to its recorded original path and explicitly refreshing can make it available again.
-There is no DTFlow Undo or guaranteed restoration (including no macOS Finder Put Back
-integration). No permanent-delete fallback exists. See [architecture and platform
-limitations](../architecture/image-recycling.md). Owner platform runtime/packaged
-acceptance is pending; the Qt adapter does not establish full Debian app support.
+Moves run in the background one image at a time. Stop after current image preserves completed moves. Failed/uncertain selections remain checked for manual review; never retry an uncertain result without inspecting the files. Manually recovering a file to its recorded original path and explicitly refreshing can make it available again. There is no DTFlow Undo or guaranteed restoration (including no macOS Finder Put Back integration). No permanent-delete fallback exists. See [architecture and platform limitations](../architecture/image-recycling.md). Owner platform runtime/packaged acceptance is pending; the Qt adapter does not establish full Debian app support.
 
 ## Remembered settings and diagnostics
 
