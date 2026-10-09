@@ -3,7 +3,7 @@
 import math
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRect, QTimer, Qt, Slot
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRect, Qt, QTimer, Slot
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFrame
 
