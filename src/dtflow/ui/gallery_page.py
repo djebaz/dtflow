@@ -43,7 +43,7 @@ from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.button_focus import KeyboardFocusGuard
-from dtflow.ui.gallery_detail_preview import CoverPainter, RowHoverDelegate, apply_gallery
+from dtflow.ui.gallery_detail_preview import ASSETS, CoverPainter, RowHoverDelegate, apply_gallery
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
@@ -424,6 +424,16 @@ class GalleryPage(QObject):
         self.export_button.clicked.connect(self._open_checked_export)
         self.delete_button.clicked.connect(self._request_recycle)
         self.detail_check.toggled.connect(self._detail_check_toggled)
+        for control, icon in (
+            (self.select_page_button, "select-page"),
+            (self.select_filtered_button, "layers"),
+            (self.copy_paths_button, "copy"),
+            (self.more_button, "more"),
+            (self.export_button, "export"),
+            (self.delete_button, "delete"),
+        ):
+            control.setIcon(QIcon(str(ASSETS / f"{icon}.svg")))
+            control.setIconSize(QSize(16, 16))
 
         clear_menu = QMenu(self.clear_selection_button)
         clear_menu.addAction("Clear hidden", self._clear_hidden)
