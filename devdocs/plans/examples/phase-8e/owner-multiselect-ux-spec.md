@@ -5,9 +5,9 @@
 
 # DTFlow — Gallery Multi-Selection and Bulk Actions
 
-**Status:** Proposed implementation specification; not implemented or verified.  
-**Scope:** Phase 8E, Images workspace (Grid, List, Detail).  
-**References:** Two project Library mockups (`DTFlow Dark Mode Image Gallery.png`, `image-gen-3(8).png`); `AGENTS.md`; `DESIGN.md`; `devdocs/current_dev_status.md`; `devdocs/plans/2026-10-05-phase-8a-viewer.md`; `src/dtflow/ui/gallery_page.py` on repository `djebaz/dtflow` main, inspected October 9, 2026.  
+**Status:** Proposed implementation specification; not implemented or verified.
+**Scope:** Phase 8E, Images workspace (Grid, List, Detail).
+**References:** Two project Library mockups (`DTFlow Dark Mode Image Gallery.png`, `image-gen-3(8).png`); `AGENTS.md`; `DESIGN.md`; `devdocs/current_dev_status.md`; `devdocs/plans/2026-10-05-phase-8a-viewer.md`; `src/dtflow/ui/gallery_page.py` on repository `djebaz/dtflow` main, inspected October 9, 2026.
 **Status of UX decisions:** This document proposes new choices where the references do not establish agreed behavior. These should be owner-approved before implementation.
 
 ## 1. Goal and non-goals
