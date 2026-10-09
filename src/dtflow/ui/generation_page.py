@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.composition import BACKENDS
+from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
@@ -375,7 +376,32 @@ class GenerationPage:
         page.heightSpinBox.setValue(values.height)
         page.stepsSpinBox.setValue(values.steps)
         page.guidanceSpinBox.setValue(values.guidance)
-        page.samplerCombo.setCurrentText(values.sampler)
+        self._filter_samplers(keep=values.sampler)
+
+    def _filter_samplers(self, keep: str | None = None) -> None:
+        """Offer the samplers that suit the selected model; a model with no profile offers all of them.
+
+        ``keep`` is a sampler the caller restores on purpose (a loaded configuration), so it stays selectable even when
+        the dataset would not suggest it. Otherwise an unsuitable current sampler switches to the model's recommended one.
+        """
+        page = self.page
+        combo = page.samplerCombo
+        model = page.modelCombo.currentText()
+        entry = self._catalogue.checkpoint(model, include_unavailable=True) if model else None
+        profile = profile_for(model, entry.base_model if entry else None) if model else None
+        allowed = [item.value for item in profile.samplers] if profile else list(SAMPLERS)
+        wanted = keep or combo.currentText()
+        if wanted not in allowed:
+            if keep:
+                allowed.append(keep)
+            elif profile:
+                wanted = profile.sampler.value
+        if [combo.itemText(i) for i in range(combo.count())] != allowed:
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(allowed)
+            combo.blockSignals(False)
+        combo.setCurrentText(wanted if wanted in allowed else allowed[0])
 
     PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
 
@@ -919,6 +945,7 @@ class GenerationPage:
     def _catalogue_checkpoint_changed(self, *_args) -> None:
         if not self._updating_catalogue:
             self._filter_loras()
+        self._filter_samplers()
 
     def _rebuild_catalogue(
         self,

@@ -38,8 +38,28 @@ class ErrorCategory(StrEnum):
 
 
 class Sampler(StrEnum):
+    """Backend-neutral sampler ids; the first two predate the others and keep their saved spelling."""
+
     EULER_A = "euler_a"
     DPMPP_2M_KARRAS = "dpmpp_2m_karras"
+    DDIM = "ddim"
+    PLMS = "plms"
+    DPMPP_SDE_KARRAS = "dpmpp_sde_karras"
+    UNIPC = "unipc"
+    LCM = "lcm"
+    EULER_A_SUBSTEP = "euler_a_substep"
+    DPMPP_SDE_SUBSTEP = "dpmpp_sde_substep"
+    TCD = "tcd"
+    EULER_A_TRAILING = "euler_a_trailing"
+    DPMPP_SDE_TRAILING = "dpmpp_sde_trailing"
+    DPMPP_2M_AYS = "dpmpp_2m_ays"
+    EULER_A_AYS = "euler_a_ays"
+    DPMPP_SDE_AYS = "dpmpp_sde_ays"
+    DPMPP_2M_TRAILING = "dpmpp_2m_trailing"
+    DDIM_TRAILING = "ddim_trailing"
+    UNIPC_TRAILING = "unipc_trailing"
+    UNIPC_AYS = "unipc_ays"
+    TCD_TRAILING = "tcd_trailing"
 
 
 class Designation(StrEnum):
@@ -439,7 +459,7 @@ class PreflightDiagnostic:
 class Capabilities:
     backend_id: str
     operations: tuple[str, ...] = ("txt2img",)
-    samplers: tuple[Sampler, ...] = (Sampler.EULER_A, Sampler.DPMPP_2M_KARRAS)
+    samplers: tuple[Sampler, ...] = tuple(Sampler)
     model_ids: tuple[str, ...] = ()
     max_concurrency: int = 1
     batch_size: int = 1

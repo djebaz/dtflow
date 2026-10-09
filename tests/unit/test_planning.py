@@ -108,7 +108,7 @@ def test_dry_run_table_matches_the_expansion_without_persisting_anything():
         (Plan("cross", (("prompt", ("a",)),), seed_policy="random"), "Seed policy"),
         (Plan("cross", (("steps", (4, 500)),)), "steps"),
         (Plan("cross", (("steps", (True, 8)),)), "steps"),
-        (Plan("cross", (("sampler", ("ddim",)),)), "sampler"),
+        (Plan("cross", (("sampler", ("not-a-sampler",)),)), "sampler"),
         (Plan("cross", (("size", ((512, 200),)),)), "multiple of 64"),
         (Plan("cross", (("size", ((512,),)),)), "pair"),
         (Plan("cross", (("seed", (-1,)),)), "seed"),

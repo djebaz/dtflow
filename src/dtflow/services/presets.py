@@ -18,7 +18,16 @@ from dtflow.core.models import LoRASelection, ValidationError
 PRESETS_DIR = "presets"
 PRESETS_FILE = "custom_configs.json"
 MAX_PRESET_BYTES = 4 * 1024 * 1024
-SAMPLER_FROM_DRAW_THINGS = {0: "dpmpp_2m_karras", 1: "euler_a"}
+# Draw Things sampler enum order (drawthings-py generated SamplerType); index is the wire/preset value.
+SAMPLER_FROM_DRAW_THINGS = dict(
+    enumerate(
+        (
+            "dpmpp_2m_karras euler_a ddim plms dpmpp_sde_karras unipc lcm euler_a_substep dpmpp_sde_substep tcd "
+            "euler_a_trailing dpmpp_sde_trailing dpmpp_2m_ays euler_a_ays dpmpp_sde_ays dpmpp_2m_trailing "
+            "ddim_trailing unipc_trailing unipc_ays tcd_trailing"
+        ).split()
+    )
+)
 SAMPLER_TO_DRAW_THINGS = {value: key for key, value in SAMPLER_FROM_DRAW_THINGS.items()}
 
 
