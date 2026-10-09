@@ -1,7 +1,7 @@
 # Subplan: Phase 8E multi-selection, checked-image export and Recycle Bin
 
 **Date:** 2026-10-09
-**Status:** Plan-first implementation PR; runtime work has not started. Owner-approved interaction direction, subject to scoped implementation and owner acceptance.
+**Status:** In-progress draft implementation PR. Session-only selection, Grid/List/Detail controls, one-row toolbar and Connection checked-ID export handoff are implemented in source but not agent/owner runtime-verified. Recycle Bin deletion remains disabled pending durable safety service and owner acceptance.
 **Parent:** [8E image management](2026-10-09-phase-8e-image-management.md).
 **Reference:** [Owner UX specification and mockups](examples/phase-8e/owner-multiselect-ux-spec.md).
 
@@ -26,19 +26,19 @@
 
 ### 8E-1 — Selection model and query snapshots
 - [ ] Audit canonical GalleryItem/identity/query/paging and viewer preference contracts; preserve existing focused-item persistence compatibility.
-- [ ] Add backend-neutral checked/focused/anchor state and a bounded selected-ID snapshot path. Keep checkbox toggling local; do not query/decode on each click.
+- [x] Add backend-neutral checked/focused/anchor state and a bounded selected-ID snapshot path. Checkbox toggling remains local, without image decoding or requery on ordinary clicks; source presence only, Windows acceptance pending.
 - [ ] Define authoritative removal versus unloaded/filtered/missing-file state; retain missing/unloaded checks and prune only confirmed unavailable records with visible feedback.
-- [ ] Resolve all-filtered selection and hidden counts off-thread without materializing image/metadata payloads; merge checked IDs in deterministic filter/sort order until the **combined** set reaches 10,000. Report added, already checked and omitted-at-limit counts; cancellation leaves the previous checked set unchanged.
+- [x] Resolve all-filtered selection and hidden counts off-thread without materializing image/metadata payloads; merge checked IDs in deterministic filter/sort order until the **combined** set reaches 10,000. Report added and omitted-at-limit counts; cancellation leaves prior checks unchanged. Source-only; runtime acceptance pending.
 
 ### 8E-2 — Images presentation and read-only actions
-- [ ] Implement Grid/List/Detail checkbox parity and separate focus/check styling through shared widgets/forms.
-- [ ] Add an always-accessible selection/status row with zero-selection page/all-filtered commands, visible total/hidden checked counts, clear-hidden/clear-all, **Export** and **Delete** controls, copy paths, keyboard and accessible labels. Keep this toolbar in one row at every window width by collapsing secondary actions into an overflow menu; do not wrap or truncate labels.
+- [x] Implement Grid/List/Detail checkbox parity and separate focus/check styling through shared widgets/forms; offline sample fixture remains illustrative and its destructive/export controls are disabled. Source-only; visual acceptance pending.
+- [x] Add a one-row selection/status bar with zero-selection page/all-filtered commands, visible total/hidden checked counts, clear-hidden/clear-all, **Export**, disabled **Delete**, copy paths, keyboard and accessible labels. Secondary controls collapse into More at narrower widths. Source-only; DPI and Windows smoke remain open.
 - [ ] Preserve paging, view/tab/filter/sort/refresh continuity and existing thumbnail/preview state.
 - [ ] Verify narrow-window/high-DPI action accessibility without changing global shell geometry or tokens unnecessarily.
 
 ### 8E-3 — Shared checked-image export and both entry points
-- [ ] Expose a read-only checked-ID snapshot seam; keep the existing single-focused-image export scope.
-- [ ] Add Checked images in Images to Connection's export scope; empty selection produces an honest message. Add the Images contextual **Export** action, which activates the existing Connection export workflow with this scope selected (no duplicate configuration/dialog).
+- [x] Expose a read-only checked-ID snapshot seam; keep the existing single-focused-image export scope.
+- [x] Add Checked images in Images to Connection's export scope; empty selection produces an honest message. The Images contextual **Export** action activates the existing Connection workflow with this scope selected (no duplicate configuration/dialog). Source-only; owner export smoke pending.
 - [ ] Freeze exact identities at export start from either entry point; explicitly include/count hidden checks, and reuse services/image_export.py without duplicating export rules. Preserve the other Connection scopes and destination/privacy preferences.
 - [ ] Keep export and recycle operations coordinated; checking or copying paths must never trigger generation or mutation.
 
@@ -74,4 +74,4 @@
 These are engineering audit tasks, not requests to reopen the approved UX: durable availability schema, managed/custom output-root eligibility, Windows recycle adapter, reader/writer coordination and interrupted-operation reconciliation. Record evidence/choices before the corresponding destructive code is enabled. No irreversible fallback or broad filesystem cleanup is permitted.
 
 ## Validation and acceptance ledger
-Initial deliverable is documentation/reference-only. Runtime behavior, selection, recycling and checked-image export are not implemented or verified by this commit. No new tests, agent smoke, file recycling/deletion, inference, provider calls, packaging or billable actions. Parent 8D acceptance does not establish 8E acceptance.
+The first incremental code slice now exists on this draft branch: selection model/query snapshots, canonical Qt Grid/List/Detail controls, single-row toolbar/icons/overflow, illustrative fixture and checked-scope export handoff to Connection. This is **source presence, not runtime verification or owner acceptance**. No new tests, agent smoke, Windows Recycle Bin calls, file deletion, inference, provider calls, packaging or billable actions were performed. 8E-4/8E-5 destructive work and the original-file concurrency/availability contracts remain open; Delete is disabled. Parent 8D acceptance does not establish 8E acceptance.
