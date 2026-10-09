@@ -8,7 +8,7 @@
   <property name="windowTitle">
    <string>DTFlow — Images</string>
   </property>
-  <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,1">
+  <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,0,1">
    <item>
     <widget class="QWidget" name="galleryBrandRow">
      <layout class="QHBoxLayout" name="galleryBrandRowLayout" stretch="0,1">
@@ -653,6 +653,110 @@
    <property name="spacing">
     <number>8</number>
    </property>
+   <item>
+    <widget class="QFrame" name="gallerySelectionBar">
+     <property name="role" stdset="0"><string>gallerySelectionBar</string></property>
+     <property name="minimumSize"><size><width>0</width><height>52</height></size></property>
+     <property name="maximumSize"><size><width>16777215</width><height>52</height></size></property>
+     <layout class="QHBoxLayout" name="gallerySelectionBarLayout">
+      <property name="leftMargin"><number>10</number></property>
+      <property name="rightMargin"><number>10</number></property>
+      <property name="topMargin"><number>7</number></property>
+      <property name="bottomMargin"><number>7</number></property>
+      <property name="spacing"><number>7</number></property>
+     <item>
+      <widget class="QLabel" name="gallerySelectedCountLabel">
+       <property name="text"><string>0 selected</string></property>
+       <property name="role" stdset="0"><string>gallerySelectionCount</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="galleryHiddenCountLabel">
+       <property name="text"><string>0 hidden</string></property>
+       <property name="role" stdset="0"><string>secondary</string></property>
+       <property name="toolTip"><string>Checked outputs outside the current gallery filters are included in bulk actions.</string></property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="gallerySelectionSpacer">
+       <property name="orientation"><enum>Qt::Horizontal</enum></property>
+       <property name="sizeHint" stdset="0"><size><width>8</width><height>0</height></size></property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="gallerySelectPageButton">
+       <property name="text"><string>Select page</string></property>
+       <property name="accessibleName"><string>Select page</string></property>
+       <property name="toolTip"><string>Check all outputs currently loaded on this page.</string></property>
+       <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
+       <property name="enabled"><bool>true</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="gallerySelectFilteredButton">
+       <property name="text"><string>Select all filtered</string></property>
+       <property name="accessibleName"><string>Select all filtered</string></property>
+       <property name="toolTip"><string>Add every matching output across pages, up to 10,000 checked in total.</string></property>
+       <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
+       <property name="enabled"><bool>true</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="galleryClearButton">
+       <property name="text"><string>Clear ▾</string></property>
+       <property name="accessibleName"><string>Clear ▾</string></property>
+       <property name="toolTip"><string>Clear hidden selections or clear all checked images.</string></property>
+       <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
+       <property name="enabled"><bool>true</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="galleryCopyPathsButton">
+       <property name="text"><string>Copy paths</string></property>
+       <property name="accessibleName"><string>Copy paths</string></property>
+       <property name="toolTip"><string>Copy paths of checked available outputs.</string></property>
+       <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
+       <property name="enabled"><bool>true</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QCheckBox" name="galleryDetailSelectionCheck">
+       <property name="text"><string>Select image</string></property>
+       <property name="accessibleName"><string>Check the current Detail image for bulk actions</string></property>
+       <property name="toolTip"><string>Check or uncheck the image being previewed, without changing other selections.</string></property>
+       <property name="visible"><bool>false</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="galleryMoreButton">
+       <property name="text"><string>More ▾</string></property>
+       <property name="accessibleName"><string>More ▾</string></property>
+       <property name="toolTip"><string>More selection commands, including actions hidden at narrow widths.</string></property>
+       <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
+       <property name="enabled"><bool>true</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="galleryExportButton">
+       <property name="text"><string>Export</string></property>
+       <property name="accessibleName"><string>Export</string></property>
+       <property name="toolTip"><string>Open the existing Connection export workflow for checked images.</string></property>
+       <property name="role" stdset="0"><string>galleryExportAction</string></property>
+       <property name="enabled"><bool>false</bool></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="galleryDeleteButton">
+       <property name="text"><string>Delete</string></property>
+       <property name="accessibleName"><string>Delete</string></property>
+       <property name="toolTip"><string>Move eligible checked originals to Windows Recycle Bin after confirmation.</string></property>
+       <property name="role" stdset="0"><string>danger</string></property>
+       <property name="enabled"><bool>false</bool></property>
+      </widget>
+     </item>
+     </layout>
+    </widget>
+   </item>
    <item>
     <widget class="QStackedWidget" name="galleryContentStack">
      <widget class="QWidget" name="galleryDetailContent">
