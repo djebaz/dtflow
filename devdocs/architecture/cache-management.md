@@ -22,4 +22,4 @@ Permission or I/O failures during removal can leave partial cleanup. The service
 
 ## Acceptance
 
-Code implementation does not establish owner/runtime or packaged acceptance. Under fast-implement no new tests or agent test/smoke execution was performed. See the [8D plan and smoke checklist](../plans/2026-10-09-phase-8d-cache-completion.md). Offline temporary directories suffice for preservation/contention/path-safety validation; no generation is required.
+Owner accepted the selected 8D source/runtime scope on 2026-10-09 after successful smoke tests and passing CI at runtime head bb92217. This is owner-reported source smoke, not agent GUI verification or packaged acceptance. Under fast-implement no new tests or agent test/smoke execution was performed. See the [8D plan and smoke checklist](../plans/2026-10-09-phase-8d-cache-completion.md). Offline temporary directories suffice for preservation/contention/path-safety validation; no generation is required.

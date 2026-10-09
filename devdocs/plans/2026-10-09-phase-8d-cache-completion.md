@@ -12,7 +12,7 @@
 - [x] Reconcile inventory/thumbnails/derived documentation: gallery thumbnails are currently in-memory; PR #55 writes derived/image_analysis.json.
 - [x] Review existing authoritative preservation/category coverage and record remaining validation scenarios without duplicating tests across layers.
 - [x] Run repo-defined static checks, synchronize status/architecture/desktop/unreleased documentation, and commit/push coherent checkpoints.
-- [ ] Owner final tests and cache-management smoke acceptance.
+- [x] Owner cache-management smoke acceptance and passing CI at runtime head bb92217.
 
 ## Decisions and Design Changes
 - 2026-10-09: PR #55 squash-merged as bca51e60a3e363b3c279e473020ca4b698a79d18. This follow-up is separate from completed export delivery.
@@ -25,8 +25,8 @@
 - None blocking for 8D. 8E deletion/recovery and selection policies remain separate pre-implementation decisions.
 
 ## Validation
-- Runtime implementation and docs are present; owner acceptance is pending. Cache-only control file remains outside purge categories; bounded preflight rejects redirected roots/categories/nested paths before deleting any selected tree. Partial failures report completed/failing categories and refresh sizes.
-- Under fast-implement, no new tests or agent test/smoke execution. Final validation remains with the owner unless explicitly requested otherwise.
+- Runtime implementation and docs are present; the owner accepted the selected 8D scope after green CI and successful smoke tests on 2026-10-09. Cache-only control file remains outside purge categories; bounded preflight rejects redirected roots/categories/nested paths before deleting any selected tree. Partial failures report completed/failing categories and refresh sizes.
+- Under fast-implement, no new tests or agent test/smoke execution. Owner source-smoke acceptance is recorded below; packaged acceptance is outside this PR.
 - Acceptance must cover category measurement/purge, durable-output/state preservation, active export/inventory/cache activity, concurrent starts, failures, cache recreation and no-cache behavior. Offline temporary fixtures only; no real generation is needed.
 - No inference, training, billable actions, packaging or release.
 
@@ -47,13 +47,19 @@
 
 ## Owner test feedback and startup contention fix
 - Owner ran the offline suite at 9397d03: 425 passed, 3 skipped, one failure in test_cache_prefills_the_model_list_and_a_bypass_ignores_it (cached model not restored within three seconds).
-- Source inspection identified transient ownership contention between startup cache measurement and simultaneous persistence reads: immediate busy-to-miss handling can discard the current valid observation. Persistence transactions now wait at most 0.5 seconds, including OS-lock contention; purge, measurement and export acquisition stay nonblocking. Owner rerun is required; no agent test execution or new tests.
+- Source inspection identified transient ownership contention between startup cache measurement and simultaneous persistence reads: immediate busy-to-miss handling can discard the current valid observation. Persistence transactions now wait at most 0.5 seconds, including OS-lock contention; purge, measurement and export acquisition stay nonblocking. Owner subsequently reported the targeted test passed, then accepted the source scope after passing CI and smoke; no agent test execution or new tests.
 
 ## Owner follow-up feedback
 - Owner reports the targeted cache-prefill test passed after 9cf3883; this is not a full-suite rerun.
 - Owner smoke: inventory dropped from about 500 KB to zero after cleanup, but the displayed size stayed zero after inventory refresh. Read-only inspection found cloud_inventory.json rebuilt at 533,044 bytes: disk persistence worked, the size label was stale.
-- Connection now requests asynchronous remeasurement after inventory refresh, generation settlement, export completion/cancellation/failure and when returning to Connection. Superseded measurement callbacks cannot overwrite newer requests. Owner display smoke/rerun pending; no agent tests or smoke.
+- Connection now requests asynchronous remeasurement after inventory refresh, generation settlement, export completion/cancellation/failure and when returning to Connection. Superseded measurement callbacks cannot overwrite newer requests. Owner subsequently accepted source smoke after the display fixes; no agent tests or smoke.
 
 ## Startup size-measurement follow-up
 - Owner reports Cache is busy at launch; logs confirm measurement contention concurrent with inventory restore. The UI previously retained this short-lived busy error until another refresh.
-- UI size measurement now retries only CacheBusyError asynchronously for up to one second; cleanup remains immediate and genuine prolonged contention remains visible. No agent tests/smoke; owner launch/display acceptance pending.
+- UI size measurement now retries only CacheBusyError asynchronously for up to one second; cleanup remains immediate and genuine prolonged contention remains visible. No agent tests/smoke; owner subsequently accepted launch/display smoke.
+
+## Acceptance recorded — 2026-10-09
+- Owner reports all CI green and smoke tests okay, and explicitly requests recording acceptance. Selected Phase 8D source/runtime scope is accepted; no implementation blockers remain for this PR.
+- GitHub CI at runtime head bb92217c99e1b79360904918076f154ed97c007b: Lock, lint, test succeeded, run 37949919102. Verified live; a separate skipped run is not counted as test evidence. Earlier owner full-suite failure/targeted-pass history is retained above; no separate latest owner full-suite count is invented.
+- Owner smoke acceptance is an owner report, not agent GUI verification or proof that every isolated adversarial filesystem scenario was individually exercised. No new dedicated cleanup/path-safety tests were added under fast-implement.
+- Phase 8E remains planned-only. No packaged executable, release, provider generation or billable-action acceptance is implied. Documentation-only acceptance update does not change the accepted runtime code.

@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 
-**Status:** Phase 8A is implemented. PR #46 implements 8B presets, 8C reuse/regeneration and 8D disposable-cache management for the proposed 0.4.0 gate; owner/runtime acceptance remains pending.
+**Status:** Phase 8A is implemented. PR #46 implements 8B presets, 8C reuse/regeneration and 8D disposable-cache management for the proposed 0.4.0 gate; 8D source/runtime scope was owner-accepted on 2026-10-09 after green CI and smoke (see the [8D completion ledger](2026-10-09-phase-8d-cache-completion.md)); other phase/packaged gates remain separate.
 
 **Target:** Proposed 0.4.0 daily-use refinement, subject to the [release roadmap](releases.md).
 
