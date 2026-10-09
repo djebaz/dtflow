@@ -19,7 +19,7 @@ remain visible through refresh failures and cache-only startup.
 Windows Credential Manager stores a saved cloud API key outside ordinary configuration files.
 
 Action confirmations and notices stay inside the main window. Confirm changes the original
-button to red for Delete/Clear and amber otherwise; Cancel stays in the shared bottom overlay. Searchable checkpoint and one-step
+button to red for Delete/Clear and mint/teal (matching Auto-refresh ON) otherwise; Cancel stays in the shared bottom overlay. Searchable checkpoint and one-step
 LoRA/weight editors avoid extra windows, while file/folder pickers remain native.
 Confirmations, progress and results share one thin bottom overlay without resizing content. Essential information stays visible; Export starts without confirmation. Successful operation results dismiss after six seconds (paused on hover or keyboard focus); errors and partial/stopped results remain until dismissed.
 

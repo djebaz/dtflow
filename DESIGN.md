@@ -409,9 +409,9 @@ Grid and Detail selection indicators share List's explicit white tick/partial SV
 Application-owned dialogs are replaced by the canonical `inline_feedback.ui` surface,
 with `ui/inline_feedback.py` handling presentation only. Keep native file/folder pickers
 and ordinary menus. Only Confirm occupies the original action slot, preserving its width;
-its amber background reuses `color.warning`, `color.background` and
-`color.statusWarningBorder`; Delete/Clear override with `color.dangerBorder` and
-`color.onAccent` for a red confirmation. Cancel is in the shared bottom overlay, not the original action row. No timer;
+its non-destructive styling reuses Auto-refresh ON's `color.connectionSurface`,
+`color.connectionAccent` and `color.connectionGlyph` tokens; Delete/Clear override
+with `color.dangerBorder` and `color.onAccent` for a red confirmation. Cancel is in the shared bottom overlay, not the original action row. No timer;
 Cancel/Escape/navigation/relevant scope edits disarm pending consent. Do not count a mouse
 double-click as two independent consent activations. Preserve the full destructive/upload/
 credit warning and all service-level safety checks.
@@ -437,13 +437,15 @@ small body copy, 5 px progress track with separate count and Stop). Long essenti
 messages wrap directly; no Details toggle. Expanded selection/name editors and explicit
 metadata inspection stay in the same overlay; long metadata remains scrollable.
 
-Use existing selection/blue tokens for progress/info, connection/teal for success,
-danger/red for errors and Delete/Clear confirmation, and warning/amber for other
-confirmation and partial/stopped results. Non-destructive confirmation uses the
-neutral charcoal button/surface gradient and warning border, with a warning-colored
-icon; danger red is reserved for actual errors or destructive consent. Repolish the
-inline icon as well as the form when the feedback state changes so amber or red does
-not leave a stale blue icon. Reuse shared fonts, radius and native DPI
+Use existing selection/blue tokens for progress/info, connection/mint-teal for
+success and non-destructive confirmation, danger/red for errors and Delete/Clear
+confirmation, and warning/amber for partial/stopped results. Non-destructive
+confirmation reuses Auto-refresh ON's connectionSurface-to-surface treatment,
+connectionAccent border and connectionGlyph icon; Cancel remains neutral. The
+warning text still explicitly describes possible uploads or charges; confirmation
+does not imply successful completion. Repolish the inline icon as well as the form
+when its feedback state changes, avoiding a stale blue icon. Reuse shared fonts,
+radius and native DPI
 rather than hardcoding the HTML's pixel font sizes. Confirm remains on the original
 button with stable width; Cancel is in the overlay. Export has no extra confirmation.
 

@@ -9,7 +9,7 @@ checkpoint/LoRA editors stay inside the main window. Native file/folder pickers 
 menus remain available. No confirmation opens a separate window or nested dialog event loop.
 
 A guarded action first displays its explanation and changes only its original button to
-**Confirm**, red for Delete/Clear and amber otherwise, without adding Cancel to the action row. **Cancel** is in the shared
+**Confirm**, red for Delete/Clear and mint/teal (matching Auto-refresh ON) otherwise, without adding Cancel to the action row. **Cancel** is in the shared
 bottom feedback overlay. Nothing executes on the first activation. Cancel, Escape, navigation,
 provider changes and relevant selection/filter changes discard pending consent; there is no
 timer. Confirm keeps frozen file/queue/Trash scope, with busy checks and destructive-service

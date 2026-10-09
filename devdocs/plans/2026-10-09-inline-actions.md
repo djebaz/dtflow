@@ -65,6 +65,16 @@
   blue when the panel becomes amber or red. Preserve red Delete/Clear semantics,
   cancellation, upload warnings and service behavior.
 
+## Affirmative consent palette refinement (2026-10-09)
+- Owner superseded the previous amber confirmation palette: use the same existing
+  mint/teal tokens as Auto-refresh ON (`color.connectionSurface`,
+  `color.connectionAccent`, `color.connectionGlyph`) for non-destructive
+  Confirm buttons and their inline feedback state.
+- Keep Delete/Clear Confirm red, other primary actions blue, Cancel neutral,
+  partial/stopped warnings amber, and real errors red.
+- Preserve two-click consent, upload/credit text, frozen scopes and controller
+  safety. This changes presentation only; no new tokens or model/provider behavior.
+
 ## Open questions
 - None.
 

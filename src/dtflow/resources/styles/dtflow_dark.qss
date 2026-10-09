@@ -1434,9 +1434,12 @@ QFrame#inlineFeedback, QWidget#activityProgressRow {
   border: 1px solid ${color.selectionBorder};
   border-radius: ${size.radius};
 }
-/* Non-destructive consent has a neutral charcoal surface with amber accents.
-   Red danger tint is reserved for Delete/Clear and actual errors. */
-QFrame#inlineFeedback[feedbackState="confirm"],
+/* Non-destructive consent reuses the Auto-refresh ON mint/teal palette.
+   Red danger tint remains reserved for Delete/Clear and errors. */
+QFrame#inlineFeedback[feedbackState="confirm"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.connectionSurface}, stop:1 ${color.surface});
+  border-color: ${color.connectionAccent};
+}
 QFrame#inlineFeedback[feedbackState="partial"] {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.button}, stop:1 ${color.surface});
   border-color: ${color.statusWarningBorder};
@@ -1486,7 +1489,10 @@ QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activitySymbol {
   background: ${color.dangerSurface};
   color: ${color.warning};
 }
-QLabel#inlineSymbol[feedbackState="confirm"],
+QLabel#inlineSymbol[feedbackState="confirm"] {
+  background: ${color.connectionSurface};
+  color: ${color.connectionGlyph};
+}
 QLabel#inlineSymbol[feedbackState="partial"] {
   background: ${color.buttonPressed};
   color: ${color.warning};
@@ -1517,7 +1523,7 @@ QPushButton#activityDismissButton {
   color: ${color.secondary};
 }
 
-/* Explicit consent is amber; Cancel stays in the separate inline details panel. */
+/* Non-destructive Confirm reuses Auto-refresh ON; Cancel stays neutral in feedback. */
 QPushButton[confirmationPending="true"]:enabled,
 QPushButton#importPresetsButton[confirmationPending="true"]:enabled,
 QPushButton#clearInventoryCacheButton[confirmationPending="true"]:enabled,
@@ -1532,9 +1538,9 @@ QPushButton#cancelQueueButton[confirmationPending="true"]:enabled,
 QPushButton#clearQueuesButton[confirmationPending="true"]:enabled,
 QPushButton#overrideReservationButton[confirmationPending="true"]:enabled,
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"]:enabled {
-  background: ${color.warning};
-  color: ${color.background};
-  border: 1px solid ${color.statusWarningBorder};
+  background: ${color.connectionSurface};
+  color: ${color.connectionGlyph};
+  border: 1px solid ${color.connectionAccent};
   font-weight: ${type.weightEmphasis};
 }
 

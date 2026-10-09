@@ -113,7 +113,7 @@ The reviewer accepts aa1fd2e's restoration/preflight/header source fixes. A furt
 ## Inline desktop enhancement (PR #58, 2026-10-09)
 
 Source implementation replaces application-owned dialogs with inline notices/editors and
-in-place Confirm buttons (red for Delete/Clear, amber otherwise); Cancel is separate, with no timeout. Native file/folder
+in-place Confirm buttons (red for Delete/Clear, mint/teal like Auto-refresh ON otherwise); Cancel is separate, with no timeout. Native file/folder
 pickers stay. LoRA selection and 0.0–3.0/0.1-step weight entry commit in one step. Active
 progress uses a bottom overlay hidden when idle, with separate concurrent-operation rows.
 Existing destructive/upload/credit safeguards remain; no release/version change.
