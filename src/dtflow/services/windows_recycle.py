@@ -88,10 +88,15 @@ def recycle_file(path: Path) -> None:
     # shared with or operated from the GUI thread.
     ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
     ole32.CoInitializeEx.restype = ctypes.c_long
-    _check(ole32.CoInitializeEx(None, 2), "COM initialization", "com_initialize")
+    # Balance every successful CoInitializeEx, including S_FALSE (COM already
+    # initialized on this thread). Never call CoUninitialize if it failed.
+    com_initialized = False
     operation = ctypes.c_void_p()
     item = ctypes.c_void_p()
     try:
+        result = ole32.CoInitializeEx(None, 2)
+        _check(result, "COM initialization", "com_initialize")
+        com_initialized = True
         clsid = _guid("3AD05575-8857-4850-9277-11B85BDB8E09")  # CLSID_FileOperation
         iid = _guid("947AAB5F-0A5C-4C13-B4D6-4BF7836FC9F8")  # IID_IFileOperation
         ole32.CoCreateInstance.argtypes = [
@@ -136,8 +141,11 @@ def recycle_file(path: Path) -> None:
                 stage="source_still_present",
             )
     finally:
-        if item.value:
-            _invoke(item, 2, [])
-        if operation.value:
-            _invoke(operation, 2, [])
-        ole32.CoUninitialize()
+        try:
+            if item.value:
+                _invoke(item, 2, [])
+            if operation.value:
+                _invoke(operation, 2, [])
+        finally:
+            if com_initialized:
+                ole32.CoUninitialize()
