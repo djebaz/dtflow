@@ -4,6 +4,7 @@ description: Native Qt workspace design system for generation and queue workflow
 colors:
   background: "#1f1f1f"
   surface: "#252525"
+  editorScrim: "rgba(32, 32, 32, 128)"
   input: "#1e1e1e"
   canvas: "#151515"
   text: "#e6e6e6"
@@ -421,6 +422,12 @@ inline editor, Cancel and Add appear beneath the fields, right-aligned; Add uses
 same `role="primary"` button treatment as Create queue, while Cancel stays neutral.
 Other confirmations retain their header controls. Existing saved requests are not silently clamped. Preset names and explicit metadata/About inspection
 use the same main-window surface, with scrollable text for long notices.
+While an inline input editor is open, a 50%-alpha charcoal scrim covers the central
+workspace behind the bottom editor, intercepting background mouse interactions
+without resizing the preview. The editor remains fully opaque, and keyboard focus
+stays inside it until Add/Apply, Cancel or Escape closes it. The scrim follows
+window resizing and is removed when the editor closes or is replaced. It does
+not apply to confirmation, progress or result messages.
 
 `activity_strip.ui`, `inline_feedback.ui` and `activity_progress_row.ui` compose one
 bottom feedback overlay, matching the owner-approved HTML interaction structure. It

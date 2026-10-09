@@ -3,9 +3,9 @@
 import math
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRect, QTimer, Slot
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRect, QTimer, Qt, Slot
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFrame
 
 
 def _load(name, parent):
@@ -27,6 +27,12 @@ class ActivityStrip(QObject):
         self.window = window
         self.host = window.centralWidget()
         self.form = _load("activity_strip.ui", self.host)
+        # A sibling scrim covers the workspace, not the feedback overlay. It is
+        # Qt-owned, never part of the main layout and intercepts background clicks.
+        self.scrim = QFrame(self.host)
+        self.scrim.setObjectName("inlineEditorScrim")
+        self.scrim.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.scrim.hide()
         # Filters and deferred callbacks must disappear with the overlay frame.
         self.setParent(self.form)
         self.rows = {}
@@ -51,12 +57,25 @@ class ActivityStrip(QObject):
             self._position()
         return False
 
+    def set_editor_dimming(self, enabled: bool) -> None:
+        """Dim and block only the workspace behind an active inline input editor."""
+        if enabled:
+            self.scrim.setGeometry(self.host.rect())
+            self.scrim.show()
+            self.scrim.raise_()
+            self._position()
+        else:
+            self.scrim.hide()
+
     @Slot()
     def _position(self):
         if self._positioning:
             return
         self._positioning = True
         try:
+            if self.scrim.isVisible():
+                self.scrim.setGeometry(self.host.rect())
+                self.scrim.raise_()
             visible_feedback = self.feedback is not None and not self.feedback.form.isHidden()
             if not self.rows and not visible_feedback:
                 self.form.hide()

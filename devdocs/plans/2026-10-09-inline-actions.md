@@ -46,6 +46,16 @@
   header consent buttons for non-editor flows. Other editors use neutral actions unless
   explicitly assigned a primary role. No new palette or tokens.
 
+## Inline editor dimming refinement (2026-10-09)
+- Owner approved a 50%-alpha charcoal overlay behind Add LoRA while editing.
+- Use the same scrim for other main-window inline input editors; keep their bottom
+  action layout and token-based button roles unchanged.
+- The scrim intercepts workspace mouse events and keeps editor keyboard focus
+  inside the editor; it resizes with the central widget. The editor/feedback
+  surface remains fully opaque above it.
+- Hide the scrim on Apply/Add, Cancel, Escape and replacement of the editor.
+  Do not dim non-modal confirmations, progress or operation outcomes.
+
 ## Open questions
 - None.
 

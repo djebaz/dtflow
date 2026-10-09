@@ -1417,6 +1417,12 @@ QFrame[role="galleryCard"][checkedSelection="true"] {
   background: ${color.selectionPressed};
 }
 
+/* Inline input editor scrim: alpha-blended and mouse-blocking, never used for notices. */
+QFrame#inlineEditorScrim {
+  background-color: ${color.editorScrim};
+  border: none;
+}
+
 /* Shared bottom feedback overlay: no reserved space, no Details control. */
 QFrame#activityStrip {
   background: ${color.surface};

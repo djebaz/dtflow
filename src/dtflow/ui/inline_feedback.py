@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QApplication, QLineEdit
 
 from dtflow.ui.activity_strip import activity_strip
 
@@ -35,6 +35,7 @@ class InlineFeedback(QObject):
         self.form.inlineEditorCancelButton.clicked.connect(self.dismiss)
         self._armed = None
         self._editor = None
+        self._editor_focus = None
         self._accept_callback = None
         self._accept_button = None
         self._close_allowed = False
@@ -45,6 +46,21 @@ class InlineFeedback(QObject):
         self.escape = QShortcut(QKeySequence("Escape"), self.form)
         self.escape.activated.connect(self.dismiss)
         self.escape.setEnabled(False)
+        QApplication.instance().focusChanged.connect(self._keep_editor_focus)
+
+    def _keep_editor_focus(self, previous, current):
+        """Keep keyboard traversal in the editor, without trapping other windows."""
+        if self._editor is None or current is None or not self.strip.scrim.isVisible():
+            return
+        if current.window() is not self.window:
+            return
+        if self.form.isAncestorOf(current):
+            self._editor_focus = current
+            return
+        target = self._editor_focus
+        if target is None or not self.form.isAncestorOf(target):
+            target = self.form.inlineEditorCancelButton
+        target.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
@@ -55,6 +71,8 @@ class InlineFeedback(QObject):
 
     def reset(self):
         self.escape.setEnabled(False)
+        self.strip.set_editor_dimming(False)
+        self._editor_focus = None
         armed, self._armed = self._armed, None
         if armed:
             button, text, accessible, tooltip, minimum, maximum, callback = armed
@@ -121,7 +139,7 @@ class InlineFeedback(QObject):
         self.form.inlineEditorActions.show()
         self.set_accept(accept, callback, editor_action=True, primary=primary)
         widget.show()
-        self.strip._position()
+        self.strip.set_editor_dimming(True)
 
     def set_accept(self, text, callback, *, editor_action=False, primary=False):
         """Configure either the editor footer action or the header consent action."""
