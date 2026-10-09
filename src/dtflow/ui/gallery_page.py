@@ -505,6 +505,8 @@ class GalleryPage(QObject):
         self.selection_count.setText(f"{count} selected")
         self.hidden_count_label.setText(f"{self._hidden_checks} hidden by filters")
         self.hidden_count_label.setVisible(self._hidden_checks > 0)
+        self.select_page_button.setEnabled(bool(self.items))
+        self.select_filtered_button.setEnabled(self.total > 0 and not self._selection_busy)
         self.clear_selection_button.setEnabled(count > 0)
         self.copy_paths_button.setEnabled(count > 0)
         self.export_button.setEnabled(count > 0 and self._export_callback is not None)
@@ -1073,6 +1075,7 @@ class GalleryPage(QObject):
             self._syncing_selection = False
             for widget, enabled in zip(containers, updates, strict=True):
                 widget.setUpdatesEnabled(enabled)
+        self._sync_selection_ui()
         self._queue_thumbnails(image_changes)
 
     @staticmethod
