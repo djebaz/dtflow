@@ -95,9 +95,7 @@ def choose_searchable(
             supported = default is not None and 0.0 <= default <= 3.0
             weight.setValue(default if supported else 1.0)
             if default is not None and not supported:
-                weight_hint.setText(
-                    f"Catalogue weight {default:g} is outside 0.0–3.0; starting at 1.0."
-                )
+                weight_hint.setText(f"Catalogue weight {default:g} is outside 0.0–3.0; starting at 1.0.")
                 weight_hint.show()
             else:
                 weight_hint.hide()
