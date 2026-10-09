@@ -21,7 +21,7 @@
 - [x] Expose read-only Generate/Images selection seams to Connection without changing those pages or viewer state.
 - [x] Sync README, AGENTS, desktop guide, architecture, status, phase plan and unreleased notes.
 - [x] Run minimal static syntax/import/format checks only.
-- [ ] Commit/push implementation and update PR.
+- [x] Commit/push implementation and update draft PR #55.
 
 ## Decisions and Design Changes
 
@@ -78,3 +78,11 @@ None blocking. User/runtime acceptance remains separate from implementation.
   scenario assertions were not supplied. This is owner-reported source smoke, not packaged
   or comprehensive acceptance. See [evidence](../research/jpeg-export-smoke-2026-10-09.md).
 - Final tests and remaining scenario/packaged smoke validation stay with the owner.
+
+## Git outcomes
+
+- Branch: `feature/jpeg-image-export`; base: `main`; PR: [#55](https://github.com/djebaz/dtflow/pull/55).
+- Plan-first commit `b0eabae` was pushed before implementation and PR creation.
+- Implementation/docs/owner-smoke evidence committed as `b345e4e` and pushed to origin.
+- PR description updated with scope, static checks, owner smoke evidence and remaining gates.
+- PR remains draft for owner final validation; not merged. No version/tag/release or packaged artifact.
