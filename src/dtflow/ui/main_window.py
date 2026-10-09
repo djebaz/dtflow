@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer
@@ -25,6 +26,8 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
+from dtflow.persistence.image_recycle import reconcile as reconcile_images
+from dtflow.persistence.original_io import original_images_lock
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
@@ -38,6 +41,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
+from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.run_control import RunControl
@@ -163,6 +167,7 @@ class MainWindow:
             reuse_callback=self._reuse_output,
             regenerate_callback=self._regenerate_output,
             export_callback=self._open_checked_export,
+            recycle_callback=self._request_gallery_recycle if os.name == "nt" else None,
         )
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
@@ -220,6 +225,10 @@ class MainWindow:
             no_cache=no_cache,
         )
         self.image_export.cache_changed.connect(self.refresh_cache)
+        self.image_recycle = ImageRecyclePanel(
+            form, runner=self.runner, state_dir=self.state_dir,
+            gallery=self.gallery, busy_source=self._recycle_busy,
+        )
         self.queue = QueuePage(
             self.queue_page,
             runner=self.runner,
@@ -285,7 +294,7 @@ class MainWindow:
             widget.installEventFilter(
                 _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
             )
-        self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
+        self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
@@ -294,6 +303,7 @@ class MainWindow:
         self.refresh_presets()
         self._workspace_changed(0)
         self._responsive_workspace()
+        self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
 
     @staticmethod
     def _disable_preview_controls(page: QWidget) -> None:
@@ -737,6 +747,41 @@ class MainWindow:
         self.refresh_credentials()
         self.generation.credentials_changed()
 
+    def _recycle_busy(self) -> bool:
+        """Keep UI-generated exports and local dispatch from racing with recycling."""
+        return bool(
+            self.image_export.running
+            or self.generation._busy
+            or self.queue.dispatching_here
+            or self.activity.dispatching
+        )
+
+    def _request_gallery_recycle(self, identities: tuple[str, ...], hidden: int) -> None:
+        """Only the confirmation service may move explicitly checked originals."""
+        self.image_recycle.request(identities, hidden)
+
+    def _confirm_close(self) -> bool:
+        if self.image_recycle.running:
+            self.image_recycle.cancel()
+            QMessageBox.information(
+                self.form, "Image recycling in progress",
+                "Stop requested. Wait for the current image and result summary before closing.",
+            )
+            return False
+        return self.queue.confirm_close()
+
+    def _reconcile_images(self):
+        """Inspect interrupted file operations under the original-file lease."""
+        with original_images_lock(self.state_dir):
+            return reconcile_images(self.state_dir)
+
+    def _images_reconciled(self, outcome, error) -> None:
+        if error is not None:
+            log.warning("image-recycle reconciliation skipped reason=%s", type(error).__name__)
+            return
+        if outcome and any(outcome):
+            self.gallery.refresh(preserve=True)
+
     def _open_checked_export(self) -> None:
         """Activate the one authoritative Connection export form for checked gallery IDs."""
         self.form.workspaceStack.setCurrentIndex(0)
@@ -765,6 +810,7 @@ class MainWindow:
     def close(self) -> None:
         self.remember(background=False)
         self.image_export.cancel()
+        self.image_recycle.cancel()
         self.gallery.save_now()
         log.info("window closed")
         self.runner.shutdown()
