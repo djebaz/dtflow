@@ -97,10 +97,11 @@ def record_outcome(
               size=excluded.size, mtime_ns=excluded.mtime_ns, updated_utc=excluded.updated_utc""",
             (identity, path, outcome, operation_id, size, mtime_ns, _now()),
         )
-        db.execute(
-            "UPDATE operations SET completed_count=completed_count+1 WHERE operation_id=?",
-            (operation_id,),
-        )
+        if outcome != "pending":
+            db.execute(
+                "UPDATE operations SET completed_count=completed_count+1 WHERE operation_id=?",
+                (operation_id,),
+            )
 
 
 def finish_operation(state: Path, operation_id: str, outcome: str) -> None:
