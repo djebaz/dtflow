@@ -439,7 +439,11 @@ metadata inspection stay in the same overlay; long metadata remains scrollable.
 
 Use existing selection/blue tokens for progress/info, connection/teal for success,
 danger/red for errors and Delete/Clear confirmation, and warning/amber for other
-confirmation and partial/stopped results. Reuse shared fonts, radius and native DPI
+confirmation and partial/stopped results. Non-destructive confirmation uses the
+neutral charcoal button/surface gradient and warning border, with a warning-colored
+icon; danger red is reserved for actual errors or destructive consent. Repolish the
+inline icon as well as the form when the feedback state changes so amber or red does
+not leave a stale blue icon. Reuse shared fonts, radius and native DPI
 rather than hardcoding the HTML's pixel font sizes. Confirm remains on the original
 button with stable width; Cancel is in the overlay. Export has no extra confirmation.
 

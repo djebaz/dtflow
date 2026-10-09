@@ -56,6 +56,15 @@
 - Hide the scrim on Apply/Add, Cancel, Escape and replacement of the editor.
   Do not dim non-modal confirmations, progress or operation outcomes.
 
+## Confirmation palette follow-up (2026-10-09)
+- Cloud asset preparation is a non-destructive amber confirmation, not an error:
+  remove the red `color.dangerSurface` tint from its feedback surface.
+- Use existing neutral `color.button`/`color.surface` gradient and amber
+  `color.statusWarningBorder`/icon; keep the amber Confirm button unchanged.
+- Re-polish the inline symbol on state transitions so the icon cannot remain
+  blue when the panel becomes amber or red. Preserve red Delete/Clear semantics,
+  cancellation, upload warnings and service behavior.
+
 ## Open questions
 - None.
 

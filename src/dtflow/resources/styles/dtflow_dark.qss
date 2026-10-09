@@ -1434,7 +1434,14 @@ QFrame#inlineFeedback, QWidget#activityProgressRow {
   border: 1px solid ${color.selectionBorder};
   border-radius: ${size.radius};
 }
-QFrame#inlineFeedback[feedbackState="confirm"], QWidget#activityProgressRow[feedbackState="partial"],
+/* Non-destructive consent has a neutral charcoal surface with amber accents.
+   Red danger tint is reserved for Delete/Clear and actual errors. */
+QFrame#inlineFeedback[feedbackState="confirm"],
+QFrame#inlineFeedback[feedbackState="partial"] {
+  background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.button}, stop:1 ${color.surface});
+  border-color: ${color.statusWarningBorder};
+}
+QWidget#activityProgressRow[feedbackState="partial"],
 QWidget#activityProgressRow[feedbackState="stopped"] {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.dangerSurface}, stop:1 ${color.surface});
   border-color: ${color.statusWarningBorder};
@@ -1475,13 +1482,17 @@ QWidget#activityProgressRow[feedbackState="success"] QLabel#activitySymbol {
   color: ${color.connectionAccent};
 }
 QWidget#activityProgressRow[feedbackState="partial"] QLabel#activitySymbol,
-QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activitySymbol,
-QFrame#inlineFeedback[feedbackState="confirm"] QLabel#inlineSymbol {
+QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activitySymbol {
   background: ${color.dangerSurface};
   color: ${color.warning};
 }
+QLabel#inlineSymbol[feedbackState="confirm"],
+QLabel#inlineSymbol[feedbackState="partial"] {
+  background: ${color.buttonPressed};
+  color: ${color.warning};
+}
 QWidget#activityProgressRow[feedbackState="error"] QLabel#activitySymbol,
-QFrame#inlineFeedback[feedbackState="error"] QLabel#inlineSymbol {
+QLabel#inlineSymbol[feedbackState="error"] {
   background: ${color.dangerSurface};
   color: ${color.dangerText};
 }

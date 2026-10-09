@@ -103,12 +103,18 @@ class InlineFeedback(QObject):
         self.form.hide()
         self.strip._position()
 
+    def _set_feedback_state(self, state):
+        """Refresh both the container and its icon after a semantic state change."""
+        self.form.setProperty("feedbackState", state)
+        self.form.inlineSymbol.setProperty("feedbackState", state)
+        for widget in (self.form, self.form.inlineSymbol):
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+
     def show(self, title, text, state="info"):
         self.reset()
-        self.form.setProperty("feedbackState", state)
+        self._set_feedback_state(state)
         self.form.inlineSymbol.setText("!" if state in {"error", "partial", "confirm"} else "i")
-        self.form.style().unpolish(self.form)
-        self.form.style().polish(self.form)
         self.form.inlineTitleLabel.setText(title)
         self.form.inlineTextBrowser.setPlainText(text)
         self.form.inlineTextBrowser.setVisible(bool(text))
@@ -196,9 +202,7 @@ class InlineFeedback(QObject):
         button.style().unpolish(button)
         button.style().polish(button)
         button._inline_commit = callback
-        self.form.setProperty("feedbackState", "error" if button.property("confirmationDanger") else "confirm")
-        self.form.style().unpolish(self.form)
-        self.form.style().polish(self.form)
+        self._set_feedback_state("error" if button.property("confirmationDanger") else "confirm")
         self.strip._position()
 
     def commit(self, button):
