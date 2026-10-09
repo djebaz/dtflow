@@ -26,8 +26,8 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.logging_setup import ATTEMPT
-from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.persistence.original_io import original_images_lock
+from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
 from dtflow.services.events import EventBuffer
