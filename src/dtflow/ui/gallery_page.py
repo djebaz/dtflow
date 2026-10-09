@@ -451,6 +451,7 @@ class GalleryPage(QObject):
         self.more_button.setMenu(more_menu)
         self.more_button.hide()
 
+        self._selection_shortcuts: list[QShortcut] = []
         for key, callback in (
             ("Ctrl+A", self._select_page),
             ("Escape", self._clear_all),
@@ -459,8 +460,16 @@ class GalleryPage(QObject):
             shortcut = QShortcut(QKeySequence(key), self.page)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(lambda action=callback: self._selection_shortcut(action))
+            self._selection_shortcuts.append(shortcut)
+        QApplication.instance().focusChanged.connect(self._selection_focus_changed)
         self._sync_selection_ui()
         QTimer.singleShot(0, self._responsive_selection)
+
+    def _selection_focus_changed(self, _previous, current) -> None:
+        """Release native Ctrl+A/Delete handling whenever text controls own focus."""
+        editable = isinstance(current, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit))
+        for shortcut in self._selection_shortcuts:
+            shortcut.setEnabled(not editable)
 
     def _selection_shortcut(self, callback) -> None:
         """Do not steal standard editing, pop-up or global generation shortcuts."""
