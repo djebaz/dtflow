@@ -222,7 +222,7 @@ class ImageExportPanel(QObject):
             text += " " + " ".join(result.warnings)
         self.form.imageExportStatusLabel.setText(text)
         state = "partial" if result.failed or result.warnings else "stopped" if result.cancelled else "success"
-        activity_strip(self.form).complete("export", prefix, text, state, auto_dismiss=state == "stopped")
+        activity_strip(self.form).complete("export", prefix, text, state)
         self.form.imageExportStatusLabel.setToolTip("\n".join(result.failures))
         if result.exported or result.skipped:
             self._exported_folder = Path(result.destination)

@@ -467,19 +467,23 @@ consent. An unrelated InlineNotice shown during an armed confirmation is a
 separately dismissible row; only direct Cancel/Escape, relevant scope changes,
 or another explicit editor/confirmation may disarm it. Unrelated notices
 also use their own rows while an inline input editor is active, so partially
-typed values remain untouched. Success results last six seconds with a 2 px
-full-width teal lifetime line that drains along the bottom edge, a small
-mint/teal remaining-seconds label right-aligned immediately before Dismiss,
-and a 450 ms fade-out. The timer and bar pause
-when hovering or focusing anywhere inside the overlay; the 5 px blue
-progress track is separate and represents actual processed work only.
-Error/partial/uncertain/stopped results and informational notices stay
-until dismissed, except a clean user-cancelled image export: it stays an
-amber `stopped` result but opts into the same six-second lifetime bar and
-450 ms fade, with amber countdown and bar. Export cancellations that include
-failures or warnings remain persistent `partial` results for review. Escape dismisses a standalone notice, while Cancel/Escape
-disarm a pending confirmation/editor; dismissing any row never stops work.
-Stopped shows a stop-square glyph; progress uses operation-specific glyphs
+typed values remain untouched. Success and all amber (warning, partial,
+stopped) overlay rows last six seconds, with a 2 px full-width lifetime
+line draining along the bottom edge and a small right-aligned countdown
+before Dismiss; success uses teal and amber states use warning amber.
+A 450 ms fade-out follows expiry. The timer and line pause while the
+overlay is hovered or keyboard-focused. The 5 px blue task progress
+track is distinct and reflects actual completed work only.
+Amber informational warnings use the timed row even without another active
+editor/confirmation. Red errors and neutral informational inspection stay
+until dismissed. Amber overlay expiry only hides the notification: it
+never erases durable outcome records, uncertainty indicators, failure
+details, or changes stop/retry behavior. Escape dismisses a standalone
+notice, while Cancel/Escape disarm a pending confirmation/editor;
+dismissing any row never stops work.
+Recycle Bin delete confirmation uses a monochrome danger-red trash-can
+pictogram drawn with Qt, never the green system recycling emoji. Stopped
+shows a stop-square glyph; progress uses operation-specific glyphs
 for Trash, Export, Cache, Queue, selection and generation. Destructive
 classification is explicit at the confirmation call site (`danger=True`),
 rather than inferred from button object names. Dismiss never stops work;

@@ -4,12 +4,36 @@ import math
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRectF, Qt
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 from dtflow.ui.activity_strip import activity_strip
+from dtflow.ui.theme import load_tokens
+
+
+def _trash_can_icon() -> QPixmap:
+    """Draw a monochrome danger-red trash can, independent of emoji fonts."""
+    ratio = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
+    icon = QPixmap(round(28 * ratio), round(28 * ratio))
+    icon.setDevicePixelRatio(ratio)
+    icon.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(icon)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(load_tokens()["color.dangerText"]))
+    pen.setWidthF(1.8)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.drawLine(7, 9, 21, 9)
+    painter.drawLine(11, 7, 17, 7)
+    painter.drawRoundedRect(QRectF(9, 11, 10, 12), 1.2, 1.2)
+    painter.drawLine(12, 14, 12, 20)
+    painter.drawLine(16, 14, 16, 20)
+    painter.end()
+    return icon
 
 
 class InlineFeedback(QObject):
@@ -115,7 +139,7 @@ class InlineFeedback(QObject):
 
     def notice(self, title, text, state="info"):
         """Keep unrelated notices visible without disarming a pending consent."""
-        if self._armed is not None or self._editor is not None:
+        if state in {"warning", "partial", "stopped"} or self._armed is not None or self._editor is not None:
             self._notice_index += 1
             self.strip.complete(f"notice-{self._notice_index}", title, text, state)
             return
@@ -210,9 +234,10 @@ class InlineFeedback(QObject):
         button.style().polish(button)
         button._inline_commit = callback
         self._set_feedback_state("error" if danger else "confirm")
-        self.form.inlineSymbol.setText(
-            "♻" if title.startswith("Move ") else "▤" if "cache" in title.lower() else "!" if danger else "i"
-        )
+        if danger and title.startswith("Move "):
+            self.form.inlineSymbol.setPixmap(_trash_can_icon())
+        else:
+            self.form.inlineSymbol.setText("▤" if "cache" in title.lower() else "!" if danger else "i")
         self.strip._position()
 
     def commit(self, button):

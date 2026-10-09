@@ -184,3 +184,12 @@ lifetime countdown, draining bar and 450 ms fade as success. Cancellations
 with failures or warnings remain persistent partial outcomes. The shared
 activity-strip expiry remains opt-in for stopped states; other stopped
 workflows are unchanged. Native GUI rendering acceptance is still pending.
+
+PR #58 overlay semantic-lifetime follow-up: Every amber warning, partial or
+stopped notification now receives the six-second amber countdown/draining bar
+and fade, whether it comes from a result or a nonfatal standalone notice.
+Red errors and informational inspection remain until dismissed. The Recycle
+Bin destructive confirmation uses a drawn monochrome red trash icon instead
+of the green recycling emoji. The underlying generation/queue/Trash attempt
+records and uncertainty/retry semantics are unaffected. Qt CI and native GUI
+acceptance must be checked for this revision.

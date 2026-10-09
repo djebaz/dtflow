@@ -21,6 +21,8 @@
 
 ## Changed
 
+- PR #58 unifies all amber warning/partial/stopped overlay results and nonfatal notices under the six-second state-colored countdown, draining bar, hover/focus pause and fade. Persistent red errors and informational inspections are unchanged; hiding a notification does not change durable outcome/uncertainty semantics. Recycle Bin Delete confirmation now uses a monochrome danger-red trash-can icon instead of a green recycling emoji.
+
 - PR #58 now auto-dismisses **clean, user-cancelled Export** results after six seconds using the existing draining lifetime bar, hover/focus pause and 450 ms fade. The result remains an amber stopped outcome with an amber countdown and bar; export failures/warnings and other stopped workflows remain persistent.
 
 - PR #58 aligns the success countdown text to the right, adjacent to Dismiss, and colors it mint/teal to match the draining lifetime bar instead of ordinary grey detail text. No expiry or task-progress behavior changed.

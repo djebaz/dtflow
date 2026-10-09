@@ -164,6 +164,22 @@
   preserve the default persistent stopped/partial contracts.
 - CI and owner native Windows visual acceptance remain separately required.
 
+## Unified amber lifetime and destructive icon (2026-10-10)
+- Owner requested a consistent six-second countdown/draining bar and fade
+  for every amber warning, partial or stopped overlay. Apply this uniformly
+  in the shared activity strip; route standalone warning notices through it.
+  Errors and informational inspection stay persistent. Countdown and line
+  use amber, while success continues to use teal.
+- The countdown is presentation only: it does not settle or dismiss durable
+  uncertainty, erase warnings, or imply remote cancellation. Generation stop
+  evidence stays recorded in the Generation view and attempt ledger.
+- Draw the Recycle Bin destructive-confirmation symbol as a red monochrome
+  trash can, not the OS green recycling emoji. Preserve the red danger
+  surface, stable Confirm button, Cancel and explicit consent semantics.
+- Extend existing Qt shell tests for state lifetimes, warning notices and
+  trash icon. New CI and owner native visual smoke are required before
+  accepting the HTML mockup synchronization.
+
 ## Open questions
 - None.
 

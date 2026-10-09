@@ -186,8 +186,8 @@ class ActivityStrip(QObject):
                     detail if detail is not None else f"{done} of {total} processed" if total else "Working…"
                 )
 
-    def complete(self, key, title, text, state="success", *, auto_dismiss=False):
-        """Display an outcome; allow only explicitly transient stopped results to expire."""
+    def complete(self, key, title, text, state="success"):
+        """Show a semantic result: success and amber outcomes expire after six seconds."""
         if not self._live():
             return
         self.start(key, title)
@@ -207,7 +207,7 @@ class ActivityStrip(QObject):
         for widget in (row.activitySymbol, row.activityLifetime, row.activityLifetimeBar):
             widget.style().unpolish(widget)
             widget.style().polish(widget)
-        if state == "success" or (state == "stopped" and auto_dismiss):
+        if state in {"success", "warning", "partial", "stopped"}:
             self._expiry[key] = 6.0
             row.activityLifetime.setText("6s")
             row.activityLifetime.show()

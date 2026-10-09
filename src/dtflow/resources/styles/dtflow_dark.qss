@@ -1483,6 +1483,8 @@ QLabel#activityLifetime {
   font-size: ${type.small};
   font-weight: ${type.weightEmphasis};
 }
+QWidget#activityProgressRow[feedbackState="warning"] QLabel#activityLifetime,
+QWidget#activityProgressRow[feedbackState="partial"] QLabel#activityLifetime,
 QWidget#activityProgressRow[feedbackState="stopped"] QLabel#activityLifetime {
   color: ${color.warning};
 }
@@ -1543,6 +1545,8 @@ QProgressBar#activityLifetimeBar {
 QProgressBar#activityLifetimeBar::chunk {
   background: ${color.connectionAccent};
 }
+QWidget#activityProgressRow[feedbackState="warning"] QProgressBar#activityLifetimeBar::chunk,
+QWidget#activityProgressRow[feedbackState="partial"] QProgressBar#activityLifetimeBar::chunk,
 QWidget#activityProgressRow[feedbackState="stopped"] QProgressBar#activityLifetimeBar::chunk {
   background: ${color.warning};
 }
