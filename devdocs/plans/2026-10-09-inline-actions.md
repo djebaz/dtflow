@@ -40,6 +40,12 @@
 
 - 2026-10-09 Owner final color refinement: Delete/Clear confirmations are red; other confirmations remain amber. Cancel remains separate.
 
+## Add LoRA editor layout refinement (2026-10-09)
+- Owner selected the existing Create queue primary-button treatment for Add LoRA.
+- Put editor Cancel and Add below the identifier/weight fields, preserving the shared
+  header consent buttons for non-editor flows. Other editors use neutral actions unless
+  explicitly assigned a primary role. No new palette or tokens.
+
 ## Open questions
 - None.
 

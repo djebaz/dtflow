@@ -32,11 +32,14 @@ class InlineFeedback(QObject):
         self.strip.mount_feedback(self)
         self.form.hide()
         self.form.inlineDismissButton.clicked.connect(self.dismiss)
+        self.form.inlineEditorCancelButton.clicked.connect(self.dismiss)
         self._armed = None
         self._editor = None
         self._accept_callback = None
+        self._accept_button = None
         self._close_allowed = False
         self.form.inlineAcceptButton.hide()
+        self.form.inlineEditorActions.hide()
         window._inline_feedback = self
         window.installEventFilter(self)
         self.escape = QShortcut(QKeySequence("Escape"), self.form)
@@ -70,9 +73,12 @@ class InlineFeedback(QObject):
             self._editor.deleteLater()
             self._editor = None
         self.form.inlineAcceptButton.hide()
+        self.form.inlineEditorActions.hide()
+        self.form.inlineDismissButton.show()
         if self._accept_callback is not None:
-            self.form.inlineAcceptButton.clicked.disconnect(self._accept_callback)
+            self._accept_button.clicked.disconnect(self._accept_callback)
             self._accept_callback = None
+            self._accept_button = None
 
     def dismiss(self):
         self.reset()
@@ -106,21 +112,31 @@ class InlineFeedback(QObject):
         if browser.height() != height:
             browser.setFixedHeight(height)
 
-    def editor(self, title, widget, accept, callback):
+    def editor(self, title, widget, accept, callback, *, primary=False):
         self.show(title, "")
         self._editor = widget
         self.escape.setEnabled(True)
         self.form.inlineEditorLayout.addWidget(widget)
-        self.form.inlineDismissButton.setText("Cancel")
-        self.set_accept(accept, callback)
+        self.form.inlineDismissButton.hide()
+        self.form.inlineEditorActions.show()
+        self.set_accept(accept, callback, editor_action=True, primary=primary)
         widget.show()
         self.strip._position()
 
-    def set_accept(self, text, callback):
+    def set_accept(self, text, callback, *, editor_action=False, primary=False):
+        """Configure either the editor footer action or the header consent action."""
+        button = self.form.inlineEditorAcceptButton if editor_action else self.form.inlineAcceptButton
+        if self._accept_callback is not None:
+            self._accept_button.clicked.disconnect(self._accept_callback)
+            self._accept_button.hide()
         self._accept_callback = callback
-        self.form.inlineAcceptButton.setText(text)
-        self.form.inlineAcceptButton.show()
-        self.form.inlineAcceptButton.clicked.connect(callback)
+        self._accept_button = button
+        button.setProperty("role", "primary" if primary else "")
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.setText(text)
+        button.show()
+        button.clicked.connect(callback)
         self.strip._position()
 
     def arm(self, button, title, text, callback, canceled=None):

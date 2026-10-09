@@ -416,8 +416,10 @@ double-click as two independent consent activations. Preserve the full destructi
 credit warning and all service-level safety checks.
 
 Checkpoint and LoRA choices use inline substring search and custom-identifier entry.
-LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step. Existing
-saved requests are not silently clamped. Preset names and explicit metadata/About inspection
+LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step. In the
+inline editor, Cancel and Add appear beneath the fields, right-aligned; Add uses the
+same `role="primary"` button treatment as Create queue, while Cancel stays neutral.
+Other confirmations retain their header controls. Existing saved requests are not silently clamped. Preset names and explicit metadata/About inspection
 use the same main-window surface, with scrollable text for long notices.
 
 `activity_strip.ui`, `inline_feedback.ui` and `activity_progress_row.ui` compose one

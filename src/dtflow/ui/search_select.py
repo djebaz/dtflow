@@ -103,7 +103,7 @@ def choose_searchable(
 
     search.textChanged.connect(populate)
     choices.currentItemChanged.connect(selected)
-    panel.editor(title, editor, "Add" if weights is not None else "Apply", accept)
+    panel.editor(title, editor, "Add" if weights is not None else "Apply", accept, primary=weights is not None)
     # No double-click/Enter commit: selecting and weight editing are one explicit step.
     populate()
     search.setFocus()
