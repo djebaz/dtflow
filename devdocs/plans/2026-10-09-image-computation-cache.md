@@ -28,4 +28,3 @@
 
 ## Delivery
 - Implemented on feature/jpeg-image-export for PR #55. Whole-repo Ruff check and format check, AST/import checks, CLI help, Designer XML, uv lock check and git diff whitespace checks passed. Tests, export/GUI smoke and packaging were not run for this change; final validation remains with the owner.
-
