@@ -84,7 +84,7 @@ These instructions apply throughout `dtflow`.
 
 ## Saved-image export
 
-- Keep export controls in the middle panel of Connection, in the canonical `main_window.ui`.
+- Keep export destination, metadata/privacy/routing settings, progress, cancel and Start controls in the middle panel of Connection, in the canonical `main_window.ui`. The Images gallery may offer a contextual **Export** shortcut that navigates to Connection with its checked-image scope selected. It must not duplicate export options, encoding or service behavior.
 - Use `services/image_export.export_outputs` for single and bulk exports; UI controllers must not duplicate encoding or metadata rules. Pillow is permitted only in the headless image_export/image_quality services; core remains dependency-neutral and all provider/Qt boundaries remain enforced.
 - Export JPGs and matching JSON sidecars at the selected root except when the default-on noise/blank checkbox routes flagged copies only into noise/ or blank/. With it off, keep exports completely flat. No attempt/provider/date subfolders, original moves or overwrites. Use services/image_quality.py as the shared advisory detector; no job-status changes.
 - Keep no persistent destination/export records. New names include the full _dtf-<attempt-id>-<output> marker; list root/noise/blank once to build transient membership, with bounded EXIF fallback for legacy/renamed files. Fast skips use the full identity plus JPEG framing check, not ambiguous short prefixes or cryptographic integrity claims. Existing copies remain unchanged even when options differ.
