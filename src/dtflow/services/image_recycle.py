@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
 from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
@@ -92,7 +93,9 @@ def _regular_managed_file(state: Path, record: dict) -> RecycleTarget | None:
     )
 
 
-def prepare_recycle(state: Path, identities: tuple[str, ...], hidden: int = 0) -> RecyclePlan:
+def prepare_recycle(
+    state: Path, identities: tuple[str, ...], hidden: int = 0, query: GalleryQuery | None = None
+) -> RecyclePlan:
     """Resolve exactly the checked identities, with no filesystem mutation.
 
     Custom --out locations are deliberately not accepted until their ownership
@@ -103,6 +106,10 @@ def prepare_recycle(state: Path, identities: tuple[str, ...], hidden: int = 0) -
         raise ValueError("Recycle selection must contain between 1 and 10,000 images.")
     if os.name != "nt":
         return RecyclePlan((), 0, len(unique), min(hidden, len(unique)), len(unique))
+    # Derive the hidden count from the same explicit checked-ID snapshot, not
+    # an eventually refreshed UI label that may reflect the previous filter.
+    if query is not None:
+        _added, hidden, _omitted, _matched = gallery_storage.selection_candidates(state, query, unique)
     states = ledger.outcomes(state)
     eligible = []
     missing = ineligible = 0
