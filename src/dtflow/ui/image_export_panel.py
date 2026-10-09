@@ -179,19 +179,20 @@ class ImageExportPanel(QObject):
         if result.total == 0:
             text = "No saved images match this export scope."
         else:
-            text = f"{prefix} {result.exported} exported, {result.failed} failed, {result.total - result.exported - result.failed} not processed."
+            text = f"{prefix} {result.exported} exported, {result.skipped} skipped (already exported), {result.failed} failed, {result.total - result.exported - result.skipped - result.failed} not processed."
         if result.noise or result.blank:
             text += f" Sorted into subfolders: {result.noise} noise, {result.blank} blank (advisory)."
         if result.warnings:
             text += " " + " ".join(result.warnings)
         self.form.imageExportStatusLabel.setText(text)
         self.form.imageExportStatusLabel.setToolTip("\n".join(result.failures))
-        if result.exported:
+        if result.exported or result.skipped:
             self._exported_folder = Path(result.destination)
             self.form.imageExportOpenButton.setEnabled(True)
         log.info(
-            "image export completed exported=%d failed=%d cancelled=%s",
+            "image export completed exported=%d skipped=%d failed=%d cancelled=%s",
             result.exported,
+            result.skipped,
             result.failed,
             result.cancelled,
         )

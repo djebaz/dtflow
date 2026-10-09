@@ -60,6 +60,102 @@ EFFECTIVE_FIELDS = frozenset(
 )
 
 
+def _saved_date(value: str) -> datetime | None:
+    try:
+        date = datetime.fromisoformat(value)
+        return date.astimezone(UTC) if date.tzinfo is not None else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _set_creation_time(handle, date: datetime) -> None:
+    """Set Windows creation time only, on our exclusively created file handle."""
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    ticks = int((date - datetime(1601, 1, 1, tzinfo=UTC)).total_seconds() * 10_000_000)
+    if not 0 < ticks < 2**64:
+        raise ValueError("Creation date is outside the Windows file-time range.")
+    value = wintypes.FILETIME(ticks & 0xFFFFFFFF, ticks >> 32)
+    set_time = ctypes.WinDLL("kernel32", use_last_error=True).SetFileTime
+    set_time.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+        ctypes.POINTER(wintypes.FILETIME),
+    ]
+    set_time.restype = wintypes.BOOL
+    if not set_time(msvcrt.get_osfhandle(handle.fileno()), ctypes.byref(value), None, None):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def _existing_exports(destination: Path) -> set[tuple[str, str]]:
+    """Discover completed DTFlow copies only; never trust a filename as identity."""
+    identities = set()
+    count = 0
+    for folder in (destination, destination / "noise", destination / "blank"):
+        if not folder.exists():
+            continue
+        if folder != destination and folder.resolve() != folder:
+            raise ValidationError("Detected-image export subfolders must not redirect to another location.")
+        for path in folder.iterdir():
+            if path.suffix.lower() not in (".jpg", ".jpeg") or not path.is_file():
+                continue
+            count += 1
+            if count > MAX_EXPORT_IMAGES:
+                raise ValidationError("Export folder scan exceeds 10,000 JPEG files; choose a narrower destination.")
+            try:
+                if path.stat().st_size > MAX_IMAGE_BYTES:
+                    continue
+                with path.open("rb") as stream:
+                    stream.seek(-2, os.SEEK_END)
+                    if stream.read(2) != b"\xff\xd9":
+                        continue
+                    stream.seek(0)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("error", Image.DecompressionBombWarning)
+                        with Image.open(stream) as image:
+                            if image.format != "JPEG":
+                                continue
+                            raw = image.getexif().get_ifd(34665).get(37510, b"")
+                if not isinstance(raw, bytes) or not raw.startswith(b"UNICODE\0") or len(raw) > MAX_EXIF_BYTES:
+                    continue
+                document = json.loads(raw[8:].decode("utf-16"))
+                if not isinstance(document, dict) or document.get("export_schema_version") != 1:
+                    continue
+                if "metadata_sidecar" in document:
+                    name = document["metadata_sidecar"]
+                    if name != path.with_suffix(".json").name:
+                        continue
+                    with path.with_suffix(".json").open("rb") as stream:
+                        data = stream.read(2 * 1024 * 1024 + 1)
+                    if len(data) > 2 * 1024 * 1024:
+                        continue
+                    document = json.loads(data)
+                if not isinstance(document, dict) or document.get("export_schema_version") != 1:
+                    continue
+                identity, checksum = document.get("source_output_identity"), document.get("source_png_sha256")
+                if (
+                    isinstance(identity, str)
+                    and re.fullmatch(r"[a-f0-9]{32}:\d+", identity)
+                    and (isinstance(checksum, str) and re.fullmatch(r"[a-f0-9]{64}", checksum))
+                ):
+                    identities.add((identity, checksum))
+            except (
+                OSError,
+                ValueError,
+                TypeError,
+                AttributeError,
+                SyntaxError,
+                RecursionError,
+                Image.DecompressionBombError,
+                Image.DecompressionBombWarning,
+            ):
+                continue
+    return identities
+
+
 def _identifier(value) -> str:
     """Keep portable model identity; never export an absolute local model/LoRA path."""
     text = str(value or "")
@@ -104,6 +200,8 @@ def _portable(item: GalleryItem, options: ExportOptions) -> tuple[dict, list[str
         "source_output_identity": item.identity,
         "saved_at_utc": item.saved_at_utc,
         "timestamp_meaning": "durable saved time, not generation start time",
+        "file_creation_time_utc": item.saved_at_utc,
+        "file_creation_time_basis": "durable saved time; generation-completion proxy, exact generation time unavailable",
         "backend_id": item.backend_id,
         "requested_configuration": requested,
         "recorded_effective_configuration": effective,
@@ -207,7 +305,19 @@ def _exif(document: dict, sidecar_name: str | None = None) -> bytes:
             "note": "Full portable metadata exceeds JPEG EXIF capacity; see accompanying JSON.",
         }
     )
+    date = _saved_date(document["saved_at_utc"])
+    date_fields = {}
+    if date is not None:
+        date_fields = {
+            36867: date.strftime("%Y:%m:%d %H:%M:%S"),
+            36868: date.strftime("%Y:%m:%d %H:%M:%S"),
+            36881: "+00:00",
+            36882: "+00:00",
+            37521: f"{date.microsecond:06d}",
+            37522: f"{date.microsecond:06d}",
+        }
     exif[34665] = {
+        **date_fields,
         37510: b"UNICODE\0" + json.dumps(full, ensure_ascii=False, allow_nan=False).encode("utf-16"),
         40962: document["artifact"]["width_px"],
         40963: document["artifact"]["height_px"],
@@ -240,7 +350,9 @@ def _reserve(destination: Path, stem: str):
     raise ValidationError("Too many filename collisions in the export folder.")
 
 
-def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) -> tuple[tuple[str, ...], str]:
+def _export_one(
+    item: GalleryItem, destination: Path, options: ExportOptions, existing: set[tuple[str, str]]
+) -> tuple[tuple[str, ...], str]:
     source = Path(item.path).resolve()
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
@@ -250,10 +362,13 @@ def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) ->
         original = handle.read(MAX_IMAGE_BYTES + 1)
     if len(original) > MAX_IMAGE_BYTES:
         raise ValidationError("Image exceeds the 64 MiB export limit.")
+    checksum = hashlib.sha256(original).hexdigest()
+    if (item.identity, checksum) in existing:
+        return (), "skipped"
     category = "root"
     document, notes = _portable(item, options)
     document.update(
-        source_png_sha256=hashlib.sha256(original).hexdigest(),
+        source_png_sha256=checksum,
         exported_at_utc=datetime.now(UTC).isoformat(),
         encoding={"format": "JPEG", "quality": 95, "subsampling": "4:4:4", "lossy": True, "alpha_background": "white"},
     )
@@ -317,6 +432,20 @@ def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) ->
                         )
                         sidecar_handle.flush()
                         os.fsync(sidecar_handle.fileno())
+                    date = _saved_date(item.saved_at_utc)
+                    if date is None:
+                        notes.append("Some export dates were unavailable; file creation time was not changed.")
+                    elif os.name == "nt":
+                        try:
+                            _set_creation_time(image_handle, date)
+                            if keep_sidecar:
+                                _set_creation_time(sidecar_handle, date)
+                        except (OSError, ValueError, OverflowError):
+                            notes.append(
+                                "Some Windows export creation times could not be set; image copies were retained."
+                            )
+                    else:
+                        notes.append("File creation time is set only on Windows; EXIF retains the recorded saved date.")
                 except BaseException:
                     image_handle.close()
                     sidecar_handle.close()
@@ -330,6 +459,7 @@ def _export_one(item: GalleryItem, destination: Path, options: ExportOptions) ->
                         sidecar.unlink()
             finally:
                 rgb.close()
+    existing.add((item.identity, checksum))
     return tuple(notes), category
 
 
@@ -347,7 +477,8 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     if not total or cancel.is_set():
         return ExportResult(str(destination), total, 0, 0, cancel.is_set())
     destination.mkdir(parents=True, exist_ok=True)
-    exported, failed, noise, blank = 0, 0, 0, 0
+    existing = _existing_exports(destination)
+    exported, failed, noise, blank, skipped = 0, 0, 0, 0, 0
     notes, failures = set(), []
     if progress:
         progress(0, total)
@@ -358,11 +489,14 @@ def _run_export(state, destination, options, query, identities, cancel, progress
             record = storage.get_record(state, identity)
             if record is None:
                 raise ValidationError("Saved output is no longer available.")
-            item_notes, category = _export_one(item_from_record(record), destination, options)
+            item_notes, category = _export_one(item_from_record(record), destination, options, existing)
             notes.update(item_notes)
             noise += category == "noise"
             blank += category == "blank"
-            exported += 1
+            if category == "skipped":
+                skipped += 1
+            else:
+                exported += 1
         except (
             OSError,
             ValueError,
@@ -386,7 +520,16 @@ def _run_export(state, destination, options, query, identities, cancel, progress
         if progress:
             progress(index + 1, total)
     return ExportResult(
-        str(destination), total, exported, failed, cancel.is_set(), tuple(sorted(notes)), tuple(failures), noise, blank
+        str(destination),
+        total,
+        exported,
+        failed,
+        cancel.is_set(),
+        tuple(sorted(notes)),
+        tuple(failures),
+        noise,
+        blank,
+        skipped,
     )
 
 

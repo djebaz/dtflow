@@ -18,6 +18,8 @@ Do not introduce attempt/provider/date subfolders. The service rejects destinati
 inside application state or the source attempt folder. Originals and their durable
 references are read-only. It uses exclusive filename reservations for both image
 and sidecar, adding numeric collision suffixes rather than replacing any file.
+Before conversion, a bounded scan of root/noise/blank reads portable DTFlow metadata (including bounded mandatory JSON fallback) from JPEG candidates with an end marker. Matching saved-output identity and original PNG checksum skips re-export regardless of changed options. Filenames alone are not proof. The scan is capped at 10,000 JPEG candidates. Existing files are never rewritten or retimestamped, and incomplete/unrecognized files are not skips. This snapshot is not a cross-process deduplication lock; exclusive reservations still protect collisions from overwrites. `ExportResult.skipped` is distinct from exported/failed and included in processed counts. Missing destination directories and parents are created before scanning/writing; permission errors do not redirect exports.
+
 Caught write/encode errors clean up only the files reserved by that operation.
 Successful completed images remain after cancellation; a crash/power loss can leave
 an incomplete newly reserved export, but never replaces an original or existing file.
@@ -63,6 +65,10 @@ credentials and arbitrary provider metadata are excluded. Missing/inconsistent
 sidecars use explicitly marked durable request evidence instead of invented values.
 The prompt checkbox applies equally to filename, visible EXIF, embedded JSON and
 sidecars. Camera Make/Model, authorship and copyright are not fabricated.
+
+## Historical export dates
+
+New JPEG EXIF DateTimeOriginal/DateTimeDigitized include UTC offsets and subseconds from the durable successful saved time. This is an explicit generation-completion proxy, not invented generation-start telemetry. Windows creation time is set via [SetFileTime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime) on the exclusively created export handle after flushing writes, and on written JSON sidecars. Modified time remains export time. Timestamp failures warn and preserve completed copies; unavailable timestamps omit date fields rather than guess. No original/existing/skipped files are timestamped. Non-Windows execution retains EXIF but reports that file creation time was not set.
 
 ## Preferences and acceptance
 

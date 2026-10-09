@@ -21,3 +21,4 @@ class ExportResult:
     failures: tuple[str, ...] = ()
     noise: int = 0
     blank: int = 0
+    skipped: int = 0

@@ -33,6 +33,8 @@ filtered export, set filters in Images first, then return to Connection. Selecti
 Generate's metadata entry is not selecting an image. Export freezes the selection
 when started; new outputs arriving afterward do not expand that operation.
 
+You can type an absolute folder path that does not yet exist; export creates it and missing parents before writing. Permission/path failures are reported, not redirected.
+
 Click **Export JPEGs**. Normal images go directly into the chosen folder: **no
 attempt, provider or date subfolders**. Filenames use saved-at UTC time, a short
 prompt label, request seed, short attempt ID and output index, for example:
@@ -42,6 +44,10 @@ saved time, not a claimed generation start time. The seed is the recorded reques
 seed, not an independently verified per-image seed.
 
 **Separate detected noise and blank images into subfolders** is checked by default and remembered. Flagged copies go only into `noise/` or `blank/`, with any JSON metadata beside them; they are not also written at root. Folders are created only when used. Uncheck for a completely flat export and no detector analysis. The shared v2 detector uses pixel statistics on the white-composited source before JPEG encoding; flags are provisional, not aesthetics/prompt checks or job-status changes. Review them manually. The completion summary includes routed counts.
+
+Re-exporting to the same folder skips saved outputs already present at root, `noise/` or `blank/`, identified by embedded DTFlow output identity plus original PNG checksum (including the mandatory-sidecar fallback). Existing files are never rewritten: changed privacy, routing or sidecar choices do not apply to skipped copies. Use a new folder to apply changed choices. Unrecognized or incomplete files are not counted as prior exports; unrelated name collisions still use numeric suffixes.
+
+New Windows copies have **Date created** set to the recorded successful saved-output time; EXIF **Date taken** uses the same UTC date with its offset. This is a generation-completion proxy: exact generation start/end was not recorded, so export cannot recreate it. Filename dates keep the same saved-time basis. Skipped/existing files are not retimestamped. Timestamp-setting failures warn without discarding written copies; JSON sidecars receive the same creation time when written.
 
 JPEG quality 95 / 4:4:4 is **lossy**; transparency is composited on white. Original
 PNGs, metadata and history stay untouched. Right-click an exported JPG in Windows
@@ -59,7 +65,7 @@ mandatory if full portable metadata exceeds EXIF capacity, with a reported warni
 
 The folder and privacy/sidecar/routing choices are remembered independently of cache.
 **Open folder** opens the last successful destination. **Cancel export** stops after
-the current image and keeps completed exports. The final summary reports exported,
+the current image and keeps completed exports. The final summary reports exported, skipped,
 failed and unprocessed images; hover over it for the first 100 failure details.
 Missing/corrupt images fail individually rather than hiding other saved outputs.
 A single operation is capped at 10,000 images, 64 MiB encoded input per image and
