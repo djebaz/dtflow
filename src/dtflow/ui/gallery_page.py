@@ -346,10 +346,10 @@ class GalleryPage(QObject):
         self.table.itemChanged.connect(self._table_item_changed)
         self._header_check = QCheckBox(self.table.horizontalHeader())
         self._header_check.setTristate(True)
-        self._header_check.setToolTip("Select all images on this loaded page only.")
-        self._header_check.setAccessibleName("Check the current gallery page")
+        self._header_check.setToolTip("Select or unselect the currently displayed rows.")
+        self._header_check.setAccessibleName("Select currently displayed rows")
         self._header_check.setGeometry(10, 6, 22, 22)
-        self._header_check.clicked.connect(self._toggle_page)
+        self._header_check.clicked.connect(self._toggle_visible_rows)
         self.table.horizontalHeader().sectionResized.connect(lambda *_: self._position_header_check())
 
         self.table_viewport.setMouseTracking(True)
@@ -420,23 +420,20 @@ class GalleryPage(QObject):
         self.selection_bar = self._widget("gallerySelectionBar", QFrame)
         self.selection_count = self._widget("gallerySelectedCountLabel", QLabel)
         self.hidden_count_label = self._widget("galleryHiddenCountLabel", QLabel)
-        self.select_page_button = self._widget("gallerySelectPageButton", QPushButton)
         self.select_filtered_button = self._widget("gallerySelectFilteredButton", QPushButton)
-        self.clear_selection_button = self._widget("galleryClearButton", QPushButton)
+        self.clear_selection_button = self._widget("galleryUnselectButton", QPushButton)
         self.copy_paths_button = self._widget("galleryCopyPathsButton", QPushButton)
         self.more_button = self._widget("galleryMoreButton", QPushButton)
         self.export_button = self._widget("galleryExportButton", QPushButton)
         self.delete_button = self._widget("galleryDeleteButton", QPushButton)
         self.detail_check = self._widget("galleryDetailSelectionCheck", QCheckBox)
 
-        self.select_page_button.clicked.connect(self._select_page)
         self.select_filtered_button.clicked.connect(self._select_all_filtered)
         self.copy_paths_button.clicked.connect(self._copy_checked_paths)
         self.export_button.clicked.connect(self._open_checked_export)
         self.delete_button.clicked.connect(self._request_recycle)
         self.detail_check.toggled.connect(self._detail_check_toggled)
         for control, icon in (
-            (self.select_page_button, "select-page"),
             (self.select_filtered_button, "layers"),
             (self.copy_paths_button, "copy"),
             (self.more_button, "more"),
@@ -447,25 +444,24 @@ class GalleryPage(QObject):
             control.setIconSize(QSize(16, 16))
 
         clear_menu = QMenu(self.clear_selection_button)
-        clear_menu.addAction("Clear hidden", self._clear_hidden)
-        clear_menu.addAction("Clear all", self._clear_all)
-        self.clear_selection_button.setText("Clear")
+        clear_menu.addAction("Unselect hidden", self._unselect_hidden)
+        clear_menu.addAction("Unselect all", self._unselect_all)
+        self.clear_selection_button.setText("Unselect")
         self.clear_selection_button.setMenu(clear_menu)
         more_menu = QMenu(self.more_button)
-        more_menu.addAction("Select page", self._select_page)
         more_menu.addAction("Select all filtered", self._select_all_filtered)
         more_menu.addAction("Copy paths", self._copy_checked_paths)
         more_menu.addSeparator()
-        more_menu.addAction("Clear hidden", self._clear_hidden)
-        more_menu.addAction("Clear all", self._clear_all)
+        more_menu.addAction("Unselect hidden", self._unselect_hidden)
+        more_menu.addAction("Unselect all", self._unselect_all)
         self.more_button.setText("More")
         self.more_button.setMenu(more_menu)
         self.more_button.hide()
 
         self._selection_shortcuts: list[QShortcut] = []
         for key, callback in (
-            ("Ctrl+A", self._select_page),
-            ("Escape", self._clear_all),
+            ("Ctrl+A", self._select_all_filtered),
+            ("Escape", self._unselect_all),
             ("Delete", self._request_recycle),
         ):
             shortcut = QShortcut(QKeySequence(key), self.page)
@@ -505,7 +501,6 @@ class GalleryPage(QObject):
         narrow = width < 790
         for button in (self.select_filtered_button, self.clear_selection_button, self.copy_paths_button):
             button.setVisible(not compact)
-        self.select_page_button.setVisible(not narrow)
         self.more_button.setVisible(compact)
         self._position_header_check()
 
@@ -525,7 +520,6 @@ class GalleryPage(QObject):
         self.selection_count.setText(f"{count} selected")
         self.hidden_count_label.setText(f"{self._hidden_checks} hidden by filters")
         self.hidden_count_label.setVisible(self._hidden_checks > 0)
-        self.select_page_button.setEnabled(bool(self.items))
         self.select_filtered_button.setEnabled(self.total > 0 and not self._selection_busy)
         self.clear_selection_button.setEnabled(count > 0)
         self.copy_paths_button.setEnabled(count > 0)
@@ -557,7 +551,7 @@ class GalleryPage(QObject):
         blocked = self._header_check.blockSignals(True)
         self._header_check.setCheckState(state)
         self._header_check.setEnabled(total > 0)
-        self._header_check.setToolTip(f"{selected} of {total} images checked on this page")
+        self._header_check.setToolTip(f"{selected} of {total} displayed images checked")
         self._header_check.blockSignals(blocked)
 
     def _paint_checked_item(self, row: int, identity: str) -> None:
@@ -604,7 +598,7 @@ class GalleryPage(QObject):
         if self._syncing_selection or (identity in self.selection.checked) == value:
             return
         if value and len(self.selection.checked) >= MAX_CHECKED_IMAGES:
-            self._selection_notice("Selection limit reached: 10,000 images. Clear some checks first.")
+            self._selection_notice("Selection limit reached: 10,000 images. Unselect some images first.")
             self._sync_selection_ui()
             return
         self.selection.toggle(identity)
@@ -649,23 +643,23 @@ class GalleryPage(QObject):
         if cell.column() != 0:
             self._open_from_list(str(cell.data(Qt.ItemDataRole.UserRole)))
 
-    def _toggle_page(self, *_args) -> None:
+    def _toggle_visible_rows(self, *_args) -> None:
         ids = [item.identity for item in self.items]
         if ids and all(identity in self.selection.checked for identity in ids):
             self.selection.checked.difference_update(ids)
             self._after_selection_edit()
         else:
-            self._select_page()
+            self._select_visible_rows()
 
-    def _select_page(self) -> None:
+    def _select_visible_rows(self) -> None:
         wanted = [item.identity for item in self.items]
         added = self.selection.add(wanted)
         omitted = sum(identity not in self.selection.checked for identity in wanted)
         if omitted:
-            self._selection_notice(f"{added} page images added; {omitted} omitted at the 10,000-image limit.")
+            self._selection_notice(f"{added} visible images added; {omitted} omitted at the 10,000-image limit.")
         self._after_selection_edit()
 
-    def _clear_all(self) -> None:
+    def _unselect_all(self) -> None:
         if self.selection.checked:
             self.selection.clear()
             self._hidden_checks = 0
@@ -747,7 +741,7 @@ class GalleryPage(QObject):
     def _select_all_filtered(self) -> None:
         self._begin_selection_scan(mode="add")
 
-    def _clear_hidden(self) -> None:
+    def _unselect_hidden(self) -> None:
         if self._hidden_checks:
             self._begin_selection_scan(mode="clear-hidden")
 
