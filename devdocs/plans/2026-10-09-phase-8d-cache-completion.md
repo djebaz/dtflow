@@ -44,3 +44,7 @@
 5. Clear Inventory, then explicitly Refresh inventory: disk cache is rebuilt without generation. Existing in-memory choices may stay visible; cleanup is not a presentation reset. Clear all cache and verify durable state/images/export copies remain untouched.
 6. Close the app, launch with uv run dtflow gui --no-cache, and export to a fresh folder: inventory/derived files must not be created or rewritten. Existing cache/control files may remain. Exit and relaunch normally to restore disk caching.
 7. Isolated fixture validation (never manipulate real state): redirected root/category/nested junctions, invalid category names, traversal bound, concurrent-start races and permission/partial-deletion errors. Confirm no durable target is touched and errors allow retry; these are not agent-validated by the static checks above.
+
+## Owner test feedback and startup contention fix
+- Owner ran the offline suite at 9397d03: 425 passed, 3 skipped, one failure in test_cache_prefills_the_model_list_and_a_bypass_ignores_it (cached model not restored within three seconds).
+- Source inspection identified transient ownership contention between startup cache measurement and simultaneous persistence reads: immediate busy-to-miss handling can discard the current valid observation. Persistence transactions now wait at most 0.5 seconds, including OS-lock contention; purge, measurement and export acquisition stay nonblocking. Owner rerun is required; no agent test execution or new tests.

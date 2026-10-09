@@ -26,6 +26,9 @@
 
 ## Fixed
 
+- Short cache-persistence contention now waits up to 0.5 seconds off-thread rather than immediately discarding valid startup inventory evidence; cleanup/measurement/export ownership remain nonblocking. Owner suite reported 425 passed, 3 skipped and one cache-prefill timeout before this fix; rerun pending.
+
+
 - PR #56 completes shared cache-I/O/cleanup coordination across threads/processes, including export computations; busy exports fall back to no persistent cache. Category measurement shows file counts, redirected cache trees are refused, and bounded preflight plus partial-failure feedback preserves durable data and user exports. Owner/runtime acceptance remains pending.
 
 

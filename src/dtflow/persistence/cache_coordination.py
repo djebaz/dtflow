@@ -3,6 +3,7 @@
 import os
 import stat
 import threading
+import time
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
@@ -44,13 +45,14 @@ def category_path(state: Path, category: str) -> Path:
 
 
 @contextmanager
-def cache_access(state: Path):
-    """Serialize cache transactions across threads/processes; never wait on the GUI."""
+def cache_access(state: Path, *, timeout: float = 0.0):
+    """Serialize transactions; callers doing background file I/O may wait briefly."""
     root = Path(state).resolve()
     key = os.path.normcase(str(root))
     with _registry_guard:
         lock = _locks.setdefault(key, threading.RLock())
-    if not lock.acquire(blocking=False):
+    deadline = time.monotonic() + max(0.0, timeout)
+    if not lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
         raise CacheBusyError("Cache is busy; wait for active cache operations and try again.")
     depths = getattr(_local, "depths", None)
     if depths is None:
@@ -62,22 +64,27 @@ def cache_access(state: Path):
             lock_path = root / "cache.lock"
             check_path(lock_path)
             handle = lock_path.open("a+b")
-            try:
-                handle.seek(0)
-                if os.name == "nt":
-                    import msvcrt
-
-                    if handle.read(1) == b"":
-                        handle.write(b"0")
-                        handle.flush()
+            while True:
+                try:
                     handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
+                    if os.name == "nt":
+                        import msvcrt
 
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError as exc:
-                raise CacheBusyError("Cache is busy; wait for active cache operations and try again.") from exc
+                        if handle.read(1) == b"":
+                            handle.write(b"0")
+                            handle.flush()
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise CacheBusyError("Cache is busy; wait for active cache operations and try again.") from exc
+                    time.sleep(min(0.01, remaining))
         depths[key] = depths.get(key, 0) + 1
         try:
             yield
@@ -94,12 +101,12 @@ def cache_access(state: Path):
 
 
 def cache_io(category: str):
-    """Coordinate a synchronous persistence function whose first argument is state."""
+    """Bounded file-I/O wait avoids false misses during overlapping startup reads."""
 
     def decorate(function):
         @wraps(function)
         def guarded(state, *args, **kwargs):
-            with cache_access(state):
+            with cache_access(state, timeout=0.5):
                 category_path(state, category)
                 return function(state, *args, **kwargs)
 
