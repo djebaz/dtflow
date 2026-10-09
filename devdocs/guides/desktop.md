@@ -16,7 +16,9 @@ timer. Confirm keeps frozen file/queue/Trash scope, with busy checks and destruc
 revalidation still applied. A double-click does not count as two consent activations.
 Closing during queue dispatch uses an inline **Confirm close** action because the native
 window close button cannot change its label; closing during recycling requests a safe stop
-and waits for the result instead of exiting mid-file.
+and waits for the result instead of exiting mid-file. Programmatic closing follows the same
+consent; a refused close does not shut down the runner. Once shutdown begins, polling timers
+stop and already-queued UI results cannot restart background work.
 
 Checkpoint search and exact custom identifiers use one expanded editor. **Add LoRA** shows
 search, identifier and weight together and commits once with **Add**. New UI selections use

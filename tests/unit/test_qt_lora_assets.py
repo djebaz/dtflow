@@ -13,6 +13,7 @@ import pytest
 pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtWidgets import QDoubleSpinBox, QLineEdit, QListWidget  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -65,9 +66,11 @@ def settled(page):
 
 
 def add_lora(window, qtbot, name, weight=0.5):
-    panel = window.generation.lora
-    panel.choose_lora = lambda parent, candidates: (name, weight)
     window.generation_page.addLoraButton.click()
+    editor = window.inline._editor
+    editor.findChild(QLineEdit, "inlineSelectionIdentifier").setText(name)
+    editor.findChild(QDoubleSpinBox, "inlineSelectionWeight").setValue(weight)
+    window.inline.form.inlineAcceptButton.click()
 
 
 def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window, qtbot, monkeypatch):
@@ -75,10 +78,17 @@ def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window,
     page, panel = window.generation_page, window.generation.lora
     page.refreshInventoryButton.click()
     qtbot.waitUntil(lambda: page.refreshInventoryButton.isEnabled(), timeout=5000)
-    seen = []
-    panel.choose_lora = lambda parent, candidates: seen.append(dict(candidates)) or ("ok", 0.7)
     page.addLoraButton.click()
-    assert seen[0]["ok"] == 0.7 and set(seen[0]) == {"ok", "bad", "unk"}  # inventory suggestions with default weights
+    editor = window.inline._editor
+    choices = editor.findChild(QListWidget, "inlineSelectionChoices")
+    assert {choices.item(i).text() for i in range(choices.count())} == {"ok", "bad", "unk"}
+    choices.setCurrentRow(next(i for i in range(choices.count()) if choices.item(i).text() == "ok"))
+    weight = editor.findChild(QDoubleSpinBox, "inlineSelectionWeight")
+    assert weight.value() == 0.7  # inventory suggestion, alongside identifier rather than a second dialog
+    assert (weight.minimum(), weight.maximum(), weight.singleStep(), weight.decimals()) == (0.0, 3.0, 0.1, 1)
+    assert not panel.loras  # selection alone does not commit
+    window.inline.form.inlineAcceptButton.click()
+    assert panel.loras[0].weight == 0.7
     for name in ("bad", "unk"):
         add_lora(window, qtbot, name)
     assert page.loraList.count() == 3
@@ -126,11 +136,20 @@ def cloud(window, monkeypatch):
 def prepare(window, qtbot, file, confirm=True):
     panel, page = window.generation.lora, window.generation_page
     asked = []
-    panel.choose_asset_file = lambda parent, directory: str(file)
-    panel.confirm_upload = lambda parent, path: asked.append(path.name) or confirm
+    panel.choose_asset_file = lambda parent, directory: asked.append(file.name) or str(file)
+    original = page.prepareAssetButton.text()
     page.prepareAssetButton.click()
+    assert page.prepareAssetButton.text() == "Confirm"
+    assert page.prepareAssetButton.property("confirmationPending") is True
+    details = window.inline.form.inlineTextBrowser.toPlainText()
+    assert file.name in details and UPLOAD_NOTICE in details
     if confirm:
+        page.prepareAssetButton.click()
         qtbot.waitUntil(lambda: page.generateButton.isEnabled(), timeout=5000)
+    else:
+        window.inline.form.inlineDismissButton.click()
+    assert page.prepareAssetButton.text() == original
+    assert not page.prepareAssetButton.property("confirmationPending")
     return asked
 
 

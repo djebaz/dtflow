@@ -49,3 +49,29 @@
 - Syntax/AST parsing, canonical XML parsing, module imports and theme token resolution passed without launching the application. Ruff check passed for src/dtflow/ui; format checks passed for all ten changed Python modules; git diff whitespace check passed. A source inventory found no remaining QMessageBox/QInputDialog/QProgressDialog/QDialog use in src/dtflow/ui.
 - Packaging skipped: this is an enhancement PR, not an artifact/release task. Canonical forms use the existing packaged data collection; packaged acceptance is not claimed.
 - No training/inference, cloud upload, actual Trash/cache mutation or potentially billable action ran.
+
+
+## Approved CI follow-up (2026-10-09)
+
+Owner approved adapting existing tests and correcting shutdown, without popup restoration,
+weakened consent or progress redesign. CI [run 37982792491](https://github.com/djebaz/dtflow/actions/runs/37982792491)
+at source 314d927 reported 8 failed, 417 passed, 3 skipped and 1 error. Failures relied on
+removed QMessageBox/chooser/confirmation hooks; queue teardown also polled a shut-down runner.
+
+- [x] Adapt existing metadata, LoRA, upload, queue and saved-key contracts to the inline controls.
+- [x] Extend existing lifecycle/close contracts for refused programmatic close, stopped polling
+  and ignored queued results; no new test functions/files.
+- [x] Expose runner closed/shutdown_started lifecycle; stop desktop timers and reject late UI
+  delivery without changing worker cancellation/durable outcome settlement.
+- [x] Programmatic close requests consent before runner shutdown; close consent is one-use only.
+- [x] Synchronize lifecycle contract, desktop guide, status and unreleased notes.
+- [x] Review/static checks and commit/push follow-up to PR #58; fresh CI tracked in the PR.
+
+Tests were adapted with owner approval, not added or run locally. Smoke tests were not run.
+Fresh CI, runtime/visual and packaged acceptance remain separate. No inference, training,
+actual cloud upload, destructive live operations, billable action, packaging or release.
+Disk exhaustion interrupted documentation writes; owner freed space before handoff resumed.
+
+Follow-up static checks: Ruff lint/format passed for all eight changed Python files; AST and
+module imports passed; existing test-function inventory unchanged; git diff whitespace passed.
+No application launch or test execution. Fresh CI status is not presumed successful.

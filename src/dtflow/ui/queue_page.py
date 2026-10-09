@@ -195,6 +195,9 @@ class QueuePage:
 
     # -- reading ---------------------------------------------------------------------------------------------------
     def refresh(self) -> None:
+        if self._runner.closed:
+            self._timer.stop()
+            return
         if self._reading:
             return
         self._reading = True

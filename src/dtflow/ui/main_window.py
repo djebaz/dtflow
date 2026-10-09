@@ -143,6 +143,7 @@ class MainWindow:
         self._saved = saved or SavedCredentials()
         self._environ = environ
         self.runner = runner or AsyncRunner(self.form)
+        self.runner.shutdown_started.connect(self._stop_ui_timers)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
         self.activity = Activity()
@@ -829,6 +830,8 @@ class MainWindow:
         self.image_recycle.request(identities, hidden, query)
 
     def _confirm_close(self) -> bool:
+        if self.runner.closed:
+            return True
         if self.image_recycle.running:
             self.image_recycle.cancel()
             InlineNotice.information(
@@ -846,7 +849,10 @@ class MainWindow:
 
         def close_confirmed():
             self.inline._close_allowed = True
-            self.form.close()
+            try:
+                self.form.close()
+            finally:
+                self.inline._close_allowed = False  # consent applies only to this close attempt
 
         self.inline.show(
             "Close DTFlow?",
@@ -937,11 +943,19 @@ class MainWindow:
     def about(self) -> None:
         InlineNotice.about(self.form, "About DTFlow", f"{display_identity()}\n\nState folder: {self.state_dir}")
 
+    def _stop_ui_timers(self) -> None:
+        """No poll/save/debounce timer may submit work after runner shutdown."""
+        for timer in self.form.findChildren(QTimer):
+            timer.stop()
+
     def close(self) -> None:
+        # Request consent before saving/stopping: a refused close leaves the
+        # running dispatcher and its durable uncertainty safeguards intact.
+        if not self.form.close() or self.runner.closed:
+            return
         self.remember(background=False)
         self.image_export.cancel()
         self.image_recycle.cancel()
         self.gallery.save_now()
         log.info("window closed")
         self.runner.shutdown()
-        self.form.close()

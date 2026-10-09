@@ -119,3 +119,11 @@ progress uses a bottom overlay hidden when idle, with separate concurrent-operat
 Existing destructive/upload/credit safeguards remain; no release/version change.
 See the [live plan](plans/2026-10-09-inline-actions.md). Static checks only; no tests added/run
 or smoke tests run under fast-implement. Owner runtime/visual/packaged acceptance remains.
+
+
+PR #58 CI follow-up: run 37982792491 at 314d927 reported 8 failed, 417 passed,
+3 skipped and 1 error. Existing Qt contracts are adapted to real inline editor/consent
+interactions rather than removed dialog mocks. Shutdown stops desktop timers and suppresses
+late GUI deliveries; programmatic close now obtains consent before stopping dispatch.
+No new tests or local test/smoke execution; fresh CI confirmation remains pending.
+The owner's progress-overlay redesign discussion is separate and not implemented here.

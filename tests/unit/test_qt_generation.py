@@ -381,9 +381,7 @@ def test_canvas_zoom_anchor_expand_lifecycle_and_narrow_navigation(window, qtbot
     assert not viewer._expanded and viewer.parentWidget() is host
 
 
-def test_saved_actions_use_attempt_identity_and_metadata_file(window, qtbot, fake, monkeypatch):
-    from PySide6.QtWidgets import QMessageBox
-
+def test_saved_actions_use_attempt_identity_and_metadata_file(window, qtbot, fake):
     use, _ = fake
     use()
     page = window.generation_page
@@ -391,10 +389,10 @@ def test_saved_actions_use_attempt_identity_and_metadata_file(window, qtbot, fak
     qtbot.waitUntil(settled(page), timeout=5000)
     window.form.backendCombo.setCurrentText("cloud")
     assert "Fixture" in page.resultPreviewLabel._badge.text()
-    shown = []
-    monkeypatch.setattr(QMessageBox, "exec", lambda dialog: shown.append(dialog.detailedText()))
     window.generation.metadataButton.click()
-    assert json.loads(shown[0])["backend_id"] == "fake"
+    assert window.inline.form.inlineTitleLabel.text() == "Saved generation metadata"
+    assert json.loads(window.inline.form.inlineTextBrowser.toPlainText())["backend_id"] == "fake"
+    window.inline.form.inlineDismissButton.click()
     window.generation._show_image(fixture_png(64, 64, 0), "final", "cloud")
     assert "Fixture" not in page.resultPreviewLabel._badge.text()
 

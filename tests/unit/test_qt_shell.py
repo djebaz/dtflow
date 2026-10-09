@@ -28,13 +28,19 @@ def window(qtbot, tmp_path):
     shell.runner.shutdown()
 
 
-def test_lifecycle_from_designer_file_and_clean_shutdown(window):
+def test_lifecycle_from_designer_file_and_clean_shutdown(window, qtbot):
     assert window.form.objectName() == "MainWindow"
     assert not window.form.windowIcon().isNull()
     window.show()
     assert window.runner._thread.is_alive()
+    window.queue._timer.start(1)
+    delivered = []
+    window.runner._done.emit(lambda result, error: delivered.append(result), "stale", None)
     window.runner.shutdown()
-    assert not window.runner._thread.is_alive()
+    assert window.runner.closed and not window.runner._thread.is_alive()
+    assert not window.queue._timer.isActive()
+    qtbot.wait(20)  # drain the callback queued before shutdown, without reviving polling
+    assert delivered == [] and not window.queue._timer.isActive()
 
 
 def test_shutdown_before_the_loop_starts_is_not_lost(qtbot):
@@ -110,10 +116,14 @@ def test_credential_entry_wiring_never_echoes_secret(window):
     assert form.keyEdit.text() == ""
     assert "saved" in form.credentialStatusLabel.text().lower()
     assert "private-key" not in form.credentialStatusLabel.text()
-    window.confirm = lambda *_: False  # declining keeps the key
     form.removeKeyButton.click()
+    assert form.removeKeyButton.property("confirmationPending") is True
+    assert "saved" in form.credentialStatusLabel.text().lower()
+    window.inline.form.inlineDismissButton.click()  # declining keeps the key
+    assert not form.removeKeyButton.property("confirmationPending")
     assert "saved" in form.credentialStatusLabel.text().lower() and form.removeKeyButton.isEnabled()
-    window.confirm = lambda *_: True
+    form.removeKeyButton.click()
+    assert "saved" in form.credentialStatusLabel.text().lower()
     form.removeKeyButton.click()
     assert form.credentialStatusLabel.text().startswith("No API key") and not form.removeKeyButton.isEnabled()
     form.saveKeyButton.click()  # empty entry is refused
