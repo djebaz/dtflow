@@ -97,3 +97,12 @@ None blocking. User/runtime acceptance remains separate from implementation.
 - Full Unicode prompts remain in XP fields and portable JSON; no original or existing export is rewritten.
 - Final tests and smoke checks for this follow-up remain with the owner; no tests added/run and
   no new agent export/smoke invocation. Static checks only; no inference or billable actions.
+
+## Owner follow-up smoke
+
+- Owner reports the ImageDescription follow-up "seems ok" using `tmp/smoke3`.
+- Read-only inspection: 345 JPGs at root, no subfolders/JSONs; all 345 have prompts
+  enabled and matching ImageDescription summaries. No metadata read failures.
+- No new export, GUI launch, pixel decode, tests or agent smoke invocation.
+  Remaining privacy-off/scenario/packaged gates remain with the owner. See
+  [updated evidence](../research/jpeg-export-smoke-2026-10-09.md).

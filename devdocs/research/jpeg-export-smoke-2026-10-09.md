@@ -25,3 +25,23 @@ Final tests and remaining Windows/packaged acceptance belong to the owner, inclu
 privacy-off, optional/oversized sidecars, repeated export collisions, single/filtered
 scopes, corrupt/missing files and cancel/close boundaries. No inference or potentially
 billable provider operation was performed by the agent.
+
+## ImageDescription follow-up smoke
+
+After the ImageDescription fix (`9fa4c31`), the owner reported that the new smoke
+"seems ok", using `C:/Users/dje/Documents/GitHub/dtflow/tmp/smoke3`.
+The exact runtime/executable revision was not supplied; the local branch was at
+`9fa4c31` when the agent inspected the supplied files.
+
+Read-only file/EXIF inspection (no new export, GUI launch or pixel decode) found:
+
+- 345 JPGs directly at the folder root; zero subfolders and zero JSON sidecars.
+- All 345 have `prompts_included=true` in portable metadata.
+- All 345 contain ImageDescription, matching the bounded ASCII-compatible prompt
+  summary in embedded metadata; no unreadable metadata was found.
+
+This supports the checked Include prompts path and restored ImageDescription for
+the supplied artifacts. It does not establish unchecked privacy, collision,
+sidecar-overflow, cancellation, all scope variants or packaged acceptance. No tests
+or agent smoke invocation were performed. The ignored inspection summary is
+`tmp/smoke3-exif-inspection.json`.
