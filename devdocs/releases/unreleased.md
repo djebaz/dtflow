@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 reuses the canonical Images Delete SVG, tinted danger red, in both the Recycle Bin confirmation and in-progress Trash overlay instead of separate drawn/emoji icons. Other operation glyphs and behavior are unchanged.
+
+
 - PR #58 unifies all amber warning/partial/stopped overlay results and nonfatal notices under the six-second state-colored countdown, draining bar, hover/focus pause and fade. Persistent red errors and informational inspections are unchanged; hiding a notification does not change durable outcome/uncertainty semantics. Recycle Bin Delete confirmation now uses a monochrome danger-red trash-can icon instead of a green recycling emoji.
 
 - PR #58 now auto-dismisses **clean, user-cancelled Export** results after six seconds using the existing draining lifetime bar, hover/focus pause and 450 ms fade. The result remains an amber stopped outcome with an amber countdown and bar; export failures/warnings and other stopped workflows remain persistent.

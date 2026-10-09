@@ -112,6 +112,7 @@ def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbo
 
 def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
     from dtflow.ui.theme import load_tokens
+    from dtflow.ui.trash_icon import trash_icon_pixmap
 
     window.show()
     button = window.gallery.delete_button
@@ -121,6 +122,7 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
     symbol = window.inline.form.inlineSymbol
     icon = symbol.pixmap()
     assert icon is not None and not icon.isNull()
+    assert icon.toImage() == trash_icon_pixmap().toImage()
     assert symbol.text() == ""
     assert symbol.property("feedbackState") == "error"
     danger_rgb = load_tokens()["color.dangerText"].lower()
@@ -131,6 +133,14 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
         for x in range(pixels.width())
     )
     window.inline.dismiss()
+
+    # Running Trash also uses the same canonical Delete pictogram, never an emoji.
+    window.progress_strip.start("trash", "Moving originals to Recycle Bin")
+    progress_symbol = window.progress_strip.rows["trash"].activitySymbol
+    assert progress_symbol.pixmap() is not None
+    assert progress_symbol.pixmap().toImage() == icon.toImage()
+    assert progress_symbol.text() == ""
+    window.progress_strip.finish("trash")
 
 
 def test_shutdown_before_the_loop_starts_is_not_lost(qtbot):

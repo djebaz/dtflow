@@ -4,36 +4,13 @@ import math
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRectF, Qt
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QPixmap, QShortcut
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 from dtflow.ui.activity_strip import activity_strip
-from dtflow.ui.theme import load_tokens
-
-
-def _trash_can_icon() -> QPixmap:
-    """Draw a monochrome danger-red trash can, independent of emoji fonts."""
-    ratio = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
-    icon = QPixmap(round(28 * ratio), round(28 * ratio))
-    icon.setDevicePixelRatio(ratio)
-    icon.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(icon)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    pen = QPen(QColor(load_tokens()["color.dangerText"]))
-    pen.setWidthF(1.8)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen)
-    painter.setBrush(Qt.BrushStyle.NoBrush)
-    painter.drawLine(7, 9, 21, 9)
-    painter.drawLine(11, 7, 17, 7)
-    painter.drawRoundedRect(QRectF(9, 11, 10, 12), 1.2, 1.2)
-    painter.drawLine(12, 14, 12, 20)
-    painter.drawLine(16, 14, 16, 20)
-    painter.end()
-    return icon
+from dtflow.ui.trash_icon import trash_icon_pixmap
 
 
 class InlineFeedback(QObject):
@@ -235,7 +212,7 @@ class InlineFeedback(QObject):
         button._inline_commit = callback
         self._set_feedback_state("error" if danger else "confirm")
         if danger and title.startswith("Move "):
-            self.form.inlineSymbol.setPixmap(_trash_can_icon())
+            self.form.inlineSymbol.setPixmap(trash_icon_pixmap())
         else:
             self.form.inlineSymbol.setText("▤" if "cache" in title.lower() else "!" if danger else "i")
         self.strip._position()

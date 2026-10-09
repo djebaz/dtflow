@@ -481,8 +481,9 @@ never erases durable outcome records, uncertainty indicators, failure
 details, or changes stop/retry behavior. Escape dismisses a standalone
 notice, while Cancel/Escape disarm a pending confirmation/editor;
 dismissing any row never stops work.
-Recycle Bin delete confirmation uses a monochrome danger-red trash-can
-pictogram drawn with Qt, never the green system recycling emoji. Stopped
+Recycle Bin Delete confirmation and in-progress Trash rows reuse the exact
+Images Delete button SVG (\`resources/images/gallery/delete.svg\`), tinted
+with the shared danger-red token; neither shows a recycling emoji. Stopped
 shows a stop-square glyph; progress uses operation-specific glyphs
 for Trash, Export, Cache, Queue, selection and generation. Destructive
 classification is explicit at the confirmation call site (`danger=True`),

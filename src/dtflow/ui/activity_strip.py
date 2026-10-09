@@ -8,6 +8,8 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect
 from shiboken6 import isValid
 
+from dtflow.ui.trash_icon import trash_icon_pixmap
+
 
 def _load(name, parent):
     file = QFile(str(Path(__file__).with_name("forms") / name))
@@ -23,7 +25,6 @@ def _load(name, parent):
 
 
 _OPERATION_ICONS = {
-    "trash": "♻",
     "export": "⇧",
     "asset": "⇧",
     "cache": "▤",
@@ -145,7 +146,10 @@ class ActivityStrip(QObject):
         self.finish(key)
         row = _load("activity_progress_row.ui", self.form)
         row.setProperty("feedbackState", "progress")
-        row.activitySymbol.setText(_OPERATION_ICONS.get(key.split("-")[0], "⋯"))
+        if key.split("-")[0] == "trash":
+            row.activitySymbol.setPixmap(trash_icon_pixmap())
+        else:
+            row.activitySymbol.setText(_OPERATION_ICONS.get(key.split("-")[0], "⋯"))
         row.activityLabel.setText(label)
         row.activityDetail.setText(detail or "Preparing…")
         row.activityProgress.setAccessibleName(label + " progress")
