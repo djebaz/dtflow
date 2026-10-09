@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from dtflow.core.gallery import GalleryQuery
+from dtflow.persistence.image_recycle import attach_read_only
 from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_sqlite
 
 # The saver commits image paths followed by metadata.json only after every durable write succeeds.
@@ -20,6 +21,9 @@ WITH outputs AS (
  FROM attempts a, json_each(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END) p
  WHERE a.state='succeeded' AND a.remote_outcome='succeeded' AND p.type='text'
    AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
+   AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
+                   WHERE r.identity = a.attempt_id || ':' || CAST(p.key AS INTEGER)
+                     AND r.outcome='recycled')
 ), records AS (
  SELECT *, attempt_id || ':' || ordinal AS identity,
    json_extract(request_json, '$.model_id') AS model,
@@ -54,6 +58,7 @@ def reader(state: Path):
     try:
         connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
         connection.row_factory = sqlite3.Row
+        attach_read_only(connection, state)
         connection.execute("PRAGMA query_only=ON")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (1, SCHEMA_VERSION):
@@ -236,3 +241,20 @@ def selection_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str
                 if source.is_file() and not source.is_symlink():
                     found[row["identity"]] = str(source)
     return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
+
+
+def path_reference_count(state: Path, path: str) -> int:
+    """Count committed final-output references regardless of recycle state."""
+    with reader(state) as db:
+        if db is None:
+            return 0
+        row = db.execute(
+            """SELECT count(*) FROM attempts a,
+                     json_each(CASE WHEN json_valid(a.artifacts_json)
+                       THEN a.artifacts_json ELSE '[]' END) p
+               WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                 AND p.type='text' AND p.value=?
+                 AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1""",
+            (path,),
+        ).fetchone()
+        return int(row[0])
