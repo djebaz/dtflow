@@ -60,7 +60,7 @@ def test_feedback_child_deleted_before_activity_strip_remains_safe(window, qtbot
     strip.finish("fixture-progress")
 
 
-def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window):
+def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbot):
     from dtflow.ui.inline_feedback import edit_text
 
     window.show()
@@ -77,7 +77,7 @@ def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window):
     strip.complete("example", "Finished", "Saved successfully", "success")
     row = strip.rows["example"]
     assert row.activityProgress.isHidden()
-    assert row.activityLifetimeBar.isVisible()
+    qtbot.waitUntil(row.activityLifetimeBar.isVisible, timeout=1000)
     assert row.activityLifetimeBar.value() == 6000
     assert strip._expiry["example"] == 6.0
     strip.finish("example")
