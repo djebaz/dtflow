@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 fixes single-generation Run-ring step updates: stage-only Draw Things signposts and preview notifications no longer erase the last actually reported sampler step from the header ring or shared progress row. Tooltips identify retained counts as last reported; a new run resets them, and no percentage is invented.
+
+
 - PR #58 polishes the compact Generate prompt header to match the approved mockup: a 38 px icon-only Expand/Collapse toggle with stateful SVG, accessible name and tooltip, beside the blue Generate image CTA with a sparkles SVG. Uses Qt icons and existing QSS tokens rather than emoji; generator and prompt-height behavior remain unchanged.
 
 

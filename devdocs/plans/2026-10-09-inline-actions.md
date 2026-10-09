@@ -180,6 +180,11 @@
   trash icon. New CI and owner native visual smoke are required before
   accepting the HTML mockup synchronization.
 
+## Single-generation ring step preservation (2026-10-10)
+- A non-sampling Draw Things signpost or preview event has no step count; the compact Generate overlay refactor had been replacing the shared RunState count with None, causing the global Run ring to fall back to its animated indeterminate indicator.
+- Preserve the latest observed, validated per-generation sampler step/total across stage-only and preview events, including in the overlay count. Mark it as the *last reported* step in stage tooltips, never a newly inferred percentage; reset on each new generation and on settlement, keeping queue semantics unchanged.
+- Add a focused existing Qt generation regression covering sampling → stage → preview → later sampling and next-run reset. Owner native visual/provider acceptance remains separate.
+
 ## Open questions
 - None.
 

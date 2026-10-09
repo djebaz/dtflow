@@ -618,12 +618,20 @@ class GenerationPage:
         return request, name, endpoint, self.lora.receipt_ids()
 
     def _present_progress(self, stage: str, completed: int | None = None, total: int | None = None) -> None:
-        """Show reported stages and real sampler steps in the shared overlay, never guessed percentages."""
+        """Keep the last observed sampler step across stage-only events; never synthesize progress."""
         if not self._generating:
             return
+        reported = type(completed) is int and type(total) is int and total > 0 and 0 <= completed <= total
+        if not reported:
+            current = self._activity.run_state
+            if current.owner == "generation" and current.phase == "running":
+                completed, total = current.completed, current.total
+            else:
+                completed, total = None, None
         detail = stage
-        if type(completed) is int and type(total) is int and total > 0:
-            detail = f"{detail} · step {completed}/{total}"
+        if completed is not None and total is not None:
+            qualifier = "step" if reported else "last reported step"
+            detail = f"{detail} · {qualifier} {completed}/{total}"
         self._activity.present_run(
             RunState(
                 owner="generation",

@@ -126,6 +126,40 @@ def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(wind
     window.runner.submit(other.aclose(), lambda *_: None)
 
 
+def test_run_ring_preserves_reported_sampler_step_across_stage_and_preview(window, qtbot, fake):
+    """Stage-only backend events must not erase a truthful step count from the header ring."""
+    use, gate = fake
+    use(gate=gate)
+    page = window.generation_page
+    page.generateButton.click()
+    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("fake"), timeout=5000)
+    ring = window.shell.runControl
+    assert ring._phase == "running" and ring._completed is None
+
+    window.generation._event(BackendEvent("r", 100, "progress", "t", stage="sampling", completed=3, total=9))
+    assert ring._completed == 3 and ring._total == 9
+    assert window.progress_strip.rows["run"].activityCount.text() == "3 / 9"
+
+    window.generation._event(BackendEvent("r", 101, "progress", "t", stage="decoding"))
+    assert ring._completed == 3 and ring._total == 9
+    assert "last reported step 3/9" in ring.toolTip()
+
+    preview = ImageArtifact("p", Designation.PREVIEW, "image/png", fixture_png(64, 64, 1), 64, 64)
+    window.generation._event(BackendEvent("r", 102, "preview", "t", artifact=preview))
+    assert ring._completed == 3 and ring._total == 9
+    assert "Preview shown (not the final image)" in ring.toolTip()
+
+    window.generation._event(BackendEvent("r", 103, "progress", "t", stage="sampling", completed=4, total=9))
+    assert ring._completed == 4 and ring._total == 9
+    assert window.progress_strip.rows["run"].activityCount.text() == "4 / 9"
+
+    window.runner._loop.call_soon_threadsafe(gate.set)
+    qtbot.waitUntil(settled(window), timeout=5000)
+    page.generateButton.click()
+    assert ring._phase == "running" and ring._completed is None and ring._total is None
+    qtbot.waitUntil(settled(window), timeout=5000)
+
+
 def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
     use, gate = fake
     use(gate=gate)

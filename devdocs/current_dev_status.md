@@ -200,3 +200,12 @@ Remove the duplicate Stop waiting and synthetic progress bar from the center;
 keep the shared overlay as the single progress/local-stop interface, reporting
 only observed stage/step evidence. The durable generation status/evidence remains.
 Existing Qt generation tests are adapted. CI and native visual acceptance pending.
+
+PR #58 single-generation Run-ring progress follow-up: a source-level regression
+was found after the center-panel progress consolidation. Non-sampling stage or
+preview events had overwritten the valid sampling count with None in shared
+RunState, causing the header indicator to return to indeterminate animation.
+The Generate controller now retains the last real sampler count across those
+events, labels it as the last reported step, and resets it each new request.
+An existing Qt generation test now exercises this sequence. Fresh CI and
+native Windows/provider visual acceptance remain separate.
