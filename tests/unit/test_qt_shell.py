@@ -115,7 +115,9 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
 
     window.show()
     button = window.gallery.delete_button
-    window.inline.arm(button, "Move 2 selected originals to Recycle Bin?", "Confirm the scope", lambda: None, danger=True)
+    window.inline.arm(
+        button, "Move 2 selected originals to Recycle Bin?", "Confirm the scope", lambda: None, danger=True
+    )
     symbol = window.inline.form.inlineSymbol
     icon = symbol.pixmap()
     assert icon is not None and not icon.isNull()
