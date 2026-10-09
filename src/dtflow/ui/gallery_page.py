@@ -13,30 +13,48 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QImage, QImageReader, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import (
+    QDesktopServices,
+    QIcon,
+    QImage,
+    QImageReader,
+    QKeySequence,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
     QApplication,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFrame,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
+    QPlainTextEdit,
+    QProgressDialog,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from dtflow.core.gallery import GalleryItem, GalleryQuery
+from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
+from dtflow.persistence import gallery as gallery_storage
+from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.button_focus import KeyboardFocusGuard
-from dtflow.ui.gallery_detail_preview import CoverPainter, RowHoverDelegate, apply_gallery
+from dtflow.ui.gallery_detail_preview import ASSETS, CoverPainter, RowHoverDelegate, apply_gallery
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.theme import load_tokens
 
 log = logging.getLogger(__name__)
 
@@ -60,19 +78,28 @@ DIMENSIONS = re.compile(r"^\s*(\d+)\s*[x×]\s*(\d+)\s*$")
 DATE_RANGE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})\s*$")
 
 
-def _image(path: str, max_side: int) -> tuple[QImage | None, str]:
-    """Decode one image off the GUI thread, optionally asking Qt for a bounded decode."""
+def _image(path: str, max_side: int, state: Path | None = None) -> tuple[QImage | None, str]:
+    """Decode one original while holding its shared cross-process read lease."""
 
-    reader = QImageReader(path)
-    reader.setAutoTransform(True)
-    if max_side:
-        source = reader.size()
-        if source.isValid() and (source.width() > max_side or source.height() > max_side):
-            reader.setScaledSize(source.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
-    value = reader.read()
-    if value.isNull():
-        return None, reader.errorString() or "Image could not be decoded."
-    return value, ""
+    def decode() -> tuple[QImage | None, str]:
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)
+        if max_side:
+            source = reader.size()
+            if source.isValid() and (source.width() > max_side or source.height() > max_side):
+                reader.setScaledSize(source.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
+        value = reader.read()
+        if value.isNull():
+            return None, reader.errorString() or "Image could not be decoded."
+        return value, ""
+
+    if state is None:
+        return decode()
+    try:
+        with original_images_lock(state, timeout=12):
+            return decode()
+    except OriginalImagesBusyError:
+        return None, "Original temporarily busy"
 
 
 def _display_output_path(path: str) -> str:
@@ -139,7 +166,15 @@ class GalleryPage(QObject):
     """Bind saved-output services to the existing Designer gallery without owning generation."""
 
     def __init__(
-        self, page: QWidget, *, runner: AsyncRunner, state_dir: Path, reuse_callback=None, regenerate_callback=None
+        self,
+        page: QWidget,
+        *,
+        runner: AsyncRunner,
+        state_dir: Path,
+        reuse_callback=None,
+        regenerate_callback=None,
+        export_callback=None,
+        recycle_callback=None,
     ):
         super().__init__(page)
         self.page = page
@@ -147,6 +182,21 @@ class GalleryPage(QObject):
         self.state_dir = Path(state_dir)
         self._reuse_callback = reuse_callback
         self._regenerate_callback = regenerate_callback
+        self._export_callback = export_callback
+        self._recycle_callback = recycle_callback
+        self._recycle_busy = False
+        self.selection = GallerySelection()
+        self._tokens = load_tokens()
+        self._hidden_checks = 0
+        self._all_filtered_checked = False
+        self._matching_checked: set[str] = set()
+        self._hidden_query: GalleryQuery | None = None
+        self._selection_generation = 0
+        self._selection_busy = False
+        self._selection_query: GalleryQuery | None = None
+        self._syncing_selection = False
+        self._selection_progress: QProgressDialog | None = None
+        self._check_boxes: dict[str, QCheckBox] = {}
         self._active = False
         self._loading = False
         self._pending_refresh: tuple[bool, bool] | None = None
@@ -215,6 +265,7 @@ class GalleryPage(QObject):
         self._setup_views()
         self._setup_filmstrip()
         self._setup_actions()
+        self._setup_selection_actions()
         self._restore_preferences()
         self._clear_detail()
         self.show_view(self.mode, persist=False)
@@ -285,9 +336,10 @@ class GalleryPage(QObject):
             button.clicked.connect(lambda checked=False, name=mode: self.show_view(name))
             self.modes[mode] = self._widget(f"gallery{mode}Content")
 
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels(
             [
+                "",
                 "Image",
                 "Filename",
                 "Model",
@@ -304,14 +356,25 @@ class GalleryPage(QObject):
         self.table.setIconSize(QSize(64, 48))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
-        for column, width in enumerate((80, 160, 180, 300, 120, 90, 145, 360)):
+        for column, width in enumerate((36, 80, 160, 180, 300, 120, 90, 145, 360)):
             self.table.setColumnWidth(column, width)
-        self.table.itemClicked.connect(lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole))))
-        self.table.itemActivated.connect(lambda item: self._open_from_list(str(item.data(Qt.ItemDataRole.UserRole))))
+        self.table.itemClicked.connect(self._table_clicked)
+        self.table.itemActivated.connect(self._table_activated)
+        self.table.itemChanged.connect(self._table_item_changed)
+        self._header_check = QCheckBox(self.table.horizontalHeader())
+        self._header_check.setTristate(True)
+        self._header_check.setToolTip("Select or unselect the currently displayed rows.")
+        self._header_check.setAccessibleName("Select currently displayed rows")
+        self._header_check.setGeometry(10, 6, 22, 22)
+        self._header_check.clicked.connect(self._toggle_visible_rows)
+        self.table.horizontalHeader().sectionResized.connect(lambda *_: self._position_header_check())
+        self.table.horizontalHeader().sectionMoved.connect(lambda *_: self._position_header_check())
+        self.table.horizontalScrollBar().valueChanged.connect(lambda *_: self._position_header_check())
 
         self.table_viewport.setMouseTracking(True)
         self.table_viewport.installEventFilter(self)
         self.grid_viewport.installEventFilter(self)
+        self.page.installEventFilter(self)
         self.slider.valueChanged.connect(self._density_changed)
         self.grid_scroll.verticalScrollBar().valueChanged.connect(lambda value: self._scroll_changed("grid", value))
         self.table.verticalScrollBar().valueChanged.connect(lambda value: self._scroll_changed("list", value))
@@ -369,6 +432,468 @@ class GalleryPage(QObject):
         self.copy_button.clicked.connect(self._copy_path)
         self.folder_button.clicked.connect(self._open_folder)
         self.external_button.clicked.connect(self._open_external)
+
+    def _setup_selection_actions(self) -> None:
+        """Wire the canonical single-row contextual toolbar and keyboard affordances."""
+        self.selection_bar = self._widget("gallerySelectionBar", QFrame)
+        self.selection_count = self._widget("gallerySelectedCountLabel", QLabel)
+        self.hidden_count_label = self._widget("galleryHiddenCountLabel", QLabel)
+        self.select_filtered_button = self._widget("gallerySelectFilteredButton", QPushButton)
+        self.clear_selection_button = self._widget("galleryUnselectButton", QPushButton)
+        self.copy_paths_button = self._widget("galleryCopyPathsButton", QPushButton)
+        self.more_button = self._widget("galleryMoreButton", QPushButton)
+        self.export_button = self._widget("galleryExportButton", QPushButton)
+        self.delete_button = self._widget("galleryDeleteButton", QPushButton)
+        self.detail_check = self._widget("galleryDetailSelectionCheck", QCheckBox)
+
+        self.select_filtered_button.clicked.connect(self._toggle_all_filtered)
+        self.copy_paths_button.clicked.connect(self._copy_checked_paths)
+        self.export_button.clicked.connect(self._open_checked_export)
+        self.delete_button.clicked.connect(self._request_recycle)
+        self.detail_check.toggled.connect(self._detail_check_toggled)
+        for control, icon in (
+            (self.select_filtered_button, "layers"),
+            (self.copy_paths_button, "copy"),
+            (self.more_button, "more"),
+            (self.export_button, "export"),
+            (self.delete_button, "delete"),
+        ):
+            control.setIcon(QIcon(str(ASSETS / f"{icon}.svg")))
+            control.setIconSize(QSize(16, 16))
+
+        clear_menu = QMenu(self.clear_selection_button)
+        clear_menu.addAction("Unselect hidden", self._unselect_hidden)
+        clear_menu.addAction("Unselect all", self._unselect_all)
+        self.clear_selection_button.setText("Unselect")
+        self.clear_selection_button.setMenu(clear_menu)
+        more_menu = QMenu(self.more_button)
+        more_menu.addAction("Copy paths", self._copy_checked_paths)
+        more_menu.addSeparator()
+        more_menu.addAction("Unselect hidden", self._unselect_hidden)
+        more_menu.addAction("Unselect all", self._unselect_all)
+        self.more_button.setText("More")
+        self.more_button.setMenu(more_menu)
+        self.more_button.hide()
+
+        self._selection_shortcuts: list[QShortcut] = []
+        for key, callback in (
+            ("Ctrl+A", self._select_all_filtered),
+            ("Escape", self._unselect_all),
+            ("Delete", self._request_recycle),
+        ):
+            shortcut = QShortcut(QKeySequence(key), self.page)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda action=callback: self._selection_shortcut(action))
+            self._selection_shortcuts.append(shortcut)
+        QApplication.instance().focusChanged.connect(self._selection_focus_changed)
+        self._sync_selection_ui()
+        QTimer.singleShot(0, self._responsive_selection)
+
+    def _selection_focus_changed(self, _previous, current) -> None:
+        """Release native Ctrl+A/Delete handling whenever text controls own focus."""
+        editable = isinstance(current, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit))
+        for shortcut in self._selection_shortcuts:
+            shortcut.setEnabled(not editable)
+
+    def _selection_shortcut(self, callback) -> None:
+        """Do not steal standard editing, pop-up or global generation shortcuts."""
+        focus = QApplication.focusWidget()
+        if focus is None or isinstance(
+            focus, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit, QCheckBox)
+        ):
+            return
+        # Shortcuts never operate from navigation/toolbar buttons or dialogs.
+        if (
+            isinstance(focus, QPushButton)
+            and focus not in self._grid_buttons.values()
+            and focus not in self._film_buttons
+        ):
+            return
+        if self.page.findChild(QWidget, "galleryPromptSearch").hasFocus():
+            return
+        if focus is self.detail_check:
+            return
+        if isinstance(focus, QPushButton) and focus in (self.export_button, self.delete_button):
+            return
+        callback()
+
+    def _responsive_selection(self) -> None:
+        """Keep one toolbar row: secondary actions collapse into a Qt menu."""
+        width = self.selection_bar.width()
+        compact = width < 1190
+        for button in (self.clear_selection_button, self.copy_paths_button):
+            button.setVisible(not compact)
+        self.select_filtered_button.setVisible(True)
+        self.more_button.setVisible(compact)
+        self._position_header_check()
+
+    def _position_header_check(self) -> None:
+        header = self.table.horizontalHeader()
+        position = header.sectionViewportPosition(0)
+        self._header_check.setVisible(position >= 0 and position < header.viewport().width())
+        if position >= 0:
+            self._header_check.setGeometry(position + 9, 5, 24, 24)
+
+    def _selection_notice(self, text: str) -> None:
+        """Surface bulk-action results without adding another toolbar row."""
+        self.selection_count.setToolTip(text)
+        self.selection_bar.setToolTip(text)
+        window = self.page.window()
+        if hasattr(window, "statusBar"):
+            window.statusBar().showMessage(text, 8000)
+
+    def _sync_selection_ui(self) -> None:
+        count = len(self.selection.checked)
+        self.selection_count.setText(f"{count} selected")
+        self.hidden_count_label.setText(f"{self._hidden_checks} hidden by filters")
+        self.hidden_count_label.setVisible(self._hidden_checks > 0)
+        label = "Unselect all" if self._all_filtered_checked else "Select all"
+        self.select_filtered_button.setText(label)
+        self.select_filtered_button.setAccessibleName(label)
+        self.select_filtered_button.setToolTip(
+            "Unselect every checked image, including hidden checks."
+            if self._all_filtered_checked
+            else "Select matching images across all pages, up to 10,000 checked in total."
+        )
+        self.select_filtered_button.setEnabled(self.total > 0 and not self._selection_busy)
+        self.clear_selection_button.setEnabled(count > 0)
+        self.copy_paths_button.setEnabled(count > 0)
+        self.export_button.setEnabled(count > 0 and self._export_callback is not None)
+        self.delete_button.setEnabled(count > 0 and not self._recycle_busy and self._recycle_callback is not None)
+        self._sync_detail_checkbox()
+        for row, item in enumerate(self.items):
+            self._paint_checked_item(row, item.identity)
+        self._sync_header_check()
+
+    def _sync_detail_checkbox(self) -> None:
+        if not hasattr(self, "detail_check"):
+            return
+        checked = self.selected_id in self.selection.checked if self.selected_id else False
+        blocked = self.detail_check.blockSignals(True)
+        self.detail_check.setChecked(checked)
+        self.detail_check.setEnabled(self.selected_id is not None)
+        self.detail_check.blockSignals(blocked)
+
+    def _sync_header_check(self) -> None:
+        if not hasattr(self, "_header_check"):
+            return
+        total = len(self.items)
+        selected = sum(item.identity in self.selection.checked for item in self.items)
+        state = (
+            Qt.CheckState.Unchecked
+            if selected == 0
+            else Qt.CheckState.Checked
+            if selected == total
+            else Qt.CheckState.PartiallyChecked
+        )
+        blocked = self._header_check.blockSignals(True)
+        self._header_check.setCheckState(state)
+        self._header_check.setEnabled(total > 0)
+        self._header_check.setToolTip(f"{selected} of {total} displayed images checked")
+        self._header_check.blockSignals(blocked)
+
+    def _paint_checked_item(self, row: int, identity: str) -> None:
+        checked = identity in self.selection.checked
+        check = self._check_boxes.get(identity)
+        if check is not None:
+            blocked = check.blockSignals(True)
+            check.setChecked(checked)
+            check.blockSignals(blocked)
+        button = self._grid_buttons.get(identity)
+        if button is not None and button.property("checkedSelection") != checked:
+            button.setProperty("checkedSelection", checked)
+            button.update()
+        card = button.parentWidget() if button is not None else None
+        if card is not None and card.property("checkedSelection") != checked:
+            card.setProperty("checkedSelection", checked)
+            card.style().unpolish(card)
+            card.style().polish(card)
+            card.update()
+        for col in range(self.table.columnCount()):
+            cell = self.table.item(row, col)
+            if cell is None:
+                continue
+            if col == 0:
+                blocked = self.table.blockSignals(True)
+                cell.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+                self.table.blockSignals(blocked)
+        first = self.table.visualRect(self.table.model().index(row, 0))
+        last = self.table.visualRect(self.table.model().index(row, self.table.columnCount() - 1))
+        self.table.viewport().update(first.united(last))
+
+    def _after_selection_edit(self) -> None:
+        if self._selection_busy:
+            self._cancel_selection_scan()
+        self._selection_generation += 1
+        try:
+            same_filter = self._hidden_query == self.export_query()
+        except ValidationError:
+            same_filter = False
+        if same_filter:
+            # Ordinary checkbox edits stay local: loaded rows match this filter,
+            # and the last snapshot retains membership of off-page checked IDs.
+            self._matching_checked.intersection_update(self.selection.checked)
+            self._matching_checked.update(
+                item.identity for item in self.items if item.identity in self.selection.checked
+            )
+            self._hidden_checks = len(self.selection.checked) - len(self._matching_checked)
+            self._all_filtered_checked = self.total > 0 and len(self._matching_checked) == self.total
+        else:
+            self._hidden_query = None
+            self._all_filtered_checked = False
+        self._sync_selection_ui()
+        if not same_filter:
+            self._refresh_hidden_count()
+
+    def _set_checked(self, identity: str, value: bool) -> None:
+        if self._syncing_selection or (identity in self.selection.checked) == value:
+            return
+        if value and len(self.selection.checked) >= MAX_CHECKED_IMAGES:
+            self._selection_notice("Selection limit reached: 10,000 images. Unselect some images first.")
+            self._sync_selection_ui()
+            return
+        self.selection.toggle(identity)
+        self._after_selection_edit()
+
+    def _toggle_checked(self, identity: str) -> None:
+        self._set_checked(identity, identity not in self.selection.checked)
+
+    def _detail_check_toggled(self, value: bool) -> None:
+        if self.selected_id:
+            self._set_checked(self.selected_id, value)
+
+    def _select_range(self, identity: str) -> None:
+        ids = [item.identity for item in self.items]
+        anchor = self.selection.anchor
+        if anchor not in ids or identity not in ids:
+            self._set_checked(identity, True)
+            return
+        a, b = ids.index(anchor), ids.index(identity)
+        self.selection.add(ids[min(a, b) : max(a, b) + 1])
+        self._after_selection_edit()
+
+    def _table_item_changed(self, cell: QTableWidgetItem) -> None:
+        if not self._syncing_selection and cell.column() == 0:
+            identity = cell.data(Qt.ItemDataRole.UserRole)
+            if identity:
+                self._set_checked(str(identity), cell.checkState() == Qt.CheckState.Checked)
+
+    def _table_clicked(self, cell: QTableWidgetItem) -> None:
+        if cell.column() == 0:
+            return
+        identity = str(cell.data(Qt.ItemDataRole.UserRole))
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            self._select_range(identity)
+        elif modifiers & Qt.KeyboardModifier.ControlModifier:
+            self._toggle_checked(identity)
+        else:
+            self._open_from_list(identity)
+
+    def _table_activated(self, cell: QTableWidgetItem) -> None:
+        if cell.column() != 0:
+            self._open_from_list(str(cell.data(Qt.ItemDataRole.UserRole)))
+
+    def _toggle_visible_rows(self, *_args) -> None:
+        ids = [item.identity for item in self.items]
+        if ids and all(identity in self.selection.checked for identity in ids):
+            self.selection.checked.difference_update(ids)
+            self._after_selection_edit()
+        else:
+            self._select_visible_rows()
+
+    def _select_visible_rows(self) -> None:
+        wanted = [item.identity for item in self.items]
+        added = self.selection.add(wanted)
+        omitted = sum(identity not in self.selection.checked for identity in wanted)
+        if omitted:
+            self._selection_notice(f"{added} visible images added; {omitted} omitted at the 10,000-image limit.")
+        self._after_selection_edit()
+
+    def _unselect_all(self) -> None:
+        if self.selection.checked:
+            self.selection.clear()
+            self._hidden_checks = 0
+            self._after_selection_edit()
+
+    def _begin_selection_scan(self, *, mode: str) -> None:
+        if self._selection_busy:
+            return
+        try:
+            query = self.export_query()
+        except ValidationError as exc:
+            self._selection_notice(str(exc))
+            return
+        checked = self.selection.snapshot()
+        self._selection_generation += 1
+        generation = self._selection_generation
+        self._selection_query = query
+        self._selection_busy = True
+        self.select_filtered_button.setEnabled(False)
+        self._selection_progress = QProgressDialog("Resolving saved output identities…", "Cancel", 0, 0, self.page)
+        self._selection_progress.setWindowTitle("Gallery selection")
+        self._selection_progress.setWindowModality(Qt.WindowModality.NonModal)
+        self._selection_progress.setMinimumDuration(0)
+        self._selection_progress.canceled.connect(self._cancel_selection_scan)
+        self._selection_progress.show()
+        self.runner.submit(
+            asyncio.to_thread(
+                gallery_storage.selection_candidates,
+                self.state_dir,
+                query,
+                checked,
+                add=mode == "add",
+                maximum=MAX_CHECKED_IMAGES,
+            ),
+            lambda result, error: self._selection_scan_done(generation, mode, result, error),
+        )
+
+    def _cancel_selection_scan(self) -> None:
+        self._selection_generation += 1
+        self._selection_busy = False
+        self._selection_query = None
+        self.select_filtered_button.setEnabled(True)
+        if self._selection_progress is not None:
+            self._selection_progress.blockSignals(True)
+            self._selection_progress.close()
+            self._selection_progress = None
+        self._selection_notice("Selection operation canceled; previous checks are retained.")
+
+    def _selection_scan_done(self, generation, mode, result, error) -> None:
+        if generation != self._selection_generation:
+            return
+        self._selection_busy = False
+        used_query = self._selection_query
+        self._selection_query = None
+        self.select_filtered_button.setEnabled(True)
+        if self._selection_progress is not None:
+            self._selection_progress.blockSignals(True)
+            self._selection_progress.close()
+            self._selection_progress = None
+        if error is not None:
+            self._selection_notice(f"Selection query failed: {type(error).__name__}")
+            return
+        additions, hidden, omitted, matching = result
+        self._hidden_query = used_query
+        self._matching_checked = set(matching) | set(additions)
+        if mode == "add":
+            added = self.selection.add(additions)
+            self._hidden_checks = hidden
+            self._selection_notice(
+                f"{added} added; {omitted} matching images not added at the 10,000-image limit."
+                if omitted
+                else f"{added} images added to the checked selection."
+            )
+        elif mode == "clear-hidden":
+            self.selection.checked.intersection_update(matching)
+            if self.selection.anchor not in self.selection.checked:
+                self.selection.anchor = None
+            self._hidden_checks = 0
+        self._after_selection_edit()
+
+    def _toggle_all_filtered(self) -> None:
+        """Toggle the permanent toolbar action, without changing Ctrl+A semantics."""
+        try:
+            same_filter = self._hidden_query == self.export_query()
+        except ValidationError:
+            same_filter = False
+        if self._all_filtered_checked and same_filter:
+            self._unselect_all()
+        else:
+            self._select_all_filtered()
+
+    def _select_all_filtered(self) -> None:
+        self._begin_selection_scan(mode="add")
+
+    def _unselect_hidden(self) -> None:
+        # Re-resolve the current filter even if an earlier hidden-count query
+        # has not completed. Never rely on a stale label to decide scope.
+        if self.selection.checked:
+            self._begin_selection_scan(mode="clear-hidden")
+
+    def _refresh_hidden_count(self) -> None:
+        if self._selection_busy:
+            return
+        checked = self.selection.snapshot()
+        if not checked:
+            self._hidden_checks = 0
+            try:
+                self._hidden_query = self.export_query()
+            except ValidationError:
+                self._hidden_query = None
+            self._sync_selection_ui()
+            return
+        try:
+            query = self.export_query()
+        except ValidationError:
+            return
+        if query == self._hidden_query:
+            return
+        self._selection_generation += 1
+        generation = self._selection_generation
+        self.runner.submit(
+            asyncio.to_thread(gallery_storage.selection_candidates, self.state_dir, query, checked),
+            lambda result, error: self._hidden_count_done(generation, query, result, error),
+        )
+
+    def _hidden_count_done(self, generation, query, result, error) -> None:
+        if generation != self._selection_generation:
+            return
+        if error is not None:
+            self._selection_notice("Hidden checked-image count could not be refreshed.")
+            return
+        self._hidden_checks = result[1]
+        self._matching_checked = set(result[3])
+        self._all_filtered_checked = self.total > 0 and len(result[3]) == self.total
+        self._hidden_query = query
+        self._sync_selection_ui()
+
+    def _copy_checked_paths(self) -> None:
+        ids = self.selection.snapshot()
+        if not ids:
+            return
+        self.runner.submit(
+            asyncio.to_thread(gallery_storage.selection_paths, self.state_dir, ids),
+            self._paths_resolved,
+        )
+
+    def _paths_resolved(self, result, error) -> None:
+        if error is not None or result is None:
+            self._selection_notice("Checked paths could not be resolved.")
+            return
+        paths, missing = result
+        if paths:
+            QApplication.clipboard().setText("\n".join(paths))
+        self._selection_notice(f"Copied {len(paths)} paths; {missing} records unavailable.")
+
+    def _open_checked_export(self) -> None:
+        if self.selection.checked and self._export_callback is not None:
+            self._export_callback()
+
+    def _request_recycle(self) -> None:
+        """Only the confirmation controller can authorize a Recycle Bin operation."""
+        if self.selection.checked and not self._recycle_busy and self._recycle_callback is not None:
+            try:
+                query = self.export_query()
+            except ValidationError as exc:
+                self._selection_notice(str(exc))
+                return
+            self._recycle_callback(self.selection.snapshot(), self._hidden_checks, query)
+
+    def set_recycle_busy(self, busy: bool) -> None:
+        """Prevent overlapping deletion requests without blocking ordinary browsing."""
+        self._recycle_busy = busy
+        self._sync_selection_ui()
+
+    def recycle_completed(self, recycled: tuple[str, ...]) -> None:
+        """Reconcile only proven recycled identities; retain failed/uncertain checks."""
+        if recycled:
+            self.selection.checked.difference_update(recycled)
+            if self.selection.anchor in recycled:
+                self.selection.anchor = None
+            self._hidden_query = None
+            self._after_selection_edit()
+        self.refresh(preserve=True)
 
     def _restore_preferences(self) -> None:
         document = load_viewer(self.state_dir)
@@ -535,6 +1060,9 @@ class GalleryPage(QObject):
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
+        # Refresh may add/remove outputs even when filters and visible cards match.
+        self._hidden_query = None
+        self._all_filtered_checked = False
         if self.mode == "Detail" and anchor == self.selected_id and anchor and not anchor_found:
             self.selected_id = None
         self._populate_facets(*choices)
@@ -554,10 +1082,12 @@ class GalleryPage(QObject):
                 )
                 self._widget("galleryPositionOverlay", QLabel).setText(f"{position} / {self.total}")
             self.refresh_button.setToolTip(self._page_summary())
+            self._refresh_hidden_count()
             self._schedule_save()
             return
         self._render_page()
         self._rendered_page = visible_page
+        self._refresh_hidden_count()
 
         pending = self._pending_page_selection
         self._pending_page_selection = None
@@ -614,6 +1144,7 @@ class GalleryPage(QObject):
         updates = [widget.updatesEnabled() for widget in containers]
         for widget in containers:
             widget.setUpdatesEnabled(False)
+        self._syncing_selection = True
         try:
             if self._rendered_page is None:
                 self._clear_grid()  # Remove Designer fixture cards only on the first render.
@@ -625,6 +1156,7 @@ class GalleryPage(QObject):
                 card.deleteLater()
                 del self._grid_painters[identity]
                 del self._grid_labels[identity]
+                self._check_boxes.pop(identity, None)
                 self._thumb_versions.pop(identity, None)
 
             self._reconcile_rows()
@@ -634,11 +1166,12 @@ class GalleryPage(QObject):
                     self._create_card(item)
                 if previous.get(item.identity) != item:
                     self._update_entry(row, item)
+                self._paint_checked_item(row, item.identity)
             for item in image_changes:
                 self._grid_painters[item.identity].pixmap = QPixmap()
                 self._film_entries[item.identity][1].pixmap = QPixmap()
                 row = next(i for i, record in enumerate(self.items) if record.identity == item.identity)
-                self.table.item(row, 0).setIcon(QIcon())
+                self.table.item(row, 1).setIcon(QIcon())
 
             if self.items:
                 if self._grid_empty is not None:
@@ -654,8 +1187,10 @@ class GalleryPage(QObject):
                 self.cards_layout.addWidget(self._grid_empty, 0, 0)
             self._density_changed()
         finally:
+            self._syncing_selection = False
             for widget, enabled in zip(containers, updates, strict=True):
                 widget.setUpdatesEnabled(enabled)
+        self._sync_selection_ui()
         self._queue_thumbnails(image_changes)
 
     @staticmethod
@@ -671,6 +1206,15 @@ class GalleryPage(QObject):
         button = QPushButton(card)
         button.setProperty("role", "galleryCardImage")
         button.clicked.connect(lambda checked=False, identity=item.identity: self._open_from_grid(identity))
+        check = QCheckBox(button)
+        check.setObjectName("galleryCardCheck")
+        check.setToolTip("Check image for bulk actions")
+        check.setAccessibleName(f"Check {Path(item.path).name}")
+        check.setGeometry(9, 9, 28, 28)
+        check.setChecked(item.identity in self.selection.checked)
+        check.toggled.connect(lambda value, identity=item.identity: self._set_checked(identity, value))
+        self._check_boxes[item.identity] = check
+        check.raise_()
         painter = CoverPainter(button, "", ("", ""))
         painter.mode = "Fit"
         self._grid_buttons[item.identity] = button
@@ -732,6 +1276,7 @@ class GalleryPage(QObject):
         loras = "; ".join(f"{identifier} · {weight:g} · Unknown" for identifier, weight in item.loras) or "None"
         fields = (
             "",
+            "",
             filename,
             item.model or "Not recorded",
             loras,
@@ -747,7 +1292,14 @@ class GalleryPage(QObject):
                 cell.setData(Qt.ItemDataRole.UserRole, item.identity)
                 self.table.setItem(row, column, cell)
             cell.setText(value)
-            cell.setToolTip(tooltip if column == 0 else value)
+            if column == 0:
+                cell.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                cell.setCheckState(
+                    Qt.CheckState.Checked if item.identity in self.selection.checked else Qt.CheckState.Unchecked
+                )
+            cell.setToolTip(tooltip if column == 1 else value)
         film_button, film_painter = self._film_entries[item.identity]
         film_button.setAccessibleName(f"Open {filename}")
         film_button.setToolTip(tooltip)
@@ -822,7 +1374,7 @@ class GalleryPage(QObject):
             self._thumb_active += 1
 
             async def work(filename=path):
-                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE)
+                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir)
 
             self.runner.submit(
                 work(),
@@ -844,19 +1396,37 @@ class GalleryPage(QObject):
                 except StopIteration:
                     row = -1
                 if row >= 0:
-                    table_item = self.table.item(row, 0)
+                    table_item = self.table.item(row, 1)
                     if table_item is not None:
                         table_item.setIcon(QIcon(pixmap))
                     if row < len(self._film_painters):
                         self._film_painters[row].pixmap = pixmap
                         self._film_buttons[row].update()
             elif issue:
-                button = self._grid_buttons.get(identity)
-                if button is not None:
-                    button.setToolTip(f"Image is corrupt or unreadable: {issue}")
+                if issue == "Original temporarily busy":
+                    QTimer.singleShot(2000, lambda: self._retry_thumbnail(generation, identity))
+                else:
+                    button = self._grid_buttons.get(identity)
+                    if button is not None:
+                        button.setToolTip(f"Image is corrupt or unreadable: {issue}")
         self._pump_thumbnails()
 
+    def _retry_thumbnail(self, generation: int, identity: str) -> None:
+        """Retry only the same visible identity after a transient original-file lease."""
+        if self._thumb_versions.get(identity) != generation:
+            return
+        item = next((entry for entry in self.items if entry.identity == identity), None)
+        if item is not None:
+            self._queue_thumbnails([item])
+
     def _open_from_grid(self, identity: str) -> None:
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            self._select_range(identity)
+            return
+        if modifiers & Qt.KeyboardModifier.ControlModifier:
+            self._toggle_checked(identity)
+            return
         self._origin_identity = identity
         self.select(identity)
 
@@ -869,6 +1439,7 @@ class GalleryPage(QObject):
         if item is None:
             return
         self.selected_id = identity
+        self._sync_detail_checkbox()
         if open_detail:
             self.show_view("Detail")
         for index, record in enumerate(self.items):
@@ -936,7 +1507,7 @@ class GalleryPage(QObject):
             image_generation = self._image_generation
 
             async def read_image():
-                return await asyncio.to_thread(_image, item.path, 0)
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
 
             self.runner.submit(
                 read_image(),
@@ -955,12 +1526,29 @@ class GalleryPage(QObject):
         if error is not None or not result or result[0] is None:
             issue = type(error).__name__ if error is not None else (result[1] if result else "decode failed")
             self.surface_painter.pixmap = QPixmap()
+            if issue == "Original temporarily busy":
+                QTimer.singleShot(2000, lambda: self._retry_detail_image(generation, identity))
+                return
             self.surface.setToolTip(f"Image is corrupt or unreadable: {issue}")
             self.external_button.setEnabled(False)
             self.surface.update()
             return
         self.surface_painter.pixmap = QPixmap.fromImage(result[0])
         self.surface.update()
+
+    def _retry_detail_image(self, generation: int, identity: str) -> None:
+        if generation != self._image_generation or identity != self.selected_id:
+            return
+        item = self._selected()
+        if item is not None:
+
+            async def read_again():
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
+
+            self.runner.submit(
+                read_again(),
+                lambda result, error: self._image_done(generation, identity, result, error),
+            )
 
     def _detail_done(self, generation: int, identity: str, detail, error) -> None:
         if generation != self._detail_generation or identity != self.selected_id:
@@ -1091,6 +1679,8 @@ class GalleryPage(QObject):
             else:
                 self._clear_detail()
         self._widget("galleryThumbnailSizeLabel", QLabel).setText("Row density" if mode == "List" else "Thumbnail size")
+        self.detail_check.setVisible(mode == "Detail")
+        self._responsive_selection()
         self._density_changed()
         if mode == "Grid" and self._origin_identity:
             button = self._grid_buttons.get(self._origin_identity)
@@ -1173,6 +1763,8 @@ class GalleryPage(QObject):
             elif kind == QEvent.Type.Leave:
                 self.table.setProperty("hoverRow", -1)
                 self.table_viewport.update()
+        if watched is self.page and kind == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._responsive_selection)
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
             self.reflow_timer.start(0)
         if kind == QEvent.Type.Wheel and watched in (self.grid_viewport, self.table_viewport):
@@ -1279,6 +1871,10 @@ class GalleryPage(QObject):
         """Expose only the committed identity of the current single selection."""
         item = self._selected()
         return item.identity if item is not None else None
+
+    def export_checked(self) -> tuple[str, ...]:
+        """Freeze explicitly checked image identities for the shared exporter."""
+        return self.selection.snapshot()
 
     def _selected(self) -> GalleryItem | None:
         return next((item for item in self.items if item.identity == self.selected_id), None)

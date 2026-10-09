@@ -290,8 +290,7 @@ standard 160 logical-pixel Grid/filmstrip baseline, with a 25–250% range. List
 row thumbnails follow the same percentage through the full range. The internal
 pixel conversion is a presentation detail and must not leak into the control
 label. Grid keeps uniform aspect-fit tiles; List has metadata columns and
-row-wide hover. Neither browsing view exposes bulk selection or destructive
-actions.
+row-wide hover. Original shipped viewer behavior was single-focus browsing; Phase 8E's draft branch adds checkboxes and a checked-image selection layer without changing Detail focus or tile geometry.
 
 Detail defaults to Fit so the complete saved image is visible on entry. Cover
 remains available for a filled canvas; 100%, zoom, pan, previous/next,
@@ -332,6 +331,8 @@ accessible names and tooltips. Negative-prompt search remains available through
 the shared query/CLI service but is intentionally absent from the visible Images
 header. Detail shows recorded provenance and uses explicit `Not recorded` or
 `Unknown` text when evidence is absent.
+
+The Phase 8E gallery selection toolbar is one reserved 52 px-high row immediately below the shared header/filter rows. It uses `color.toolbar` with `color.selectionBorder`, muted checked-state blues from `color.selection`, `color.selectionText` and `color.selectionBorder`, and the existing danger treatment for Delete. **Select all** is an independent always-visible button in Grid/List/Detail, never an overflow action; it adds matching outputs across all pages up to the combined 10,000 checked-ID limit. When all current filtered results are checked it becomes **Unselect all**, clearing every checked ID including hidden checks. A partial fill must not show Unselect all. Narrow layouts collapse secondary Unselect/Copy paths controls into More rather than wrapping or truncating Select all, Export or Delete. Grid and List checks share stable output identities; Detail focus remains separate. Export toggles a scrollable right-hand column beside gallery content, using the same canonical export card and controller as Connection; Delete opens a confirmed system Trash action through the shared durable service. Owner reports smoke acceptance of deletion, checkbox appearance and Select all / Unselect all behavior (2026-10-09); broader platform/packaged acceptance remains separate.
 
 The standalone `DetailFixture` and preview tools continue to use bundled
 illustrative artwork. They are development presentation fixtures only and do not
@@ -396,3 +397,7 @@ their natural layout. Avoid distributing spare height among action rows.
 ### Inventory continuity and statistics
 
 Provider switches restore each provider's last-successful matching observation without resetting its form. Preserve model/LoRA counts, provenance (cached, remembered or refreshed) and original observation time alongside refreshing/error status. A failed refresh says Refresh failed · showing previous inventory and does not rebuild/prune selections. Unknown/no matching observation is not a fabricated zero inventory. Endpoint or selected credential changes invalidate mismatched availability evidence; mere provider switching or a failed HTTP/RPC response does not. Discovery restoration itself never silently removes selected checkpoints/LoRAs; deliberate user filter changes keep existing catalogue behavior. Generation still performs fresh live validation. Use the existing inventoryEvidenceLabel and shared secondary-text styling; no new tokens or layouts.
+
+The Images export column is page-local, not the shell inspector or a List-side preview. The canonical gallery form owns its scroll container, close action and empty card host; the Connection form owns the single shared vertical export card. Reparent the card on navigation, preserve settings/progress and never cancel merely because the panel is hidden. Keep the listing flexible beside the column; both remain keyboard-accessible and the export controls scroll at smaller heights. Owner reports column smoke passed for 5772f54. The subsequent checked-only Images context hides the scope label/dropdown, retaining Connection scope choices; that small follow-up remains owner-smoke-pending.
+
+Grid and Detail selection indicators share List's explicit white tick/partial SVGs, 14 px indicator size and token-based rest/hover/checked/disabled states. Scope the same QSS selector groups to gallery object names; preserve the Grid checkbox wrapper and independent focus/check state. Owner reports style smoke passed for the glyph-parity fix at 8ec3a55 on 2026-10-09; broader DPI/platform/packaged coverage remains separate.

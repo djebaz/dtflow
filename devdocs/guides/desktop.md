@@ -26,12 +26,9 @@ Refresh inventory to populate model and LoRA choices. Startup and provider retur
 
 ## Export saved images
 
-Use **Export saved images** in the **middle panel of Connection**. Choose a folder
-and one scope: all saved images; the current Images filter across every page; the
-single image selected in Images; or the selected PNG result in Generate. For a
-filtered export, set filters in Images first, then return to Connection. Selecting
-Generate's metadata entry is not selecting an image. Export freezes the selection
-when started; new outputs arriving afterward do not expand that operation.
+In Images, check images and click **Export** to toggle the export panel beside the listing on the right. It exports checked images, including checks hidden by filters; there is no scope dropdown in Images. Connection retains the scope dropdown. No tab switch or export happens until you click **Export JPEGs**. You can also use **Export saved images** in Connection's middle panel: these are the same controls, settings and running operation. Other scopes are all saved images, the current Images filter across every page, the single image selected in Images, or the selected PNG result in Generate. Selecting Generate's metadata entry is not selecting an image. Export freezes identities when started; new outputs or changed checks afterward do not expand that operation.
+
+Click **Export** again or **Close export panel** to hide the Images column. Hiding it does not cancel export; use **Cancel export** to stop after the current image. Switching to Connection shows the same progress and controls; returning to Images remembers its open column. Destination/privacy settings and active progress are preserved across navigation.
 
 You can type an absolute folder path that does not yet exist; export creates it and missing parents before writing. Permission/path failures are reported, not redirected.
 
@@ -152,6 +149,14 @@ artifact. Missing or corrupt files remain represented without preventing other
 outputs from being browsed. Browsing does not generate, modify or delete saved
 outputs.
 
+
+The Images action bar keeps **Select all** visible at every width. It selects matching results across all pages, up to 10,000 checked images in total. When every current matching result is checked, the same button becomes **Unselect all** and clears all checks, including hidden ones. Partial selections at the limit do not show Unselect all. Selection coverage is refreshed after checkbox edits and gallery refresh; owner reports this Select all / Unselect all smoke passed on 2026-10-09 (follow-up to f3bc285).
+
+### Move checked originals to system Trash
+
+In the Phase 8E source implementation, **Delete** opens a confirmation, not permanent deletion. It includes hidden checked images and reports eligible/missing/ineligible counts. Cancel is the default. The destination is **Recycle Bin** on Windows and **Trash** on Linux/macOS. Only managed originals are accepted; Qt determines Trash usability for each file without an OS/filesystem allowlist; custom output roots and exported copies are excluded.
+
+Moves run in the background one image at a time. Stop after current image preserves completed moves. Results distinguish confirmed moves, failures and Qt-reported success with an unverifiable destination. Failed and uncertain selections remain checked for manual review; never retry an uncertain result without inspecting the files. Manually recovering a file to its recorded path does **not** currently make it available in DTFlow again: Refresh cannot prove content identity from the path, size or timestamp. Recycled records remain hidden until a future explicit content-verified recovery workflow; old heuristic restoration records are also withdrawn without removing files. There is no DTFlow Undo or guaranteed restoration (including no macOS Finder Put Back integration). No permanent-delete fallback exists. See [architecture and platform limitations](../architecture/image-recycling.md). Owner platform runtime/packaged acceptance is pending; the Qt adapter does not establish full Debian app support.
 
 ## Remembered settings and diagnostics
 

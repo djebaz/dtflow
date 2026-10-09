@@ -26,6 +26,7 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.logging_setup import ATTEMPT
+from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
@@ -207,9 +208,14 @@ class GenerationService:
                 outcome = RemoteOutcome.SUCCEEDED
                 await self.store.transition(attempt_id, ("possibly_submitted",), "saving", stage, outcome)
                 state = "saving"
-                paths, metadata = await settle(
-                    asyncio.to_thread(self.saver, self.output, attempt_id, request, result, identity(), caps.limits)
-                )
+
+                def commit_originals():
+                    # Keep committed originals behind the same OS-released lease
+                    # used by export and Recycle Bin; no provider code runs here.
+                    with original_images_lock(getattr(self.store, "directory", self.output.parent)):
+                        return self.saver(self.output, attempt_id, request, result, identity(), caps.limits)
+
+                paths, metadata = await settle(asyncio.to_thread(commit_originals))
             await self.store.transition(
                 attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
             )

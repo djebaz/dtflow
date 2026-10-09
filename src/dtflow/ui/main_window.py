@@ -26,7 +26,9 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
+from dtflow.persistence.image_recycle import reconcile as reconcile_images
 from dtflow.persistence.last_session import load_last_session, save_last_session
+from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
@@ -39,10 +41,12 @@ from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
+from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.queue_page import QueuePage, ask_confirmation
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
+from dtflow.ui.system_trash import TRASH_NAME, trash_supported
 from dtflow.ui.theme import apply_native_dark_titlebar
 
 log = logging.getLogger(__name__)
@@ -162,7 +166,10 @@ class MainWindow:
             state_dir=self.state_dir,
             reuse_callback=self._reuse_output,
             regenerate_callback=self._regenerate_output,
+            export_callback=self._open_checked_export,
+            recycle_callback=self._request_gallery_recycle if trash_supported() else None,
         )
+        self.gallery.delete_button.setToolTip(f"Move eligible checked originals to {TRASH_NAME} after confirmation.")
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
@@ -219,6 +226,17 @@ class MainWindow:
             no_cache=no_cache,
         )
         self.image_export.cache_changed.connect(self.refresh_cache)
+        self._gallery_export_open = False
+        self.gallery_detail.galleryExportScroll.hide()
+        self.gallery_detail.galleryExportCloseButton.clicked.connect(self._close_gallery_export)
+        self.image_recycle = ImageRecyclePanel(
+            form,
+            runner=self.runner,
+            state_dir=self.state_dir,
+            gallery=self.gallery,
+            busy_source=self._recycle_busy,
+        )
+        self.gallery.refresh_button.clicked.connect(self._request_recycle_reconciliation)
         self.queue = QueuePage(
             self.queue_page,
             runner=self.runner,
@@ -284,7 +302,7 @@ class MainWindow:
             widget.installEventFilter(
                 _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
             )
-        self.form.installEventFilter(_CloseGuard(self.queue.confirm_close, self.form))
+        self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
         log.info("window ready state=%s", "default" if state_dir is None else "custom")
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
@@ -293,6 +311,7 @@ class MainWindow:
         self.refresh_presets()
         self._workspace_changed(0)
         self._responsive_workspace()
+        self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
 
     @staticmethod
     def _disable_preview_controls(page: QWidget) -> None:
@@ -325,6 +344,7 @@ class MainWindow:
         )
         buttons[index].setChecked(True)
         self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)
+        self._place_export_panel()
         self._responsive_workspace()
 
     def _sync_run_control(self) -> None:
@@ -736,12 +756,102 @@ class MainWindow:
         self.refresh_credentials()
         self.generation.credentials_changed()
 
+    def _recycle_busy(self) -> bool:
+        """Keep UI-generated exports and local dispatch from racing with recycling."""
+        return bool(
+            self.image_export.running
+            or self.generation._busy
+            or self.queue.dispatching_here
+            or self.activity.dispatching
+        )
+
+    def _request_gallery_recycle(self, identities: tuple[str, ...], hidden: int, query: GalleryQuery) -> None:
+        """Only the confirmation service may move explicitly checked originals."""
+        self.image_recycle.request(identities, hidden, query)
+
+    def _confirm_close(self) -> bool:
+        if self.image_recycle.running:
+            self.image_recycle.cancel()
+            QMessageBox.information(
+                self.form,
+                "Image recycling in progress",
+                "Stop requested. Wait for the current image and result summary before closing.",
+            )
+            return False
+        return self.queue.confirm_close()
+
+    def _request_recycle_reconciliation(self) -> None:
+        """Settle interrupted intent without inferring restored content from file stats."""
+        self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
+
+    def _reconcile_images(self):
+        """Inspect interrupted file operations under the original-file lease."""
+        with recycle_batch_lock(self.state_dir):
+            with original_images_lock(self.state_dir):
+                return reconcile_images(self.state_dir)
+
+    def _images_reconciled(self, outcome, error) -> None:
+        if error is not None:
+            log.warning("image-recycle reconciliation skipped reason=%s", type(error).__name__)
+            return
+        if outcome and any(outcome):
+            self.gallery.refresh(preserve=True)
+
+    def _open_checked_export(self) -> None:
+        """Toggle the shared export card beside Images, without changing tabs."""
+        self._gallery_export_open = not self._gallery_export_open
+        self._place_export_panel()
+        if self._gallery_export_open:
+            target = (
+                self.gallery_detail.galleryExportCloseButton
+                if self.image_export.running
+                else self.form.imageExportFolderEdit
+            )
+            target.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _close_gallery_export(self) -> None:
+        """Hiding controls never cancels the shared export operation."""
+        self._gallery_export_open = False
+        self._place_export_panel()
+        target = (
+            self.gallery.export_button
+            if self.gallery.export_button.isEnabled()
+            else self.gallery.select_filtered_button
+        )
+        target.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _place_export_panel(self) -> None:
+        """Keep one card/controller/operation, mounting it in the active page's host."""
+        inline = self._gallery_export_open and self.form.workspaceStack.currentWidget() is self.images_page
+        host = self.gallery_detail.galleryExportHost if inline else self.form.imageExportConnectionHost
+        card = self.form.imageExportBox
+        if card.parentWidget() is not host:
+            if inline and not self.image_export.running:
+                self.image_export.select_scope("checked")
+            host.layout().addWidget(card)
+            card.show()  # Reparenting hides QWidget; the same controls and progress survive.
+        self.form.imageExportScopeLabel.setVisible(not inline)
+        self.form.imageExportScopeCombo.setVisible(not inline)
+        self.gallery_detail.galleryExportScroll.setVisible(inline)
+        self.gallery.export_button.setToolTip(
+            "Hide the export panel without cancelling an active export."
+            if inline
+            else "Show the export panel beside the listing for checked images."
+        )
+
     def _export_selection(self, scope: str) -> GalleryQuery | tuple[str, ...]:
         """Freeze presentation choices; export service rechecks committed evidence."""
+        if self._gallery_export_open and self.form.workspaceStack.currentWidget() is self.images_page:
+            scope = "checked"  # Images has no scope selector; never inherit a hidden Connection scope.
         if scope == "all":
             return GalleryQuery()
         if scope == "filter":
             return self.gallery.export_query()
+        if scope == "checked":
+            identities = self.gallery.export_checked()
+            if not identities:
+                raise ValidationError("Check at least one saved image in Images first.")
+            return identities
         identity = self.gallery.export_identity() if scope == "selected" else self.generation.export_identity()
         if identity is None:
             raise ValidationError("Select a saved image in Images or a PNG output in Generate first.")
@@ -753,6 +863,7 @@ class MainWindow:
     def close(self) -> None:
         self.remember(background=False)
         self.image_export.cancel()
+        self.image_recycle.cancel()
         self.gallery.save_now()
         log.info("window closed")
         self.runner.shutdown()

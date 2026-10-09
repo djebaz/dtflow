@@ -10,9 +10,11 @@ from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QFrame,
     QHeaderView,
     QLabel,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QStyle,
@@ -62,6 +64,10 @@ class CoverPainter(QObject):
                 w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
                 dest = QRectF((rect.width() - w) / 2 + self.offset[0], (rect.height() - h) / 2 + self.offset[1], w, h)
                 painter.drawPixmap(dest, self.pixmap, QRectF(self.pixmap.rect()))
+            if obj.property("role") == "galleryCardImage" and obj.property("checkedSelection"):
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QColor(self.tokens["color.selectionBorder"]))
+                painter.drawRoundedRect(rect.adjusted(1.5, 1.5, -1.5, -1.5), 9, 9)
             if obj.property("role") == "galleryCardImage" and (obj.underMouse() or obj.hasFocus()):
                 painter.setBrush(Qt.NoBrush)
                 painter.setPen(QColor(self.tokens["color.focus"]))
@@ -108,6 +114,15 @@ class CoverPainter(QObject):
 
 class RowHoverDelegate(QStyledItemDelegate):
     """Apply the light hover state across one row without selecting records."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # Checked bulk selection is independent of the view's focused/current row.
+        checked = index.siblingAtColumn(0).data(Qt.ItemDataRole.CheckStateRole)
+        if checked == Qt.CheckState.Checked or checked == Qt.CheckState.Checked.value:
+            option.state |= QStyle.StateFlag.State_Selected
+        else:
+            option.state &= ~QStyle.StateFlag.State_Selected
 
     def paint(self, painter, option, index):
         style = QStyleOptionViewItem(option)
@@ -293,6 +308,7 @@ class DetailFixture(QObject):
         self.additional = page.findChild(QWidget, "galleryAdditionalScroll")
         self.raw = page.findChild(QPlainTextEdit, "galleryRawMetadata")
         self.setup_browsing()
+        self.setup_selection_preview()
         for key, name in [("Left", "galleryPreviousButton"), ("Right", "galleryNextButton")]:
             shortcut = QShortcut(QKeySequence(key), page)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -351,6 +367,12 @@ class DetailFixture(QObject):
             button.setAccessibleName(f"Open {path.name} in Detail; illustrative sample")
             button.setToolTip("Illustrative artwork; no saved-output generation evidence")
             painter = CoverPainter(button, path, (record["dimensions"], "Sample"))
+            check = QCheckBox(button)
+            check.setObjectName("galleryCardCheck")
+            check.setGeometry(9, 9, 28, 28)
+            check.setAccessibleName(f"Check illustrative sample {index}")
+            check.setToolTip("Illustrative selection only; no real saved output is changed.")
+            check.toggled.connect(lambda checked, item=index: self.toggle_sample(item, checked))
             painter.mode = "Fit"
             self.painters.append(painter)
             button.clicked.connect(lambda checked=False, item=index: self.open_detail(item))
@@ -364,9 +386,10 @@ class DetailFixture(QObject):
             model.setProperty("textRole", "supporting")
             layout.addWidget(model)
             self.cards.append((card, button))
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels(
             [
+                "",
                 "Image",
                 "Filename",
                 "Model",
@@ -387,7 +410,11 @@ class DetailFixture(QObject):
         for row, record in enumerate(self.records):
             icon = QTableWidgetItem()
             icon.setIcon(QIcon(record["pixmap"]))
+            check = QTableWidgetItem()
+            check.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
+            check.setCheckState(Qt.CheckState.Unchecked)
             fields = [
+                check,
                 icon,
                 record["path"].name,
                 record["model"],
@@ -402,22 +429,104 @@ class DetailFixture(QObject):
                 item.setData(Qt.ItemDataRole.UserRole, record["index"])
                 item.setToolTip("Illustrative sample. " + (item.text() or record["path"].name))
                 self.table.setItem(row, column, item)
-        for column, width in enumerate((80, 150, 150, 270, 120, 85, 130, 320)):
+        for column, width in enumerate((36, 80, 150, 150, 270, 120, 85, 130, 320)):
             self.table.setColumnWidth(column, width)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.itemClicked.connect(lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)))
-        self.table.itemActivated.connect(lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)))
+        self.table.itemClicked.connect(
+            lambda item: (
+                self.toggle_sample(item.data(Qt.ItemDataRole.UserRole), item.checkState() == Qt.CheckState.Checked)
+                if item.column() == 0
+                else self.open_detail(item.data(Qt.ItemDataRole.UserRole))
+            )
+        )
+        self.table.itemActivated.connect(
+            lambda item: self.open_detail(item.data(Qt.ItemDataRole.UserRole)) if item.column() != 0 else None
+        )
         self.grid_viewport.installEventFilter(self)
         self.slider.valueChanged.connect(self.update_density)
         self.show_view("Detail")
         self.initial_density_timer.start(0)
+
+    def setup_selection_preview(self):
+        """Demonstrate selection parity using illustrative records, never saved outputs."""
+        self.sample_checked: set[int] = set()
+        self.sample_focus = 1
+        self._sample_sync = False
+        self.sample_checks = [button.findChild(QCheckBox, "galleryCardCheck") for _, button in self.cards]
+        self.sample_detail_check = self.page.findChild(QCheckBox, "galleryDetailSelectionCheck")
+        self.sample_detail_check.toggled.connect(lambda checked: self.toggle_sample(self.sample_focus, checked))
+        self.sample_select_filtered = self.page.findChild(QPushButton, "gallerySelectFilteredButton")
+        self.sample_clear = self.page.findChild(QPushButton, "galleryUnselectButton")
+        self.sample_select_filtered.clicked.connect(self.sample_toggle_all)
+        menu = QMenu(self.sample_clear)
+        menu.addAction("Unselect all", self.sample_unselect_all)
+        self.sample_clear.setText("Unselect")
+        self.sample_clear.setMenu(menu)
+        for name in ("galleryCopyPathsButton", "galleryExportButton", "galleryDeleteButton", "galleryMoreButton"):
+            button = self.page.findChild(QPushButton, name)
+            button.setEnabled(False)
+            button.setToolTip("Disabled in the illustrative fixture; no saved outputs are available.")
+        self.table.itemChanged.connect(self.sample_table_changed)
+        self.sync_sample_selection()
+
+    def sample_toggle_all(self):
+        if len(self.sample_checked) == len(self.records):
+            self.sample_unselect_all()
+        else:
+            self.sample_select_all()
+
+    def sample_select_all(self):
+        self.sample_checked.update(range(1, len(self.records) + 1))
+        self.sync_sample_selection()
+
+    def sample_unselect_all(self):
+        self.sample_checked.clear()
+        self.sync_sample_selection()
+
+    def toggle_sample(self, index, checked):
+        if getattr(self, "_sample_sync", False) or index is None:
+            return
+        if checked:
+            self.sample_checked.add(int(index))
+        else:
+            self.sample_checked.discard(int(index))
+        self.sync_sample_selection()
+
+    def sample_table_changed(self, item):
+        if item.column() == 0 and not self._sample_sync:
+            self.toggle_sample(item.data(Qt.ItemDataRole.UserRole), item.checkState() == Qt.CheckState.Checked)
+
+    def sync_sample_selection(self):
+        self._sample_sync = True
+        try:
+            selected = len(self.sample_checked)
+            self.page.findChild(QLabel, "gallerySelectedCountLabel").setText(f"{selected} selected")
+            label = self.page.findChild(QLabel, "galleryHiddenCountLabel")
+            label.setVisible(False)
+            self.sample_clear.setEnabled(selected > 0)
+            label = "Unselect all" if selected == len(self.records) and selected else "Select all"
+            self.sample_select_filtered.setText(label)
+            self.sample_select_filtered.setAccessibleName(label)
+            self.sample_select_filtered.setToolTip(label + " illustrative images.")
+            for index, ((_card, image), checkbox) in enumerate(zip(self.cards, self.sample_checks, strict=True), 1):
+                value = index in self.sample_checked
+                checkbox.setChecked(value)
+                image.setProperty("checkedSelection", value)
+                image.update()
+                cell = self.table.item(index - 1, 0)
+                cell.setCheckState(Qt.CheckState.Checked if value else Qt.CheckState.Unchecked)
+            self.table.viewport().update()
+            self.sample_detail_check.setChecked(self.sample_focus in self.sample_checked)
+        finally:
+            self._sample_sync = False
 
     def show_view(self, mode):
         """Switch mounted content only; header widgets and scroll positions persist."""
         self.mode = mode
         self.stack.setCurrentWidget(self.modes[mode])
         self.page.findChild(QPushButton, f"gallery{mode}Button").setChecked(True)
+        self.page.findChild(QCheckBox, "galleryDetailSelectionCheck").setVisible(mode == "Detail")
         self.page.findChild(QWidget, "galleryThumbnailSizeLabel").setText(
             "Row density" if mode == "List" else "Thumbnail size"
         )
@@ -426,6 +535,8 @@ class DetailFixture(QObject):
     def open_detail(self, index):
         """Open one sample without introducing gallery multi-selection state."""
         self.page.findChild(QPushButton, f"galleryThumbnail{index}").click()
+        self.sample_focus = index
+        self.sync_sample_selection()
         self.show_view("Detail")
 
     def update_density(self, *_):

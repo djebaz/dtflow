@@ -1,0 +1,287 @@
+"""Safety-first, durable system Trash operations for committed saved images.
+
+No provider interaction, no permanent-delete fallback, and no mutation of the
+attempt/queue audit tables. Trash operations and SQLite commits are not atomic.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from uuid import uuid4
+
+from dtflow.core.gallery import GalleryQuery
+from dtflow.persistence import gallery as gallery_storage
+from dtflow.persistence import image_recycle as ledger
+from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
+
+
+class RecycleUnavailable(RuntimeError):
+    """Sanitized system Trash failure; never includes a path or raw OS error."""
+
+    def __init__(self, message: str, *, stage: str = "unknown"):
+        super().__init__(message)
+        self.stage = stage
+
+    @property
+    def diagnostic(self) -> str:
+        return self.stage
+
+
+_ATTEMPT_ID = re.compile(r"^[a-f0-9]{32}$")
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class RecycleTarget:
+    """The exact original and file fingerprint validated at confirmation time."""
+
+    identity: str
+    path: str
+    size: int
+    mtime_ns: int
+    inode: int
+    device: int
+
+
+@dataclass(frozen=True, slots=True)
+class RecyclePlan:
+    """An immutable, bounded target snapshot; never a live gallery query."""
+
+    targets: tuple[RecycleTarget, ...]
+    missing: int
+    ineligible: int
+    hidden: int
+    requested: int
+
+
+@dataclass(frozen=True, slots=True)
+class RecycleResult:
+    """Per-operation settled counts with explicitly uncertain outcomes."""
+
+    recycled: tuple[str, ...]
+    failed: tuple[str, ...]
+    uncertain: tuple[str, ...]
+    missing: int
+    ineligible: int
+    unprocessed: int
+    canceled: bool
+    failure_details: tuple[tuple[str, str], ...] = ()
+
+
+def _regular_managed_file(
+    state: Path, record: dict, *, reference_counts: dict[str, int] | None = None
+) -> RecycleTarget | None:
+    """Reject custom output roots, shared/redirected files and non-final images."""
+    attempt = str(record["attempt_id"])
+    ordinal = int(record["ordinal"])
+    if not _ATTEMPT_ID.fullmatch(attempt) or ordinal < 0:
+        return None
+    root = Path(state).resolve() / "outputs"
+    expected = root / attempt / f"final-{ordinal + 1}.png"
+    metadata = root / attempt / "metadata.json"
+    candidate = Path(record["path"])
+    # A managed original has the exact canonical path written by save_artifacts.
+    if not candidate.is_absolute() or os.path.normcase(os.path.normpath(str(candidate))) != os.path.normcase(
+        str(expected)
+    ):
+        return None
+    if os.path.normcase(os.path.normpath(str(record["metadata_path"]))) != os.path.normcase(str(metadata)):
+        return None
+    if not expected.is_file():
+        return None
+    try:
+        for component in (root, expected.parent, expected, metadata):
+            if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
+                return None
+        if expected.resolve(strict=True) != expected or not metadata.is_file():
+            return None
+        info = expected.stat()
+    except OSError:
+        return None
+    if not expected.is_file() or not info.st_size or info.st_nlink != 1:
+        return None
+    references = (
+        gallery_storage.path_reference_count(state, str(expected))
+        if reference_counts is None
+        else reference_counts.get(str(expected), 0)
+    )
+    if references != 1:
+        return None
+    return RecycleTarget(
+        str(record["identity"]),
+        str(expected),
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ino,
+        info.st_dev,
+    )
+
+
+def prepare_recycle(
+    state: Path, identities: tuple[str, ...], hidden: int = 0, query: GalleryQuery | None = None, *, trash_check=None
+) -> RecyclePlan:
+    """Resolve exactly the checked identities, with no filesystem mutation.
+
+    Custom --out locations are deliberately not accepted until their ownership
+    and root authorization have an independent, explicit product contract.
+    """
+    unique = tuple(dict.fromkeys(identities))
+    if not 1 <= len(unique) <= 10_000:
+        raise ValueError("Recycle selection must contain between 1 and 10,000 images.")
+    # Derive the hidden count from the same explicit checked-ID snapshot, not
+    # an eventually refreshed UI label that may reflect the previous filter.
+    if query is not None:
+        _added, hidden, _omitted, _matched = gallery_storage.selection_candidates(state, query, unique)
+    states = ledger.outcomes(state)
+    eligible = []
+    missing = ineligible = 0
+    for offset in range(0, len(unique), gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH):
+        batch = unique[offset : offset + gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH]
+        records, reference_counts = gallery_storage.recycle_preflight_batch(state, batch)
+        for identity in batch:
+            if identity in states and states[identity][0] in ("pending", "uncertain", "recycled", "restored"):
+                ineligible += 1
+                continue
+            record = records.get(identity)
+            if record is None:
+                missing += 1
+                continue
+            target = _regular_managed_file(state, record, reference_counts=reference_counts)
+            if target is None:
+                if not Path(record["path"]).is_file():
+                    missing += 1
+                else:
+                    ineligible += 1
+                continue
+            if trash_check is not None:
+                try:
+                    trash_check(Path(target.path))
+                except (OSError, RecycleUnavailable):
+                    ineligible += 1
+                    continue
+            eligible.append(target)
+    return RecyclePlan(tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique))
+
+
+def _unchanged(source: RecycleTarget) -> bool:
+    try:
+        target = Path(source.path)
+        if target.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(target)):
+            return False
+        info = target.stat()
+        return (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev) == (
+            source.size,
+            source.mtime_ns,
+            source.inode,
+            source.device,
+        )
+    except OSError:
+        return False
+
+
+def recycle_outputs(
+    state: Path,
+    plan: RecyclePlan,
+    stop: threading.Event,
+    progress=None,
+    *,
+    recycle_adapter,
+) -> RecycleResult:
+    """Perform only confirmed Recycle Bin operations with durable item checkpoints.
+
+    Batch ownership prevents simultaneous Delete flows while the original-file
+    lock is held only around each item. This allows generation saves between
+    items instead of blocking them for an entire large recycle batch.
+    """
+    recycled: list[str] = []
+    failed: list[str] = []
+    uncertain: list[str] = []
+    failure_details: list[tuple[str, str]] = []
+    missing = plan.missing
+    ineligible = plan.ineligible
+    processed = 0
+    operation_id = uuid4().hex
+    with recycle_batch_lock(state):
+        ledger.start_operation(state, operation_id, len(plan.targets))
+        for target in plan.targets:
+            if stop.is_set():
+                break
+            with original_images_lock(state):
+                record = gallery_storage.get_record(state, target.identity)
+                if record is None or not _unchanged(target):
+                    if not Path(target.path).is_file():
+                        missing += 1
+                    else:
+                        ineligible += 1
+                else:
+                    confirmed = _regular_managed_file(state, record)
+                    if confirmed != target:
+                        ineligible += 1
+                    elif not ledger.claim_recycle_intent(
+                        state, operation_id, target.identity, target.path, target.size, target.mtime_ns
+                    ):
+                        # A preflight plan may predate another process's intent.
+                        # Never overwrite pending/uncertain/removed evidence or
+                        # submit a second move, even if the file looks unchanged.
+                        ineligible += 1
+                        if len(failure_details) < 100:
+                            failure_details.append((target.identity, "ledger_requires_review"))
+                    else:
+                        try:
+                            recycle_adapter(Path(target.path))
+                        except (OSError, RecycleUnavailable) as exc:
+                            # A Trash error after a disappearing original is uncertain.
+                            # Never assume that it was successfully recycled.
+                            state_value = "failed" if _unchanged(target) else "uncertain"
+                            if isinstance(exc, RecycleUnavailable):
+                                detail = exc.diagnostic
+                            else:
+                                windows_code = getattr(exc, "winerror", None)
+                                detail = f"os_error_{windows_code}" if isinstance(windows_code, int) else "os_error"
+                            # Stable output identities and sanitized adapter stages
+                            # are safe; do not log full paths or raw OS exceptions.
+                            log.warning(
+                                "image recycle outcome=%s identity=%s reason=%s",
+                                state_value,
+                                target.identity,
+                                detail,
+                            )
+                            if len(failure_details) < 100:
+                                failure_details.append((target.identity, detail))
+                        else:
+                            state_value = "recycled" if not Path(target.path).exists() else "uncertain"
+                        ledger.record_outcome(
+                            state,
+                            operation_id,
+                            target.identity,
+                            target.path,
+                            state_value,
+                            target.size,
+                            target.mtime_ns,
+                        )
+                        if state_value == "recycled":
+                            recycled.append(target.identity)
+                        elif state_value == "uncertain":
+                            uncertain.append(target.identity)
+                        else:
+                            failed.append(target.identity)
+            processed += 1
+            if progress:
+                progress(processed, len(plan.targets))
+        canceled = stop.is_set()
+        ledger.finish_operation(state, operation_id, "canceled" if canceled else "complete")
+    return RecycleResult(
+        tuple(recycled),
+        tuple(failed),
+        tuple(uncertain),
+        missing,
+        ineligible,
+        len(plan.targets) - processed,
+        canceled,
+        tuple(failure_details),
+    )

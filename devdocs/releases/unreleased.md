@@ -21,6 +21,12 @@
 
 ## Changed
 
+- Images keeps Select all as a standalone action at every width; it becomes Unselect all only when all current filtered results are checked. Unselect all clears hidden checks too; partial 10,000-ID fills retain Select all. Owner reports Select all / Unselect all smoke passed (2026-10-09, follow-up to f3bc285).
+
+- Images List row/header checkboxes now use shared dark/blue styling with explicit checked and partial glyphs rather than native white boxes. Owner reports deletion smoke passed (2026-10-09); owner also reports checkbox styling smoke passed (2026-10-09, follow-up to ceb8e26); remaining recovery/platform/packaged gates are separate.
+
+- Phase 8E system Trash adapter now uses locked Qt 6.11.2 instead of handwritten Windows COM, without a new dependency. Managed-original validation remains; Qt capability detection and per-file move results replace fixed-drive/filesystem/OS restrictions, with platform-aware wording. Qt-reported success with an unverifiable destination remains uncertain and is explicitly distinguished in results. Shared durable checkpoints/coordination remain Qt-free. Owner trash/recovery and platform acceptance remain pending; no agent tests or actual trash operations.
+
 - Connection middle-panel cards scroll within the shared shell to keep the export controls reachable on smaller windows.
 - Pillow is declared as a runtime dependency through uv (it was already transitive).
 
@@ -42,9 +48,19 @@
 
 ## Planned scope
 
-- Phase 8E Images multi-selection and confirmed bulk deletion of selected/all-filtered saved originals is documented separately, not implemented. Export copies and execution audit history must be preserved; deletion/recovery policy remains to be finalized.
+- Phase 8E PR #57 implements session-only Images multi-selection, a single-row action bar, checked-image export and durable system Trash with original-file coordination. Select all toggles to Unselect all only after full filtered coverage, within the 10,000 combined-check limit. Qt handles per-file Trash capability without permanent-delete fallback or OS/filesystem allowlists. Owner reports deletion, checkbox styling, Select all / Unselect all and earlier export action smoke passed; interrupted recovery and broader platform/packaged acceptance remain separate. Exported copies and audit history stay preserved.
+
+- Images Export no longer redirects to Connection: it toggles a scrollable right-hand column with all shared export controls. One card/controller preserves settings and active progress across navigation; hiding does not cancel. Owner reports column smoke passed for 5772f54; Images now hides the scope dropdown and starts checked-only exports, while Connection retains every scope. This checked-only refinement remains owner-smoke-pending. No agent tests/smoke or provider calls.
+
+- Repeat-export skips now validate committed/non-recycled identities in short batches of at most 128, avoiding a full gallery record and SQLite/lock setup for every skipped image. Actual exports retain per-image original-file leases; no destination index or safety bypass. Owner reports repeat-export speed smoke passed at 314737b (2026-10-09); no measured benchmark or agent runtime check. Mixed/recycled/unavailable/cancel and packaged/platform acceptance remain separate.
+
+- PR #57 review follow-up: remove automatic restoration based on path/size/mtime and conservatively withdraw old unverified restored outcomes without deleting files; verified recovery remains future work. Batch Trash preflight selected records/path-reference counts in consistent snapshots of up to 128; retain per-file validation and execution revalidation. List header checkbox now tracks horizontal scroll/section movement. Static checks only; follow-up runtime/GUI acceptance pending.
+
+- Grid and Detail checked-image checkboxes now share List's explicit white tick/partial SVGs and token-based indicator states, without changing geometry or selection behavior. Static theme/resource checks passed; owner reports style smoke passed at 8ec3a55 (2026-10-09), without implying broader DPI/platform/packaged acceptance.
+
+- Trash execution now atomically validates the latest durable outcome and commits pending intent under batch/original-file leases. Stale plans cannot overwrite pending/uncertain/recycled/restored or unknown evidence; only new/failed identities proceed, others become ineligible/manual review without another Trash call. Source/static checks only; cross-process crash/stale-plan acceptance pending.
 
 ## Release audit
 
-- PRs: #54, #55, #56
-- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #56 implements cache coordination/cleanup safety and adds the planned-only 8E image-management scope; owner cache/source-runtime acceptance recorded 2026-10-09 after passing CI and smoke tests, no new agent tests/smoke under fast-implement. PR #55 adds Connection-centered JPEG/EXIF exports with optional default-on advisory noise/blank sorting with portable metadata, privacy and background progress/cancel; initial development deferred tests/smoke under fast-implement; owner later requested full offline pytest (426 passed, 3 skipped) and Ruff (passed), with the existing boundary guard narrowed only for the two Pillow image services; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions.
+- PRs: #54, #55, #56, #57
+- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #56 implements cache coordination/cleanup safety and adds the planned-only 8E image-management scope; owner cache/source-runtime acceptance recorded 2026-10-09 after passing CI and smoke tests, no new agent tests/smoke under fast-implement. PR #55 adds Connection-centered JPEG/EXIF exports with optional default-on advisory noise/blank sorting with portable metadata, privacy and background progress/cancel; initial development deferred tests/smoke under fast-implement; owner later requested full offline pytest (426 passed, 3 skipped) and Ruff (passed), with the existing boundary guard narrowed only for the two Pillow image services; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions. PR #57 adds checked-image management and Qt-backed system Trash; Images now toggles the shared export card beside the listing, with new placement/navigation/cancel smoke pending.

@@ -7,10 +7,14 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from dtflow.core.gallery import GalleryQuery
+from dtflow.persistence.image_recycle import attach_read_only
 from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_sqlite
 
 # The saver commits image paths followed by metadata.json only after every durable write succeeds.
 # These references include non-default --out locations. Failed/orphaned files are not discovery sources.
+MAX_EXPORT_AVAILABILITY_BATCH = 128
+MAX_RECYCLE_PREFLIGHT_BATCH = 128
+
 BASE = """
 WITH outputs AS (
  SELECT a.attempt_id, a.request_id, a.backend_id, a.updated_at_utc AS saved_at_utc,
@@ -20,6 +24,9 @@ WITH outputs AS (
  FROM attempts a, json_each(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END) p
  WHERE a.state='succeeded' AND a.remote_outcome='succeeded' AND p.type='text'
    AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
+   AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
+                   WHERE r.identity = a.attempt_id || ':' || CAST(p.key AS INTEGER)
+                     AND r.outcome IN ('recycled', 'restored'))
 ), records AS (
  SELECT *, attempt_id || ':' || ordinal AS identity,
    json_extract(request_json, '$.model_id') AS model,
@@ -54,6 +61,7 @@ def reader(state: Path):
     try:
         connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
         connection.row_factory = sqlite3.Row
+        attach_read_only(connection, state)
         connection.execute("PRAGMA query_only=ON")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (1, SCHEMA_VERSION):
@@ -147,6 +155,50 @@ def get_record(state: Path, identity: str) -> dict | None:
         return dict(row) if row else None
 
 
+def available_export_identities(state: Path, identities: tuple[str, ...]) -> frozenset[str]:
+    """Read only committed, non-recycled identities using selected attempt primary keys.
+
+    The exporter holds the original-file lease until these bounded skip outcomes
+    are counted. No original files, requests or metadata payloads are loaded.
+    """
+    if len(identities) > MAX_EXPORT_AVAILABILITY_BATCH:
+        raise ValueError("Export availability batch exceeds its bounded limit.")
+    selected = []
+    for identity in identities:
+        if not isinstance(identity, str):
+            continue
+        attempt, separator, output = identity.partition(":")
+        if not separator or not output.isascii() or not output.isdecimal():
+            continue
+        ordinal = int(output)
+        if output != str(ordinal):
+            continue
+        selected.append((attempt, ordinal, identity))
+    if not selected:
+        return frozenset()
+    with reader(state) as db:
+        if db is None:
+            return frozenset()
+        rows = db.execute(
+            """WITH selected AS (
+                 SELECT json_extract(value, '$[0]') AS attempt_id,
+                        json_extract(value, '$[1]') AS ordinal,
+                        json_extract(value, '$[2]') AS identity
+                 FROM json_each(?)
+               )
+               SELECT s.identity FROM selected s JOIN attempts a ON a.attempt_id=s.attempt_id
+               WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                 AND s.ordinal < json_array_length(CASE WHEN json_valid(a.artifacts_json)
+                                                       THEN a.artifacts_json ELSE '[]' END)-1
+                 AND json_type(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END,
+                               '$[' || s.ordinal || ']')='text'
+                 AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
+                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored'))""",
+            (json.dumps(selected),),
+        )
+        return frozenset(row[0] for row in rows)
+
+
 def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """At most 1000 exact model/LoRA choices; editable controls support identifiers beyond this list."""
     with reader(state) as db:
@@ -184,3 +236,117 @@ def export_identities(state: Path, query: GalleryQuery, maximum: int) -> tuple[s
             [*values, maximum + 1],
         )
         return tuple(row[0] for row in rows)
+
+
+def selection_candidates(
+    state: Path,
+    query: GalleryQuery,
+    checked: tuple[str, ...],
+    *,
+    add: bool = False,
+    maximum: int = 10_000,
+) -> tuple[tuple[str, ...], int, int, tuple[str, ...]]:
+    """Return new matching identities, hidden checked count and omitted matches.
+
+    Read only stable IDs in a single bounded SQLite snapshot. Existing checked
+    IDs keep their place; additions follow the current deterministic query sort.
+    This does not silently limit or replace existing selections.
+    """
+    where, values, order = clauses(query)
+    existing = set(checked)
+    capacity = max(0, maximum - len(existing)) if add else 0
+    additions: list[str] = []
+    matched_checked: list[str] = []
+    omitted = 0
+    with reader(state) as db:
+        if db is None:
+            return (), len(existing), 0, ()
+        rows = db.execute(BASE + f"SELECT identity FROM records WHERE {where} ORDER BY {order}", values)
+        for row in rows:
+            identity = row[0]
+            if identity in existing:
+                matched_checked.append(identity)
+            elif add:
+                if len(additions) < capacity:
+                    additions.append(identity)
+                else:
+                    omitted += 1
+    return tuple(additions), len(existing) - len(matched_checked), omitted, tuple(matched_checked)
+
+
+def selection_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
+    """Read source paths for checked recorded originals without Qt or image decodes."""
+    targets = set(identities)
+    if not targets:
+        return (), 0
+    found = {}
+    with reader(state) as db:
+        if db is None:
+            return (), len(targets)
+        for row in db.execute(BASE + "SELECT identity, path FROM records"):
+            if row["identity"] in targets:
+                source = Path(row["path"])
+                if source.is_file() and not source.is_symlink():
+                    found[row["identity"]] = str(source)
+    return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
+
+
+def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[dict[str, dict], dict[str, int]]:
+    """Read selected records and committed path ownership in one bounded snapshot.
+
+    Path counts include recycled references, just like execution revalidation.
+    Do not load request/metadata payloads or inspect original files here.
+    """
+    if len(identities) > MAX_RECYCLE_PREFLIGHT_BATCH:
+        raise ValueError("Recycle preflight batch exceeds its bounded limit.")
+    if not identities:
+        return {}, {}
+    attempts = tuple(dict.fromkeys(identity.partition(":")[0] for identity in identities))
+    attempt_slots = ",".join("?" for _ in attempts)
+    identity_slots = ",".join("?" for _ in identities)
+    with reader(state) as db:
+        if db is None:
+            return {}, {}
+        records = {
+            row["identity"]: dict(row)
+            for row in db.execute(
+                BASE
+                + "SELECT identity,attempt_id,ordinal,path,metadata_path FROM records "
+                + f"WHERE attempt_id IN ({attempt_slots}) AND identity IN ({identity_slots})",
+                (*attempts, *identities),
+            )
+        }
+        paths = tuple(dict.fromkeys(record["path"] for record in records.values()))
+        if not paths:
+            return records, {}
+        counts = {
+            row[0]: int(row[1])
+            for row in db.execute(
+                """SELECT p.value,count(*) FROM attempts a,
+                         json_each(CASE WHEN json_valid(a.artifacts_json)
+                           THEN a.artifacts_json ELSE '[]' END) p
+                   WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                     AND p.type='text' AND p.value IN (SELECT value FROM json_each(?))
+                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
+                   GROUP BY p.value""",
+                (json.dumps(paths),),
+            )
+        }
+        return records, counts
+
+
+def path_reference_count(state: Path, path: str) -> int:
+    """Count committed final-output references regardless of recycle state."""
+    with reader(state) as db:
+        if db is None:
+            return 0
+        row = db.execute(
+            """SELECT count(*) FROM attempts a,
+                     json_each(CASE WHEN json_valid(a.artifacts_json)
+                       THEN a.artifacts_json ELSE '[]' END) p
+               WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                 AND p.type='text' AND p.value=?
+                 AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1""",
+            (path,),
+        ).fetchone()
+        return int(row[0])
