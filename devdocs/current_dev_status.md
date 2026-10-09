@@ -84,3 +84,5 @@ The [routing follow-up](plans/2026-10-09-export-noise-routing.md) adds the canon
 Owner reports noise/blank routing works (2026-10-09); no exact packaged build was supplied. The [repeat/date follow-up](plans/2026-10-09-export-repeat-dates.md) adds identity/checksum skip counts and Windows creation/EXIF dates based on recorded successful save time, not exact inference start/end. Owner repeat/date acceptance remains pending; the reference JPEG PoC is retained under tools/images without owner-local defaults.
 
 Owner-requested branch validation: Ruff lint/format passed; full offline pytest rerun 426 passed, 3 gated live skips (109.46s), after updating the existing Pillow import boundary for the two headless image services. Repeat/date GUI smoke and packaged acceptance remain separate; no real inference or billable actions.
+
+The [export-index follow-up](plans/2026-10-09-export-index.md) moves repeat skips before source reads and per-item lookups, with bounded destination-local recovery and cheap exported-file checks. Static implementation checks only; owner repeat-speed/recovery acceptance and a fresh suite run remain pending.

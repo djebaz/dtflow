@@ -20,6 +20,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
+from dtflow.persistence.export_index import load_export_index, save_export_index
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
 from dtflow.services.image_quality import assess_rgb
@@ -90,70 +91,127 @@ def _set_creation_time(handle, date: datetime) -> None:
         raise ctypes.WinError(ctypes.get_last_error())
 
 
-def _existing_exports(destination: Path) -> set[tuple[str, str]]:
-    """Discover completed DTFlow copies only; never trust a filename as identity."""
-    identities = set()
-    count = 0
+def _read_export_identity(path: Path) -> tuple[str, str] | None:
+    """Read bounded portable identity from a candidate; never decode its pixels."""
+    try:
+        if path.stat().st_size > MAX_IMAGE_BYTES:
+            return None
+        with path.open("rb") as stream:
+            stream.seek(-2, os.SEEK_END)
+            if stream.read(2) != b"\xff\xd9":
+                return None
+            stream.seek(0)
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(stream) as image:
+                    if image.format != "JPEG":
+                        return None
+                    raw = image.getexif().get_ifd(34665).get(37510, b"")
+        if not isinstance(raw, bytes) or not raw.startswith(b"UNICODE\0") or len(raw) > MAX_EXIF_BYTES:
+            return None
+        document = json.loads(raw[8:].decode("utf-16"))
+        if not isinstance(document, dict) or document.get("export_schema_version") != 1:
+            return None
+        if "metadata_sidecar" in document:
+            if document["metadata_sidecar"] != path.with_suffix(".json").name:
+                return None
+            with path.with_suffix(".json").open("rb") as stream:
+                data = stream.read(2 * 1024 * 1024 + 1)
+            if len(data) > 2 * 1024 * 1024:
+                return None
+            document = json.loads(data)
+        if not isinstance(document, dict) or document.get("export_schema_version") != 1:
+            return None
+        identity, checksum = document.get("source_output_identity"), document.get("source_png_sha256")
+        if (
+            isinstance(identity, str)
+            and re.fullmatch(r"[a-f0-9]{32}:\d+", identity)
+            and (isinstance(checksum, str) and re.fullmatch(r"[a-f0-9]{64}", checksum))
+        ):
+            return identity, checksum
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        SyntaxError,
+        RecursionError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ):
+        pass
+    return None
+
+
+def _sidecar_fingerprint(path: Path) -> dict | None:
+    try:
+        stat = path.with_suffix(".json").stat()
+        return {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+    except FileNotFoundError:
+        return None
+
+
+def _existing_exports(destination: Path, cancel: threading.Event) -> tuple[dict, set[str]]:
+    """Stat unchanged indexed copies; only inspect metadata for new/changed files."""
+    notes = set()
+    try:
+        cached = load_export_index(destination)
+    except (OSError, ValueError, TypeError, RecursionError):
+        cached = {}
+        notes.add("Export index could not be read; rebuilt from existing image metadata.")
+    files = {}
     for folder in (destination, destination / "noise", destination / "blank"):
         if not folder.exists():
             continue
         if folder != destination and folder.resolve() != folder:
             raise ValidationError("Detected-image export subfolders must not redirect to another location.")
         for path in folder.iterdir():
+            if cancel.is_set():
+                return files, notes
             if path.suffix.lower() not in (".jpg", ".jpeg") or not path.is_file():
                 continue
-            count += 1
-            if count > MAX_EXPORT_IMAGES:
+            if len(files) >= MAX_EXPORT_IMAGES:
                 raise ValidationError("Export folder scan exceeds 10,000 JPEG files; choose a narrower destination.")
-            try:
-                if path.stat().st_size > MAX_IMAGE_BYTES:
-                    continue
-                with path.open("rb") as stream:
-                    stream.seek(-2, os.SEEK_END)
-                    if stream.read(2) != b"\xff\xd9":
-                        continue
-                    stream.seek(0)
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("error", Image.DecompressionBombWarning)
-                        with Image.open(stream) as image:
-                            if image.format != "JPEG":
-                                continue
-                            raw = image.getexif().get_ifd(34665).get(37510, b"")
-                if not isinstance(raw, bytes) or not raw.startswith(b"UNICODE\0") or len(raw) > MAX_EXIF_BYTES:
-                    continue
-                document = json.loads(raw[8:].decode("utf-16"))
-                if not isinstance(document, dict) or document.get("export_schema_version") != 1:
-                    continue
-                if "metadata_sidecar" in document:
-                    name = document["metadata_sidecar"]
-                    if name != path.with_suffix(".json").name:
-                        continue
-                    with path.with_suffix(".json").open("rb") as stream:
-                        data = stream.read(2 * 1024 * 1024 + 1)
-                    if len(data) > 2 * 1024 * 1024:
-                        continue
-                    document = json.loads(data)
-                if not isinstance(document, dict) or document.get("export_schema_version") != 1:
-                    continue
-                identity, checksum = document.get("source_output_identity"), document.get("source_png_sha256")
-                if (
-                    isinstance(identity, str)
-                    and re.fullmatch(r"[a-f0-9]{32}:\d+", identity)
-                    and (isinstance(checksum, str) and re.fullmatch(r"[a-f0-9]{64}", checksum))
-                ):
-                    identities.add((identity, checksum))
-            except (
-                OSError,
-                ValueError,
-                TypeError,
-                AttributeError,
-                SyntaxError,
-                RecursionError,
-                Image.DecompressionBombError,
-                Image.DecompressionBombWarning,
+            name = path.relative_to(destination).as_posix()
+            stat = path.stat()
+            sidecar = _sidecar_fingerprint(path)
+            old = cached.get(name)
+            if (
+                old
+                and old["size"] == stat.st_size
+                and old["mtime_ns"] == stat.st_mtime_ns
+                and old.get("sidecar") == sidecar
             ):
+                files[name] = old
                 continue
-    return identities
+            identity = _read_export_identity(path)
+            # Cache unrecognized candidates too, but they never supply a skip identity.
+            files[name] = {
+                "size": stat.st_size,
+                "mtime_ns": stat.st_mtime_ns,
+                "identity": identity[0] if identity else None,
+                "source_png_sha256": identity[1] if identity else None,
+                "sidecar": sidecar,
+            }
+    return files, notes
+
+
+def _checkpoint_index(destination: Path, files: dict, notes: set[str]) -> None:
+    try:
+        save_export_index(destination, files)
+    except (OSError, ValueError, TypeError):
+        notes.add("Export index could not be saved; completed image copies were retained.")
+
+
+def _remember_export(files: dict, destination: Path, image: Path, identity: str, checksum: str) -> None:
+    stat = image.stat()
+    files[image.relative_to(destination).as_posix()] = {
+        "identity": identity,
+        "source_png_sha256": checksum,
+        "sidecar": _sidecar_fingerprint(image),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
 
 
 def _identifier(value) -> str:
@@ -351,7 +409,7 @@ def _reserve(destination: Path, stem: str):
 
 
 def _export_one(
-    item: GalleryItem, destination: Path, options: ExportOptions, existing: set[tuple[str, str]]
+    item: GalleryItem, destination: Path, options: ExportOptions, existing: dict
 ) -> tuple[tuple[str, ...], str]:
     source = Path(item.path).resolve()
     if destination == source.parent or destination.is_relative_to(source.parent):
@@ -363,8 +421,6 @@ def _export_one(
     if len(original) > MAX_IMAGE_BYTES:
         raise ValidationError("Image exceeds the 64 MiB export limit.")
     checksum = hashlib.sha256(original).hexdigest()
-    if (item.identity, checksum) in existing:
-        return (), "skipped"
     category = "root"
     document, notes = _portable(item, options)
     document.update(
@@ -459,7 +515,7 @@ def _export_one(
                         sidecar.unlink()
             finally:
                 rgb.close()
-    existing.add((item.identity, checksum))
+    _remember_export(existing, destination, image, item.identity, checksum)
     return tuple(notes), category
 
 
@@ -477,14 +533,22 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     if not total or cancel.is_set():
         return ExportResult(str(destination), total, 0, 0, cancel.is_set())
     destination.mkdir(parents=True, exist_ok=True)
-    existing = _existing_exports(destination)
+    existing, notes = _existing_exports(destination, cancel)
+    if not cancel.is_set():
+        _checkpoint_index(destination, existing, notes)
+    skipped_identities = {record["identity"] for record in existing.values() if record["identity"]}
     exported, failed, noise, blank, skipped = 0, 0, 0, 0, 0
-    notes, failures = set(), []
+    failures = []
     if progress:
         progress(0, total)
     for index, identity in enumerate(identities):
         if cancel.is_set():
             break
+        if identity in skipped_identities:
+            skipped += 1
+            if progress:
+                progress(index + 1, total)
+            continue
         try:
             record = storage.get_record(state, identity)
             if record is None:
@@ -493,10 +557,10 @@ def _run_export(state, destination, options, query, identities, cancel, progress
             notes.update(item_notes)
             noise += category == "noise"
             blank += category == "blank"
-            if category == "skipped":
-                skipped += 1
-            else:
-                exported += 1
+            exported += 1
+            skipped_identities.add(identity)
+            if exported % 25 == 0:
+                _checkpoint_index(destination, existing, notes)
         except (
             OSError,
             ValueError,
@@ -519,6 +583,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                 failures.append(f"{identity}: {reason}")
         if progress:
             progress(index + 1, total)
+    _checkpoint_index(destination, existing, notes)
     return ExportResult(
         str(destination),
         total,

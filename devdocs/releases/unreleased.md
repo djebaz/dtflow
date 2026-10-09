@@ -17,6 +17,8 @@
 - Repeat export skips matching saved-output identities/checksums in root/noise/blank with a distinct skipped count, leaving existing files/options untouched. New Windows JPEGs and JSON sidecars receive the recorded saved-date creation time; EXIF Date taken carries UTC generation-completion-proxy semantics. Missing destination folders and parents are created automatically.
 - Retained tools/images/export_jpeg_exif_poc.py reference PoC with required source/output arguments and no owner-local defaults or scratch-module imports; intentionally retains full private metadata and warns against sharing.
 
+- Destination-local .dtflow-export-index.json speeds repeat export: quick file checks and early saved-identity skips before source reads, hashing, detection or per-item database lookups. Older folders build the index once; missing/changed copies and lost checkpoints are rediscovered. No source paths or full prompts stored; unchanged committed originals are assumed immutable on hits.
+
 ## Changed
 
 - Connection middle-panel cards scroll within the shared shell to keep the export controls reachable on smaller windows.

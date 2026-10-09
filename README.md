@@ -60,7 +60,7 @@ recorded provenance and safe raw metadata without inventing unavailable values. 
 Connection provides a saved-image export hub: copy one image or a filtered batch into
 one folder as JPEGs with readable filenames and Windows-visible generation
 properties. Prompt privacy and optional JSON sidecars keep sharing explicit; original
-PNGs and saved history stay untouched. A default-on checkbox sorts pixel-statistics-flagged copies into `noise/` and `blank/`; turn it off for a completely flat folder. These are advisory flags, not generation-status verdicts. Repeat exports skip matching existing copies; new Windows files retain the saved generation-completion date in their creation time and EXIF.
+PNGs and saved history stay untouched. A default-on checkbox sorts pixel-statistics-flagged copies into `noise/` and `blank/`; turn it off for a completely flat folder. These are advisory flags, not generation-status verdicts. A small destination index lets repeat exports skip matching existing copies before image processing; new Windows files retain the saved generation-completion date in their creation time and EXIF.
 See the [desktop guide](devdocs/guides/desktop.md#images) and
 [image export guide](devdocs/guides/desktop.md#export-saved-images).
 

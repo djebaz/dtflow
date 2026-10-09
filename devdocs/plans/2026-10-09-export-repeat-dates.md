@@ -31,3 +31,6 @@
 ## Owner-requested validation
 - Owner explicitly requests Ruff and tests, overriding earlier execution deferral for this turn. First full run: 424 passed, 3 skipped, 2 failed in 127.01s; both failures were the existing blanket Pillow-import ban against the export service introduced earlier in PR #55.
 - Existing contract checks now allow only Pillow in services/image_export.py and image_quality.py, never Qt/providers or Pillow in core/other services. No new test functions added; existing boundary assertions preserve the strict default. Full suite rerun passed: 426 passed, 3 gated live tests skipped in 109.46s. Whole-repo Ruff lint/format passed. These tests do not establish direct repeat-export/Windows-date smoke acceptance; no new exporter or reference-PoC invocation performed.
+
+## Early-skip index follow-up
+Owner reports skip is slow and requests a destination index. [The index plan](2026-10-09-export-index.md) supersedes per-run source hashing on recognized hits with quick exported-file checks and durable identity lookup. Existing-source mutation detection is intentionally no longer part of the fast path.
