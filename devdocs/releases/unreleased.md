@@ -26,9 +26,16 @@
 
 ## Fixed
 
+- PR #56 completes shared cache-I/O/cleanup coordination across threads/processes, including export computations; busy exports fall back to no persistent cache. Category measurement shows file counts, redirected cache trees are refused, and bounded preflight plus partial-failure feedback preserves durable data and user exports. Owner/runtime acceptance remains pending.
+
+
 - Restored the PoC-compatible EXIF ImageDescription prompt summary when Include prompts is checked; omit it entirely when unchecked. Newly exported copies gain the field; existing export files are not rewritten.
+
+## Planned scope
+
+- Phase 8E Images multi-selection and confirmed bulk deletion of selected/all-filtered saved originals is documented separately, not implemented. Export copies and execution audit history must be preserved; deletion/recovery policy remains to be finalized.
 
 ## Release audit
 
-- PRs: #54, #55
-- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #55 adds Connection-centered JPEG/EXIF exports with optional default-on advisory noise/blank sorting with portable metadata, privacy and background progress/cancel; initial development deferred tests/smoke under fast-implement; owner later requested full offline pytest (426 passed, 3 skipped) and Ruff (passed), with the existing boundary guard narrowed only for the two Pillow image services; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions.
+- PRs: #54, #55, #56
+- Scope: Version bump 0.3.8; shipped changes are recorded in v0.3.8.md, pending final owner executable acceptance and publication. PR #56 implements cache coordination/cleanup safety and adds the planned-only 8E image-management scope; final owner cache/runtime acceptance pending, no new agent tests/smoke under fast-implement. PR #55 adds Connection-centered JPEG/EXIF exports with optional default-on advisory noise/blank sorting with portable metadata, privacy and background progress/cancel; initial development deferred tests/smoke under fast-implement; owner later requested full offline pytest (426 passed, 3 skipped) and Ruff (passed), with the existing boundary guard narrowed only for the two Pillow image services; owner reports a source smoke export with 345 JPGs at the folder root and no subfolders; final scenario/packaged acceptance remains with the owner; no inference or billable actions.

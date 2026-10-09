@@ -25,6 +25,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.paths import application_state_dir
+from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
@@ -551,17 +552,21 @@ class MainWindow:
     def _cache_measured(self, usage, failure) -> None:
         if failure is not None:
             log.warning("cache measurement failed reason=%s", type(failure).__name__)
-            self.form.cacheStatusLabel.setText("Disposable cache size unavailable.")
+            self.form.cacheStatusLabel.setText(
+                str(failure)
+                if isinstance(failure, (CacheBusyError, CacheCleanupError, CacheSafetyError))
+                else "Disposable cache size unavailable; refresh to retry."
+            )
             return
-        labels = {item.name: self._human_bytes(item.bytes) for item in usage}
+        labels = {item.name: f"{self._human_bytes(item.bytes)} ({item.files} files)" for item in usage}
         self.form.cacheStatusLabel.setText(
             f"Inventory {labels['inventory']} · Thumbnails {labels['thumbnails']} · Derived {labels['derived']}"
         )
 
     def clear_cache(self, categories: tuple[str, ...]) -> None:
-        if self.activity.generating or self.activity.dispatching:
+        if self.activity.generating or self.activity.dispatching or self.image_export.running:
             QMessageBox.warning(
-                self.form, "Cache is busy", "Stop the active generation or queue dispatch before cleanup."
+                self.form, "Cache is busy", "Stop the active generation, queue dispatch or image export before cleanup."
             )
             return
         names = ", ".join(categories)
@@ -580,7 +585,14 @@ class MainWindow:
     def _cache_cleared(self, names: str, failure) -> None:
         if failure is not None:
             log.warning("cache cleanup failed reason=%s", type(failure).__name__)
-            QMessageBox.warning(self.form, "Cache not cleared", type(failure).__name__)
+            QMessageBox.warning(
+                self.form,
+                "Cache not cleared",
+                str(failure)
+                if isinstance(failure, (CacheBusyError, CacheCleanupError, CacheSafetyError))
+                else "Cleanup may be partial; refresh sizes and retry. Check cache-folder permissions.",
+            )
+            self.refresh_cache()
             return
         self.refresh_cache()
         self.form.statusBar().showMessage(f"Cleared disposable cache: {names}.", 5000)

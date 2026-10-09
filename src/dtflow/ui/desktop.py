@@ -30,7 +30,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-v", "--version", action="store_true", help="Show application version and build identity.")
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Override the diagnostic log directory.")
-    command.add_argument("-nc", "--no-cache", action="store_true", help="Bypass inventory cache reads and writes.")
+    command.add_argument("-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes.")
     return command
 
 

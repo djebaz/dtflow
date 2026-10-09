@@ -65,6 +65,10 @@ class ImageExportPanel(QObject):
         form.installEventFilter(self)
         self.runner.submit(asyncio.to_thread(load_export_preferences, self.state_dir), self._loaded)
 
+    @property
+    def running(self) -> bool:
+        return self._running
+
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.Close:
             self.cancel()

@@ -13,7 +13,7 @@ This is coding orientation against [initial.md](plans/initial.md), not a release
 | 4 — Qt shell | Connection selection/status and Windows saved API-key service. |
 | 5 — Desktop execution | Generate, LoRA/cloud asset actions (Prepare adds and binds the receipt automatically; custom cloud LoRA use owner-reported working 2026-10-06, see [lora-assets.md](plans/lora-assets.md#referencing-a-prepared-lora-in-a-generation-request)), configuration save/load and queue controls through shared services. |
 | 6 — Batch planning | Shared seed/pair/cross planner, bounded expansion and CLI/desktop dry runs. |
-| 8A–8D — Gallery/presets | Saved-output browsing, native-format presets with conservative field application, reuse/explicit regeneration and category-specific cache cleanup (only the inventory category has files today). Runtime acceptance pending. |
+| 8A–8D — Gallery/presets | Saved-output browsing, native-format presets with conservative field application, reuse/explicit regeneration and category-specific cache cleanup (inventory snapshots and source image computations use disk cache; gallery thumbnails remain in memory). Runtime acceptance pending. |
 
 Implemented does not mean universal compatibility or remote cancellation. On 2026-10-05 the owner reported the other 0.3.0 release checks complete, identifying the exact portable Qt executable smoke test as the remaining gate; this is owner-reported, not newly assistant-verified. Keep existing detailed source/live evidence rather than rerunning it without need. PR #29 changes the builder to a GUI-first windowed launcher; the owner has now built and exercised its dirty 0.1.0 artifact, including key/form persistence and bounded local/cloud generation/queues. See [the identified GUI smoke](research/windows-gui-smoke-2026-10-05.md) for artifact identity, one unresolved cloud outcome and coverage limits. The owner subsequently built/launched the clean 0.3.0 artifact and confirmed its displayed identity; the agent verified bundled metadata/checksum and downloaded release assets. [0.3.0 is published](https://github.com/djebaz/dtflow/releases/tag/v0.3.0); earlier live coverage/limitations remain separate. See [the build guide](guides/building.md), [0.3.0 notes](releases/v0.3.0.md) and [packaging evidence](research/windows-packaging.md).
 
@@ -22,7 +22,7 @@ Implemented does not mean universal compatibility or remote cancellation. On 202
 | Phase | Remaining scope |
 | --- | --- |
 | 7 — Advanced scheduling | Priorities, fairness and adaptive concurrency; not a prerequisite for the proposed release milestones. Basic rolling dispatch already exists. |
-| 8 — Gallery/presets | Only separately scoped 8E organisation remains; it is not a 0.4.0 gate. Owner/runtime acceptance of 8B–8D remains pending. |
+| 8 — Gallery/presets | Owner/runtime acceptance of 8B–8D remains pending. Planned 8E Images multi-selection/bulk deletion is separate and not automatically a 0.4.0 gate. |
 | 9 — Image operations | 9A img2img, 9B existing mask-file inpainting, 9C interactive masks and selected controls/references. |
 | 10 — Workflows | 10A versioned workflow files/compiler/execution; 10B visual editor and expanded semantics. |
 | 11 — Broader DT+ | Additional verified cloud capabilities and hardening. Token handling, secret safety, subscription-only policy and ambiguous-outcome protection already belong to Phases 2/3; do not rebuild or defer them. |
@@ -58,7 +58,7 @@ PR #49 is merged from `ui/global-run-control` and replaces the obsolete manual I
 
 The [release roadmap](plans/releases.md) sequences Phase 8 daily-use refinement (proposed 0.4.0), then 9A img2img (0.5.0), then 10A workflows (0.6.0). These are planned milestones, not shipped versions. Future executable acceptance remains separate from the next feature to code; follow [the release guide](guides/releasing.md). The owner selected interim 0.3.8 preparation with [versioned notes](releases/v0.3.8.md); 0.3.5 remains a draft candidate. Owner Windows acceptance of Phase 8B–8D and the exact final executable remain separate gates; this version choice does not declare 0.4.0 accepted. Recheck the roadmap and relevant phase plan before choosing work.
 
-## JPEG export follow-up (branch scope, 2026-10-09)
+## JPEG export follow-up (merged PR #55, 2026-10-09)
 
 PR #55 adds a local-only JPEG export hub in the middle panel of Connection: one
 folder, readable filenames, Windows-friendly EXIF, portable generation metadata,
@@ -86,3 +86,9 @@ Owner reports noise/blank routing works (2026-10-09); no exact packaged build wa
 Owner-requested branch validation: Ruff lint/format passed; full offline pytest rerun 426 passed, 3 gated live skips (109.46s), after updating the existing Pillow import boundary for the two headless image services. Repeat/date GUI smoke and packaged acceptance remain separate; no real inference or billable actions.
 
 The [source-computation follow-up](plans/2026-10-09-image-computation-cache.md) supersedes destination indexes: full-ID filenames and transient folder membership drive early skips; a central Derived cache reuses source-only checksums/detection across destinations, honoring no-cache and cleanup. Legacy filenames retain EXIF fallback. Static implementation checks only; owner speed/cache/recovery acceptance and a fresh suite run remain pending.
+
+## Phase 8D completion / 8E plan (PR #56, 2026-10-09)
+
+Shared nonblocking thread/process cache ownership now coordinates inventory and image-computation I/O with category measurement/purge. Export owns its cache computation/checkpoint interval or continues without persistent cache when ownership is unavailable. Connection refuses cleanup during its active export/generation/dispatch, reports file counts/busy/partial errors, and bounds category traversal while rejecting links/junctions. Actual inventory network refreshes stay outside the file-I/O lease and can write fresh observations after cleanup. No provider/generation behavior changes. Static checks are separate from pending owner/runtime acceptance; no new tests or agent smoke under fast-implement.
+
+See the [8D completion plan](plans/2026-10-09-phase-8d-cache-completion.md) and [cache coordination architecture](architecture/cache-management.md). Owner-selected [8E multi-selection/bulk deletion](plans/2026-10-09-phase-8e-image-management.md) is planned only; deletion policy, recovery and selection lifetime must be settled before implementation. Original files and user export folders are never disposable cache.

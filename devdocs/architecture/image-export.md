@@ -94,3 +94,7 @@ this feature under fast-implement. Final source/Windows/packaged acceptance is t
 owner's responsibility; no inference or provider calls are needed to validate export.
 
 The owner later reported a source smoke export; see [evidence](../research/jpeg-export-smoke-2026-10-09.md). Remaining scenario/packaged acceptance is separate.
+
+## Cache-cleanup coordination
+
+Export holds the shared nonblocking cache lease across source computation and checkpoints. Cleanup cannot overlap that cache transaction; if the lease is unavailable when export starts, export proceeds without persistent cache and reports the fallback. No-cache export never takes this lease. Connection also refuses cleanup while its export is running. See [cache management](cache-management.md); original PNGs, durable history and exported copies remain outside purge ownership.
