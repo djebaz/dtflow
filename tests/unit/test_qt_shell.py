@@ -143,6 +143,31 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
     window.progress_strip.finish("trash")
 
 
+def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_path):
+    """All thumbnail views share one 600 px decode; Detail retains original pixels."""
+    from PySide6.QtGui import QImage
+
+    from dtflow.ui.gallery_page import THUMBNAIL_SIDE, _image
+
+    path = tmp_path / "saved-output.png"
+    source = QImage(1200, 900, QImage.Format.Format_RGB32)
+    source.fill(0xFF497AA3)
+    assert source.save(str(path))
+    assert THUMBNAIL_SIDE == 600
+
+    thumb, issue = _image(str(path), THUMBNAIL_SIDE)
+    assert issue == ""
+    assert thumb is not None
+    assert (thumb.width(), thumb.height()) == (600, 450)
+
+    full, issue = _image(str(path), 0)
+    assert issue == ""
+    assert full is not None
+    assert (full.width(), full.height()) == (1200, 900)
+    assert path.read_bytes()  # No derivative is created or written beside the source.
+    assert tuple(tmp_path.iterdir()) == (path,)
+
+
 def test_images_grid_and_list_thumbnails_use_320px_standard_and_scale_column(window):
     """100% matches the former 200% Grid size; List scales image width, not only height."""
     gallery = window.gallery

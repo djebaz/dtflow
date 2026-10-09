@@ -60,7 +60,9 @@ from dtflow.ui.theme import load_tokens
 log = logging.getLogger(__name__)
 
 PAGE_SIZE = 80
-THUMBNAIL_SIDE = 320
+# One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
+# The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
+THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 5000
 STANDARD_THUMBNAIL_PX = 320

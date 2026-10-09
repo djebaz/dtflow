@@ -21,6 +21,9 @@
 
 ## Changed
 
+- PR #58 separates thumbnail display size from decoded resolution: Grid, List and the Detail filmstrip share a single 600 px maximum-side thumbnail of each saved original at every zoom instead of the old 320 px decode. No per-zoom thumbnail variants or persistent derivatives are generated. The main Detail viewer continues loading the native-resolution saved original without resizing it.
+
+
 - PR #58 enlarges the default Images Grid/Detail-filmstrip thumbnails to the previous 200% size (320 logical pixels at 100%). List now scales thumbnail width and Image-column width along with row height when the 25–250% slider changes, preventing the old 80 px column from clipping thumbnails. Existing saved zoom percentages and bounded decoding remain unchanged.
 
 
