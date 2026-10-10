@@ -544,6 +544,7 @@ class DrawThingsBackend:
         self._model_specs = {
             item["file"]: item for item in items if isinstance(item, dict) and isinstance(item.get("file"), str)
         }
+        log.debug("echo model specs=%d files=%s", len(self._model_specs), sorted(self._model_specs))
         # Model metadata only (no prompts or credentials): shows how the server itself describes newer checkpoints.
         for file, item in self._model_specs.items():
             if model_key(file).startswith(("flux_1_dev", "flux_2", "krea_2")):
