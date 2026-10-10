@@ -44,6 +44,12 @@ FAMILY_LABELS = {
     "kandinsky": "Kandinsky",
     "wurstchen": "Würstchen",
     "hidream_i1": "HiDream-I1",
+    "anima": "Anima",
+    "ideogram_4": "Ideogram 4",
+    "krea_2": "Krea 2",
+    "ernie_image": "ERNIE Image",
+    "hunyuan_video": "Hunyuan Video",
+    "svd": "SVD",
 }
 FAMILY_ORDER = tuple(FAMILY_LABELS)
 

@@ -83,6 +83,7 @@
 ## Fixed
 
 - Generate on direct DT+ cloud no longer counts or offers every metadata-less file (LoRAs, controls, encoders, VAEs, upscalers) as a checkpoint: only files with an exact Draw Things community model description are offered; other files are listed only in the unclassified-files inspector without any guessed family.
+- Fill missing families/modes for 125 `Models_niche.json` checkpoints from the community model `version` (or an unambiguous name such as `chroma_`, `wan_v2.1_`, `_xl_`) and drop 65 non-checkpoints (text encoders, LLMs, upscalers, preprocessors, try-on/vision models) from the model catalogue; 78 remain unclassified.
 - PR #58 follow-up keeps unrelated notices in separate dismissible rows while an inline Confirm is pending, avoiding implicit disarm; Qt page destruction unsubscribes Queues/Generate activity callbacks, with idempotent listener removal. The LoRA editor now explains any out-of-range catalogue weight default before initializing to 1.0. The PR description is synchronized to the approved no-second-Confirm cloud Prepare flow.
 
 
