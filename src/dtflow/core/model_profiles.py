@@ -117,6 +117,13 @@ _SDXL_BASE = "juggernaut_xl_ragnarok_f16.ckpt"
 _SD1_BASE = "dreamshaper_v8_f16.ckpt"
 _FLUX_DEV_BASE = "flux_1_dev_q8p.ckpt"
 _FLUX_SCHNELL_BASE = "pixelwave_flux_1_schnell_04_q8p.ckpt"
+
+
+def has_own_profile(model_id: str) -> bool:
+    """Whether this exact checkpoint (any quantization) has its own profile rather than a family default."""
+    return model_key(model_id) in _load()[0]
+
+
 _SKIP = re.compile(
     r"^sd[-_]v|^wd-|minisd|fill|kontext|redux|canny|depth|inpaint|pix2pix|v_?pred|lcm|turbo|lightning|hyper",
     re.IGNORECASE,

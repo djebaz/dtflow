@@ -514,6 +514,35 @@
             <item row="5" column="1">
              <widget class="QComboBox" name="samplerCombo" />
             </item>
+            <item row="6" column="0" colspan="2">
+             <widget class="QLabel" name="suggestionLabel">
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="7" column="1">
+             <widget class="QPushButton" name="applySuggestionButton">
+              <property name="visible">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string>Apply suggested</string>
+              </property>
+              <property name="toolTip">
+               <string>Set steps, guidance and sampler to the suggested values for the selected checkpoint.</string>
+              </property>
+              <property name="accessibleName">
+               <string>Apply suggested steps, guidance and sampler</string>
+              </property>
+             </widget>
+            </item>
             <property name="leftMargin">
              <number>10</number>
             </property>

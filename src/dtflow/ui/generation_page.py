@@ -7,6 +7,7 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import replace
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.composition import BACKENDS
-from dtflow.core.model_profiles import profile_for
+from dtflow.core.model_profiles import has_own_profile, profile_for
 from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
@@ -96,6 +97,8 @@ WIRED_CONTROLS = (
     "heightSpinBox",
     "guidanceSpinBox",
     "samplerCombo",
+    "suggestionLabel",
+    "applySuggestionButton",
     "generationDomainCombo",
     "baseModelCombo",
     "modelCombo",
@@ -235,6 +238,10 @@ class GenerationPage:
             page.generationDomainCombo.addItem(label, value)
         page.generationDomainCombo.currentIndexChanged.connect(self._catalogue_filter_changed)
         page.baseModelCombo.currentIndexChanged.connect(self._catalogue_family_changed)
+        page.applySuggestionButton.clicked.connect(self._apply_suggestion)
+        page.stepsSpinBox.valueChanged.connect(self._update_suggestion)
+        page.guidanceSpinBox.valueChanged.connect(self._update_suggestion)
+        page.samplerCombo.currentTextChanged.connect(self._update_suggestion)
         page.includeCloudCheck.toggled.connect(self._catalogue_filter_changed)
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
@@ -410,6 +417,51 @@ class GenerationPage:
             combo.addItems(allowed)
             combo.blockSignals(False)
         combo.setCurrentText(wanted if wanted in allowed else allowed[0])
+        self._update_suggestion()
+
+    DISTILLED_NAME = re.compile(r"schnell|turbo|lightning|hyper|lcm|distill", re.IGNORECASE)
+
+    def _suggestion(self):
+        """The dataset profile for the selected checkpoint, or ``None`` when there is nothing honest to suggest."""
+        model = self.page.modelCombo.currentText()
+        if not model:
+            return None
+        entry = self._catalogue.checkpoint(model, include_unavailable=True)
+        return profile_for(model, entry.base_model if entry else None)
+
+    def _update_suggestion(self, *_args) -> None:
+        """Hint the suggested steps/guidance/sampler; never change the user's values."""
+        page = self.page
+        model = page.modelCombo.currentText()
+        profile = self._suggestion()
+        visible = profile is not None
+        page.suggestionLabel.setVisible(visible)
+        page.applySuggestionButton.setVisible(visible)
+        if profile is None:
+            return
+        distilled = not has_own_profile(model) and bool(self.DISTILLED_NAME.search(model))
+        basis = profile.name if has_own_profile(model) else f"{profile.name} family default"
+        text = f"Suggested ({basis}): {profile.steps} steps · guidance {profile.guidance:g} · {profile.sampler.value}."
+        if distilled:
+            text += " The name suggests a distilled model, which usually needs fewer steps and low guidance; verify."
+        elif not has_own_profile(model):
+            text += " Merged checkpoints may differ."
+        page.suggestionLabel.setText(text)
+        current = (page.stepsSpinBox.value(), page.guidanceSpinBox.value(), page.samplerCombo.currentText())
+        page.applySuggestionButton.setEnabled(
+            current != (profile.steps, float(profile.guidance), profile.sampler.value)
+        )
+
+    def _apply_suggestion(self) -> None:
+        profile = self._suggestion()
+        if profile is None:
+            return
+        page = self.page
+        page.stepsSpinBox.setValue(profile.steps)
+        page.guidanceSpinBox.setValue(float(profile.guidance))
+        if page.samplerCombo.findText(profile.sampler.value) >= 0:
+            page.samplerCombo.setCurrentText(profile.sampler.value)
+        self._update_suggestion()
 
     PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
 
