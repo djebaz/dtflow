@@ -16,7 +16,7 @@ This is the design target for the Generate editor, agreed with the owner while i
 
 ### Left rail
 
-- **Source image**: file name, size/orientation/colour-space line (for example "2048 × 1536 · EXIF orientation applied · RGB"), **Choose image…** and **From Images**.
+- **Source image**: small thumbnail and file name; a facts line ("2048 × 1536 · EXIF orientation applied · alpha flattened onto white · RGB"); **Choose image…** and **From Images**; **Remove image** (only when a source is set); a limits note ("Up to 64 MiB and 16 MP. Animated or unreadable files are rejected. You can also drop an image on the canvas."). An inline red reason line appears between the facts and the buttons when a file is rejected. See [Source image lifecycle](#source-image-lifecycle).
 - **Backend**: Provider, Generation (model-type filter), Base model, Checkpoint, and a capability line. The line is green "Inpainting confirmed for this checkpoint." or an amber explanation when exact evidence is missing (see Edit image states).
 - **Parameters**: Seed, Steps, Guidance, **Strength** (default 0.75), Sampler, and the backend control **Keep everything outside the mask** (default on; off returns the raw provider result). Width and height follow the source image, fitted to 64 px.
 
@@ -36,6 +36,17 @@ This is the design target for the Generate editor, agreed with the owner while i
   - Select mode: **Find people**, the people list, Body / Clothes / Person layers, the body filter (All pixels / Skin only / Clothing only) and **Expand to nearby region** (off by default).
   - Paint mode replaces the Select controls with: **Brush**, **Erase**, **Rectangle**, **Circle**, and a brush-size slider with its value.
 - **Live mask** card, top to bottom: mask thumbnail, "Covers N% of the image" (plus the delta of the last edit), **Clear mask**, **Load mask…** / **Save mask…**, then the **Edits** history list.
+
+## Source image lifecycle
+
+The mask is bound to the EXIF-oriented source grid, and the backend rejects any mask whose size differs, so the source, mask, result and Undo history live and die together.
+
+- **Choose / From Images / drop on the canvas** all take the same path. With no source, or a source and no mask or result, the new image replaces it directly.
+- **Replacing with a mask or result present** asks first: the Choose button becomes a red in-place **Confirm replace** (width preserved), **Cancel** lives in the bottom overlay ("The mask, result and Undo history belong to the current image and will be discarded."). Replacing never keeps the old mask, even when the sizes match.
+- **Remove image** returns to the empty state ("Choose a source image…"). It uses the same red Confirm / overlay Cancel when a mask or result exists, and discards the mask, result and history with the image.
+- Escape, another action or a scope change discards a pending confirmation; there is no expiry timer. Neither action is available while a task runs.
+- **Rejected files** (over 64 MiB, over 16 MP, animated, unreadable) never change the current source or mask. They show the specific reason inline in the Source image card and in a red overlay row that stays until dismissed.
+- Alpha is flattened onto white and EXIF orientation applied; the facts line says so, since the provider sees the flattened image.
 
 ## Select and Paint modes
 
@@ -73,6 +84,7 @@ All feedback uses the one thin bottom overlay with a 6-second draining lifetime 
 ## Open decisions and not in the mockup
 
 - "Use result as source" on the Result view is not designed.
+- Real file picking, the From Images handoff and drop validation are not simulated: in the mockup Choose, From Images and drop all load the same illustrative scene, and the "Rejected file" demo state cycles the four rejection messages.
 - Live preview during editing is an approximation (low-resolution thumbnail at editing speed); the exact mask is built from the source at generation time.
 - Grow and Feather are shown but not simulated.
 - Mask file import/export polarity and size handling follow the plan's mask-file contract; the buttons here only fix their position.
