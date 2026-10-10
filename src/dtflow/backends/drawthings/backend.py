@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -25,6 +26,7 @@ from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
+from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -103,6 +105,7 @@ class DrawThingsBackend:
         self._lane = asyncio.Semaphore(self.max_concurrency)
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
+        self._model_specs: dict[str, dict] = {}
 
     # -- contract ------------------------------------------------------------------------------------------------
 
@@ -310,7 +313,10 @@ class DrawThingsBackend:
                     else None
                 )
                 base_version = (model.architecture if model else None) or bundled_base_version(request.model_id)
-                wire = build_generation_message(request, await self._secret(), base_version)
+                spec = await self._model_spec(request.model_id)
+                wire = build_generation_message(request, await self._secret(), base_version, spec)
+                if spec:
+                    log.debug("model spec sent for %s keys=%s", request.model_id, sorted(spec))
                 if request.loras:
                     log.debug(
                         "loras sent=%s override=%s base_version=%s prepared=%d",
@@ -518,4 +524,30 @@ class DrawThingsBackend:
             reply = await stub.echo(request, timeout=self.timeouts.inventory)
         except Exception as exc:
             raise BackendError(from_exception(exc, phase="inventory")) from exc
+        self._remember_specs(reply)
         return reply, bool(secret)
+
+    def _remember_specs(self, reply) -> None:
+        """Keep the server's own model descriptions (Echo ``override.models``) keyed by file name."""
+        try:
+            items = json.loads(reply.override.models) if reply.override.models else []
+        except ValueError:
+            return
+        self._model_specs = {
+            item["file"]: item for item in items if isinstance(item, dict) and isinstance(item.get("file"), str)
+        }
+
+    async def _model_spec(self, model_id: str) -> dict | None:
+        """The cloud's description of a profiled model, sent back so the server runs it with its full specification.
+
+        DT+ resolves most checkpoints from its public model list; newer ones (e.g. FLUX.1 dev) are described only by the
+        client's ``override.models``. Local servers already know their own files, so nothing is sent there.
+        """
+        if self.backend_id != "drawthings-cloud" or profile_for(model_id) is None:
+            return None
+        if model_id not in self._model_specs:
+            try:
+                await self._echo()
+            except BackendError:
+                return None
+        return self._model_specs.get(model_id)

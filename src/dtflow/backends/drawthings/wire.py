@@ -125,7 +125,10 @@ def with_guidance_embed(configuration: bytes, value: float) -> bytes:
 
 
 def build_generation_message(
-    request: ResolvedGenerationRequest, shared_secret: str | None, base_version: str | None = None
+    request: ResolvedGenerationRequest,
+    shared_secret: str | None,
+    base_version: str | None = None,
+    model_spec: dict | None = None,
 ) -> WireRequest:
     validate_supported(request)
     sampler = SAMPLER_NAME[request.sampler_id]
@@ -158,8 +161,10 @@ def build_generation_message(
         user=CLIENT_NAME,
     )
     override = custom_lora_override(request, base_version)
-    if override:
-        message.override = image_service.MetadataOverride(loras=override)
+    if override or model_spec:
+        message.override = image_service.MetadataOverride(
+            loras=override, models=json.dumps([model_spec]).encode() if model_spec else b""
+        )
     if shared_secret:
         message.shared_secret = shared_secret
     return WireRequest(message, effective)
