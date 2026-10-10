@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QIODevice, QObject, QTimer, Slot
+from PySide6.QtCore import QFile, QIODevice, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QFileDialog
@@ -21,7 +21,7 @@ from dtflow.services.image_preparation import (
 )
 from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
-from dtflow.ui.inline_feedback import confirm_action
+from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.inpaint_canvas import InpaintCanvas
 
 
@@ -61,15 +61,24 @@ class InpaintEditor(QObject):
         self.form.hide()
         page.generationContextLayout.insertWidget(0, self.form.sourceCard)
         page.generationInspectorLayout.insertWidget(0, self.form.maskCard)
+        page.generationInspectorLayout.insertWidget(1, self.form.liveMaskCard)
+        self._coverage_text = ""
+        self.form.toolLayout.setContentsMargins(0, 0, 0, 0)
+        self.form.toolLayout.setSpacing(0)
         self.canvas = InpaintCanvas(page.previewHost)
         page.previewHostLayout.addWidget(self.canvas)
         self.form.chooseSourceButton.clicked.connect(self.choose_source)
         self.form.removeSourceButton.clicked.connect(self.remove_source)
-        self.form.toolCombo.currentTextChanged.connect(self._tool)
-        self.form.brushSize.valueChanged.connect(lambda value: setattr(self.canvas, "brush_size", value))
-        self.form.viewCombo.currentTextChanged.connect(self.canvas.set_view)
-        self.form.undoButton.clicked.connect(self.canvas.undo)
-        self.form.redoButton.clicked.connect(self.canvas.redo)
+        for name, tool in (
+            ("toolBrush", "Brush"),
+            ("toolErase", "Erase"),
+            ("toolRect", "Rectangle"),
+            ("toolCircle", "Circle"),
+        ):
+            getattr(self.form, name).clicked.connect(lambda _=False, tool=tool: self._tool(tool))
+        self.form.brushSize.valueChanged.connect(self._brush)
+        self.form.advancedToggle.toggled.connect(self.form.advancedBox.setVisible)
+        self.canvas.viewChanged.connect(self._view_changed)
         self.form.clearMaskButton.clicked.connect(self.clear_mask)
         self.form.loadMaskButton.clicked.connect(self.load_mask)
         self.form.saveMaskButton.clicked.connect(self.save_mask)
@@ -87,8 +96,6 @@ class InpaintEditor(QObject):
         page.stepsSpinBox.valueChanged.connect(self._steps_note)
         page.modelCombo.currentTextChanged.connect(self._steps_note)
         page.modelCombo.currentTextChanged.connect(self.refresh_capability)
-        page.widthSpinBox.valueChanged.connect(self._size_note)
-        page.heightSpinBox.valueChanged.connect(self._size_note)
         self.sync_mode()
 
     def attach(self, controller):
@@ -103,7 +110,7 @@ class InpaintEditor(QObject):
     def sync_mode(self):
         active = self.active
         self.canvas.cancel_stroke()
-        for widget in (self.form.sourceCard, self.form.maskCard, self.canvas):
+        for widget in (self.form.sourceCard, self.form.maskCard, self.form.liveMaskCard, self.canvas):
             widget.setVisible(active)
         self.page.resultPreviewLabel.setVisible(not active)
         self.page.generateButton.setText("Edit image" if active else "Generate image")
@@ -112,7 +119,6 @@ class InpaintEditor(QObject):
             widget.setEnabled(not active and not self._busy)
             widget.setToolTip("Image operations are single-shot only." if active else "")
         self._steps_note()
-        self._size_note()
         self._controls()
         self.refresh_capability()
 
@@ -150,10 +156,7 @@ class InpaintEditor(QObject):
         if support is None:
             text, state = f"Capability could not be checked. {error or ''}".strip(), "error"
         elif support.status == "owner_probe":
-            text = (
-                "Unverified checkpoint: nothing confirms this model edits images. Edit image runs it as a probe; "
-                "the source and mask are sent to the backend and cloud may consume credits."
-            )
+            text = "Unverified checkpoint. Edit image sends the source and mask to the backend; cloud may use credits."
             state = "warning"
         elif support.status == "owner_verified":
             text, state = support.reason, "ok"
@@ -188,48 +191,62 @@ class InpaintEditor(QObject):
         else:
             button.setToolTip(self._support.reason if self._support is not None else "Checking capability…")
 
-    def _size_note(self, *_):
-        if self._source is None or not self.active:
-            self.form.sizeLabel.setText("")
-            return
-        width, height = self.page.widthSpinBox.value(), self.page.heightSpinBox.value()
-        self.form.sizeLabel.setText(
-            f"Generates at {width} × {height} (Size in Generate settings). The source "
-            f"({self._source.width} × {self._source.height}) is fitted without stretching."
-        )
-
     def _controls(self):
         available = not self._busy and not self._loading
         self.canvas.setEnabled(available)
         self.form.chooseSourceButton.setEnabled(available)
-        for name in ("removeSourceButton", "toolCombo", "brushSize", "viewCombo", "clearMaskButton", "loadMaskButton"):
-            getattr(self.form, name).setEnabled(available and self._source is not None)
+        has_source = available and self._source is not None
+        for name in (
+            "removeSourceButton",
+            "toolBrush",
+            "toolErase",
+            "toolRect",
+            "toolCircle",
+            "brushSize",
+            "clearMaskButton",
+            "loadMaskButton",
+        ):
+            getattr(self.form, name).setEnabled(has_source)
         for name in ("growSpin", "featherSpin", "strengthSpinBox", "keepOutsideCheck"):
             getattr(self.form, name).setEnabled(available)
         self.form.saveMaskButton.setEnabled(available and self._source is not None and self._coverage > 0)
-        self.form.undoButton.setEnabled(available and bool(self.canvas._undo))
-        self.form.redoButton.setEnabled(available and bool(self.canvas._redo))
+        self.canvas.undoButton.setEnabled(has_source and self.canvas.can_undo())
+        self.canvas.redoButton.setEnabled(has_source and self.canvas.can_redo())
+        for button in self.canvas._view_buttons.values():
+            button.setEnabled(has_source)
         self._sync_button()
 
     def _tool(self, value):
         self.canvas.cancel_stroke()
         self.canvas.tool = value
 
+    def _brush(self, value):
+        self.canvas.brush_size = value
+        self.form.brushValue.setText(f"{value} px")
+
+    def _view_changed(self, view):
+        self.form.liveMaskCard.setToolTip("")
+
     def _steps_note(self):
         profile = profile_for(self.page.modelCombo.currentText())
         low = profile is not None and self.page.stepsSpinBox.value() < profile.steps
         self.form.stepsNote.setText(
-            f"Below the bundled {profile.steps}-step preset; output quality may suffer. This is advisory, not a minimum."
-            if low
-            else ""
+            f"Below this model's {profile.steps}-step preset; quality may suffer." if low else ""
         )
 
     def _edited(self):
         self._revision += 1
         self._debounce.start()
-        self.form.historyLabel.setText(
-            f"Undo: {len(self.canvas._undo)} · Redo: {len(self.canvas._redo)} (bounded history)"
-        )
+        edits = self.form.editsList
+        edits.clear()
+        labels = self.canvas.edit_labels()
+        edits.addItems(labels[-20:] or ["No edits yet."])
+        edits.scrollToBottom()
+        mask = self.canvas._mask
+        if mask.isNull():
+            self.form.maskThumb.clear()
+        else:
+            self.form.maskThumb.setPixmap(QPixmap.fromImage(mask.scaled(96, 96, Qt.AspectRatioMode.KeepAspectRatio)))
         self._controls()
 
     def _measure(self):
@@ -246,8 +263,10 @@ class InpaintEditor(QObject):
             if revision != self._revision or self.runner.closed:
                 return
             if error is None:
+                delta = value - self._coverage
                 self._coverage = value
-                self.form.coverageLabel.setText(f"Covers {value:.2f}% of the image · working mask, before grow/feather")
+                change = f" ({delta:+.2f}%)" if abs(delta) >= 0.005 else ""
+                self.form.coverageLabel.setText(f"Covers {value:.2f}% of the image{change}")
                 self._controls()
 
         self.runner.submit(work(), done)
@@ -288,8 +307,12 @@ class InpaintEditor(QObject):
 
         self.runner.submit(work(), done)
 
+    def _commit(self, button):
+        """A pending Confirm lives on the original button: its next click commits instead of repeating the action."""
+        return feedback(self.page).commit(button)
+
     def choose_source(self):
-        if self._busy or self._loading:
+        if self._commit(self.form.chooseSourceButton) or self._busy or self._loading:
             return
         path = QFileDialog.getOpenFileName(
             self.page, "Choose source image", "", "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
@@ -298,7 +321,7 @@ class InpaintEditor(QObject):
             self.replace_source(path)
 
     def _discard_then(self, button, title, callback):
-        if self.canvas._undo or self.canvas._redo:
+        if self.canvas.can_undo() or self.canvas.can_redo():
             confirm_action(
                 self.page,
                 button,
@@ -337,6 +360,7 @@ class InpaintEditor(QObject):
         """Follow the new source: sensible brush, grow budget and a 64-multiple generation box of the same aspect."""
         source = self._source
         longest = max(source.width, source.height)
+        self.form.brushSize.setRange(1, max(32, min(512, longest // 4)))
         self.form.brushSize.setValue(max(4, min(256, longest // 30)))
         self.form.growSpin.setRange(
             -max_mask_grow(source.width, source.height), max_mask_grow(source.width, source.height)
@@ -346,12 +370,11 @@ class InpaintEditor(QObject):
         width, height = suggest_generation_size(source.width, source.height, max_edge=edge)
         self.page.widthSpinBox.setValue(width)
         self.page.heightSpinBox.setValue(height)
-        self._size_note()
         self.canvas.set_result(QPixmap())
-        self.form.viewCombo.setCurrentText("Source")
+        self.canvas.set_view("Source")
 
     def remove_source(self):
-        if self._busy or self._loading:
+        if self._commit(self.form.removeSourceButton) or self._busy or self._loading:
             return
 
         def remove():
@@ -362,12 +385,13 @@ class InpaintEditor(QObject):
             self.form.sourceFacts.setText("Choose a source image…")
             self.form.sourceError.clear()
             self.form.coverageLabel.setText("Covers 0% of the image")
-            self._size_note()
             self._controls()
 
         self._discard_then(self.form.removeSourceButton, "Remove source image", remove)
 
     def clear_mask(self):
+        if self._commit(self.form.clearMaskButton):
+            return
         if not self._busy and not self._loading:
             confirm_action(
                 self.page,
@@ -433,10 +457,7 @@ class InpaintEditor(QObject):
         pixmap = QPixmap()
         if pixmap.loadFromData(encoded):
             self.canvas.set_result(pixmap)
-            self.form.viewCombo.setCurrentText("Result")
-            self.form.maskCaption.setText(
-                "Result of the last edit. Switch to Source or Mask to keep editing; the mask is unchanged."
-            )
+            self.canvas.set_view("Result")
 
     @Slot()
     def shutdown(self):

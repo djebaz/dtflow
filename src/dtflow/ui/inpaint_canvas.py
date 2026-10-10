@@ -1,14 +1,35 @@
 """Manual source-grid painting only; no Pillow, backend or generation ownership."""
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
+from PySide6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtSvg import QSvgRenderer
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton
 
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.theme import load_tokens
 
 
+def _arrow_icon(path: str, color: str) -> QIcon:
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" '
+        f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{path}</svg>'
+    )
+    renderer = QSvgRenderer(QByteArray(svg.encode()))
+    pixmap = QPixmap(40, 40)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QIcon(pixmap)
+
+
+UNDO_PATH = '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'
+REDO_PATH = '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>'
+
+
 class InpaintCanvas(ImagePreview):
     maskEdited = Signal()
+    viewChanged = Signal(str)
     sourceDropped = Signal(str)
     HISTORY_BYTES = 64 * 1024 * 1024
 
@@ -27,6 +48,29 @@ class InpaintCanvas(ImagePreview):
         self._accent = QColor(load_tokens()["color.accent"])
         self._expand.hide()  # The editor never detaches into a popup window.
         self._expand.setEnabled(False)
+        text = self._secondary_color.name()
+        self._history_bar = QFrame(self.viewport())
+        self._history_bar.setObjectName("previewToolbar")
+        row = QHBoxLayout(self._history_bar)
+        row.setContentsMargins(4, 4, 4, 4)
+        row.setSpacing(4)
+        self.undoButton = self._icon_button(row, UNDO_PATH, text, "Undo (Ctrl+Z)", "Undo mask edit", self.undo)
+        self.redoButton = self._icon_button(row, REDO_PATH, text, "Redo (Ctrl+Shift+Z)", "Redo mask edit", self.redo)
+        self._view_bar = QFrame(self.viewport())
+        self._view_bar.setObjectName("previewToolbar")
+        row = QHBoxLayout(self._view_bar)
+        row.setContentsMargins(4, 4, 4, 4)
+        row.setSpacing(4)
+        self._view_buttons = {}
+        for name in ("Source", "Mask", "Result"):
+            button = QPushButton(name)
+            button.setCheckable(True)
+            button.setAutoExclusive(True)
+            button.clicked.connect(lambda _=False, name=name: self.set_view(name))
+            row.addWidget(button)
+            self._view_buttons[name] = button
+        self._view_buttons["Source"].setChecked(True)
+        self._position_controls()
         self.setAcceptDrops(True)
         self._refresh = QTimer(self)  # strokes repaint the tint at most ~30 times a second
         self._refresh.setSingleShot(True)
@@ -34,6 +78,31 @@ class InpaintCanvas(ImagePreview):
         self._refresh.timeout.connect(self._rebuild_overlay)
         self.setText("Choose a source image, then paint the area to change.")
         self.setAccessibleName("Inpaint canvas. Space-drag pans; Control-wheel zooms. Alt reverses painting.")
+
+    def _icon_button(self, row, path, color, tip, name, slot):
+        button = QPushButton()
+        button.setIcon(_arrow_icon(path, color))
+        button.setIconSize(QSize(16, 16))
+        button.setToolTip(tip)
+        button.setAccessibleName(name)
+        button.clicked.connect(slot)
+        row.addWidget(button)
+        return button
+
+    def _position_controls(self):
+        super()._position_controls()
+        if not hasattr(self, "_view_bar"):
+            return
+        width, height = self.viewport().width(), self.viewport().height()
+        self._history_bar.adjustSize()
+        self._view_bar.adjustSize()
+        self._history_bar.move(10, 10)
+        self._view_bar.move(max(10, width - self._view_bar.width() - 10), 10)
+        # Zoom controls sit bottom-left, as in the mockup; the size badge rises above them.
+        self._top.move(10, max(10, height - self._top.height() - 10))
+        self._badge.hide()  # no designation badge on the editor canvas
+        self._history_bar.show()
+        self._view_bar.show()
 
     def set_source(self, pixels: bytes, width: int, height: int):
         image = QImage(pixels, width, height, width * 3, QImage.Format.Format_RGB888).copy()
@@ -73,28 +142,37 @@ class InpaintCanvas(ImagePreview):
     def has_result(self):
         return not self._result.isNull()
 
-    def replace_mask(self, pixels: bytes):
+    def replace_mask(self, pixels: bytes, label="Load mask"):
         width, height = self._mask.width(), self._mask.height()
         if len(pixels) != width * height or pixels.count(b"\x00") + pixels.count(b"\xff") != len(pixels):
             raise ValueError("Mask must be binary and match the source grid.")
         before = self._mask.copy()
         self._mask = QImage(pixels, width, height, width, QImage.Format.Format_Grayscale8).copy()
-        self._commit(before)
+        self._commit(before, label)
 
     def clear_mask(self):
         if self._mask.isNull():
             return
         before = self._mask.copy()
         self._mask.fill(0)
-        self._commit(before)
+        self._commit(before, "Clear mask")
+
+    def edit_labels(self):
+        return [label for _, label in self._undo]
+
+    def can_undo(self):
+        return bool(self._undo)
+
+    def can_redo(self):
+        return bool(self._redo)
 
     def _trim(self, history):
         limit = max(1, min(32, self.HISTORY_BYTES // max(1, self._mask.sizeInBytes())))
         del history[:-limit]
 
-    def _commit(self, before):
+    def _commit(self, before, label):
         if before != self._mask:
-            self._undo.append(before)
+            self._undo.append((before, label))
             self._trim(self._undo)
             self._redo.clear()
         self._changed()
@@ -102,16 +180,18 @@ class InpaintCanvas(ImagePreview):
     def undo(self):
         self.cancel_stroke()
         if self._undo:
-            self._redo.append(self._mask)
-            self._mask = self._undo.pop()
+            before, label = self._undo.pop()
+            self._redo.append((self._mask, label))
+            self._mask = before
             self._trim(self._redo)
             self._changed()
 
     def redo(self):
         self.cancel_stroke()
         if self._redo:
-            self._undo.append(self._mask)
-            self._mask = self._redo.pop()
+            after, label = self._redo.pop()
+            self._undo.append((self._mask, label))
+            self._mask = after
             self._trim(self._undo)
             self._changed()
 
@@ -135,7 +215,10 @@ class InpaintCanvas(ImagePreview):
     def set_view(self, view):
         self.cancel_stroke()
         self._view = view
+        for name, button in self._view_buttons.items():
+            button.setChecked(name == view)
         self.viewport().update()
+        self.viewChanged.emit(view)
 
     def _point(self, position):
         rect = self.image_rect()
@@ -169,6 +252,7 @@ class InpaintCanvas(ImagePreview):
         point = self._point(event.position())
         erase = (self.tool == "Erase") != bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
         self._stroke = (self._mask.copy(), point, point, erase, event.position())
+        self._stroke_size = self.brush_size
         if self.tool in ("Brush", "Erase"):
             self._paint_line(point, point, erase)
         event.accept()
@@ -193,7 +277,13 @@ class InpaintCanvas(ImagePreview):
         before, start, _, erase, screen_start = self._stroke
         end = self._point(event.position())
         self._stroke = None
-        if self.tool in ("Rectangle", "Circle") and (event.position() - screen_start).manhattanLength() > 3:
+        shape = self.tool in ("Rectangle", "Circle")
+        label = (
+            f"{'Remove' if erase else 'Add'} {self.tool.lower()}"
+            if shape
+            else (f"{'Erase' if erase else 'Brush'} · {self._stroke_size} px")
+        )
+        if shape and (event.position() - screen_start).manhattanLength() > 3:
             painter = QPainter(self._mask)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(Qt.GlobalColor.black if erase else Qt.GlobalColor.white)
@@ -203,7 +293,7 @@ class InpaintCanvas(ImagePreview):
             else:
                 painter.drawRect(box)
             painter.end()
-        self._commit(before)
+        self._commit(before, label)
 
     def cancel_stroke(self):
         if self._stroke:

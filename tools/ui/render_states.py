@@ -85,10 +85,10 @@ def render_inpaint_states(shell, state, capture):
         ("20-inpaint-result-no-result", "Result"),
     ):
         # No result exists yet, so Result still shows the source: nothing is fabricated or dispatched.
-        editor.form.viewCombo.setCurrentText(view)
+        editor.canvas.set_view(view)
         capture(name)
 
-    editor.form.viewCombo.setCurrentText("Source")
+    editor.canvas.set_view("Source")
     editor.form.clearMaskButton.click()
     capture("21-inpaint-clear-confirmation")
     shell.inline.dismiss()  # Keep the fixture mask.
@@ -98,9 +98,9 @@ def render_inpaint_states(shell, state, capture):
     editor._render_support()
     capture("24-inpaint-capability-probe")
     editor.canvas.set_result(QPixmap.fromImage(source.mirrored(True, False)))
-    editor.form.viewCombo.setCurrentText("Result")
+    editor.canvas.set_view("Result")
     capture("26-inpaint-result-fixture")
-    editor.form.viewCombo.setCurrentText("Source")
+    editor.canvas.set_view("Source")
 
     strip = activity_strip(page)
     for key, label, stop_text, done, total, detail, name in (
