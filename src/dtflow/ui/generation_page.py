@@ -1150,11 +1150,20 @@ class GenerationPage:
             return
         models = len(eligible_model_ids(snapshot))
         loras = sum(entry.kind == "lora" for entry in snapshot.entries)
+        other = 0
+        if dict(snapshot.diagnostics).get("model_metadata") != "present":
+            # Metadata-less inventories (direct DT+ cloud) list every file as unknown: count what the catalogue
+            # can prove instead of calling every file a model.
+            view = self._catalogue.view()
+            models = len(view.checkpoints) + len(view.unclassified_checkpoints)
+            loras = len(view.loras)
+            other = len(snapshot.entries) - models - loras
         try:
             observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
         except ValueError:
             observed = snapshot.observed_at_utc
-        lines = [f"{models} model(s) · {loras} LoRA(s)", f"{self._inventory_how} · observed {observed}"]
+        counts = f"{models} model(s) · {loras} LoRA(s)" + (f" · {other} other file(s)" if other > 0 else "")
+        lines = [counts, f"{self._inventory_how} · observed {observed}"]
         if self._inventory_notice:
             lines.append(self._inventory_notice)
         label.setText("\n".join(lines))
