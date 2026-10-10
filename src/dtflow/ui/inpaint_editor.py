@@ -107,11 +107,13 @@ class InpaintEditor(QObject):
         self.form.selectModeButton.toggled.connect(self._mode)
         self.form.modelsButton.clicked.connect(self.choose_models)
         self.form.findPeopleButton.clicked.connect(self.find_people)
-        self.form.peopleList.itemActivated.connect(self._person_item)
-        self.form.peopleList.itemClicked.connect(self._person_item)
+        self.form.peopleList.currentRowChanged.connect(self._list_selected)
+        self.form.peopleList.itemActivated.connect(lambda _item: self._add_selected(remove=False))
+        self.form.addPersonButton.clicked.connect(lambda: self._add_selected(remove=False))
+        self.form.removePersonButton.clicked.connect(lambda: self._add_selected(remove=True))
         self.canvas.pointPicked.connect(self._pick)
         self.canvas.pointHovered.connect(self._hover)
-        self.canvas.hoverLeft.connect(self.canvas.clear_hover)
+        self.canvas.hoverLeft.connect(self._hover_left)
         self._hovered = None
         for name in LAYERS:
             item = QListWidgetItem(name.capitalize())
@@ -119,7 +121,7 @@ class InpaintEditor(QObject):
             item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
             item.setCheckState(Qt.CheckState.Checked if name == "person" else Qt.CheckState.Unchecked)
             self.form.layerList.addItem(item)
-        self.form.layerList.itemChanged.connect(lambda _item: self._reset_hover())
+        self.form.layerList.itemChanged.connect(lambda _item: (self._reset_hover(), self._controls()))
         self.form.modeLayout.setContentsMargins(0, 0, 0, 0)
         self.form.modeLayout.setSpacing(0)
         self.canvas.viewChanged.connect(self._view_changed)
@@ -263,6 +265,9 @@ class InpaintEditor(QObject):
         self.form.findPeopleButton.setEnabled(has_source and self._models.segmentation is not None)
         self.form.modelsButton.setEnabled(available)
         self.form.peopleList.setEnabled(has_source and self._analysis is not None)
+        can_add = has_source and self._selected_person() is not None and bool(self._layers())
+        self.form.addPersonButton.setEnabled(can_add)
+        self.form.removePersonButton.setEnabled(can_add and self._coverage > 0)
         has_clothes = self._analysis is not None and self._analysis.has_clothes
         for row in range(1, self.form.layerList.count()):
             item = self.form.layerList.item(row)
@@ -674,10 +679,31 @@ class InpaintEditor(QObject):
             and layers.item(row).flags() & Qt.ItemFlag.ItemIsEnabled
         )
 
-    def _person_item(self, item):
-        row = self.form.peopleList.row(item)
+    def _selected_person(self):
+        row = self.form.peopleList.currentRow()
         if self._analysis is not None and 0 <= row < len(self._analysis.people):
-            self._add_person(self._analysis.people[row], remove=False)
+            return self._analysis.people[row]
+        return None
+
+    def _list_selected(self, _row):
+        self._reset_hover()
+        self._preview_selected()
+        self._controls()
+
+    def _preview_selected(self):
+        person, layers = self._selected_person(), self._layers()
+        if person is not None and layers:
+            self.canvas.set_hover(person.box, layers_union(person, frozenset(layers)))
+
+    def _hover_left(self):
+        self._hovered = None
+        self.canvas.clear_hover()
+        self._preview_selected()
+
+    def _add_selected(self, *, remove):
+        person = self._selected_person()
+        if person is not None:
+            self._add_person(person, remove)
 
     def _pick(self, x, y, remove):
         if self._analysis is None:
