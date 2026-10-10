@@ -1,24 +1,40 @@
-"""Offline manual editor checkpoint; all decoding and mask file I/O use headless workers."""
+"""Inline manual Inpaint editor; decoding, preparation and mask I/O run on workers, dispatch stays in the page."""
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QFile, QIODevice, QObject, QTimer, Slot
+from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QFileDialog
 
+from dtflow.core.image_inputs import ImageContent, max_mask_grow, suggest_generation_size
 from dtflow.core.model_profiles import profile_for
 from dtflow.core.tasks import settle
 from dtflow.services.image_preparation import (
     image_content_pixels,
     load_mask_file,
+    load_source_file,
     mask_coverage,
-    prepare_image_files,
     save_mask_pixels_file,
 )
+from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
-from dtflow.ui.inline_feedback import InlineNotice, confirm_action
+from dtflow.ui.inline_feedback import confirm_action
 from dtflow.ui.inpaint_canvas import InpaintCanvas
+
+
+@dataclass(frozen=True, slots=True)
+class EditJob:
+    """Immutable snapshot taken on the GUI thread when the user confirms one edit."""
+
+    source: ImageContent
+    mask: bytes
+    grow: int
+    feather: float
+    strength: float
+    keep_outside: bool
 
 
 class InpaintEditor(QObject):
@@ -30,6 +46,9 @@ class InpaintEditor(QObject):
         self._loading = False
         self._source = None
         self._coverage = 0.0
+        self.controller = None
+        self._support = None
+        self._support_revision = 0
         file = QFile(str(Path(__file__).with_name("forms") / "inpaint_editor.ui"))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
             raise OSError("Inpaint editor form could not be opened.")
@@ -67,7 +86,15 @@ class InpaintEditor(QObject):
         page.inpaintModeButton.toggled.connect(self.sync_mode)
         page.stepsSpinBox.valueChanged.connect(self._steps_note)
         page.modelCombo.currentTextChanged.connect(self._steps_note)
+        page.modelCombo.currentTextChanged.connect(self.refresh_capability)
+        page.widthSpinBox.valueChanged.connect(self._size_note)
+        page.heightSpinBox.valueChanged.connect(self._size_note)
         self.sync_mode()
+
+    def attach(self, controller):
+        """The generation page owns backend selection and dispatch; the editor only asks it."""
+        self.controller = controller
+        self.refresh_capability()
 
     @property
     def active(self):
@@ -80,24 +107,96 @@ class InpaintEditor(QObject):
             widget.setVisible(active)
         self.page.resultPreviewLabel.setVisible(not active)
         self.page.generateButton.setText("Edit image" if active else "Generate image")
-        if active:
-            self.page.generateButton.setEnabled(False)
-            self.page.generateButton.setToolTip("Offline editor checkpoint: permit-backed generation is not wired yet.")
-        else:
-            self.page.generateButton.setToolTip("")
         for name in ("configurationCombo", "loadConfigurationButton", "saveConfigurationButton", "savePresetButton"):
             widget = getattr(self.page, name)
             widget.setEnabled(not active and not self._busy)
             widget.setToolTip("Image operations are single-shot only." if active else "")
         self._steps_note()
+        self._size_note()
         self._controls()
+        self.refresh_capability()
 
     def set_busy(self, busy):
         self._busy = busy
         self.page.generationModeSwitch.setEnabled(not busy)
         self._controls()
-        if self.active:
-            self.page.generateButton.setEnabled(False)
+
+    def refresh_capability(self, *_):
+        """Read-only evidence line, computed on a worker; stale answers are dropped."""
+        if self.controller is None or not self.active or self.runner.closed:
+            return
+        name, endpoint = self.controller._backend()
+        model = self.page.modelCombo.currentText().strip()
+        state = self.controller._state
+        self._support_revision += 1
+        revision = self._support_revision
+
+        async def work():
+            return await settle(
+                asyncio.to_thread(lambda: image_edit_capability(selection_for(name, endpoint, state), model))
+            )
+
+        def done(value, error):
+            if revision != self._support_revision or self.runner.closed:
+                return
+            self._support = value if error is None else None
+            self._render_support(error)
+
+        self.runner.submit(work(), done)
+
+    def _render_support(self, error=None):
+        label = self.form.editorCapability
+        support = self._support
+        if support is None:
+            text, state = f"Capability could not be checked. {error or ''}".strip(), "error"
+        elif support.status == "owner_probe":
+            text = (
+                "Unverified checkpoint: nothing confirms this model edits images. Each edit is an explicit probe "
+                "you confirm first; the source and mask are sent to the backend and cloud may consume credits."
+            )
+            state = "warning"
+        elif support.status == "owner_verified":
+            text, state = support.reason, "ok"
+        else:
+            text, state = support.reason, "error"
+        label.setText(text)
+        label.setProperty("state", state)
+        label.style().unpolish(label)
+        label.style().polish(label)
+        self._controls()
+
+    def _ready(self):
+        support = self._support
+        return (
+            self._source is not None
+            and self._coverage > 0
+            and support is not None
+            and support.status in ("owner_probe", "owner_verified")
+        )
+
+    def _sync_button(self):
+        button = self.page.generateButton
+        if not self.active:
+            button.setEnabled(not self._busy)
+            button.setToolTip("")
+            return
+        button.setEnabled(self._ready() and not self._busy and not self._loading)
+        if self._source is None:
+            button.setToolTip("Choose a source image first.")
+        elif self._coverage <= 0:
+            button.setToolTip("Paint the area to change first.")
+        else:
+            button.setToolTip(self._support.reason if self._support is not None else "Checking capability…")
+
+    def _size_note(self, *_):
+        if self._source is None or not self.active:
+            self.form.sizeLabel.setText("")
+            return
+        width, height = self.page.widthSpinBox.value(), self.page.heightSpinBox.value()
+        self.form.sizeLabel.setText(
+            f"Generates at {width} × {height} (Size in Generate settings). The source "
+            f"({self._source.width} × {self._source.height}) is fitted without stretching."
+        )
 
     def _controls(self):
         available = not self._busy and not self._loading
@@ -105,9 +204,12 @@ class InpaintEditor(QObject):
         self.form.chooseSourceButton.setEnabled(available)
         for name in ("removeSourceButton", "toolCombo", "brushSize", "viewCombo", "clearMaskButton", "loadMaskButton"):
             getattr(self.form, name).setEnabled(available and self._source is not None)
+        for name in ("growSpin", "featherSpin", "strengthSpinBox", "keepOutsideCheck"):
+            getattr(self.form, name).setEnabled(available)
         self.form.saveMaskButton.setEnabled(available and self._source is not None and self._coverage > 0)
         self.form.undoButton.setEnabled(available and bool(self.canvas._undo))
         self.form.redoButton.setEnabled(available and bool(self.canvas._redo))
+        self._sync_button()
 
     def _tool(self, value):
         self.canvas.cancel_stroke()
@@ -214,8 +316,8 @@ class InpaintEditor(QObject):
 
         def load():
             def worker():
-                prepared = prepare_image_files(Path(path), 512, 512)
-                return prepared.source, image_content_pixels(prepared.source)
+                source = load_source_file(Path(path))
+                return source, image_content_pixels(source)
 
             def apply(value):
                 self._source, pixels = value
@@ -225,10 +327,28 @@ class InpaintEditor(QObject):
                 self.form.sourceFacts.setText(
                     f"{Path(path).name}\n{self._source.width} × {self._source.height} · EXIF-oriented · RGB8 · alpha flattened onto white"
                 )
+                self._fit_to_source()
 
             self._task("Load source image", worker, apply)
 
         self._discard_then(self.form.chooseSourceButton, "Replace source image", load)
+
+    def _fit_to_source(self):
+        """Follow the new source: sensible brush, grow budget and a 64-multiple generation box of the same aspect."""
+        source = self._source
+        longest = max(source.width, source.height)
+        self.form.brushSize.setValue(max(4, min(256, longest // 30)))
+        self.form.growSpin.setRange(
+            -max_mask_grow(source.width, source.height), max_mask_grow(source.width, source.height)
+        )
+        current = max(self.page.widthSpinBox.value(), self.page.heightSpinBox.value())
+        edge = min(2048, max(128, round(current / 64) * 64))
+        width, height = suggest_generation_size(source.width, source.height, max_edge=edge)
+        self.page.widthSpinBox.setValue(width)
+        self.page.heightSpinBox.setValue(height)
+        self._size_note()
+        self.canvas.set_result(QPixmap())
+        self.form.viewCombo.setCurrentText("Source")
 
     def remove_source(self):
         if self._busy or self._loading:
@@ -242,6 +362,8 @@ class InpaintEditor(QObject):
             self.form.sourceFacts.setText("Choose a source image…")
             self.form.sourceError.clear()
             self.form.coverageLabel.setText("Covers 0% of the image")
+            self._size_note()
+            self._controls()
 
         self._discard_then(self.form.removeSourceButton, "Remove source image", remove)
 
@@ -281,12 +403,49 @@ class InpaintEditor(QObject):
             width, height = self._source.width, self._source.height
             self._task("Save mask", lambda: save_mask_pixels_file(Path(path), pixels, width, height), lambda _: None)
 
+    def edit_saved_image(self, path):
+        """Images handoff: load a saved output as the source, after the usual discard consent."""
+        self.page.inpaintModeButton.setChecked(True)
+        self.replace_source(path)
+
     def generate(self):
-        InlineNotice.warning(
+        """Edit image: validate, then ask for explicit consent before anything leaves this machine."""
+        if self._busy or self._loading or not self._ready() or self.controller is None:
+            return
+        name, endpoint = self.controller._backend()
+        where = "DT+ cloud" if name == "cloud" else f"the Draw Things server{f' at {endpoint}' if endpoint else ''}"
+        confirm_action(
             self.page,
-            "Editor dispatch pending",
-            "This checkpoint is offline only. Continue using dtflow edit for explicit owner probes.",
+            self.page.generateButton,
+            "Edit image",
+            f"Sends the source image and mask to {where}. This checkpoint is an unverified owner probe"
+            + ("; cloud may consume credits." if name == "cloud" else "."),
+            self._dispatch,
         )
+
+    def _dispatch(self):
+        if self._source is None or self._busy or self._loading or self.controller is None:
+            return
+        form = self.form
+        job = EditJob(
+            self._source,
+            self.canvas.mask_pixels(),
+            form.growSpin.value(),
+            float(form.featherSpin.value()),
+            form.strengthSpinBox.value(),
+            form.keepOutsideCheck.isChecked(),
+        )
+        self.canvas.set_result(QPixmap())
+        self.controller.generate(edit=job)
+
+    def show_result(self, encoded):
+        pixmap = QPixmap()
+        if pixmap.loadFromData(encoded):
+            self.canvas.set_result(pixmap)
+            self.form.viewCombo.setCurrentText("Result")
+            self.form.maskCaption.setText(
+                "Result of the last edit. Switch to Source or Mask to keep editing; the mask is unchanged."
+            )
 
     @Slot()
     def shutdown(self):

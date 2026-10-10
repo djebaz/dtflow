@@ -201,6 +201,7 @@ class MainWindow:
             state_dir=self.state_dir,
             reuse_callback=self._reuse_output,
             regenerate_callback=self._regenerate_output,
+            edit_callback=self._edit_output,
             export_callback=self._open_checked_export,
             recycle_callback=self._request_gallery_recycle if trash_supported() else None,
         )
@@ -746,6 +747,10 @@ class MainWindow:
     def _reuse_output(self, request: dict, identity: str) -> None:
         self.generation.reuse_saved_request(request, identity)
         self._show_generation()
+
+    def _edit_output(self, path: str) -> None:
+        if self.generation.edit_saved_image(path):
+            self._show_generation()
 
     def _regenerate_output(self, request: dict, identity: str) -> None:
         if self.inline.commit(self.gallery.regenerate_button):

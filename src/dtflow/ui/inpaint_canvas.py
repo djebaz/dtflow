@@ -1,6 +1,6 @@
 """Manual source-grid painting only; no Pillow, backend or generation ownership."""
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 
 from dtflow.ui.image_preview import ImagePreview
@@ -16,6 +16,7 @@ class InpaintCanvas(ImagePreview):
         super().__init__(parent)
         self._mask = QImage()
         self._overlay = QImage()
+        self._result = QPixmap()
         self._undo = []
         self._redo = []
         self._stroke = None
@@ -27,14 +28,19 @@ class InpaintCanvas(ImagePreview):
         self._expand.hide()  # The editor never detaches into a popup window.
         self._expand.setEnabled(False)
         self.setAcceptDrops(True)
+        self._refresh = QTimer(self)  # strokes repaint the tint at most ~30 times a second
+        self._refresh.setSingleShot(True)
+        self._refresh.setInterval(33)
+        self._refresh.timeout.connect(self._rebuild_overlay)
         self.setText("Choose a source image, then paint the area to change.")
         self.setAccessibleName("Inpaint canvas. Space-drag pans; Control-wheel zooms. Alt reverses painting.")
 
     def set_source(self, pixels: bytes, width: int, height: int):
         image = QImage(pixels, width, height, width * 3, QImage.Format.Format_RGB888).copy()
         self.setPixmap(QPixmap.fromImage(image))
-        self._mask = QImage(width, height, QImage.Format.Format_RGB32)
-        self._mask.fill(Qt.GlobalColor.black)
+        self._mask = QImage(width, height, QImage.Format.Format_Grayscale8)
+        self._mask.fill(0)
+        self._result = QPixmap()
         self._undo.clear()
         self._redo.clear()
         self._stroke = None
@@ -43,34 +49,43 @@ class InpaintCanvas(ImagePreview):
     def remove_source(self):
         self.cancel_stroke()
         self.clear()
+        self._result = QPixmap()
         self._mask = QImage()
         self._undo.clear()
         self._redo.clear()
         self._changed()
 
     def mask_pixels(self) -> bytes:
-        image = self._mask.convertToFormat(QImage.Format.Format_Grayscale8)
+        image = self._mask
         if image.isNull():
             return b""
         raw = bytes(image.constBits())
         stride, width = image.bytesPerLine(), image.width()
+        if stride == width:
+            return raw[: width * image.height()]
         return b"".join(raw[row * stride : row * stride + width] for row in range(image.height()))
+
+    def set_result(self, pixmap):
+        """Display-only result; the source and mask stay untouched and editable."""
+        self._result = pixmap
+        self.viewport().update()
+
+    def has_result(self):
+        return not self._result.isNull()
 
     def replace_mask(self, pixels: bytes):
         width, height = self._mask.width(), self._mask.height()
         if len(pixels) != width * height or pixels.count(b"\x00") + pixels.count(b"\xff") != len(pixels):
             raise ValueError("Mask must be binary and match the source grid.")
         before = self._mask.copy()
-        self._mask = QImage(pixels, width, height, width, QImage.Format.Format_Grayscale8).convertToFormat(
-            QImage.Format.Format_RGB32
-        )
+        self._mask = QImage(pixels, width, height, width, QImage.Format.Format_Grayscale8).copy()
         self._commit(before)
 
     def clear_mask(self):
         if self._mask.isNull():
             return
         before = self._mask.copy()
-        self._mask.fill(Qt.GlobalColor.black)
+        self._mask.fill(0)
         self._commit(before)
 
     def _trim(self, history):
@@ -100,16 +115,21 @@ class InpaintCanvas(ImagePreview):
             self._trim(self._undo)
             self._changed()
 
-    def _changed(self):
+    def _rebuild_overlay(self):
         self._overlay = QImage()
         if not self._mask.isNull():
             alpha = self._mask.scaled(
-                512, 512, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
-            ).convertToFormat(QImage.Format.Format_Grayscale8)
+                768, 768, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
+            )
             self._overlay = QImage(alpha.size(), QImage.Format.Format_ARGB32)
             self._overlay.fill(self._accent)
             self._overlay.setAlphaChannel(alpha)
         self.viewport().update()
+
+    def _changed(self):
+        """A committed mask change: rebuild the tint now and tell the editor (coverage, history)."""
+        self._refresh.stop()
+        self._rebuild_overlay()
         self.maskEdited.emit()
 
     def set_view(self, view):
@@ -134,7 +154,8 @@ class InpaintCanvas(ImagePreview):
         )
         painter.drawLine(start, end)
         painter.end()
-        self._changed()
+        if not self._refresh.isActive():
+            self._refresh.start()
 
     def mousePressEvent(self, event):
         if self._space or event.button() == Qt.MouseButton.MiddleButton:
@@ -195,7 +216,17 @@ class InpaintCanvas(ImagePreview):
         if self._mask.isNull():
             return
         painter = QPainter(self.viewport())
-        if self._view == "Mask":
+        if self._view == "Result" and not self._result.isNull():
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            rect = self.image_rect()
+            scale = min(rect.width() / self._result.width(), rect.height() / self._result.height())
+            width, height = self._result.width() * scale, self._result.height() * scale
+            painter.drawPixmap(
+                QRectF(rect.x() + (rect.width() - width) / 2, rect.y() + (rect.height() - height) / 2, width, height),
+                self._result,
+                QRectF(self._result.rect()),
+            )
+        elif self._view == "Mask":
             painter.drawImage(self.image_rect(), self._mask)
         elif not self._overlay.isNull():
             painter.setOpacity(0.45)

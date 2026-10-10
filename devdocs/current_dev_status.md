@@ -239,3 +239,5 @@ Source-present, not runtime-accepted: headless preparation, request v2/DB v3 bac
 - Manual handoff clarified: visible approximate-preview note, actual fit/upscale/padding evidence and owner-confirmed status separate from inventory availability. Helper annotations/spec only; no Qt wiring or checkpoint acceptance.
 - Step 4 now has a dedicated `dtflow edit` probe-only CLI harness with explicit one-run consent, user evidence and exact published cloud description gating. Offline refusal coverage/checks are owner-requested; live img2img/inpaint acceptance remains pending and step 4 is not completed.
 - CLI probe harness now offers explicit local-to-DT+ bridge opt-in, recorded in the request; inventory gating remains default-on. No bridge checkpoint acceptance is claimed.
+
+- 2026-10-10: inline Inpaint editor dispatch is source-present (explicit per-edit probe consent, Grow/Feather/Strength, Result view, Images **Edit image** handoff). Not runtime-accepted: owner Windows smoke of the app flow, smart selection (step 7) and acceptance (step 8) remain pending.

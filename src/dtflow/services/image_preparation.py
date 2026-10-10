@@ -269,6 +269,25 @@ def validate_prepared_inputs(prepared: PreparedImageInputs) -> None:
         raise ValidationError("Prepared blend mask does not match bounded feather evidence.")
 
 
+def load_source_file(path: Path) -> ImageContent:
+    """Editor-side source snapshot: EXIF-oriented, alpha flattened on white, RGB8; no fitting or resizing."""
+    oriented = _decode(_read(path, "Source image"), "Source image").convert("RGBA")
+    flat = Image.new("RGBA", oriented.size, "white")
+    flat.alpha_composite(oriented)
+    validate_source_dimensions(*flat.size)
+    return _content(flat.convert("RGB"))
+
+
+def prepare_edit_inputs(
+    source: ImageContent, mask_pixels: bytes, width: int, height: int, *, grow: int = 0, feather: float = 0.0
+) -> PreparedImageInputs:
+    """Fit an editor source snapshot and its painted binary source-grid mask for one dispatch (worker only)."""
+    if mask_coverage(mask_pixels, source.width, source.height) == 0:
+        raise ValidationError("Paint a mask before editing.")
+    mask = _content(Image.frombytes("L", (source.width, source.height), mask_pixels))
+    return prepare_image_bytes(source.encoded, width, height, mask_bytes=mask.encoded, grow=grow, feather=feather)
+
+
 def image_content_pixels(content: ImageContent) -> bytes:
     """Verified interleaved RGB or grayscale bytes; no Pillow object crosses services."""
     return _verified(content).tobytes()

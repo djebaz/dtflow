@@ -22,13 +22,14 @@ install()  # before provider/client imports; the guard rejects unregistered DNS/
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QPoint  # noqa: E402
-from PySide6.QtGui import QColor, QImage, QPainter  # noqa: E402
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
+from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
 from dtflow.services import session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
@@ -83,7 +84,7 @@ def render_inpaint_states(shell, state, capture):
         ("19-inpaint-mask-view", "Mask"),
         ("20-inpaint-result-no-result", "Result"),
     ):
-        # Result currently falls back to Source: no fabricated result or dispatch.
+        # No result exists yet, so Result still shows the source: nothing is fabricated or dispatched.
         editor.form.viewCombo.setCurrentText(view)
         capture(name)
 
@@ -91,6 +92,19 @@ def render_inpaint_states(shell, state, capture):
     editor.form.clearMaskButton.click()
     capture("21-inpaint-clear-confirmation")
     shell.inline.dismiss()  # Keep the fixture mask.
+
+    # Presentation fixtures: a probe-status line, the consent step, and a calibration image as the "result".
+    editor._support = ImageOperationSupport("owner_probe", "Offline presentation fixture.")
+    editor._render_support()
+    capture("24-inpaint-capability-probe")
+    editor.form.keepOutsideCheck.setFocus()
+    page.generateButton.click()
+    capture("25-inpaint-edit-consent")
+    shell.inline.dismiss()
+    editor.canvas.set_result(QPixmap.fromImage(source.mirrored(True, False)))
+    editor.form.viewCombo.setCurrentText("Result")
+    capture("26-inpaint-result-fixture")
+    editor.form.viewCombo.setCurrentText("Source")
 
     strip = activity_strip(page)
     for key, label, stop_text, done, total, detail, name in (

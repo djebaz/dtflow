@@ -80,6 +80,35 @@ def image_operation_status(
     )
 
 
+def owner_probe_permit(
+    selection: BackendSelection, model_id: str, operation: str, evidence_id: str
+) -> ImageOperationPermit:
+    """Exact-scope owner probe permit; the caller must still pass ``allow_image_probe=True`` after user consent."""
+    cloud = selection.name == "cloud"
+    digest = exact_model_description_digest(model_id) if cloud else None
+    if cloud and digest is None:
+        raise ValidationError("Cloud edit requires an exact published model description; none is available.")
+    return ImageOperationPermit(
+        backend_id="drawthings-cloud" if cloud else "drawthings-grpc",
+        endpoint=image_endpoint_label(selection),
+        model_id=model_id,
+        operation=operation,
+        evidence_id=evidence_id,
+        status="owner_probe",
+        model_description_sha256=digest,
+    )
+
+
+def image_edit_capability(selection: BackendSelection, model_id: str) -> ImageOperationSupport:
+    """Read-only capability line for the editor: no client, credential, state or dispatch."""
+    try:
+        permit = owner_probe_permit(selection, model_id, "inpaint", "capability-check")
+    except ValidationError as exc:
+        status = "missing_exact_description" if selection.name == "cloud" else "unsupported"
+        return ImageOperationSupport(status, str(exc))
+    return image_operation_status(selection, model_id, "inpaint", image_permits=(permit,))
+
+
 ASSET_NOTE = (
     "Local registry view of what this machine measured and a server once acknowledged; not remote account "
     "inventory. Reuse is re-validated by a fresh metadata check."
