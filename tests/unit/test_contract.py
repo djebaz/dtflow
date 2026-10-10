@@ -85,6 +85,7 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
                 "image_export.py",
                 "image_quality.py",
                 "image_preparation.py",
+                "person_selection.py",
             )
             assert not forbidden_imports(path.read_text(), f"dtflow.{directory}", allow_pillow=allow_pillow), path
     importlib.import_module("dtflow.core.models")
@@ -102,6 +103,7 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "image_export.py"),
             ("services", "image_quality.py"),
             ("services", "image_preparation.py"),
+            ("services", "person_selection.py"),
         )
         assert not forbidden_imports(path.read_text(), package, backends=False, allow_pillow=allow_pillow), path
 

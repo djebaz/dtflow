@@ -33,6 +33,7 @@ from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
 from dtflow.services import session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.services.person_selection import PersonAnalysis, PersonLayers  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
@@ -101,6 +102,28 @@ def render_inpaint_states(shell, state, capture):
     editor.canvas.set_view("Result")
     capture("26-inpaint-result-fixture")
     editor.canvas.set_view("Source")
+
+    # Select mode: offline fixtures only (a synthetic silhouette; no ONNX model is loaded).
+    editor.form.selectModeButton.setChecked(True)
+    capture("27-inpaint-select-no-models")
+    people = PersonAnalysis(
+        width,
+        height,
+        (
+            PersonLayers(
+                1,
+                0.93,
+                (width // 3, height // 4, 2 * width // 3, 3 * height // 4),
+                bytes([255]) * ((width // 3) * (height // 2)),
+                bytes([255]) * ((width // 3) * (height // 2)),
+                bytes([255]) * ((width // 3) * (height // 2)),
+            ),
+        ),
+        True,
+    )
+    editor._set_analysis(people)
+    capture("28-inpaint-select-people-found")
+    editor.form.paintModeButton.setChecked(True)
 
     strip = activity_strip(page)
     for key, label, stop_text, done, total, detail, name in (

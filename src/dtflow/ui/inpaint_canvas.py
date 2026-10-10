@@ -30,6 +30,7 @@ REDO_PATH = '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"
 class InpaintCanvas(ImagePreview):
     maskEdited = Signal()
     viewChanged = Signal(str)
+    pointPicked = Signal(int, int, bool)  # source pixel x, y; True when Alt asks to remove
     sourceDropped = Signal(str)
     HISTORY_BYTES = 64 * 1024 * 1024
 
@@ -44,6 +45,7 @@ class InpaintCanvas(ImagePreview):
         self._space = False
         self._view = "Source"
         self.tool = "Brush"
+        self.select_mode = False
         self.brush_size = 24
         self._accent = QColor(load_tokens()["color.accent"])
         self._expand.hide()  # The editor never detaches into a popup window.
@@ -212,6 +214,14 @@ class InpaintCanvas(ImagePreview):
         self._rebuild_overlay()
         self.maskEdited.emit()
 
+    def set_select_mode(self, enabled):
+        self.cancel_stroke()
+        self.select_mode = enabled
+        if enabled:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.viewport().unsetCursor()
+
     def set_view(self, view):
         self.cancel_stroke()
         self._view = view
@@ -250,6 +260,12 @@ class InpaintCanvas(ImagePreview):
             return
         self.setFocus()
         point = self._point(event.position())
+        if self.select_mode:
+            x = min(self._mask.width() - 1, max(0, int(point.x())))
+            y = min(self._mask.height() - 1, max(0, int(point.y())))
+            self.pointPicked.emit(x, y, bool(event.modifiers() & Qt.KeyboardModifier.AltModifier))
+            event.accept()
+            return
         erase = (self.tool == "Erase") != bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
         self._stroke = (self._mask.copy(), point, point, erase, event.position())
         self._stroke_size = self.brush_size

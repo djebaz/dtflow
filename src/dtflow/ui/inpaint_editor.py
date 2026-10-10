@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QFileDialog, QLabel
 from dtflow.core.image_inputs import ImageContent, max_mask_grow, suggest_generation_size
 from dtflow.core.model_profiles import profile_for
 from dtflow.core.tasks import settle
+from dtflow.persistence.person_models import PersonModels, load_person_models, save_person_models
 from dtflow.services.image_preparation import (
     image_content_pixels,
     load_mask_file,
@@ -19,6 +20,7 @@ from dtflow.services.image_preparation import (
     mask_coverage,
     save_mask_pixels_file,
 )
+from dtflow.services.person_selection import analyze_people, apply_selection, describe_model, person_at
 from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -49,6 +51,8 @@ class InpaintEditor(QObject):
         self.controller = None
         self._support = None
         self._support_revision = 0
+        self._models = PersonModels()
+        self._analysis = None
         file = QFile(str(Path(__file__).with_name("forms") / "inpaint_editor.ui"))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
             raise OSError("Inpaint editor form could not be opened.")
@@ -89,6 +93,14 @@ class InpaintEditor(QObject):
             getattr(self.form, name).clicked.connect(lambda _=False, tool=tool: self._tool(tool))
         self.form.brushSize.valueChanged.connect(self._brush)
         self.form.advancedToggle.toggled.connect(self.form.advancedBox.setVisible)
+        self.form.selectModeButton.toggled.connect(self._mode)
+        self.form.modelsButton.clicked.connect(self.choose_models)
+        self.form.findPeopleButton.clicked.connect(self.find_people)
+        self.form.peopleList.itemActivated.connect(self._person_item)
+        self.form.peopleList.itemClicked.connect(self._person_item)
+        self.canvas.pointPicked.connect(self._pick)
+        self.form.modeLayout.setContentsMargins(0, 0, 0, 0)
+        self.form.modeLayout.setSpacing(0)
         self.canvas.viewChanged.connect(self._view_changed)
         self.form.clearMaskButton.clicked.connect(self.clear_mask)
         self.form.loadMaskButton.clicked.connect(self.load_mask)
@@ -112,6 +124,11 @@ class InpaintEditor(QObject):
     def attach(self, controller):
         """The generation page owns backend selection and dispatch; the editor only asks it."""
         self.controller = controller
+        try:
+            self._models = load_person_models(controller._state)
+        except Exception as exc:  # unreadable settings never block manual painting
+            self.form.peopleStatus.setText(str(exc))
+        self._people_status()
         self.refresh_capability()
 
     @property
@@ -223,6 +240,11 @@ class InpaintEditor(QObject):
         for name in ("growSpin", "featherSpin", "strengthSpinBox", "keepOutsideCheck"):
             getattr(self.form, name).setEnabled(available)
         self.form.saveMaskButton.setEnabled(available and self._source is not None and self._coverage > 0)
+        self.form.findPeopleButton.setEnabled(has_source and self._models.segmentation is not None)
+        self.form.modelsButton.setEnabled(available)
+        self.form.peopleList.setEnabled(has_source and self._analysis is not None)
+        self.form.layerBody.setEnabled(self._analysis is not None and self._analysis.has_clothes)
+        self.form.layerClothes.setEnabled(self._analysis is not None and self._analysis.has_clothes)
         self.canvas.undoButton.setEnabled(has_source and self.canvas.can_undo())
         self.canvas.redoButton.setEnabled(has_source and self.canvas.can_redo())
         for button in self.canvas._view_buttons.values():
@@ -284,7 +306,7 @@ class InpaintEditor(QObject):
 
         self.runner.submit(work(), done)
 
-    def _task(self, title, worker, apply):
+    def _task(self, title, worker, apply, *, quiet=False):
         if self.runner.closed or self._busy or self._loading:
             return
         self._revision += 1
@@ -315,7 +337,10 @@ class InpaintEditor(QObject):
             else:
                 apply(value)
                 self.form.sourceError.clear()
-                strip.complete(key, title, "Completed locally. No generation was submitted.")
+                if quiet:
+                    strip.finish(key)
+                else:
+                    strip.complete(key, title, "Completed locally. No generation was submitted.")
             self._controls()
 
         self.runner.submit(work(), done)
@@ -358,6 +383,7 @@ class InpaintEditor(QObject):
             def apply(value):
                 self._source, pixels = value
                 self._coverage = 0
+                self._set_analysis(None)
                 self.canvas.set_source(pixels, self._source.width, self._source.height)
                 self.form.sourceThumbnail.setPixmap(self.canvas.pixmap().scaledToHeight(80))
                 self.form.sourceFacts.setText(
@@ -393,6 +419,7 @@ class InpaintEditor(QObject):
         def remove():
             self._source = None
             self._coverage = 0
+            self._set_analysis(None)
             self.canvas.remove_source()
             self.form.sourceThumbnail.clear()
             self.form.sourceFacts.setText("Choose a source image…")
@@ -465,6 +492,110 @@ class InpaintEditor(QObject):
         )
         self.canvas.set_result(QPixmap())
         self.controller.generate(edit=job)
+
+    # -- Select mode: local ONNX person selection ------------------------------------------------------------------
+    def _mode(self, select):
+        self.form.selectBox.setVisible(select)
+        self.form.paintBox.setVisible(not select)
+        self.canvas.set_select_mode(select)
+
+    def _people_status(self):
+        models = self._models
+        if self._analysis is None and models.segmentation is None:
+            text = "Choose a YOLO26 segmentation model (Models…) to find people. Painting works without it."
+        elif self._analysis is None:
+            text = "Press Find people." + (
+                "" if models.clothes else " Add a clothes model for Body and Clothes layers."
+            )
+        elif not self._analysis.people:
+            text = "No people found. Paint the area instead."
+        else:
+            text = (
+                "Click a person on the image (Alt removes) or in the list. Suggestions can be wrong; refine in Paint."
+            )
+        self.form.peopleStatus.setText(text)
+
+    def _set_analysis(self, analysis):
+        self._analysis = analysis
+        self.form.peopleList.clear()
+        if analysis is not None:
+            self.form.peopleList.addItems([f"Person {p.index} · {p.score:.0%}" for p in analysis.people])
+        self._people_status()
+        self._controls()
+
+    def choose_models(self):
+        if self._busy or self._loading or self.controller is None:
+            return
+        segmentation = QFileDialog.getOpenFileName(
+            self.page, "Choose the YOLO26 segmentation model (ONNX)", "", "ONNX (*.onnx)"
+        )[0]
+        if not segmentation:
+            return
+        clothes = QFileDialog.getOpenFileName(
+            self.page, "Choose the SegFormer clothes model (ONNX), or cancel to skip", "", "ONNX (*.onnx)"
+        )[0]
+        state = self.controller._state
+
+        def worker():
+            models = PersonModels(
+                describe_model(Path(segmentation)), describe_model(Path(clothes)) if clothes else None
+            )
+            save_person_models(state, models)
+            return models
+
+        def apply(models):
+            self._models = models
+            self._set_analysis(None)
+
+        self._task("Choose person models", worker, apply)
+
+    def find_people(self):
+        if self._source is None or self._models.segmentation is None or self._busy or self._loading:
+            return
+        source, models = self._source, self._models
+        self._task(
+            "Find people",
+            lambda: analyze_people(source, models.segmentation, models.clothes),
+            self._set_analysis,
+        )
+
+    def _layers(self):
+        form = self.form
+        return frozenset(
+            name
+            for name, box in (("person", form.layerPerson), ("body", form.layerBody), ("clothes", form.layerClothes))
+            if box.isChecked() and box.isEnabled()
+        )
+
+    def _person_item(self, item):
+        row = self.form.peopleList.row(item)
+        if self._analysis is not None and 0 <= row < len(self._analysis.people):
+            self._add_person(self._analysis.people[row], remove=False)
+
+    def _pick(self, x, y, remove):
+        if self._analysis is None:
+            self.form.peopleStatus.setText("Press Find people first.")
+            return
+        person = person_at(self._analysis, x, y)
+        if person is None:
+            self.form.peopleStatus.setText("No person at that point.")
+            return
+        self._add_person(person, remove)
+
+    def _add_person(self, person, remove):
+        layers, analysis = self._layers(), self._analysis
+        if not layers:
+            self.form.peopleStatus.setText("Tick Person, Body or Clothes first.")
+            return
+        current = self.canvas.mask_pixels()
+        names = " + ".join(name.title() for name in ("person", "body", "clothes") if name in layers)
+        label = f"{'Remove' if remove else 'Add'} Person {person.index} · {names}"
+        self._task(
+            "Select person",
+            lambda: apply_selection(current, analysis, person, layers, remove=remove),
+            lambda pixels: self.canvas.replace_mask(pixels, label),
+            quiet=True,
+        )
 
     def show_result(self, encoded):
         pixmap = QPixmap()
