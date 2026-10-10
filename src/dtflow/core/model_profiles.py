@@ -106,7 +106,27 @@ _DERIVED: dict[str, tuple[str, str | None, str]] = {
 }
 
 
+# SDXL checkpoints the cloud serves (their own CLIP companions are listed) without a community description. Derived from
+# a plain SDXL sibling (no modifier, consistency or v-prediction fields) with the checkpoint's own file, name and encoder
+# companions. Owner-requested attempt: unconfirmed until a direct-cloud run returns an image. file -> (base file, name, stem).
+_DERIVED_SDXL: dict[str, tuple[str, str, str]] = {
+    "copax_pony_xl_f16.ckpt": ("juggernaut_xl_ragnarok_f16.ckpt", "Copax Pony XL", "copax_pony_xl"),
+}
+
+
 def _derived_spec(model_id: str) -> dict | None:
+    sdxl = _DERIVED_SDXL.get(model_id)
+    if sdxl is not None:
+        base = _community_specs().get(sdxl[0])
+        if base is None:
+            return None
+        return {
+            **base,
+            "name": sdxl[1],
+            "file": model_id,
+            "clip_encoder": f"{sdxl[2]}_clip_vit_l14_f16.ckpt",
+            "text_encoder": f"{sdxl[2]}_open_clip_vit_bigg14_f16.ckpt",
+        }
     derived = _DERIVED.get(model_id)
     base = _community_specs().get(derived[0]) if derived else None
     if derived is None or base is None:
