@@ -447,10 +447,6 @@ class GenerationPage:
         elif not has_own_profile(model):
             text += " Merged checkpoints may differ."
         page.suggestionLabel.setText(text)
-        current = (page.stepsSpinBox.value(), page.guidanceSpinBox.value(), page.samplerCombo.currentText())
-        page.applySuggestionButton.setEnabled(
-            current != (profile.steps, float(profile.guidance), profile.sampler.value)
-        )
 
     def _apply_suggestion(self) -> None:
         profile = self._suggestion()
