@@ -911,7 +911,7 @@ class MainWindow:
             "confirm",
         )
         self.inline.escape.setEnabled(True)
-        self.inline.form.inlineDismissButton.setText("Cancel")
+        self.inline._set_dismiss_label(cross=False)
         self.inline.set_accept("Confirm close", close_confirmed)
         return False
 

@@ -89,6 +89,7 @@
 - The Images Size filter now offers Small, Medium, Large and Big classes (<400, <600, <1200, ≥1200 px) by the longer side; typing a size still works.
 - The Images detail full-screen button now also collapses the filter/search bar, the selection action bar and the metadata/prompt panels below the image; Escape or the button restores them.
 - The window no longer has a menu bar holding only "Help"; About DTFlow is a small help icon at the right of the bottom status bar on every page, giving the pages the vertical room back.
+- Informational overlays such as About now close with a × button (instead of "Dismiss") or a click anywhere outside them; errors and confirmations still stay until answered.
 - Unclassified checkpoints no longer appear under every base-model family (they have none); they are listed under a separate "Unclassified" base-model entry, and in the custom-identifier action and unclassified inspector.
 - The Checkpoint list no longer accumulates the previous family's selected checkpoint (for example an SDXL or Z-Image pick showing up under FLUX.1) when the base-model family changes.
 - Generate on direct DT+ cloud no longer counts or offers every metadata-less file (LoRAs, controls, encoders, VAEs, upscalers) as a checkpoint: only files with an exact Draw Things community model description are offered; other files are listed only in the unclassified-files inspector without any guessed family.
