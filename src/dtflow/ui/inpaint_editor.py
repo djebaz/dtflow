@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QFile, QIODevice, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QLabel
 
 from dtflow.core.image_inputs import ImageContent, max_mask_grow, suggest_generation_size
 from dtflow.core.model_profiles import profile_for
@@ -62,7 +62,18 @@ class InpaintEditor(QObject):
         page.generationContextLayout.insertWidget(0, self.form.sourceCard)
         page.generationInspectorLayout.insertWidget(0, self.form.maskCard)
         page.generationInspectorLayout.insertWidget(1, self.form.liveMaskCard)
-        self._coverage_text = ""
+        # Strength and Keep-outside are backend parameters: they live in the Generate Parameters card.
+        grid = page.parametersGrid
+        self.form.maskCardLayout.removeWidget(self.form.strengthSpinBox)
+        self.form.maskCardLayout.removeWidget(self.form.keepOutsideCheck)
+        self.form.strengthSpinBox.setPrefix("")
+        self._strength_label = QLabel("Strength")
+        self._strength_label.setProperty("textRole", "caption")
+        row = grid.rowCount()
+        grid.addWidget(self._strength_label, row, 0)
+        grid.addWidget(self.form.strengthSpinBox, row, 1)
+        grid.addWidget(self.form.keepOutsideCheck, row + 1, 0, 1, 2)
+        self._parameter_widgets = (self._strength_label, self.form.strengthSpinBox, self.form.keepOutsideCheck)
         self.form.toolLayout.setContentsMargins(0, 0, 0, 0)
         self.form.toolLayout.setSpacing(0)
         self.canvas = InpaintCanvas(page.previewHost)
@@ -111,6 +122,8 @@ class InpaintEditor(QObject):
         active = self.active
         self.canvas.cancel_stroke()
         for widget in (self.form.sourceCard, self.form.maskCard, self.form.liveMaskCard, self.canvas):
+            widget.setVisible(active)
+        for widget in self._parameter_widgets:
             widget.setVisible(active)
         self.page.resultPreviewLabel.setVisible(not active)
         self.page.generateButton.setText("Edit image" if active else "Generate image")
