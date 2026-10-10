@@ -147,6 +147,11 @@ class MainWindow:
         state_dir: Path | None = None,
         no_cache: bool = False,
     ):
+        # Separate first-use Qt costs (loader plugins, fonts, stylesheet parsing) from the form's own cost.
+        QUiLoader()
+        startup.mark("ui loader created")
+        QWidget().ensurePolished()
+        startup.mark("first widget polished")
         self.form = load_form()
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
