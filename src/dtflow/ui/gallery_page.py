@@ -52,7 +52,13 @@ from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
-from dtflow.ui.gallery_detail_preview import ASSETS, CoverPainter, RowHoverDelegate, apply_gallery
+from dtflow.ui.gallery_detail_preview import (
+    ASSETS,
+    CoverPainter,
+    RowHoverDelegate,
+    apply_gallery,
+    toggle_image_focus,
+)
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
@@ -494,7 +500,7 @@ class GalleryPage(QObject):
         ):
             shortcut = QShortcut(QKeySequence(key), self.page)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            shortcut.activated.connect(lambda action=callback: self._selection_shortcut(action))
+            shortcut.activated.connect(lambda action=callback, key=key: self._leave_focus_or(key, action))
             self._selection_shortcuts.append(shortcut)
         QApplication.instance().focusChanged.connect(self._selection_focus_changed)
         self._sync_selection_ui()
@@ -505,6 +511,12 @@ class GalleryPage(QObject):
         editable = isinstance(current, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit))
         for shortcut in self._selection_shortcuts:
             shortcut.setEnabled(not editable)
+
+    def _leave_focus_or(self, key: str, action) -> None:
+        if key == "Escape" and self.page.property("imageFocus"):
+            toggle_image_focus(self.page, False)
+        else:
+            self._selection_shortcut(action)
 
     def _selection_shortcut(self, callback) -> None:
         """Do not steal standard editing, pop-up or global generation shortcuts."""
