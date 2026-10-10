@@ -243,3 +243,4 @@ Source-present, not runtime-accepted: headless preparation, request v2/DB v3 bac
 - 2026-10-10: inline Inpaint editor dispatch is source-present (explicit per-edit probe consent, Grow/Feather/Strength, Result view, Images **Edit image** handoff). Not runtime-accepted: owner Windows smoke of the app flow, smart selection (step 7) and acceptance (step 8) remain pending.
 
 - 2026-10-10: Inpaint Select mode (local YOLO26 seg + SegFormer clothes ONNX via `services/person_selection.py`) is source-present. Owner acceptance pending: ONNX runtime on the target CPU, packaged-exe collection of onnxruntime, and real-image selection quality.
+- 2026-10-10: A [plan for Inpaint and image-to-image in queues](plans/2026-10-10-inpaint-queues.md) is proposed (plan only, nothing implemented; queues, planner and CLI still refuse image operations).
