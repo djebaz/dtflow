@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QFrame,
@@ -133,6 +134,65 @@ class RowHoverDelegate(QStyledItemDelegate):
         super().paint(painter, style, index)
 
 
+FOCUS_HIDDEN_ROWS = ("galleryNavigationRow", "gallerySelectionBar")
+
+
+class _EscapeLeavesFocus(QObject):
+    def __init__(self, page):
+        super().__init__(page)
+        self.page = page
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+            feedback = getattr(self.page.window(), "_inline_feedback", None)
+            if feedback is not None and feedback.form.isVisible():
+                return False  # an open notice or editor consumes Escape first
+            toggle_image_focus(self.page, False)
+            return True
+        return False
+
+
+def toggle_image_focus(page, enter: bool | None = None) -> None:
+    """Full screen the window and collapse search, selection and info chrome around the image.
+
+    Hidden widgets are recorded so only those visible beforehand are restored. enter=False only leaves.
+    """
+    window = page.window()
+    focused = bool(page.property("imageFocus"))
+    enter = (not focused) if enter is None else enter
+    if enter == focused:
+        return
+    page.setProperty("imageFocus", enter)
+    toggle = page.findChild(QWidget, "galleryFocusButton")
+    if toggle is not None:
+        toggle.setChecked(enter)
+    if enter:
+        targets = [page.findChild(QWidget, name) for name in FOCUS_HIDDEN_ROWS]
+        column = page.findChild(QWidget, "galleryMainColumn")
+        host = page.findChild(QWidget, "galleryPreviewHost")
+        if column is not None and column.layout() is not None:
+            layout = column.layout()
+            targets += [
+                item.widget() for item in map(layout.itemAt, range(layout.count())) if item.widget() is not host
+            ]
+        hidden = [widget for widget in targets if widget is not None and widget.isVisibleTo(page)]
+        for widget in hidden:
+            widget.hide()
+        page._focus_hidden = hidden
+        # An application-wide filter keeps Escape working from any view or focus until focus mode ends.
+        page._focus_escape = getattr(page, "_focus_escape", None) or _EscapeLeavesFocus(page)
+        QApplication.instance().installEventFilter(page._focus_escape)
+        window.showFullScreen()
+    else:
+        escape = getattr(page, "_focus_escape", None)
+        if escape is not None:
+            QApplication.instance().removeEventFilter(escape)
+        for widget in getattr(page, "_focus_hidden", []):
+            widget.show()
+        page._focus_hidden = []
+        window.showNormal()
+
+
 def apply_gallery_button_icons(page, assets=ASSETS):
     """Shared real icon configuration for application and state-catalogue buttons."""
 
@@ -145,6 +205,7 @@ def apply_gallery_button_icons(page, assets=ASSETS):
         ("galleryDetailButton", "image"),
         ("galleryRefreshButton", "refresh"),
         ("galleryFullscreenButton", "fullscreen"),
+        ("galleryFocusButton", "fullscreen"),
         ("galleryAdditionalButton", "document"),
         ("galleryRawButton", "json"),
     ]:
@@ -158,6 +219,7 @@ def apply_gallery_button_icons(page, assets=ASSETS):
         get(name).setIconSize(QSize(14, 14))
     get("galleryRefreshButton").setText("")
     get("galleryFullscreenButton").setText("")
+    get("galleryFocusButton").setText("")
 
 
 def apply_gallery(page, assets=ASSETS, sample=False):
@@ -230,9 +292,8 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     get("galleryActualSizeButton").setEnabled(True)
     get("galleryActualSizeButton").clicked.connect(lambda: set_view("100%"))
     get("galleryFullscreenButton").setEnabled(True)
-    get("galleryFullscreenButton").clicked.connect(
-        lambda: page.window().showNormal() if page.window().isFullScreen() else page.window().showFullScreen()
-    )
+    get("galleryFullscreenButton").clicked.connect(lambda: toggle_image_focus(page))
+    get("galleryFocusButton").clicked.connect(lambda: toggle_image_focus(page))
     paths = [assets / f"thumb{i}.png" for i in range(1, 7)]
     badges = [
         ("1536 × 1024", "Sample"),
@@ -314,7 +375,7 @@ class DetailFixture(QObject):
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(page.findChild(QPushButton, name).click)
         escape = QShortcut(QKeySequence("Escape"), page)
-        escape.activated.connect(lambda: page.window().showNormal() if page.window().isFullScreen() else None)
+        escape.activated.connect(lambda: toggle_image_focus(page, False))
 
     def setup_browsing(self):
         """Mount fixture Grid/List below the same persistent two-row header."""

@@ -8,6 +8,7 @@ import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from dtflow import startup
 from dtflow.build import display_identity, identity
 from dtflow.composition import BACKENDS
 from dtflow.core.gallery import SORTS, GalleryQuery
@@ -549,10 +550,12 @@ def start_logging(args: argparse.Namespace):
 
 
 def main(argv: list[str] | None = None) -> int:
+    startup.mark("python imports")
     args = parser().parse_args(argv)
     logging_session = None if args.command == "test" else start_logging(args)
     try:
         if args.command == "gui":
+            startup.mark("logging configured")
             return run_gui_command(no_cache=args.no_cache)
         if args.command == "test":
             return run_tests(args)
@@ -601,6 +604,8 @@ def run_gui_command(*, no_cache: bool = False) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
         from dtflow.ui.app import run_gui
+
+        startup.mark("qt imports")
     except ImportError:
         print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
         return EXIT_INVALID

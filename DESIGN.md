@@ -245,7 +245,7 @@ One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/im
 | Connection sections | Backend `server`, DT+ credentials `key-round`, Connection check `shield-check` |
 | Generate sections | Backend `server`, Parameters `detail`, Simulation `flask-conical`, Configuration `settings`, Cloud assets `cloud` |
 | Queues sections | Dispatch policy `send`, Plan batch `layers`, Selected item `list-checks`, Uncertainty `triangle-alert` |
-| Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, filter combo arrow `chevron`, fullscreen `fullscreen` |
+| Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, full-screen toggle `fullscreen` (every view), filter combo arrow `chevron`, fullscreen `fullscreen` |
 | Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
 | Prompt disclosure | Additional `document`, Raw `json` |
 | Additional-details rows | Negative prompt `ban`, Resolved seed `dices`, Filename `file-image`, Source `hard-drive`, File size `weight`, Backend duration `timer`; Path keeps `document` |
@@ -305,7 +305,7 @@ row-wide hover. Original shipped viewer behavior was single-focus browsing; Phas
 
 Detail defaults to Fit so the complete saved image is visible on entry. Cover
 remains available for a filled canvas; 100%, zoom, pan, previous/next,
-fullscreen/Escape and the right-hand filmstrip remain available. The filmstrip
+fullscreen/Escape and the right-hand filmstrip remain available. The header full-screen toggle (all views) also collapses the filter row, selection bar and metadata/prompt panels; Escape leaves it from any view. The filmstrip
 spans the content height beside the preview and its metadata/prompt/disclosure
 panels. Image overlays have a separate 10 px interior inset.
 
@@ -495,11 +495,10 @@ A 450 ms fade-out follows expiry. The timer and line pause while the
 overlay is hovered or keyboard-focused. The 5 px blue task progress
 track is distinct and reflects actual completed work only.
 Amber informational warnings use the timed row even without another active
-editor/confirmation. Red errors and neutral informational inspection stay
-until dismissed. Amber overlay expiry only hides the notification: it
+editor/confirmation. Red errors stay until dismissed; neutral informational inspection closes with its × button, Escape or a click outside it. Amber overlay expiry only hides the notification: it
 never erases durable outcome records, uncertainty indicators, failure
 details, or changes stop/retry behavior. Escape dismisses a standalone
-notice, while Cancel/Escape disarm a pending confirmation/editor;
+notice (a × button replaces the text Dismiss), while Cancel/Escape disarm a pending confirmation/editor;
 dismissing any row never stops work.
 Recycle Bin Delete confirmation and in-progress Trash rows reuse the exact
 Images Delete button SVG (\`resources/images/gallery/delete.svg\`), tinted

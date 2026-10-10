@@ -11,10 +11,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from dtflow.core.model_profiles import community_model_ids
 from dtflow.core.models import InventorySnapshot
 
 log = logging.getLogger(__name__)
@@ -43,8 +45,24 @@ FAMILY_LABELS = {
     "kandinsky": "Kandinsky",
     "wurstchen": "Würstchen",
     "hidream_i1": "HiDream-I1",
+    "anima": "Anima",
+    "ideogram_4": "Ideogram 4",
+    "krea_2": "Krea 2",
+    "ernie_image": "ERNIE Image",
+    "hunyuan_video": "Hunyuan Video",
+    "svd": "SVD",
 }
 FAMILY_ORDER = tuple(FAMILY_LABELS)
+
+# Draw Things companion files that are never selectable checkpoints: per-checkpoint CLIP encoders, textual inversions,
+# VAEs, text/vision encoders and language models, upscalers and preprocessors. They are kept out of the inspector list.
+_COMPANION = re.compile(
+    r"(_clip_vit_l14|_open_clip_vit_bigg14)_f16\.ckpt$|_ti_f16\.ckpt$|(^|_)vae(_|\.)|vae_f(16|32)\.ckpt$|_vae_|"
+    r"encoder|_clip_|^clip_|^open_clip|siglip|^qwen_[23]|gemma|mistral|ministral|llama|llava|moondream|whisper|"
+    r"xlm_roberta|chatglm|^opt_|blip2|dino|arcface|depth_anything|segment_anything|^sam_|schp_|^hed_|realesrgan|esrgan|"
+    r"remacri|^4x_|^2dn_f16|seedvr|ootd_|^film_|pulid|redux|upscaler|taesd|consistencydecoder|previewer|stage_a|"
+    r"longcat|^eva02|(^|_)vit_|^dis_v|^is_net|parsenet|restoreformer"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +94,7 @@ class CatalogueView:
     checkpoints: tuple[CatalogueEntry, ...]
     loras: tuple[CatalogueEntry, ...]
     unclassified_checkpoints: tuple[str, ...]
+    other_files: tuple[str, ...] = ()
 
 
 def _records(path: Path) -> list[dict]:
@@ -275,22 +294,32 @@ class Catalogue:
         known = {entry.identifier for entry in known_entries}
         known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *user_loras, *self._controls)}
         unknown = ()
+        other = ()
         if self._inventory is not None:
             metadata = dict(self._inventory.diagnostics).get("model_metadata") == "present"
-            raw_unknown = {
-                entry.identifier
-                for entry in self._inventory.entries
-                if entry.identifier not in known
-                and entry.identifier not in known_nonmodels
-                and (entry.kind == "model" or (entry.kind == "unknown" and not metadata))
-            }
+            # Without server model metadata (direct DT+ cloud) every listed file is "unknown": checkpoints, LoRAs,
+            # controls, VAEs, text encoders, upscalers. Only files with an exact community model description are
+            # evidence of a checkpoint; the rest stay out of the model list and are only inspectable.
+            community = community_model_ids()
+            raw_unknown = set()
+            raw_other = set()
+            for entry in self._inventory.entries:
+                if entry.identifier in known or entry.identifier in known_nonmodels:
+                    continue
+                if _COMPANION.search(entry.identifier):
+                    continue
+                if entry.kind == "model":
+                    raw_unknown.add(entry.identifier)
+                elif entry.kind == "unknown" and not metadata:
+                    (raw_unknown if entry.identifier in community else raw_other).add(entry.identifier)
             classified_unknown = {
                 entry.identifier
                 for entry in known_entries
                 if entry.identifier in available and (entry.base_model is None or not entry.domains)
             }
             unknown = tuple(sorted(raw_unknown | classified_unknown))
-        self._cached_view = CatalogueView(checkpoints, loras, unknown)
+            other = tuple(sorted(raw_other))
+        self._cached_view = CatalogueView(checkpoints, loras, unknown, other)
         return self._cached_view
 
     def checkpoints(

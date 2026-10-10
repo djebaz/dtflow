@@ -5,24 +5,28 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QFontMetrics, QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
     QAbstractSpinBox,
+    QApplication,
     QComboBox,
     QFileDialog,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
+    QToolButton,
     QWidget,
 )
 
+from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
+from dtflow.logging_setup import dev_enabled
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -49,12 +53,14 @@ from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.system_trash import TRASH_NAME, trash_supported
 from dtflow.ui.theme import apply_native_dark_titlebar
+from dtflow.ui.wheel_guard import WheelGuard
 
 log = logging.getLogger(__name__)
 
 RUN_SETTLE_MS = 2000  # how long the header control shows its finishing state after work ends
 
 FORMS_DIR = Path(__file__).with_name("forms")
+ASSETS_CONTROLS = Path(__file__).parents[1] / "resources" / "images" / "controls"
 UI_FILE = FORMS_DIR / "main_window.ui"
 GENERATION_UI_FILE = FORMS_DIR / "generation_page.ui"
 QUEUE_UI_FILE = FORMS_DIR / "queue_page.ui"
@@ -143,9 +149,22 @@ class MainWindow:
         state_dir: Path | None = None,
         no_cache: bool = False,
     ):
+        # Separate first-use Qt costs (loader plugins, fonts, stylesheet parsing) from the form's own cost.
+        QUiLoader()
+        startup.mark("ui loader created")
+        QWidget().ensurePolished()
+        startup.mark("first widget polished")
+        if dev_enabled():  # development diagnosis only: Windows pays seconds on first text-input use
+            QFontMetrics(QApplication.font()).horizontalAdvance("Ag")
+            startup.mark("first font metrics")
+            QLineEdit().ensurePolished()
+            startup.mark("first QLineEdit polished")
         self.form = load_form()
+        startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
+        startup.mark("generation form")
         self.queue_page = load_ui(QUEUE_UI_FILE)
+        startup.mark("queue form")
         self._disable_preview_controls(self.generation_page)
         self._disable_preview_controls(self.queue_page)
         self.form.workspaceStack.addWidget(self.generation_page)
@@ -155,6 +174,7 @@ class MainWindow:
         self._environ = environ
         self.runner = runner or AsyncRunner(self.form)
         self._shutdown_guard = _ShutdownGuard(self.form)
+        self._wheel_guard = WheelGuard(self.form)
         self.runner.shutdown_started.connect(self._shutdown_guard.stop_timers)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._busy = False
@@ -172,7 +192,9 @@ class MainWindow:
             ):
                 stack.addWidget(getattr(page, name))
         self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
+        startup.mark("shell form and mounting")
         self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
+        startup.mark("images form")
         self.gallery = GalleryPage(
             self.gallery_detail,
             runner=self.runner,
@@ -182,6 +204,7 @@ class MainWindow:
             export_callback=self._open_checked_export,
             recycle_callback=self._request_gallery_recycle if trash_supported() else None,
         )
+        startup.mark("images page controller")
         self.gallery.delete_button.setToolTip(f"Move eligible checked originals to {TRASH_NAME} after confirmation.")
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
@@ -265,7 +288,19 @@ class MainWindow:
         )
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
+        startup.mark("pages wired, session restored")
         form.statusBar().showMessage(display_identity())
+        # The former Help menu is a small status-bar icon so no menu bar takes vertical room.
+        help_icon = ASSETS_CONTROLS / "help.svg"
+        form.aboutAction.setIcon(QIcon(str(help_icon)))
+        form.aboutAction.setToolTip("About DTFlow")
+        about_button = QToolButton(form.statusBar())
+        about_button.setObjectName("aboutButton")
+        about_button.setDefaultAction(form.aboutAction)
+        about_button.setAutoRaise(True)
+        about_button.setAccessibleName("About DTFlow")
+        form.statusBar().addPermanentWidget(about_button)
+        form.statusBar().setSizeGripEnabled(False)
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
@@ -897,7 +932,7 @@ class MainWindow:
             "confirm",
         )
         self.inline.escape.setEnabled(True)
-        self.inline.form.inlineDismissButton.setText("Cancel")
+        self.inline._set_dismiss_label(cross=False)
         self.inline.set_accept("Confirm close", close_confirmed)
         return False
 

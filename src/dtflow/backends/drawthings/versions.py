@@ -29,7 +29,7 @@ def bundled_base_version(model_id: str) -> str | None:
 
 
 # The bundled catalogue names families (``flux_1``); the LoRA specification wants Draw Things' own version string.
-_LORA_VERSIONS = {"flux_1": "flux1", "sd_1": "v1", "sdxl": "sdxl_base_v0.9"}
+_LORA_VERSIONS = {"flux_1": "flux1", "sd_1": "v1", "sdxl": "sdxl_base_v0.9", "anima": "cosmos2.5_2b"}
 
 
 def lora_version(base_version: str | None, model_spec: dict | None = None) -> str | None:

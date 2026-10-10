@@ -35,6 +35,7 @@ class InlineFeedback(QObject):
         self.form.inlineDismissButton.clicked.connect(self.dismiss)
         self.form.inlineEditorCancelButton.clicked.connect(self.dismiss)
         self._armed = None
+        self._outside = False
         self._editor = None
         self._editor_focus = None
         self._accept_callback = None
@@ -65,6 +66,11 @@ class InlineFeedback(QObject):
         target.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def eventFilter(self, watched, event):
+        if self._outside and event.type() == QEvent.Type.MouseButtonPress and self.form.isVisible():
+            point = event.globalPosition().toPoint()
+            if not self.form.rect().contains(self.form.mapFromGlobal(point)):
+                self.dismiss()
+            return False
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
             if self._armed or self._editor or self.form.isVisible():
                 self.dismiss()
@@ -72,6 +78,7 @@ class InlineFeedback(QObject):
         return False
 
     def reset(self):
+        self._watch_outside(False)
         self.escape.setEnabled(False)
         self.strip.set_editor_dimming(False)
         self._editor_focus = None
@@ -101,7 +108,21 @@ class InlineFeedback(QObject):
             self._accept_callback = None
             self._accept_button = None
 
+    def _set_dismiss_label(self, *, cross: bool) -> None:
+        button = self.form.inlineDismissButton
+        button.setText("×" if cross else "Cancel")
+        button.setToolTip("Dismiss" if cross else "Cancel")
+        button.setAccessibleName("Dismiss" if cross else "Cancel")
+
+    def _watch_outside(self, enabled: bool) -> None:
+        app = QApplication.instance()
+        if enabled == self._outside:
+            return
+        self._outside = enabled
+        (app.installEventFilter if enabled else app.removeEventFilter)(self)
+
     def dismiss(self):
+        self._watch_outside(False)
         self.reset()
         self.form.hide()
         self.strip._position()
@@ -138,8 +159,10 @@ class InlineFeedback(QObject):
         self.form.inlineTitleLabel.setText(title)
         self.form.inlineTextBrowser.setPlainText(text)
         self.form.inlineTextBrowser.setVisible(bool(text))
-        self.form.inlineDismissButton.setText("Dismiss")
+        self._set_dismiss_label(cross=True)
         self.form.show()
+        # Informational notices also close on any click outside them; errors and consent stay until answered.
+        self._watch_outside(state == "info")
         self.strip._position()
 
     def fit_text(self, width):
@@ -185,7 +208,7 @@ class InlineFeedback(QObject):
 
     def arm(self, button, title, text, callback, canceled=None, *, danger=False):
         self.show(title, text, "confirm")
-        self.form.inlineDismissButton.setText("Cancel")
+        self._set_dismiss_label(cross=False)
         self.escape.setEnabled(True)
         # Only the label/color changes in the original slot; Cancel belongs to
         # the details surface, so the action row and pointer target do not move.

@@ -7,14 +7,15 @@ backend to another, and credentials are read from the environment by providers, 
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from dtflow.backends.drawthings.backend import DrawThingsBackend, DrawThingsEndpoint
-from dtflow.backends.drawthings.cloud import DirectCloudBackend
-from dtflow.backends.drawthings.cloud_auth import CloudAuth
-from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.fake import FakeBackend
 from dtflow.core.models import Backend, Credential, CredentialProvider, TimeoutPolicy, ValidationError
 from dtflow.services.credentials import KEY, EnvironmentCredentials, resolve_credentials
+
+if TYPE_CHECKING:  # the Draw Things provider library is slow to import, so it loads only when a backend needs it
+    from dtflow.backends.drawthings.backend import DrawThingsEndpoint
+    from dtflow.backends.drawthings.tls import TlsPolicy
 
 BACKENDS = ("fake", "local", "cloud")
 SHARED_SECRET = "DRAWTHINGS_SHARED_SECRET"
@@ -57,7 +58,9 @@ class BackendSelection:
     previews: bool = False  # fake only: emit preview images while the simulated wait runs
 
 
-def parse_endpoint(text: str) -> DrawThingsEndpoint:
+def parse_endpoint(text: str) -> "DrawThingsEndpoint":
+    from dtflow.backends.drawthings.backend import DrawThingsEndpoint
+
     host, separator, port = text.strip().rpartition(":")
     if not separator or not host or not port.isdigit():
         raise ValidationError("Endpoint must be HOST:PORT.")
@@ -76,7 +79,7 @@ def create_backend(
     *,
     timeouts: TimeoutPolicy | None = None,
     environ: Mapping[str, str] | None = None,
-    tls: TlsPolicy | None = None,
+    tls: "TlsPolicy | None" = None,
     saved: CredentialProvider | None = None,
 ) -> Backend:
     """Build the explicitly selected backend; ``tls`` is the injection point for fixture trust only.
@@ -85,6 +88,10 @@ def create_backend(
     so headless runs stay environment-only.
     """
     environ = os.environ if environ is None else environ
+    if selection.name in ("local", "cloud"):
+        from dtflow.backends.drawthings.backend import DrawThingsBackend, DrawThingsEndpoint
+        from dtflow.backends.drawthings.cloud import DirectCloudBackend
+        from dtflow.backends.drawthings.cloud_auth import CloudAuth
     if selection.name == "fake":
         return FakeBackend(
             scenario=selection.scenario,
