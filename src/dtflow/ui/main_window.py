@@ -164,6 +164,11 @@ class MainWindow:
             startup.mark("first font metrics")
             QGuiApplication.inputMethod().locale()
             startup.mark("input method")
+            startup.mark(f"style {QApplication.style().objectName()}")
+            line_edit = QLineEdit()
+            startup.mark("QLineEdit constructed")
+            line_edit.ensurePolished()
+            startup.mark("QLineEdit polished")
             for widget_class in (QLabel, QFrame, QPushButton, QLineEdit, QComboBox, QCheckBox, QGroupBox, QMainWindow):
                 widget_class().ensurePolished()
                 startup.mark(f"first {widget_class.__name__}")
