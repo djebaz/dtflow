@@ -1525,6 +1525,9 @@ class GalleryPage(QObject):
         self.previous_button.setEnabled(index > 0 or self.offset > 0)
         self.next_button.setEnabled(index + 1 < len(self.items) or self.offset + len(self.items) < self.total)
 
+    _USE_TIP = "Populate Generate from this recorded request without submitting."
+    _REGENERATE_TIP = "Create a fresh generation attempt from these recorded settings after confirmation."
+
     def _present_item(self, item: GalleryItem) -> None:
         position = self.offset + self.items.index(item) + 1
         self._widget("galleryPositionOverlay", QLabel).setText(f"{position} / {self.total}")
@@ -1559,9 +1562,19 @@ class GalleryPage(QObject):
         self._widget("galleryAdditionalFileSizeValue", QLabel).setText(_human_size(item.file_size))
         self._widget("galleryAdditionalDurationValue", QLabel).setText("Not recorded")
         self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
-        reusable = bool(request.get("model_id"))
+        edited = request.get("operation", "txt2img") != "txt2img"
+        reusable = bool(request.get("model_id")) and not edited
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
+        for button, tip in (
+            (self.use_settings_button, self._USE_TIP),
+            (self.regenerate_button, self._REGENERATE_TIP),
+        ):
+            button.setToolTip(
+                "Not available for edited images: the source and mask are not restored here. Use Edit image instead."
+                if edited
+                else tip
+            )
         self.edit_button.setEnabled(not item.issue and bool(item.path) and self._edit_callback is not None)
         self.copy_button.setEnabled(bool(item.path))
         available = not item.issue
