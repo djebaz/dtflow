@@ -42,7 +42,7 @@ concurrent export, Trash, gallery selection and generation/queue work. Unknown t
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
 Stop/Cancel delegates to the original controller, preserving completed copies/moves and
 existing uncertainty semantics. Generation preview and the compact Run control remain.
-Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results show a teal 2 px draining lifetime line, an optional seconds label and a 450 ms fade after six seconds, paused while any overlay row is hovered or focused. Blue 5 px task progress remains a separate measure of actual completed work; amber warning/partial/stopped overlays use the same six-second countdown, amber 2 px draining line and fade; red errors and informational inspections remain persistent. Dismissing an amber notification does not modify an uncertain attempt, its recorded evidence or its recovery/retry rules. Unrelated notices cannot discard an active editor; Escape dismisses a plain notice. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
+Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results show a teal 2 px draining lifetime line, an optional seconds label and a 450 ms fade after six seconds, paused while any overlay row is hovered or focused. Blue 5 px task progress remains a separate measure of actual completed work; amber warning/partial/stopped overlays use the same six-second countdown, amber 2 px draining line and fade; red errors and informational inspections remain persistent. Dismissing an amber notification does not modify an uncertain attempt, its recorded evidence or its recovery/retry rules. Unrelated notices cannot discard an active editor; Escape dismisses a plain notice. Informational inspections (for example About DTFlow) also close with their × button or a click anywhere outside them; errors and confirmations ignore outside clicks and keep Cancel/Dismiss semantics. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
 This implementation still requires owner runtime/visual and packaged acceptance.
 
 ## Launch
@@ -54,6 +54,8 @@ uv run dtflow gui
 uv run dtflow -x gui
 uv run dtflow gui -nc
 ```
+
+There is no menu bar: About DTFlow is the small help icon at the right of the bottom status bar. The Draw Things provider library loads in the background after the window first paints; with `-x` the log also records one `dtflow.startup` line of per-phase startup timings (Python and Qt imports, forms, pages, session restore, window shown, first paint, background library load, and first font/text-field costs).
 
 `-x/--dev` adds sanitized diagnostic detail only; `-nc/--no-cache` disables persistent disposable-cache reads and writes for that run. Logs use repository `logs/` in development. See [development tools](development.md) and [runtime layout](../architecture/runtime-layout.md).
 
@@ -115,7 +117,7 @@ separate operations. Export is local-only and never generates or contacts a prov
 
 ## Generate
 
-Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and sampler. After inventory refresh, use All/Image/Video to narrow classified models, choose a base-model family, then choose the exact available checkpoint/quantization. Prime checkpoints are the default; `Include niche models` adds available Niche entries without replacing Prime. If the provider exposes a checkpoint DTFlow has not classified, the page reports it as unclassified and keeps the editable exact-ID field as the explicit escape hatch rather than guessing its family or mode. Width and height snap to the nearest multiple of 64 with an adjustment message. The CLI and loaded configurations remain strict.
+Set prompt, negative prompt, exact model, seed, dimensions, steps, guidance and sampler. After inventory refresh, use All/Image/Video to narrow classified models, choose a base-model family, then choose the exact available checkpoint/quantization. Prime checkpoints are the default; `Include niche models` adds available Niche entries without replacing Prime. If the provider exposes a checkpoint DTFlow has not classified, the page reports it as unclassified, lists it only under the separate "Unclassified" base-model entry and keeps the editable exact-ID field as the explicit escape hatch rather than guessing its family or mode. Companion/support files (encoders, VAEs, upscalers, preprocessors) are hidden from model lists and counted as other files. For checkpoints with no recorded profile, an unobtrusive hint suggests steps and guidance for their family with an Apply button; it never changes values by itself. Mouse-wheel scrolling over dropdowns in scrollable panels scrolls the panel instead of changing the selection. Width and height snap to the nearest multiple of 64 with an adjustment message. The CLI and loaded configurations remain strict.
 
 **Desktop seed 0 means random on submission or queue creation.** The effective request and metadata retain the resolved seed. Saving a configuration, checking LoRAs and the CLI preserve 0 literally.
 
@@ -158,7 +160,7 @@ thumbnail scale and auto-refresh choice.
 
 Grid, List and Detail share the same bounded query. Positive-prompt search is
 case-insensitive; model and LoRA filters use exact recorded identifiers. Date,
-exact dimensions and aspect-ratio filters compose with AND, and sorting supports
+size-class (Small under 400 px, Medium under 600, Large under 1200, Big 1200 and up, by the longer side), exact-dimension and aspect-ratio filters compose with AND, and sorting supports
 newest/oldest, model, pixel area and canonical LoRA ordering. Negative-prompt
 search remains available through the shared CLI/service query but is not shown
 in the compact desktop header.
@@ -184,7 +186,7 @@ reserved for keyboard navigation, matching Connection.
 Click a Grid tile or List row to open Detail. Detail defaults to Fit, with Cover
 available when you prefer a filled canvas. It also provides true 100%, zoom/pan,
 previous/next through the current filtered order, keyboard navigation and
-fullscreen/Escape. Additional details include the negative prompt, resolved
+full screen. The full-screen toggle in the header (beside Refresh, in every view; also the Detail image toolbar button) fullscreens the window and collapses the filter row, selection bar and the metadata/prompt panels below the image; the toggle or Escape (even after changing view) restores them. Additional details include the negative prompt, resolved
 seed when recorded, provider, file size/path and file actions. Raw metadata is
 bounded and sanitized; unavailable evidence is shown as `Not recorded` or
 `Unknown`, not inferred.

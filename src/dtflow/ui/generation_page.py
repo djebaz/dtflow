@@ -7,6 +7,7 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
 from dataclasses import replace
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.composition import BACKENDS
-from dtflow.core.model_profiles import profile_for
+from dtflow.core.model_profiles import has_own_profile, profile_for
 from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
@@ -70,6 +71,8 @@ from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
+UNCLASSIFIED_FAMILY = "__unclassified__"  # base-model combo data for checkpoints without a catalogue family
+
 log = logging.getLogger(__name__)
 
 
@@ -94,6 +97,8 @@ WIRED_CONTROLS = (
     "heightSpinBox",
     "guidanceSpinBox",
     "samplerCombo",
+    "suggestionLabel",
+    "applySuggestionButton",
     "generationDomainCombo",
     "baseModelCombo",
     "modelCombo",
@@ -233,6 +238,10 @@ class GenerationPage:
             page.generationDomainCombo.addItem(label, value)
         page.generationDomainCombo.currentIndexChanged.connect(self._catalogue_filter_changed)
         page.baseModelCombo.currentIndexChanged.connect(self._catalogue_family_changed)
+        page.applySuggestionButton.clicked.connect(self._apply_suggestion)
+        page.stepsSpinBox.valueChanged.connect(self._update_suggestion)
+        page.guidanceSpinBox.valueChanged.connect(self._update_suggestion)
+        page.samplerCombo.currentTextChanged.connect(self._update_suggestion)
         page.includeCloudCheck.toggled.connect(self._catalogue_filter_changed)
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
@@ -408,6 +417,47 @@ class GenerationPage:
             combo.addItems(allowed)
             combo.blockSignals(False)
         combo.setCurrentText(wanted if wanted in allowed else allowed[0])
+        self._update_suggestion()
+
+    DISTILLED_NAME = re.compile(r"schnell|turbo|lightning|hyper|lcm|distill", re.IGNORECASE)
+
+    def _suggestion(self):
+        """The dataset profile for the selected checkpoint, or ``None`` when there is nothing honest to suggest."""
+        model = self.page.modelCombo.currentText()
+        if not model:
+            return None
+        entry = self._catalogue.checkpoint(model, include_unavailable=True)
+        return profile_for(model, entry.base_model if entry else None)
+
+    def _update_suggestion(self, *_args) -> None:
+        """Hint the suggested steps/guidance/sampler; never change the user's values."""
+        page = self.page
+        model = page.modelCombo.currentText()
+        profile = self._suggestion()
+        visible = profile is not None
+        page.suggestionLabel.setVisible(visible)
+        page.applySuggestionButton.setVisible(visible)
+        if profile is None:
+            return
+        distilled = not has_own_profile(model) and bool(self.DISTILLED_NAME.search(model))
+        basis = profile.name if has_own_profile(model) else f"{profile.name} family default"
+        text = f"Suggested ({basis}): {profile.steps} steps · guidance {profile.guidance:g} · {profile.sampler.value}."
+        if distilled:
+            text += " The name suggests a distilled model, which usually needs fewer steps and low guidance; verify."
+        elif not has_own_profile(model):
+            text += " Merged checkpoints may differ."
+        page.suggestionLabel.setText(text)
+
+    def _apply_suggestion(self) -> None:
+        profile = self._suggestion()
+        if profile is None:
+            return
+        page = self.page
+        page.stepsSpinBox.setValue(profile.steps)
+        page.guidanceSpinBox.setValue(float(profile.guidance))
+        if page.samplerCombo.findText(profile.sampler.value) >= 0:
+            page.samplerCombo.setCurrentText(profile.sampler.value)
+        self._update_suggestion()
 
     PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
 
@@ -979,7 +1029,9 @@ class GenerationPage:
         current = combo.currentText()
         combo.clear()
         combo.addItems(ids)
-        combo.setCurrentText(current)
+        # Re-select only a listed entry: setCurrentText() would append a carried-over identifier from another family
+        # (for example the previous SDXL pick) to this family's list, where it then shows up in the search.
+        combo.setCurrentIndex(combo.findText(current))
 
     def _catalogue_domain(self) -> str:
         return self.page.generationDomainCombo.currentData() or "all"
@@ -1030,20 +1082,36 @@ class GenerationPage:
             page.baseModelCombo.clear()
             for family, label in families:
                 page.baseModelCombo.addItem(label, family)
+            unclassified = self._catalogue.view().unclassified_checkpoints
+            if unclassified:
+                # Checkpoints the catalogue cannot place stay selectable without guessing a family for them.
+                page.baseModelCombo.addItem("Unclassified", UNCLASSIFIED_FAMILY)
             family_index = page.baseModelCombo.findData(current_family)
             if family_index < 0 and preferred_checkpoint:
                 entry = self._catalogue.checkpoint(preferred_checkpoint)
                 if entry is not None:
                     family_index = page.baseModelCombo.findData(entry.base_model)
-            page.baseModelCombo.setCurrentIndex(family_index if family_index >= 0 else (0 if families else -1))
+                elif preferred_checkpoint in unclassified:
+                    family_index = page.baseModelCombo.findData(UNCLASSIFIED_FAMILY)
+            page.baseModelCombo.setCurrentIndex(
+                family_index if family_index >= 0 else (0 if page.baseModelCombo.count() else -1)
+            )
         finally:
             self._updating_catalogue = False
         self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint, preserve_selection=preserve_selection)
-        unknown = self._catalogue.view().unclassified_checkpoints
-        page.unclassifiedModelsButton.setVisible(bool(unknown))
-        page.unclassifiedModelsButton.setText(
-            f"{len(unknown)} unclassified checkpoint" + ("" if len(unknown) == 1 else "s") + " found"
-        )
+        view = self._catalogue.view()
+        unknown, other = view.unclassified_checkpoints, view.other_files
+        page.unclassifiedModelsButton.setVisible(bool(unknown or other))
+        if other:
+            page.unclassifiedModelsButton.setText(
+                f"{len(unknown) + len(other)} unclassified file"
+                + ("" if len(unknown) + len(other) == 1 else "s")
+                + " found"
+            )
+        else:
+            page.unclassifiedModelsButton.setText(
+                f"{len(unknown)} unclassified checkpoint" + ("" if len(unknown) == 1 else "s") + " found"
+            )
 
     def _rebuild_checkpoints(
         self, *, preferred_checkpoint: str | None = None, preserve_selection: bool = False
@@ -1052,16 +1120,19 @@ class GenerationPage:
         current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
         family = page.baseModelCombo.currentData()
         include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
-        entries = self._catalogue.checkpoints(
-            domain=self._catalogue_domain(),
-            base_model=family if isinstance(family, str) else None,
-            include_niche=page.includeNicheCheck.isChecked(),
-            include_unavailable=include_cloud,
-        )
-        allowed = {entry.identifier for entry in entries}
         unclassified = set(self._catalogue.view().unclassified_checkpoints)
-        selectable = [entry.identifier for entry in entries]
-        selectable.extend(identifier for identifier in sorted(unclassified) if identifier not in allowed)
+        if family == UNCLASSIFIED_FAMILY:
+            entries = ()
+            selectable = sorted(unclassified, key=str.casefold)
+        else:
+            entries = self._catalogue.checkpoints(
+                domain=self._catalogue_domain(),
+                base_model=family if isinstance(family, str) else None,
+                include_niche=page.includeNicheCheck.isChecked(),
+                include_unavailable=include_cloud,
+            )
+            selectable = [entry.identifier for entry in entries]
+        allowed = {entry.identifier for entry in entries}
         self._updating_catalogue = True
         try:
             self._fill_models(selectable)
@@ -1099,17 +1170,23 @@ class GenerationPage:
         self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
 
     def _show_unclassified_models(self) -> None:
-        unknown = self._catalogue.view().unclassified_checkpoints
-        if not unknown:
+        view = self._catalogue.view()
+        unknown, other = view.unclassified_checkpoints, view.other_files
+        if not unknown and not other:
             return
-        InlineNotice.information(
-            self.page,
-            "Unclassified checkpoints",
+        text = (
             "These checkpoints are available on the active provider but are not classified by the DTFlow catalogue. "
             "They remain usable through the Checkpoint selector's custom-identifier action. "
             "DTFlow will not guess their family, generation type, quantization or compatible LoRAs.\n\n"
-            + "\n".join(unknown),
+            + "\n".join(unknown)
         )
+        if other:
+            text += (
+                "\n\nOther files listed by the provider without metadata (LoRAs, controls, encoders, upscalers or "
+                "checkpoints; DTFlow cannot tell them apart). They are not offered as checkpoints:\n\n"
+                + "\n".join(other)
+            )
+        InlineNotice.information(self.page, "Unclassified files", text)
 
     def _show_inventory(self, snapshot: InventorySnapshot, how: str) -> None:
         self.lora.set_inventory(snapshot)
@@ -1136,11 +1213,20 @@ class GenerationPage:
             return
         models = len(eligible_model_ids(snapshot))
         loras = sum(entry.kind == "lora" for entry in snapshot.entries)
+        other = 0
+        if dict(snapshot.diagnostics).get("model_metadata") != "present":
+            # Metadata-less inventories (direct DT+ cloud) list every file as unknown: count what the catalogue
+            # can prove instead of calling every file a model.
+            view = self._catalogue.view()
+            models = len({entry.identifier for entry in view.checkpoints} | set(view.unclassified_checkpoints))
+            loras = len(view.loras)
+            other = len(snapshot.entries) - models - loras
         try:
             observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
         except ValueError:
             observed = snapshot.observed_at_utc
-        lines = [f"{models} model(s) · {loras} LoRA(s)", f"{self._inventory_how} · observed {observed}"]
+        counts = f"{models} model(s) · {loras} LoRA(s)" + (f" · {other} other file(s)" if other > 0 else "")
+        lines = [counts, f"{self._inventory_how} · observed {observed}"]
         if self._inventory_notice:
             lines.append(self._inventory_notice)
         label.setText("\n".join(lines))

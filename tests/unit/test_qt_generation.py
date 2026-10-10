@@ -278,7 +278,7 @@ def test_relay_coalesces_transient_events_and_keeps_critical_ones(qtbot):
 
 
 def local_snapshot(metadata="absent"):
-    entries = tuple(InventoryEntry(f"m{n}.ckpt", "unknown", f"M{n}", None, "listed", "echo.files") for n in range(2))
+    entries = tuple(InventoryEntry(f"m{n}.ckpt", "model", f"M{n}", None, "listed", "echo.files") for n in range(2))
     return InventorySnapshot(
         "drawthings-local", "s", "2026-10-05T10:00:00+00:00", True, entries, (("model_metadata", metadata),), ENDPOINT
     )

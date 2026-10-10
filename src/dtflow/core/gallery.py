@@ -23,6 +23,10 @@ def utc_boundary(value: str | None) -> str | None:
         raise ValidationError("Date must be YYYY-MM-DD or an ISO timestamp with a timezone.") from exc
 
 
+# Longer-side pixel bounds [low, high) per size class.
+SIZE_CLASSES = {"": None, "small": (0, 400), "medium": (400, 600), "large": (600, 1200), "big": (1200, None)}
+
+
 @dataclass(frozen=True, slots=True)
 class GalleryQuery:
     prompt: str = ""
@@ -34,6 +38,7 @@ class GalleryQuery:
     ratio: str = ""
     width: int | None = None
     height: int | None = None
+    size_class: str = ""
     sort: str = "newest"
     offset: int = 0
     limit: int = 100
@@ -42,6 +47,8 @@ class GalleryQuery:
         for field in ("prompt", "negative", "model", "lora", "ratio"):
             if not isinstance(getattr(self, field), str) or len(getattr(self, field)) > 4096:
                 raise ValidationError("Gallery filters must be text of at most 4096 characters.")
+        if self.size_class not in SIZE_CLASSES:
+            raise ValidationError("Unknown gallery size class.")
         if self.sort not in SORTS:
             raise ValidationError("Unknown gallery sort.")
         if type(self.limit) is not int or not 1 <= self.limit <= 200:

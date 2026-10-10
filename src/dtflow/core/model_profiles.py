@@ -74,6 +74,11 @@ def _community_specs() -> dict[str, dict]:
     return document if isinstance(document, dict) else {}
 
 
+def community_model_ids() -> frozenset[str]:
+    """Exact checkpoint files the bundled Draw Things community descriptions cover (models only, never LoRAs/controls)."""
+    return frozenset(_community_specs())
+
+
 def fallback_spec(model_id: str) -> dict | None:
     """The Draw Things community description of this exact checkpoint file, for models DT+ cloud neither lists nor advertises.
 
@@ -101,9 +106,84 @@ _DERIVED: dict[str, tuple[str, str | None, str]] = {
 }
 
 
+# Community checkpoints (catalogue tier "niche") that DT+ cloud serves without a Draw Things community description. Owner
+# requested trial: derive one from a plain sibling of the same family, with the checkpoint's own file and (SDXL) CLIP
+# companions. Derived, not published by Draw Things; Owner-tested on direct cloud 2026-10-10 (Copax Pony XL fixed, most SDXL and FLUX.1 files working); the rest
+# are unconfirmed. Edit/fill/inpaint/v-prediction files are excluded: they carry modifier or objective fields a plain
+# sibling does not have, as are the official Stable Diffusion bases DT+ lists itself. SDXL and SD 1.x files need the
+# ``_f16`` / ``_q6p_q8p`` naming that carries per-checkpoint CLIP companions.
+_CATALOGUE = Path(__file__).parents[1] / "resources" / "catalogue"
+_SDXL_BASE = "juggernaut_xl_ragnarok_f16.ckpt"
+_SD1_BASE = "dreamshaper_v8_f16.ckpt"
+_FLUX_DEV_BASE = "flux_1_dev_q8p.ckpt"
+_FLUX_SCHNELL_BASE = "pixelwave_flux_1_schnell_04_q8p.ckpt"
+
+
+def has_own_profile(model_id: str) -> bool:
+    """Whether this exact checkpoint (any quantization) has its own profile rather than a family default."""
+    return model_key(model_id) in _load()[0]
+
+
+_SKIP = re.compile(
+    r"^sd[-_]v|^wd-|minisd|fill|kontext|redux|canny|depth|inpaint|pix2pix|v_?pred|lcm|turbo|lightning|hyper",
+    re.IGNORECASE,
+)
+_FLAT_STEM = re.compile(r"(.+?)(?:_f16|_q6p_q8p)\.ckpt$")
+_NAMES = {"copax_pony_xl_f16.ckpt": "Copax Pony XL"}
+
+
+@cache
+def _niche_families() -> dict[str, str]:
+    try:
+        records = json.loads((_CATALOGUE / "Models_niche.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {
+        item["file"]: item["base_model"]
+        for item in records
+        if isinstance(item, dict) and isinstance(item.get("file"), str) and isinstance(item.get("base_model"), str)
+    }
+
+
+def _catalogue_derived(model_id: str) -> dict | None:
+    family = _niche_families().get(model_id)
+    if family not in ("sdxl", "sd_1", "flux_1") or _SKIP.search(model_id):
+        return None
+    specs = _community_specs()
+    if family == "sdxl":
+        stem = _FLAT_STEM.match(model_id)
+        base = specs.get(_SDXL_BASE)
+        if stem is None or base is None:
+            return None
+        return {
+            **base,
+            "name": _NAMES.get(model_id, stem.group(1)),
+            "file": model_id,
+            "clip_encoder": f"{stem.group(1)}_clip_vit_l14_f16.ckpt",
+            "text_encoder": f"{stem.group(1)}_open_clip_vit_bigg14_f16.ckpt",
+        }
+    if family == "sd_1":
+        stem = _FLAT_STEM.match(model_id)
+        base = specs.get(_SD1_BASE)
+        if stem is None or base is None:
+            return None
+        spec = {
+            **base,
+            "name": _NAMES.get(model_id, stem.group(1)),
+            "file": model_id,
+            "text_encoder": f"{stem.group(1)}_clip_vit_l14_f16.ckpt",
+        }
+        spec.pop("download", None)
+        return spec
+    base = specs.get(_FLUX_SCHNELL_BASE if "schnell" in model_id.lower() else _FLUX_DEV_BASE)
+    if base is None:
+        return None
+    return {**base, "name": model_id.removesuffix(".ckpt"), "file": model_id}
+
+
 def _derived_spec(model_id: str) -> dict | None:
     derived = _DERIVED.get(model_id)
     base = _community_specs().get(derived[0]) if derived else None
     if derived is None or base is None:
-        return None
+        return _catalogue_derived(model_id)
     return {**base, "name": derived[1] or base["name"], "file": model_id, "text_encoder": derived[2]}

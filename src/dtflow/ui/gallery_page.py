@@ -52,7 +52,13 @@ from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
-from dtflow.ui.gallery_detail_preview import ASSETS, CoverPainter, RowHoverDelegate, apply_gallery
+from dtflow.ui.gallery_detail_preview import (
+    ASSETS,
+    CoverPainter,
+    RowHoverDelegate,
+    apply_gallery,
+    toggle_image_focus,
+)
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
@@ -78,6 +84,12 @@ SORT_LABELS = {
 }
 SORT_NAMES = {value: key for key, value in SORT_LABELS.items()}
 DIMENSIONS = re.compile(r"^\s*(\d+)\s*[x×]\s*(\d+)\s*$")
+SIZE_CLASS_LABELS = {
+    "Small": "small",
+    "Medium": "medium",
+    "Large": "large",
+    "Big": "big",
+}
 DATE_RANGE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})\s*$")
 
 
@@ -321,7 +333,9 @@ class GalleryPage(QObject):
         self.model.setToolTip("Exact recorded model identifier; the list is a bounded convenience facet.")
         self.lora.setToolTip("Exact recorded LoRA identifier; the list is a bounded convenience facet.")
         self.date_filter.setToolTip("Local calendar date or range. Examples: 2026-10-06 or 2026-10-01..2026-10-06.")
-        self.dimensions.setToolTip("Exact dimensions, for example 1024 × 1024.")
+        self.dimensions.setToolTip(
+            "Small under 400 px, Medium under 600, Large under 1200, Big 1200 and up (longer side); typing exact dimensions such as 1024 × 1024 also works."
+        )
         self.ratio.setToolTip("Orientation or exact W:H aspect ratio.")
         self.sort.setToolTip("Deterministic saved-output ordering.")
 
@@ -486,7 +500,7 @@ class GalleryPage(QObject):
         ):
             shortcut = QShortcut(QKeySequence(key), self.page)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-            shortcut.activated.connect(lambda action=callback: self._selection_shortcut(action))
+            shortcut.activated.connect(lambda action=callback, key=key: self._leave_focus_or(key, action))
             self._selection_shortcuts.append(shortcut)
         QApplication.instance().focusChanged.connect(self._selection_focus_changed)
         self._sync_selection_ui()
@@ -497,6 +511,12 @@ class GalleryPage(QObject):
         editable = isinstance(current, (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit))
         for shortcut in self._selection_shortcuts:
             shortcut.setEnabled(not editable)
+
+    def _leave_focus_or(self, key: str, action) -> None:
+        if key == "Escape" and self.page.property("imageFocus"):
+            toggle_image_focus(self.page, False)
+        else:
+            self._selection_shortcut(action)
 
     def _selection_shortcut(self, callback) -> None:
         """Do not steal standard editing, pop-up or global generation shortcuts."""
@@ -999,7 +1019,8 @@ class GalleryPage(QObject):
         since, until = self._date_query()
         dimensions_text = self.dimensions.currentText().strip()
         width = height = None
-        if dimensions_text and dimensions_text.casefold() != "any size":
+        size_class = SIZE_CLASS_LABELS.get(dimensions_text, "")
+        if dimensions_text and dimensions_text.casefold() != "any size" and not size_class:
             match = DIMENSIONS.match(dimensions_text)
             if not match:
                 raise ValidationError("Dimensions must look like WIDTH × HEIGHT.")
@@ -1023,6 +1044,7 @@ class GalleryPage(QObject):
             ratio=ratio,
             width=width,
             height=height,
+            size_class=size_class,
             sort=sort,
             offset=self.offset if offset is None else offset,
             limit=PAGE_SIZE,
@@ -1140,6 +1162,7 @@ class GalleryPage(QObject):
         for combo, placeholder, values in (
             (self.model, "All models", models),
             (self.lora, "All LoRAs", loras),
+            (self.dimensions, "Any size", tuple(SIZE_CLASS_LABELS)),
         ):
             current = combo.currentText()
             if tuple(combo.itemText(i) for i in range(combo.count())) == (placeholder, *values):
