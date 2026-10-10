@@ -78,6 +78,12 @@ SORT_LABELS = {
 }
 SORT_NAMES = {value: key for key, value in SORT_LABELS.items()}
 DIMENSIONS = re.compile(r"^\s*(\d+)\s*[x×]\s*(\d+)\s*$")
+SIZE_CLASS_LABELS = {
+    "Small (< 400 px)": "small",
+    "Medium (< 600 px)": "medium",
+    "Large (< 1200 px)": "large",
+    "Big (≥ 1200 px)": "big",
+}
 DATE_RANGE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})\s*$")
 
 
@@ -321,7 +327,7 @@ class GalleryPage(QObject):
         self.model.setToolTip("Exact recorded model identifier; the list is a bounded convenience facet.")
         self.lora.setToolTip("Exact recorded LoRA identifier; the list is a bounded convenience facet.")
         self.date_filter.setToolTip("Local calendar date or range. Examples: 2026-10-06 or 2026-10-01..2026-10-06.")
-        self.dimensions.setToolTip("Exact dimensions, for example 1024 × 1024.")
+        self.dimensions.setToolTip("Size class by longer side, or exact dimensions such as 1024 × 1024.")
         self.ratio.setToolTip("Orientation or exact W:H aspect ratio.")
         self.sort.setToolTip("Deterministic saved-output ordering.")
 
@@ -999,7 +1005,8 @@ class GalleryPage(QObject):
         since, until = self._date_query()
         dimensions_text = self.dimensions.currentText().strip()
         width = height = None
-        if dimensions_text and dimensions_text.casefold() != "any size":
+        size_class = SIZE_CLASS_LABELS.get(dimensions_text, "")
+        if dimensions_text and dimensions_text.casefold() != "any size" and not size_class:
             match = DIMENSIONS.match(dimensions_text)
             if not match:
                 raise ValidationError("Dimensions must look like WIDTH × HEIGHT.")
@@ -1023,6 +1030,7 @@ class GalleryPage(QObject):
             ratio=ratio,
             width=width,
             height=height,
+            size_class=size_class,
             sort=sort,
             offset=self.offset if offset is None else offset,
             limit=PAGE_SIZE,
@@ -1142,7 +1150,7 @@ class GalleryPage(QObject):
         for combo, placeholder, values in (
             (self.model, "All models", models),
             (self.lora, "All LoRAs", loras),
-            (self.dimensions, "Any size", dimensions),
+            (self.dimensions, "Any size", (*SIZE_CLASS_LABELS, *dimensions)),
         ):
             current = combo.currentText()
             if tuple(combo.itemText(i) for i in range(combo.count())) == (placeholder, *values):

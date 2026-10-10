@@ -6,7 +6,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from dtflow.core.gallery import GalleryQuery
+from dtflow.core.gallery import SIZE_CLASSES, GalleryQuery
 from dtflow.persistence.image_recycle import attach_read_only
 from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_sqlite
 
@@ -101,6 +101,14 @@ def clauses(query: GalleryQuery) -> tuple[str, list, str]:
         if value is not None:
             terms.append(f"{field}=?")
             values.append(value)
+    bounds = SIZE_CLASSES[query.size_class]
+    if bounds:
+        longer = "max(width, height)"
+        terms.append(f"{longer} >= ?")
+        values.append(bounds[0])
+        if bounds[1] is not None:
+            terms.append(f"{longer} < ?")
+            values.append(bounds[1])
     if query.ratio in ("square", "portrait", "landscape"):
         comparison = {"square": "=", "portrait": "<", "landscape": ">"}[query.ratio]
         terms.append(f"width {comparison} height")
