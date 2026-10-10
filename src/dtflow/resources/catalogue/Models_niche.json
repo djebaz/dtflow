@@ -2538,14 +2538,6 @@
     ]
   },
   {
-    "file": "flux_1_redux_f16.ckpt",
-    "base_model": "flux_1",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
     "file": "fooocus_inpaint_sd_xl_v2.6_f16.ckpt",
     "base_model": "sdxl",
     "modes": [
