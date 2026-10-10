@@ -114,6 +114,7 @@ class InpaintEditor(QObject):
         self.form.peopleList.currentRowChanged.connect(self._list_selected)
         self.form.peopleList.itemActivated.connect(lambda _item: self._add_selected(remove=False))
         self.form.useResultButton.clicked.connect(self.use_result)
+        self.form.queueEditButton.clicked.connect(self.queue_edit)
         self.form.addPersonButton.clicked.connect(lambda: self._add_selected(remove=False))
         self.form.removePersonButton.clicked.connect(lambda: self._add_selected(remove=True))
         self.canvas.pointPicked.connect(self._pick)
@@ -261,6 +262,7 @@ class InpaintEditor(QObject):
         self.canvas.setEnabled(available)
         self.form.chooseSourceButton.setEnabled(available)
         self.form.useResultButton.setEnabled(available and self._result_path is not None)
+        self.form.queueEditButton.setEnabled(self._ready() and available)
         has_source = available and self._source is not None
         for name in (
             "removeSourceButton",
@@ -580,11 +582,29 @@ class InpaintEditor(QObject):
             return
         self._dispatch()
 
-    def _dispatch(self):
-        if self._source is None or self._busy or self._loading or self.controller is None:
+    def queue_edit(self):
+        """Stage this edit into a paused queue; nothing is dispatched or uploaded until Start in Queues."""
+        if self._busy or self._loading or not self._ready() or self.controller is None:
             return
         form = self.form
-        job = EditJob(
+        try:
+            strengths = tuple(
+                float(part) for part in form.queueStrengthsEdit.text().replace(";", ",").split(",") if part.strip()
+            )
+        except ValueError:
+            self.form.sourceError.setText("Strengths must be numbers between 0 and 1, separated by commas.")
+            return
+        if any(not 0 <= value <= 1 for value in strengths):
+            self.form.sourceError.setText("Strengths must be numbers between 0 and 1, separated by commas.")
+            return
+        self.form.sourceError.clear()
+        self.controller.queue_edit(
+            self._edit_job(), strengths, form.queueCountSpin.value(), form.queueModeCombo.currentText().lower()
+        )
+
+    def _edit_job(self):
+        form = self.form
+        return EditJob(
             self._source,
             self.canvas.mask_pixels(),
             form.growSpin.value(),
@@ -592,6 +612,11 @@ class InpaintEditor(QObject):
             form.strengthSpinBox.value(),
             form.keepOutsideCheck.isChecked(),
         )
+
+    def _dispatch(self):
+        if self._source is None or self._busy or self._loading or self.controller is None:
+            return
+        job = self._edit_job()
         self.canvas.set_result(QPixmap())
         self.controller.generate(edit=job)
 

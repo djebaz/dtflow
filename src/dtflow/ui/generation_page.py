@@ -45,8 +45,10 @@ from dtflow.services.connection import (
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
+from dtflow.services.queue_session import create_edit_queue
 from dtflow.services.session import (
     InventoryDisplayMemory,
+    bind_prepared,
     generate_image_once,
     generate_once,
     owner_probe_permit,
@@ -852,6 +854,73 @@ class GenerationPage:
         return await generate_once(
             selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
         )
+
+    def queue_edit(self, job, strengths, count, mode) -> None:
+        """Queue edit: stage the prepared inputs once and persist a paused queue; nothing is dispatched."""
+        if self._busy:
+            return
+        name, endpoint = self._backend()
+        try:
+            request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
+            request = self._allow_local_bridge_model(request)
+        except FormError as exc:
+            self._mark(exc.widget)
+            self._status(Presentation("error", "Invalid request", str(exc)))
+            return
+        if request.batch_size * request.batch_count != 1:
+            self._status(Presentation("error", "Invalid request", "Queued edits run one image at a time."))
+            return
+        strip = activity_strip(self.page)
+        strip.start("queue-edit", "Queue edit", detail="Staging the source and mask locally. Nothing is sent.")
+        self._runner.submit(
+            self._queue_edit(
+                name, endpoint, request, self.lora.receipt_ids(), self.simulation(), job, strengths, count, mode
+            ),
+            self._queued_edit,
+        )
+
+    async def _queue_edit(self, name, endpoint, request, asset_ids, simulation, job, strengths, count, mode):
+        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
+        request = await bind_prepared(self._state, name, request, asset_ids)
+        prepared = await asyncio.to_thread(
+            prepare_edit_inputs,
+            job.source,
+            job.mask,
+            request.width_px,
+            request.height_px,
+            grow=job.grow,
+            feather=job.feather,
+        )
+        backend = {"name": name, "endpoint": endpoint, "scenario": "success", **simulation}
+        return await create_edit_queue(
+            self._state,
+            backend,
+            selection,
+            request,
+            prepared,
+            strength=job.strength,
+            preserve_outside=job.keep_outside,
+            strengths=strengths,
+            count=count,
+            mode=mode,
+        )
+
+    def _queued_edit(self, value, failure) -> None:
+        strip = activity_strip(self.page)
+        if failure is not None:
+            log.warning("queue edit failed reason=%s", failure_reason(failure))
+            strip.complete("queue-edit", "Queue edit failed", str(failure), "error")
+            return
+        _queue_id, _cap, items = value
+        log.info("queue edit created items=%d", items)
+        strip.complete(
+            "queue-edit",
+            "Edit queued",
+            f"{items} paused item(s) in Queues. Nothing is sent until you start it; cloud then uploads the source "
+            "and mask and may use credits.",
+            "success",
+        )
+        self._cache_changed()
 
     async def _generate_edit(self, name, endpoint, request, saved, asset_ids, prefix, simulation, job):
         """One explicit owner-probe edit: the user confirmed this exact scope in the editor just now."""

@@ -186,3 +186,65 @@ def test_plan_documents_are_versioned_credential_free_and_bounded(tmp_path):
             load_plan(tmp_path / name)
     with pytest.raises(ConfigError, match="could not be read"):
         load_plan(tmp_path / "absent.json")
+
+
+def staged_edit_base():
+    from dataclasses import replace
+    from io import BytesIO
+
+    from PIL import Image
+
+    from dtflow.core.image_inputs import ImageInputSnapshot
+    from dtflow.services.image_preparation import prepare_image_bytes
+
+    def png(color, mode):
+        buffer = BytesIO()
+        Image.new(mode, (128, 128), color).save(buffer, "PNG")
+        return buffer.getvalue()
+
+    mask = Image.new("L", (128, 128), 0)
+    mask.paste(255, (32, 32, 96, 96))
+    mask_bytes = BytesIO()
+    mask.save(mask_bytes, "PNG")
+    prepared = prepare_image_bytes(png((10, 20, 30), "RGB"), 128, 128, mask_bytes=mask_bytes.getvalue())
+    snapshot = ImageInputSnapshot.from_prepared("a" * 32, prepared, preserve_outside=True)
+    evidence = (("image_permit_evidence", "queue-x"), ("image_permit_status", "owner_probe"))
+    return replace(
+        base(width_px=128, height_px=128),
+        operation="inpaint",
+        strength=0.7,
+        image_inputs=snapshot,
+        resolution_evidence=evidence,
+    )
+
+
+def test_staged_edit_plans_vary_strength_in_cross_and_pair_and_share_one_snapshot():
+    edit = staged_edit_base()
+    items = expand_plan(edit, Plan("cross", (("strength", (0.5, 1.0)), ("seed", (1, 2)))))
+    assert varied(items, "strength", "seed") == [(0.5, 1), (0.5, 2), (1.0, 1), (1.0, 2)]
+    assert {item.image_inputs for item in items} == {edit.image_inputs}
+    assert dict(items[0].resolution_evidence)["plan.dimension.strength"] == "0.5"
+    assert varied(
+        expand_plan(edit, Plan("pair", (("strength", (0.4, 0.9)), ("seed", (5, 6))))), "strength", "seed"
+    ) == [
+        (0.4, 5),
+        (0.9, 6),
+    ]
+    with pytest.raises(PlanError, match="size"):
+        expand_plan(edit, plan("cross", size=((128, 128), (192, 192))))
+    with pytest.raises(PlanError, match="Strength"):
+        expand_plan(base(), plan("cross", strength=(0.5, 1.0)))
+    with pytest.raises(PlanError):
+        expand_plan(edit, plan("cross", strength=(0.5, 1.5)))
+
+
+def test_queues_accept_staged_edits_only_with_recorded_consent():
+    from dataclasses import replace
+
+    from dtflow.persistence.queues import check_queueable
+
+    edit = staged_edit_base()
+    check_queueable(base())
+    check_queueable(edit)
+    with pytest.raises(ValidationError, match="consent"):
+        check_queueable(replace(edit, resolution_evidence=()))

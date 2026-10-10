@@ -84,11 +84,27 @@ ATTEMPT_TO_ITEM = {
 }
 
 
+def check_queueable(request: ResolvedGenerationRequest) -> None:
+    """Text-to-image, or a staged single-output edit that carries its recorded per-item owner-probe consent."""
+    if request.operation == "txt2img":
+        return
+    evidence = dict(request.resolution_evidence)
+    if (
+        request.image_inputs is None
+        or request.batch_size * request.batch_count != 1
+        or evidence.get("image_permit_status") != "owner_probe"
+        or not evidence.get("image_permit_evidence")
+    ):
+        raise ValidationError(
+            "Queued image operations need staged inputs, one output and recorded owner-probe consent; "
+            "nothing was dispatched."
+        )
+
+
 def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
     """Rebuild an immutable request from its stored ``asdict`` form, revalidating every field."""
     request = decode_request(record)
-    if request.operation != "txt2img":
-        raise ValidationError("Image-operation queues are not supported; nothing was dispatched.")
+    check_queueable(request)
     return request
 
 
@@ -156,8 +172,11 @@ class QueueMixin:
             raise QueueError(f"A queue needs 1..{MAX_ITEMS} items.")
         if len({request.request_id for request in requests}) != len(requests):
             raise QueueError("Queue items need distinct request identities.")
-        if any(request.operation != "txt2img" for request in requests):
-            raise QueueError("Image-operation queues are not supported.")
+        try:
+            for request in requests:
+                check_queueable(request)
+        except ValidationError as exc:
+            raise QueueError(str(exc)) from exc
         queue_id, now = uuid4().hex, self._now()
         with self._txn() as db:
             db.execute(
@@ -364,6 +383,25 @@ class QueueMixin:
             )
         return state
 
+    async def image_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
+        """Distinct (checkpoint, operation, consent evidence id) of the queue's pending image items."""
+        return await self._run(self._image_scopes, queue_id)
+
+    def _image_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
+        scopes: dict[tuple[str, str], str] = {}
+        for row in self._db().execute(
+            "SELECT request_json FROM queue_items WHERE queue_id=? AND state='pending' ORDER BY position", (queue_id,)
+        ):
+            try:
+                record = json.loads(row["request_json"])
+                if record.get("operation") in (None, "txt2img"):
+                    continue
+                evidence = {str(k): str(v) for k, v in record["resolution_evidence"]}
+                scopes.setdefault((record["model_id"], record["operation"]), evidence["image_permit_evidence"])
+            except (TypeError, ValueError, KeyError):
+                continue  # claim_next rejects a malformed item without reserving it
+        return tuple((model, operation, evidence) for (model, operation), evidence in scopes.items())
+
     async def inspect_queue(self, queue_id: str) -> dict[str, Any]:
         return await self._run(lambda: _read(self._db(), queue_id)[0])
 
@@ -540,6 +578,8 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "attempt_id": item["attempt_id"],
                     "request_id": request.get("request_id"),
                     "seed": request.get("seed"),
+                    "operation": request.get("operation") or "txt2img",
+                    "strength": request.get("strength"),
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
                 }

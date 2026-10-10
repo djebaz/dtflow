@@ -24,9 +24,16 @@ SCHEMA = "dtflow.queue-plan"
 VERSION = 1
 MODES = ("seed", "pair", "cross")
 SEED_POLICIES = ("fixed", "increment")
-SCALARS = ("prompt", "model", "seed", "steps", "guidance", "sampler", "size")
+SCALARS = ("prompt", "model", "seed", "steps", "guidance", "sampler", "size", "strength")
 LORA_WEIGHT = "lora_weight."  # dimension name prefix; the rest is the exact LoRA identifier from the base request
-FIELD_NAMES = {"prompt": "prompt", "model": "model_id", "seed": "seed", "steps": "steps", "guidance": "guidance"}
+FIELD_NAMES = {
+    "prompt": "prompt",
+    "model": "model_id",
+    "seed": "seed",
+    "steps": "steps",
+    "guidance": "guidance",
+    "strength": "strength",
+}
 
 
 class PlanError(ConfigError):
@@ -177,8 +184,11 @@ def _combinations(plan: Plan, total: int):
 
 def expand_plan(base: ResolvedGenerationRequest, plan: Plan) -> list[ResolvedGenerationRequest]:
     """Ordered, fully resolved requests for the plan; every failure is raised before anything is enqueued."""
-    if base.operation != "txt2img":
-        raise PlanError("Image-operation batches/plans are not supported.")
+    varied = {name for name, _ in plan.dimensions}
+    if base.operation == "txt2img" and "strength" in varied:
+        raise PlanError("Strength applies to staged image edits only.")
+    if base.operation != "txt2img" and "size" in varied:
+        raise PlanError("A staged edit is fitted to one size; size cannot vary.")
     total = plan_size(plan)
     if total > MAX_QUEUE_ITEMS:
         raise PlanError(f"The plan would create {total} items; one queue holds at most {MAX_QUEUE_ITEMS}.")
