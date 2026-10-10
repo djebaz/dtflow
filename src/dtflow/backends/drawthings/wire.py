@@ -156,14 +156,13 @@ def build_generation_message(
         if expected != request.image_inputs:
             raise _reject(request, "image_input_mismatch", "Prepared inputs differ from the resolved request.")
         if backend_id == "drawthings-cloud" and (
-            model_spec is None
-            or model_spec != exact_model_spec(request.model_id)
+            model_spec != exact_model_spec(request.model_id)
             or image_permit.model_description_sha256 != exact_model_description_digest(request.model_id)
         ):
             raise _reject(
                 request,
                 "exact_model_description_missing",
-                "Cloud image operations require an exact published description.",
+                "The published model description differs from the permit.",
             )
         transport = encode_image_inputs(prepared, limits)
     elif prepared is not None or image_permit is not None:

@@ -137,10 +137,10 @@ class DrawThingsBackend:
                 raise ValidationError("Duplicate exact image-operation permits are refused.")
             spec = exact_model_spec(permit.model_id)
             digest = exact_model_description_digest(permit.model_id)
-            if (cls.backend_id == "drawthings-cloud" or permit.model_description_sha256 is not None) and (
-                spec is None or digest != permit.model_description_sha256
-            ):
-                raise ValidationError("Exact published model description is missing or differs from the owner permit.")
+            if (
+                cls.backend_id == "drawthings-cloud" or permit.model_description_sha256 is not None
+            ) and digest != permit.model_description_sha256:
+                raise ValidationError("The published model description differs from the owner permit.")
             permits[key] = permit
             specs[permit.model_id] = spec if cls.backend_id == "drawthings-cloud" else None
         return permits, specs

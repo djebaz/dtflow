@@ -186,8 +186,7 @@ class InpaintEditor(QObject):
         if support is None:
             text, state = f"Capability could not be checked. {error or ''}".strip(), "error"
         elif support.status == "owner_probe":
-            text = "Unverified checkpoint. Edit image sends the source and mask to the backend; cloud may use credits."
-            state = "warning"
+            text, state = support.reason, "warning"
         elif support.status == "owner_verified":
             text, state = support.reason, "ok"
         else:

@@ -532,8 +532,6 @@ async def run_edit(args: argparse.Namespace) -> int:
         )
     selection = selection_for(args.backend, args.endpoint, args.state)
     digest = exact_model_description_digest(request.model_id) if args.backend == "cloud" else None
-    if args.backend == "cloud" and digest is None:
-        raise ValidationError("Cloud edit requires an exact published model description digest; none is available.")
     permit = ImageOperationPermit(
         backend_id="drawthings-cloud" if args.backend == "cloud" else "drawthings-grpc",
         endpoint=image_endpoint_label(selection),

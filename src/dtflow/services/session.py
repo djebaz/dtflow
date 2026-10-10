@@ -85,9 +85,7 @@ def owner_probe_permit(
 ) -> ImageOperationPermit:
     """Exact-scope owner probe permit; the caller must still pass ``allow_image_probe=True`` after user consent."""
     cloud = selection.name == "cloud"
-    digest = exact_model_description_digest(model_id) if cloud else None
-    if cloud and digest is None:
-        raise ValidationError("Cloud edit requires an exact published model description; none is available.")
+    digest = exact_model_description_digest(model_id) if cloud else None  # None: nothing is sent for the file
     return ImageOperationPermit(
         backend_id="drawthings-cloud" if cloud else "drawthings-grpc",
         endpoint=image_endpoint_label(selection),
@@ -104,9 +102,14 @@ def image_edit_capability(selection: BackendSelection, model_id: str) -> ImageOp
     try:
         permit = owner_probe_permit(selection, model_id, "inpaint", "capability-check")
     except ValidationError as exc:
-        status = "missing_exact_description" if selection.name == "cloud" else "unsupported"
-        return ImageOperationSupport(status, str(exc))
-    return image_operation_status(selection, model_id, "inpaint", image_permits=(permit,))
+        return ImageOperationSupport("unsupported", str(exc))
+    support = image_operation_status(selection, model_id, "inpaint", image_permits=(permit,))
+    if support.status == "owner_probe":
+        reason = "Unverified checkpoint. Edit image sends the source and mask to the backend; cloud may use credits."
+        if selection.name == "cloud" and permit.model_description_sha256 is None:
+            reason += " No published model description exists for this file; the cloud may return no image."
+        return ImageOperationSupport(support.status, reason, support.evidence_id)
+    return support
 
 
 ASSET_NOTE = (

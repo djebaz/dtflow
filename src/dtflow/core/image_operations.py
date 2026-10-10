@@ -68,8 +68,6 @@ class ImageOperationPermit:
             not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)
         ):
             raise ValidationError("Permit model-description digest must be SHA-256.")
-        if self.backend_id == "drawthings-cloud" and digest is None:
-            raise ValidationError("Cloud image-operation permits require an exact model-description digest.")
 
     def validate_scope(
         self, backend_id: str, endpoint: str, model_id: str, operation: str, *, allow_probe: bool = False
@@ -107,10 +105,6 @@ def inspect_image_operation(
         raise ValidationError("Capability inspection requires an immutable tuple of owner permits.")
     if backend_id not in ("drawthings-grpc", "drawthings-cloud") or operation not in ("img2img", "inpaint"):
         return ImageOperationSupport("unsupported", "This backend or operation does not support image editing.")
-    if backend_id == "drawthings-cloud" and exact_description_sha256 is None:
-        return ImageOperationSupport(
-            "missing_exact_description", "No published exact-file cloud description is available."
-        )
     matching = tuple(
         p
         for p in permits
@@ -123,8 +117,10 @@ def inspect_image_operation(
     if len(matching) != 1:
         return ImageOperationSupport("conflicting_permits", "Duplicate exact-scope permits require owner review.")
     permit = matching[0]
+    # A checkpoint without a published description is allowed: nothing is sent for it. A permit that recorded a
+    # description must still match the current one.
     if (backend_id == "drawthings-cloud" or permit.model_description_sha256 is not None) and (
-        exact_description_sha256 is None or permit.model_description_sha256 != exact_description_sha256
+        permit.model_description_sha256 != exact_description_sha256
     ):
         return ImageOperationSupport(
             "description_changed", "The exact model description differs from the owner evidence."
