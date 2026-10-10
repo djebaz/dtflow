@@ -82,6 +82,7 @@
 
 ## Fixed
 
+- Unclassified checkpoints no longer appear under every base-model family (they have none); they stay reachable through the custom-identifier action and the unclassified inspector.
 - Generate on direct DT+ cloud no longer counts or offers every metadata-less file (LoRAs, controls, encoders, VAEs, upscalers) as a checkpoint: only files with an exact Draw Things community model description are offered; other files are listed only in the unclassified-files inspector without any guessed family.
 - Fill missing families/modes for 125 `Models_niche.json` checkpoints from the community model `version` (or an unambiguous name such as `chroma_`, `wan_v2.1_`, `_xl_`) and drop 65 non-checkpoints (text encoders, LLMs, upscalers, preprocessors, try-on/vision models) from the model catalogue; 78 remain unclassified.
 - Cloud files without metadata that are Draw Things companions (per-checkpoint CLIP encoders, textual inversions, VAEs, encoders, LLMs, upscalers, preprocessors) no longer fill the unclassified-files list; 53 more niche checkpoints gained a family from CLIP-companion evidence (SDXL has an `open_clip_vit_bigg14` companion, SD 1.x only `clip_vit_l14`).

@@ -1069,7 +1069,6 @@ class GenerationPage:
         allowed = {entry.identifier for entry in entries}
         unclassified = set(self._catalogue.view().unclassified_checkpoints)
         selectable = [entry.identifier for entry in entries]
-        selectable.extend(identifier for identifier in sorted(unclassified) if identifier not in allowed)
         self._updating_catalogue = True
         try:
             self._fill_models(selectable)
