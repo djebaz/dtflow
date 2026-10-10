@@ -81,7 +81,7 @@ async def locate_output(state: Path, query: GalleryQuery, identity: str) -> int 
     return await asyncio.to_thread(storage.locate_record, state, query, identity)
 
 
-async def filter_choices(state: Path) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+async def filter_choices(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return await asyncio.to_thread(storage.facets, state)
 
 

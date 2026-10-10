@@ -327,7 +327,9 @@ class GalleryPage(QObject):
         self.model.setToolTip("Exact recorded model identifier; the list is a bounded convenience facet.")
         self.lora.setToolTip("Exact recorded LoRA identifier; the list is a bounded convenience facet.")
         self.date_filter.setToolTip("Local calendar date or range. Examples: 2026-10-06 or 2026-10-01..2026-10-06.")
-        self.dimensions.setToolTip("Size class by longer side, or exact dimensions such as 1024 × 1024.")
+        self.dimensions.setToolTip(
+            "Size class by the longer side; typing exact dimensions such as 1024 × 1024 also works."
+        )
         self.ratio.setToolTip("Orientation or exact W:H aspect ratio.")
         self.sort.setToolTip("Deterministic saved-output ordering.")
 
@@ -1144,13 +1146,11 @@ class GalleryPage(QObject):
         self._restore_scroll_later(anchor if anchor_found else None)
         self._schedule_save()
 
-    def _populate_facets(
-        self, models: tuple[str, ...], loras: tuple[str, ...], dimensions: tuple[str, ...] = ()
-    ) -> None:
+    def _populate_facets(self, models: tuple[str, ...], loras: tuple[str, ...]) -> None:
         for combo, placeholder, values in (
             (self.model, "All models", models),
             (self.lora, "All LoRAs", loras),
-            (self.dimensions, "Any size", (*SIZE_CLASS_LABELS, *dimensions)),
+            (self.dimensions, "Any size", tuple(SIZE_CLASS_LABELS)),
         ):
             current = combo.currentText()
             if tuple(combo.itemText(i) for i in range(combo.count())) == (placeholder, *values):
