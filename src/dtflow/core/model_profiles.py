@@ -81,5 +81,23 @@ def fallback_spec(model_id: str) -> dict | None:
     file match is used: another quantization's description can carry different fields (``is_bf16``, ``mmdit``) and
     made the cloud drop the connection, so a file without its own entry sends no description.
     """
-    spec = _community_specs().get(model_id)
+    spec = _community_specs().get(model_id) or _derived_spec(model_id)
     return dict(spec) if spec is not None else None
+
+
+# Official FLUX.1 Schnell files the cloud does not list. The community repository has no official Schnell entry, so
+# these are derived from its Schnell derivative PixelWave Schnell 04 (same architecture, same fields) with the name and
+# file replaced; the f16 file uses the f16 T5 encoder as flux_1_dev_f16 does. Derived, not published by Draw Things.
+_SCHNELL_BASE = "pixelwave_flux_1_schnell_04_q8p.ckpt"
+_SCHNELL_FILES = {
+    "flux_1_schnell_f16.ckpt": "t5_xxl_encoder_f16.ckpt",
+    "flux_1_schnell_q4p.ckpt": "t5_xxl_encoder_q6p.ckpt",
+}
+
+
+def _derived_spec(model_id: str) -> dict | None:
+    encoder = _SCHNELL_FILES.get(model_id)
+    base = _community_specs().get(_SCHNELL_BASE)
+    if encoder is None or base is None:
+        return None
+    return {**base, "name": "FLUX.1 [schnell]", "file": model_id, "text_encoder": encoder}
