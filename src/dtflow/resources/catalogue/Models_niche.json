@@ -2624,37 +2624,37 @@
   },
   {
     "file": "hidream_e1_1_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
     "file": "hidream_e1_1_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
     "file": "hidream_e1_full_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
     "file": "hidream_e1_full_q5p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
     "file": "hidream_e1_full_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "hidream_i1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
