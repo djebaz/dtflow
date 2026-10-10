@@ -5,12 +5,13 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, Slot
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QFontMetrics, QGuiApplication, QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
     QAbstractSpinBox,
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -159,6 +160,10 @@ class MainWindow:
         QWidget().ensurePolished()
         startup.mark("first widget polished")
         if dev_enabled():  # development diagnosis only: which widget class pays the first-use cost
+            QFontMetrics(QApplication.font()).horizontalAdvance("Ag")
+            startup.mark("first font metrics")
+            QGuiApplication.inputMethod().locale()
+            startup.mark("input method")
             for widget_class in (QLabel, QFrame, QPushButton, QLineEdit, QComboBox, QCheckBox, QGroupBox, QMainWindow):
                 widget_class().ensurePolished()
                 startup.mark(f"first {widget_class.__name__}")
