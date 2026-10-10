@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QFile, QIODevice, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QFileDialog, QLabel, QListWidgetItem
+from PySide6.QtWidgets import QFileDialog, QLabel, QListWidgetItem, QSizePolicy
 
 from dtflow.core.image_inputs import ImageContent, max_mask_grow, suggest_generation_size
 from dtflow.core.model_profiles import profile_for
@@ -91,6 +91,8 @@ class InpaintEditor(QObject):
         self.form.toolLayout.setSpacing(0)
         self.canvas = InpaintCanvas(page.previewHost)
         page.previewHostLayout.addWidget(self.canvas)
+        self.form.sourceFacts.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.form.sourceFacts.setMinimumWidth(0)
         self.form.chooseSourceButton.clicked.connect(self.choose_source)
         self.form.removeSourceButton.clicked.connect(self.remove_source)
         for name, tool in (
@@ -409,13 +411,20 @@ class InpaintEditor(QObject):
                 self.canvas.set_source(pixels, self._source.width, self._source.height)
                 self.form.sourceThumbnail.setPixmap(self.canvas.pixmap().scaledToHeight(80))
                 self.form.sourceFacts.setText(
-                    f"{Path(path).name}\n{self._source.width} × {self._source.height} · EXIF-oriented · RGB8 · alpha flattened onto white"
+                    f"{self._short_name(path)}\n{self._source.width} × {self._source.height} · EXIF-oriented · RGB8 · alpha flattened onto white"
                 )
+                self.form.sourceFacts.setToolTip(Path(path).name)
                 self._fit_to_source()
 
             self._task("Load source image", worker, apply, quiet=quiet)
 
         self._discard_then(self.form.chooseSourceButton, "Replace source image", load)
+
+    def _short_name(self, path):
+        """File name elided in the middle to the card width: very long names must never widen the left rail."""
+        label = self.form.sourceFacts
+        width = max(120, min(260, label.width() - 8)) if label.width() > 0 else 220
+        return label.fontMetrics().elidedText(Path(path).name, Qt.TextElideMode.ElideMiddle, width)
 
     def _fit_to_source(self):
         """Follow the new source: sensible brush, grow budget and a 64-multiple generation box of the same aspect."""
@@ -446,6 +455,7 @@ class InpaintEditor(QObject):
             self.canvas.remove_source()
             self.form.sourceThumbnail.clear()
             self.form.sourceFacts.setText("Choose a source image…")
+            self.form.sourceFacts.setToolTip("")
             self.form.sourceError.clear()
             self.form.coverageLabel.setText("Covers 0% of the image")
             self._controls()
