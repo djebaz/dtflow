@@ -1,8 +1,8 @@
 """Keep the mouse wheel from changing values while a panel is being scrolled.
 
 A combo box or spin box changes value on wheel even when it merely sits under the pointer, so scrolling the left panel
-silently switched presets and steps. Unfocused ones now hand the wheel to the enclosing scroll area; a control the user
-has clicked into still responds.
+silently switched presets and steps. Combo boxes never take the wheel (the window may give one initial keyboard focus, so
+focus alone cannot tell intent); an unfocused spin box does not either. Both hand it to the enclosing scroll area.
 """
 
 from PySide6.QtCore import QEvent, QObject
@@ -22,7 +22,9 @@ class WheelGuard(QObject):
     def eventFilter(self, watched, event):
         if event.type() != QEvent.Type.Wheel or not isinstance(watched, QComboBox | QAbstractSpinBox):
             return False
-        if watched.hasFocus() or watched.window() is not self._window:
+        if watched.window() is not self._window:
+            return False
+        if isinstance(watched, QAbstractSpinBox) and watched.hasFocus():
             return False
         parent = watched.parentWidget()
         while parent is not None and not isinstance(parent, QAbstractScrollArea):
