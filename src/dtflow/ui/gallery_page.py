@@ -79,10 +79,10 @@ SORT_LABELS = {
 SORT_NAMES = {value: key for key, value in SORT_LABELS.items()}
 DIMENSIONS = re.compile(r"^\s*(\d+)\s*[x×]\s*(\d+)\s*$")
 SIZE_CLASS_LABELS = {
-    "Small (< 400 px)": "small",
-    "Medium (< 600 px)": "medium",
-    "Large (< 1200 px)": "large",
-    "Big (≥ 1200 px)": "big",
+    "Small": "small",
+    "Medium": "medium",
+    "Large": "large",
+    "Big": "big",
 }
 DATE_RANGE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})\s*$")
 
@@ -328,7 +328,7 @@ class GalleryPage(QObject):
         self.lora.setToolTip("Exact recorded LoRA identifier; the list is a bounded convenience facet.")
         self.date_filter.setToolTip("Local calendar date or range. Examples: 2026-10-06 or 2026-10-01..2026-10-06.")
         self.dimensions.setToolTip(
-            "Size class by the longer side; typing exact dimensions such as 1024 × 1024 also works."
+            "Small under 400 px, Medium under 600, Large under 1200, Big 1200 and up (longer side); typing exact dimensions such as 1024 × 1024 also works."
         )
         self.ratio.setToolTip("Orientation or exact W:H aspect ratio.")
         self.sort.setToolTip("Deterministic saved-output ordering.")
