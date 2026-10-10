@@ -20,7 +20,7 @@ from dtflow.services.image_preparation import (
     mask_coverage,
     save_mask_pixels_file,
 )
-from dtflow.services.person_selection import analyze_people, apply_selection, describe_model, person_at
+from dtflow.services.person_selection import analyze_people, apply_selection, classify_models, person_at
 from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -525,20 +525,19 @@ class InpaintEditor(QObject):
     def choose_models(self):
         if self._busy or self._loading or self.controller is None:
             return
-        segmentation = QFileDialog.getOpenFileName(
-            self.page, "Choose the YOLO26 segmentation model (ONNX)", "", "ONNX (*.onnx)"
+        paths = QFileDialog.getOpenFileNames(
+            self.page,
+            "Choose the YOLO26 segmentation model and, optionally, the clothes model (ONNX)",
+            "",
+            "ONNX (*.onnx)",
         )[0]
-        if not segmentation:
+        if not paths:
             return
-        clothes = QFileDialog.getOpenFileName(
-            self.page, "Choose the SegFormer clothes model (ONNX), or cancel to skip", "", "ONNX (*.onnx)"
-        )[0]
         state = self.controller._state
 
         def worker():
-            models = PersonModels(
-                describe_model(Path(segmentation)), describe_model(Path(clothes)) if clothes else None
-            )
+            segmentation, clothes = classify_models([Path(path) for path in paths])
+            models = PersonModels(segmentation, clothes)
             save_person_models(state, models)
             return models
 

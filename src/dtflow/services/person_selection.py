@@ -86,6 +86,31 @@ def describe_model(path: Path) -> ModelRef:
     return ModelRef(str(Path(path).resolve()), hashlib.sha256(data).hexdigest())
 
 
+def classify_models(paths: list[Path]) -> tuple[ModelRef | None, ModelRef | None]:
+    """Sort chosen files into (segmentation, clothes) by their ONNX contract, so the pick order never matters."""
+    segmentation = clothes = None
+    for path in paths:
+        ref = describe_model(path)
+        for kind, builder in (("segmentation", _segmentation_session), ("clothes", _clothes_session)):
+            try:
+                _verified_session(ref, builder)
+            except ValidationError:
+                continue
+            if kind == "segmentation" and segmentation is None:
+                segmentation = ref
+            elif kind == "clothes" and clothes is None:
+                clothes = ref
+            break
+        else:
+            raise ValidationError(
+                f"{Path(path).name} is neither a YOLO26 end2end segmentation model nor a "
+                "segformer_b2_clothes model (both must be full-precision float32 ONNX files)."
+            )
+    if segmentation is None:
+        raise ValidationError("Choose the YOLO26 segmentation model (yolo26n-seg.onnx); the clothes model is optional.")
+    return segmentation, clothes
+
+
 def _verified_session(ref: ModelRef, builder):
     try:
         data = Path(ref.path).read_bytes()
@@ -112,6 +137,10 @@ def _options():
     return options
 
 
+def _describe(items) -> str:
+    return ", ".join(f"{item.type} {item.shape}" for item in items) or "no tensors"
+
+
 def _cpu_session(data: bytes):
     import onnxruntime as ort
 
@@ -125,9 +154,15 @@ def _segmentation_session(data: bytes):
     session = _cpu_session(data)
     inputs, outputs = session.get_inputs(), session.get_outputs()
     if len(inputs) != 1 or inputs[0].shape != [1, 3, SIDE, SIDE] or inputs[0].type != "tensor(float)":
-        raise ValidationError("Segmentation model needs a float32 [1,3,640,640] input (YOLO26 end2end segment).")
+        raise ValidationError(
+            "The segmentation model must be a YOLO26 end2end segment export with one float32 [1,3,640,640] input; "
+            f"this file has {_describe(inputs)}. Check that the YOLO file was chosen first and is not a "
+            "half-precision or other-size export."
+        )
     if len(outputs) != 2 or outputs[0].shape != [1, 300, 38] or outputs[1].shape != [1, 32, 160, 160]:
-        raise ValidationError("Segmentation model needs YOLO26 end2end outputs [1,300,38] and [1,32,160,160].")
+        raise ValidationError(
+            f"The segmentation model must output [1,300,38] and [1,32,160,160]; this file has {_describe(outputs)}."
+        )
     meta = session.get_modelmeta().custom_metadata_map
     if meta.get("task") != "segment" or meta.get("end2end", "").lower() != "true":
         raise ValidationError("Segmentation model must be a YOLO26 end2end segment export.")
@@ -144,7 +179,10 @@ def _clothes_session(data: bytes):
     session = _cpu_session(data)
     inputs, outputs = session.get_inputs(), session.get_outputs()
     if len(inputs) != 1 or len(inputs[0].shape) != 4 or inputs[0].type != "tensor(float)":
-        raise ValidationError("Clothes model needs one float32 NCHW RGB input.")
+        raise ValidationError(
+            f"The clothes model must have one float32 NCHW RGB input; this file has {_describe(inputs)}. "
+            "Use segformer_b2_clothes.onnx (full precision) as the second file."
+        )
     shape = outputs[0].shape if len(outputs) == 1 else ()
     if len(shape) != 4 or outputs[0].type != "tensor(float)" or (isinstance(shape[1], int) and shape[1] != 18):
         raise ValidationError("Clothes model needs one float32 [N,18,h,w] logits output (segformer_b2_clothes).")
