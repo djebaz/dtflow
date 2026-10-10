@@ -10,8 +10,10 @@ from pathlib import Path
 
 from dtflow import startup
 from dtflow.build import display_identity, identity
-from dtflow.composition import BACKENDS
+from dtflow.composition import BACKENDS, image_endpoint_label
 from dtflow.core.gallery import SORTS, GalleryQuery
+from dtflow.core.image_operations import ImageOperationPermit
+from dtflow.core.model_profiles import exact_model_description_digest
 from dtflow.core.models import (
     BackendError,
     ErrorCategory,
@@ -36,6 +38,7 @@ from dtflow.services.session import (
     ASSET_NOTE,
     asset_view,
     bind_prepared,
+    generate_image_files_once,
     open_session,
     prepare_asset,
     reconcile_asset,
@@ -57,7 +60,7 @@ log = logging.getLogger("dtflow.cli")
 
 def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(
-        description="DTFlow headless text-to-image CLI. Results are JSON on stdout; progress and diagnostics go to stderr."
+        description="DTFlow headless CLI. Results are JSON on stdout; progress and diagnostics go to stderr."
     )
     command.add_argument("-v", "--version", action="version", version=display_identity())
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
@@ -130,6 +133,7 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("-o", "--out", type=Path, help="Final output root (default: state directory/outputs).")
             add_scenario_option(child)
             child.add_argument("-t", "--timeout", type=float, default=600.0, help="Total backend deadline in seconds.")
+    add_edit_command(commands)
     add_queue_commands(commands)
     add_asset_commands(commands)
     add_gallery_commands(commands)
@@ -178,8 +182,40 @@ async def run_gallery(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-def add_request_options(child: argparse.ArgumentParser) -> None:
-    """Generation parameters shared by ``generate`` and ``queue add``."""
+def add_edit_command(commands) -> None:
+    child = commands.add_parser(
+        "edit", help="Single-shot owner probe for img2img or mask-file inpaint; not acceptance."
+    )
+    child.add_argument("-b", "--backend", choices=("local", "cloud"), required=True)
+    child.add_argument("-e", "--endpoint", help="Local Draw Things HOST:PORT.")
+    child.add_argument("-d", "--state", type=Path, default=Path(".dtflow"))
+    add_request_options(child, image_probe=True)
+    child.set_defaults(config=None, lora=None)
+    child.add_argument("-src", "--source", type=Path, required=True, help="Source image; never modified.")
+    child.add_argument("-mk", "--mask", type=Path, help="Same-size mask; white edits, black preserves.")
+    child.add_argument("-st", "--strength", type=float, default=0.75, help="Strength in 0..1 (default: 0.75).")
+    child.add_argument(
+        "-gr", "--grow", type=int, default=0, help="Signed source-pixel grow/shrink (default: 0; bounded)."
+    )
+    child.add_argument("-f", "--feather", type=float, default=0.0, help="Inward feather in source pixels (default: 0).")
+    child.add_argument(
+        "-k", "--keep", choices=("on", "off"), default="on", help="Keep prepared pixels outside mask (default: on)."
+    )
+    child.add_argument("-o", "--out", type=Path, help="Final output root (default: state directory/outputs).")
+    child.add_argument("-t", "--timeout", type=float, default=600.0, help="Total backend deadline in seconds.")
+    child.add_argument(
+        "-u", "--evidence", required=True, help="User-chosen path-free evidence ID for this owner probe."
+    )
+    child.add_argument(
+        "-r",
+        "--probe",
+        action="store_true",
+        help="Explicit one-run consent: sends images off-machine; cloud may consume credits.",
+    )
+
+
+def add_request_options(child: argparse.ArgumentParser, *, image_probe: bool = False) -> None:
+    """Base request parameters; the bounded image probe excludes LoRA/asset options."""
     child.add_argument("-p", "--prompt")
     child.add_argument("-n", "--negative")
     child.add_argument("-m", "--model", help="Exact model identifier (required for local/cloud).")
@@ -189,6 +225,8 @@ def add_request_options(child: argparse.ArgumentParser) -> None:
     child.add_argument("-i", "--steps", type=int)
     child.add_argument("-g", "--guidance", type=float)
     child.add_argument("-a", "--sampler", choices=tuple(x.value for x in Sampler))
+    if image_probe:
+        return
     child.add_argument(
         "-l", "--lora", action="append", metavar="ID:WEIGHT", help="Exact LoRA identifier and explicit weight."
     )
@@ -473,7 +511,72 @@ async def run_assets(args: argparse.Namespace) -> int:
     return {"confirmed": EXIT_OK, "upload_required": EXIT_FAILED}.get(result.status, EXIT_UNKNOWN)
 
 
+async def run_edit(args: argparse.Namespace) -> int:
+    # This guard precedes selection, file preparation, durable state and authentication.
+    if not args.probe:
+        raise ValidationError("edit requires explicit --probe consent; no backend was opened.")
+    request = resolve_generation(args)
+    selection = selection_for(args.backend, args.endpoint, args.state)
+    digest = exact_model_description_digest(request.model_id) if args.backend == "cloud" else None
+    if args.backend == "cloud" and digest is None:
+        raise ValidationError("Cloud edit requires an exact published model description digest; none is available.")
+    permit = ImageOperationPermit(
+        backend_id="drawthings-cloud" if args.backend == "cloud" else "drawthings-grpc",
+        endpoint=image_endpoint_label(selection),
+        model_id=request.model_id,
+        operation="inpaint" if args.mask is not None else "img2img",
+        evidence_id=args.evidence,
+        status="owner_probe",
+        model_description_sha256=digest,
+    )
+    policy = TimeoutPolicy(total=args.timeout)
+    print(
+        "WARNING: Owner probe sends source and mask off-machine; cloud may consume credits. This is not confirmed compatibility.",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    def progress(event):
+        if event.kind in ("preparing", "progress", "terminal"):
+            print(f"[{args.backend}] {event.kind}: {event.stage}", file=sys.stderr)
+
+    outcome = await generate_image_files_once(
+        selection,
+        args.state,
+        request,
+        args.source,
+        permit=permit,
+        mask=args.mask,
+        grow=args.grow,
+        feather=args.feather,
+        strength=args.strength,
+        preserve_outside=args.keep == "on",
+        allow_image_probe=True,
+        output=args.out,
+        timeouts=policy,
+        on_event=progress,
+    )
+    evidence = dict(outcome.request.resolution_evidence)
+    print(
+        json.dumps(
+            {
+                "attempt_id": outcome.attempt_id,
+                "backend": outcome.backend_id,
+                "outputs": outcome.output_paths,
+                "metadata": outcome.metadata_path,
+                "permit_status": evidence["image_permit_status"],
+                "evidence_id": evidence["image_permit_evidence"],
+                "warnings": list(outcome.warnings),
+            },
+            indent=2,
+        )
+    )
+    return EXIT_OK
+
+
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "edit":
+        return await run_edit(args)
     if args.command == "gallery":
         return await run_gallery(args)
     if args.command == "queue":

@@ -34,6 +34,30 @@ def invoke(tmp_path, capsys):
 GENERATE = ("generate", "-b", "fake", "-p", "fixture")
 
 
+def test_edit_without_probe_refuses_before_selection_preparation_or_backend(invoke, tmp_path, monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unconsented edit must not select/open/authenticate a backend or prepare files.")
+
+    monkeypatch.setattr(cli, "selection_for", forbidden)
+    monkeypatch.setattr(cli, "open_session", forbidden)
+    monkeypatch.setattr(cli, "generate_image_files_once", forbidden)
+    code, out, err = invoke(
+        "edit",
+        "--backend",
+        "cloud",
+        "--model",
+        "exact-model",
+        "--prompt",
+        "fixture",
+        "--source",
+        str(tmp_path / "missing.png"),
+        "--evidence",
+        "first-probe",
+    )
+    assert code == 2 and out == "" and "requires explicit --probe" in err
+    assert not (tmp_path / "state").exists()
+
+
 def test_help_version_and_documented_options(capsys):
     with pytest.raises(SystemExit) as exit_info:
         cli.main(["-v"])

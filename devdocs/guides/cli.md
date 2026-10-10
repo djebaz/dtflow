@@ -103,3 +103,32 @@ State is stored in `.dtflow/attempts.sqlite3` and outputs under `.dtflow/outputs
 ## Offline fixtures
 
 The fake backend returns the bundled illustrative lighthouse, cropped and resampled to the requested dimensions, for `fake-fixture`, and a calibration grid for `fake-grid`. No model inference occurs. The CLI keeps seed 0 as a real seed; the desktop resolves 0 randomly on submission.
+
+## Single-shot image-operation owner probe
+
+`edit` is the explicit acceptance harness for PR #64, not general image-operation support. Without `-r/--probe` it refuses before backend selection, file preparation or authentication. Each invocation requests one real generation, with no queue, plan, batch or retry. Generic `generate`, configuration reuse and `queue add` remain txt2img-only.
+
+```powershell
+# Examples only: these submit real work when explicitly run by the owner.
+uv run dtflow edit -b local -e HOST:PORT -m EXACT_MODEL -p 'edit prompt' --source source.png --evidence local-img2img-01 --probe
+uv run dtflow edit -b cloud -m EXACT_MODEL -p 'edit prompt' --source source.png --mask mask.png --evidence cloud-inpaint-01 --probe
+```
+
+The command prints an off-machine/possible-cloud-credit warning on stderr. It builds an `owner_probe` permit scoped to the selected backend, endpoint, exact checkpoint and operation; the user-chosen evidence ID is not proof of acceptance. Cloud additionally requires the bundled exact published model description digest: missing descriptions refuse, with no family-derived fallback or user-supplied digest override. Inventory availability is checked independently by the shared session before dispatch.
+
+| Canonical options | Meaning |
+| --- | --- |
+| `-src/--source` | Required source image (original unchanged) |
+| `-mk/--mask` | Optional same-size EXIF-oriented mask; white editable, black preserved; chooses inpaint instead of img2img |
+| `-st/--strength` | 0..1, default 0.75; checkpoint behavior still needs acceptance |
+| `-gr/--grow` | Signed grow/shrink in source pixels, default 0; source-size work budget applies |
+| `-f/--feather` | Inward feather in source pixels, default 0 |
+| `-k/--keep on\|off` | Default on: preserve normalized prepared RGB pixels outside the mask, not original-file pixels; off returns generation-size raw output copy |
+| `-u/--evidence` | Required path-free evidence ID, 1..128 ASCII letters/digits/`.`/`_`/`-` |
+| `-r/--probe` | Explicit consent for this one run; never promotes evidence to owner-confirmed |
+| `-o/--out` | Output root; default `<state>/outputs` |
+| `-t/--timeout` | Backend deadline in seconds, default 600 |
+
+The usual `-b/--backend` (local or cloud only), `-e/--endpoint`, `-d/--state`, `-p/--prompt`, `-n/--negative`, `-m/--model`, `-s/--seed`, `-w/--width`, `-y/--height`, `-i/--steps`, `-g/--guidance` and `-a/--sampler` build the ordinary single-output txt2img base request. Target size is explicit/default request size, not derived from the source. Multi-letter image aliases avoid collisions with these established spellings. No config, LoRA, asset, prefix, batch or fake-scenario options are exposed by this bounded harness.
+
+Successful JSON contains `attempt_id`, `backend`, `outputs` (registered final paths), `metadata`, `permit_status` and `evidence_id` read from the effective request, and warnings. Metadata retains request permit evidence, prepared inputs/fit, raw output evidence and normalization policy. Inspect unknown outcomes; never automatically replay. No local/cloud image-operation acceptance is claimed by this command's presence or offline tests.

@@ -41,7 +41,7 @@ The [implementation plan](../plans/2026-10-10-smart-mask-inpainting.md) requires
 - Provider configuration verifies requested strength, mask blur/outset zero and provider preserve-original false. Tensor layout/polarity/contents checks run before cloud authorization. Source checks do not prove deployed checkpoint behavior.
 - Dedicated saving retains untouched `outputs/<attempt-id>/raw-1.png`; only `final-1.png` and metadata enter the committed artifact ledger. Optional preserve-outside produces a source-sized normalized-source composite; OFF uses a raw provider copy. Raw/final have distinct IDs with a raw-evidence link. Aggregate raw-plus-final encoded limits apply in both modes; failures retain partial/raw evidence without publishing success or retrying generation.
 - The session returns registered final bytes for display and the effective attempt-bound request. Gallery/export/recycle operate on registered finals only. Inputs, masks and raw evidence are durable, not cache; no cleanup scans/registers them automatically. Raw provider inspection UI and image-operation portable export acceptance remain pending.
-- Generic `generate_once`, CLI/config, queues, planners and batches remain txt2img-only. Dedicated APIs do not broaden those contracts. No default permits or live acceptance commands are introduced.
+- Generic `generate_once`, CLI/config, queues, planners and batches remain txt2img-only. Dedicated APIs do not broaden those contracts. No default verified permits are introduced; the dedicated probe harness below is the only CLI image-operation entry.
 
 ## Manual editor support helpers (source-only)
 
@@ -80,3 +80,5 @@ No new tests, test execution, builds, renders, inference or paid calls were perf
 
 
 
+
+The dedicated `dtflow edit` CLI harness constructs only one-run `owner_probe` permits from explicit user evidence and `--probe` consent. It uses `generate_image_files_once` unchanged; cloud requires the bundled exact published description digest before preparation/backend opening. Generic CLI generation/config/queues remain txt2img-only. Harness presence and offline validation do not establish live acceptance.
