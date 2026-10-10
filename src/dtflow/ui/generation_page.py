@@ -1318,7 +1318,7 @@ class GenerationPage:
         own = {preset["name"] for preset in presets}
         for preset in builtin_presets():
             if preset["name"] not in own:
-                combo.addItem(f"Draw Things · {preset['name']}", ("preset", preset))
+                combo.addItem(f"DT · {preset['name']}", ("preset", preset))
         for path in paths:
             combo.addItem(f"Config · {path.name}", str(path))
         combo.setCurrentIndex(-1)
