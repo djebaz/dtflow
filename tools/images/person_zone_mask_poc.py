@@ -16,7 +16,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = "torchvision-lraspp-mobilenet-v3-large-voc21-320-v1"
 SIDE = 320
-PERSON = 15
+PROFILES = {
+    "torchvision": {
+        "contract": CONTRACT,
+        "classes": 21,
+        "person": 15,
+        "weights": "LRASPP_MobileNet_V3_Large_Weights.COCO_WITH_VOC_LABELS_V1",
+        "metadata_required": True,
+        "resize_note": "experimental; upstream short edge is 520",
+        "export_note": "Caller-supplied TorchVision export",
+    },
+    "fastseg": {
+        "contract": "fastseg-mobilev3small-lraspp-f64-cityscapes19-320-v1",
+        "classes": 19,
+        "person": 11,
+        "weights": "mobilev3small-lraspp-f64-114fc23b.pt",
+        "metadata_required": False,
+        "resize_note": "experimental fixed-size export; upstream predict normalizes without resizing",
+        "export_note": "Owner-supplied 320 export: AvgPool2d kernel/stride patched to 40x40; optional dynamic INT8",
+    },
+}
 MAX_BYTES = 64 * 1024 * 1024
 MAX_PIXELS = 16_000_000
 
@@ -77,15 +96,16 @@ def preprocess(image):
     return np.ascontiguousarray(((pixels - mean) / std).transpose(2, 0, 1)[None])
 
 
-def masks_from_logits(logits, size: tuple[int, int], box: list[int]):
+def masks_from_logits(logits, size: tuple[int, int], box: list[int], profile: str = "torchvision"):
     import numpy as np
     from PIL import Image
 
     validate_box(box, size)
-    if logits.shape != (1, 21, SIDE, SIDE) or logits.dtype != np.float32 or not np.isfinite(logits).all():
-        raise ValueError("Expected finite float32 logits [1,21,320,320]")
+    spec = PROFILES[profile]
+    if logits.shape != (1, spec["classes"], SIDE, SIDE) or logits.dtype != np.float32 or not np.isfinite(logits).all():
+        raise ValueError(f"Expected finite float32 logits [1,{spec['classes']},320,320]")
     # Argmax in model coordinates, then nearest-neighbour binary resize: no feather spill.
-    small = (logits[0].argmax(axis=0) == PERSON).astype(np.uint8) * 255
+    small = (logits[0].argmax(axis=0) == spec["person"]).astype(np.uint8) * 255
     person = np.asarray(Image.fromarray(small).resize(size, Image.Resampling.NEAREST)).copy()
     zone = np.zeros_like(person)
     x0, y0, x1, y1 = box
@@ -93,9 +113,10 @@ def masks_from_logits(logits, size: tuple[int, int], box: list[int]):
     return person, zone, np.bitwise_and(person, zone)
 
 
-def create_session(model_bytes: bytes, threads: int):
+def create_session(model_bytes: bytes, threads: int, profile: str = "torchvision"):
     import onnxruntime as ort
 
+    spec = PROFILES[profile]
     options = ort.SessionOptions()
     options.intra_op_num_threads = threads
     options.inter_op_num_threads = 1
@@ -110,10 +131,11 @@ def create_session(model_bytes: bytes, threads: int):
         raise ValueError("Contract requires exactly one input and one output")
     if inputs[0].type != "tensor(float)" or inputs[0].shape != [1, 3, SIDE, SIDE]:
         raise ValueError("Contract requires float32 input [1,3,320,320]")
-    if outputs[0].type != "tensor(float)" or outputs[0].shape != [1, 21, SIDE, SIDE]:
-        raise ValueError("Contract requires float32 output [1,21,320,320]")
-    if session.get_modelmeta().custom_metadata_map.get("mask_poc_contract") != CONTRACT:
-        raise ValueError(f"Model must declare mask_poc_contract={CONTRACT}; see README export recipe")
+    if outputs[0].type != "tensor(float)" or outputs[0].shape != [1, spec["classes"], SIDE, SIDE]:
+        raise ValueError(f"Contract requires float32 output [1,{spec['classes']},320,320]")
+    declared = session.get_modelmeta().custom_metadata_map.get("mask_poc_contract")
+    if declared != spec["contract"] and (spec["metadata_required"] or declared is not None):
+        raise ValueError(f"Model must declare mask_poc_contract={spec['contract']}; see README")
     return session
 
 
@@ -122,6 +144,7 @@ def run(args: argparse.Namespace) -> Path:
     import onnxruntime as ort
     from PIL import Image
 
+    spec = PROFILES[args.profile]
     total_start = time.perf_counter()
     destination = output_path(args.out)
     if not re.fullmatch(r"[a-fA-F0-9]{64}", args.sha256):
@@ -139,7 +162,7 @@ def run(args: argparse.Namespace) -> Path:
     validate_box(args.box, image.size)
     image_load_ms = (time.perf_counter() - start) * 1000
     start = time.perf_counter()
-    session = create_session(model_bytes, args.threads)
+    session = create_session(model_bytes, args.threads, args.profile)
     session_load_ms = (time.perf_counter() - start) * 1000
     del model_bytes
     start = time.perf_counter()
@@ -149,19 +172,23 @@ def run(args: argparse.Namespace) -> Path:
     logits = session.run([session.get_outputs()[0].name], {session.get_inputs()[0].name: tensor})[0]
     inference_ms = (time.perf_counter() - start) * 1000
     start = time.perf_counter()
-    person, zone, edit = masks_from_logits(logits, image.size, args.box)
+    person, zone, edit = masks_from_logits(logits, image.size, args.box, args.profile)
     del logits, tensor
     highlight = Image.new("RGB", image.size, (255, 64, 64))
     tinted = Image.blend(image, highlight, 0.45)
     overlay = Image.composite(tinted, image, Image.fromarray(edit))
     postprocess_ms = (time.perf_counter() - start) * 1000
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model": {
-            "contract": CONTRACT,
+            "contract": spec["contract"],
+            "profile": args.profile,
+            "class_count": spec["classes"],
+            "person_class": spec["person"],
+            "export_note": spec["export_note"],
             "path": str(args.model.resolve()),
             "sha256": checksum,
-            "weights": "LRASPP_MobileNet_V3_Large_Weights.COCO_WITH_VOC_LABELS_V1",
+            "weights": spec["weights"],
             "provenance": "caller-supplied export; metadata/checksum are not architecture or accuracy proof",
         },
         "runtime": {
@@ -187,7 +214,7 @@ def run(args: argparse.Namespace) -> Path:
             "orientation": "EXIF transpose",
             "alpha": "white composite",
             "color": "RGB",
-            "resize": "Pillow bilinear stretch to 320x320 (experimental; upstream short edge is 520)",
+            "resize": f"Pillow bilinear stretch to 320x320 ({spec['resize_note']})",
             "input": "float32 NCHW [1,3,320,320]",
             "scale": "divide by 255",
             "mean": [0.485, 0.456, 0.406],
@@ -198,7 +225,7 @@ def run(args: argparse.Namespace) -> Path:
             "space": "EXIF-oriented source pixels",
             "origin": "top-left",
             "bounds": "left/top inclusive, right/bottom exclusive; no clipping",
-            "mask_mapping": "argmax model logits, person class 15, nearest resize to oriented source",
+            "mask_mapping": f"argmax model logits, person class {spec['person']}, nearest resize to oriented source",
         },
         "masks": {
             "polarity": "255 selected; 0 unselected",
@@ -242,6 +269,13 @@ def run(args: argparse.Namespace) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-s", "--source", type=Path, required=True, help="One local image (read only)")
+    parser.add_argument(
+        "-p",
+        "--profile",
+        choices=PROFILES,
+        default="torchvision",
+        help="Explicit model contract (default torchvision; supplied MobileV3Small exports use fastseg)",
+    )
     parser.add_argument("-m", "--model", type=Path, required=True, help="Local self-contained LR-ASPP ONNX export")
     parser.add_argument("-c", "--sha256", required=True, help="Expected SHA-256 of the trusted export")
     parser.add_argument("-b", "--box", nargs=4, type=int, required=True, metavar=("X0", "Y0", "X1", "Y1"))

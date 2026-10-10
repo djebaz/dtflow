@@ -73,7 +73,7 @@ The owner-requested [pixel-statistics detector PoC](../tools/images/README.md) n
 
 ## Developer-only person/zone mask experiment
 
-The [CPU mask PoC](plans/2026-10-10-person-zone-mask-poc.md) adds a standalone tools/images experiment, not Phase 9 production behavior or acceptance. Manual-box intersection and fake-session tests are present; a trusted local LR-ASPP ONNX export, real-mask review and target-CPU cost measurement remain pending. No real inference or billable operation was run.
+The [CPU mask PoC](plans/2026-10-10-person-zone-mask-poc.md) adds a standalone tools/images experiment, not Phase 9 production behavior or acceptance. Manual-box intersection and fake-session tests are present; owner-supplied FastSeg 320 ONNX exports are now supported through an explicit Cityscapes19 profile, while real-mask review and target-CPU cost measurement remain pending. No real inference or billable operation was run.
 
 ## Maintenance
 
