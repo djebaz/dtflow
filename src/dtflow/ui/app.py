@@ -31,7 +31,7 @@ def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
     application.aboutToQuit.connect(window.image_export.cancel)
     application.aboutToQuit.connect(window.runner.shutdown)
     window.show()
-    splash.finish(window)
+    splash.finish(window.form)
     startup.mark("window shown")
     # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.
     QTimer.singleShot(0, lambda: _after_first_paint(window))
