@@ -157,10 +157,6 @@ def build_generation_message(
         configuration=configuration,
         user=CLIENT_NAME,
     )
-    if extras:
-        # Experiment for flow models only: the protocol default is PHONE, while the Draw Things app reports its real
-        # device class. Other models keep today's request until this is shown to matter.
-        message.device = image_service.DeviceType.LAPTOP
     override = custom_lora_override(request, base_version)
     if override:
         message.override = image_service.MetadataOverride(loras=override)
