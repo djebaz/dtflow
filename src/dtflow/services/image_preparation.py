@@ -269,6 +269,28 @@ def validate_prepared_inputs(prepared: PreparedImageInputs) -> None:
         raise ValidationError("Prepared blend mask does not match bounded feather evidence.")
 
 
+def adjusted_mask_alpha(
+    pixels: bytes, width: int, height: int, *, source_width: int, source_height: int, grow: int, feather: float
+) -> bytes:
+    """Raw 8-bit alpha of the mask after Grow and Edge feather, for the editor's overlay (thumbnail grid only)."""
+    return _blend_bytes(pixels, width, height, source_width, source_height, grow, feather)
+
+
+def _blend_bytes(pixels, width, height, source_width, source_height, grow, feather) -> bytes:
+    validate_source_dimensions(width, height)
+    if width > 512 or height > 512 or len(pixels) != width * height:
+        raise ValidationError("Mask preview must be a downsampled grid of at most 512x512.")
+    if type(grow) is not int or abs(grow) > max_mask_grow(source_width, source_height):
+        raise ValidationError("Mask grow exceeds the source-size work budget.")
+    if type(feather) not in (int, float) or not math.isfinite(feather) or not 0 <= feather <= 64:
+        raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+    scale = min(width / source_width, height / source_height)
+    mask = _adjust_binary(Image.frombytes("L", (width, height), pixels), round(grow * scale))
+    if feather:
+        mask = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(feather * scale)))
+    return mask.tobytes()
+
+
 def load_source_file(path: Path) -> ImageContent:
     """Editor-side source snapshot: EXIF-oriented, alpha flattened on white, RGB8; no fitting or resizing."""
     oriented = _decode(_read(path, "Source image"), "Source image").convert("RGBA")

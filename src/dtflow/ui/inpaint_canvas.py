@@ -40,6 +40,7 @@ class InpaintCanvas(ImagePreview):
         super().__init__(parent)
         self._mask = QImage()
         self._overlay = QImage()
+        self._adjuster = None
         self._result = QPixmap()
         self._hover = None  # (x0, y0, ARGB overlay) in source pixels
         self._undo = []
@@ -200,12 +201,40 @@ class InpaintCanvas(ImagePreview):
             self._trim(self._undo)
             self._changed()
 
-    def _rebuild_overlay(self):
+    def set_adjuster(self, adjuster):
+        """``adjuster(bytes, width, height) -> alpha bytes | None``: the mask as Grow/Edge feather will apply it."""
+        self._adjuster = adjuster
+        self._rebuild_overlay(True)
+
+    def refresh_adjustment(self):
+        self._rebuild_overlay(True)
+
+    def _adjusted_alpha(self):
+        if self._adjuster is None or self._mask.isNull():
+            return None
+        small = self._mask.scaled(
+            512, 512, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
+        )
+        small = small.convertToFormat(QImage.Format.Format_Grayscale8)
+        width, height, stride = small.width(), small.height(), small.bytesPerLine()
+        raw = bytes(small.constBits())
+        pixels = b"".join(raw[row * stride : row * stride + width] for row in range(height))
+        try:
+            data = self._adjuster(pixels, width, height)
+        except Exception:  # advisory preview only; the exact mask is prepared at dispatch
+            return None
+        if data is None:
+            return None
+        return QImage(data, width, height, width, QImage.Format.Format_Grayscale8).copy()
+
+    def _rebuild_overlay(self, adjusted=False):
         self._overlay = QImage()
         if not self._mask.isNull():
-            alpha = self._mask.scaled(
-                768, 768, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
-            )
+            alpha = self._adjusted_alpha() if adjusted else None
+            if alpha is None:
+                alpha = self._mask.scaled(
+                    768, 768, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation
+                )
             self._overlay = QImage(alpha.size(), QImage.Format.Format_ARGB32)
             self._overlay.fill(self._accent)
             self._overlay.setAlphaChannel(alpha)
@@ -214,7 +243,7 @@ class InpaintCanvas(ImagePreview):
     def _changed(self):
         """A committed mask change: rebuild the tint now and tell the editor (coverage, history)."""
         self._refresh.stop()
-        self._rebuild_overlay()
+        self._rebuild_overlay(True)
         self.maskEdited.emit()
 
     def set_hover(self, box, pixels):

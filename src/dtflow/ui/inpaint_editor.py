@@ -15,6 +15,7 @@ from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence.person_models import PersonModels, load_person_models, save_person_models
 from dtflow.services.image_preparation import (
+    adjusted_mask_alpha,
     image_content_pixels,
     load_mask_file,
     load_source_file,
@@ -114,6 +115,9 @@ class InpaintEditor(QObject):
         self.form.addPersonButton.clicked.connect(lambda: self._add_selected(remove=False))
         self.form.removePersonButton.clicked.connect(lambda: self._add_selected(remove=True))
         self.canvas.pointPicked.connect(self._pick)
+        self.canvas.set_adjuster(self._adjusted_alpha)
+        self.form.growSpin.valueChanged.connect(lambda _v: self.canvas.refresh_adjustment())
+        self.form.featherSpin.valueChanged.connect(lambda _v: self.canvas.refresh_adjustment())
         self.canvas.pointHovered.connect(self._hover)
         self.canvas.hoverLeft.connect(self._hover_left)
         self._hovered = None
@@ -614,6 +618,21 @@ class InpaintEditor(QObject):
                 "Click a person on the image (Alt removes) or in the list. Suggestions can be wrong; refine in Paint."
             )
         self.form.peopleStatus.setText(text)
+
+    def _adjusted_alpha(self, pixels, width, height):
+        """Overlay alpha with Grow and Edge feather applied; None when neither is set (the raw mask shows)."""
+        grow, feather = self.form.growSpin.value(), float(self.form.featherSpin.value())
+        if self._source is None or not (grow or feather):
+            return None
+        return adjusted_mask_alpha(
+            pixels,
+            width,
+            height,
+            source_width=self._source.width,
+            source_height=self._source.height,
+            grow=grow,
+            feather=feather,
+        )
 
     def _layer_changed(self, item):
         self._style_layer(item)
