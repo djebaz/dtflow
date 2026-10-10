@@ -258,13 +258,25 @@ def test_background_work_leaves_event_loop_responsive_and_returns_on_gui_thread(
     runner = AsyncRunner()
     results = []
 
+    from PySide6.QtCore import QTimer
+
+    release = asyncio.Event()
+    started = threading.Event()
+    gui_events = []
+
     async def slow():
-        await asyncio.sleep(0.2)
+        started.set()
+        await release.wait()
         return threading.current_thread().name
 
     runner.submit(slow(), lambda result, failure: results.append((result, failure, threading.current_thread().name)))
-    qtbot.wait(20)
-    assert results == []  # the GUI thread was free to process events while the coroutine ran
+    QTimer.singleShot(0, lambda: gui_events.append(threading.current_thread().name))
+    try:
+        qtbot.waitUntil(lambda: started.is_set() and bool(gui_events), timeout=3000)
+        assert gui_events == [threading.current_thread().name]
+        assert results == []  # Qt processed its callback while worker completion was explicitly held.
+    finally:
+        runner._loop.call_soon_threadsafe(release.set)
     qtbot.waitUntil(lambda: bool(results), timeout=3000)
     worker, failure, delivered_on = results[0]
     assert failure is None and worker == "dtflow-qt-async" and delivered_on != worker
