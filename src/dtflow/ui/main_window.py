@@ -148,9 +148,11 @@ class MainWindow:
         no_cache: bool = False,
     ):
         self.form = load_form()
+        startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
+        startup.mark("generation form")
         self.queue_page = load_ui(QUEUE_UI_FILE)
-        startup.mark("main/generation/queue forms")
+        startup.mark("queue form")
         self._disable_preview_controls(self.generation_page)
         self._disable_preview_controls(self.queue_page)
         self.form.workspaceStack.addWidget(self.generation_page)
@@ -178,7 +180,9 @@ class MainWindow:
             ):
                 stack.addWidget(getattr(page, name))
         self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
+        startup.mark("shell form and mounting")
         self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
+        startup.mark("images form")
         self.gallery = GalleryPage(
             self.gallery_detail,
             runner=self.runner,
@@ -188,7 +192,7 @@ class MainWindow:
             export_callback=self._open_checked_export,
             recycle_callback=self._request_gallery_recycle if trash_supported() else None,
         )
-        startup.mark("images form and page")
+        startup.mark("images page controller")
         self.gallery.delete_button.setToolTip(f"Move eligible checked originals to {TRASH_NAME} after confirmation.")
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
