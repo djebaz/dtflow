@@ -75,17 +75,11 @@ def _community_specs() -> dict[str, dict]:
 
 
 def fallback_spec(model_id: str) -> dict | None:
-    """The Draw Things community description of a checkpoint, for models DT+ cloud neither lists publicly nor advertises.
+    """The Draw Things community description of this exact checkpoint file, for models DT+ cloud neither lists nor advertises.
 
-    Bundled from the public ``community-models`` repository (``tools/drawthings/build_model_specs.py``). An exact file
-    match wins; otherwise another quantization of the same model supplies the description with this file name.
+    Bundled from the public ``community-models`` repository (``tools/drawthings/build_model_specs.py``). Only an exact
+    file match is used: another quantization's description can carry different fields (``is_bf16``, ``mmdit``) and
+    made the cloud drop the connection, so a file without its own entry sends no description.
     """
-    specs = _community_specs()
-    exact = specs.get(model_id)
-    if exact is not None:
-        return dict(exact)
-    key = model_key(model_id)
-    for file, spec in specs.items():
-        if model_key(file) == key:
-            return {**spec, "file": model_id}
-    return None
+    spec = _community_specs().get(model_id)
+    return dict(spec) if spec is not None else None
