@@ -5,17 +5,21 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QApplication, QSplashScreen
 
 from dtflow import startup
-from dtflow.ui.brand import app_icon
+from dtflow.ui.brand import app_icon, splash_pixmap
 from dtflow.ui.main_window import MainWindow
 from dtflow.ui.theme import apply_theme
 
 
 def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
     application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
+    # A small card appears at once; the main window takes seconds to build and replaces it when shown.
+    splash = QSplashScreen(splash_pixmap(), Qt.WindowType.WindowStaysOnTopHint)
+    splash.show()
+    application.processEvents()
     apply_theme(application)
     application.setWindowIcon(app_icon())
     startup.mark("application and theme")
@@ -27,6 +31,7 @@ def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
     application.aboutToQuit.connect(window.image_export.cancel)
     application.aboutToQuit.connect(window.runner.shutdown)
     window.show()
+    splash.finish(window)
     startup.mark("window shown")
     # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.
     QTimer.singleShot(0, lambda: _after_first_paint(window))
