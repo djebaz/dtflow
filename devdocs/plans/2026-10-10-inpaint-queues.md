@@ -26,14 +26,15 @@ Today an edit runs immediately: **Edit image** builds an owner-probe permit, pre
 3. **Uploads happen at dispatch, not at enqueue.** Cloud edits send source and mask off-machine and may consume credits. Enqueueing writes local files only. The Queues page must disclose the upload and credits before Start, as it already discloses cloud credits.
 4. **Unknown outcomes keep their meaning.** Unknown, interrupted and save-failed items stay reserved and never replay; their input snapshots stay as evidence. Clearing queues removes only queue records, never `inputs/` or `outputs/`.
 5. **Memory and disk.** Items must not hold pixels in the DB. Source and mask are read from the snapshot when the item is claimed and released after dispatch. A queue of many seeds of one edit should share one staged snapshot, not copy a 16 MP source per item.
-6. **Planner stays txt2img by default.** The simplest valuable image-operation plan is one staged edit with a seed sweep. Per-item masks, mixed sources and cross products are out of scope.
+6. **Planner gets one new dimension.** `strength` (finite, 0..1) joins the planner's scalar dimensions and is accepted only for image-operation plans; txt2img plans keep refusing it. The other existing scalars (prompt, model, steps, guidance, sampler, LoRA weights, seed) keep working over a staged edit, except `size`, which is refused because the snapshot is fitted to one size. The item count is still computed arithmetically and bounded by the 1000-item queue maximum before enumeration. Each item records `plan.dimension.strength` in its evidence like any other dimension.
 
 ## Scope
 
 ### In
 
-- Stage an edit (source, mask, grow, feather, strength, keep-outside, size) once and enqueue 1..N items that share it and differ by seed (the planner's `seed` mode).
+- Stage an edit (source, mask, grow, feather, keep-outside, size) once and enqueue 1..N items that share it. Items may differ by seed and by **strength**, in all three planner modes: `seed` (count items), `pair` (zip) and `cross` (product). Example: strength `0.5, 0.7, 1.0` crossed with seeds `1, 2` gives six items over one staged edit.
 - A **Queue edit** action beside **Edit image** in the Inpaint editor; same capability line and disclosure text as Edit image.
+- Planner and dry run: `strength` as a dimension for `seed`, `pair` and `cross` plans over a staged edit, shown in the dry-run table. The Queues page Plan area offers it only when the queue is an edit queue.
 - Dispatcher path for image items: restore the snapshot, rebuild the permit from the recorded consent, call the existing image generation path, save raw and final outputs and settle the item from the attempt.
 - Queues page: an operation badge (Inpaint or Image to image), strength, and a small source thumbnail per queue; Start disclosure for cloud uploads.
 - Restart: pending image items resume; hash verification fails closed (item fails with a clear reason, no replay, no regeneration of inputs).
@@ -42,7 +43,7 @@ Today an edit runs immediately: **Edit image** builds an owner-probe permit, pre
 ### Out
 
 - `dtflow queue add` and plan/config files for image operations (they stay refused with the current message).
-- Per-item masks, multiple sources, cross products, control or reference images.
+- Per-item masks, multiple sources, per-item size (the staged inputs are fitted to one generation size), control or reference images.
 - Standing permits, automatic retries, provider fallback, PAYG.
 - Re-using the previous result as the next item's source inside one queue ("chain"). Single edits can already chain through **Use result as source**.
 - Changing the meaning of unknown outcomes or the override control.
@@ -69,18 +70,18 @@ Today an edit runs immediately: **Edit image** builds an owner-probe permit, pre
 
 ## Pull-request sequence
 
-1. **Persistence and request acceptance.** Pre-allocated attempt id (or item-keyed inputs), consent record, relaxed queue validation for well-formed image items, planner `seed` mode for staged edits. Offline contract tests with the fake backend: enqueue, restart, hash mismatch, scope mismatch, unknown outcome keeps its reservation.
+1. **Persistence and request acceptance.** Pre-allocated attempt id (or item-keyed inputs), consent record, relaxed queue validation for well-formed image items, planner `seed`/`pair`/`cross` modes with the `strength` dimension for staged edits. Offline contract tests with the fake backend: enqueue, restart, hash mismatch, scope mismatch, unknown outcome keeps its reservation.
 2. **Dispatcher and session path.** Image item execution, outcome settlement, raw/final saving, cloud and local scope checks. Fake-backend tests for success, failure, cancellation and no-replay.
 3. **Desktop.** **Queue edit**, Queues page display, disclosure, render states, desktop guide.
 4. **Owner acceptance.** Owner-run Windows smoke on local and DT+ cloud with one exact checkpoint each. No live generation in CI, nothing billable by the author.
 
 Each step updates `devdocs/releases/unreleased.md`, `devdocs/current_dev_status.md` and the image-operations architecture document in the same change. No version bump is implied; this belongs with the 0.5.0 image-to-image milestone in [the release roadmap](releases.md).
 
-## Open questions for the owner
+## Owner decisions (2026-10-10)
 
-1. Shared snapshot across a seed sweep (recommended) or one snapshot per item?
-2. Should **Queue edit** be available on cloud before a published model description exists (as **Edit image** is today), or only when the capability line is green?
-3. Is a seed sweep enough for the first release, or are per-item strengths also wanted?
+1. Seed-sweep items share one staged snapshot rather than one per item.
+2. **Queue edit** is available on cloud when no model description is published, like **Edit image** (the capability line still discloses it).
+3. Strength is a per-item value and joins the cross and pair plan systems, not only the seed sweep.
 
 ## Validation
 
