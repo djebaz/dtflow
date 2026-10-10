@@ -12,11 +12,12 @@ import platform
 import time
 from pathlib import Path
 
+from person_zone_mask_poc import load_image, output_path, thread_count, validate_box
+
 # Bound NumPy's mask reconstruction as well as ORT; no GPU imports/probes.
 for _key in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[_key] = "1"
 
-from person_zone_mask_poc import load_image, output_path, thread_count, validate_box
 
 LOG = logging.getLogger("yolo_person_zone_mask_poc")
 SIDE = 640
@@ -96,7 +97,7 @@ def decode(detections, prototypes, geometry, size, threshold, names):
     classes, counts = np.unique(accepted[:, 5].astype(int), return_counts=True)
     histogram = [
         {"class_id": int(c), "name": names.get(int(c), "unknown"), "detections": int(n)}
-        for c, n in zip(classes, counts)
+        for c, n in zip(classes, counts, strict=False)
     ]
     people = accepted[accepted[:, 5] == 0]
     people = people[np.argsort(-people[:, 4])]
