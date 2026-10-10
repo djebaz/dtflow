@@ -283,10 +283,13 @@ class MainWindow:
             saved_source=lambda: self._saved if self._saved.available() else None,
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
+            edit_source=self.generation.queue_edit_job,
+            editing_source=lambda: self.generation.inpaint.active,
             simulation_source=self.generation.simulation,
             created_hook=self.generation.queue_created,
             activity=self.activity,
         )
+        self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
         startup.mark("pages wired, session restored")
@@ -751,8 +754,8 @@ class MainWindow:
         self._show_generation()
 
     def _edit_output(self, path: str) -> None:
-        if self.generation.edit_saved_image(path):
-            self._show_generation()
+        self._show_generation()
+        self.generation.edit_saved_image(path)
 
     def _regenerate_output(self, request: dict, identity: str) -> None:
         if self.inline.commit(self.gallery.regenerate_button):

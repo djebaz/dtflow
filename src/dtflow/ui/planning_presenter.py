@@ -28,6 +28,7 @@ ERROR_FIELDS = {
     "height_px": "planSizesEdit",
     "lora_weight": "planLorasEdit",
     "lora": "planLorasEdit",
+    "strength": "planStrengthsEdit",
 }
 SEED_POLICY_TEXT = {
     "fixed": "the base seed is kept for every item",
@@ -50,6 +51,7 @@ class PlanForm:
     sizes: str = ""
     loras: str = ""
     increment: bool = False
+    strengths: str = ""
 
 
 def _tokens(text: str, separator: str = ";") -> list[str]:
@@ -113,6 +115,7 @@ def build_plan(form: PlanForm) -> Plan:
         ("guidance", _numbers(form.guidance, float, "planGuidanceEdit", "guidance")),
         ("sampler", tuple(_tokens(form.samplers))),
         ("size", _sizes(form.sizes)),
+        ("strength", _numbers(form.strengths, float, "planStrengthsEdit", "strengths")),
     ):
         if values:
             dimensions.append((name, values))

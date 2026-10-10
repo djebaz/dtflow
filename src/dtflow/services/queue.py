@@ -12,10 +12,18 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from dtflow.core.models import BackendError, BackendEvent, ResolvedGenerationRequest
+from dtflow.core.models import (
+    BackendError,
+    BackendEvent,
+    BackendFailure,
+    ErrorCategory,
+    ResolvedGenerationRequest,
+    ValidationError,
+)
 from dtflow.core.tasks import settle
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.generation import GenerationService
+from dtflow.services.image_inputs import restore_image_inputs
 
 log = logging.getLogger(__name__)
 
@@ -139,7 +147,23 @@ class QueueDispatcher:
         evidence.put_nowait(("item_started", {"item_id": item_id, "request_id": request.request_id}, None))
         try:
             try:
-                saved = await self.service.generate(request, on_event=receive)
+                options = {}
+                if request.operation != "txt2img":
+                    try:
+                        # Staged, hash-verified inputs are read on a worker only now, and released after dispatch.
+                        options["prepared_inputs"] = await settle(
+                            asyncio.to_thread(restore_image_inputs, self.service.input_state, request.image_inputs)
+                        )
+                    except ValidationError as exc:
+                        raise BackendError(
+                            BackendFailure(
+                                ErrorCategory.VALIDATION,
+                                "image_inputs_unavailable",
+                                str(exc),
+                                request.request_id,
+                            )
+                        ) from exc
+                saved = await self.service.generate(request, on_event=receive, **options)
             except asyncio.CancelledError:
                 state = await settle(self.store.settle_item(item_id))
                 evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))

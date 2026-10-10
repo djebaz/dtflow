@@ -2844,6 +2844,36 @@ No generation or saved output</string>
                  </widget>
                 </item>
                 <item row="3" column="0">
+                 <widget class="QLabel" name="galleryAdditionalOperationLabel">
+                  <property name="text"><string>Operation</string></property>
+                  <property name="role" stdset="0"><string>secondary</string></property>
+                  <property name="textRole" stdset="0"><string>caption</string></property>
+                 </widget>
+                </item>
+                <item row="3" column="1">
+                 <widget class="QLabel" name="galleryAdditionalOperationValue">
+                  <property name="text"><string>Not recorded</string></property>
+                  <property name="textInteractionFlags"><set>Qt::TextSelectableByMouse</set></property>
+                  <property name="wordWrap"><bool>false</bool></property>
+                  <property name="textRole" stdset="0"><string>value</string></property>
+                 </widget>
+                </item>
+                <item row="3" column="2">
+                 <widget class="QLabel" name="galleryAdditionalStrengthLabel">
+                  <property name="text"><string>Strength</string></property>
+                  <property name="role" stdset="0"><string>secondary</string></property>
+                  <property name="textRole" stdset="0"><string>caption</string></property>
+                 </widget>
+                </item>
+                <item row="3" column="3">
+                 <widget class="QLabel" name="galleryAdditionalStrengthValue">
+                  <property name="text"><string>Not recorded</string></property>
+                  <property name="textInteractionFlags"><set>Qt::TextSelectableByMouse</set></property>
+                  <property name="wordWrap"><bool>false</bool></property>
+                  <property name="textRole" stdset="0"><string>value</string></property>
+                 </widget>
+                </item>
+                <item row="4" column="0">
                  <layout class="QHBoxLayout" name="galleryAdditionalPathLabelHeadingLayout" stretch="0,1">
                   <property name="leftMargin">
                    <number>0</number>
@@ -2906,7 +2936,7 @@ No generation or saved output</string>
                   </item>
                  </layout>
                 </item>
-                <item row="3" column="1">
+                <item row="4" column="1">
                  <widget class="QLabel" name="galleryAdditionalPathValue">
                   <property name="accessibleName">
                    <string>AdditionalPathValue</string>
@@ -2925,7 +2955,7 @@ No generation or saved output</string>
                   </property>
                  </widget>
                 </item>
-                <item row="3" column="2" colspan="2">
+                <item row="4" column="2" colspan="2">
                  <layout class="QHBoxLayout" name="galleryReuseActionsLayout">
                   <property name="spacing"><number>6</number></property>
                   <item><spacer name="galleryReuseActionsSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint"><size><width>20</width><height>20</height></size></property></spacer></item>
@@ -2955,7 +2985,7 @@ No generation or saved output</string>
                   </item>
                  </layout>
                 </item>
-                <item row="4" column="0" colspan="4">
+                <item row="5" column="0" colspan="4">
                  <layout class="QHBoxLayout" name="galleryPathActionsLayout">
                   <property name="spacing"><number>6</number></property>
                   <item>

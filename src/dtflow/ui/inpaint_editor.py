@@ -183,7 +183,7 @@ class InpaintEditor(QObject):
         for name in ("configurationCombo", "loadConfigurationButton", "saveConfigurationButton", "savePresetButton"):
             widget = getattr(self.page, name)
             widget.setEnabled(not active and not self._busy)
-            widget.setToolTip("Image operations are single-shot only." if active else "")
+            widget.setToolTip("Configurations and presets cover text-to-image only." if active else "")
         self._steps_note()
         self._controls()
         self.refresh_capability()
@@ -580,11 +580,15 @@ class InpaintEditor(QObject):
             return
         self._dispatch()
 
-    def _dispatch(self):
-        if self._source is None or self._busy or self._loading or self.controller is None:
-            return
+    def queue_job(self):
+        """The current edit for the Queues tab: None until a source and a mask are ready (the capability line says why)."""
+        if self._busy or self._loading or not self._ready():
+            return None
+        return self._edit_job()
+
+    def _edit_job(self):
         form = self.form
-        job = EditJob(
+        return EditJob(
             self._source,
             self.canvas.mask_pixels(),
             form.growSpin.value(),
@@ -592,6 +596,11 @@ class InpaintEditor(QObject):
             form.strengthSpinBox.value(),
             form.keepOutsideCheck.isChecked(),
         )
+
+    def _dispatch(self):
+        if self._source is None or self._busy or self._loading or self.controller is None:
+            return
+        job = self._edit_job()
         self.canvas.set_result(QPixmap())
         self.controller.generate(edit=job)
 
