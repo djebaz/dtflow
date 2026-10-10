@@ -123,6 +123,10 @@ def render_inpaint_states(shell, state, capture):
     )
     editor._set_analysis(people)
     capture("28-inpaint-select-people-found")
+    person = people.people[0]
+    editor.canvas.set_hover(person.box, person.person)
+    capture("29-inpaint-select-hover-preview")
+    editor.canvas.clear_hover()
     editor.form.paintModeButton.setChecked(True)
 
     strip = activity_strip(page)

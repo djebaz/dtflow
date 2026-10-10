@@ -20,7 +20,7 @@ from dtflow.services.image_preparation import (
     mask_coverage,
     save_mask_pixels_file,
 )
-from dtflow.services.person_selection import analyze_people, apply_selection, classify_models, person_at
+from dtflow.services.person_selection import analyze_people, apply_selection, classify_models, layers_union, person_at
 from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -99,6 +99,11 @@ class InpaintEditor(QObject):
         self.form.peopleList.itemActivated.connect(self._person_item)
         self.form.peopleList.itemClicked.connect(self._person_item)
         self.canvas.pointPicked.connect(self._pick)
+        self.canvas.pointHovered.connect(self._hover)
+        self.canvas.hoverLeft.connect(self.canvas.clear_hover)
+        self._hovered = None
+        for box in (self.form.layerPerson, self.form.layerBody, self.form.layerClothes):
+            box.toggled.connect(lambda _=False: self._reset_hover())
         self.form.modeLayout.setContentsMargins(0, 0, 0, 0)
         self.form.modeLayout.setSpacing(0)
         self.canvas.viewChanged.connect(self._view_changed)
@@ -514,7 +519,27 @@ class InpaintEditor(QObject):
             )
         self.form.peopleStatus.setText(text)
 
+    def _reset_hover(self):
+        self._hovered = None
+        self.canvas.clear_hover()
+
+    def _hover(self, x, y):
+        analysis = self._analysis
+        if analysis is None or self._busy or self._loading:
+            return
+        person = person_at(analysis, x, y)
+        layers = self._layers()
+        key = None if person is None or not layers else (person.index, layers)
+        if key == self._hovered:
+            return
+        self._hovered = key
+        if key is None:
+            self.canvas.clear_hover()
+        else:
+            self.canvas.set_hover(person.box, layers_union(person, layers))
+
     def _set_analysis(self, analysis):
+        self._reset_hover()
         self._analysis = analysis
         self.form.peopleList.clear()
         if analysis is not None:
@@ -582,6 +607,7 @@ class InpaintEditor(QObject):
 
     def _add_person(self, person, remove):
         layers, analysis = self._layers(), self._analysis
+        self._reset_hover()
         if not layers:
             self.form.peopleStatus.setText("Tick Person, Body or Clothes first.")
             return

@@ -30,6 +30,8 @@ REDO_PATH = '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"
 class InpaintCanvas(ImagePreview):
     maskEdited = Signal()
     viewChanged = Signal(str)
+    pointHovered = Signal(int, int)
+    hoverLeft = Signal()
     pointPicked = Signal(int, int, bool)  # source pixel x, y; True when Alt asks to remove
     sourceDropped = Signal(str)
     HISTORY_BYTES = 64 * 1024 * 1024
@@ -39,6 +41,7 @@ class InpaintCanvas(ImagePreview):
         self._mask = QImage()
         self._overlay = QImage()
         self._result = QPixmap()
+        self._hover = None  # (x0, y0, ARGB overlay) in source pixels
         self._undo = []
         self._redo = []
         self._stroke = None
@@ -214,8 +217,24 @@ class InpaintCanvas(ImagePreview):
         self._rebuild_overlay()
         self.maskEdited.emit()
 
+    def set_hover(self, box, pixels):
+        """Display-only tint of the person under the pointer; never part of the mask or its history."""
+        x0, y0, x1, y1 = box
+        alpha = QImage(pixels, x1 - x0, y1 - y0, x1 - x0, QImage.Format.Format_Grayscale8).copy()
+        overlay = QImage(alpha.size(), QImage.Format.Format_ARGB32)
+        overlay.fill(self._accent)
+        overlay.setAlphaChannel(alpha)
+        self._hover = (x0, y0, overlay)
+        self.viewport().update()
+
+    def clear_hover(self):
+        if self._hover is not None:
+            self._hover = None
+            self.viewport().update()
+
     def set_select_mode(self, enabled):
         self.cancel_stroke()
+        self.clear_hover()
         self.select_mode = enabled
         if enabled:
             self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
@@ -273,7 +292,21 @@ class InpaintCanvas(ImagePreview):
             self._paint_line(point, point, erase)
         event.accept()
 
+    def leaveEvent(self, event):
+        if self.select_mode:
+            self.hoverLeft.emit()
+        super().leaveEvent(event)
+
     def mouseMoveEvent(self, event):
+        if self.select_mode and self._drag is None and not self._mask.isNull():
+            if self.image_rect().contains(event.position()):
+                point = self._point(event.position())
+                self.pointHovered.emit(
+                    min(self._mask.width() - 1, max(0, int(point.x()))),
+                    min(self._mask.height() - 1, max(0, int(point.y()))),
+                )
+            else:
+                self.hoverLeft.emit()
         if self._drag is not None:
             super().mouseMoveEvent(event)
         elif self._stroke:
@@ -337,6 +370,17 @@ class InpaintCanvas(ImagePreview):
         elif not self._overlay.isNull():
             painter.setOpacity(0.45)
             painter.drawImage(self.image_rect(), self._overlay)
+            painter.setOpacity(1)
+        if self._hover is not None and self.select_mode and self._view != "Result":
+            x0, y0, overlay = self._hover
+            rect, factor = self.image_rect(), self._factor()
+            painter.setOpacity(0.55)
+            painter.drawImage(
+                QRectF(
+                    rect.x() + x0 * factor, rect.y() + y0 * factor, overlay.width() * factor, overlay.height() * factor
+                ),
+                overlay,
+            )
             painter.setOpacity(1)
         if self._stroke and self.tool in ("Rectangle", "Circle"):
             _, start, end, _, _ = self._stroke

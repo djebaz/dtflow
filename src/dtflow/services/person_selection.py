@@ -312,6 +312,16 @@ def person_at(analysis: PersonAnalysis, x: int, y: int) -> PersonLayers | None:
     return None
 
 
+def layers_union(person: PersonLayers, layers: frozenset[str]) -> bytes:
+    """Box-sized 0/255 union of the chosen layers, for the hover preview; layers the model lacks are skipped."""
+    total = np.zeros((person.box[3] - person.box[1]) * (person.box[2] - person.box[0]), dtype=np.uint8)
+    for name in layers:
+        data = person.layer(name)
+        if data is not None:
+            total |= np.frombuffer(data, dtype=np.uint8)
+    return total.tobytes()
+
+
 def apply_selection(
     current: bytes, analysis: PersonAnalysis, person: PersonLayers, layers: frozenset[str], *, remove: bool
 ) -> bytes:
