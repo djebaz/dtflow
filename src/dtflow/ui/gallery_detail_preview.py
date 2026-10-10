@@ -160,8 +160,23 @@ def toggle_image_focus(page, enter: bool | None = None) -> None:
         for widget in hidden:
             widget.hide()
         page._focus_hidden = hidden
+        # Escape must leave from any focus inside the window; page-local Escape shortcuts would make it ambiguous.
+        page._focus_escape = getattr(page, "_focus_escape", None) or QShortcut(QKeySequence("Escape"), window)
+        page._focus_escape.setContext(Qt.ShortcutContext.WindowShortcut)
+        page._focus_escape.activated.connect(lambda: toggle_image_focus(page, False))
+        page._focus_muted = [
+            item for item in page.findChildren(QShortcut) if item.key() == QKeySequence("Escape") and item.isEnabled()
+        ]
+        for item in page._focus_muted:
+            item.setEnabled(False)
         window.showFullScreen()
     else:
+        escape = getattr(page, "_focus_escape", None)
+        if escape is not None:
+            escape.activated.disconnect()
+        for item in getattr(page, "_focus_muted", []):
+            item.setEnabled(True)
+        page._focus_muted = []
         for widget in getattr(page, "_focus_hidden", []):
             widget.show()
         page._focus_hidden = []
