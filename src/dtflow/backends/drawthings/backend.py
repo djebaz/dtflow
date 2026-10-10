@@ -529,9 +529,12 @@ class DrawThingsBackend:
 
     def _remember_specs(self, reply) -> None:
         """Keep the server's own model descriptions (Echo ``override.models``) keyed by file name."""
+        override = reply.override
         try:
-            items = json.loads(reply.override.models) if reply.override.models else []
+            items = json.loads(override.models) if override is not None and override.models else []
         except ValueError:
+            return
+        if not isinstance(items, list):
             return
         self._model_specs = {
             item["file"]: item for item in items if isinstance(item, dict) and isinstance(item.get("file"), str)
