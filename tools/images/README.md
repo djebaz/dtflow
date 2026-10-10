@@ -145,3 +145,124 @@ these are not real segmentation evidence. No further tests or smoke runs are
 performed under fast-implement. Final real-model and target-CPU smoke belongs
 to the owner. No pretrained image inference, training, generation or paid provider
 operations have been run by the agent.
+
+## CPU YOLO26 person mask and manual rectangle
+
+`yolo_person_zone_mask_poc.py` is the same experiment as the FastSeg one, with an Ultralytics
+**YOLO26n-seg** end2end export (instance masks instead of a semantic class). It needs the
+`segment` + `end2end` metadata: raw YOLO exports and other tasks fail. Input is one float32
+`[1,3,640,640]` tensor, outputs are `[1,300,38]` detections and `[1,32,160,160]` prototypes. Images are
+letterboxed to 640 square (Pillow bilinear, grey pad 114, divide by 255). The person class (0) above
+`-f/--confidence` (default 0.25) is kept, at most the 20 best instances, and their masks are
+united. The CLI is `-s -m -c -b -f -t -o` as above (`-b x0 y0 x1 y1` is the manual rectangle) and writes the
+same four images and `report.json`. Both Ultralytics exports used here are AGPL-3.0: check licensing
+before shipping anything built on them in an app.
+
+## Person parts mask PoC (YOLO26 + NudeNet + pose + clothes)
+
+`person_parts_mask_poc.py` cuts the YOLO26 person mask into labelled parts. It is standalone, CPU only,
+sequential (one ONNX session alive at a time, freed before the next one loads), and non-generative.
+It imports the decoder, letterbox and checks of `yolo_person_zone_mask_poc.py` and the image/output
+helpers of `person_zone_mask_poc.py`. Nothing is downloaded: every model is passed with its
+SHA-256 and a mismatch fails.
+
+### Stages
+
+1. **Person mask**: YOLO26n-seg as above, with a `--person-box-margin` (default 8 model px) around each
+   box and `--fill-holes` (default 1500 px) to close small holes.
+2. **Parts** (required): NudeNet **320n** (Ultralytics YOLOv8 detect, raw `[1,22,N]`, 18 classes). Armpit
+   classes are excluded, then greedy class-agnostic NMS (`--parts-confidence`, default 0.25, and
+   `--parts-iou`, default 0.45). Each detection is grown (`--grow`), limited by a shape
+   (`--mask-box-limit-shape rectangle|rounded|ellipse`), reduced to the component under its centre,
+   smoothed (`--mask-smooth-*`) and intersected with the person. `--overlap center|nearest|smaller` decides
+   box overlaps.
+3. **Pose** (optional, `--pose-model` + `--pose-sha256`): **yolo26n-pose** end2end `[1,300,57]`, 17 COCO
+   keypoints, NMS applied (near-duplicate people otherwise appear). It adds limb zones: upper arm,
+   forearm, hand, thigh, shin, foot. A zone is the slab between the two planes perpendicular to the
+   keypoint vector, within `--limb-width` (arms, default 0.35) or `--leg-width` (legs, default 0.20) of the
+   limb length, intersected with the person and with the connected piece through the limb axis. A hand or
+   foot is an extension past the wrist or ankle (`--hand-extent`, `--foot-extent`; 0 = until the mask
+   ends). Limb zones are painted after the box parts; overlaps between zones go to the nearest limb
+   axis. `--foot-zones auto` skips foot zones when NudeNet found a `FEET_*` box, `--no-leg-zones`
+   keeps arms and hands only.
+4. **Clothes** (optional, `--clothes-model` + `--clothes-sha256`, optional `--clothes-config`): a
+   SegFormer ONNX with dynamic NCHW input, run on the person bounding-box crop (long side
+   `--clothes-size`, default 512, multiple of 32). Tested with `mattmdjaga/segformer_b2_clothes`
+   (110 MB, 18 labels: Background, Hat, Hair, Sunglasses, Upper-clothes, Skirt, Pants, Dress, Belt,
+   Left-shoe, Right-shoe, Face, Left-leg, Right-leg, Left-arm, Right-arm, Bag, Scarf). The B0 variant was
+   clearly weaker on the owner's samples. There is **no** label for stockings, tights, socks or underwear:
+   such pixels land in a leg, pants or skirt label. `Face` is capped to the NudeNet face box plus
+   `--face-below` (default 0.15 of its height); Face pixels beyond it become a synthetic `Skin` label.
+   `--limb-skin-only` removes garment pixels from every pose zone (needs the clothes model).
+5. **Expansion** (`--expand none|rows|nearest|geodesic`, `--expand-max`, `--limb-expand-max`):
+   geodesic floods each part through the person mask, so it follows limbs and curves. Pixels not connected
+   to any part stay unassigned (`unassigned_person_pixels` in the report).
+
+### Running
+
+```powershell
+uv run --locked --group mask-poc python tools/images/person_parts_mask_poc.py `
+  -s 'C:\Images\person.jpg' `
+  -m 'tmp/models/yolo26n-seg.onnx' -c <sha256> `
+  --parts-model 'tmp/models/320n.onnx' --parts-sha256 <sha256> `
+  --pose-model 'tmp/models/yolo26n-pose.onnx' --pose-sha256 <sha256> `
+  --clothes-model 'tmp/models/segformer_b2_clothes.onnx' --clothes-sha256 <sha256> `
+  --limb-width 0.17 --hand-extent 0.7 --limb-expand-max 15 `
+  --expand geodesic --expand-max 150 --overlap nearest --limb-skin-only `
+  -o 'tmp/person-zone/parts-001'
+```
+
+`-o` must be a new directory below repository `tmp/`; `--overwrite` reuses an existing one and replaces only
+the files this script owns. **Folder mode**: `-d/--source-dir <folder>` replaces `-s`/`-o`; it takes
+the images directly inside the folder (not recursive, symlinks ignored) and writes each to
+`<folder>/analyze/<filename>/` (the extension is kept only when two files share a name). Existing result
+folders are skipped unless `--overwrite`; a failing image is logged and the run continues (exit code 1 at
+the end). Models are reloaded for each image. Folder-mode outputs are not under `tmp/`.
+
+### Outputs
+
+Per image: `person_mask.png`, `parts_label_map.png` and `parts_core_label_map.png` (0 outside the person,
+1 person without a part, detection index + 2 for a part; core = before expansion), their `*_view.png`
+colour versions with part names, `parts/NN_LABEL.png`, `labels/LABEL.png` (union per label),
+`overlay.jpg` and `report.json`. With the clothes model: `clothes_label_map.png` (0 outside, class id + 1
+inside) and its view, `clothes/*.png`, `clothes_overlay.jpg`, `clothed_mask.png`, `skin_mask.png` and
+`parts_fused/NN_LABEL_covered|skin.png`; each part gets `clothed_pixels`, `skin_pixels` and
+`other_pixels` in the report. Clothing labels are Upper-clothes, Skirt, Pants, Dress, Belt, Scarf;
+skin labels are Face, Left/Right-arm, Left/Right-leg and `Skin`; Hair, Background, shoes and the rest
+count as neither.
+
+`combined_overlay.png` puts everything in one image (`--combined-layers`, default
+`fill,parts,clothes,names`; also `boxes`, `pose`; `none` skips it). Fill colour is the status: red =
+exposed (non-garment pixels of a detector `*_EXPOSED` part), amber = other bare skin, blue = clothing,
+grey = other. Contour hue is the part, a black line is a clothing edge, white is the person outline,
+and a legend strip sits below the picture. Without the clothes model, `*_COVERED` parts stand in for
+clothing.
+
+The report records models and checksums, providers and versions, preprocessing, every decoding option,
+per-part pixel counts, pose keypoints and diagnostics (`foot_zones_skipped`,
+`limb_pixels_removed_as_clothing`), clothes label counts and timings per stage. On the owner's old
+Core 2-class CPU a full run with SegFormer B2 took roughly 20 to 30 s, of which the clothes inference was
+5 to 13 s and writing the PNGs 4 to 7 s; these are single cold runs, not a benchmark.
+
+### Known limits
+
+- Parts are detector boxes intersected with the person mask: rectangular cuts, not part segmentation,
+  and detections can be missed. For example `FEMALE_GENITALIA_COVERED` was absent on a standing photo with a
+  short skirt, so the belly and thighs absorbed that area. The report does not yet say whether such a
+  candidate scored under the threshold or lost in NMS.
+- Pose keypoints can be wrong under skirts or long hems: a knee placed at the hem makes the thigh zone
+  tiny and the shin zone contain the whole leg. There is no knee sanity check yet.
+- With `--limb-skin-only`, pixels removed from a limb zone are not protected: box parts can flood into them
+  and a zone made only of clothing can end empty.
+- SegFormer logits are 1/4 of the input resolution; the ATR label set may mislabel skin, underwear or
+  unusual poses; Left/Right follow the model's convention. Its licence was not checked.
+- Person masks are the union of up to 20 instances; parts are not attributed to instances.
+- Both Ultralytics models are AGPL-3.0. Reports and overlays contain local paths and may be sensitive.
+
+### Validation boundary
+
+Fake-session and synthetic-array smoke tests (decoders, split and expansion, limb zones, pose NMS,
+clothes fusion, label views, folder mode, combined overlay) were run in a sandbox without the YOLO
+or pose weights; the NudeNet 320n and SegFormer B0 sessions were real. All other model results come from the owner's
+runs on real photos, reviewed by eye. No accuracy, speed or licence claim is made. Thresholds and defaults are
+sample-fitted on a handful of images.
