@@ -1039,11 +1039,19 @@ class GenerationPage:
         finally:
             self._updating_catalogue = False
         self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint, preserve_selection=preserve_selection)
-        unknown = self._catalogue.view().unclassified_checkpoints
-        page.unclassifiedModelsButton.setVisible(bool(unknown))
-        page.unclassifiedModelsButton.setText(
-            f"{len(unknown)} unclassified checkpoint" + ("" if len(unknown) == 1 else "s") + " found"
-        )
+        view = self._catalogue.view()
+        unknown, other = view.unclassified_checkpoints, view.other_files
+        page.unclassifiedModelsButton.setVisible(bool(unknown or other))
+        if other:
+            page.unclassifiedModelsButton.setText(
+                f"{len(unknown) + len(other)} unclassified file"
+                + ("" if len(unknown) + len(other) == 1 else "s")
+                + " found"
+            )
+        else:
+            page.unclassifiedModelsButton.setText(
+                f"{len(unknown)} unclassified checkpoint" + ("" if len(unknown) == 1 else "s") + " found"
+            )
 
     def _rebuild_checkpoints(
         self, *, preferred_checkpoint: str | None = None, preserve_selection: bool = False
@@ -1099,17 +1107,23 @@ class GenerationPage:
         self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
 
     def _show_unclassified_models(self) -> None:
-        unknown = self._catalogue.view().unclassified_checkpoints
-        if not unknown:
+        view = self._catalogue.view()
+        unknown, other = view.unclassified_checkpoints, view.other_files
+        if not unknown and not other:
             return
-        InlineNotice.information(
-            self.page,
-            "Unclassified checkpoints",
+        text = (
             "These checkpoints are available on the active provider but are not classified by the DTFlow catalogue. "
             "They remain usable through the Checkpoint selector's custom-identifier action. "
             "DTFlow will not guess their family, generation type, quantization or compatible LoRAs.\n\n"
-            + "\n".join(unknown),
+            + "\n".join(unknown)
         )
+        if other:
+            text += (
+                "\n\nOther files listed by the provider without metadata (LoRAs, controls, encoders, upscalers or "
+                "checkpoints; DTFlow cannot tell them apart). They are not offered as checkpoints:\n\n"
+                + "\n".join(other)
+            )
+        InlineNotice.information(self.page, "Unclassified files", text)
 
     def _show_inventory(self, snapshot: InventorySnapshot, how: str) -> None:
         self.lora.set_inventory(snapshot)

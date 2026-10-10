@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from dtflow.core.model_profiles import community_model_ids
 from dtflow.core.models import InventorySnapshot
 
 log = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ class CatalogueView:
     checkpoints: tuple[CatalogueEntry, ...]
     loras: tuple[CatalogueEntry, ...]
     unclassified_checkpoints: tuple[str, ...]
+    other_files: tuple[str, ...] = ()
 
 
 def _records(path: Path) -> list[dict]:
@@ -275,22 +277,30 @@ class Catalogue:
         known = {entry.identifier for entry in known_entries}
         known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *user_loras, *self._controls)}
         unknown = ()
+        other = ()
         if self._inventory is not None:
             metadata = dict(self._inventory.diagnostics).get("model_metadata") == "present"
-            raw_unknown = {
-                entry.identifier
-                for entry in self._inventory.entries
-                if entry.identifier not in known
-                and entry.identifier not in known_nonmodels
-                and (entry.kind == "model" or (entry.kind == "unknown" and not metadata))
-            }
+            # Without server model metadata (direct DT+ cloud) every listed file is "unknown": checkpoints, LoRAs,
+            # controls, VAEs, text encoders, upscalers. Only files with an exact community model description are
+            # evidence of a checkpoint; the rest stay out of the model list and are only inspectable.
+            community = community_model_ids()
+            raw_unknown = set()
+            raw_other = set()
+            for entry in self._inventory.entries:
+                if entry.identifier in known or entry.identifier in known_nonmodels:
+                    continue
+                if entry.kind == "model":
+                    raw_unknown.add(entry.identifier)
+                elif entry.kind == "unknown" and not metadata:
+                    (raw_unknown if entry.identifier in community else raw_other).add(entry.identifier)
             classified_unknown = {
                 entry.identifier
                 for entry in known_entries
                 if entry.identifier in available and (entry.base_model is None or not entry.domains)
             }
             unknown = tuple(sorted(raw_unknown | classified_unknown))
-        self._cached_view = CatalogueView(checkpoints, loras, unknown)
+            other = tuple(sorted(raw_other))
+        self._cached_view = CatalogueView(checkpoints, loras, unknown, other)
         return self._cached_view
 
     def checkpoints(

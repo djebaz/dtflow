@@ -74,6 +74,11 @@ def _community_specs() -> dict[str, dict]:
     return document if isinstance(document, dict) else {}
 
 
+def community_model_ids() -> frozenset[str]:
+    """Exact checkpoint files the bundled Draw Things community descriptions cover (models only, never LoRAs/controls)."""
+    return frozenset(_community_specs())
+
+
 def fallback_spec(model_id: str) -> dict | None:
     """The Draw Things community description of this exact checkpoint file, for models DT+ cloud neither lists nor advertises.
 
