@@ -670,7 +670,7 @@ class GenerationPage:
                 phase="running",
                 completed=completed,
                 total=total,
-                detail=detail + ". Pause is not supported for single generation.",
+                detail=detail,
             )
         )
 
@@ -731,7 +731,7 @@ class GenerationPage:
             run_state=RunState(
                 owner="generation",
                 phase="running",
-                detail="Preparing generation. Pause is not supported for single generation.",
+                detail="Preparing generation",
             ),
         )
         self._set_busy(True)
