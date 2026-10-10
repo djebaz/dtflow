@@ -754,8 +754,8 @@ class MainWindow:
         self._show_generation()
 
     def _edit_output(self, path: str) -> None:
-        if self.generation.edit_saved_image(path):
-            self._show_generation()
+        self._show_generation()
+        self.generation.edit_saved_image(path)
 
     def _regenerate_output(self, request: dict, identity: str) -> None:
         if self.inline.commit(self.gallery.regenerate_button):
