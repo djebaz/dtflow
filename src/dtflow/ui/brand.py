@@ -36,33 +36,3 @@ def connection_icon(level: str = "unknown") -> QIcon:
     painter.drawEllipse(34, 1, 6, 6)
     painter.end()
     return QIcon(pixmap)
-
-
-def splash_pixmap() -> QPixmap:
-    """Small startup card painted from the shared palette, shown while the window is built."""
-    tokens = load_tokens()
-    pixmap = QPixmap(360, 220)
-    pixmap.fill(QColor(tokens["color.background"]))
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    logo = QPixmap(str(APP_ICON))
-    if not logo.isNull():
-        logo = logo.scaled(84, 84, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        painter.drawPixmap((pixmap.width() - logo.width()) // 2, 38, logo)
-    painter.setPen(QColor(tokens["color.text"]))
-    font = painter.font()
-    font.setPointSize(18)
-    font.setBold(True)
-    painter.setFont(font)
-    painter.drawText(
-        pixmap.rect().adjusted(0, 0, 0, -50), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom, "DTFlow"
-    )
-    painter.setPen(QColor(tokens["color.secondary"]))
-    font.setPointSize(9)
-    font.setBold(False)
-    painter.setFont(font)
-    painter.drawText(
-        pixmap.rect().adjusted(0, 0, 0, -22), Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom, "Starting…"
-    )
-    painter.end()
-    return pixmap
