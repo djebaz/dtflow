@@ -68,7 +68,9 @@ def letterbox(image):
     canvas = Image.new("RGB", (SIDE, SIDE), (114, 114, 114))
     canvas.paste(image.resize(resized, Image.Resampling.BILINEAR), (left, top))
     tensor = np.ascontiguousarray(np.asarray(canvas, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0)
-    return tensor, {"resized_wh": list(resized), "padding_left_top": [left, top],
+    # "gain" is the single Ultralytics-style ratio used to unmap boxes; gain_xy is the effective
+    # per-axis ratio after rounding (differs by <1 px for odd sizes) and is kept for the mask crop.
+    return tensor, {"resized_wh": list(resized), "padding_left_top": [left, top], "gain": gain,
                     "gain_xy": [resized[0] / width, resized[1] / height]}
 
 
@@ -98,7 +100,7 @@ def decode(detections, prototypes, geometry, size, threshold, names):
     yy, xx = np.ogrid[:SIDE, :SIDE]
     records = []
     left, top = geometry["padding_left_top"]
-    gain_x, gain_y = geometry["gain_xy"]
+    gain_x = gain_y = geometry["gain"]
     width, height = size
     proto = prototypes[0].reshape(32, -1)
     for row in people:
@@ -119,9 +121,13 @@ def decode(detections, prototypes, geometry, size, threshold, names):
     rw, rh = geometry["resized_wh"]
     cropped = (union[top:top+rh, left:left+rw].astype(np.uint8) * 255)
     person = np.asarray(Image.fromarray(cropped).resize(size, Image.Resampling.NEAREST)).copy()
+    person_rows = rows[rows[:, 5] == 0]
+    top_scores = [float(v) for v in np.sort(person_rows[:, 4])[::-1][:3]]
     return person, {"class_histogram_above_confidence": histogram, "person_instances": records,
-                    "person_instances_dropped_at_cap": dropped, "max_person_score": float(rows[rows[:, 5] == 0, 4].max())
-                    if np.any(rows[:, 5] == 0) else None}
+                    "person_instances_dropped_at_cap": dropped,
+                    "max_person_score": top_scores[0] if top_scores else None,
+                    "top3_person_scores_any_confidence": top_scores,
+                    "prototype_shape": list(prototypes.shape), "mask_coefficients": int(rows.shape[1] - 6)}
 
 
 def run(args):
@@ -175,6 +181,12 @@ def run(args):
         warnings.append("Person mask does not intersect manual box")
     if diagnostics["person_instances_dropped_at_cap"]:
         warnings.append("Person masks capped at 20 highest-score instances")
+    if "'half': True" in metadata.get("args", ""):
+        warnings.append("Export args say half=True: graph may run FP16 internally on CPU; consider a half=False export")
+    person_px, edit_px = int(np.count_nonzero(person)), int(np.count_nonzero(edit))
+    edit_fraction = edit_px / person_px if person_px else 0.0
+    if person_px and 0 < edit_fraction < 0.25:
+        warnings.append(f"Manual box covers only {edit_fraction:.1%} of the person mask; check box coordinates")
     LOG.info("DETECTIONS %s", diagnostics)
     LOG.info("MASKS person_pixels=%d edit_pixels=%d", np.count_nonzero(person), np.count_nonzero(edit))
     for warning in warnings:
@@ -182,6 +194,8 @@ def run(args):
     report = {
         "schema_version": 1, "algorithm": "yolo26-end2end-person-zone-poc-v1",
         "model": {"path": str(args.model.resolve()), "sha256": digest, "metadata": metadata},
+        "model_io": {"inputs": [{"name": i.name, "shape": i.shape, "type": i.type} for i in session.get_inputs()],
+                     "outputs": [{"name": o.name, "shape": o.shape, "type": o.type} for o in session.get_outputs()]},
         "source": {"path": str(args.source.resolve()), "raw_size_wh": list(raw_size), "oriented_size_wh": list(image.size)},
         "runtime": {"providers": session.get_providers(), "onnxruntime": ort.__version__, "numpy": np.__version__,
                     "platform": platform.platform(), "processor": platform.processor(), "inference_workers": 1,
@@ -192,15 +206,17 @@ def run(args):
                           "input": "float32 NCHW", **geometry},
         "decoding": {"layout": "xyxy,score,class,32 mask coefficients; end2end, no additional NMS",
                      "person_class": 0, "confidence": args.confidence, "mask_threshold": "logits >0",
-                     "mapping": "Pillow bilinear prototype logits to640; threshold/crop detection; unpad; nearest tosource",
-                     "union": "up to20 person instances; manual rectangle AND union; no feather"},
+                     "mapping": "Pillow bilinear prototype logits to 640; threshold/crop detection; unpad; nearest to source",
+                     "union": "up to 20 person instances; manual rectangle AND union; no feather"},
         "coordinates": {"box_xyxy": args.box, "space": "EXIF-oriented source pixels",
                         "bounds": "left/top inclusive, right/bottom exclusive"},
-        "masks": {"person_pixels": int(np.count_nonzero(person)), "zone_pixels": int(np.count_nonzero(zone)),
-                  "edit_pixels": int(np.count_nonzero(edit)), "polarity": "255 selected,0 unselected"},
+        "masks": {"person_pixels": person_px, "zone_pixels": int(np.count_nonzero(zone)),
+                  "edit_pixels": edit_px, "edit_fraction_of_person": edit_fraction,
+                  "polarity": "255 selected; 0 unselected"},
         "diagnostics": diagnostics, "warnings": warnings, "timings_ms": timings,
         "limitations": ["Pillow interpolation is not verified identical to Ultralytics", "One cold run, not a benchmark",
-                        "No inpainting compatibility claim", "Report paths and overlay may be sensitive"],
+                        "No inpainting compatibility claim", "Report paths and overlay may be sensitive",
+                        "Model is AGPL-3.0 (Ultralytics); check licensing before shipping in an app"],
     }
     out.mkdir(parents=True, exist_ok=False)
     start = time.perf_counter()
@@ -233,7 +249,9 @@ def main():
         run(args)
     except Exception:
         LOG.exception("PoC failed; no retry/fallback; any partial outputs are preserved")
-        return 2
+        if args.out.exists():
+            LOG.error("Partial output left at %s; remove it before retrying", args.out)
+        return 1  # argparse owns exit code 2 (usage errors)
     return 0
 
 
