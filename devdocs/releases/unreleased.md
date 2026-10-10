@@ -21,11 +21,14 @@
 
 ## Fixed
 
+- Image-operation saving records RGB8/white-alpha/no-ICC-transform source normalization and its preservation limits explicitly, with distinct final/raw artifact IDs and a raw-evidence link. Grow +/-64 is documented as an absolute bound constrained by source-size work budget, not universal availability. Source-only; no runtime acceptance.
+
 - Source-only smart-mask review fixes: bounded small-kernel grow/shrink, full-range 16-bit mask thresholding, refusal of over-25% normalized selection loss at fit/restore, and audited invalid pending queue failure/skip while preserving associated-attempt uncertainty. Strict junction/ancestor refusal now explains choosing a non-redirected state location. No tests or runtime acceptance.
 
 ## Release audit
 
 - PRs: #63, #64
 - Scope: Standalone CPU person-zone mask PoC, headless image preparation, durable input snapshot/restore and provider-local tensor encoding; no image-operation dispatch or production acceptance.
+
 
 

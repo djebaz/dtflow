@@ -180,8 +180,10 @@ def prepare_image_bytes(
 
     Mask alpha is ignored: luminance strictly >127 selects pixels. Masks must match
     the oriented source grid; no implicit mask resize. Grow/shrink is a square-kernel
-    source-pixel adjustment. Feather is Gaussian edge softness clipped *inside* the
-    final binary support, not a promise of anatomy-aware segmentation.
+    source-pixel adjustment: +/-64 is an absolute bound, additionally restricted
+    by the padded-pixel-pass budget for the source dimensions. Feather is Gaussian
+    edge softness clipped *inside* the final binary support, not a promise of
+    anatomy-aware segmentation.
     """
     if type(grow) is not int or not -64 <= grow <= 64:
         raise ValidationError("Mask grow must be an integer in -64..64 source pixels.")

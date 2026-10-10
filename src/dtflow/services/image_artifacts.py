@@ -15,7 +15,7 @@ from dtflow.core.png import validate_png
 from dtflow.services.artifacts import (
     artifact_record, atomic_write, generation_metadata, sync_directory, validate_result,
 )
-from dtflow.services.image_preparation import composite_image
+from dtflow.services.image_preparation import ALGORITHM, composite_image
 
 
 def save_image_artifacts(
@@ -50,14 +50,16 @@ def save_image_artifacts(
     raw = result.artifacts[0]
     raw_path = directory / "raw-1.png"
     atomic_write(raw_path, raw.encoded)
-    final = raw
+    # The application-owned final (including an unchanged raw copy) is distinct
+    # from provider evidence. Retain the provider identity only on the raw record.
+    final = replace(raw, artifact_id=f"{raw.artifact_id}.dtflow-final")
     if request.image_inputs.preserve_outside:
         composite = composite_image(prepared, raw.encoded)
         if len(composite.encoded) > limits.artifact_bytes or len(raw.encoded) + len(composite.encoded) > limits.final_bytes:
             raise ValueError("Raw/composite output exceeds the encoded byte limit.")
         validate_png(composite.encoded, composite.width, composite.height, decoded_limit=limits.tensor_bytes)
         final = replace(
-            raw, encoded=composite.encoded, width_px=composite.width, height_px=composite.height,
+            final, encoded=composite.encoded, width_px=composite.width, height_px=composite.height,
             metadata=(*raw.metadata, ("dtflow_output_role", "source_sized_composite")),
         )
     final_path = directory / "final-1.png"
@@ -73,6 +75,18 @@ def save_image_artifacts(
         "preserve_outside_mask": request.image_inputs.preserve_outside,
         "final_role": "source_sized_composite" if request.image_inputs.preserve_outside else "raw_provider_copy",
         "source_sha256": prepared.source.sha256,
+        "source_normalization": {
+            "algorithm": ALGORITHM,
+            "orientation": "exif_transposed",
+            "pixel_mode": "RGB",
+            "bits_per_channel": 8,
+            "alpha_background": "white",
+            "color_management": "no_icc_transform_or_profile_retention",
+            "inherited_exif_icc_metadata": "removed",
+            "outside_mask_reference": "prepared_source_rgb" if request.image_inputs.preserve_outside else None,
+            "original_file_pixel_preservation_guaranteed": False,
+        },
+        "raw_artifact_id": raw.artifact_id,
         "raw_artifacts": [raw_record],
         "final_sha256": hashlib.sha256(final.encoded).hexdigest(),
     }
