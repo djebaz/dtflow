@@ -250,7 +250,8 @@ class ResolvedGenerationRequest:
             if (self.batch_size, self.batch_count) != (1, 1):
                 raise ValidationError("Image operations support one output per submission.")
             if (self.width_px, self.height_px) != (
-                self.image_inputs.fit.target_width, self.image_inputs.fit.target_height
+                self.image_inputs.fit.target_width,
+                self.image_inputs.fit.target_height,
             ):
                 raise ValidationError("Image-operation dimensions must match prepared input fitting.")
             if (self.operation == "inpaint") != (self.image_inputs.mask is not None):

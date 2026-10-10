@@ -26,8 +26,10 @@ class ImageOperationPermit:
         if self.backend_id not in ("drawthings-grpc", "drawthings-cloud"):
             raise ValidationError("Image-operation permits require a real selected backend.")
         if (
-            not isinstance(self.endpoint, str) or not self.endpoint.startswith("grpcs://")
-            or not self.endpoint.removeprefix("grpcs://") or any(c in self.endpoint for c in "@?#\r\n")
+            not isinstance(self.endpoint, str)
+            or not self.endpoint.startswith("grpcs://")
+            or not self.endpoint.removeprefix("grpcs://")
+            or any(c in self.endpoint for c in "@?#\r\n")
         ):
             raise ValidationError("Image-operation permit requires a credential-free endpoint identity.")
         if not isinstance(self.model_id, str) or not self.model_id.strip():
@@ -37,8 +39,11 @@ class ImageOperationPermit:
         if self.status not in ("owner_verified", "owner_probe"):
             raise ValidationError("Image-operation permit status is unsupported.")
         if (
-            not isinstance(self.evidence_id, str) or not 1 <= len(self.evidence_id) <= 128
-            or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in self.evidence_id)
+            not isinstance(self.evidence_id, str)
+            or not 1 <= len(self.evidence_id) <= 128
+            or any(
+                c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in self.evidence_id
+            )
         ):
             raise ValidationError("Permit evidence ID must be a path-free identifier of at most 128 characters.")
         digest = self.model_description_sha256
@@ -49,10 +54,17 @@ class ImageOperationPermit:
         if self.backend_id == "drawthings-cloud" and digest is None:
             raise ValidationError("Cloud image-operation permits require an exact model-description digest.")
 
-    def validate_scope(self, backend_id: str, endpoint: str, model_id: str, operation: str, *, allow_probe: bool = False):
+    def validate_scope(
+        self, backend_id: str, endpoint: str, model_id: str, operation: str, *, allow_probe: bool = False
+    ):
         if type(allow_probe) is not bool:
             raise ValidationError("Owner-probe authorization must be boolean.")
-        if (self.backend_id, self.endpoint, self.model_id, self.operation) != (backend_id, endpoint, model_id, operation):
+        if (self.backend_id, self.endpoint, self.model_id, self.operation) != (
+            backend_id,
+            endpoint,
+            model_id,
+            operation,
+        ):
             raise ValidationError("Image-operation permit does not match the selected exact scope.")
         if self.status == "owner_probe" and not allow_probe:
             raise ValidationError("Owner-probe image generation requires explicit per-invocation authorization.")

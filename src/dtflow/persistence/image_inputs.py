@@ -31,7 +31,9 @@ def _check(path: Path, *, directory: bool) -> None:
     except FileNotFoundError:
         return
     if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
-        raise ValidationError("Durable input paths and all state-directory ancestors must not be symlinks or junctions; choose a non-redirected state location.")
+        raise ValidationError(
+            "Durable input paths and all state-directory ancestors must not be symlinks or junctions; choose a non-redirected state location."
+        )
     if directory and not stat.S_ISDIR(info.st_mode):
         raise ValidationError("Durable input directory is not a directory.")
     if not directory and not stat.S_ISREG(info.st_mode):
@@ -76,9 +78,7 @@ def _read(path: Path, limit: int) -> bytes:
     return encoded
 
 
-def save_input_snapshot(
-    state: Path, snapshot: ImageInputSnapshot, prepared: PreparedImageInputs
-) -> ImageInputSnapshot:
+def save_input_snapshot(state: Path, snapshot: ImageInputSnapshot, prepared: PreparedImageInputs) -> ImageInputSnapshot:
     """Commit already-validated pixels once; refuse mismatched identities/overwrites.
 
     The orchestration owner must hold its durable-state ownership boundary and call
@@ -144,9 +144,5 @@ def load_input_snapshot(state: Path, snapshot: ImageInputSnapshot) -> PreparedIm
         encoded = _read(directory / f"{name}.png", min(reference.byte_count, IMAGE_BYTE_LIMIT))
         if len(encoded) != reference.byte_count or hashlib.sha256(encoded).hexdigest() != reference.sha256:
             raise ValidationError("Durable input content identity mismatch.")
-        contents[name] = ImageContent(
-            encoded, reference.sha256, reference.width, reference.height, reference.channels
-        )
-    return PreparedImageInputs(
-        **contents, fit=snapshot.fit, grow=snapshot.grow, feather=snapshot.feather
-    )
+        contents[name] = ImageContent(encoded, reference.sha256, reference.width, reference.height, reference.channels)
+    return PreparedImageInputs(**contents, fit=snapshot.fit, grow=snapshot.grow, feather=snapshot.feather)

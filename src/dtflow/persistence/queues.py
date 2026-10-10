@@ -289,14 +289,19 @@ class QueueMixin:
                     request = request_from_record(record)
                 except (TypeError, ValueError):
                     request_id = record.get("request_id") if isinstance(record, dict) else None
-                    associated = db.execute(
-                        "SELECT 1 FROM attempts WHERE request_id=? LIMIT 1", (request_id,)
-                    ).fetchone() if isinstance(request_id, str) else None
+                    associated = (
+                        db.execute("SELECT 1 FROM attempts WHERE request_id=? LIMIT 1", (request_id,)).fetchone()
+                        if isinstance(request_id, str)
+                        else None
+                    )
                     if row["attempt_id"] is not None or associated is not None:
-                        raise QueueError("Invalid pending request has attempt evidence; owner inspection is required.")
+                        raise QueueError(
+                            "Invalid pending request has attempt evidence; owner inspection is required."
+                        ) from None
                     now = self._now()
                     failure = {
-                        "category": "validation", "code": "stored_request_invalid",
+                        "category": "validation",
+                        "code": "stored_request_invalid",
                         "message": "Stored queue request is malformed or unsupported; not dispatched by this claim.",
                     }
                     # Retain the original request for inspection, without copying
@@ -305,9 +310,16 @@ class QueueMixin:
                         "UPDATE queue_items SET state='failed', failure_json=?, updated_at_utc=? WHERE item_id=?",
                         (json.dumps(failure), now, row["item_id"]),
                     )
-                    self._event(db, queue_id, "request_rejected", now, {
-                        "item_id": row["item_id"], "code": "stored_request_invalid",
-                    })
+                    self._event(
+                        db,
+                        queue_id,
+                        "request_rejected",
+                        now,
+                        {
+                            "item_id": row["item_id"],
+                            "code": "stored_request_invalid",
+                        },
+                    )
                     continue
                 db.execute(
                     "UPDATE queue_items SET state='running', updated_at_utc=? WHERE item_id=?",
@@ -401,7 +413,8 @@ def _shared_connection(directory: Path, *, readonly: bool = False) -> sqlite3.Co
         raise QueueError("No execution state exists in this directory; create a queue first.")
     connection = (
         sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)
-        if readonly else sqlite3.connect(path, timeout=2.0)
+        if readonly
+        else sqlite3.connect(path, timeout=2.0)
     )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=2000")

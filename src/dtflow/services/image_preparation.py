@@ -46,7 +46,9 @@ def _check_mask_fit(source: Image.Image, target: Image.Image, fit: ImageFit) -> 
     # Normalize by the exact fitted grids, not padding or rounded scale factors.
     # This is an area guard, not a connected-component/topology guarantee.
     if retained * fit.source_width * fit.source_height * 4 < selected * fit.fitted_width * fit.fitted_height * 3:
-        raise ValidationError("Mask loses over 25% of selected area at generation resolution; increase target size or broaden the selection.")
+        raise ValidationError(
+            "Mask loses over 25% of selected area at generation resolution; increase target size or broaden the selection."
+        )
 
 
 def _read(path: Path, label: str) -> bytes:
@@ -114,7 +116,10 @@ def validate_prepared_inputs(prepared: PreparedImageInputs) -> None:
 
     if not isinstance(prepared, PreparedImageInputs):
         raise ValidationError("Image preparation evidence is required.")
-    if sum(len(getattr(prepared, name).encoded) for name in INPUT_NAMES if getattr(prepared, name) is not None) > INPUT_SET_BYTE_LIMIT:
+    if (
+        sum(len(getattr(prepared, name).encoded) for name in INPUT_NAMES if getattr(prepared, name) is not None)
+        > INPUT_SET_BYTE_LIMIT
+    ):
         raise ValidationError("Prepared input set exceeds 128 MiB.")
     source = _verified(prepared.source)
     image = _verified(prepared.image)
@@ -131,14 +136,22 @@ def validate_prepared_inputs(prepared: PreparedImageInputs) -> None:
     mask = _verified(prepared.mask)
     blend = _verified(prepared.blend_mask)
     for item in (binary, mask):
-        if item.getbbox() is None or any(count for value, count in enumerate(item.histogram()) if value not in (0, 255)):
+        if item.getbbox() is None or any(
+            count for value, count in enumerate(item.histogram()) if value not in (0, 255)
+        ):
             raise ValidationError("Prepared masks must be nonempty binary 0/255.")
     fitted_mask = Image.new("L", image.size, 0)
-    fitted_mask.paste(binary.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST), (fit.left, fit.top))
+    fitted_mask.paste(
+        binary.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST), (fit.left, fit.top)
+    )
     if ImageChops.difference(mask, fitted_mask).getbbox() is not None:
         raise ValidationError("Prepared mask pixels do not match the recorded fit/padding.")
     _check_mask_fit(binary, mask, fit)
-    wanted_blend = ImageChops.multiply(binary, binary.filter(ImageFilter.GaussianBlur(prepared.feather))) if prepared.feather else binary
+    wanted_blend = (
+        ImageChops.multiply(binary, binary.filter(ImageFilter.GaussianBlur(prepared.feather)))
+        if prepared.feather
+        else binary
+    )
     if ImageChops.difference(blend, wanted_blend).getbbox() is not None:
         raise ValidationError("Prepared blend mask does not match bounded feather evidence.")
 
@@ -219,9 +232,7 @@ def prepare_image_bytes(
         # support, without a potentially 129x129 rank filter per pixel.
         for _ in range(border):
             padded = padded.filter(kernel(3))
-        mask = padded.crop(
-            (border, border, border + mask.width, border + mask.height)
-        )
+        mask = padded.crop((border, border, border + mask.width, border + mask.height))
     if mask.getbbox() is None:
         raise ValidationError("Inpainting mask is empty after threshold/adjustments.")
     blend = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(feather))) if feather else mask.copy()
@@ -260,7 +271,8 @@ def prepare_image_files(
         width,
         height,
         mask_bytes=_read(mask, "Mask image") if mask is not None else None,
-        grow=grow, feather=feather,
+        grow=grow,
+        feather=feather,
     )
 
 

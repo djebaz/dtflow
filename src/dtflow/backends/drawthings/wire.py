@@ -139,8 +139,9 @@ def build_generation_message(
     backend_id: str | None = None,
     endpoint: str | None = None,
     allow_image_probe: bool = False,
-    limits: ResourceLimits = ResourceLimits(),
+    limits: ResourceLimits | None = None,
 ) -> WireRequest:
+    limits = limits or ResourceLimits()
     image_operation = request.operation != "txt2img"
     transport = None
     if image_operation:
@@ -155,10 +156,15 @@ def build_generation_message(
         if expected != request.image_inputs:
             raise _reject(request, "image_input_mismatch", "Prepared inputs differ from the resolved request.")
         if backend_id == "drawthings-cloud" and (
-            model_spec is None or model_spec != exact_model_spec(request.model_id)
+            model_spec is None
+            or model_spec != exact_model_spec(request.model_id)
             or image_permit.model_description_sha256 != exact_model_description_digest(request.model_id)
         ):
-            raise _reject(request, "exact_model_description_missing", "Cloud image operations require an exact published description.")
+            raise _reject(
+                request,
+                "exact_model_description_missing",
+                "Cloud image operations require an exact published description.",
+            )
         transport = encode_image_inputs(prepared, limits)
     elif prepared is not None or image_permit is not None:
         raise _reject(request, "unexpected_image_inputs", "Text-to-image cannot include image transport or permits.")
@@ -209,8 +215,11 @@ def build_generation_message(
         # Count the complete protobuf too, not just its tensors: config/prompt/
         # overrides consume the same transport budget. No payload is logged.
         if len(bytes(message)) > limits.transport_bytes:
-            raise _reject(request, "image_request_byte_limit", "Encoded image request exceeds the transport byte limit.")
-        effective = (*effective,
+            raise _reject(
+                request, "image_request_byte_limit", "Encoded image request exceeds the transport byte limit."
+            )
+        effective = (
+            *effective,
             ("image_tensor_sha256", transport.image.hex()),
             ("mask_tensor_sha256", transport.mask.hex() if transport.mask is not None else ""),
             ("image_operation_evidence", image_permit.evidence_id),

@@ -7,9 +7,9 @@ quantization suffix ignored, then by base family; unknown models get no profile 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-import hashlib
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import cache

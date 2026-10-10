@@ -74,9 +74,13 @@ def save_artifacts(
         path = directory / f"final-{index}.png"
         atomic_write(path, artifact.encoded)
         paths.append(str(path.resolve()))
-    metadata = generation_metadata(attempt_id, request, result, build_identity, [
-        artifact_record(path, artifact) for path, artifact in zip(paths, result.artifacts, strict=True)
-    ])
+    metadata = generation_metadata(
+        attempt_id,
+        request,
+        result,
+        build_identity,
+        [artifact_record(path, artifact) for path, artifact in zip(paths, result.artifacts, strict=True)],
+    )
     metadata_path = directory / "metadata.json"
     atomic_write(metadata_path, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     return tuple(paths), str(metadata_path.resolve())

@@ -13,7 +13,11 @@ from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.models import GenerationResult, ResolvedGenerationRequest, ResourceLimits
 from dtflow.core.png import validate_png
 from dtflow.services.artifacts import (
-    artifact_record, atomic_write, generation_metadata, sync_directory, validate_result,
+    artifact_record,
+    atomic_write,
+    generation_metadata,
+    sync_directory,
+    validate_result,
 )
 from dtflow.services.image_preparation import ALGORITHM, composite_image
 
@@ -59,7 +63,10 @@ def save_image_artifacts(
             raise ValueError("Composite output exceeds the encoded artifact byte limit.")
         validate_png(composite.encoded, composite.width, composite.height, decoded_limit=limits.tensor_bytes)
         final = replace(
-            final, encoded=composite.encoded, width_px=composite.width, height_px=composite.height,
+            final,
+            encoded=composite.encoded,
+            width_px=composite.width,
+            height_px=composite.height,
             metadata=(*raw.metadata, ("dtflow_output_role", "source_sized_composite")),
         )
     if len(raw.encoded) + len(final.encoded) > limits.final_bytes:
@@ -67,9 +74,7 @@ def save_image_artifacts(
     final_path = directory / "final-1.png"
     atomic_write(final_path, final.encoded)
     paths = (str(final_path.resolve()),)
-    metadata = generation_metadata(
-        attempt_id, request, result, build_identity, [artifact_record(paths[0], final)]
-    )
+    metadata = generation_metadata(attempt_id, request, result, build_identity, [artifact_record(paths[0], final)])
     raw_record = artifact_record(str(raw_path.resolve()), raw)
     raw_record.update(role="raw_provider_evidence", sha256=hashlib.sha256(raw.encoded).hexdigest())
     metadata["image_operation"] = {

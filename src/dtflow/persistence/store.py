@@ -14,7 +14,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import BackendFailure, RemoteOutcome, ResolvedGenerationRequest, SubmissionStage, ValidationError
+from dtflow.core.models import (
+    BackendFailure,
+    RemoteOutcome,
+    ResolvedGenerationRequest,
+    SubmissionStage,
+    ValidationError,
+)
 from dtflow.core.request_records import upgraded_request_record
 from dtflow.core.tasks import settle
 from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin
@@ -175,7 +181,9 @@ class SQLiteAttempts(QueueMixin):
                         upgraded = upgraded_request_record(record)
                         updates.append((json.dumps(upgraded, allow_nan=False), row[key]))
                     except (ValueError, TypeError, KeyError) as exc:
-                        raise PersistenceError("Request migration refused; original execution state was preserved.") from exc
+                        raise PersistenceError(
+                            "Request migration refused; original execution state was preserved."
+                        ) from exc
                 connection.executemany(f"UPDATE {table} SET request_json=? WHERE {key}=?", updates)
                 after = rows[-1][key]
 

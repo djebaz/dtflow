@@ -35,10 +35,7 @@ class EncodedImageInputs:
 
 def _check_tensor(tensor: bytes, width: int, height: int, *, mask: bool) -> None:
     """Check the SDK's two distinct CCV layouts, dtype and exact uncompressed size."""
-    expected_header = (
-        (0, 1, 2, 0x01000, 0, height, width, 0, 0)
-        if mask else (0, 1, 2, 0x20000, 0, 1, height, width, 3)
-    )
+    expected_header = (0, 1, 2, 0x01000, 0, height, width, 0, 0) if mask else (0, 1, 2, 0x20000, 0, 1, height, width, 3)
     expected_size = HEADER_BYTES + width * height * (1 if mask else 6)
     if (
         len(tensor) != expected_size
@@ -48,9 +45,7 @@ def _check_tensor(tensor: bytes, width: int, height: int, *, mask: bool) -> None
         raise ValidationError("Encoded input tensor does not match the required CCV layout.")
 
 
-def encode_image_inputs(
-    prepared: PreparedImageInputs, limits: ResourceLimits = ResourceLimits()
-) -> EncodedImageInputs:
+def encode_image_inputs(prepared: PreparedImageInputs, limits: ResourceLimits | None = None) -> EncodedImageInputs:
     """Encode fitted RGB float16 [-1,1] plus optional uint8 0/2 mask.
 
     White/edit pixels become provider value 2 (selected at requested strength),
@@ -58,6 +53,7 @@ def encode_image_inputs(
     is hidden in the provider mask; inward blend alpha remains local evidence.
     Call on a worker. This does not establish backend/checkpoint compatibility.
     """
+    limits = limits or ResourceLimits()
     if not isinstance(prepared, PreparedImageInputs):
         raise ValidationError("Image preparation evidence is required.")
     width, height = prepared.fit.target_width, prepared.fit.target_height

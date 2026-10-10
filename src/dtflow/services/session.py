@@ -164,7 +164,11 @@ async def open_session(
         async with asyncio.timeout(policy.connect):
             await backend.open()
         yield GenerationService(
-            backend, store, output or state / "outputs", timeouts=policy, assets=asset_validator(backend),
+            backend,
+            store,
+            output or state / "outputs",
+            timeouts=policy,
+            assets=asset_validator(backend),
             input_state=state if image_permits else None,
         )
     finally:
@@ -192,9 +196,12 @@ async def run_generation(
         if not callable(gate) or prepared_inputs is None or service.input_state is None:
             raise ValidationError("Image generation requires a scoped permit and prepared managed inputs.")
         gate(request)
-        if ImageInputSnapshot.from_prepared(
-            request.image_inputs.attempt_id, prepared_inputs, preserve_outside=request.image_inputs.preserve_outside
-        ) != request.image_inputs:
+        if (
+            ImageInputSnapshot.from_prepared(
+                request.image_inputs.attempt_id, prepared_inputs, preserve_outside=request.image_inputs.preserve_outside
+            )
+            != request.image_inputs
+        ):
             raise ValidationError("Prepared image inputs do not match the requested snapshot.")
     elif prepared_inputs is not None:
         raise ValidationError("Text-to-image cannot include prepared image inputs.")
@@ -239,7 +246,9 @@ async def generate_once(
     ``asset_ids`` binds confirmed local receipts (cloud only, never uploads) before any backend or state is opened.
     """
     if request.operation != "txt2img":
-        raise ValidationError("Use the explicit permit-scoped image-generation entry; generic dispatch is txt2img-only.")
+        raise ValidationError(
+            "Use the explicit permit-scoped image-generation entry; generic dispatch is txt2img-only."
+        )
     request = await bind_prepared(state, selection.name, request, asset_ids)
     async with open_session(selection, state, output=output, timeouts=timeouts, saved=saved) as service:
         return await run_generation(service, request, prefix=prefix, on_event=on_event)
@@ -278,7 +287,9 @@ async def generate_image_once(
     operation = "inpaint" if prepared_inputs.mask is not None else "img2img"
     backend_id = {"local": "drawthings-grpc", "cloud": "drawthings-cloud"}.get(selection.name)
     if backend_id is None or (permit.backend_id, permit.model_id, permit.operation) != (
-        backend_id, request.model_id, operation
+        backend_id,
+        request.model_id,
+        operation,
     ):
         raise ValidationError("Owner permit does not match the selected backend/checkpoint/operation.")
     permit.validate_scope(
@@ -286,19 +297,29 @@ async def generate_image_once(
     )
     snapshot = ImageInputSnapshot.from_prepared(uuid4().hex, prepared_inputs, preserve_outside=preserve_outside)
     request = replace(
-        request, request_id=uuid4().hex, operation=operation, strength=strength, image_inputs=snapshot,
-        resolution_evidence=(*request.resolution_evidence, ("image_permit_evidence", permit.evidence_id),
-                             ("image_permit_status", permit.status)),
+        request,
+        request_id=uuid4().hex,
+        operation=operation,
+        strength=strength,
+        image_inputs=snapshot,
+        resolution_evidence=(
+            *request.resolution_evidence,
+            ("image_permit_evidence", permit.evidence_id),
+            ("image_permit_status", permit.status),
+        ),
     )
     await settle(asyncio.to_thread(validate_prepared_inputs, prepared_inputs))
     request = await bind_prepared(state, selection.name, request, asset_ids)
     async with open_session(
-        selection, state, output=output, timeouts=timeouts, saved=saved,
-        image_permits=(permit,), allow_image_probe=allow_image_probe,
+        selection,
+        state,
+        output=output,
+        timeouts=timeouts,
+        saved=saved,
+        image_permits=(permit,),
+        allow_image_probe=allow_image_probe,
     ) as service:
-        return await run_generation(
-            service, request, prefix=prefix, on_event=on_event, prepared_inputs=prepared_inputs
-        )
+        return await run_generation(service, request, prefix=prefix, on_event=on_event, prepared_inputs=prepared_inputs)
 
 
 async def generate_image_files_once(
@@ -327,15 +348,32 @@ async def generate_image_files_once(
     Cancellation settles the preparation worker before returning, without dispatch.
     This function is not a safe preview entry: invoking it requests real generation.
     """
-    prepared = await settle(asyncio.to_thread(
-        prepare_image_files, source, request.width_px, request.height_px,
-        mask=mask, grow=grow, feather=feather,
-    ))
+    prepared = await settle(
+        asyncio.to_thread(
+            prepare_image_files,
+            source,
+            request.width_px,
+            request.height_px,
+            mask=mask,
+            grow=grow,
+            feather=feather,
+        )
+    )
     return await generate_image_once(
-        selection, state, request, prepared, permit=permit, strength=strength,
-        preserve_outside=preserve_outside, allow_image_probe=allow_image_probe,
-        prefix=prefix, output=output, timeouts=timeouts, saved=saved,
-        on_event=on_event, asset_ids=asset_ids,
+        selection,
+        state,
+        request,
+        prepared,
+        permit=permit,
+        strength=strength,
+        preserve_outside=preserve_outside,
+        allow_image_probe=allow_image_probe,
+        prefix=prefix,
+        output=output,
+        timeouts=timeouts,
+        saved=saved,
+        on_event=on_event,
+        asset_ids=asset_ids,
     )
 
 

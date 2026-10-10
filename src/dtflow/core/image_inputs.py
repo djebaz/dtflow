@@ -193,7 +193,10 @@ class ImageInputSnapshot:
             item = getattr(self, name)
             if (name in ("source", "image") or item is not None) and not isinstance(item, ImageReference):
                 raise ValidationError("Input snapshot requires immutable content references.")
-        if sum(getattr(self, name).byte_count for name in INPUT_NAMES if getattr(self, name) is not None) > INPUT_SET_BYTE_LIMIT:
+        if (
+            sum(getattr(self, name).byte_count for name in INPUT_NAMES if getattr(self, name) is not None)
+            > INPUT_SET_BYTE_LIMIT
+        ):
             raise ValidationError("Prepared input set exceeds 128 MiB.")
         # Apply the preparation record's grid/options invariants without creating
         # placeholder byte payloads or depending on an image library in core.
@@ -233,7 +236,11 @@ class ImageInputSnapshot:
             for name in INPUT_NAMES
         }
         return cls(
-            attempt_id, **references, fit=prepared.fit, grow=prepared.grow, feather=prepared.feather,
+            attempt_id,
+            **references,
+            fit=prepared.fit,
+            grow=prepared.grow,
+            feather=prepared.feather,
             preserve_outside=preserve_outside if prepared.mask is not None else False,
         )
 

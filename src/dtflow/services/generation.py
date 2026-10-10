@@ -32,9 +32,9 @@ from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
 from dtflow.services.events import EventBuffer
-from dtflow.services.preflight import preflight_loras, raise_if_blocked
-from dtflow.services.image_inputs import snapshot_image_inputs
 from dtflow.services.image_artifacts import save_image_artifacts
+from dtflow.services.image_inputs import snapshot_image_inputs
+from dtflow.services.preflight import preflight_loras, raise_if_blocked
 
 log = logging.getLogger(__name__)
 
@@ -90,7 +90,10 @@ class GenerationService:
         return preflight_loras(request, await self.get_inventory())
 
     async def generate(
-        self, request: ResolvedGenerationRequest, *, on_event: EventSink | None = None,
+        self,
+        request: ResolvedGenerationRequest,
+        *,
+        on_event: EventSink | None = None,
         prepared_inputs: PreparedImageInputs | None = None,
     ) -> SavedGeneration:
         caps = self.backend.capabilities
@@ -98,10 +101,14 @@ class GenerationService:
         if image_operation:
             gate = getattr(self.backend, "validate_image_operation", None)
             if not callable(gate) or prepared_inputs is None or self.input_state is None:
-                raise BackendError(BackendFailure(
-                    ErrorCategory.VALIDATION, "image_dispatch_not_configured",
-                    "Image operations require a scoped owner gate and prepared managed inputs.", request.request_id,
-                ))
+                raise BackendError(
+                    BackendFailure(
+                        ErrorCategory.VALIDATION,
+                        "image_dispatch_not_configured",
+                        "Image operations require a scoped owner gate and prepared managed inputs.",
+                        request.request_id,
+                    )
+                )
             gate(request)
             expected = ImageInputSnapshot.from_prepared(
                 request.image_inputs.attempt_id, prepared_inputs, preserve_outside=request.image_inputs.preserve_outside
@@ -163,10 +170,15 @@ class GenerationService:
             # Conservative allowance for retained PNGs, preparation/verification
             # grids, SDK tensor temporaries and full protobuf serialization. This
             # is admission policy, not measured peak-RSS/performance evidence.
-            reservation += sum(
-                len(getattr(prepared_inputs, name).encoded)
-                for name in INPUT_NAMES if getattr(prepared_inputs, name) is not None
-            ) + prepared_inputs.source.width * prepared_inputs.source.height * 16 + request.width_px * request.height_px * 24
+            reservation += (
+                sum(
+                    len(getattr(prepared_inputs, name).encoded)
+                    for name in INPUT_NAMES
+                    if getattr(prepared_inputs, name) is not None
+                )
+                + prepared_inputs.source.width * prepared_inputs.source.height * 16
+                + request.width_px * request.height_px * 24
+            )
         if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
             raise BackendError(
                 BackendFailure(
@@ -213,10 +225,15 @@ class GenerationService:
             await self.budget.acquire(reservation)
             reserved = True
             if image_operation:
-                snapshot = await settle(asyncio.to_thread(
-                    snapshot_image_inputs, self.input_state, attempt_id, prepared_inputs,
-                    preserve_outside=request.image_inputs.preserve_outside,
-                ))
+                snapshot = await settle(
+                    asyncio.to_thread(
+                        snapshot_image_inputs,
+                        self.input_state,
+                        attempt_id,
+                        prepared_inputs,
+                        preserve_outside=request.image_inputs.preserve_outside,
+                    )
+                )
                 if snapshot != request.image_inputs:
                     raise ValueError("Committed image inputs differ from the prepared attempt.")
             await self.store.transition(
@@ -266,8 +283,12 @@ class GenerationService:
             )
             log.info("attempt succeeded outputs=%d", len(paths))
             return SavedGeneration(
-                attempt_id, paths, metadata, result,
-                request=request if image_operation else None, display_image=display_image,
+                attempt_id,
+                paths,
+                metadata,
+                result,
+                request=request if image_operation else None,
+                display_image=display_image,
             )
         except asyncio.CancelledError:
             log.warning("attempt interrupted locally stage=%s outcome=%s", stage, outcome)

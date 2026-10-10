@@ -124,8 +124,12 @@ def create_backend(
         if tls is not None:
             endpoint = DrawThingsEndpoint(endpoint.host, endpoint.port, tls)
         return DrawThingsBackend(
-            endpoint, timeouts=timeouts, shared_secret=_SharedSecret(environ),
-            image_permits=image_permits, image_inputs_loader=image_inputs_loader, allow_image_probe=allow_image_probe,
+            endpoint,
+            timeouts=timeouts,
+            shared_secret=_SharedSecret(environ),
+            image_permits=image_permits,
+            image_inputs_loader=image_inputs_loader,
+            allow_image_probe=allow_image_probe,
         )
     if selection.name == "cloud":
         if type(selection.cloud_concurrency) is not int or not 1 <= selection.cloud_concurrency <= 4:
@@ -139,7 +143,11 @@ def create_backend(
         if KEY not in environ and isinstance(saved, _NoSavedCredentials):
             raise ValidationError(f"The cloud backend requires {KEY} in the environment.")
         return DirectCloudBackend(
-            CloudAuth(_CloudCredentials(environ, saved)), max_concurrency=selection.cloud_concurrency, timeouts=timeouts,
-            image_permits=image_permits, image_inputs_loader=image_inputs_loader, allow_image_probe=allow_image_probe,
+            CloudAuth(_CloudCredentials(environ, saved)),
+            max_concurrency=selection.cloud_concurrency,
+            timeouts=timeouts,
+            image_permits=image_permits,
+            image_inputs_loader=image_inputs_loader,
+            allow_image_probe=allow_image_probe,
         )
     raise ValidationError("Unknown backend selection.")

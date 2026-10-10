@@ -169,7 +169,10 @@ class DrawThingsBackend:
         if permit is None:
             raise ValidationError("No owner permit exists for this exact backend/checkpoint/image operation.")
         permit.validate_scope(
-            self.backend_id, self.endpoint.label, request.model_id, request.operation,
+            self.backend_id,
+            self.endpoint.label,
+            request.model_id,
+            request.operation,
             allow_probe=self._allow_image_probe,
         )
         if request.image_inputs is None or self._image_inputs_loader is None:
@@ -326,8 +329,10 @@ class DrawThingsBackend:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.", request.request_id)
         if request.operation not in self.capabilities.operations:
             raise error(
-                ErrorCategory.VALIDATION, "unsupported_operation",
-                "Image-operation dispatch is not offered by this adapter.", request.request_id,
+                ErrorCategory.VALIDATION,
+                "unsupported_operation",
+                "Image-operation dispatch is not offered by this adapter.",
+                request.request_id,
             )
         if request.operation != "txt2img":
             self.validate_image_operation(request)
@@ -382,12 +387,21 @@ class DrawThingsBackend:
                     base_version = (spec or {}).get("version") or base_version
                     prepared = await settle(asyncio.to_thread(self._image_inputs_loader, request.image_inputs))
                     secret = await self._secret()
-                    wire = await settle(asyncio.to_thread(
-                        build_generation_message, request, secret, base_version, spec,
-                        prepared=prepared, image_permit=self.validate_image_operation(request),
-                        backend_id=self.backend_id, endpoint=self.endpoint.label,
-                        allow_image_probe=self._allow_image_probe, limits=limits,
-                    ))
+                    wire = await settle(
+                        asyncio.to_thread(
+                            build_generation_message,
+                            request,
+                            secret,
+                            base_version,
+                            spec,
+                            prepared=prepared,
+                            image_permit=self.validate_image_operation(request),
+                            backend_id=self.backend_id,
+                            endpoint=self.endpoint.label,
+                            allow_image_probe=self._allow_image_probe,
+                            limits=limits,
+                        )
+                    )
                 if spec:
                     log.debug(
                         "model spec sent for %s advertised=%s keys=%s",
