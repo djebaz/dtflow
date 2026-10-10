@@ -1653,9 +1653,10 @@
   },
   {
     "file": "animij_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1744,9 +1745,10 @@
   },
   {
     "file": "artofura_furry_mix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1775,16 +1777,18 @@
   },
   {
     "file": "aungir_aungir_t6a4_1405004_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "aungir_aungir_t6ao4.5_1723632_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1797,9 +1801,10 @@
   },
   {
     "file": "big_love_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1812,9 +1817,10 @@
   },
   {
     "file": "blendermix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2060,9 +2066,10 @@
   },
   {
     "file": "circusmix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2134,9 +2141,10 @@
   },
   {
     "file": "cyberrealistic_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2241,9 +2249,10 @@
   },
   {
     "file": "dixar_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2262,16 +2271,18 @@
   },
   {
     "file": "dreamisoa_remix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "dreamshaper_v6.31_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2304,23 +2315,26 @@
   },
   {
     "file": "duchaiten_cool_age_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "duchaiten_noobai_cinematic_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "duchaiten_noobai_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2349,9 +2363,10 @@
   },
   {
     "file": "editijon_k_pop_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2534,9 +2549,10 @@
   },
   {
     "file": "furrytoonmix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2686,9 +2702,10 @@
   },
   {
     "file": "hna_3dkx_1.0b_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2724,9 +2741,10 @@
   },
   {
     "file": "hs_ultrahd_cg_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2780,9 +2798,10 @@
   },
   {
     "file": "icedcoffeeil_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2851,23 +2870,26 @@
   },
   {
     "file": "illustrij_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "illustrij_genv1_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "illustrij_genv1_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2912,16 +2934,18 @@
   },
   {
     "file": "inbetweij___no.04_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "inbetweij___no.04_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2950,9 +2974,10 @@
   },
   {
     "file": "indigo_void_furry_vpred_furry_noobai_v_pred_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -2964,16 +2989,17 @@
   },
   {
     "file": "instruct_pix2pix_22000_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "i2i"
     ]
   },
   {
     "file": "ionsyx_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3058,9 +3084,10 @@
   },
   {
     "file": "jujumix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3189,9 +3216,10 @@
   },
   {
     "file": "lox_s_souls_mix_prisma__f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3211,9 +3239,10 @@
   },
   {
     "file": "madly_mix_ver_nightnoob_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3239,9 +3268,10 @@
   },
   {
     "file": "meichidarkmix_reload_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3254,16 +3284,18 @@
   },
   {
     "file": "miruku_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "mistoon_anime_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3276,16 +3308,18 @@
   },
   {
     "file": "mol_keun_mix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "molcajetemix_noobil_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3321,9 +3355,10 @@
   },
   {
     "file": "nostramix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3472,9 +3507,10 @@
   },
   {
     "file": "oops_all_vpred_noobai_western_2d_furry_toon_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3503,16 +3539,18 @@
   },
   {
     "file": "pikon_realism_v2_alt_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "pikon_realism_v2_alt_q6p_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3561,16 +3599,18 @@
   },
   {
     "file": "plant_milk_model_suite_flax_1331188_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "plant_milk_model_suite_hemp_ii_1714314_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3665,9 +3705,10 @@
   },
   {
     "file": "ratatoskr_animal__creature_and_furry__f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3694,9 +3735,10 @@
   },
   {
     "file": "realism_by_stable_yogi_v4.0_fp16_1422871_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3752,9 +3794,10 @@
   },
   {
     "file": "redcraft___cads_updated_may4_commercial___advertising_design_system_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3806,9 +3849,10 @@
   },
   {
     "file": "rillusm___realistic_il_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -3960,9 +4004,10 @@
   },
   {
     "file": "skibidimix_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -4192,9 +4237,10 @@
   },
   {
     "file": "throwing_pasta_mix_spaghetti_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -4222,9 +4268,10 @@
   },
   {
     "file": "tt_animerge_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -4245,9 +4292,10 @@
   },
   {
     "file": "uncanny_valley_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -4268,9 +4316,10 @@
   },
   {
     "file": "vixon_s_dream_weave_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -4283,9 +4332,10 @@
   },
   {
     "file": "wai_shuffle_noob_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -4530,9 +4580,10 @@
   },
   {
     "file": "wd-v1.3.ckpt",
-    "base_model": "unknown",
+    "base_model": "sd_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -4553,9 +4604,10 @@
   },
   {
     "file": "zep9_f16.ckpt",
-    "base_model": "unknown",
+    "base_model": "sdxl",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   }
 ]
