@@ -60,3 +60,29 @@ def profile_for(model_id: str, family: str | None = None) -> ModelProfile | None
     """The checkpoint's own profile, else its family's default, else ``None``."""
     models, families = _load()
     return models.get(model_key(model_id)) or (families.get(family) if family else None)
+
+
+# Draw Things' public model list has no entry for FLUX.1 [dev]; the app describes it to DT+ itself (``override.models``).
+# Mirrors the public FLUX.1 [schnell] entry with the dev differences: guidance-distilled (``guidance_embed``), no
+# consistency model, 512-token padded T5 context. Unverified approximation of the app's own entry.
+_FLUX1_DEV_SPEC = {
+    "name": "FLUX.1 [dev]",
+    "prefix": "",
+    "version": "flux1",
+    "upcast_attention": False,
+    "default_scale": 16,
+    "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+    "autoencoder": "flux_1_vae_f16.ckpt",
+    "clip_encoder": "clip_vit_l14_f16.ckpt",
+    "high_precision_autoencoder": True,
+    "guidance_embed": True,
+    "padded_text_encoding_length": 512,
+    "hires_fix_scale": 24,
+}
+
+
+def fallback_spec(model_id: str) -> dict | None:
+    """A hand-built model description for a checkpoint the cloud neither lists in its public zoo nor advertises."""
+    if model_key(model_id) == "flux_1_dev":
+        return {**_FLUX1_DEV_SPEC, "file": model_id}
+    return None

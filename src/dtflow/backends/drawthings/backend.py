@@ -26,7 +26,7 @@ from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
-from dtflow.core.model_profiles import profile_for
+from dtflow.core.model_profiles import fallback_spec, profile_for
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -316,7 +316,12 @@ class DrawThingsBackend:
                 spec = await self._model_spec(request.model_id)
                 wire = build_generation_message(request, await self._secret(), base_version, spec)
                 if spec:
-                    log.debug("model spec sent for %s keys=%s", request.model_id, sorted(spec))
+                    log.debug(
+                        "model spec sent for %s advertised=%s keys=%s",
+                        request.model_id,
+                        request.model_id in self._model_specs,
+                        sorted(spec),
+                    )
                 if request.loras:
                     log.debug(
                         "loras sent=%s override=%s base_version=%s prepared=%d",
@@ -544,7 +549,8 @@ class DrawThingsBackend:
         """The cloud's description of a profiled model, sent back so the server runs it with its full specification.
 
         DT+ resolves most checkpoints from its public model list; newer ones (e.g. FLUX.1 dev) are described only by the
-        client's ``override.models``. Local servers already know their own files, so nothing is sent there.
+        client's ``override.models``; when the server does not advertise one either, a bundled approximation is used
+        for the few known cases. Local servers already know their own files, so nothing is sent there.
         """
         if self.backend_id != "drawthings-cloud" or profile_for(model_id) is None:
             return None
@@ -553,4 +559,4 @@ class DrawThingsBackend:
                 await self._echo()
             except BackendError:
                 return None
-        return self._model_specs.get(model_id)
+        return self._model_specs.get(model_id) or fallback_spec(model_id)
