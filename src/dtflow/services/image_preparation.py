@@ -69,11 +69,58 @@ def _content(image: Image.Image) -> ImageContent:
 def _verified(content: ImageContent) -> Image.Image:
     if hashlib.sha256(content.encoded).hexdigest() != content.sha256:
         raise ValidationError("Prepared image content digest mismatch.")
+    if not content.encoded.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValidationError("Prepared content must be canonical PNG.")
     image = _decode(content.encoded, "Prepared content")
     expected_mode = "RGB" if content.channels == 3 else "L"
+    if image.info:
+        raise ValidationError("Prepared PNG content must not contain inherited metadata.")
     if image.mode != expected_mode or image.size != (content.width, content.height):
         raise ValidationError("Prepared image content does not match its recorded pixels.")
     return image
+
+
+def validate_prepared_inputs(prepared: PreparedImageInputs) -> None:
+    """Validate pixels as well as immutable record invariants before durable use.
+
+    This worker-only boundary also applies to restored snapshots: hashes alone do
+    not establish modes, polarity, fitting, padding or mask support.
+    """
+    from dtflow.core.image_inputs import INPUT_NAMES, INPUT_SET_BYTE_LIMIT
+
+    if not isinstance(prepared, PreparedImageInputs):
+        raise ValidationError("Image preparation evidence is required.")
+    if sum(len(getattr(prepared, name).encoded) for name in INPUT_NAMES if getattr(prepared, name) is not None) > INPUT_SET_BYTE_LIMIT:
+        raise ValidationError("Prepared input set exceeds 128 MiB.")
+    source = _verified(prepared.source)
+    image = _verified(prepared.image)
+    fit = prepared.fit
+    if fit != _fit(source.size, image.size):
+        raise ValidationError("Prepared fitting evidence does not match the canonical transform.")
+    fitted = Image.new("RGB", image.size, "white")
+    fitted.paste(source.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS), (fit.left, fit.top))
+    if ImageChops.difference(image, fitted).getbbox() is not None:
+        raise ValidationError("Prepared image pixels do not match the recorded source/fit.")
+    if prepared.mask is None:
+        return
+    binary = _verified(prepared.source_mask)
+    mask = _verified(prepared.mask)
+    blend = _verified(prepared.blend_mask)
+    for item in (binary, mask):
+        if item.getbbox() is None or any(count for value, count in enumerate(item.histogram()) if value not in (0, 255)):
+            raise ValidationError("Prepared masks must be nonempty binary 0/255.")
+    fitted_mask = Image.new("L", image.size, 0)
+    fitted_mask.paste(binary.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST), (fit.left, fit.top))
+    if ImageChops.difference(mask, fitted_mask).getbbox() is not None:
+        raise ValidationError("Prepared mask pixels do not match the recorded fit/padding.")
+    wanted_blend = ImageChops.multiply(binary, binary.filter(ImageFilter.GaussianBlur(prepared.feather))) if prepared.feather else binary
+    if ImageChops.difference(blend, wanted_blend).getbbox() is not None:
+        raise ValidationError("Prepared blend mask does not match bounded feather evidence.")
+
+
+def image_content_pixels(content: ImageContent) -> bytes:
+    """Verified interleaved RGB or grayscale bytes; no Pillow object crosses services."""
+    return _verified(content).tobytes()
 
 
 def _fit(source: tuple[int, int], target: tuple[int, int]) -> ImageFit:
