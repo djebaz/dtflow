@@ -981,7 +981,9 @@ class GenerationPage:
         current = combo.currentText()
         combo.clear()
         combo.addItems(ids)
-        combo.setCurrentText(current)
+        # Re-select only a listed entry: setCurrentText() would append a carried-over identifier from another family
+        # (for example the previous SDXL pick) to this family's list, where it then shows up in the search.
+        combo.setCurrentIndex(combo.findText(current))
 
     def _catalogue_domain(self) -> str:
         return self.page.generationDomainCombo.currentData() or "all"
