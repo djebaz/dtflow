@@ -38,7 +38,7 @@ from dtflow.services.connection import (
     present_interruption,
     present_outcome,
 )
-from dtflow.services.presets import apply_preset, load_presets, save_preset
+from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
     generate_once,
@@ -1315,6 +1315,10 @@ class GenerationPage:
             log.warning("preset scan failed reason=%s", type(preset_failure).__name__)
         for preset in presets:
             combo.addItem(f"Preset · {preset['name']}", ("preset", preset))
+        own = {preset["name"] for preset in presets}
+        for preset in builtin_presets():
+            if preset["name"] not in own:
+                combo.addItem(f"Draw Things · {preset['name']}", ("preset", preset))
         for path in paths:
             combo.addItem(f"Config · {path.name}", str(path))
         combo.setCurrentIndex(-1)

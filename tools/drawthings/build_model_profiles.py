@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from dtflow.core.model_profiles import model_key  # noqa: E402
 
-SOURCE = Path(__file__).with_name("draw_things_configs.json")
+SOURCE = ROOT / "src" / "dtflow" / "resources" / "presets" / "draw_things_configs.json"
 TARGET = ROOT / "src" / "dtflow" / "resources" / "catalogue" / "model_profiles.json"
 
 # Draw Things sampler enum order (drawthings-py generated SamplerType).

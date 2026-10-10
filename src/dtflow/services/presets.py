@@ -93,6 +93,17 @@ def _atomic_json(path: Path, document: object) -> None:
             temporary.unlink(missing_ok=True)
 
 
+BUILTIN_PRESETS = Path(__file__).parents[1] / "resources" / "presets" / "draw_things_configs.json"
+
+
+def builtin_presets() -> tuple[dict, ...]:
+    """Draw Things' official community presets, bundled read-only; never written to the user's preset library."""
+    try:
+        return tuple(validate_native_presets(_read_json(BUILTIN_PRESETS)))
+    except ValidationError:
+        return ()
+
+
 def load_presets(state: Path) -> tuple[dict, ...]:
     path = preset_path(state)
     if not path.exists():
