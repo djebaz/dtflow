@@ -145,6 +145,8 @@ dependencies = [
     { name = "grpclib" },
     { name = "httpx" },
     { name = "keyring" },
+    { name = "numpy" },
+    { name = "onnxruntime" },
     { name = "pillow" },
     { name = "pyside6-essentials" },
 ]
@@ -169,6 +171,8 @@ requires-dist = [
     { name = "grpclib", specifier = ">=0.4.9,<0.5.0" },
     { name = "httpx", specifier = ">=0.28.1,<0.29.0" },
     { name = "keyring", specifier = ">=25.7.0" },
+    { name = "numpy", specifier = "==2.3.5" },
+    { name = "onnxruntime", specifier = ">=1.20,<2" },
     { name = "pillow", specifier = ">=12.1,<13" },
     { name = "pyside6-essentials", specifier = ">=6.8" },
 ]

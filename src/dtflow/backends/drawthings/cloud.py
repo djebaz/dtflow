@@ -31,6 +31,10 @@ class DirectCloudBackend(DrawThingsBackend):
     backend_id = "drawthings-cloud"
     unlisted_model_bridge = False
 
+    @staticmethod
+    def default_endpoint() -> DrawThingsEndpoint:
+        return DrawThingsEndpoint("compute.drawthings.ai", 443, TlsPolicy.system())
+
     def __init__(
         self,
         auth: CloudAuth,
@@ -46,7 +50,7 @@ class DirectCloudBackend(DrawThingsBackend):
         if endpoint is not None and endpoint.tls.bundled_local:
             raise ValidationError("DT+ uses system or explicitly injected TLS trust, not the local bundled-CA policy.")
         self.max_concurrency = max_concurrency
-        super().__init__(endpoint or DrawThingsEndpoint("compute.drawthings.ai", 443, TlsPolicy.system()), **kwargs)
+        super().__init__(endpoint or self.default_endpoint(), **kwargs)
         self._auth = auth
         self._upload_transport, self._upload_policy = upload_transport, upload_policy
 

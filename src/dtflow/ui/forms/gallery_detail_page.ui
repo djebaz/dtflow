@@ -2938,6 +2938,14 @@ No generation or saved output</string>
                    </widget>
                   </item>
                   <item>
+                   <widget class="QPushButton" name="galleryEditImageButton">
+                    <property name="text"><string>Edit image</string></property>
+                    <property name="enabled"><bool>false</bool></property>
+                    <property name="toolTip"><string>Open this saved image as the source in the Inpaint editor without submitting.</string></property>
+                    <property name="sizePolicy"><sizepolicy hsizetype="Maximum" vsizetype="Fixed" /></property>
+                   </widget>
+                  </item>
+                  <item>
                    <widget class="QPushButton" name="galleryRegenerateButton">
                     <property name="text"><string>Regenerate…</string></property>
                     <property name="enabled"><bool>false</bool></property>

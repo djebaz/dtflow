@@ -201,6 +201,7 @@ class MainWindow:
             state_dir=self.state_dir,
             reuse_callback=self._reuse_output,
             regenerate_callback=self._regenerate_output,
+            edit_callback=self._edit_output,
             export_callback=self._open_checked_export,
             recycle_callback=self._request_gallery_recycle if trash_supported() else None,
         )
@@ -514,6 +515,7 @@ class MainWindow:
         if isinstance(endpoint, str):
             self.form.endpointEdit.setText(endpoint)
         self.generation.restore(document.get("form"), document.get("forms"))
+        self.generation.inpaint.restore(document.get("edit"))
         log.info("last session restored provider=%s", provider if provider in BACKENDS else "-")
 
     def _session_document(self) -> dict:
@@ -522,6 +524,7 @@ class MainWindow:
             "endpoint": self.form.endpointEdit.text().strip(),
             "form": self.generation.form_document(),
             "forms": self.generation.forms_document(),
+            "edit": self.generation.inpaint.session_document(),
         }
 
     def remember(self, *_, background: bool = True) -> None:
@@ -746,6 +749,10 @@ class MainWindow:
     def _reuse_output(self, request: dict, identity: str) -> None:
         self.generation.reuse_saved_request(request, identity)
         self._show_generation()
+
+    def _edit_output(self, path: str) -> None:
+        if self.generation.edit_saved_image(path):
+            self._show_generation()
 
     def _regenerate_output(self, request: dict, identity: str) -> None:
         if self.inline.commit(self.gallery.regenerate_button):

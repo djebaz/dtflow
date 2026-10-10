@@ -52,7 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         command = [
             sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--name", "dtflow",
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
-            "--collect-data", "dtflow", "--copy-metadata", "keyring", "--distpath", str(out),
+            "--collect-data", "dtflow", "--copy-metadata", "keyring", "--collect-binaries", "onnxruntime",
+            "--distpath", str(out),
         ]  # fmt: skip
         if platform.system() == "Windows":
             command.extend(

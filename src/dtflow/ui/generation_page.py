@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from PySide6.QtCore import QSize, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QPixmap
@@ -41,11 +42,14 @@ from dtflow.services.connection import (
     present_interruption,
     present_outcome,
 )
+from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
+    generate_image_once,
     generate_once,
+    owner_probe_permit,
     read_attempt,
     selection_for,
 )
@@ -68,6 +72,7 @@ from dtflow.ui.generation_presenter import (
     values_from_request,
 )
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
+from dtflow.ui.inpaint_editor import EditJob, InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -89,6 +94,8 @@ PREVIEW_MIN_HEIGHT = 180
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
+    "textToImageModeButton",
+    "inpaintModeButton",
     "promptEdit",
     "negativePromptEdit",
     "seedEdit",
@@ -250,7 +257,7 @@ class GenerationPage:
             page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
-        page.generateButton.clicked.connect(self.generate)
+        page.generateButton.clicked.connect(lambda _=False: self.generate())
         page.refreshInventoryButton.clicked.connect(self.refresh)
         page.saveConfigurationButton.clicked.connect(self.save)
         page.savePresetButton.setEnabled(True)
@@ -292,6 +299,10 @@ class GenerationPage:
         page.resultPreviewLabel.enable_inspection()
         self.sync_backend()
         self._scan_configs()
+        self.inpaint = InpaintEditor(page, runner)
+        self.inpaint.attach(self)
+        page.textToImageModeButton.toggled.connect(self._sync_activity)
+        page.inpaintModeButton.toggled.connect(self._sync_activity)
 
     def _set_prompt_expanded(self, expanded: bool) -> None:
         """Match prompt height, icon and accessible label to the toggle state."""
@@ -341,6 +352,8 @@ class GenerationPage:
             else "Select a checkpoint. Search matches any part of its name; custom identifiers remain available."
         )
         self.lora.sync_backend()
+        if hasattr(self, "inpaint"):
+            self.inpaint.refresh_capability()
         if changed:
             self._rebuild_catalogue(
                 preferred_family=self._pending_family,
@@ -659,6 +672,8 @@ class GenerationPage:
         self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
         self.lora.set_enabled(not busy)
+        if hasattr(self, "inpaint"):
+            self.inpaint.set_busy(busy or self._activity.dispatching)
 
     def _unlisten_activity(self) -> None:
         """Detach before Qt destroys the page and its generation controls."""
@@ -667,6 +682,8 @@ class GenerationPage:
     def _sync_activity(self) -> None:
         """A queue dispatch holds the state lock, so single generation waits for it (and vice versa)."""
         self.page.generateButton.setEnabled(not self._busy and not self._activity.dispatching)
+        if hasattr(self, "inpaint"):
+            self.inpaint.set_busy(self._busy or self._activity.dispatching)
         if self._activity.dispatching:
             self._status(
                 Presentation("warning", "Queue dispatch is running", "Single generation is unavailable until it stops.")
@@ -681,6 +698,8 @@ class GenerationPage:
         A random seed (form seed 0) picked for a plan preview is kept until a queue is created (``queue_created``),
         so the dry-run table shows the seeds the queue will really use, even after a rejected attempt.
         """
+        if self.inpaint.active:
+            raise FormError("Inpaint mode is single-shot only; queues and plans are unavailable.", None)
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()
@@ -735,7 +754,20 @@ class GenerationPage:
         )
 
     # -- generation ------------------------------------------------------------------------------------------------
-    def generate(self) -> None:
+    def edit_saved_image(self, path: str) -> bool:
+        """Images handoff: open a saved output as the Inpaint source; nothing is submitted."""
+        if self._busy or self._activity.dispatching:
+            InlineNotice.warning(
+                self.page, "Generation is busy", "Stop the active generation or queue dispatch before editing."
+            )
+            return False
+        self.inpaint.edit_saved_image(path)
+        return True
+
+    def generate(self, edit: EditJob | None = None) -> None:
+        if self.inpaint.active and edit is None:
+            self.inpaint.generate()
+            return
         if self._busy:
             return
         self._mark(None)
@@ -751,9 +783,12 @@ class GenerationPage:
             log.debug("generate validation message=%s", exc)
             self._status(Presentation("error", "Invalid request", str(exc)))
             return
+        if edit is not None and request.batch_size * request.batch_count != 1:
+            self._status(Presentation("error", "Invalid request", "Edit image runs one image at a time."))
+            return
         self._reuse_source_identity = None
         self._request = request
-        log.info("generate submitted backend=%s", name)
+        log.info("generate submitted backend=%s operation=%s", name, "inpaint" if edit else "txt2img")
         log.debug(
             "generate request model=%s size=%dx%d steps=%d sampler=%s seed=%s loras=%s",
             request.model_id,
@@ -785,8 +820,10 @@ class GenerationPage:
             ),
         )
         self._set_busy(True)
+        run = self._generate_edit if edit is not None else self._generate
+        extra = (edit,) if edit is not None else ()
         self._future = self._runner.submit(
-            self._generate(
+            run(
                 name,
                 endpoint,
                 request,
@@ -794,6 +831,7 @@ class GenerationPage:
                 self.lora.receipt_ids(),
                 self.page.triggerPrefixCheck.isChecked(),
                 self.simulation(),
+                *extra,
             ),
             self._generated,
         )
@@ -813,6 +851,34 @@ class GenerationPage:
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
         return await generate_once(
             selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
+        )
+
+    async def _generate_edit(self, name, endpoint, request, saved, asset_ids, prefix, simulation, job):
+        """One explicit owner-probe edit: the user confirmed this exact scope in the editor just now."""
+        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
+        permit = owner_probe_permit(selection, request.model_id, "inpaint", f"gui-{uuid4().hex[:12]}")
+        prepared = await asyncio.to_thread(
+            prepare_edit_inputs,
+            job.source,
+            job.mask,
+            request.width_px,
+            request.height_px,
+            grow=job.grow,
+            feather=job.feather,
+        )
+        return await generate_image_once(
+            selection,
+            self._state,
+            request,
+            prepared,
+            permit=permit,
+            strength=job.strength,
+            preserve_outside=job.keep_outside,
+            allow_image_probe=True,
+            prefix=prefix,
+            saved=saved,
+            on_event=self._relay,
+            asset_ids=asset_ids,
         )
 
     def _event(self, event: BackendEvent) -> None:
@@ -882,6 +948,8 @@ class GenerationPage:
             self.page.detailsToggle.setChecked(True)  # the output chooser lives in the details
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
+            if self.inpaint.active:
+                self.inpaint.show_result(outcome.final_image, outcome.output_paths[0] if outcome.output_paths else None)
 
     def _quality_text(self, outcome) -> str:
         """Development mode: the export noise/blank detector's verdict on each saved output, also written to the log."""

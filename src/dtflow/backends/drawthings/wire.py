@@ -21,9 +21,12 @@ from drawthings_py.generated.dt_grpc.config_generated import (
 )
 
 from dtflow.backends.drawthings.errors import error
+from dtflow.backends.drawthings.image_inputs import encode_image_inputs
 from dtflow.backends.drawthings.versions import lora_version
-from dtflow.core.model_profiles import profile_for
-from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, Sampler
+from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
+from dtflow.core.image_operations import ImageOperationPermit
+from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, profile_for
+from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, ResourceLimits, Sampler
 
 # Provider sampler names; drawthings-py silently substitutes a default for unknown names, so the result is verified.
 SAMPLER_NAME = {
@@ -84,10 +87,10 @@ def _reject(request: ResolvedGenerationRequest, code: str, message: str):
     return error(ErrorCategory.VALIDATION, code, message, request.request_id)
 
 
-def validate_supported(request: ResolvedGenerationRequest) -> None:
-    """Reject anything outside the verified txt2img scope before any serialization."""
-    if request.operation != "txt2img":
-        raise _reject(request, "unsupported_operation", "Only text-to-image is supported.")
+def validate_supported(request: ResolvedGenerationRequest, *, image_permitted: bool = False) -> None:
+    """Image expressibility requires the separate exact owner gate, never a family guess."""
+    if request.operation != "txt2img" and not image_permitted:
+        raise _reject(request, "unsupported_operation", "Image operations require an exact owner permit.")
     if (request.batch_size, request.batch_count) != (1, 1):
         raise _reject(request, "unsupported_batch", "Only a single output per request is supported.")
     if request.sampler_id not in SAMPLER_NAME:
@@ -130,12 +133,47 @@ def build_generation_message(
     shared_secret: str | None,
     base_version: str | None = None,
     model_spec: dict | None = None,
+    *,
+    prepared: PreparedImageInputs | None = None,
+    image_permit: ImageOperationPermit | None = None,
+    backend_id: str | None = None,
+    endpoint: str | None = None,
+    allow_image_probe: bool = False,
+    limits: ResourceLimits | None = None,
 ) -> WireRequest:
-    validate_supported(request)
+    limits = limits or ResourceLimits()
+    image_operation = request.operation != "txt2img"
+    transport = None
+    if image_operation:
+        if not isinstance(image_permit, ImageOperationPermit) or prepared is None or request.image_inputs is None:
+            raise _reject(request, "image_inputs_missing", "Image operations require owned inputs and an owner permit.")
+        image_permit.validate_scope(
+            backend_id, endpoint, request.model_id, request.operation, allow_probe=allow_image_probe
+        )
+        expected = ImageInputSnapshot.from_prepared(
+            request.image_inputs.attempt_id, prepared, preserve_outside=request.image_inputs.preserve_outside
+        )
+        if expected != request.image_inputs:
+            raise _reject(request, "image_input_mismatch", "Prepared inputs differ from the resolved request.")
+        if backend_id == "drawthings-cloud" and (
+            model_spec != exact_model_spec(request.model_id)
+            or image_permit.model_description_sha256 != exact_model_description_digest(request.model_id)
+        ):
+            raise _reject(
+                request,
+                "exact_model_description_missing",
+                "The published model description differs from the permit.",
+            )
+        transport = encode_image_inputs(prepared, limits)
+    elif prepared is not None or image_permit is not None:
+        raise _reject(request, "unexpected_image_inputs", "Text-to-image cannot include image transport or permits.")
+    validate_supported(request, image_permitted=image_operation)
     sampler = SAMPLER_NAME[request.sampler_id]
     # Flow models (Flux, ...) need version-specific fields that a bare configuration leaves at library defaults.
     profile = profile_for(request.model_id, base_version)
     extras = dict(profile.extras) if profile else {}
+    if image_operation:
+        extras.update(mask_blur=0.0, mask_blur_outset=0, preserve_original_after_inpaint=False)
     config = GenConfig(
         model=request.model_id,
         width=request.width_px,
@@ -143,7 +181,7 @@ def build_generation_message(
         steps=request.steps,
         guidance=request.guidance,
         sampler=sampler,
-        strength=TXT2IMG_STRENGTH,
+        strength=request.strength if image_operation else TXT2IMG_STRENGTH,
         batch_size=1,
         batch_count=1,
         **extras,
@@ -168,6 +206,25 @@ def build_generation_message(
         )
     if shared_secret:
         message.shared_secret = shared_secret
+    if transport is not None:
+        message.image = transport.image
+        if transport.mask is not None:
+            message.mask = transport.mask
+        message.contents = list(transport.contents)
+        # Count the complete protobuf too, not just its tensors: config/prompt/
+        # overrides consume the same transport budget. No payload is logged.
+        if len(bytes(message)) > limits.transport_bytes:
+            raise _reject(
+                request, "image_request_byte_limit", "Encoded image request exceeds the transport byte limit."
+            )
+        effective = (
+            *effective,
+            ("image_tensor_sha256", transport.image.hex()),
+            ("mask_tensor_sha256", transport.mask.hex() if transport.mask is not None else ""),
+            ("image_operation_evidence", image_permit.evidence_id),
+            ("image_operation_status", image_permit.status),
+            ("model_description_sha256", image_permit.model_description_sha256 or ""),
+        )
     return WireRequest(message, effective)
 
 
@@ -197,6 +254,12 @@ def verify_wire_configuration(
         mismatches.append("loras")
     if not _same_float32(decoded.get("guidance"), request.guidance):
         mismatches.append("guidance")
+    if not _same_float32(raw.Strength(), request.strength):
+        mismatches.append("strength")
+    if request.operation != "txt2img" and (
+        raw.MaskBlur() != 0 or raw.MaskBlurOutset() != 0 or raw.PreserveOriginalAfterInpaint()
+    ):
+        mismatches.append("provider_mask_adjustments")
     for key, wanted_value in (extras or {}).items():
         sent_value = decoded.get(key)
         if isinstance(wanted_value, bool):

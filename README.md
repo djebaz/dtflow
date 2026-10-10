@@ -115,6 +115,7 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Queues and batch plans](devdocs/guides/queues.md) — queue controls, concurrency and parameter comparisons.
 - [CLI reference](devdocs/guides/cli.md) — automation and development interface.
 - [Testing](devdocs/guides/testing.md), [development tools](devdocs/guides/development.md) and [Windows builds](devdocs/guides/building.md).
+- [Image-operation preparation](devdocs/architecture/image-operations.md) — developer-only permit-gated single-shot path; no default image capability or accepted editor/checkpoint support.
 - [Architecture](devdocs/architecture/), [runtime layout](devdocs/architecture/runtime-layout.md) and the [design system reference](devdocs/design-system/README.md).
 - [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
 - [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
@@ -137,3 +138,4 @@ Dependency changes go through uv, with `pyproject.toml` and `uv.lock` kept toget
 
 DTFlow is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE) and the
 [dependency licensing decision](devdocs/decisions/0001-drawthings-py-license.md).
+

@@ -9,6 +9,7 @@ from time import monotonic
 from uuid import uuid4
 
 from dtflow.build import identity
+from dtflow.core.image_inputs import INPUT_NAMES, ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.models import (
     Backend,
     BackendError,
@@ -31,6 +32,8 @@ from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
 from dtflow.services.events import EventBuffer
+from dtflow.services.image_artifacts import save_image_artifacts
+from dtflow.services.image_inputs import snapshot_image_inputs
 from dtflow.services.preflight import preflight_loras, raise_if_blocked
 
 log = logging.getLogger(__name__)
@@ -49,11 +52,13 @@ class GenerationService:
         saver: Callable = save_artifacts,
         budget: BufferBudget | None = None,
         assets: AssetValidator | None = None,
+        input_state: Path | None = None,
     ):
         self.assets = assets
         self.backend, self.store, self.output = backend, store, Path(output)
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
+        self.input_state = Path(input_state) if input_state is not None else None
         self.budget = budget or BufferBudget(backend.capabilities.limits.buffer_budget)
         # Serialize validation/saving while admitted backend requests may overlap.
         self._buffers = asyncio.Semaphore(1)
@@ -85,9 +90,33 @@ class GenerationService:
         return preflight_loras(request, await self.get_inventory())
 
     async def generate(
-        self, request: ResolvedGenerationRequest, *, on_event: EventSink | None = None
+        self,
+        request: ResolvedGenerationRequest,
+        *,
+        on_event: EventSink | None = None,
+        prepared_inputs: PreparedImageInputs | None = None,
     ) -> SavedGeneration:
         caps = self.backend.capabilities
+        image_operation = request.operation != "txt2img"
+        if image_operation:
+            gate = getattr(self.backend, "validate_image_operation", None)
+            if not callable(gate) or prepared_inputs is None or self.input_state is None:
+                raise BackendError(
+                    BackendFailure(
+                        ErrorCategory.VALIDATION,
+                        "image_dispatch_not_configured",
+                        "Image operations require a scoped owner gate and prepared managed inputs.",
+                        request.request_id,
+                    )
+                )
+            gate(request)
+            expected = ImageInputSnapshot.from_prepared(
+                request.image_inputs.attempt_id, prepared_inputs, preserve_outside=request.image_inputs.preserve_outside
+            )
+            if expected != request.image_inputs:
+                raise ValueError("Prepared image inputs do not match the request.")
+        elif prepared_inputs is not None:
+            raise ValueError("Text-to-image cannot include prepared image inputs.")
         unsupported = tuple(
             (name, code)
             for name, code, failed in (
@@ -137,6 +166,19 @@ class GenerationService:
             raise_if_blocked(request, await self.preflight(request))
         raw_bytes = request.height_px * (1 + request.width_px * 4)
         reservation = raw_bytes + 3 * caps.limits.artifact_bytes + caps.limits.preview_bytes
+        if prepared_inputs is not None:
+            # Conservative allowance for retained PNGs, preparation/verification
+            # grids, SDK tensor temporaries and full protobuf serialization. This
+            # is admission policy, not measured peak-RSS/performance evidence.
+            reservation += (
+                sum(
+                    len(getattr(prepared_inputs, name).encoded)
+                    for name in INPUT_NAMES
+                    if getattr(prepared_inputs, name) is not None
+                )
+                + prepared_inputs.source.width * prepared_inputs.source.height * 16
+                + request.width_px * request.height_px * 24
+            )
         if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
             raise BackendError(
                 BackendFailure(
@@ -148,6 +190,8 @@ class GenerationService:
             )
         reserved = False
         attempt_id = uuid4().hex
+        if image_operation:
+            request = replace(request, image_inputs=replace(request.image_inputs, attempt_id=attempt_id))
         ATTEMPT.set(attempt_id)
         await self.store.create(attempt_id, caps.backend_id, request)
         log.info(
@@ -180,6 +224,18 @@ class GenerationService:
         try:
             await self.budget.acquire(reservation)
             reserved = True
+            if image_operation:
+                snapshot = await settle(
+                    asyncio.to_thread(
+                        snapshot_image_inputs,
+                        self.input_state,
+                        attempt_id,
+                        prepared_inputs,
+                        preserve_outside=request.image_inputs.preserve_outside,
+                    )
+                )
+                if snapshot != request.image_inputs:
+                    raise ValueError("Committed image inputs differ from the prepared attempt.")
             await self.store.transition(
                 attempt_id,
                 ("prepared",),
@@ -213,14 +269,27 @@ class GenerationService:
                     # Keep committed originals behind the same OS-released lease
                     # used by export and Recycle Bin; no provider code runs here.
                     with original_images_lock(getattr(self.store, "directory", self.output.parent)):
+                        if image_operation:
+                            return save_image_artifacts(
+                                self.output, attempt_id, request, result, identity(), caps.limits, prepared_inputs
+                            )
                         return self.saver(self.output, attempt_id, request, result, identity(), caps.limits)
 
-                paths, metadata = await settle(asyncio.to_thread(commit_originals))
+                saved = await settle(asyncio.to_thread(commit_originals))
+                paths, metadata = saved[:2]
+                display_image = saved[2] if image_operation else None
             await self.store.transition(
                 attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
             )
             log.info("attempt succeeded outputs=%d", len(paths))
-            return SavedGeneration(attempt_id, paths, metadata, result)
+            return SavedGeneration(
+                attempt_id,
+                paths,
+                metadata,
+                result,
+                request=request if image_operation else None,
+                display_image=display_image,
+            )
         except asyncio.CancelledError:
             log.warning("attempt interrupted locally stage=%s outcome=%s", stage, outcome)
             failure = BackendFailure(
