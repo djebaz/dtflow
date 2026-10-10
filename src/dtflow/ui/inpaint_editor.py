@@ -184,7 +184,7 @@ class InpaintEditor(QObject):
         for name in ("configurationCombo", "loadConfigurationButton", "saveConfigurationButton", "savePresetButton"):
             widget = getattr(self.page, name)
             widget.setEnabled(not active and not self._busy)
-            widget.setToolTip("Image operations are single-shot only." if active else "")
+            widget.setToolTip("Configurations and presets cover text-to-image only." if active else "")
         self._steps_note()
         self._controls()
         self.refresh_capability()

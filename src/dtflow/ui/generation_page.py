@@ -701,7 +701,7 @@ class GenerationPage:
         so the dry-run table shows the seeds the queue will really use, even after a rejected attempt.
         """
         if self.inpaint.active:
-            raise FormError("Inpaint mode is single-shot only; queues and plans are unavailable.", None)
+            raise FormError("Inpaint mode queues edits from the editor: use Queue edit in Generate.", None)
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()
