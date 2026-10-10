@@ -73,6 +73,8 @@ select:hover,input:hover{border-color:#606060}
 /* Shared bottom overlay: absolute, never a layout participant. */
 .dock{position:absolute;left:8px;right:8px;bottom:30px;z-index:10;border-radius:7px;border:1px solid #31668b;background:linear-gradient(100deg,#1d2935,#202426);padding:8px 12px;display:flex;align-items:center;gap:12px;min-height:46px;overflow:hidden;box-shadow:0 -3px 14px #0005}
 .dock.success{background:linear-gradient(108deg,#123e36,#202627 85%);border-color:#16947e}
+.dock.error{background:linear-gradient(105deg,#432323,#242424);border-color:var(--dangerBorder)}
+.srcrow{display:flex;gap:10px;align-items:center}.srcthumb{width:56px;height:42px;border-radius:4px;border:1px solid var(--border);background:#000;flex:none}.srcerr{color:#ff9d97;font-size:12px}
 .dock.confirm{background:linear-gradient(105deg,#432323,#242424);border-color:var(--dangerBorder)}
 .dock .t{font-weight:600}.dock .s{color:#c3cdd6;flex:1;font-size:12px}
 .dock .bar{height:5px;background:#2a2a2a;border-radius:3px;width:240px;flex:none;overflow:hidden}.dock .bar i{display:block;height:100%;background:#1695e0;width:0}
@@ -84,7 +86,7 @@ select:hover,input:hover{border-color:#606060}
   <div class="demo-toolbar">
     <div><div class="demo-title">DTFlow — Inpaint Interaction Reference</div><div class="demo-kicker">Offline illustrative mockup. Nothing is generated, uploaded or detected: zones are hand-drawn vectors.</div></div>
     <div class="demo-control"><span class="demo-label">State</span>
-      <button data-demo="reset">Reset</button><button data-demo="selected">Person selected</button><button data-demo="nosource">No source</button><button data-demo="unconfirmed">Unconfirmed checkpoint</button><button data-demo="find">Find people</button><button data-demo="result">Saved result</button>
+      <button data-demo="reset">Reset</button><button data-demo="selected">Person selected</button><button data-demo="nosource">No source</button><button data-demo="rejected">Rejected file</button><button data-demo="unconfirmed">Unconfirmed checkpoint</button><button data-demo="find">Find people</button><button data-demo="result">Saved result</button>
     </div>
   </div>
   <div class="demo-guide"><b>Try:</b> <b>Select</b> and <b>Paint</b> are two modes of one mask: edits from both add up, and the right panel swaps to that mode's controls. In Select, hover a person and click to add (Alt removes); in Paint, Brush, Erase, Rectangle and Circle draw on the same mask; Undo/Redo; Source / Mask / Result views; <b>Edit image</b> runs a simulated edit. The blue tint is a fixed 45% accent, not a user setting. Grow and Feather are not simulated.</div>
@@ -96,9 +98,12 @@ select:hover,input:hover{border-color:#606060}
         <div class="brand"><b><span class="mark">D</span>DTFlow</b><span class="run-icon" aria-label="Run control">&#9654;</span></div>
         <div class="nav"><button class="conn" aria-label="Connection">&#9211;</button><button class="active">Generate</button><button>Queues</button><button>Images</button></div>
         <div class="card"><div class="hd">Source image</div><div class="bd">
-          <div class="fld" id="srcname">portrait-street.jpg</div>
-          <div class="sup" id="srcmeta">2048 × 1536 · EXIF orientation applied · RGB</div>
+          <div class="srcrow"><canvas id="srcthumb" class="srcthumb" width="56" height="42" aria-hidden="true"></canvas><div style="min-width:0;flex:1"><div class="fld" id="srcname">portrait-street.jpg</div></div></div>
+          <div class="sup" id="srcmeta">2048 × 1536 · EXIF orientation applied · alpha flattened onto white · RGB</div>
+          <div class="srcerr" id="srcerr" role="alert" hidden></div>
           <div class="row"><button class="btn" id="choose" style="flex:1">Choose image…</button><button class="btn" id="fromimages" style="flex:1">From Images</button></div>
+          <button class="btn" id="removesrc" style="width:100%">Remove image</button>
+          <div class="sup" id="srclimits">Up to 64 MiB and 16 MP. Animated or unreadable files are rejected. You can also drop an image on the canvas.</div>
         </div></div>
         <div class="card"><div class="hd">Backend</div><div class="bd">
           <div class="form">
@@ -127,7 +132,7 @@ select:hover,input:hover{border-color:#606060}
         <div class="prompt">a woman in a green wool coat, wet street, evening light</div>
         <div class="prompt" style="min-height:30px;color:#a8a8a8;padding:5px 10px">Negative prompt (optional)</div>
         <div class="stage" id="stage">
-          <div class="empty" id="empty" hidden><div><b style="font-size:14px;color:var(--text)">Choose a source image</b><br>Then click a person or paint the area to change.</div></div>
+          <div class="empty" id="empty" hidden><div><b style="font-size:14px;color:var(--text)">Choose a source image</b><br>Then click a person or paint the area to change.<br><span style="color:var(--secondary)">Choose a file, pick from Images, or drop an image here.</span></div></div>
           <div class="holder" id="holder">
             <canvas id="base" width="760" height="560"></canvas>
             <canvas id="over" class="over" width="760" height="560"></canvas>
@@ -257,7 +262,8 @@ function render(){
  const st=$('status');st.className='status'+(reason?' warn':S.result&&S.view==='result'?' ok':'');
  st.textContent=reason||(S.result?'Saved inpaint · 1024 × 768 · seed 0 · strength 0.75 · raw provider output is kept with the composite.':'Live preview: tint, thumbnail and coverage update on every edit, before anything is generated.');
  $('hint').textContent=T()==='click'?'Click adds a person · Alt removes · Shift + click also adds':T()==='rect'?'Drag to select a rectangle · Alt removes':T()==='circle'?'Drag to select a circle or ellipse · Alt removes':'Drag to paint · Alt switches to erase';
- $('srcname').textContent=S.hasSource?'portrait-street.jpg':'No image chosen';$('srcmeta').textContent=S.hasSource?'2048 × 1536 · EXIF orientation applied · RGB':'JPEG, PNG or WebP. EXIF orientation is applied.';
+ $('srcname').textContent=S.hasSource?'portrait-street.jpg':'No image chosen';$('srcmeta').textContent=S.hasSource?'2048 × 1536 · EXIF orientation applied · alpha flattened onto white · RGB':'JPEG, PNG or WebP. EXIF orientation is applied.';
+ $('removesrc').hidden=!S.hasSource;$('srcthumb').hidden=!S.hasSource;$('srcerr').hidden=!S.srcerr;$('srcerr').textContent=S.srcerr||'';if(S.hasSource)drawThumb();syncSrc();
  const paint=S.mode==='paint';$('selpanel').hidden=paint;$('paintpanel').hidden=!paint;
  document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===S.mode));
  document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on',S.mode==='paint'&&b.dataset.tool===S.tool));
@@ -281,7 +287,7 @@ over.addEventListener('pointerup',e=>{const d=S.drag;if(!d)return;S.drag=null;
  if(d.tool==='rect'||d.tool==='circle'){const r=d.rect,c=d.tool==='circle';if(r.w>3&&r.h>3){mctx.globalCompositeOperation=d.sub?'destination-out':'source-over';mctx.fillStyle='#fff';if(c){mctx.beginPath();mctx.ellipse(r.x+r.w/2,r.y+r.h/2,r.w/2,r.h/2,0,0,Math.PI*2);mctx.fill()}else mctx.fillRect(r.x,r.y,r.w,r.h);mctx.globalCompositeOperation='source-over';S.edits.push((d.sub?'Remove':'Add')+(c?' circle':' rectangle'));S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0}}
  else{S.edits.push(d.label);S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0}
  render()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(S.confirm){S.confirm=false;showDock(null);syncClear()}}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(S.confirm||S.pend)cancelPending();else if(!$('dock').hidden&&$('dock').classList.contains('error'))showDock(null)}});
 document.addEventListener('click',e=>{const m=e.target.closest('[data-mode]');if(m){S.mode=m.dataset.mode;S.hover=null;render();return}const b=e.target.closest('[data-tool]');if(b){S.tool=b.dataset.tool;S.hover=null;render()}});
 $('bsize').addEventListener('input',()=>{$('bsizev').textContent=$('bsize').value+' px'});
 $('undo').onclick=()=>{if(S.history.length>1){S.redoStack.push(S.history.pop());restore(S.history[S.history.length-1]);S.edits.pop();render()}};
@@ -292,11 +298,24 @@ document.querySelectorAll('#bfilter button').forEach(b=>b.onclick=()=>{document.
 $('ckpt').onchange=render;
 $('advt').onclick=()=>{const o=$('adv').hidden;$('adv').hidden=!o;$('advt').setAttribute('aria-expanded',o)};
 $('people').addEventListener('click',e=>{const b=e.target.closest('[data-p]');if(b){const n=+b.dataset.p;const sel=selectedPersons();if(sel[n-1])selectPerson(n,'sub');else selectPerson(n,'add');render()}});
-$('choose').onclick=()=>{S.hasSource=true;render()};$('fromimages').onclick=()=>{S.hasSource=true;render()};
+/* Source image: choose / replace / remove. Replacing or removing with a mask asks first (red in-place Confirm, Cancel in the overlay). */
+function drawThumb(){const c=$('srcthumb').getContext('2d');c.save();c.scale(56/W,42/H);scene(c,false);c.restore()}
+function maskCov(){const d=mctx.getImageData(0,0,380,280).data;for(let i=3;i<d.length;i+=4)if(d[i]>10)return true;return false}
+function cancelPending(){if(S.pend||S.confirm){S.pend=null;S.confirm=false;showDock(null);syncClear();syncSrc()}}
+function syncSrc(){const p=S.pend;$('choose').textContent=p==='replace'?'Confirm replace':'Choose image…';$('choose').classList.toggle('danger',p==='replace');$('removesrc').textContent=p==='remove'?'Confirm remove':'Remove image';$('removesrc').classList.toggle('danger',p==='remove')}
+function newSource(){resetMask();S.result=false;S.view='source';S.found=false;S.srcerr=null;S.hasSource=true;S.pend=null;showDock(null);syncSrc();render()}
+function pickSource(){if(S.running)return;if(S.pend==='replace'){newSource();return}cancelPending();S.srcerr=null;
+ if(S.hasSource&&(maskCov()||S.result)){S.pend='replace';syncSrc();showDock('confirm','Replace the source image?','The mask, result and Undo history belong to the current image and will be discarded.','Cancel',()=>cancelPending())}else newSource()}
+const stg=$('stage');stg.addEventListener('dragover',e=>e.preventDefault());stg.addEventListener('drop',e=>{e.preventDefault();pickSource()});
+$('choose').onclick=pickSource;$('fromimages').onclick=pickSource;
+$('removesrc').onclick=()=>{if(S.running)return;if(S.pend==='remove'){resetMask();S.result=false;S.found=false;S.hasSource=false;S.pend=null;showDock(null);syncSrc();render();return}cancelPending();
+ if(maskCov()||S.result){S.pend='remove';syncSrc();showDock('confirm','Remove the source image?','The mask, result and Undo history are discarded with it.','Cancel',()=>cancelPending())}else{S.hasSource=false;render()}};
+const REJECTS=[['The file is 80 MiB. Source images must be 64 MiB or smaller.','File too large'],['The image is 5472 × 3648 (20 MP). Source images must be 16 MP or smaller.','Image too large'],['animated.gif is animated. Choose a still image.','Animated image'],['broken.jpg could not be read as an image.','Unreadable file']];let rj=0;
+function rejectFile(){const [m,t]=REJECTS[rj++%REJECTS.length];cancelPending();S.srcerr=m;render();showDock('error',t,m+' The current source and mask are unchanged.','Dismiss',()=>{showDock(null)})}
 
 /* Clear mask: in-place red Confirm, Cancel in the shared bottom overlay. */
 function syncClear(){const b=$('clear');b.textContent=S.confirm?'Confirm clear':'Clear mask';b.classList.toggle('danger',S.confirm)}
-$('clear').onclick=()=>{if(!S.confirm){S.confirm=true;syncClear();showDock('confirm','Clear mask?','Removes the whole mask. Undo stays available.','Cancel',()=>{S.confirm=false;showDock(null);syncClear()})}else{S.confirm=false;resetAndKeep();S.edits.push('Clear mask');S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0;showDock(null);syncClear();render()}};
+$('clear').onclick=()=>{if(!S.confirm){S.pend=null;syncSrc();S.confirm=true;syncClear();showDock('confirm','Clear mask?','Removes the whole mask. Undo stays available.','Cancel',()=>{S.confirm=false;showDock(null);syncClear()})}else{S.confirm=false;resetAndKeep();S.edits.push('Clear mask');S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0;showDock(null);syncClear();render()}};
 
 /* Shared bottom overlay */
 let tm=null,life=null;
@@ -322,8 +341,8 @@ $('go').onclick=()=>{if($('go').disabled)return;S.running='edit';let n=0;render(
  const upd=()=>{showDock('running','Edit image','Step '+n+' of 9 · sampling',null,null,n/9*100);$('dbtn').hidden=false;$('dbtn').textContent='Stop waiting';$('dbtn').onclick=()=>{stopTimers();S.running=null;showDock('success','Stopped waiting','The provider may still finish. Nothing is replayed automatically.');render()}};upd();
  S.timers.push(setInterval(()=>{n++;if(n>9){stopTimers();S.running=null;S.result=true;S.view='result';showDock('success','Saved','1 image with reproducibility metadata. Original pixels kept outside the mask.');render();return}upd()},380))};
 
-function reset(){stopTimers();showDock(null);S.hasSource=true;S.view='source';S.mode='select';S.tool='brush';S.found=false;S.result=false;S.running=null;S.confirm=false;S.hover=null;$('ckpt').value='ok';resetMask();syncClear();render()}
-function demo(k){reset();if(k==='selected'||k==='result'){S.found=true;selectPerson(1,'add')}if(k==='nosource')S.hasSource=false;if(k==='unconfirmed'){selectPerson(1,'add');$('ckpt').value='no'}if(k==='result'){S.result=true;S.view='result'}render();if(k==='find')runFind()}
+function reset(){stopTimers();showDock(null);S.hasSource=true;S.view='source';S.mode='select';S.tool='brush';S.found=false;S.result=false;S.running=null;S.confirm=false;S.pend=null;S.srcerr=null;S.hover=null;$('ckpt').value='ok';resetMask();syncClear();render()}
+function demo(k){reset();if(k==='rejected'){rejectFile();return}if(k==='selected'||k==='result'){S.found=true;selectPerson(1,'add')}if(k==='nosource')S.hasSource=false;if(k==='unconfirmed'){selectPerson(1,'add');$('ckpt').value='no'}if(k==='result'){S.result=true;S.view='result'}render();if(k==='find')runFind()}
 document.querySelectorAll('[data-demo]').forEach(b=>b.onclick=()=>{b.dataset.demo==='reset'?reset():demo(b.dataset.demo)});
 reset();
 </script>
