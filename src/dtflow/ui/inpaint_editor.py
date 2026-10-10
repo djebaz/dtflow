@@ -63,6 +63,7 @@ class InpaintEditor(QObject):
         self._support = None
         self._support_revision = 0
         self._source_path = None
+        self._result_path = None
         self._models = PersonModels()
         self._analysis = None
         file = QFile(str(Path(__file__).with_name("forms") / "inpaint_editor.ui"))
@@ -112,6 +113,7 @@ class InpaintEditor(QObject):
         self.form.findPeopleButton.clicked.connect(self.find_people)
         self.form.peopleList.currentRowChanged.connect(self._list_selected)
         self.form.peopleList.itemActivated.connect(lambda _item: self._add_selected(remove=False))
+        self.form.useResultButton.clicked.connect(self.use_result)
         self.form.addPersonButton.clicked.connect(lambda: self._add_selected(remove=False))
         self.form.removePersonButton.clicked.connect(lambda: self._add_selected(remove=True))
         self.canvas.pointPicked.connect(self._pick)
@@ -258,6 +260,7 @@ class InpaintEditor(QObject):
         available = not self._busy and not self._loading
         self.canvas.setEnabled(available)
         self.form.chooseSourceButton.setEnabled(available)
+        self.form.useResultButton.setEnabled(available and self._result_path is not None)
         has_source = available and self._source is not None
         for name in (
             "removeSourceButton",
@@ -412,7 +415,7 @@ class InpaintEditor(QObject):
         else:
             callback()
 
-    def replace_source(self, path, *, quiet=False):
+    def replace_source(self, path, *, quiet=False, button=None):
         if self._busy or self._loading:
             return
 
@@ -424,6 +427,7 @@ class InpaintEditor(QObject):
             def apply(value):
                 self._source, pixels = value
                 self._source_path = str(path)
+                self._result_path = None
                 self._coverage = 0
                 self._set_analysis(None)
                 self.canvas.set_source(pixels, self._source.width, self._source.height)
@@ -436,7 +440,7 @@ class InpaintEditor(QObject):
 
             self._task("Load source image", worker, apply, quiet=quiet)
 
-        self._discard_then(self.form.chooseSourceButton, "Replace source image", load)
+        self._discard_then(button or self.form.chooseSourceButton, "Replace source image", load)
 
     def _short_name(self, path):
         """File name elided in the middle to the card width: very long names must never widen the left rail."""
@@ -468,6 +472,7 @@ class InpaintEditor(QObject):
         def remove():
             self._source = None
             self._source_path = None
+            self._result_path = None
             self._coverage = 0
             self._set_analysis(None)
             self.canvas.remove_source()
@@ -787,7 +792,17 @@ class InpaintEditor(QObject):
             quiet=True,
         )
 
-    def show_result(self, encoded):
+    def use_result(self):
+        """Chain edits: the latest saved result becomes the source (after the usual discard consent)."""
+        if self._commit(self.form.useResultButton):
+            return
+        path = self._result_path
+        if path is not None and Path(path).is_file():
+            self.replace_source(path, button=self.form.useResultButton)
+
+    def show_result(self, encoded, path=None):
+        self._result_path = str(path) if path else None
+        self._controls()
         pixmap = QPixmap()
         if pixmap.loadFromData(encoded):
             self.canvas.set_result(pixmap)

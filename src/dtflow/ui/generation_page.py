@@ -949,7 +949,7 @@ class GenerationPage:
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
             if self.inpaint.active:
-                self.inpaint.show_result(outcome.final_image)
+                self.inpaint.show_result(outcome.final_image, outcome.output_paths[0] if outcome.output_paths else None)
 
     def _quality_text(self, outcome) -> str:
         """Development mode: the export noise/blank detector's verdict on each saved output, also written to the log."""

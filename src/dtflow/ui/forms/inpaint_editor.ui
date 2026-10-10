@@ -12,6 +12,7 @@
      <item><widget class="QLabel" name="sourceError"><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>error</string></property></widget></item>
      <item><widget class="QPushButton" name="chooseSourceButton"><property name="text"><string>Choose image…</string></property></widget></item>
      <item><widget class="QPushButton" name="fromImagesButton"><property name="text"><string>From Images</string></property><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>In Images, select a saved image and press Edit image.</string></property></widget></item>
+     <item><widget class="QPushButton" name="useResultButton"><property name="text"><string>Use result as source</string></property><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>Load the latest saved result as the new source, to keep editing it. The mask and Undo history are discarded.</string></property></widget></item>
      <item><widget class="QPushButton" name="removeSourceButton"><property name="text"><string>Remove image</string></property></widget></item>
      <item><widget class="QLabel" name="sourceLimits"><property name="text"><string>Up to 64 MiB / 16 MP. You can also drop an image on the canvas.</string></property><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>secondary</string></property></widget></item>
     </layout>
