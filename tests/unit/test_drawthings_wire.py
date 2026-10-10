@@ -110,6 +110,13 @@ def test_prepared_custom_loras_are_described_in_the_override_with_the_base_versi
     assert not build_generation_message(
         request(loras=selections, prepared_assets=(asset,)), None
     ).message.override.loras
+    # The catalogue's family name is mapped to Draw Things' version string; an exact description's version wins.
+    flux = build_generation_message(request(loras=selections, prepared_assets=(asset,)), None, "flux_1")
+    assert json.loads(flux.message.override.loras)[0]["version"] == "flux1"
+    exact = build_generation_message(
+        request(loras=selections, prepared_assets=(asset,)), None, "flux_2", {"version": "flux2_9b", "file": "x"}
+    )
+    assert json.loads(exact.message.override.loras)[0]["version"] == "flux2_9b"
     assert not build_generation_message(request(loras=selections), None, "z_image").message.override.loras
 
 

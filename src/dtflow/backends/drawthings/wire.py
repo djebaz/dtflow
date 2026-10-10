@@ -21,6 +21,7 @@ from drawthings_py.generated.dt_grpc.config_generated import (
 )
 
 from dtflow.backends.drawthings.errors import error
+from dtflow.backends.drawthings.versions import lora_version
 from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, Sampler
 
@@ -160,7 +161,7 @@ def build_generation_message(
         configuration=configuration,
         user=CLIENT_NAME,
     )
-    override = custom_lora_override(request, base_version)
+    override = custom_lora_override(request, lora_version(base_version, model_spec))
     if override or model_spec:
         message.override = image_service.MetadataOverride(
             loras=override, models=json.dumps([model_spec]).encode() if model_spec else b""
