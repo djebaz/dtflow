@@ -61,7 +61,7 @@ _COMPANION = re.compile(
     r"encoder|_clip_|^clip_|^open_clip|siglip|^qwen_[23]|gemma|mistral|ministral|llama|llava|moondream|whisper|"
     r"xlm_roberta|chatglm|^opt_|blip2|dino|arcface|depth_anything|segment_anything|^sam_|schp_|^hed_|realesrgan|esrgan|"
     r"remacri|^4x_|^2dn_f16|seedvr|ootd_|^film_|pulid|redux|upscaler|taesd|consistencydecoder|previewer|stage_a|"
-    r"longcat|^eva02"
+    r"longcat|^eva02|(^|_)vit_"
 )
 
 
