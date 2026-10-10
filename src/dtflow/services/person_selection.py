@@ -136,8 +136,6 @@ def classify_models(paths: list[Path]) -> tuple[ModelRef | None, ModelRef | None
                 f"{Path(path).name} is neither a YOLO26 end2end segmentation model nor a "
                 "segformer_b2_clothes model (both must be full-precision float32 ONNX files)."
             )
-    if segmentation is None:
-        raise ValidationError("Choose the YOLO26 segmentation model (yolo26n-seg.onnx); the clothes model is optional.")
     return segmentation, clothes
 
 

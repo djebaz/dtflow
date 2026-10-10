@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QFileDialog, QLabel, QListWidgetItem
 
 from dtflow.core.image_inputs import ImageContent, max_mask_grow, suggest_generation_size
 from dtflow.core.model_profiles import profile_for
+from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence.person_models import PersonModels, load_person_models, save_person_models
 from dtflow.services.image_preparation import (
@@ -577,6 +578,11 @@ class InpaintEditor(QObject):
             )
         elif not self._analysis.people:
             text = "No people found. Paint the area instead."
+        elif not self._analysis.has_clothes:
+            text = (
+                "Only Person is available: no clothes model is set. Press Models… and select "
+                "segformer_b2_clothes.onnx (Ctrl-click to pick both files) to enable the part layers."
+            )
         else:
             text = (
                 "Click a person on the image (Alt removes) or in the list. Suggestions can be wrong; refine in Paint."
@@ -622,11 +628,13 @@ class InpaintEditor(QObject):
         )[0]
         if not paths:
             return
-        state = self.controller._state
+        state, previous = self.controller._state, self._models
 
         def worker():
             segmentation, clothes = classify_models([Path(path) for path in paths])
-            models = PersonModels(segmentation, clothes)
+            models = PersonModels(segmentation or previous.segmentation, clothes or previous.clothes)
+            if models.segmentation is None:
+                raise ValidationError("Also choose the YOLO26 segmentation model (yolo26n-seg.onnx).")
             save_person_models(state, models)
             return models
 
