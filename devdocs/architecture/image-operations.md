@@ -82,3 +82,4 @@ No new tests, test execution, builds, renders, inference or paid calls were perf
 
 
 The dedicated `dtflow edit` CLI harness constructs only one-run `owner_probe` permits from explicit user evidence and `--probe` consent. It uses `generate_image_files_once` unchanged; cloud requires the bundled exact published description digest before preparation/backend opening. Generic CLI generation/config/queues remain txt2img-only. Harness presence and offline validation do not establish live acceptance.
+Local-to-DT+ bridge probes use the edit-only explicit --bridge flag: existing allow_unlisted_model plus image_bridge resolution evidence, still scoped to the local endpoint and requiring --probe. It is an owner routing assertion, not bridge detection or confirmed compatibility; no generic CLI or backend behavior is changed.

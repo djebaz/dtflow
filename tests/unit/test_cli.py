@@ -6,6 +6,8 @@ call passes an isolated log directory so tests never write to the repository's l
 
 import json
 import sqlite3
+from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -55,6 +57,60 @@ def test_edit_without_probe_refuses_before_selection_preparation_or_backend(invo
         "first-probe",
     )
     assert code == 2 and out == "" and "requires explicit --probe" in err
+    assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.parametrize("backend,bridge", [("local", False), ("local", True), ("cloud", True)])
+def test_edit_bridge_is_explicit_local_only_and_recorded(invoke, tmp_path, monkeypatch, backend, bridge):
+    calls = []
+
+    async def generate(selection, state, request, source, **options):
+        calls.append(request)
+        assert options["allow_image_probe"] is True
+        permit = options["permit"]
+        effective = replace(
+            request,
+            resolution_evidence=(
+                *request.resolution_evidence,
+                ("image_permit_status", permit.status),
+                ("image_permit_evidence", permit.evidence_id),
+            ),
+        )
+        return SimpleNamespace(
+            request=effective,
+            attempt_id="fixture",
+            backend_id=permit.backend_id,
+            output_paths=("final.png",),
+            metadata_path="metadata.json",
+            warnings=(),
+        )
+
+    monkeypatch.setattr(cli, "generate_image_files_once", generate)
+    extra = ("--bridge",) if bridge else ()
+    code, out, err = invoke(
+        "edit",
+        "-b",
+        backend,
+        "-e",
+        "192.0.2.7:7859",
+        "-m",
+        "unlisted-fill",
+        "-p",
+        "fixture",
+        "--source",
+        str(tmp_path / "missing.png"),
+        "--evidence",
+        "bridge-probe",
+        "--probe",
+        *extra,
+    )
+    if backend == "cloud":
+        assert code == 2 and "--bridge applies only" in err and not calls and out == ""
+    else:
+        assert code == 0 and len(calls) == 1
+        assert calls[0].allow_unlisted_model is bridge
+        assert dict(calls[0].resolution_evidence).get("image_bridge") == ("local_to_dtplus" if bridge else None)
+        assert json.loads(out)["permit_status"] == "owner_probe"
     assert not (tmp_path / "state").exists()
 
 

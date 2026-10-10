@@ -188,6 +188,12 @@ def add_edit_command(commands) -> None:
     )
     child.add_argument("-b", "--backend", choices=("local", "cloud"), required=True)
     child.add_argument("-e", "--endpoint", help="Local Draw Things HOST:PORT.")
+    child.add_argument(
+        "-c",
+        "--bridge",
+        action="store_true",
+        help="Explicit Local-to-DT+ bridge: allow an unlisted checkpoint (local backend only; may consume credits).",
+    )
     child.add_argument("-d", "--state", type=Path, default=Path(".dtflow"))
     add_request_options(child, image_probe=True)
     child.set_defaults(config=None, lora=None)
@@ -515,7 +521,15 @@ async def run_edit(args: argparse.Namespace) -> int:
     # This guard precedes selection, file preparation, durable state and authentication.
     if not args.probe:
         raise ValidationError("edit requires explicit --probe consent; no backend was opened.")
+    if args.bridge and args.backend != "local":
+        raise ValidationError("--bridge applies only to the local backend forwarding to DT+.")
     request = resolve_generation(args)
+    if args.bridge:
+        request = replace(
+            request,
+            allow_unlisted_model=True,
+            resolution_evidence=(*request.resolution_evidence, ("image_bridge", "local_to_dtplus")),
+        )
     selection = selection_for(args.backend, args.endpoint, args.state)
     digest = exact_model_description_digest(request.model_id) if args.backend == "cloud" else None
     if args.backend == "cloud" and digest is None:

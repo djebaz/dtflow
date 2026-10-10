@@ -46,3 +46,4 @@
 
 
 - Added the bounded `dtflow edit` owner-probe acceptance harness (single shot, explicit consent, exact cloud description gate, permit evidence in request/output). Generic generation and queues remain txt2img-only; no live checkpoint acceptance is claimed.
+- The edit harness now exposes explicit local-to-DT+ bridge opt-in (`-c/--bridge`), recording unlisted-model authorization in the request without weakening defaults or direct-cloud description checks. Live bridge acceptance remains pending.
