@@ -1151,7 +1151,8 @@ QTableWidget#galleryListTable::item:selected:hover {
 QTableWidget#galleryListTable::indicator,
 QTableWidget#galleryListTable QCheckBox::indicator,
 QCheckBox#galleryCardCheck::indicator,
-QCheckBox#galleryDetailSelectionCheck::indicator {
+QCheckBox#galleryDetailSelectionCheck::indicator,
+QListWidget#layerList::indicator {
   width: 14px;
   height: 14px;
   border: 1px solid ${color.checkBorder};
@@ -1162,13 +1163,15 @@ QCheckBox#galleryDetailSelectionCheck::indicator {
 QTableWidget#galleryListTable::indicator:hover,
 QTableWidget#galleryListTable QCheckBox::indicator:hover,
 QCheckBox#galleryCardCheck::indicator:hover,
-QCheckBox#galleryDetailSelectionCheck::indicator:hover {
+QCheckBox#galleryDetailSelectionCheck::indicator:hover,
+QListWidget#layerList::indicator:hover {
   border-color: ${color.focus};
 }
 QTableWidget#galleryListTable::indicator:checked,
 QTableWidget#galleryListTable QCheckBox::indicator:checked,
 QCheckBox#galleryCardCheck::indicator:checked,
-QCheckBox#galleryDetailSelectionCheck::indicator:checked {
+QCheckBox#galleryDetailSelectionCheck::indicator:checked,
+QListWidget#layerList::indicator:checked {
   background: ${color.accent};
   border-color: ${color.focus};
   image: url(../images/controls/check.svg);
@@ -1176,7 +1179,8 @@ QCheckBox#galleryDetailSelectionCheck::indicator:checked {
 QTableWidget#galleryListTable::indicator:indeterminate,
 QTableWidget#galleryListTable QCheckBox::indicator:indeterminate,
 QCheckBox#galleryCardCheck::indicator:indeterminate,
-QCheckBox#galleryDetailSelectionCheck::indicator:indeterminate {
+QCheckBox#galleryDetailSelectionCheck::indicator:indeterminate,
+QListWidget#layerList::indicator:indeterminate {
   background: ${color.accent};
   border-color: ${color.focus};
   image: url(../images/controls/check-partial.svg);
@@ -1184,7 +1188,8 @@ QCheckBox#galleryDetailSelectionCheck::indicator:indeterminate {
 QTableWidget#galleryListTable::indicator:disabled,
 QTableWidget#galleryListTable QCheckBox::indicator:disabled,
 QCheckBox#galleryCardCheck::indicator:disabled,
-QCheckBox#galleryDetailSelectionCheck::indicator:disabled {
+QCheckBox#galleryDetailSelectionCheck::indicator:disabled,
+QListWidget#layerList::indicator:disabled {
   background: ${color.disabledBorder};
   border-color: ${color.checkDisabledBorder};
 }
