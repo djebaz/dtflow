@@ -81,7 +81,7 @@ def main():
             print(target)
 
         def settled():
-            return page.generateButton.isEnabled() and not page.cancelButton.isEnabled()
+            return page.generateButton.isEnabled()
 
         try:
             QTest.qWait(100)
@@ -129,7 +129,7 @@ def main():
             controller.lora.set_loras(())
             gate = asyncio.Event()
             page.generateButton.click()
-            wait_for(lambda: page.generationProgressBar.format().startswith("fake"))
+            wait_for(lambda: not page.generateButton.isEnabled())
             capture("10-busy-disabled")
             shell.runner._loop.call_soon_threadsafe(gate.set)
             wait_for(settled)
@@ -149,16 +149,17 @@ def main():
                 wait_for(settled)
                 wait_for(lambda name=name: page.assetList.count() >= (1 if "style" in name else 2))
             page.assetList.setCurrentRow(0)
-            cloud.stored.clear()
-            page.reconcileAssetButton.click()
-            wait_for(settled)
-            wait_for(lambda: any("unknown" in page.assetList.item(i).text() for i in range(page.assetList.count())))
             controller.lora.set_loras((LoRASelection("fixture-soft.ckpt", 0.8),))
             page.assetNoteLabel.setText(
                 "OFFLINE FIXTURE · in-memory cloud receipts. No provider traffic or real upload."
             )
             page.detailsToggle.setChecked(True)
             capture("12-assets-details")
+            shell.form.backendCombo.setCurrentText("fake")
+            for name, tab in (("13-queues", "queueNavigationButton"), ("14-images", "imagesNavigationButton")):
+                getattr(shell.form, tab).click()
+                QTest.qWait(300)
+                capture(name)
         finally:
             shell.runner.shutdown()
             shell.form.close()
