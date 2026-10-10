@@ -106,29 +106,59 @@ _DERIVED: dict[str, tuple[str, str | None, str]] = {
 }
 
 
-# SDXL checkpoints the cloud serves (their own CLIP companions are listed) without a community description. Derived from
-# a plain SDXL sibling (no modifier, consistency or v-prediction fields) with the checkpoint's own file, name and encoder
-# companions. Owner-confirmed on direct cloud 2026-10-10. file -> (base file, name, stem).
-_DERIVED_SDXL: dict[str, tuple[str, str, str]] = {
-    "copax_pony_xl_f16.ckpt": ("juggernaut_xl_ragnarok_f16.ckpt", "Copax Pony XL", "copax_pony_xl"),
-}
+# Community checkpoints (catalogue tier "niche") that DT+ cloud serves without a Draw Things community description. Owner
+# requested trial: derive one from a plain sibling of the same family, with the checkpoint's own file and (SDXL) CLIP
+# companions. Derived, not published by Draw Things; Copax Pony XL is owner-confirmed on direct cloud 2026-10-10, the rest
+# are unconfirmed. Edit/fill/inpaint/v-prediction files are excluded: they carry modifier or objective fields a plain
+# sibling does not have. SDXL files need the ``_f16`` / ``_q6p_q8p`` naming that carries per-checkpoint CLIP companions.
+_CATALOGUE = Path(__file__).parents[1] / "resources" / "catalogue"
+_SDXL_BASE = "juggernaut_xl_ragnarok_f16.ckpt"
+_FLUX_DEV_BASE = "flux_1_dev_q8p.ckpt"
+_FLUX_SCHNELL_BASE = "pixelwave_flux_1_schnell_04_q8p.ckpt"
+_SKIP = re.compile(r"fill|kontext|redux|canny|depth|inpaint|pix2pix|v_?pred|lcm|turbo|lightning|hyper", re.IGNORECASE)
+_SDXL_STEM = re.compile(r"(.+?)(?:_f16|_q6p_q8p)\.ckpt$")
+_NAMES = {"copax_pony_xl_f16.ckpt": "Copax Pony XL"}
 
 
-def _derived_spec(model_id: str) -> dict | None:
-    sdxl = _DERIVED_SDXL.get(model_id)
-    if sdxl is not None:
-        base = _community_specs().get(sdxl[0])
-        if base is None:
+@cache
+def _niche_families() -> dict[str, str]:
+    try:
+        records = json.loads((_CATALOGUE / "Models_niche.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {
+        item["file"]: item["base_model"]
+        for item in records
+        if isinstance(item, dict) and isinstance(item.get("file"), str) and isinstance(item.get("base_model"), str)
+    }
+
+
+def _catalogue_derived(model_id: str) -> dict | None:
+    family = _niche_families().get(model_id)
+    if family not in ("sdxl", "flux_1") or _SKIP.search(model_id):
+        return None
+    specs = _community_specs()
+    if family == "sdxl":
+        stem = _SDXL_STEM.match(model_id)
+        base = specs.get(_SDXL_BASE)
+        if stem is None or base is None:
             return None
         return {
             **base,
-            "name": sdxl[1],
+            "name": _NAMES.get(model_id, stem.group(1)),
             "file": model_id,
-            "clip_encoder": f"{sdxl[2]}_clip_vit_l14_f16.ckpt",
-            "text_encoder": f"{sdxl[2]}_open_clip_vit_bigg14_f16.ckpt",
+            "clip_encoder": f"{stem.group(1)}_clip_vit_l14_f16.ckpt",
+            "text_encoder": f"{stem.group(1)}_open_clip_vit_bigg14_f16.ckpt",
         }
+    base = specs.get(_FLUX_SCHNELL_BASE if "schnell" in model_id.lower() else _FLUX_DEV_BASE)
+    if base is None:
+        return None
+    return {**base, "name": model_id.removesuffix(".ckpt"), "file": model_id}
+
+
+def _derived_spec(model_id: str) -> dict | None:
     derived = _DERIVED.get(model_id)
     base = _community_specs().get(derived[0]) if derived else None
     if derived is None or base is None:
-        return None
+        return _catalogue_derived(model_id)
     return {**base, "name": derived[1] or base["name"], "file": model_id, "text_encoder": derived[2]}

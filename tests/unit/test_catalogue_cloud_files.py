@@ -14,4 +14,4 @@ def test_metadata_less_cloud_files_are_models_only_with_community_evidence(tmp_p
     catalogue.set_inventory(_snapshot(["flux_2_dev_i8x.ckpt", "some_vae_f16.ckpt", "unknown_lora_f16.ckpt"]))
     view = catalogue.view()
     assert view.unclassified_checkpoints == ("flux_2_dev_i8x.ckpt",)
-    assert view.other_files == ("some_vae_f16.ckpt", "unknown_lora_f16.ckpt")
+    assert view.other_files == ("unknown_lora_f16.ckpt",)  # the VAE is a hidden companion file

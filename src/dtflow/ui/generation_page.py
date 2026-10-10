@@ -70,6 +70,8 @@ from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
+UNCLASSIFIED_FAMILY = "__unclassified__"  # base-model combo data for checkpoints without a catalogue family
+
 log = logging.getLogger(__name__)
 
 
@@ -1030,12 +1032,20 @@ class GenerationPage:
             page.baseModelCombo.clear()
             for family, label in families:
                 page.baseModelCombo.addItem(label, family)
+            unclassified = self._catalogue.view().unclassified_checkpoints
+            if unclassified:
+                # Checkpoints the catalogue cannot place stay selectable without guessing a family for them.
+                page.baseModelCombo.addItem("Unclassified", UNCLASSIFIED_FAMILY)
             family_index = page.baseModelCombo.findData(current_family)
             if family_index < 0 and preferred_checkpoint:
                 entry = self._catalogue.checkpoint(preferred_checkpoint)
                 if entry is not None:
                     family_index = page.baseModelCombo.findData(entry.base_model)
-            page.baseModelCombo.setCurrentIndex(family_index if family_index >= 0 else (0 if families else -1))
+                elif preferred_checkpoint in unclassified:
+                    family_index = page.baseModelCombo.findData(UNCLASSIFIED_FAMILY)
+            page.baseModelCombo.setCurrentIndex(
+                family_index if family_index >= 0 else (0 if page.baseModelCombo.count() else -1)
+            )
         finally:
             self._updating_catalogue = False
         self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint, preserve_selection=preserve_selection)
@@ -1060,15 +1070,19 @@ class GenerationPage:
         current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
         family = page.baseModelCombo.currentData()
         include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
-        entries = self._catalogue.checkpoints(
-            domain=self._catalogue_domain(),
-            base_model=family if isinstance(family, str) else None,
-            include_niche=page.includeNicheCheck.isChecked(),
-            include_unavailable=include_cloud,
-        )
-        allowed = {entry.identifier for entry in entries}
         unclassified = set(self._catalogue.view().unclassified_checkpoints)
-        selectable = [entry.identifier for entry in entries]
+        if family == UNCLASSIFIED_FAMILY:
+            entries = ()
+            selectable = sorted(unclassified, key=str.casefold)
+        else:
+            entries = self._catalogue.checkpoints(
+                domain=self._catalogue_domain(),
+                base_model=family if isinstance(family, str) else None,
+                include_niche=page.includeNicheCheck.isChecked(),
+                include_unavailable=include_cloud,
+            )
+            selectable = [entry.identifier for entry in entries]
+        allowed = {entry.identifier for entry in entries}
         self._updating_catalogue = True
         try:
             self._fill_models(selectable)
