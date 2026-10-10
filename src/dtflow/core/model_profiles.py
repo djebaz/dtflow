@@ -85,19 +85,25 @@ def fallback_spec(model_id: str) -> dict | None:
     return dict(spec) if spec is not None else None
 
 
-# Official FLUX.1 Schnell files the cloud does not list. The community repository has no official Schnell entry, so
-# these are derived from its Schnell derivative PixelWave Schnell 04 (same architecture, same fields) with the name and
-# file replaced; the f16 file uses the f16 T5 encoder as flux_1_dev_f16 does. Derived, not published by Draw Things.
-_SCHNELL_BASE = "pixelwave_flux_1_schnell_04_q8p.ckpt"
-_SCHNELL_FILES = {
-    "flux_1_schnell_f16.ckpt": "t5_xxl_encoder_f16.ckpt",
-    "flux_1_schnell_q4p.ckpt": "t5_xxl_encoder_q6p.ckpt",
+# Files the cloud serves but the community repository has no description for. Each is derived from a sibling checkpoint of
+# the same model whose description is identical across all its published quantizations (only file, name and T5 encoder
+# differ, as for flux_1_dev f16/q5p/q8p). A single sibling is not enough: a Qwen description copied from one bf16 sibling
+# made the cloud drop the connection. Derived, not published by Draw Things. file -> (base file, name or None, T5 encoder).
+_T5_F16 = "t5_xxl_encoder_f16.ckpt"
+_T5_Q6P = "t5_xxl_encoder_q6p.ckpt"
+_DERIVED: dict[str, tuple[str, str | None, str]] = {
+    # Official Schnell is not in the repository; PixelWave Schnell 04 shares its architecture and fields.
+    "flux_1_schnell_f16.ckpt": ("pixelwave_flux_1_schnell_04_q8p.ckpt", "FLUX.1 [schnell]", _T5_F16),
+    "flux_1_schnell_q4p.ckpt": ("pixelwave_flux_1_schnell_04_q8p.ckpt", "FLUX.1 [schnell]", _T5_Q6P),
+    "flux_1_dev_q6p.ckpt": ("flux_1_dev_q8p.ckpt", None, _T5_Q6P),
+    "flux_1_dev_q5p_svd.ckpt": ("flux_1_dev_q5p.ckpt", None, _T5_Q6P),
+    "flux_1_dev_de_distill_f16.ckpt": ("flux_1_dev_de_distill_q8p.ckpt", None, _T5_F16),
 }
 
 
 def _derived_spec(model_id: str) -> dict | None:
-    encoder = _SCHNELL_FILES.get(model_id)
-    base = _community_specs().get(_SCHNELL_BASE)
-    if encoder is None or base is None:
+    derived = _DERIVED.get(model_id)
+    base = _community_specs().get(derived[0]) if derived else None
+    if derived is None or base is None:
         return None
-    return {**base, "name": "FLUX.1 [schnell]", "file": model_id, "text_encoder": encoder}
+    return {**base, "name": derived[1] or base["name"], "file": model_id, "text_encoder": derived[2]}
