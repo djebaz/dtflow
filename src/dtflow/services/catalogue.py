@@ -61,7 +61,7 @@ _COMPANION = re.compile(
     r"encoder|_clip_|^clip_|^open_clip|siglip|^qwen_[23]|gemma|mistral|ministral|llama|llava|moondream|whisper|"
     r"xlm_roberta|chatglm|^opt_|blip2|dino|arcface|depth_anything|segment_anything|^sam_|schp_|^hed_|realesrgan|esrgan|"
     r"remacri|^4x_|^2dn_f16|seedvr|ootd_|^film_|pulid|redux|upscaler|taesd|consistencydecoder|previewer|stage_a|"
-    r"longcat|^eva02|(^|_)vit_"
+    r"longcat|^eva02|(^|_)vit_|^dis_v|^is_net|parsenet|restoreformer"
 )
 
 
@@ -306,11 +306,11 @@ class Catalogue:
             for entry in self._inventory.entries:
                 if entry.identifier in known or entry.identifier in known_nonmodels:
                     continue
+                if _COMPANION.search(entry.identifier):
+                    continue
                 if entry.kind == "model":
                     raw_unknown.add(entry.identifier)
                 elif entry.kind == "unknown" and not metadata:
-                    if _COMPANION.search(entry.identifier):
-                        continue
                     (raw_unknown if entry.identifier in community else raw_other).add(entry.identifier)
             classified_unknown = {
                 entry.identifier
