@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QCheckBox,
     QFrame,
@@ -136,6 +137,21 @@ class RowHoverDelegate(QStyledItemDelegate):
 FOCUS_HIDDEN_ROWS = ("galleryNavigationRow", "gallerySelectionBar")
 
 
+class _EscapeLeavesFocus(QObject):
+    def __init__(self, page):
+        super().__init__(page)
+        self.page = page
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+            feedback = getattr(self.page.window(), "_inline_feedback", None)
+            if feedback is not None and feedback.form.isVisible():
+                return False  # an open notice or editor consumes Escape first
+            toggle_image_focus(self.page, False)
+            return True
+        return False
+
+
 def toggle_image_focus(page, enter: bool | None = None) -> None:
     """Full screen the window and collapse search, selection and info chrome around the image.
 
@@ -160,23 +176,14 @@ def toggle_image_focus(page, enter: bool | None = None) -> None:
         for widget in hidden:
             widget.hide()
         page._focus_hidden = hidden
-        # Escape must leave from any focus inside the window; page-local Escape shortcuts would make it ambiguous.
-        page._focus_escape = getattr(page, "_focus_escape", None) or QShortcut(QKeySequence("Escape"), window)
-        page._focus_escape.setContext(Qt.ShortcutContext.WindowShortcut)
-        page._focus_escape.activated.connect(lambda: toggle_image_focus(page, False))
-        page._focus_muted = [
-            item for item in page.findChildren(QShortcut) if item.key() == QKeySequence("Escape") and item.isEnabled()
-        ]
-        for item in page._focus_muted:
-            item.setEnabled(False)
+        # An application-wide filter keeps Escape working from any view or focus until focus mode ends.
+        page._focus_escape = getattr(page, "_focus_escape", None) or _EscapeLeavesFocus(page)
+        QApplication.instance().installEventFilter(page._focus_escape)
         window.showFullScreen()
     else:
         escape = getattr(page, "_focus_escape", None)
         if escape is not None:
-            escape.activated.disconnect()
-        for item in getattr(page, "_focus_muted", []):
-            item.setEnabled(True)
-        page._focus_muted = []
+            QApplication.instance().removeEventFilter(escape)
         for widget in getattr(page, "_focus_hidden", []):
             widget.show()
         page._focus_hidden = []
