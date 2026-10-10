@@ -17,6 +17,7 @@ import math
 import platform
 import re
 import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from person_zone_mask_poc import load_image, output_path, thread_count
@@ -206,38 +207,179 @@ def decode_parts(output, geometry, size, threshold, iou, names, exclude_ids=()):
     }
 
 
-def split_person_mask(person, detections, grow=0.0):
-    """Partition the person mask: smaller boxes win overlaps, ties go to the higher score.
+@dataclass(frozen=True)
+class CutOptions:
+    """How each grown part box is turned into a region of the person mask.
 
-    Each box is first scaled by (1 + grow) around its center (grow=0.3 -> 130% width and height), then
-    clipped to the image.
+    Ported from the p0rnClassColab standalone mask tool (shape limiter, center component, smoothing).
+    """
 
-    Returns (labels, int_boxes, box_person_pixels). labels: 0 outside person, 1 person without a part
-    box, detection index + 2 otherwise.
+    grow: float = 0.0
+    shape: str = "rectangle"  # rectangle | rounded | ellipse
+    roundness: float = 0.5
+    component: str = "none"  # none | center
+    center_radius: int = 8
+    min_component_area: int = 12
+    fallback_nearest: bool = False
+    close_kernel: int = 0
+    open_kernel: int = 0
+    blur_sigma: float = 0.0
+
+
+def label_components(mask):
+    """8-connected component labels (1..n) of a boolean mask using row runs and union-find."""
+    import numpy as np
+
+    height, width = mask.shape
+    labels = np.zeros((height, width), dtype=np.int32)
+    parent = [0]
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    previous = []  # (start, end, id) runs of the previous row
+    for y in range(height):
+        padded = np.concatenate(([0], mask[y].astype(np.int8), [0]))
+        edges = np.diff(padded)
+        current = []
+        for a, b in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0]):
+            ids = [rid for (pa, pb, rid) in previous if pa < b + 1 and pb > a - 1]  # touch incl. diagonals
+            if ids:
+                root = find(ids[0])
+                for other in ids[1:]:
+                    parent[find(other)] = root
+                rid = root
+            else:
+                parent.append(len(parent))
+                rid = len(parent) - 1
+            labels[y, a:b] = rid
+            current.append((int(a), int(b), rid))
+        previous = current
+    roots = np.array([find(i) for i in range(len(parent))])
+    unique = np.unique(roots[1:]) if len(roots) > 1 else roots[1:]
+    remap = np.zeros(len(parent), dtype=np.int32)
+    for n, root in enumerate(unique, start=1):
+        remap[roots == root] = n
+    remap[0] = 0
+    return remap[labels], len(unique)
+
+
+def keep_component_from_center(mask, cx, cy, radius=8, min_area=12, fallback_nearest=False):
+    """Keep only the connected component under (cx, cy); else the one most present in a disk around it.
+
+    With no seed found, return an empty mask unless fallback_nearest picks the component nearest to the
+    center. Components smaller than min_area are dropped.
+    """
+    import numpy as np
+
+    if not mask.any():
+        return mask
+    labels, count = label_components(mask)
+    height, width = mask.shape
+    cx, cy = min(max(int(cx), 0), width - 1), min(max(int(cy), 0), height - 1)
+    chosen = int(labels[cy, cx])
+    if not chosen:
+        ys, xs = np.nonzero(mask)
+        d2 = (xs - cx) ** 2 + (ys - cy) ** 2
+        near = d2 <= radius * radius
+        if near.any():
+            chosen = int(np.bincount(labels[ys[near], xs[near]]).argmax())
+        elif fallback_nearest:
+            chosen = int(labels[ys[d2.argmin()], xs[d2.argmin()]])
+    if not chosen:
+        return np.zeros_like(mask)
+    kept = labels == chosen
+    return kept if int(kept.sum()) >= min_area else np.zeros_like(mask)
+
+
+def shape_mask(height, width, shape, roundness=0.5):
+    """Boolean mask of the limiter shape inscribed in a height x width box."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    if shape == "rectangle" or height < 2 or width < 2:
+        return np.ones((height, width), dtype=bool)
+    image = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(image)
+    if shape == "ellipse":
+        draw.ellipse((0, 0, width - 1, height - 1), fill=255)
+    else:
+        draw.rounded_rectangle((0, 0, width - 1, height - 1), radius=roundness * min(width, height) / 2, fill=255)
+    return np.asarray(image) > 0
+
+
+def smooth_mask(mask, close_kernel=0, open_kernel=0, blur_sigma=0.0):
+    """Close, open, then Gaussian-blur and re-threshold a boolean mask (Pillow, square kernels)."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    if not mask.any() or not (close_kernel or open_kernel or blur_sigma):
+        return mask
+    pad = max(close_kernel, open_kernel, int(math.ceil(blur_sigma * 3)), 1)
+    image = Image.fromarray(np.pad(mask, pad).astype(np.uint8) * 255)
+
+    def odd(k):
+        return k if k % 2 else k + 1
+
+    if close_kernel > 1:
+        image = image.filter(ImageFilter.MaxFilter(odd(close_kernel))).filter(ImageFilter.MinFilter(odd(close_kernel)))
+    if open_kernel > 1:
+        image = image.filter(ImageFilter.MinFilter(odd(open_kernel))).filter(ImageFilter.MaxFilter(odd(open_kernel)))
+    if blur_sigma > 0:
+        image = image.filter(ImageFilter.GaussianBlur(blur_sigma))
+    return (np.asarray(image) >= 128)[pad:-pad, pad:-pad]
+
+
+def split_person_mask(person, detections, options=CutOptions()):
+    """Partition the person mask: smaller regions win overlaps, ties go to the higher score.
+
+    Each box is scaled by (1 + grow) around its center and clipped. Its region is the person mask inside
+    that box, optionally limited to an inscribed shape, reduced to the component under the detection's
+    own center, smoothed, and re-intersected with the person mask.
+
+    Returns (labels, int_boxes, region_pixels). labels: 0 outside person, 1 person without a part,
+    detection index + 2 otherwise.
     """
     import numpy as np
 
     height, width = person.shape
     labels = (person > 0).astype(np.uint8)
-    boxes = []
+    boxes, regions = [], []
     for d in detections:
         x0, y0, x1, y1 = d["box_xyxy"]
-        dx, dy = (x1 - x0) * grow / 2, (y1 - y0) * grow / 2
-        boxes.append(
-            (
-                max(0, math.floor(x0 - dx)),
-                max(0, math.floor(y0 - dy)),
-                min(width, math.ceil(x1 + dx)),
-                min(height, math.ceil(y1 + dy)),
-            )
+        dx, dy = (x1 - x0) * options.grow / 2, (y1 - y0) * options.grow / 2
+        box = (
+            max(0, math.floor(x0 - dx)),
+            max(0, math.floor(y0 - dy)),
+            min(width, math.ceil(x1 + dx)),
+            min(height, math.ceil(y1 + dy)),
         )
-    inside = [int(np.count_nonzero(person[y0:y1, x0:x1])) for x0, y0, x1, y1 in boxes]
+        boxes.append(box)
+        bx0, by0, bx1, by1 = box
+        crop = person[by0:by1, bx0:bx1] > 0
+        if crop.size and crop.any():
+            crop = crop & shape_mask(by1 - by0, bx1 - bx0, options.shape, options.roundness)
+            if options.component == "center":
+                crop = keep_component_from_center(
+                    crop,
+                    (x0 + x1) / 2 - bx0,
+                    (y0 + y1) / 2 - by0,
+                    options.center_radius,
+                    options.min_component_area,
+                    options.fallback_nearest,
+                )
+            crop = smooth_mask(crop, options.close_kernel, options.open_kernel, options.blur_sigma)
+            crop = crop & (person[by0:by1, bx0:bx1] > 0)
+        regions.append(crop)
+    inside = [int(np.count_nonzero(r)) for r in regions]
     areas = [(x1 - x0) * (y1 - y0) for x0, y0, x1, y1 in boxes]
     # Paint large boxes first so smaller ones overwrite; equal area: lower score first, higher score wins.
     for i in sorted(range(len(detections)), key=lambda k: (-areas[k], -k)):
         x0, y0, x1, y1 = boxes[i]
-        view = labels[y0:y1, x0:x1]
-        view[person[y0:y1, x0:x1] > 0] = i + 2
+        labels[y0:y1, x0:x1][regions[i]] = i + 2
     return labels, boxes, inside
 
 
@@ -361,6 +503,23 @@ def save_outputs(destination: Path, person, labels, core, detections, overlay, r
         handle.write("\n")
 
 
+def cut_options(args) -> CutOptions:
+    """Build CutOptions from parsed CLI arguments."""
+    smooth = not args.no_mask_smoothing
+    return CutOptions(
+        grow=args.grow,
+        shape=args.mask_box_limit_shape,
+        roundness=args.mask_box_roundness,
+        component=args.component_mode,
+        center_radius=int(args.component_center_radius),
+        min_component_area=int(args.component_min_area),
+        fallback_nearest=args.component_fallback_nearest,
+        close_kernel=int(args.mask_smooth_close) if smooth else 0,
+        open_kernel=int(args.mask_smooth_open) if smooth else 0,
+        blur_sigma=float(args.mask_smooth_blur) if smooth else 0.0,
+    )
+
+
 def run(args):
     import numpy as np
     import onnxruntime as ort
@@ -432,7 +591,8 @@ def run(args):
 
     # Stage 3: cut.
     start = time.perf_counter()
-    core, boxes, inside = split_person_mask(person, detections, args.grow)
+    options = cut_options(args)
+    core, boxes, inside = split_person_mask(person, detections, options)
     if args.expand == "rows":
         labels = expand_rows(core)
     elif args.expand == "nearest":
@@ -532,9 +692,12 @@ def run(args):
                 "nms_iou": args.parts_iou,
                 "max_parts": MAX_PARTS,
             },
-            "split": "person mask partitioned by part boxes; smaller box wins overlaps, ties to higher score",
+            "split": "person mask partitioned by part regions; smaller box wins overlaps, ties to higher score",
             "grow": args.grow,
             "grow_rule": "each box scaled by (1 + grow) around its center, width and height, then clipped",
+            "cut": asdict(options),
+            "cut_rule": "grown box ∩ person ∩ limiter shape -> component under the detection center "
+            "(disk fallback) -> close/open/blur smoothing -> ∩ person",
             "expand": args.expand,
             "expand_max_px": args.expand_max,
             "expand_rule": EXPAND_RULES[args.expand],
@@ -558,6 +721,8 @@ def run(args):
             "Growth and expansion are geometric, not anatomy-aware: rows mode leaves pixels outside every part's "
             "row band unassigned, nearest mode forces them onto the nearest part; with several people both can "
             "cross instances",
+            "Smoothing uses Pillow square-kernel Max/Min filters, not OpenCV elliptical kernels; the component "
+            "filter is 8-connected and seeded at the raw detection center",
             "Detections are model output, not ground truth; expect false positives and misses",
             "Class-agnostic NMS can suppress overlapping parts (for example covered/exposed variants)",
             "Person mask is a union of up to 20 instances; parts are not attributed to instances",
@@ -596,6 +761,42 @@ def main(argv: list[str] | None = None) -> int:
         default=0.30,
         help="scale each part box by (1+GROW) before cutting (default 0.30 = 130%%)",
     )
+    parser.add_argument(
+        "--mask-box-limit-shape",
+        choices=("rectangle", "rounded", "ellipse"),
+        default="rectangle",
+        help="limit each grown box to an inscribed shape (ellipse drops the corners)",
+    )
+    parser.add_argument(
+        "--mask-box-roundness",
+        type=grow_factor,
+        default=0.5,
+        help="rounded shape only: corner radius as a fraction of the half short side",
+    )
+    parser.add_argument(
+        "--component-mode",
+        choices=("center", "none"),
+        default="center",
+        help="center (default): keep only the person component under the detection center",
+    )
+    parser.add_argument(
+        "--component-center-radius",
+        type=pixel_count,
+        default=8,
+        help="disk radius in px searched when the center pixel is not on the mask",
+    )
+    parser.add_argument(
+        "--component-min-area", type=pixel_count, default=12, help="drop components smaller than this many px"
+    )
+    parser.add_argument(
+        "--component-fallback-nearest",
+        action="store_true",
+        help="if no component is near the center, use the nearest one",
+    )
+    parser.add_argument("--mask-smooth-close", type=pixel_count, default=9, help="closing kernel px (0 = off)")
+    parser.add_argument("--mask-smooth-open", type=pixel_count, default=3, help="opening kernel px (0 = off)")
+    parser.add_argument("--mask-smooth-blur", type=pixel_count, default=1.2, help="Gaussian sigma px (0 = off)")
+    parser.add_argument("--no-mask-smoothing", action="store_true", help="disable close/open/blur")
     parser.add_argument(
         "--expand",
         choices=tuple(EXPAND_RULES),
