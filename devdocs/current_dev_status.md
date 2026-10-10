@@ -71,6 +71,10 @@ the owner reports a source smoke export (345 JPGs at the folder root, no subfold
 
 The owner-requested [pixel-statistics detector PoC](../tools/images/README.md) now shares its v2 pixel service with optional default-on export routing into noise/blank subfolders, not a Phase 8 quality gate. Its [plan](plans/2026-10-09-noise-detector-poc.md) records owner-requested labelled sample runs and the version-2 spatial rule for two confirmed misses; thresholds are sample-fitted, with independent validation pending and no general accuracy claim.
 
+## Developer-only person/zone mask experiment
+
+The [CPU mask PoC](plans/2026-10-10-person-zone-mask-poc.md) adds a standalone tools/images experiment, not Phase 9 production behavior or acceptance. Manual-box intersection and fake-session tests are present; a trusted local LR-ASPP ONNX export, real-mask review and target-CPU cost measurement remain pending. No real inference or billable operation was run.
+
 ## Maintenance
 
 Update this short snapshot when implementation scope changes, with the reviewed base revision/date and evidence links. Keep completed, remaining and added scope aligned with `initial.md`; retain detailed validation in plans/research/release notes. If this snapshot disagrees with source or verified evidence, those sources win: refresh the snapshot rather than assuming completion. Do not append a running changelog here.

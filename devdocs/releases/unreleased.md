@@ -4,6 +4,8 @@
 
 ## Added
 
+- Standalone CPU-only person/rectangle mask PoC under tools/images, with a dedicated uv development group, model/checksum contract, five diagnostic outputs and focused non-inference tests. Real model and target-CPU smoke acceptance remain pending; no production inpainting integration.
+
 ## Changed
 
 ## Fixed
