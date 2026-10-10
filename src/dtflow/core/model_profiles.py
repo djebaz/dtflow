@@ -108,7 +108,7 @@ _DERIVED: dict[str, tuple[str, str | None, str]] = {
 
 # SDXL checkpoints the cloud serves (their own CLIP companions are listed) without a community description. Derived from
 # a plain SDXL sibling (no modifier, consistency or v-prediction fields) with the checkpoint's own file, name and encoder
-# companions. Owner-requested attempt: unconfirmed until a direct-cloud run returns an image. file -> (base file, name, stem).
+# companions. Owner-confirmed on direct cloud 2026-10-10. file -> (base file, name, stem).
 _DERIVED_SDXL: dict[str, tuple[str, str, str]] = {
     "copax_pony_xl_f16.ckpt": ("juggernaut_xl_ragnarok_f16.ckpt", "Copax Pony XL", "copax_pony_xl"),
 }

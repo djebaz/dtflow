@@ -82,7 +82,7 @@
 
 ## Fixed
 
-- Direct cloud now sends a derived SDXL model description (from Juggernaut XL Ragnarok, with Copax Pony XL's own file and CLIP companions) for `copax_pony_xl_f16.ckpt`, whose runs returned terminal OK with no image; unconfirmed until an owner cloud run returns an image.
+- Direct cloud now sends a derived SDXL model description (from Juggernaut XL Ragnarok, with Copax Pony XL's own file and CLIP companions) for `copax_pony_xl_f16.ckpt`, whose runs returned terminal OK with no image; owner confirmed the cloud now returns an image.
 - Unclassified checkpoints no longer appear under every base-model family (they have none); they stay reachable through the custom-identifier action and the unclassified inspector.
 - Generate on direct DT+ cloud no longer counts or offers every metadata-less file (LoRAs, controls, encoders, VAEs, upscalers) as a checkpoint: only files with an exact Draw Things community model description are offered; other files are listed only in the unclassified-files inspector without any guessed family.
 - Fill missing families/modes for 125 `Models_niche.json` checkpoints from the community model `version` (or an unambiguous name such as `chroma_`, `wan_v2.1_`, `_xl_`) and drop 65 non-checkpoints (text encoders, LLMs, upscalers, preprocessors, try-on/vision models) from the model catalogue; 78 remain unclassified.
