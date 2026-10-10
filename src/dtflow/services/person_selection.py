@@ -47,6 +47,11 @@ CLOTHES_LABELS = (
 )
 CLOTHING = frozenset({"upper-clothes", "skirt", "pants", "dress", "belt", "scarf"})
 SKIN = frozenset({"face", "left-leg", "right-leg", "left-arm", "right-arm"})
+SKIN_CLASS = len(CLOTHES_LABELS)  # synthetic: Face pixels the faces model places outside any head (neck, chest)
+FACES_SIDE = 320
+FACES_CONFIDENCE = 0.25
+FACES_IOU = 0.45
+FACE_BELOW = 0.15  # a face may reach this fraction of its box height under the box
 # Selectable layers. "person" is the whole instance silhouette; the rest come from the clothes model's classes.
 GARMENT_CLASSES = {
     "upper clothes": (4,),
@@ -63,9 +68,10 @@ GARMENT_CLASSES = {
     "legs": (12, 13),
     "shoes": (9, 10),
     "bag": (16,),
+    "skin": (18,),
 }
 GROUP_CLASSES = {
-    "body": tuple(k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in SKIN),
+    "body": (*(k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in SKIN), SKIN_CLASS),
     "clothes": tuple(k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in CLOTHING),
 }
 LAYERS = ("person", "body", "clothes", *GARMENT_CLASSES)
@@ -116,12 +122,16 @@ def describe_model(path: Path) -> ModelRef:
     return ModelRef(str(Path(path).resolve()), hashlib.sha256(data).hexdigest())
 
 
-def classify_models(paths: list[Path]) -> tuple[ModelRef | None, ModelRef | None]:
-    """Sort chosen files into (segmentation, clothes) by their ONNX contract, so the pick order never matters."""
-    segmentation = clothes = None
+def classify_models(paths: list[Path]) -> tuple[ModelRef | None, ModelRef | None, ModelRef | None]:
+    """Sort chosen files into (segmentation, clothes, faces) by their ONNX contract, so the pick order never matters."""
+    segmentation = clothes = faces = None
     for path in paths:
         ref = describe_model(path)
-        for kind, builder in (("segmentation", _segmentation_session), ("clothes", _clothes_session)):
+        for kind, builder in (
+            ("segmentation", _segmentation_session),
+            ("clothes", _clothes_session),
+            ("faces", _faces_session),
+        ):
             try:
                 _verified_session(ref, builder)
             except ValidationError:
@@ -130,13 +140,15 @@ def classify_models(paths: list[Path]) -> tuple[ModelRef | None, ModelRef | None
                 segmentation = ref
             elif kind == "clothes" and clothes is None:
                 clothes = ref
+            elif kind == "faces" and faces is None:
+                faces = ref
             break
         else:
             raise ValidationError(
-                f"{Path(path).name} is neither a YOLO26 end2end segmentation model nor a "
-                "segformer_b2_clothes model (both must be full-precision float32 ONNX files)."
+                f"{Path(path).name} is not a YOLO26 end2end segmentation model, a segformer_b2_clothes model "
+                "or a 320 px face-detection model (Ultralytics detect export with FACE_* classes)."
             )
-    return segmentation, clothes
+    return segmentation, clothes, faces
 
 
 def _verified_session(ref: ModelRef, builder):
@@ -227,6 +239,98 @@ def _clothes_session(data: bytes):
     return session
 
 
+def _faces_session(data: bytes):
+    session = _cpu_session(data)
+    inputs, outputs = session.get_inputs(), session.get_outputs()
+    if len(inputs) != 1 or len(inputs[0].shape) != 4 or inputs[0].type not in FLOATS:
+        raise ValidationError(f"The faces model must have one float NCHW RGB input; this file has {_describe(inputs)}.")
+    if any(isinstance(side, int) and side != FACES_SIDE for side in inputs[0].shape[2:]):
+        raise ValidationError("The faces model must take 320x320 input.")
+    meta = session.get_modelmeta().custom_metadata_map
+    try:
+        names = ast.literal_eval(meta.get("names", "{}"))
+    except (ValueError, SyntaxError):
+        names = {}
+    if meta.get("task") != "detect" or not isinstance(names, dict) or sorted(names) != list(range(len(names))):
+        raise ValidationError("The faces model must be an Ultralytics detect export with contiguous class names.")
+    shape = outputs[0].shape if len(outputs) == 1 else ()
+    if len(shape) != 3 or outputs[0].type not in FLOATS or shape[1] != 4 + len(names):
+        raise ValidationError(f"The faces model must output one [1,{4 + len(names)},N] tensor.")
+    face_ids = tuple(int(k) for k, v in names.items() if str(v).startswith("FACE_"))
+    if not face_ids:
+        raise ValidationError("The faces model has no FACE_* classes.")
+    session.dtflow_face_ids = face_ids  # type: ignore[attr-defined]
+    return session
+
+
+def _nms(boxes, scores, iou_threshold):
+    order = np.argsort(-scores)
+    areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    kept = []
+    while order.size:
+        i = order[0]
+        kept.append(int(i))
+        rest = order[1:]
+        if not rest.size:
+            break
+        w = np.clip(np.minimum(boxes[i, 2], boxes[rest, 2]) - np.maximum(boxes[i, 0], boxes[rest, 0]), 0, None)
+        h = np.clip(np.minimum(boxes[i, 3], boxes[rest, 3]) - np.maximum(boxes[i, 1], boxes[rest, 1]), 0, None)
+        inter = w * h
+        order = rest[inter / (areas[i] + areas[rest] - inter + 1e-9) <= iou_threshold]
+    return kept
+
+
+def _face_boxes(session, image: Image.Image):
+    """Source-pixel boxes of the FACE_* detections (NudeNet-style: black bottom/right square padding, 320 px)."""
+    width, height = image.size
+    side = max(width, height)
+    canvas = Image.new("RGB", (side, side), (0, 0, 0))
+    canvas.paste(image, (0, 0))
+    small = canvas.resize((FACES_SIDE, FACES_SIDE), Image.Resampling.BILINEAR)
+    tensor = np.ascontiguousarray(np.asarray(small, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0)
+    output = _run(session, tensor)[0]
+    if not np.isfinite(output).all():
+        raise ValidationError("Faces model returned non-finite values.")
+    rows = output[0].T
+    scores = rows[:, 4:].copy()
+    face_ids = list(session.dtflow_face_ids)
+    others = [k for k in range(scores.shape[1]) if k not in face_ids]
+    scores[:, others] = -1.0  # other parts can neither win an anchor nor suppress a face
+    best = scores.max(axis=1)
+    keep = best >= FACES_CONFIDENCE
+    rows, best = rows[keep], best[keep]
+    scale = side / FACES_SIDE
+    boxes = np.stack(
+        [
+            (rows[:, 0] - rows[:, 2] / 2) * scale,
+            (rows[:, 1] - rows[:, 3] / 2) * scale,
+            (rows[:, 0] + rows[:, 2] / 2) * scale,
+            (rows[:, 1] + rows[:, 3] / 2) * scale,
+        ],
+        axis=1,
+    )
+    boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, width)
+    boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, height)
+    valid = (boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1])
+    boxes, best = boxes[valid], best[valid]
+    return [tuple(float(v) for v in boxes[i]) for i in _nms(boxes, best, FACES_IOU)]
+
+
+def _cap_face(classes, box, faces):
+    """Relabel Face pixels far from every detected face as Skin: the clothes model paints neck and chest as Face."""
+    x0, y0, x1, y1 = box
+    shaped = np.frombuffer(classes, dtype=np.uint8).reshape(y1 - y0, x1 - x0).copy()
+    allowed = np.zeros(shaped.shape, bool)
+    for fx0, fy0, fx1, fy1 in faces:
+        w, h = fx1 - fx0, fy1 - fy0
+        left, right = max(0, int(fx0 - 0.5 * w) - x0), min(shaped.shape[1], int(fx1 + 0.5 * w) + 1 - x0)
+        top, bottom = max(0, int(fy0 - h) - y0), min(shaped.shape[0], int(fy1 + FACE_BELOW * h) + 1 - y0)
+        if right > left and bottom > top:
+            allowed[top:bottom, left:right] = True
+    shaped[(shaped == 11 + 1) & ~allowed] = SKIN_CLASS + 1
+    return shaped.tobytes()
+
+
 def _letterbox(image: Image.Image):
     width, height = image.size
     gain = min(SIDE / width, SIDE / height)
@@ -307,6 +411,7 @@ def analyze_people(
     source: ImageContent,
     segmentation: ModelRef,
     clothes: ModelRef | None = None,
+    faces: ModelRef | None = None,
     *,
     threshold: float = 0.25,
 ) -> PersonAnalysis:
@@ -316,10 +421,15 @@ def analyze_people(
     image = Image.open(io.BytesIO(source.encoded)).convert("RGB")
     seg = _verified_session(segmentation, _segmentation_session)
     clothes_session = _verified_session(clothes, _clothes_session) if clothes is not None else None
+    face_boxes = None
+    if clothes_session is not None and faces is not None:
+        face_boxes = _face_boxes(_verified_session(faces, _faces_session), image)
     people = []
     for index, (score, mask, box) in enumerate(_instances(seg, image, threshold), start=1):
         x0, y0, x1, y1 = box
         classes = _clothes_layers(clothes_session, image, mask, box) if clothes_session is not None else None
+        if classes is not None and face_boxes:
+            classes = _cap_face(classes, box, face_boxes)
         people.append(PersonLayers(index, score, box, mask[y0:y1, x0:x1].tobytes(), classes))
     return PersonAnalysis(source.width, source.height, tuple(people), clothes_session is not None)
 

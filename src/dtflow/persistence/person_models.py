@@ -25,6 +25,7 @@ class ModelRef:
 class PersonModels:
     segmentation: ModelRef | None = None
     clothes: ModelRef | None = None
+    faces: ModelRef | None = None
 
 
 def _ref(value: object) -> ModelRef | None:
@@ -54,7 +55,7 @@ def load_person_models(state: Path) -> PersonModels:
         raise ValidationError("Person model settings are malformed.")
     if document["schema_version"] != SCHEMA_VERSION:
         raise ValidationError("Unsupported person model settings schema; the file was left unchanged.")
-    return PersonModels(_ref(document.get("segmentation")), _ref(document.get("clothes")))
+    return PersonModels(_ref(document.get("segmentation")), _ref(document.get("clothes")), _ref(document.get("faces")))
 
 
 def save_person_models(state: Path, models: PersonModels) -> Path:
@@ -63,7 +64,7 @@ def save_person_models(state: Path, models: PersonModels) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     document = {"schema_version": SCHEMA_VERSION}
-    for name, ref in (("segmentation", models.segmentation), ("clothes", models.clothes)):
+    for name, ref in (("segmentation", models.segmentation), ("clothes", models.clothes), ("faces", models.faces)):
         document[name] = None if ref is None else {"path": ref.path, "sha256": ref.sha256}
     try:
         with NamedTemporaryFile(

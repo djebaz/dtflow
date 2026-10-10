@@ -588,8 +588,10 @@ class InpaintEditor(QObject):
         if self._analysis is None and models.segmentation is None:
             text = "Choose a YOLO26 segmentation model (Models…) to find people. Painting works without it."
         elif self._analysis is None:
-            text = "Press Find people." + (
-                "" if models.clothes else " Add a clothes model for Body and Clothes layers."
+            text = (
+                "Press Find people."
+                + ("" if models.clothes else " Add a clothes model for Body and Clothes layers.")
+                + ("" if not models.clothes or models.faces else " Add the 320 face model to limit Face to the head.")
             )
         elif not self._analysis.people:
             text = "No people found. Paint the area instead."
@@ -646,8 +648,10 @@ class InpaintEditor(QObject):
         state, previous = self.controller._state, self._models
 
         def worker():
-            segmentation, clothes = classify_models([Path(path) for path in paths])
-            models = PersonModels(segmentation or previous.segmentation, clothes or previous.clothes)
+            segmentation, clothes, faces = classify_models([Path(path) for path in paths])
+            models = PersonModels(
+                segmentation or previous.segmentation, clothes or previous.clothes, faces or previous.faces
+            )
             if models.segmentation is None:
                 raise ValidationError("Also choose the YOLO26 segmentation model (yolo26n-seg.onnx).")
             save_person_models(state, models)
@@ -665,7 +669,7 @@ class InpaintEditor(QObject):
         source, models = self._source, self._models
         self._task(
             "Find people",
-            lambda: analyze_people(source, models.segmentation, models.clothes),
+            lambda: analyze_people(source, models.segmentation, models.clothes, models.faces),
             self._set_analysis,
         )
 
