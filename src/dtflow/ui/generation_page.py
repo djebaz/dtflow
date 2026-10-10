@@ -843,13 +843,7 @@ class GenerationPage:
             if result is None:
                 continue
             reasons = ", ".join(result["reasons"]) or "none"
-            log.debug(
-                "image quality output=%d label=%s reasons=%s metrics=%s",
-                index,
-                result["label"],
-                reasons,
-                result["metrics"],
-            )
+            log.debug("image quality output=%d label=%s signals=%s", index, result["label"], reasons)
             lines.append(f"  output {index + 1}: {result['label']} (signals: {reasons})")
             lines.append("    " + ", ".join(f"{k}={v}" for k, v in result["metrics"].items()))
         return "\n\nimage quality (export detector, advisory):\n" + "\n".join(lines) if lines else ""
