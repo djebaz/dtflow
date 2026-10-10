@@ -40,6 +40,7 @@ from dtflow.services.connection import (
     present_interruption,
     present_outcome,
 )
+from dtflow.services.image_quality import assess_file
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
@@ -814,7 +815,9 @@ class GenerationPage:
         self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
         self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
         self.page.effectiveRequestBrowser.setPlainText(
-            describe_request(outcome.request, outcome.backend_id, self._backend()[1]) + self._timing_text()
+            describe_request(outcome.request, outcome.backend_id, self._backend()[1])
+            + self._timing_text()
+            + self._quality_text(outcome)
         )
         for label, path in (*(("Output", p) for p in outcome.output_paths), ("Metadata", outcome.metadata_path)):
             item = QListWidgetItem(f"{label}: {path}")
@@ -829,6 +832,27 @@ class GenerationPage:
             self.page.detailsToggle.setChecked(True)  # the output chooser lives in the details
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
+
+    def _quality_text(self, outcome) -> str:
+        """Development mode: the export noise/blank detector's verdict on each saved output, also written to the log."""
+        if not dev_enabled():
+            return ""
+        lines = []
+        for index, path in enumerate(outcome.output_paths):
+            result = assess_file(str(path))
+            if result is None:
+                continue
+            reasons = ", ".join(result["reasons"]) or "none"
+            log.debug(
+                "image quality output=%d label=%s reasons=%s metrics=%s",
+                index,
+                result["label"],
+                reasons,
+                result["metrics"],
+            )
+            lines.append(f"  output {index + 1}: {result['label']} (signals: {reasons})")
+            lines.append("    " + ", ".join(f"{k}={v}" for k, v in result["metrics"].items()))
+        return "\n\nimage quality (export detector, advisory):\n" + "\n".join(lines) if lines else ""
 
     def _timing_text(self) -> str:
         """Development mode: when each stage was first reported, in seconds since the request was submitted."""
