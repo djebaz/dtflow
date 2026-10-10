@@ -272,7 +272,9 @@ class InpaintEditor(QObject):
         for row in range(1, self.form.layerList.count()):
             item = self.form.layerList.item(row)
             flags = item.flags()
-            item.setFlags(flags | Qt.ItemFlag.ItemIsEnabled if has_clothes else flags & ~Qt.ItemFlag.ItemIsEnabled)
+            wanted = flags | Qt.ItemFlag.ItemIsEnabled if has_clothes else flags & ~Qt.ItemFlag.ItemIsEnabled
+            if wanted != flags:  # setFlags emits itemChanged, which re-enters _controls
+                item.setFlags(wanted)
         self.canvas.undoButton.setEnabled(has_source and self.canvas.can_undo())
         self.canvas.redoButton.setEnabled(has_source and self.canvas.can_redo())
         for button in self.canvas._view_buttons.values():
