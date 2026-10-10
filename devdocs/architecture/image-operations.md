@@ -6,6 +6,12 @@ Draft PR #64 starts Phase 9A/9B prerequisites before the smart editor. `core/ima
 
 The [implementation plan](../plans/2026-10-10-smart-mask-inpainting.md) records the approved interaction design and backend-first order. A first exact checkpoint/backend acceptance is a later owner gate before editor/analysis promotion, not an automatic run.
 
+## Unfinished dispatch checkpoint (2026-10-10)
+
+The latest draft checkpoint adds source-level permit-scoped adapter/wire configuration, exact published cloud-model description digests, attempt-owned input binding and dedicated raw/final saving. No permits ship by default: ordinary construction still exposes txt2img only. These additions supersede earlier descriptions of missing adapter/saver source, but do not constitute a completed application path. `services/session.py` still lacks the dedicated image-generation entry and managed loader wiring; no GUI or generic CLI image dispatch is exposed.
+
+Remaining before acceptance: finish session composition and final-image/request handoff, review cloud constructor cleanup when permit validation fails, and complete aggregate output-budget handling for raw-copy mode. Raw provider evidence is separate from the final artifact ledger; export includes strength but excludes managed-input references. No tests, validation, builds, renders, inference or potentially billable actions were performed. Keep the PR draft and the exact-checkpoint owner gate closed.
+
 ## Preparation contract (source implementation)
 
 - File reads snapshot at most 64 MiB actual bytes. Decode rejects images over 16 million pixels and animated/multiframe inputs; MPO explicitly uses primary frame 0.
@@ -62,4 +68,5 @@ Keep persistence and the provider encoder behind the future generation orchestra
 ## Verification boundary
 
 No new tests, test execution, validation commands, builds, renders, inference or paid calls were performed under python-gui-fast-implement. The existing import-boundary allowlist is adapted for the new headless preparation service only; core and Qt remain Pillow-free. Owner/CI validation must cover limits, orientation/alpha, fitting/polarity, mask loss/empty adjustments, content corruption, compositing support, privacy and source preservation before acceptance. No new UI or image-operation dispatch is available from these helpers.
+
 

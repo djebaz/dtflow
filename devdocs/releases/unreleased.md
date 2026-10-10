@@ -6,6 +6,8 @@
 
 ## Added
 
+- Unfinished headless dispatch checkpoint: exact-scope image permits/cloud description digests, image wire configuration, attempt snapshot binding and raw/final saver source. Session image entry/loader and output handoff remain pending; no default image capability, GUI change or runtime acceptance.
+
 - Durable image-input snapshot/restore helpers with exclusive attempt-owned sets, bounded manifest/content reads, content and pixel/fit verification; provider-local RGB/mask 0/2 tensor preparation with SHA-256 content references. Not integrated with dispatch; no GUI change, runtime acceptance or inference. Request/DB integration progresses separately below.
 
 - Headless image-operation preparation and immutable content/fit evidence: bounded EXIF/RGB normalization, explicit binary masks, joint target fitting, mask adjustment and source-sized compositing. No dispatch/editor integration or acceptance yet; no tests/validation/inference under fast-implement.
@@ -25,4 +27,5 @@
 
 - PRs: #63, #64
 - Scope: Standalone CPU person-zone mask PoC, headless image preparation, durable input snapshot/restore and provider-local tensor encoding; no image-operation dispatch or production acceptance.
+
 

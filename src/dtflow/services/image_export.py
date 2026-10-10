@@ -43,6 +43,7 @@ REQUEST_FIELDS = (
     "guidance",
     "sampler_id",
     "operation",
+    "strength",
     "batch_size",
     "batch_count",
     "allow_unlisted_model",

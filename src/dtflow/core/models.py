@@ -600,3 +600,5 @@ class SavedGeneration:
     output_paths: tuple[str, ...]
     metadata_path: str
     backend_result: GenerationResult
+    request: ResolvedGenerationRequest | None = None
+    display_image: bytes | None = field(default=None, repr=False)

@@ -32,8 +32,14 @@ WITH outputs AS (
    json_extract(request_json, '$.model_id') AS model,
    json_extract(request_json, '$.prompt') AS prompt,
    json_extract(request_json, '$.negative_prompt') AS negative,
-   json_extract(request_json, '$.width_px') AS width,
-   json_extract(request_json, '$.height_px') AS height
+   CASE WHEN json_extract(request_json, '$.operation')='inpaint'
+          AND json_extract(request_json, '$.image_inputs.preserve_outside')=1
+        THEN json_extract(request_json, '$.image_inputs.fit.source_width')
+        ELSE json_extract(request_json, '$.width_px') END AS width,
+   CASE WHEN json_extract(request_json, '$.operation')='inpaint'
+          AND json_extract(request_json, '$.image_inputs.preserve_outside')=1
+        THEN json_extract(request_json, '$.image_inputs.fit.source_height')
+        ELSE json_extract(request_json, '$.height_px') END AS height
  FROM outputs
 )
 """

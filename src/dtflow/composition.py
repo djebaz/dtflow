@@ -5,11 +5,13 @@ backend to another, and credentials are read from the environment by providers, 
 """
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from dtflow.backends.fake import FakeBackend
+from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
+from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.models import Backend, Credential, CredentialProvider, TimeoutPolicy, ValidationError
 from dtflow.services.credentials import KEY, EnvironmentCredentials, resolve_credentials
 
@@ -81,6 +83,9 @@ def create_backend(
     environ: Mapping[str, str] | None = None,
     tls: "TlsPolicy | None" = None,
     saved: CredentialProvider | None = None,
+    image_permits: tuple[ImageOperationPermit, ...] = (),
+    image_inputs_loader: Callable[[ImageInputSnapshot], PreparedImageInputs] | None = None,
+    allow_image_probe: bool = False,
 ) -> Backend:
     """Build the explicitly selected backend; ``tls`` is the injection point for fixture trust only.
 
@@ -93,6 +98,8 @@ def create_backend(
         from dtflow.backends.drawthings.cloud import DirectCloudBackend
         from dtflow.backends.drawthings.cloud_auth import CloudAuth
     if selection.name == "fake":
+        if image_permits or allow_image_probe:
+            raise ValidationError("Fake generation does not establish image-operation acceptance.")
         return FakeBackend(
             scenario=selection.scenario,
             delay=selection.delay,
@@ -105,13 +112,17 @@ def create_backend(
         endpoint = parse_endpoint(selection.endpoint)
         if tls is not None:
             endpoint = DrawThingsEndpoint(endpoint.host, endpoint.port, tls)
-        return DrawThingsBackend(endpoint, timeouts=timeouts, shared_secret=_SharedSecret(environ))
+        return DrawThingsBackend(
+            endpoint, timeouts=timeouts, shared_secret=_SharedSecret(environ),
+            image_permits=image_permits, image_inputs_loader=image_inputs_loader, allow_image_probe=allow_image_probe,
+        )
     if selection.name == "cloud":
         if saved is None:
             saved = _NoSavedCredentials()
         if KEY not in environ and isinstance(saved, _NoSavedCredentials):
             raise ValidationError(f"The cloud backend requires {KEY} in the environment.")
         return DirectCloudBackend(
-            CloudAuth(_CloudCredentials(environ, saved)), max_concurrency=selection.cloud_concurrency, timeouts=timeouts
+            CloudAuth(_CloudCredentials(environ, saved)), max_concurrency=selection.cloud_concurrency, timeouts=timeouts,
+            image_permits=image_permits, image_inputs_loader=image_inputs_loader, allow_image_probe=allow_image_probe,
         )
     raise ValidationError("Unknown backend selection.")

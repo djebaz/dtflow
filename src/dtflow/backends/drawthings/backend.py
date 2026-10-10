@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
@@ -26,7 +27,9 @@ from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
-from dtflow.core.model_profiles import fallback_spec, model_key
+from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
+from dtflow.core.image_operations import ImageOperationPermit
+from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, fallback_spec, model_key
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -93,6 +96,9 @@ class DrawThingsBackend:
         timeouts: TimeoutPolicy | None = None,
         limits: ResourceLimits | None = None,
         shared_secret: CredentialProvider | None = None,
+        image_permits: tuple[ImageOperationPermit, ...] = (),
+        image_inputs_loader: Callable[[ImageInputSnapshot], PreparedImageInputs] | None = None,
+        allow_image_probe: bool = False,
     ):
         self.endpoint = endpoint
         self.timeouts = timeouts or TimeoutPolicy()
@@ -106,6 +112,31 @@ class DrawThingsBackend:
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
         self._model_specs: dict[str, dict] = {}
+        if type(allow_image_probe) is not bool or not isinstance(image_permits, tuple):
+            raise ValidationError("Image-operation permits must be an immutable tuple with explicit probe policy.")
+        self._image_permits = {}
+        self._image_specs = {}
+        self._image_inputs_loader = image_inputs_loader
+        self._allow_image_probe = allow_image_probe
+        for permit in image_permits:
+            if not isinstance(permit, ImageOperationPermit):
+                raise ValidationError("Image-operation permit is malformed.")
+            permit.validate_scope(
+                self.backend_id, endpoint.label, permit.model_id, permit.operation, allow_probe=allow_image_probe
+            )
+            if image_inputs_loader is None or not callable(image_inputs_loader):
+                raise ValidationError("Image operations require a managed input loader.")
+            key = (permit.model_id, permit.operation)
+            if key in self._image_permits:
+                raise ValidationError("Duplicate exact image-operation permits are refused.")
+            spec = exact_model_spec(permit.model_id)
+            digest = exact_model_description_digest(permit.model_id)
+            if (self.backend_id == "drawthings-cloud" or permit.model_description_sha256 is not None) and (
+                spec is None or digest != permit.model_description_sha256
+            ):
+                raise ValidationError("Exact published model description is missing or differs from the owner permit.")
+            self._image_permits[key] = permit
+            self._image_specs[permit.model_id] = spec if self.backend_id == "drawthings-cloud" else None
 
     # -- contract ------------------------------------------------------------------------------------------------
 
@@ -115,6 +146,7 @@ class DrawThingsBackend:
         model_ids = eligible_model_ids(self._inventory) if self._inventory is not None else ()
         return Capabilities(
             self.backend_id,
+            operations=("txt2img", *sorted({p.operation for p in self._image_permits.values()})),
             model_ids=model_ids,
             max_concurrency=self.max_concurrency,
             batch_size=1,
@@ -123,6 +155,19 @@ class DrawThingsBackend:
             limits=self.limits,
             unlisted_model_bridge=self.unlisted_model_bridge,
         )
+
+    def validate_image_operation(self, request: ResolvedGenerationRequest) -> ImageOperationPermit:
+        """Exact owner gate before inventory/auth calls; a broad capability is insufficient."""
+        permit = self._image_permits.get((request.model_id, request.operation))
+        if permit is None:
+            raise ValidationError("No owner permit exists for this exact backend/checkpoint/image operation.")
+        permit.validate_scope(
+            self.backend_id, self.endpoint.label, request.model_id, request.operation,
+            allow_probe=self._allow_image_probe,
+        )
+        if request.image_inputs is None or self._image_inputs_loader is None:
+            raise ValidationError("Image-operation managed inputs are missing.")
+        return permit
 
     async def open(self) -> None:
         """Create the channel; the connection itself is established lazily and bounded by the connect deadline."""
@@ -277,6 +322,8 @@ class DrawThingsBackend:
                 ErrorCategory.VALIDATION, "unsupported_operation",
                 "Image-operation dispatch is not offered by this adapter.", request.request_id,
             )
+        if request.operation != "txt2img":
+            self.validate_image_operation(request)
         started = time.monotonic()
         stage = SubmissionStage.NOT_SUBMITTED
         sequence = 0
@@ -318,8 +365,22 @@ class DrawThingsBackend:
                     else None
                 )
                 base_version = (model.architecture if model else None) or bundled_base_version(request.model_id)
-                spec = await self._model_spec(request.model_id)
-                wire = build_generation_message(request, await self._secret(), base_version, spec)
+                if request.operation == "txt2img":
+                    spec = await self._model_spec(request.model_id)
+                    wire = build_generation_message(request, await self._secret(), base_version, spec)
+                else:
+                    # Never refresh/derive cloud descriptions on this path. The
+                    # exact published entry and digest were gated before open/auth.
+                    spec = self._image_specs[request.model_id]
+                    base_version = (spec or {}).get("version") or base_version
+                    prepared = await settle(asyncio.to_thread(self._image_inputs_loader, request.image_inputs))
+                    secret = await self._secret()
+                    wire = await settle(asyncio.to_thread(
+                        build_generation_message, request, secret, base_version, spec,
+                        prepared=prepared, image_permit=self.validate_image_operation(request),
+                        backend_id=self.backend_id, endpoint=self.endpoint.label,
+                        allow_image_probe=self._allow_image_probe, limits=limits,
+                    ))
                 if spec:
                     log.debug(
                         "model spec sent for %s advertised=%s keys=%s",
