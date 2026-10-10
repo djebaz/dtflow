@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
+    QToolButton,
     QWidget,
 )
 
@@ -56,6 +57,7 @@ log = logging.getLogger(__name__)
 RUN_SETTLE_MS = 2000  # how long the header control shows its finishing state after work ends
 
 FORMS_DIR = Path(__file__).with_name("forms")
+ASSETS_CONTROLS = Path(__file__).parents[1] / "resources" / "images" / "controls"
 UI_FILE = FORMS_DIR / "main_window.ui"
 GENERATION_UI_FILE = FORMS_DIR / "generation_page.ui"
 QUEUE_UI_FILE = FORMS_DIR / "queue_page.ui"
@@ -268,6 +270,16 @@ class MainWindow:
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
         form.statusBar().showMessage(display_identity())
+        # The former Help menu is a small status-bar icon so no menu bar takes vertical room.
+        help_icon = ASSETS_CONTROLS / "help.svg"
+        form.aboutAction.setIcon(QIcon(str(help_icon)))
+        form.aboutAction.setToolTip("About DTFlow")
+        about_button = QToolButton(form.statusBar())
+        about_button.setObjectName("aboutButton")
+        about_button.setDefaultAction(form.aboutAction)
+        about_button.setAutoRaise(True)
+        about_button.setAccessibleName("About DTFlow")
+        form.statusBar().addPermanentWidget(about_button)
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
