@@ -16,11 +16,13 @@ from dtflow.ui.theme import apply_theme
 
 def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
     application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
-    apply_theme(application)
     application.setWindowIcon(app_icon())
-    startup.mark("application and theme")
+    startup.mark("application")
     window = MainWindow(no_cache=no_cache)
     startup.mark("main window built")
+    # Styling every widget as it is created is slow; one pass over the finished window is faster and not yet visible.
+    apply_theme(application)
+    startup.mark("theme applied")
     # The session is remembered before the runner stops, so the last form values survive a normal quit.
     application.aboutToQuit.connect(lambda: window.remember(background=False))
     application.aboutToQuit.connect(window.gallery.save_now)
