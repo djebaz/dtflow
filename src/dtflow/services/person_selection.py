@@ -137,6 +137,16 @@ def _options():
     return options
 
 
+FLOATS = ("tensor(float)", "tensor(float16)")
+
+
+def _run(session, tensor):
+    """Run with the model's own float width (float32 or float16 exports); results come back as float32."""
+    dtype = np.float16 if session.get_inputs()[0].type == "tensor(float16)" else np.float32
+    outputs = session.run(None, {session.get_inputs()[0].name: tensor.astype(dtype, copy=False)})
+    return [np.asarray(item, dtype=np.float32) for item in outputs]
+
+
 def _describe(items) -> str:
     return ", ".join(f"{item.type} {item.shape}" for item in items) or "no tensors"
 
@@ -153,11 +163,11 @@ def _cpu_session(data: bytes):
 def _segmentation_session(data: bytes):
     session = _cpu_session(data)
     inputs, outputs = session.get_inputs(), session.get_outputs()
-    if len(inputs) != 1 or inputs[0].shape != [1, 3, SIDE, SIDE] or inputs[0].type != "tensor(float)":
+    if len(inputs) != 1 or inputs[0].shape != [1, 3, SIDE, SIDE] or inputs[0].type not in FLOATS:
         raise ValidationError(
-            "The segmentation model must be a YOLO26 end2end segment export with one float32 [1,3,640,640] input; "
-            f"this file has {_describe(inputs)}. Check that the YOLO file was chosen first and is not a "
-            "half-precision or other-size export."
+            "The segmentation model must be a YOLO26 end2end segment export with one float32 or float16 [1,3,640,640] input; "
+            f"this file has {_describe(inputs)}. Check that this is the "
+            "640x640 YOLO26 end2end segment export."
         )
     if len(outputs) != 2 or outputs[0].shape != [1, 300, 38] or outputs[1].shape != [1, 32, 160, 160]:
         raise ValidationError(
@@ -178,13 +188,13 @@ def _segmentation_session(data: bytes):
 def _clothes_session(data: bytes):
     session = _cpu_session(data)
     inputs, outputs = session.get_inputs(), session.get_outputs()
-    if len(inputs) != 1 or len(inputs[0].shape) != 4 or inputs[0].type != "tensor(float)":
+    if len(inputs) != 1 or len(inputs[0].shape) != 4 or inputs[0].type not in FLOATS:
         raise ValidationError(
-            f"The clothes model must have one float32 NCHW RGB input; this file has {_describe(inputs)}. "
+            f"The clothes model must have one float32 or float16 NCHW RGB input; this file has {_describe(inputs)}. "
             "Use segformer_b2_clothes.onnx (full precision) as the second file."
         )
     shape = outputs[0].shape if len(outputs) == 1 else ()
-    if len(shape) != 4 or outputs[0].type != "tensor(float)" or (isinstance(shape[1], int) and shape[1] != 18):
+    if len(shape) != 4 or outputs[0].type not in FLOATS or (isinstance(shape[1], int) and shape[1] != 18):
         raise ValidationError("Clothes model needs one float32 [N,18,h,w] logits output (segformer_b2_clothes).")
     return session
 
@@ -203,7 +213,7 @@ def _letterbox(image: Image.Image):
 
 def _instances(session, image: Image.Image, threshold: float):
     tensor, (left, top, rw, rh) = _letterbox(image)
-    detections, prototypes = session.run(None, {session.get_inputs()[0].name: tensor})
+    detections, prototypes = _run(session, tensor)
     if not np.isfinite(detections).all() or not np.isfinite(prototypes).all():
         raise ValidationError("Segmentation model returned non-finite values.")
     rows = detections[0]
@@ -244,7 +254,7 @@ def _clothes_layers(session, image: Image.Image, mask, box):
     target = (max(32, round(crop.width * scale / 32) * 32), max(32, round(crop.height * scale / 32) * 32))
     pixels = np.asarray(crop.resize(target, Image.Resampling.BILINEAR), dtype=np.float32) / 255.0
     tensor = np.ascontiguousarray(((pixels - _MEAN) / _STD).transpose(2, 0, 1)[None], dtype=np.float32)
-    logits = session.run(None, {session.get_inputs()[0].name: tensor})[0]
+    logits = _run(session, tensor)[0]
     if not np.isfinite(logits).all():
         raise ValidationError("Clothes model returned non-finite values.")
     scores = logits[0]
