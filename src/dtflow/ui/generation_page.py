@@ -1155,7 +1155,7 @@ class GenerationPage:
             # Metadata-less inventories (direct DT+ cloud) list every file as unknown: count what the catalogue
             # can prove instead of calling every file a model.
             view = self._catalogue.view()
-            models = len(view.checkpoints) + len(view.unclassified_checkpoints)
+            models = len({entry.identifier for entry in view.checkpoints} | set(view.unclassified_checkpoints))
             loras = len(view.loras)
             other = len(snapshot.entries) - models - loras
         try:
