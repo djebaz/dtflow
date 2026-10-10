@@ -199,11 +199,11 @@ def available_export_identities(state: Path, identities: tuple[str, ...]) -> fro
         return frozenset(row[0] for row in rows)
 
 
-def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """At most 1000 exact model/LoRA choices; editable controls support identifiers beyond this list."""
+def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """At most 1000 exact model/LoRA and 200 "W × H" choices; editable controls support values beyond these lists."""
     with reader(state) as db:
         if db is None:
-            return (), ()
+            return (), (), ()
         models = tuple(
             row[0]
             for row in db.execute(
@@ -218,7 +218,14 @@ def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
                 + "SELECT DISTINCT json_extract(l.value, '$.identifier') AS id FROM records, json_each(request_json, '$.loras') l WHERE id IS NOT NULL ORDER BY fold(id), id LIMIT 1000"
             )
         )
-        return models, loras
+        dimensions = tuple(
+            f"{width} × {height}"
+            for width, height in db.execute(
+                BASE + "SELECT DISTINCT width, height FROM records WHERE width IS NOT NULL AND height IS NOT NULL "
+                "ORDER BY width, height LIMIT 200"
+            )
+        )
+        return models, loras, dimensions
 
 
 def export_identities(state: Path, query: GalleryQuery, maximum: int) -> tuple[str, ...]:

@@ -1136,10 +1136,13 @@ class GalleryPage(QObject):
         self._restore_scroll_later(anchor if anchor_found else None)
         self._schedule_save()
 
-    def _populate_facets(self, models: tuple[str, ...], loras: tuple[str, ...]) -> None:
+    def _populate_facets(
+        self, models: tuple[str, ...], loras: tuple[str, ...], dimensions: tuple[str, ...] = ()
+    ) -> None:
         for combo, placeholder, values in (
             (self.model, "All models", models),
             (self.lora, "All LoRAs", loras),
+            (self.dimensions, "Any size", dimensions),
         ):
             current = combo.currentText()
             if tuple(combo.itemText(i) for i in range(combo.count())) == (placeholder, *values):
