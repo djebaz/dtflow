@@ -162,6 +162,8 @@ async def run_generation(
     on_event: EventSink | None = None,
 ) -> GenerationOutcome:
     """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save."""
+    if request.operation not in service.backend.capabilities.operations:
+        raise ValidationError("This backend does not offer the requested operation; inventory/auth was not requested.")
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
     snapshot = await service.get_inventory(refresh=True)
     if prefix:
@@ -199,6 +201,8 @@ async def generate_once(
 
     ``asset_ids`` binds confirmed local receipts (cloud only, never uploads) before any backend or state is opened.
     """
+    if request.operation != "txt2img":
+        raise ValidationError("Image-operation dispatch is not connected yet; no backend or state was opened.")
     request = await bind_prepared(state, selection.name, request, asset_ids)
     async with open_session(selection, state, output=output, timeouts=timeouts, saved=saved) as service:
         return await run_generation(service, request, prefix=prefix, on_event=on_event)

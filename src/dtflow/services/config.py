@@ -81,6 +81,13 @@ def parse_document(document: Any) -> dict[str, Any]:
         request = document["request"]
         if not isinstance(request, dict):
             raise ConfigError("Metadata request is malformed.")
+        version = request.get("schema_version", 1)
+        if type(version) is not int or version not in (1, 2):
+            raise ConfigError("Unsupported stored-request schema for configuration import.")
+        if request.get("operation", "txt2img") != "txt2img" or request.get("image_inputs") is not None:
+            raise ConfigError("Image-operation metadata cannot be reused as a text-to-image configuration.")
+        if request.get("strength", 1) != 1:
+            raise ConfigError("Image-operation strength cannot be discarded by configuration import.")
         reject_credentials(request)
         return {METADATA_FIELDS[name]: value for name, value in request.items() if name in METADATA_FIELDS}
     reject_credentials(document)
@@ -126,6 +133,13 @@ def resolve_request(
 ) -> ResolvedGenerationRequest:
     """Merge default < config < override into an immutable request; ``None`` overrides mean not supplied."""
     config = config or {}
+    for supplied in (config, overrides):
+        if (
+            supplied.get("operation") not in (None, "txt2img")
+            or supplied.get("image_inputs") is not None
+            or supplied.get("strength") not in (None, 1)
+        ):
+            raise ConfigError("Generic configuration/CLI dispatch supports text-to-image only.")
     values: dict[str, Any] = {}
     evidence: list[tuple[str, str]] = []
     for name in FIELDS:
@@ -164,6 +178,8 @@ def resolve_request(
 
 def export_config(request: ResolvedGenerationRequest) -> dict[str, Any]:
     """The reusable, credential-free generation settings of a resolved request (no ids, evidence or backend)."""
+    if request.operation != "txt2img":
+        raise ConfigError("Image-operation requests require managed inputs and cannot be exported as txt2img settings.")
     return {
         "schema": SCHEMA,
         "version": VERSION,

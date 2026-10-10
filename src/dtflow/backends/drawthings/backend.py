@@ -272,6 +272,11 @@ class DrawThingsBackend:
         """
         if self._closing or self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.", request.request_id)
+        if request.operation not in self.capabilities.operations:
+            raise error(
+                ErrorCategory.VALIDATION, "unsupported_operation",
+                "Image-operation dispatch is not offered by this adapter.", request.request_id,
+            )
         started = time.monotonic()
         stage = SubmissionStage.NOT_SUBMITTED
         sequence = 0

@@ -23,12 +23,10 @@ from uuid import uuid4
 
 from dtflow.core.models import (
     MAX_QUEUE_ITEMS,
-    LoRASelection,
-    PreparedAsset,
     ResolvedGenerationRequest,
-    Sampler,
     ValidationError,
 )
+from dtflow.core.request_records import request_from_record as decode_request
 
 QUEUE_STATES = ("paused", "running", "cancelled")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
@@ -88,18 +86,10 @@ ATTEMPT_TO_ITEM = {
 
 def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
     """Rebuild an immutable request from its stored ``asdict`` form, revalidating every field."""
-    try:
-        return ResolvedGenerationRequest(
-            **{
-                **record,
-                "sampler_id": Sampler(record["sampler_id"]),
-                "loras": tuple(LoRASelection(**item) for item in record["loras"]),
-                "resolution_evidence": tuple(tuple(pair) for pair in record["resolution_evidence"]),
-                "prepared_assets": tuple(PreparedAsset(**item) for item in record.get("prepared_assets", ())),
-            }
-        )
-    except (KeyError, TypeError, ValueError) as exc:
-        raise ValidationError("A stored queue request is malformed.") from exc
+    request = decode_request(record)
+    if request.operation != "txt2img":
+        raise ValidationError("Image-operation queues are not supported; nothing was dispatched.")
+    return request
 
 
 def backend_key(backend: dict[str, Any]) -> str:
@@ -166,6 +156,8 @@ class QueueMixin:
             raise QueueError(f"A queue needs 1..{MAX_ITEMS} items.")
         if len({request.request_id for request in requests}) != len(requests):
             raise QueueError("Queue items need distinct request identities.")
+        if any(request.operation != "txt2img" for request in requests):
+            raise QueueError("Image-operation queues are not supported.")
         queue_id, now = uuid4().hex, self._now()
         with self._txn() as db:
             db.execute(
@@ -288,11 +280,12 @@ class QueueMixin:
             ).fetchone()
             if row is None:
                 return None
+            request = request_from_record(json.loads(row["request_json"]))
             db.execute(
                 "UPDATE queue_items SET state='running', updated_at_utc=? WHERE item_id=?",
                 (self._now(), row["item_id"]),
             )
-            return row["item_id"], request_from_record(json.loads(row["request_json"]))
+            return row["item_id"], request
 
     @staticmethod
     def _accounting(db: sqlite3.Connection, key: str) -> tuple[bool, int]:
@@ -369,7 +362,7 @@ class QueueMixin:
 # -- access without ownership (control and read paths) ----------------------------------------------------------
 
 
-def _shared_connection(directory: Path) -> sqlite3.Connection:
+def _shared_connection(directory: Path, *, readonly: bool = False) -> sqlite3.Connection:
     from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_sqlite
 
     if not patched_sqlite(sqlite3.sqlite_version):
@@ -377,14 +370,20 @@ def _shared_connection(directory: Path) -> sqlite3.Connection:
     path = Path(directory) / "attempts.sqlite3"
     if not path.is_file():
         raise QueueError("No execution state exists in this directory; create a queue first.")
-    connection = sqlite3.connect(path, timeout=2.0)
+    connection = (
+        sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)
+        if readonly else sqlite3.connect(path, timeout=2.0)
+    )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=2000")
-    if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+    supported = (2, SCHEMA_VERSION) if readonly else (SCHEMA_VERSION,)
+    if connection.execute("PRAGMA user_version").fetchone()[0] not in supported:
         connection.close()
         raise QueueError(
             "Execution state has no queue schema yet or is unsupported; run a queue command to prepare it."
         )
+    if readonly:
+        connection.execute("PRAGMA query_only=ON")
     return connection
 
 
@@ -457,7 +456,7 @@ def _summary(items: list[dict[str, Any]]) -> dict[str, int]:
 
 def read_queues(directory: Path, queue_id: str | None = None) -> tuple[dict[str, Any], ...]:
     """Inspect queues and items in their original order without owning or modifying state."""
-    connection = _shared_connection(directory)
+    connection = _shared_connection(directory, readonly=True)
     try:
         return _read(connection, queue_id)
     finally:

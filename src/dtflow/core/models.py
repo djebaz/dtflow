@@ -1,4 +1,4 @@
-"""Backend-neutral immutable types for the Phase 2A text-to-image scope."""
+"""Backend-neutral immutable contracts; request expressibility is not backend acceptance."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
+
+if TYPE_CHECKING:
+    from dtflow.core.image_inputs import ImageInputSnapshot
 
 
 class SubmissionStage(StrEnum):
@@ -218,6 +221,9 @@ class ResolvedGenerationRequest:
     resolution_evidence: Metadata = ()
     prepared_assets: tuple[PreparedAsset, ...] = ()
     allow_unlisted_model: bool = False
+    schema_version: int = 2
+    strength: float = 1.0
+    image_inputs: ImageInputSnapshot | None = None
 
     def __post_init__(self) -> None:
         for name in ("request_id", "model_id"):
@@ -226,8 +232,29 @@ class ResolvedGenerationRequest:
                 raise ValidationError(f"{name} is required.")
         if not isinstance(self.prompt, str) or not isinstance(self.negative_prompt, str):
             raise ValidationError("Prompts must be strings.")
-        if self.operation != "txt2img":
-            raise ValidationError("Only txt2img is supported in Phase 2A.")
+        if type(self.schema_version) is not int or self.schema_version != 2:
+            raise ValidationError("Unsupported resolved-request schema.")
+        if self.operation not in ("txt2img", "img2img", "inpaint"):
+            raise ValidationError("Unsupported image generation operation.")
+        if type(self.strength) not in (int, float) or not math.isfinite(self.strength) or not 0 <= self.strength <= 1:
+            raise ValidationError("strength must be finite in 0..1.")
+        if self.operation == "txt2img":
+            if self.image_inputs is not None or self.strength != 1:
+                raise ValidationError("Text-to-image must have no image inputs and strength 1.")
+        else:
+            # Runtime import avoids the content-record -> ValidationError import cycle.
+            from dtflow.core.image_inputs import ImageInputSnapshot
+
+            if not isinstance(self.image_inputs, ImageInputSnapshot):
+                raise ValidationError("Image operations require immutable managed input references.")
+            if (self.batch_size, self.batch_count) != (1, 1):
+                raise ValidationError("Image operations support one output per submission.")
+            if (self.width_px, self.height_px) != (
+                self.image_inputs.fit.target_width, self.image_inputs.fit.target_height
+            ):
+                raise ValidationError("Image-operation dimensions must match prepared input fitting.")
+            if (self.operation == "inpaint") != (self.image_inputs.mask is not None):
+                raise ValidationError("Inpainting requires masks; img2img must not contain masks.")
         integer(self.seed, 0, SEED_LIMIT, "seed")
         for name in ("width_px", "height_px"):
             value = getattr(self, name)

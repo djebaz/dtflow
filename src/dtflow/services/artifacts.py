@@ -62,6 +62,8 @@ def save_artifacts(
     build_identity: dict[str, str],
     limits: ResourceLimits,
 ) -> tuple[tuple[str, ...], str]:
+    if request.operation != "txt2img":
+        raise ValueError("Image-operation output saving requires dedicated raw/final evidence handling.")
     validate_result(result, request, limits)
     output.mkdir(parents=True, exist_ok=True)
     directory = output / attempt_id
@@ -73,7 +75,7 @@ def save_artifacts(
         atomic_write(path, artifact.encoded)
         paths.append(str(path.resolve()))
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "attempt_id": attempt_id,
         "request": asdict(request),
         "backend_id": result.backend_id,
