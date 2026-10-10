@@ -200,6 +200,26 @@ def describe_request(request: ResolvedGenerationRequest, backend: str, endpoint:
     return "\n".join(lines)
 
 
+def describe_failure(failure: BaseException) -> str:
+    """Development-mode failure evidence: the backend's own codes, stage and diagnostics (already sanitized)."""
+    detail = getattr(failure, "failure", None)
+    lines = [f"error: {type(failure).__name__}"]
+    if detail is None:
+        return "\n".join(lines + [f"message: {failure}"])
+    category = getattr(detail.category, "value", detail.category)
+    lines += [f"code: {detail.code}", f"category: {category}", f"message: {detail.message}"]
+    for label, value in (
+        ("submission stage", detail.submission_stage),
+        ("remote outcome", detail.remote_outcome),
+        ("terminal status", detail.terminal_status),
+        ("timeout phase", detail.timeout_phase),
+    ):
+        if value:
+            lines.append(f"{label}: {getattr(value, 'value', value)}")
+    lines += [f"  {key}: {value}" for key, value in detail.diagnostics]
+    return "\n".join(lines)
+
+
 def _write_config(path: Path, request: ResolvedGenerationRequest) -> None:
     atomic_write(Path(path), (json.dumps(export_config(request), indent=2) + "\n").encode("utf-8"))
 

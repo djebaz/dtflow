@@ -31,6 +31,7 @@ from dtflow.core.models import (
     ValidationError,
     eligible_model_ids,
 )
+from dtflow.logging_setup import dev_enabled
 from dtflow.services.catalogue import Catalogue
 from dtflow.services.connection import (
     Presentation,
@@ -54,6 +55,7 @@ from dtflow.ui.generation_presenter import (
     FormError,
     FormValues,
     build_request,
+    describe_failure,
     describe_request,
     form_from_document,
     form_to_document,
@@ -788,6 +790,8 @@ class GenerationPage:
             presentation = present_generation_failure(failure)
             self._status(presentation)
             activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
+            if dev_enabled():
+                self._show_failure_details(failure)
             return
         log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
         presentation = present_outcome(outcome)
@@ -817,6 +821,15 @@ class GenerationPage:
             self.page.detailsToggle.setChecked(True)  # the output chooser lives in the details
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
+
+    def _show_failure_details(self, failure: BaseException) -> None:
+        """Development mode only: keep the request and the backend's failure evidence in the Attempt details box."""
+        backend, endpoint = self._backend()
+        self.page.attemptIdentityLabel.setText("Attempt failed (development mode details below).")
+        self.page.effectiveRequestBrowser.setPlainText(
+            describe_request(self._request, backend, endpoint) + "\n\nfailure:\n" + describe_failure(failure)
+        )
+        self.page.detailsToggle.setChecked(True)
 
     # -- saved results ---------------------------------------------------------------------------------------------
     def _set_result_actions(self, available: bool) -> None:
