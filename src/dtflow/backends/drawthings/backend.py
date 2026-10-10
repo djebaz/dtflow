@@ -26,7 +26,7 @@ from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
-from dtflow.core.model_profiles import fallback_spec, profile_for
+from dtflow.core.model_profiles import fallback_spec, model_key, profile_for
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -544,6 +544,10 @@ class DrawThingsBackend:
         self._model_specs = {
             item["file"]: item for item in items if isinstance(item, dict) and isinstance(item.get("file"), str)
         }
+        # Model metadata only (no prompts or credentials): shows how the server itself describes newer checkpoints.
+        for file, item in self._model_specs.items():
+            if model_key(file).startswith(("flux_1_dev", "flux_2", "krea_2")):
+                log.debug("server model spec %s: %s", file, json.dumps(item, sort_keys=True))
 
     async def _model_spec(self, model_id: str) -> dict | None:
         """The cloud's description of a profiled model, sent back so the server runs it with its full specification.
