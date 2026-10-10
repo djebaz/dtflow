@@ -5,6 +5,7 @@ detector is a NudeNet 320n export (Ultralytics YOLOv8 detect, raw [1,4+classes,N
 is a detector box intersected with the person mask, so parts are rectangular cuts of the person
 silhouette, not part segmentations.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,8 +26,44 @@ LOG = logging.getLogger("person_parts_mask_poc")
 PARTS_SIDE = 320
 MAX_PARTS = 100  # label ids 2..101 fit in uint8; 0 = outside person, 1 = person without a part box
 MAX_BYTES = 64 * 1024 * 1024
-PALETTE = [(230, 25, 75), (60, 180, 75), (255, 225, 25), (0, 130, 200), (245, 130, 48), (145, 30, 180),
-           (70, 240, 240), (240, 50, 230), (210, 245, 60), (250, 190, 212), (0, 128, 128), (220, 190, 255)]
+PALETTE = [
+    (230, 25, 75),
+    (60, 180, 75),
+    (255, 225, 25),
+    (0, 130, 200),
+    (245, 130, 48),
+    (145, 30, 180),
+    (70, 240, 240),
+    (240, 50, 230),
+    (210, 245, 60),
+    (250, 190, 212),
+    (0, 128, 128),
+    (220, 190, 255),
+]
+
+
+EXPAND_RULES = {
+    "rows": "grown boxes cut the mask, then each part extends left/right along its own rows through unassigned "
+    "person pixels until the mask border or another part; a gap between two parts is split at its midpoint; "
+    "pixels outside every part's row band stay unassigned",
+    "nearest": "person pixels without a box join the nearest part (Euclidean distance to its rectangle; ties to "
+    "smaller box, then higher score), optionally capped by expand_max_px",
+    "none": "grown-box cuts only",
+}
+
+
+def grow_factor(value: str) -> float:
+    number = float(value)
+    if not 0 <= number <= 5:
+        raise argparse.ArgumentTypeError("Grow must be between 0 and 5")
+    return number
+
+
+def pixel_count(value: str) -> float:
+    number = float(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("Pixel distance must be >= 0")
+    return number
 
 
 def read_verified(path: Path, expected: str, what: str) -> tuple[bytes, str]:
@@ -45,8 +82,10 @@ def io_summary(session) -> dict:
     def shape(item):
         return [dim if isinstance(dim, int) else "dynamic" for dim in item.shape]
 
-    return {"inputs": [{"name": i.name, "shape": shape(i), "type": i.type} for i in session.get_inputs()],
-            "outputs": [{"name": o.name, "shape": shape(o), "type": o.type} for o in session.get_outputs()]}
+    return {
+        "inputs": [{"name": i.name, "shape": shape(i), "type": i.type} for i in session.get_inputs()],
+        "outputs": [{"name": o.name, "shape": shape(o), "type": o.type} for o in session.get_outputs()],
+    }
 
 
 def parts_session(data: bytes, threads: int):
@@ -70,8 +109,12 @@ def parts_session(data: bytes, threads: int):
     names = ast.literal_eval(meta.get("names", "{}"))
     if not isinstance(names, dict) or not names or sorted(names) != list(range(len(names))):
         raise ValueError("Parts model needs contiguous class names in metadata")
-    if (len(outputs) != 1 or outputs[0].type != "tensor(float)" or len(outputs[0].shape) != 3
-            or outputs[0].shape[1] != 4 + len(names)):
+    if (
+        len(outputs) != 1
+        or outputs[0].type != "tensor(float)"
+        or len(outputs[0].shape) != 3
+        or outputs[0].shape[1] != 4 + len(names)
+    ):
         raise ValueError(f"Parts model requires one float32 output [1,{4 + len(names)},N]")
     return session, meta, {int(k): str(v) for k, v in names.items()}
 
@@ -111,7 +154,7 @@ def nms(boxes, scores, iou_threshold: float) -> list[int]:
     return kept
 
 
-def decode_parts(output, geometry, size, threshold, iou, names):
+def decode_parts(output, geometry, size, threshold, iou, names, exclude_ids=()):
     import numpy as np
 
     if output.ndim != 3 or output.shape[0] != 1 or output.shape[1] != 4 + len(names):
@@ -119,7 +162,10 @@ def decode_parts(output, geometry, size, threshold, iou, names):
     if not np.isfinite(output).all():
         raise ValueError("Non-finite parts output")
     rows = output[0].T  # [N, 4 + classes]; box is center-x, center-y, w, h in 320 px model space
-    class_scores = rows[:, 4:]
+    class_scores = rows[:, 4:].copy()
+    if len(exclude_ids):
+        # Excluded before argmax and NMS, so they can neither win an anchor nor suppress other parts.
+        class_scores[:, list(exclude_ids)] = -1.0
     class_ids = class_scores.argmax(axis=1)
     scores = class_scores[np.arange(len(rows)), class_ids]
     keep = scores >= threshold
@@ -127,8 +173,15 @@ def decode_parts(output, geometry, size, threshold, iou, names):
     rows, class_ids, scores = rows[keep], class_ids[keep], scores[keep]
     scale = geometry["scale"]
     width, height = size
-    boxes = np.stack([(rows[:, 0] - rows[:, 2] / 2) * scale, (rows[:, 1] - rows[:, 3] / 2) * scale,
-                      (rows[:, 0] + rows[:, 2] / 2) * scale, (rows[:, 1] + rows[:, 3] / 2) * scale], axis=1)
+    boxes = np.stack(
+        [
+            (rows[:, 0] - rows[:, 2] / 2) * scale,
+            (rows[:, 1] - rows[:, 3] / 2) * scale,
+            (rows[:, 0] + rows[:, 2] / 2) * scale,
+            (rows[:, 1] + rows[:, 3] / 2) * scale,
+        ],
+        axis=1,
+    )
     boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, width)
     boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, height)
     valid = (boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1])
@@ -136,15 +189,28 @@ def decode_parts(output, geometry, size, threshold, iou, names):
     kept = nms(boxes, scores, iou)
     dropped = max(0, len(kept) - MAX_PARTS)
     kept = kept[:MAX_PARTS]
-    detections = [{"index": n, "class_id": int(class_ids[i]), "label": names[int(class_ids[i])],
-                   "score": float(scores[i]), "box_xyxy": [float(v) for v in boxes[i]]}
-                  for n, i in enumerate(kept)]
-    return detections, {"candidates_above_confidence": candidates,
-                        "detections_after_nms": len(kept) + dropped, "detections_dropped_at_cap": dropped}
+    detections = [
+        {
+            "index": n,
+            "class_id": int(class_ids[i]),
+            "label": names[int(class_ids[i])],
+            "score": float(scores[i]),
+            "box_xyxy": [float(v) for v in boxes[i]],
+        }
+        for n, i in enumerate(kept)
+    ]
+    return detections, {
+        "candidates_above_confidence": candidates,
+        "detections_after_nms": len(kept) + dropped,
+        "detections_dropped_at_cap": dropped,
+    }
 
 
-def split_person_mask(person, detections):
+def split_person_mask(person, detections, grow=0.0):
     """Partition the person mask: smaller boxes win overlaps, ties go to the higher score.
+
+    Each box is first scaled by (1 + grow) around its center (grow=0.3 -> 130% width and height), then
+    clipped to the image.
 
     Returns (labels, int_boxes, box_person_pixels). labels: 0 outside person, 1 person without a part
     box, detection index + 2 otherwise.
@@ -153,9 +219,18 @@ def split_person_mask(person, detections):
 
     height, width = person.shape
     labels = (person > 0).astype(np.uint8)
-    boxes = [(max(0, math.floor(d["box_xyxy"][0])), max(0, math.floor(d["box_xyxy"][1])),
-              min(width, math.ceil(d["box_xyxy"][2])), min(height, math.ceil(d["box_xyxy"][3])))
-             for d in detections]
+    boxes = []
+    for d in detections:
+        x0, y0, x1, y1 = d["box_xyxy"]
+        dx, dy = (x1 - x0) * grow / 2, (y1 - y0) * grow / 2
+        boxes.append(
+            (
+                max(0, math.floor(x0 - dx)),
+                max(0, math.floor(y0 - dy)),
+                min(width, math.ceil(x1 + dx)),
+                min(height, math.ceil(y1 + dy)),
+            )
+        )
     inside = [int(np.count_nonzero(person[y0:y1, x0:x1])) for x0, y0, x1, y1 in boxes]
     areas = [(x1 - x0) * (y1 - y0) for x0, y0, x1, y1 in boxes]
     # Paint large boxes first so smaller ones overwrite; equal area: lower score first, higher score wins.
@@ -166,7 +241,7 @@ def split_person_mask(person, detections):
     return labels, boxes, inside
 
 
-def expand_to_mask(core, boxes, detections):
+def expand_to_mask(core, boxes, detections, max_distance=0.0):
     """Grow parts to the mask limits: each person pixel without a part box joins the nearest part.
 
     Distance is Euclidean from the pixel to the part's rectangle (0 inside). Ties go to the smaller box,
@@ -189,7 +264,38 @@ def expand_to_mask(core, boxes, detections):
         closer = distance < best  # strict: earlier (smaller/higher-score) box keeps ties
         best[closer] = distance[closer]
         owner[closer] = i
-    labels[ys, xs] = (owner + 2).astype(np.uint8)
+    take = best <= max_distance * max_distance if max_distance else np.ones(len(xs), dtype=bool)
+    labels[ys[take], xs[take]] = (owner[take] + 2).astype(np.uint8)
+    return labels
+
+
+def expand_rows(core):
+    """Extend each part horizontally along its rows until the mask border or another part.
+
+    For every maximal run of unassigned person pixels in a row, the part touching the run's left end and
+    the part touching its right end claim it; if both exist the run is split at its midpoint (left part
+    takes the extra pixel). A run touching no part, or bounded by background on both sides, stays
+    unassigned. Rows outside every part's (grown) box span are untouched, so nothing grows vertically.
+    """
+    import numpy as np
+
+    labels = core.copy()
+    width = core.shape[1]
+    free = core == 1
+    for y in np.nonzero(free.any(axis=1))[0]:
+        row = core[y]
+        padded = np.concatenate(([0], free[y].astype(np.int8), [0]))
+        edges = np.diff(padded)
+        for start, end in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0]):  # end is exclusive
+            left = row[start - 1] if start > 0 else 0
+            right = row[end] if end < width else 0
+            left, right = (left if left >= 2 else 0), (right if right >= 2 else 0)
+            if left and right:
+                middle = start + (end - start + 1) // 2
+                labels[y, start:middle] = left
+                labels[y, middle:end] = right
+            elif left or right:
+                labels[y, start:end] = left or right
     return labels
 
 
@@ -225,6 +331,7 @@ def save_outputs(destination: Path, person, labels, core, detections, overlay, r
     # New directory only; exclusive files ensure even partial runs are never overwritten.
     destination.mkdir(parents=True, exist_ok=False)
     (destination / "parts").mkdir()
+    (destination / "labels").mkdir()
     start = time.perf_counter()
     save_png(destination / "person_mask.png", person)
     save_png(destination / "parts_label_map.png", labels)
@@ -237,6 +344,14 @@ def save_outputs(destination: Path, person, labels, core, detections, overlay, r
             det["mask_file"] = f"parts/{name}"
         else:
             det["mask_file"] = None
+    label_masks = {}  # union of all parts sharing a label, e.g. both FEMALE_BREAST_COVERED boxes
+    for label in sorted({d["label"] for d in detections}):
+        union = np.isin(labels, [d["index"] + 2 for d in detections if d["label"] == label])
+        if union.any():
+            name = re.sub(r"[^A-Za-z0-9_]", "_", label) + ".png"
+            save_png(destination / "labels" / name, union.astype(np.uint8) * 255)
+            label_masks[label] = f"labels/{name}"
+    report["label_masks"] = label_masks
     with (destination / "overlay.jpg").open("xb") as handle:
         overlay.save(handle, format="JPEG", quality=90)
     timings["image_output_write"] = (time.perf_counter() - start) * 1000
@@ -253,8 +368,13 @@ def run(args):
     began = time.perf_counter()
     timings = {}
     out = output_path(args.out)
-    LOG.info("START YOLO26 + parts CPU threads=%d yolo_conf=%.3f parts_conf=%.3f iou=%.2f",
-             args.threads, args.confidence, args.parts_confidence, args.parts_iou)
+    LOG.info(
+        "START YOLO26 + parts CPU threads=%d yolo_conf=%.3f parts_conf=%.3f iou=%.2f",
+        args.threads,
+        args.confidence,
+        args.parts_confidence,
+        args.parts_iou,
+    )
     start = time.perf_counter()
     yolo_data, yolo_digest = read_verified(args.yolo_model, args.yolo_sha256, "yolo")
     parts_data, parts_digest = read_verified(args.parts_model, args.parts_sha256, "parts")
@@ -293,23 +413,44 @@ def run(args):
     raw = parts.run([parts.get_outputs()[0].name], {parts.get_inputs()[0].name: parts_tensor})[0]
     timings["parts_inference_cold_single_run"] = (time.perf_counter() - start) * 1000
     start = time.perf_counter()
-    detections, parts_diag = decode_parts(raw, parts_geometry, image.size, args.parts_confidence,
-                                          args.parts_iou, parts_names)
+    name_to_id = {name: index for index, name in parts_names.items()}
+    unknown = [name for name in args.exclude if name not in name_to_id]
+    if unknown:
+        raise ValueError(f"Unknown --exclude class(es) {unknown}; known: {sorted(name_to_id)}")
+    detections, parts_diag = decode_parts(
+        raw,
+        parts_geometry,
+        image.size,
+        args.parts_confidence,
+        args.parts_iou,
+        parts_names,
+        [name_to_id[n] for n in args.exclude],
+    )
     timings["parts_decode"] = (time.perf_counter() - start) * 1000
     parts_io, parts_providers = io_summary(parts), parts.get_providers()
     del raw, parts_tensor, parts
 
     # Stage 3: cut.
     start = time.perf_counter()
-    core, boxes, inside = split_person_mask(person, detections)
-    labels = expand_to_mask(core, boxes, detections) if args.expand == "mask" else core
+    core, boxes, inside = split_person_mask(person, detections, args.grow)
+    if args.expand == "rows":
+        labels = expand_rows(core)
+    elif args.expand == "nearest":
+        labels = expand_to_mask(core, boxes, detections, args.expand_max)
+    else:
+        labels = core
     core_counts = np.bincount(core.ravel(), minlength=MAX_PARTS + 2)
     counts = np.bincount(labels.ravel(), minlength=MAX_PARTS + 2)
     label_pixels: dict[str, int] = {}
     for det, box, box_person in zip(detections, boxes, inside):
         k = det["index"] + 2
-        det.update(box_xyxy_int=list(box), box_person_pixels=box_person, core_pixels=int(core_counts[k]),
-                   part_pixels=int(counts[k]), expanded_pixels=int(counts[k] - core_counts[k]))
+        det.update(
+            box_grown_xyxy_int=list(box),
+            box_person_pixels=box_person,
+            core_pixels=int(core_counts[k]),
+            part_pixels=int(counts[k]),
+            expanded_pixels=int(counts[k] - core_counts[k]),
+        )
         label_pixels[det["label"]] = label_pixels.get(det["label"], 0) + det["part_pixels"]
     overlay = render_overlay(image, labels, core, detections, boxes)
     timings["split_and_overlay"] = (time.perf_counter() - start) * 1000
@@ -334,51 +475,89 @@ def run(args):
     LOG.info("PARTS %s", [(d["index"], d["label"], round(d["score"], 3), d["part_pixels"]) for d in detections])
 
     report = {
-        "schema_version": 1, "algorithm": "yolo26-person-seg-nudenet-parts-v1",
+        "schema_version": 1,
+        "algorithm": "yolo26-person-seg-nudenet-parts-v1",
         "models": {
-            "person_segmentation": {"path": str(args.yolo_model.resolve()), "sha256": yolo_digest,
-                                    "metadata": yolo_meta, "io": yolo_io},
-            "parts_detector": {"path": str(args.parts_model.resolve()), "sha256": parts_digest,
-                               "metadata": parts_meta, "io": parts_io, "class_names": parts_names},
+            "person_segmentation": {
+                "path": str(args.yolo_model.resolve()),
+                "sha256": yolo_digest,
+                "metadata": yolo_meta,
+                "io": yolo_io,
+            },
+            "parts_detector": {
+                "path": str(args.parts_model.resolve()),
+                "sha256": parts_digest,
+                "metadata": parts_meta,
+                "io": parts_io,
+                "class_names": parts_names,
+            },
         },
-        "source": {"path": str(args.source.resolve()), "raw_size_wh": list(raw_size),
-                   "oriented_size_wh": list(image.size)},
-        "runtime": {"providers": {"person_segmentation": yolo_providers, "parts_detector": parts_providers},
-                    "onnxruntime": ort.__version__, "numpy": np.__version__, "python": platform.python_version(),
-                    "platform": platform.platform(), "processor": platform.processor(),
-                    "intra_op_threads": args.threads, "inter_op_threads": 1, "sequential": True,
-                    "spinning": False, "numpy_blas_threads": 1},
+        "source": {
+            "path": str(args.source.resolve()),
+            "raw_size_wh": list(raw_size),
+            "oriented_size_wh": list(image.size),
+        },
+        "runtime": {
+            "providers": {"person_segmentation": yolo_providers, "parts_detector": parts_providers},
+            "onnxruntime": ort.__version__,
+            "numpy": np.__version__,
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "processor": platform.processor(),
+            "intra_op_threads": args.threads,
+            "inter_op_threads": 1,
+            "sequential": True,
+            "spinning": False,
+            "numpy_blas_threads": 1,
+        },
         "preprocessing": {
-            "person_segmentation": {"resize": "Pillow bilinear letterbox 640 square, pad114",
-                                    "scale": "/255, no mean/std", **yolo_geometry},
-            "parts_detector": {"resize": "Pillow bilinear after black bottom/right pad to square, 320",
-                               "normalization": "/255, RGB, no mean/std", **parts_geometry},
+            "person_segmentation": {
+                "resize": "Pillow bilinear letterbox 640 square, pad114",
+                "scale": "/255, no mean/std",
+                **yolo_geometry,
+            },
+            "parts_detector": {
+                "resize": "Pillow bilinear after black bottom/right pad to square, 320",
+                "normalization": "/255, RGB, no mean/std",
+                **parts_geometry,
+            },
         },
         "decoding": {
-            "person_segmentation": {"person_class": 0, "confidence": args.confidence,
-                                    "mask_threshold": "logits >0"},
-            "parts_detector": {"layout": "cx,cy,w,h + per-class scores; best class per anchor",
-                               "confidence": args.parts_confidence, "nms": "greedy class-agnostic",
-                               "nms_iou": args.parts_iou, "max_parts": MAX_PARTS},
+            "person_segmentation": {"person_class": 0, "confidence": args.confidence, "mask_threshold": "logits >0"},
+            "parts_detector": {
+                "layout": "cx,cy,w,h + per-class scores; best class per anchor",
+                "confidence": args.parts_confidence,
+                "excluded_classes": list(args.exclude),
+                "nms": "greedy class-agnostic",
+                "nms_iou": args.parts_iou,
+                "max_parts": MAX_PARTS,
+            },
             "split": "person mask partitioned by part boxes; smaller box wins overlaps, ties to higher score",
+            "grow": args.grow,
+            "grow_rule": "each box scaled by (1 + grow) around its center, width and height, then clipped",
             "expand": args.expand,
-            "expand_rule": "mask: person pixels without a box join the nearest part (Euclidean distance to its "
-                           "rectangle; ties to smaller box, then higher score); none: core cuts only",
+            "expand_max_px": args.expand_max,
+            "expand_rule": EXPAND_RULES[args.expand],
         },
         "labels": {"outside_person": 0, "person_without_part_box": 1, "part": "detection index + 2"},
-        "masks": {"person_pixels": person_px, "unassigned_person_pixels": int(counts[1]),
-                  "assigned_fraction_of_person": (person_px - int(counts[1])) / person_px if person_px else 0.0,
-                  "core_unassigned_person_pixels": int(core_counts[1]),
-                  "core_assigned_fraction_of_person":
-                      (person_px - int(core_counts[1])) / person_px if person_px else 0.0,
-                  "label_pixels": dict(sorted(label_pixels.items(), key=lambda kv: -kv[1])),
-                  "polarity": "255 selected; 0 unselected"},
+        "masks": {
+            "person_pixels": person_px,
+            "unassigned_person_pixels": int(counts[1]),
+            "assigned_fraction_of_person": (person_px - int(counts[1])) / person_px if person_px else 0.0,
+            "core_unassigned_person_pixels": int(core_counts[1]),
+            "core_assigned_fraction_of_person": (person_px - int(core_counts[1])) / person_px if person_px else 0.0,
+            "label_pixels": dict(sorted(label_pixels.items(), key=lambda kv: -kv[1])),
+            "polarity": "255 selected; 0 unselected",
+        },
         "diagnostics": {"person_segmentation": yolo_diag, "parts_detector": parts_diag},
-        "parts": detections, "warnings": warnings, "timings_ms": timings,
+        "parts": detections,
+        "warnings": warnings,
+        "timings_ms": timings,
         "limitations": [
             "Parts are detector boxes intersected with the person mask: rectangular cuts, not part segmentation",
-            "Expansion is nearest-box, not anatomy-aware: limbs and hair take the nearest part's label, "
-            "and with several people it can cross instances",
+            "Growth and expansion are geometric, not anatomy-aware: rows mode leaves pixels outside every part's "
+            "row band unassigned, nearest mode forces them onto the nearest part; with several people both can "
+            "cross instances",
             "Detections are model output, not ground truth; expect false positives and misses",
             "Class-agnostic NMS can suppress overlapping parts (for example covered/exposed variants)",
             "Person mask is a union of up to 20 instances; parts are not attributed to instances",
@@ -400,11 +579,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-c", "--yolo-sha256", required=True, help="Expected SHA-256 of the YOLO model")
     parser.add_argument("--parts-model", type=Path, required=True, help="NudeNet-style 320 detect ONNX")
     parser.add_argument("--parts-sha256", required=True, help="Expected SHA-256 of the parts model")
-    parser.add_argument("-f", "--confidence", type=confidence, default=.25, help="YOLO person confidence")
-    parser.add_argument("--parts-confidence", type=confidence, default=.25, help="Parts detector confidence")
-    parser.add_argument("--parts-iou", type=confidence, default=.45, help="Parts NMS IoU threshold")
-    parser.add_argument("--expand", choices=("mask", "none"), default="mask",
-                        help="mask (default): grow parts to fill the person mask; none: box cuts only")
+    parser.add_argument("-f", "--confidence", type=confidence, default=0.25, help="YOLO person confidence")
+    parser.add_argument("--parts-confidence", type=confidence, default=0.25, help="Parts detector confidence")
+    parser.add_argument("--parts-iou", type=confidence, default=0.45, help="Parts NMS IoU threshold")
+    parser.add_argument(
+        "--exclude",
+        nargs="*",
+        type=str.upper,
+        metavar="CLASS",
+        default=["ARMPITS_COVERED", "ARMPITS_EXPOSED"],
+        help="Part classes to ignore (default: both armpit classes); pass --exclude alone to keep all",
+    )
+    parser.add_argument(
+        "--grow",
+        type=grow_factor,
+        default=0.30,
+        help="scale each part box by (1+GROW) before cutting (default 0.30 = 130%%)",
+    )
+    parser.add_argument(
+        "--expand",
+        choices=tuple(EXPAND_RULES),
+        default="rows",
+        help="rows (default): extend parts horizontally to the mask border or another part; "
+        "nearest: nearest-box fill; none: grown-box cuts only",
+    )
+    parser.add_argument(
+        "--expand-max",
+        type=pixel_count,
+        default=0.0,
+        help="nearest mode only: max distance in px from a box (0 = unlimited)",
+    )
     parser.add_argument("-t", "--threads", type=thread_count, default=1)
     parser.add_argument("-o", "--out", type=Path, required=True, help="New directory below repository tmp/")
     args = parser.parse_args(argv)

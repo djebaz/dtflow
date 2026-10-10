@@ -117,7 +117,6 @@ def masks_from_logits(logits, size: tuple[int, int], box: list[int], profile: st
     return person, zone, np.bitwise_and(person, zone)
 
 
-
 def prediction_diagnostics(tensor, logits, profile: str) -> dict:
     """Summaries only: no raw image/tensor data or extra inference."""
     import numpy as np
@@ -215,7 +214,9 @@ def run(args: argparse.Namespace) -> Path:
     image, raw_size = load_image(args.source)
     validate_box(args.box, image.size)
     image_load_ms = (time.perf_counter() - start) * 1000
-    LOGGER.info("IMAGE raw_wh=%s oriented_wh=%s box_xyxy=%s decode_ms=%.1f", raw_size, image.size, args.box, image_load_ms)
+    LOGGER.info(
+        "IMAGE raw_wh=%s oriented_wh=%s box_xyxy=%s decode_ms=%.1f", raw_size, image.size, args.box, image_load_ms
+    )
     start = time.perf_counter()
     session = create_session(model_bytes, args.threads, args.profile)
     session_load_ms = (time.perf_counter() - start) * 1000
@@ -236,15 +237,27 @@ def run(args: argparse.Namespace) -> Path:
     diagnostic_start = time.perf_counter()
     diagnostics = prediction_diagnostics(tensor, logits, args.profile)
     diagnostics_ms = (time.perf_counter() - diagnostic_start) * 1000
-    LOGGER.info("PREDICTIONS model-grid class_id:pixels=%s",
-                ", ".join(f"{row['class_id']}:{row['model_pixels']}" for row in diagnostics["class_histogram_model_grid"]))
-    LOGGER.info("PERSON class=%d model_pixels=%d source_pixels=%d edit_pixels=%d",
-                spec["person"], diagnostics["person_model_pixels"], int(np.count_nonzero(person)), int(np.count_nonzero(edit)))
-    LOGGER.info("LOGITS person=%s person_minus_winner=%s",
-                diagnostics["class_logits"][spec["person"]], diagnostics["person_minus_winning_logit"])
+    LOGGER.info(
+        "PREDICTIONS model-grid class_id:pixels=%s",
+        ", ".join(f"{row['class_id']}:{row['model_pixels']}" for row in diagnostics["class_histogram_model_grid"]),
+    )
+    LOGGER.info(
+        "PERSON class=%d model_pixels=%d source_pixels=%d edit_pixels=%d",
+        spec["person"],
+        diagnostics["person_model_pixels"],
+        int(np.count_nonzero(person)),
+        int(np.count_nonzero(edit)),
+    )
+    LOGGER.info(
+        "LOGITS person=%s person_minus_winner=%s",
+        diagnostics["class_logits"][spec["person"]],
+        diagnostics["person_minus_winning_logit"],
+    )
     diagnostic_warnings = []
     if not np.any(person):
-        diagnostic_warnings.append("Empty person mask before box intersection: review class scores, preprocessing and export")
+        diagnostic_warnings.append(
+            "Empty person mask before box intersection: review class scores, preprocessing and export"
+        )
     elif not np.any(edit):
         diagnostic_warnings.append("Person detected, but the manual box does not intersect the person mask")
     if diagnostics["dominant_fraction"] == 1.0:
@@ -334,11 +347,16 @@ def run(args: argparse.Namespace) -> Path:
             "Paths and overlay may be sensitive",
             "320-square stretch and argmax-before-nearest resize may distort shapes and produce blocky edges",
             "Pillow resize is not verified numerically identical to the upstream tensor pipeline",
-        ] + ([
-            "Cityscapes street-scene training: portrait/indoor segmentation quality is not established",
-            "FastSeg selects person class 11 only; rider class 12 is deliberately excluded",
-            "Owner pooling/export adaptation and INT8 parity are not established",
-        ] if args.profile == "fastseg" else []),
+        ]
+        + (
+            [
+                "Cityscapes street-scene training: portrait/indoor segmentation quality is not established",
+                "FastSeg selects person class 11 only; rider class 12 is deliberately excluded",
+                "Owner pooling/export adaptation and INT8 parity are not established",
+            ]
+            if args.profile == "fastseg"
+            else []
+        ),
     }
     # New directory only; exclusive files ensure even partial runs are never overwritten.
     destination.mkdir(parents=True, exist_ok=False)
@@ -381,7 +399,9 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         # ORT has its own exception types; report failure, never retry with another provider.
         LOGGER.exception("Mask PoC failed: %s: %s", type(exc).__name__, exc)
-        LOGGER.error("Requested output directory: %s (may contain partial output; nothing removed)", args.out.absolute())
+        LOGGER.error(
+            "Requested output directory: %s (may contain partial output; nothing removed)", args.out.absolute()
+        )
         return 1
     print(f"Saved masks and report to {destination}")
     return 0
