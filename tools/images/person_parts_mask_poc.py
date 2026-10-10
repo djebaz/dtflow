@@ -78,7 +78,7 @@ def decode_person(detections, prototypes, geometry, size, threshold, names, box_
     classes, counts = np.unique(accepted[:, 5].astype(int), return_counts=True)
     histogram = [
         {"class_id": int(c), "name": names.get(int(c), "unknown"), "detections": int(n)}
-        for c, n in zip(classes, counts)
+        for c, n in zip(classes, counts, strict=False)
     ]
     people = accepted[accepted[:, 5] == 0]
     people = people[np.argsort(-people[:, 4])]
@@ -723,7 +723,7 @@ def label_components(mask):
         padded = np.concatenate(([0], mask[y].astype(np.int8), [0]))
         edges = np.diff(padded)
         current = []
-        for a, b in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0]):
+        for a, b in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0], strict=False):
             ids = [rid for (pa, pb, rid) in previous if pa < b + 1 and pb > a - 1]  # touch incl. diagonals
             if ids:
                 root = find(ids[0])
@@ -835,7 +835,7 @@ def fill_person_holes(person, max_area):
     return result, int(holes.sum())
 
 
-def split_person_mask(person, detections, options=CutOptions(), zones=None, axes=None):
+def split_person_mask(person, detections, options=None, zones=None, axes=None):
     """Partition the person mask: smaller regions win overlaps, ties go to the higher score.
 
     Each box is scaled by (1 + grow) around its center and clipped. Its region is the person mask inside
@@ -849,11 +849,13 @@ def split_person_mask(person, detections, options=CutOptions(), zones=None, axes
     """
     import numpy as np
 
+    if options is None:
+        options = CutOptions()
     zones = zones or {}
     height, width = person.shape
     labels = (person > 0).astype(np.uint8)
     boxes, regions = [], []
-    for n, d in enumerate(detections):
+    for _n, d in enumerate(detections):
         if d["index"] in zones:
             ys, xs = np.nonzero(zones[d["index"]])
             box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1) if len(xs) else (0, 0, 0, 0)
@@ -1040,7 +1042,7 @@ def expand_rows(core):
         row = core[y]
         padded = np.concatenate(([0], free[y].astype(np.int8), [0]))
         edges = np.diff(padded)
-        for start, end in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0]):  # end is exclusive
+        for start, end in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0], strict=False):  # end is exclusive
             left = row[start - 1] if start > 0 else 0
             right = row[end] if end < width else 0
             left, right = (left if left >= 2 else 0), (right if right >= 2 else 0)
@@ -1068,7 +1070,7 @@ def render_overlay(image, labels, core, detections, boxes, pose_people=()):
             pixels[expanded] = pixels[expanded] * 0.75 + np.array(color, dtype=np.float32) * 0.25
     result = Image.fromarray(pixels.clip(0, 255).astype(np.uint8))
     draw = ImageDraw.Draw(result)
-    for i, (det, box) in enumerate(zip(detections, boxes)):
+    for i, (det, box) in enumerate(zip(detections, boxes, strict=False)):
         if det.get("source") != "pose":
             draw.rectangle(box, outline=colors[i], width=2)
         draw.text((box[0] + 3, box[1] + 3), f"{det['index']}:{det['label']}", fill=colors[i])
@@ -1734,7 +1736,7 @@ def run(args):
     core_counts = np.bincount(core.ravel(), minlength=MAX_PARTS + 2)
     counts = np.bincount(labels.ravel(), minlength=MAX_PARTS + 2)
     label_pixels: dict[str, int] = {}
-    for det, box, box_person in zip(detections, boxes, inside):
+    for det, box, box_person in zip(detections, boxes, inside, strict=False):
         k = det["index"] + 2
         det.update(
             box_grown_xyxy_int=list(box),
