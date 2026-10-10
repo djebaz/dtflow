@@ -5,23 +5,18 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, Slot
-from PySide6.QtGui import QFontMetrics, QGuiApplication, QIcon, QPixmap
+from PySide6.QtGui import QFontMetrics, QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
     QAbstractSpinBox,
     QApplication,
-    QCheckBox,
     QComboBox,
     QFileDialog,
-    QFrame,
-    QGroupBox,
-    QLabel,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
-    QPushButton,
     QToolButton,
     QWidget,
 )
@@ -159,19 +154,11 @@ class MainWindow:
         startup.mark("ui loader created")
         QWidget().ensurePolished()
         startup.mark("first widget polished")
-        if dev_enabled():  # development diagnosis only: which widget class pays the first-use cost
+        if dev_enabled():  # development diagnosis only: Windows pays seconds on first text-input use
             QFontMetrics(QApplication.font()).horizontalAdvance("Ag")
             startup.mark("first font metrics")
-            QGuiApplication.inputMethod().locale()
-            startup.mark("input method")
-            startup.mark(f"style {QApplication.style().objectName()}")
-            line_edit = QLineEdit()
-            startup.mark("QLineEdit constructed")
-            line_edit.ensurePolished()
-            startup.mark("QLineEdit polished")
-            for widget_class in (QLabel, QFrame, QPushButton, QLineEdit, QComboBox, QCheckBox, QGroupBox, QMainWindow):
-                widget_class().ensurePolished()
-                startup.mark(f"first {widget_class.__name__}")
+            QLineEdit().ensurePolished()
+            startup.mark("first QLineEdit polished")
         self.form = load_form()
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
