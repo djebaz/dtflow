@@ -1,0 +1,961 @@
+{
+ "flux_1_canny_dev_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_canny_dev_q5p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "canny",
+  "name": "FLUX.1 Canny [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_canny_dev_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_canny_dev_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "canny",
+  "name": "FLUX.1 Canny [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_depth_dev_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_depth_dev_q5p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "depth",
+  "name": "FLUX.1 Depth [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_depth_dev_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_depth_dev_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "depth",
+  "name": "FLUX.1 Depth [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_dev_de_distill_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_dev_de_distill_q5p.ckpt",
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "FLUX.1 [dev] De-distill",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_dev_de_distill_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_dev_de_distill_q8p.ckpt",
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "FLUX.1 [dev] De-distill",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_dev_f16.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_dev_f16.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "FLUX.1 [dev] (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_dev_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_dev_q5p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "FLUX.1 [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_dev_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_dev_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "FLUX.1 [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_fill_dev_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_fill_dev_q5p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "inpainting",
+  "name": "FLUX.1 Fill [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 128,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_fill_dev_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_fill_dev_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "inpainting",
+  "name": "FLUX.1 Fill [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 128,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_kontext_dev_f16.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_kontext_dev_f16.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "kontext",
+  "name": "FLUX.1 Kontext [dev] (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_kontext_dev_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_kontext_dev_q5p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "kontext",
+  "name": "FLUX.1 Kontext [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_kontext_dev_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_kontext_dev_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "modifier": "kontext",
+  "name": "FLUX.1 Kontext [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_krea_dev_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_krea_dev_q5p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "FLUX.1 Krea [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_1_krea_dev_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_1_krea_dev_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "FLUX.1 Krea [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "flux_2_dev_f16.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_dev_f16.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [dev] (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "prefix": "",
+  "text_encoder": "mistral_small_3.2_24b_instruct_2506_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux2"
+ },
+ "flux_2_dev_i8x.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_dev_i8x.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "prefix": "",
+  "text_encoder": "mistral_small_3.2_24b_instruct_2506_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2"
+ },
+ "flux_2_dev_q6p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_dev_q6p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "prefix": "",
+  "text_encoder": "mistral_small_3.2_24b_instruct_2506_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2"
+ },
+ "flux_2_dev_q8p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_dev_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [dev]",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "prefix": "",
+  "text_encoder": "mistral_small_3.2_24b_instruct_2506_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2"
+ },
+ "flux_2_klein_4b_f16.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_4b_f16.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 4B (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_4b_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_4b"
+ },
+ "flux_2_klein_9b_f16.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_f16.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_9b_i8x.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_i8x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_9b_kv_f16.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_kv_f16.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext_kv",
+  "name": "FLUX.2 [klein] 9B KV (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_9b_kv_i8x.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_kv_i8x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext_kv",
+  "name": "FLUX.2 [klein] 9B KV",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_9b_kv_q6p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_kv_q6p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext_kv",
+  "name": "FLUX.2 [klein] 9B KV",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_9b_kv_q8p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_kv_q8p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext_kv",
+  "name": "FLUX.2 [klein] 9B KV",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_9b_q6p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_q6p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_9b_q8p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_9b_q8p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_base_4b_f16.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_base_4b_f16.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 4B Base (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_4b_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_4b"
+ },
+ "flux_2_klein_base_9b_f16.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_base_9b_f16.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B Base (Exact)",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_f16.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_base_9b_i8x.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_base_9b_i8x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B Base",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_base_9b_q6p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_base_9b_q6p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B Base",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "flux_2_klein_base_9b_q8p.ckpt": {
+  "autoencoder": "flux_2_vae_f16.ckpt",
+  "default_scale": 16,
+  "file": "flux_2_klein_base_9b_q8p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "modifier": "kontext",
+  "name": "FLUX.2 [klein] 9B Base",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "text_encoder": "qwen_3_8b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "flux2_9b"
+ },
+ "krea_2_raw_i4x.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_raw_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_raw_i4x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Raw",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_raw_i8x.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_raw_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_raw_i8x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Raw",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_raw_q6p.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_raw_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_raw_q6p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Raw",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_raw_q8p.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_raw_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_raw_q8p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Raw",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_turbo_i4x.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_turbo_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_turbo_i4x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Turbo",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_turbo_i6x.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_turbo_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_turbo_i6x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Turbo",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_turbo_i8x.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_turbo_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_turbo_i8x.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Turbo",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_turbo_q6p.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_turbo_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_turbo_q6p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Turbo",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "krea_2_turbo_q8p.ckpt": {
+  "autoencoder": "qwen_image_vae_f16.ckpt",
+  "clip_encoder": "krea_2_turbo_q8p.ckpt",
+  "default_scale": 16,
+  "file": "krea_2_turbo_q8p.ckpt",
+  "high_precision_autoencoder": false,
+  "hires_fix_scale": 32,
+  "name": "Krea 2 Turbo",
+  "padded_text_encoding_length": 0,
+  "prefix": "",
+  "text_encoder": "qwen_3_vl_4b_q8p.ckpt",
+  "upcast_attention": false,
+  "version": "krea_2"
+ },
+ "pixelwave_flux_1_schnell_04_q5p_svd.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "pixelwave_flux_1_schnell_04_q5p_svd.ckpt",
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "is_consistency_model": true,
+  "name": "PixelWave FLUX.1 Schnell 04",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 256,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "pixelwave_flux_1_schnell_04_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "pixelwave_flux_1_schnell_04_q8p.ckpt",
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "is_consistency_model": true,
+  "name": "PixelWave FLUX.1 Schnell 04",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 256,
+  "prefix": "",
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "rayflux_v3.0_aio_q5p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "rayflux_v3.0_aio_q5p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "RayFLUX v3.0",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ },
+ "rayflux_v3.0_aio_q8p.ckpt": {
+  "autoencoder": "flux_1_vae_f16.ckpt",
+  "clip_encoder": "clip_vit_l14_f16.ckpt",
+  "default_scale": 16,
+  "file": "rayflux_v3.0_aio_q8p.ckpt",
+  "guidance_embed": true,
+  "high_precision_autoencoder": true,
+  "hires_fix_scale": 24,
+  "name": "RayFLUX v3.0",
+  "objective": {
+   "u": {
+    "condition_scale": 1000
+   }
+  },
+  "padded_text_encoding_length": 512,
+  "prefix": "",
+  "tea_cache_coefficients": [
+   498.651651,
+   -283.781631,
+   55.8554382,
+   -3.82021401,
+   0.264230861
+  ],
+  "text_encoder": "t5_xxl_encoder_q6p.ckpt",
+  "upcast_attention": false,
+  "version": "flux1"
+ }
+}

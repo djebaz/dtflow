@@ -26,7 +26,7 @@ from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
-from dtflow.core.model_profiles import fallback_spec, model_key, profile_for
+from dtflow.core.model_profiles import fallback_spec, model_key
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -551,13 +551,13 @@ class DrawThingsBackend:
                 log.debug("server model spec %s: %s", file, json.dumps(item, sort_keys=True))
 
     async def _model_spec(self, model_id: str) -> dict | None:
-        """The cloud's description of a profiled model, sent back so the server runs it with its full specification.
+        """The model's description for DT+ cloud, so the server runs it with its full specification.
 
         DT+ resolves most checkpoints from its public model list; newer ones (e.g. FLUX.1 dev) are described only by the
-        client's ``override.models``; when the server does not advertise one either, a bundled approximation is used
-        for the few known cases. Local servers already know their own files, so nothing is sent there.
+        client's ``override.models``; when the server does not advertise one either, the bundled community description is
+        used. Local servers already know their own files, so nothing is sent there.
         """
-        if self.backend_id != "drawthings-cloud" or profile_for(model_id) is None:
+        if self.backend_id != "drawthings-cloud":
             return None
         if model_id not in self._model_specs:
             try:

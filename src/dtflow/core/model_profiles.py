@@ -62,27 +62,30 @@ def profile_for(model_id: str, family: str | None = None) -> ModelProfile | None
     return models.get(model_key(model_id)) or (families.get(family) if family else None)
 
 
-# Draw Things' public model list has no entry for FLUX.1 [dev]; the app describes it to DT+ itself (``override.models``).
-# Mirrors the public FLUX.1 [schnell] entry with the dev differences: guidance-distilled (``guidance_embed``), no
-# consistency model, 512-token padded T5 context. Unverified approximation of the app's own entry.
-_FLUX1_DEV_SPEC = {
-    "name": "FLUX.1 [dev]",
-    "prefix": "",
-    "version": "flux1",
-    "upcast_attention": False,
-    "default_scale": 16,
-    "text_encoder": "t5_xxl_encoder_q6p.ckpt",
-    "autoencoder": "flux_1_vae_f16.ckpt",
-    "clip_encoder": "clip_vit_l14_f16.ckpt",
-    "high_precision_autoencoder": True,
-    "guidance_embed": True,
-    "padded_text_encoding_length": 512,
-    "hires_fix_scale": 24,
-}
+_SPECS = Path(__file__).parents[1] / "resources" / "catalogue" / "community_model_specs.json"
+
+
+@cache
+def _community_specs() -> dict[str, dict]:
+    try:
+        document = json.loads(_SPECS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return document if isinstance(document, dict) else {}
 
 
 def fallback_spec(model_id: str) -> dict | None:
-    """A hand-built model description for a checkpoint the cloud neither lists in its public zoo nor advertises."""
-    if model_key(model_id) == "flux_1_dev":
-        return {**_FLUX1_DEV_SPEC, "file": model_id}
+    """The Draw Things community description of a checkpoint, for models DT+ cloud neither lists publicly nor advertises.
+
+    Bundled from the public ``community-models`` repository (``tools/drawthings/build_model_specs.py``). An exact file
+    match wins; otherwise another quantization of the same model supplies the description with this file name.
+    """
+    specs = _community_specs()
+    exact = specs.get(model_id)
+    if exact is not None:
+        return dict(exact)
+    key = model_key(model_id)
+    for file, spec in specs.items():
+        if model_key(file) == key:
+            return {**spec, "file": model_id}
     return None
