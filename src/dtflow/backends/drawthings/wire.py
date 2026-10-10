@@ -11,16 +11,45 @@ import struct
 from dataclasses import dataclass
 from importlib.metadata import version
 
+import flatbuffers
 from drawthings_py.configs.gen_config import GenConfig
 from drawthings_py.generated.dt_grpc import image_service
-from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration
+from drawthings_py.generated.dt_grpc.config_generated import (
+    GenerationConfiguration,
+    GenerationConfigurationT,
+    SamplerType,
+)
 
 from dtflow.backends.drawthings.errors import error
+from dtflow.backends.drawthings.versions import lora_version
+from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, Sampler
 
 # Provider sampler names; drawthings-py silently substitutes a default for unknown names, so the result is verified.
-SAMPLER_NAME = {Sampler.EULER_A: "EulerA", Sampler.DPMPP_2M_KARRAS: "DPMPP2MKarras"}
-SAMPLER_WIRE_VALUE = {"EulerA": 1, "DPMPP2MKarras": 0}
+SAMPLER_NAME = {
+    Sampler.EULER_A: "EulerA",
+    Sampler.DPMPP_2M_KARRAS: "DPMPP2MKarras",
+    Sampler.DDIM: "DDIM",
+    Sampler.PLMS: "PLMS",
+    Sampler.DPMPP_SDE_KARRAS: "DPMPPSDEKarras",
+    Sampler.UNIPC: "UniPC",
+    Sampler.LCM: "LCM",
+    Sampler.EULER_A_SUBSTEP: "EulerASubstep",
+    Sampler.DPMPP_SDE_SUBSTEP: "DPMPPSDESubstep",
+    Sampler.TCD: "TCD",
+    Sampler.EULER_A_TRAILING: "EulerATrailing",
+    Sampler.DPMPP_SDE_TRAILING: "DPMPPSDETrailing",
+    Sampler.DPMPP_2M_AYS: "DPMPP2MAYS",
+    Sampler.EULER_A_AYS: "EulerAAYS",
+    Sampler.DPMPP_SDE_AYS: "DPMPPSDEAYS",
+    Sampler.DPMPP_2M_TRAILING: "DPMPP2MTrailing",
+    Sampler.DDIM_TRAILING: "DDIMTrailing",
+    Sampler.UNIPC_TRAILING: "UniPCTrailing",
+    Sampler.UNIPC_AYS: "UniPCAYS",
+    Sampler.TCD_TRAILING: "TCDTrailing",
+}
+# The generated flatbuffer enum is the authority for the numeric value of each provider name.
+SAMPLER_WIRE_VALUE = {name: getattr(SamplerType, name) for name in SAMPLER_NAME.values()}
 # Text-to-image runs at full strength in every drawthings-py preset; the library default is 0.0.
 TXT2IMG_STRENGTH = 1.0
 CLIENT_NAME = "dtflow"
@@ -86,11 +115,27 @@ def custom_lora_override(request: ResolvedGenerationRequest, version: str | None
     return json.dumps(entries).encode() if entries else b""
 
 
+def with_guidance_embed(configuration: bytes, value: float) -> bytes:
+    """drawthings-py 0.4.0 skips ``guidance_embed`` while ``speed_up_with_guidance_embed`` is on and writes the 3.5
+    default, which is exactly when Flux uses it; set the preset value on the generated table instead."""
+    table = GenerationConfigurationT.InitFromObj(GenerationConfiguration.GetRootAs(configuration, 0))
+    table.guidanceEmbed = value
+    builder = flatbuffers.Builder(0)
+    builder.Finish(table.Pack(builder))
+    return bytes(builder.Output())
+
+
 def build_generation_message(
-    request: ResolvedGenerationRequest, shared_secret: str | None, base_version: str | None = None
+    request: ResolvedGenerationRequest,
+    shared_secret: str | None,
+    base_version: str | None = None,
+    model_spec: dict | None = None,
 ) -> WireRequest:
     validate_supported(request)
     sampler = SAMPLER_NAME[request.sampler_id]
+    # Flow models (Flux, ...) need version-specific fields that a bare configuration leaves at library defaults.
+    profile = profile_for(request.model_id, base_version)
+    extras = dict(profile.extras) if profile else {}
     config = GenConfig(
         model=request.model_id,
         width=request.width_px,
@@ -101,11 +146,14 @@ def build_generation_message(
         strength=TXT2IMG_STRENGTH,
         batch_size=1,
         batch_count=1,
+        **extras,
     )
     for selection in request.loras:
         config.add_lora(wire_lora_name(request, selection.identifier), selection.weight, LORA_MODE)
     configuration = config.to_fbs(request.seed)
-    effective = verify_wire_configuration(request, configuration)
+    if "guidance_embed" in extras:
+        configuration = with_guidance_embed(configuration, extras["guidance_embed"])
+    effective = verify_wire_configuration(request, configuration, extras)
     message = image_service.ImageGenerationRequest(
         scale_factor=1,
         prompt=request.prompt,
@@ -113,15 +161,19 @@ def build_generation_message(
         configuration=configuration,
         user=CLIENT_NAME,
     )
-    override = custom_lora_override(request, base_version)
-    if override:
-        message.override = image_service.MetadataOverride(loras=override)
+    override = custom_lora_override(request, lora_version(base_version, model_spec))
+    if override or model_spec:
+        message.override = image_service.MetadataOverride(
+            loras=override, models=json.dumps([model_spec]).encode() if model_spec else b""
+        )
     if shared_secret:
         message.shared_secret = shared_secret
     return WireRequest(message, effective)
 
 
-def verify_wire_configuration(request: ResolvedGenerationRequest, configuration: bytes) -> Metadata:
+def verify_wire_configuration(
+    request: ResolvedGenerationRequest, configuration: bytes, extras: dict[str, float | bool] | None = None
+) -> Metadata:
     """Decode what will be sent and assert it equals the resolved request; return the effective configuration."""
     decoded = dict(GenConfig.from_fbs(configuration).items())
     raw = GenerationConfiguration.GetRootAs(configuration, 0)
@@ -145,6 +197,14 @@ def verify_wire_configuration(request: ResolvedGenerationRequest, configuration:
         mismatches.append("loras")
     if not _same_float32(decoded.get("guidance"), request.guidance):
         mismatches.append("guidance")
+    for key, wanted_value in (extras or {}).items():
+        sent_value = decoded.get(key)
+        if isinstance(wanted_value, bool):
+            same = sent_value is wanted_value
+        else:
+            same = _same_float32(sent_value, wanted_value)
+        if not same:
+            mismatches.append(key)
     if raw.Sampler() != SAMPLER_WIRE_VALUE[SAMPLER_NAME[request.sampler_id]]:
         mismatches.append("sampler_wire_value")
     if mismatches:

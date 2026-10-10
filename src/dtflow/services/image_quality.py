@@ -100,3 +100,12 @@ def assess_rgb(image: Image.Image) -> dict:
         }
     finally:
         thumbnail.close()
+
+
+def assess_file(path: str) -> dict | None:
+    """Development diagnostics: assess a saved image file; ``None`` when it cannot be read as an image."""
+    try:
+        with Image.open(path) as opened:
+            return assess_rgb(opened.convert("RGB"))
+    except (OSError, ValueError):
+        return None

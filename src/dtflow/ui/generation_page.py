@@ -7,6 +7,7 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.composition import BACKENDS
+from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
@@ -30,6 +32,7 @@ from dtflow.core.models import (
     ValidationError,
     eligible_model_ids,
 )
+from dtflow.logging_setup import dev_enabled
 from dtflow.services.catalogue import Catalogue
 from dtflow.services.connection import (
     Presentation,
@@ -37,7 +40,8 @@ from dtflow.services.connection import (
     present_interruption,
     present_outcome,
 )
-from dtflow.services.presets import apply_preset, load_presets, save_preset
+from dtflow.services.image_quality import assess_file
+from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
     generate_once,
@@ -53,6 +57,7 @@ from dtflow.ui.generation_presenter import (
     FormError,
     FormValues,
     build_request,
+    describe_failure,
     describe_request,
     form_from_document,
     form_to_document,
@@ -197,6 +202,8 @@ class GenerationPage:
         self._future = None
         self._generating = False
         self._request = None
+        self._stage_started = 0.0
+        self._stage_seen: dict[str, float] = {}
         self._busy = False
         self._config_name: str | None = None
         self._reuse_source_identity: str | None = None
@@ -375,7 +382,32 @@ class GenerationPage:
         page.heightSpinBox.setValue(values.height)
         page.stepsSpinBox.setValue(values.steps)
         page.guidanceSpinBox.setValue(values.guidance)
-        page.samplerCombo.setCurrentText(values.sampler)
+        self._filter_samplers(keep=values.sampler)
+
+    def _filter_samplers(self, keep: str | None = None) -> None:
+        """Offer the samplers that suit the selected model; a model with no profile offers all of them.
+
+        ``keep`` is a sampler the caller restores on purpose (a loaded configuration), so it stays selectable even when
+        the dataset would not suggest it. Otherwise an unsuitable current sampler switches to the model's recommended one.
+        """
+        page = self.page
+        combo = page.samplerCombo
+        model = page.modelCombo.currentText()
+        entry = self._catalogue.checkpoint(model, include_unavailable=True) if model else None
+        profile = profile_for(model, entry.base_model if entry else None) if model else None
+        allowed = [item.value for item in profile.samplers] if profile else list(SAMPLERS)
+        wanted = keep or combo.currentText()
+        if wanted not in allowed:
+            if keep:
+                allowed.append(keep)
+            elif profile:
+                wanted = profile.sampler.value
+        if [combo.itemText(i) for i in range(combo.count())] != allowed:
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(allowed)
+            combo.blockSignals(False)
+        combo.setCurrentText(wanted if wanted in allowed else allowed[0])
 
     PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
 
@@ -638,7 +670,7 @@ class GenerationPage:
                 phase="running",
                 completed=completed,
                 total=total,
-                detail=detail + ". Pause is not supported for single generation.",
+                detail=detail,
             )
         )
 
@@ -691,13 +723,15 @@ class GenerationPage:
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
         self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
+        self._stage_started = time.monotonic()
+        self._stage_seen = {}
         self._generating = True
         self._activity.set(
             generating=True,
             run_state=RunState(
                 owner="generation",
                 phase="running",
-                detail="Preparing generation. Pause is not supported for single generation.",
+                detail="Preparing generation",
             ),
         )
         self._set_busy(True)
@@ -734,6 +768,9 @@ class GenerationPage:
     def _event(self, event: BackendEvent) -> None:
         if not self._busy:
             return  # a late event after completion never changes the settled view
+        label = event.stage if event.kind == "progress" else {"preview": "first preview"}.get(event.kind, event.kind)
+        if label:
+            self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)
         if event.kind == "progress":
             self._present_progress(event.stage or "Generating", event.completed, event.total)
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
@@ -762,6 +799,8 @@ class GenerationPage:
             presentation = present_generation_failure(failure)
             self._status(presentation)
             activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
+            if dev_enabled():
+                self._show_failure_details(failure)
             return
         log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
         presentation = present_outcome(outcome)
@@ -777,6 +816,8 @@ class GenerationPage:
         self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
         self.page.effectiveRequestBrowser.setPlainText(
             describe_request(outcome.request, outcome.backend_id, self._backend()[1])
+            + self._timing_text()
+            + self._quality_text(outcome)
         )
         for label, path in (*(("Output", p) for p in outcome.output_paths), ("Metadata", outcome.metadata_path)):
             item = QListWidgetItem(f"{label}: {path}")
@@ -791,6 +832,41 @@ class GenerationPage:
             self.page.detailsToggle.setChecked(True)  # the output chooser lives in the details
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
+
+    def _quality_text(self, outcome) -> str:
+        """Development mode: the export noise/blank detector's verdict on each saved output, also written to the log."""
+        if not dev_enabled():
+            return ""
+        lines = []
+        for index, path in enumerate(outcome.output_paths):
+            result = assess_file(str(path))
+            if result is None:
+                continue
+            reasons = ", ".join(result["reasons"]) or "none"
+            log.debug("image quality output=%d label=%s signals=%s", index, result["label"], reasons)
+            lines.append(f"  output {index + 1}: {result['label']} (signals: {reasons})")
+            lines.append("    " + ", ".join(f"{k}={v}" for k, v in result["metrics"].items()))
+        return "\n\nimage quality (export detector, advisory):\n" + "\n".join(lines) if lines else ""
+
+    def _timing_text(self) -> str:
+        """Development mode: when each stage was first reported, in seconds since the request was submitted."""
+        if not dev_enabled() or not self._stage_seen:
+            return ""
+        lines = [f"  {name}: {seconds:.1f} s" for name, seconds in self._stage_seen.items()]
+        total = time.monotonic() - self._stage_started
+        return "\n\nstage timings (first reported, since submit):\n" + "\n".join(lines) + f"\n  settled: {total:.1f} s"
+
+    def _show_failure_details(self, failure: BaseException) -> None:
+        """Development mode only: keep the request and the backend's failure evidence in the Attempt details box."""
+        backend, endpoint = self._backend()
+        self.page.attemptIdentityLabel.setText("Attempt failed (development mode details below).")
+        self.page.effectiveRequestBrowser.setPlainText(
+            describe_request(self._request, backend, endpoint)
+            + "\n\nfailure:\n"
+            + describe_failure(failure)
+            + self._timing_text()
+        )
+        self.page.detailsToggle.setChecked(True)
 
     # -- saved results ---------------------------------------------------------------------------------------------
     def _set_result_actions(self, available: bool) -> None:
@@ -919,6 +995,7 @@ class GenerationPage:
     def _catalogue_checkpoint_changed(self, *_args) -> None:
         if not self._updating_catalogue:
             self._filter_loras()
+        self._filter_samplers()
 
     def _rebuild_catalogue(
         self,
@@ -1288,6 +1365,10 @@ class GenerationPage:
             log.warning("preset scan failed reason=%s", type(preset_failure).__name__)
         for preset in presets:
             combo.addItem(f"Preset · {preset['name']}", ("preset", preset))
+        own = {preset["name"] for preset in presets}
+        for preset in builtin_presets():
+            if preset["name"] not in own:
+                combo.addItem(f"DT · {preset['name']}", ("preset", preset))
         for path in paths:
             combo.addItem(f"Config · {path.name}", str(path))
         combo.setCurrentIndex(-1)
