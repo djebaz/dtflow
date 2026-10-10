@@ -16,7 +16,7 @@ from pathlib import Path
 from dtflow.core.models import Sampler
 
 _DATASET = Path(__file__).parents[1] / "resources" / "catalogue" / "model_profiles.json"
-_SUFFIX = re.compile(r"(?:_(?:f16|f32|bf16|q\d+p?|\d+bit|i8x|svd))+$")
+_SUFFIX = re.compile(r"(?:_(?:f16|f32|bf16|q\d+p?|\d+bit|i\d+x|svd))+$")
 
 
 def model_key(file: str) -> str:

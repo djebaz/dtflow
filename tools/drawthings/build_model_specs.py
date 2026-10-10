@@ -1,4 +1,4 @@
-"""Generate ``community_model_specs.json``: Draw Things model descriptions for FLUX and Krea checkpoints.
+"""Generate ``community_model_specs.json``: Draw Things model descriptions for the community model list.
 
 Source: the public ``drawthingsai/community-models`` repository (``models.txt`` and each model's ``metadata.json``).
 Each converted checkpoint file gets the model's description, which DT+ cloud needs in ``override.models`` for models
@@ -15,9 +15,12 @@ from pathlib import Path
 
 BASE = "https://raw.githubusercontent.com/drawthingsai/community-models/main"
 OUT = Path(__file__).parents[2] / "src" / "dtflow" / "resources" / "catalogue" / "community_model_specs.json"
-WANTED = re.compile(r"flux|krea", re.IGNORECASE)
 DROP = {"converted", "note", "copyright", "hugging_face_link"}
-SUPPORT = re.compile(r"(vae|encoder|clip|mistral|qwen_3|t5_)", re.IGNORECASE)
+_SUFFIX = re.compile(r"(?:_(?:f16|f32|bf16|q\d+p?|\d+bit|i\d+x|svd))+$")
+
+
+def model_key(file: str) -> str:
+    return _SUFFIX.sub("", file.lower().removesuffix(".ckpt"))
 
 
 def fetch(path: str) -> str:
@@ -28,15 +31,13 @@ def fetch(path: str) -> str:
 def main(out: Path) -> None:
     specs: dict[str, dict] = {}
     for name in fetch("models.txt").split():
-        if not WANTED.search(name):
-            continue
         meta = json.loads(fetch(f"models/{name}/metadata.json"))
+        if not isinstance(meta.get("file"), str) or not meta.get("version"):
+            continue
         spec = {key: value for key, value in meta.items() if key not in DROP}
         for file in meta.get("converted", {}):
-            if SUPPORT.search(file) and not file.startswith(("flux_", "krea_")):
-                continue
-            if file.endswith("_vae_f16.ckpt"):
-                continue
+            if model_key(file) != model_key(meta["file"]):
+                continue  # text encoders, autoencoders and other support files
             specs[file] = {**spec, "file": file}
     out.write_text(json.dumps(dict(sorted(specs.items())), indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(f"{len(specs)} specs -> {out}")
