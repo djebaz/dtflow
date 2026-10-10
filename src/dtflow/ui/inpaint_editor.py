@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QFile, QIODevice, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QFileDialog, QLabel
+from PySide6.QtWidgets import QFileDialog, QLabel, QListWidgetItem
 
 from dtflow.core.image_inputs import ImageContent, max_mask_grow, suggest_generation_size
 from dtflow.core.model_profiles import profile_for
@@ -20,7 +20,14 @@ from dtflow.services.image_preparation import (
     mask_coverage,
     save_mask_pixels_file,
 )
-from dtflow.services.person_selection import analyze_people, apply_selection, classify_models, layers_union, person_at
+from dtflow.services.person_selection import (
+    LAYERS,
+    analyze_people,
+    apply_selection,
+    classify_models,
+    layers_union,
+    person_at,
+)
 from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -102,8 +109,13 @@ class InpaintEditor(QObject):
         self.canvas.pointHovered.connect(self._hover)
         self.canvas.hoverLeft.connect(self.canvas.clear_hover)
         self._hovered = None
-        for box in (self.form.layerPerson, self.form.layerBody, self.form.layerClothes):
-            box.toggled.connect(lambda _=False: self._reset_hover())
+        for name in LAYERS:
+            item = QListWidgetItem(name.capitalize())
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            item.setCheckState(Qt.CheckState.Checked if name == "person" else Qt.CheckState.Unchecked)
+            self.form.layerList.addItem(item)
+        self.form.layerList.itemChanged.connect(lambda _item: self._reset_hover())
         self.form.modeLayout.setContentsMargins(0, 0, 0, 0)
         self.form.modeLayout.setSpacing(0)
         self.canvas.viewChanged.connect(self._view_changed)
@@ -247,8 +259,11 @@ class InpaintEditor(QObject):
         self.form.findPeopleButton.setEnabled(has_source and self._models.segmentation is not None)
         self.form.modelsButton.setEnabled(available)
         self.form.peopleList.setEnabled(has_source and self._analysis is not None)
-        self.form.layerBody.setEnabled(self._analysis is not None and self._analysis.has_clothes)
-        self.form.layerClothes.setEnabled(self._analysis is not None and self._analysis.has_clothes)
+        has_clothes = self._analysis is not None and self._analysis.has_clothes
+        for row in range(1, self.form.layerList.count()):
+            item = self.form.layerList.item(row)
+            flags = item.flags()
+            item.setFlags(flags | Qt.ItemFlag.ItemIsEnabled if has_clothes else flags & ~Qt.ItemFlag.ItemIsEnabled)
         self.canvas.undoButton.setEnabled(has_source and self.canvas.can_undo())
         self.canvas.redoButton.setEnabled(has_source and self.canvas.can_redo())
         for button in self.canvas._view_buttons.values():
@@ -536,7 +551,7 @@ class InpaintEditor(QObject):
         if key is None:
             self.canvas.clear_hover()
         else:
-            self.canvas.set_hover(person.box, layers_union(person, layers))
+            self.canvas.set_hover(person.box, layers_union(person, frozenset(layers)))
 
     def _set_analysis(self, analysis):
         self._reset_hover()
@@ -583,11 +598,13 @@ class InpaintEditor(QObject):
         )
 
     def _layers(self):
-        form = self.form
-        return frozenset(
-            name
-            for name, box in (("person", form.layerPerson), ("body", form.layerBody), ("clothes", form.layerClothes))
-            if box.isChecked() and box.isEnabled()
+        """Ticked layers, in list order; garment layers are unavailable without the clothes model."""
+        layers = self.form.layerList
+        return tuple(
+            layers.item(row).data(Qt.ItemDataRole.UserRole)
+            for row in range(layers.count())
+            if layers.item(row).checkState() == Qt.CheckState.Checked
+            and layers.item(row).flags() & Qt.ItemFlag.ItemIsEnabled
         )
 
     def _person_item(self, item):
@@ -612,11 +629,11 @@ class InpaintEditor(QObject):
             self.form.peopleStatus.setText("Tick Person, Body or Clothes first.")
             return
         current = self.canvas.mask_pixels()
-        names = " + ".join(name.title() for name in ("person", "body", "clothes") if name in layers)
+        names = " + ".join(name.capitalize() for name in layers)
         label = f"{'Remove' if remove else 'Add'} Person {person.index} · {names}"
         self._task(
             "Select person",
-            lambda: apply_selection(current, analysis, person, layers, remove=remove),
+            lambda: apply_selection(current, analysis, person, frozenset(layers), remove=remove),
             lambda pixels: self.canvas.replace_mask(pixels, label),
             quiet=True,
         )

@@ -47,7 +47,28 @@ CLOTHES_LABELS = (
 )
 CLOTHING = frozenset({"upper-clothes", "skirt", "pants", "dress", "belt", "scarf"})
 SKIN = frozenset({"face", "left-leg", "right-leg", "left-arm", "right-arm"})
-LAYERS = ("person", "body", "clothes")
+# Selectable layers. "person" is the whole instance silhouette; the rest come from the clothes model's classes.
+GARMENT_CLASSES = {
+    "upper clothes": (4,),
+    "pants": (6,),
+    "skirt": (5,),
+    "dress": (7,),
+    "belt": (8,),
+    "scarf": (17,),
+    "hair": (2,),
+    "hat": (1,),
+    "sunglasses": (3,),
+    "face": (11,),
+    "arms": (14, 15),
+    "legs": (12, 13),
+    "shoes": (9, 10),
+    "bag": (16,),
+}
+GROUP_CLASSES = {
+    "body": tuple(k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in SKIN),
+    "clothes": tuple(k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in CLOTHING),
+}
+LAYERS = ("person", "body", "clothes", *GARMENT_CLASSES)
 _MEAN = np.array((0.485, 0.456, 0.406), dtype=np.float32)
 _STD = np.array((0.229, 0.224, 0.225), dtype=np.float32)
 _sessions: dict[tuple[str, str], object] = {}
@@ -60,11 +81,20 @@ class PersonLayers:
     score: float
     box: tuple[int, int, int, int]  # source px x0, y0, x1, y1; every mask below is cropped to it
     person: bytes
-    body: bytes | None = None
-    clothes: bytes | None = None
+    classes: bytes | None = None  # clothes-model class id + 1 inside the person (0 outside), box-sized
 
     def layer(self, name: str) -> bytes | None:
-        return {"person": self.person, "body": self.body, "clothes": self.clothes}[name]
+        """Box-sized 0/255 mask of one layer, or None when it needs the clothes model."""
+        if name == "person":
+            return self.person
+        if self.classes is None:
+            return None
+        ids = GROUP_CLASSES.get(name) or GARMENT_CLASSES[name]
+        return (
+            (np.isin(np.frombuffer(self.classes, dtype=np.uint8), [k + 1 for k in ids]) * 255)
+            .astype(np.uint8)
+            .tobytes()
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,14 +300,9 @@ def _clothes_layers(session, image: Image.Image, mask, box):
         best[better] = up[better]
         argmax[better] = k
     inside = mask[cy0:cy1, cx0:cx1] > 0
-    body_ids = [k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in SKIN]
-    clothes_ids = [k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in CLOTHING]
-    out = []
-    for ids in (body_ids, clothes_ids):
-        full = np.zeros(mask.shape, dtype=np.uint8)
-        full[cy0:cy1, cx0:cx1][inside & np.isin(argmax, ids)] = 255
-        out.append(full[y0:y1, x0:x1].tobytes())
-    return out
+    classes = np.zeros(mask.shape, dtype=np.uint8)
+    classes[cy0:cy1, cx0:cx1][inside] = argmax[inside] + 1
+    return classes[y0:y1, x0:x1].tobytes()
 
 
 def analyze_people(
@@ -296,10 +321,8 @@ def analyze_people(
     people = []
     for index, (score, mask, box) in enumerate(_instances(seg, image, threshold), start=1):
         x0, y0, x1, y1 = box
-        body = cloth = None
-        if clothes_session is not None:
-            body, cloth = _clothes_layers(clothes_session, image, mask, box)
-        people.append(PersonLayers(index, score, box, mask[y0:y1, x0:x1].tobytes(), body, cloth))
+        classes = _clothes_layers(clothes_session, image, mask, box) if clothes_session is not None else None
+        people.append(PersonLayers(index, score, box, mask[y0:y1, x0:x1].tobytes(), classes))
     return PersonAnalysis(source.width, source.height, tuple(people), clothes_session is not None)
 
 
@@ -327,7 +350,7 @@ def apply_selection(
 ) -> bytes:
     """New binary working mask: ``current`` with the person's chosen layers added (or removed)."""
     if not layers or not layers <= set(LAYERS):
-        raise ValidationError("Choose at least one of Person, Body or Clothes.")
+        raise ValidationError("Tick at least one layer.")
     mask = np.frombuffer(current, dtype=np.uint8).reshape(analysis.height, analysis.width).copy()
     x0, y0, x1, y1 = person.box
     region = mask[y0:y1, x0:x1]
