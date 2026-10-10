@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QFile, QIODevice, QObject, Qt, QTimer, Slot
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QFileDialog, QLabel, QListWidgetItem, QSizePolicy
 
@@ -23,10 +23,12 @@ from dtflow.services.image_preparation import (
 )
 from dtflow.services.person_selection import (
     LAYERS,
+    PART_COLORS,
     analyze_people,
     apply_selection,
     classify_models,
-    layers_union,
+    colored_preview,
+    part_at,
     person_at,
 )
 from dtflow.services.session import image_edit_capability, selection_for
@@ -120,8 +122,13 @@ class InpaintEditor(QObject):
             item.setData(Qt.ItemDataRole.UserRole, name)
             item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
             item.setCheckState(Qt.CheckState.Checked if name == "person" else Qt.CheckState.Unchecked)
+            swatch = QPixmap(12, 12)
+            swatch.fill(QColor(*PART_COLORS[name]))
+            item.setIcon(QIcon(swatch))
             self.form.layerList.addItem(item)
-        self.form.layerList.itemChanged.connect(lambda _item: (self._reset_hover(), self._controls()))
+        self.form.layerList.itemChanged.connect(self._layer_changed)
+        for row in range(self.form.layerList.count()):
+            self._style_layer(self.form.layerList.item(row))
         self.form.modeLayout.setContentsMargins(0, 0, 0, 0)
         self.form.modeLayout.setSpacing(0)
         self.canvas.viewChanged.connect(self._view_changed)
@@ -608,6 +615,26 @@ class InpaintEditor(QObject):
             )
         self.form.peopleStatus.setText(text)
 
+    def _layer_changed(self, item):
+        self._style_layer(item)
+        self._reset_hover()
+        self._controls()
+
+    def _style_layer(self, item):
+        # Ticked layers are bold on a tint of their colour; restyling must not re-enter itemChanged.
+        checked = item.checkState() == Qt.CheckState.Checked
+        name = item.data(Qt.ItemDataRole.UserRole)
+        font = QFont(item.font())
+        font.setBold(checked)
+        tint = QColor(*PART_COLORS[name])
+        tint.setAlpha(70 if checked else 0)
+        blocked = self.form.layerList.blockSignals(True)
+        try:
+            item.setFont(font)
+            item.setBackground(QBrush(tint))
+        finally:
+            self.form.layerList.blockSignals(blocked)
+
     def _reset_hover(self):
         self._hovered = None
         self.canvas.clear_hover()
@@ -618,14 +645,16 @@ class InpaintEditor(QObject):
             return
         person = person_at(analysis, x, y)
         layers = self._layers()
-        key = None if person is None or not layers else (person.index, layers)
+        part = None if person is None or not layers else part_at(person, x, y, frozenset(layers))
+        key = None if person is None or not layers else (person.index, layers, part)
         if key == self._hovered:
             return
         self._hovered = key
         if key is None:
             self.canvas.clear_hover()
         else:
-            self.canvas.set_hover(person.box, layers_union(person, frozenset(layers)))
+            self.canvas.set_hover_colors(person.box, colored_preview(person, frozenset(layers), part))
+            self.form.peopleStatus.setText(f"{part.capitalize()}: click to add, Alt-click to remove." if part else "")
 
     def _set_analysis(self, analysis):
         self._reset_hover()
@@ -699,10 +728,11 @@ class InpaintEditor(QObject):
     def _preview_selected(self):
         person, layers = self._selected_person(), self._layers()
         if person is not None and layers:
-            self.canvas.set_hover(person.box, layers_union(person, frozenset(layers)))
+            self.canvas.set_hover_colors(person.box, colored_preview(person, frozenset(layers)))
 
     def _hover_left(self):
         self._hovered = None
+        self._people_status()
         self.canvas.clear_hover()
         self._preview_selected()
 
@@ -719,10 +749,11 @@ class InpaintEditor(QObject):
         if person is None:
             self.form.peopleStatus.setText("No person at that point.")
             return
-        self._add_person(person, remove)
+        part = part_at(person, x, y, frozenset(self._layers())) if self._layers() else None
+        self._add_person(person, remove, (part,) if part else None)
 
-    def _add_person(self, person, remove):
-        layers, analysis = self._layers(), self._analysis
+    def _add_person(self, person, remove, only=None):
+        layers, analysis = only or self._layers(), self._analysis
         self._reset_hover()
         if not layers:
             self.form.peopleStatus.setText("Tick Person, Body or Clothes first.")

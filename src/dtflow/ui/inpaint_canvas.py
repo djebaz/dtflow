@@ -227,6 +227,13 @@ class InpaintCanvas(ImagePreview):
         self._hover = (x0, y0, overlay)
         self.viewport().update()
 
+    def set_hover_colors(self, box, rgba):
+        """Display-only multi-colour tint (box-sized straight-alpha RGBA bytes); never part of the mask."""
+        x0, y0, x1, y1 = box
+        overlay = QImage(rgba, x1 - x0, y1 - y0, (x1 - x0) * 4, QImage.Format.Format_RGBA8888).copy()
+        self._hover = (x0, y0, overlay)
+        self.viewport().update()
+
     def clear_hover(self):
         if self._hover is not None:
             self._hover = None
@@ -374,7 +381,7 @@ class InpaintCanvas(ImagePreview):
         if self._hover is not None and self.select_mode and self._view != "Result":
             x0, y0, overlay = self._hover
             rect, factor = self.image_rect(), self._factor()
-            painter.setOpacity(0.55)
+            painter.setOpacity(0.7)
             painter.drawImage(
                 QRectF(
                     rect.x() + x0 * factor, rect.y() + y0 * factor, overlay.width() * factor, overlay.height() * factor

@@ -33,7 +33,7 @@ from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
 from dtflow.services import session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
-from dtflow.services.person_selection import PersonAnalysis, PersonLayers  # noqa: E402
+from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
@@ -115,7 +115,7 @@ def render_inpaint_states(shell, state, capture):
                 0.93,
                 (width // 3, height // 4, 2 * width // 3, 3 * height // 4),
                 bytes([255]) * ((width // 3) * (height // 2)),
-                bytes([4 + 1]) * ((width // 3) * (height // 2)),
+                bytes([4 + 1]) * ((width // 3) * (height // 4)) + bytes([6 + 1]) * ((width // 3) * (height // 4)),
             ),
         ),
         True,
@@ -123,7 +123,9 @@ def render_inpaint_states(shell, state, capture):
     editor._set_analysis(people)
     capture("28-inpaint-select-people-found")
     person = people.people[0]
-    editor.canvas.set_hover(person.box, person.person)
+    editor.canvas.set_hover_colors(
+        person.box, colored_preview(person, frozenset({"person", "upper clothes", "pants"}), "pants")
+    )
     capture("29-inpaint-select-hover-preview")
     editor.canvas.clear_hover()
     editor.form.paintModeButton.setChecked(True)

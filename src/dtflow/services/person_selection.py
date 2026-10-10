@@ -75,6 +75,28 @@ GROUP_CLASSES = {
     "clothes": tuple(k for k, name in enumerate(CLOTHES_LABELS) if name.lower() in CLOTHING),
 }
 LAYERS = ("person", "body", "clothes", *GARMENT_CLASSES)
+# One colour per layer for the hover preview and the layer list (RGB); group layers reuse their members' colours.
+PART_COLORS = {
+    "person": (150, 150, 150),
+    "body": (255, 183, 77),
+    "clothes": (66, 135, 245),
+    "upper clothes": (66, 135, 245),
+    "pants": (52, 168, 83),
+    "skirt": (171, 71, 188),
+    "dress": (233, 30, 99),
+    "belt": (255, 193, 7),
+    "scarf": (0, 188, 212),
+    "hair": (121, 85, 72),
+    "hat": (255, 87, 34),
+    "sunglasses": (96, 125, 139),
+    "face": (255, 112, 112),
+    "arms": (255, 183, 77),
+    "legs": (156, 204, 101),
+    "shoes": (141, 110, 99),
+    "bag": (0, 150, 136),
+    "skin": (255, 224, 178),
+}
+_CLASS_PART = {k: name for name, ids in GARMENT_CLASSES.items() for k in ids}
 _MEAN = np.array((0.485, 0.456, 0.406), dtype=np.float32)
 _STD = np.array((0.229, 0.224, 0.225), dtype=np.float32)
 _sessions: dict[tuple[str, str], object] = {}
@@ -441,6 +463,50 @@ def person_at(analysis: PersonAnalysis, x: int, y: int) -> PersonLayers | None:
         if x0 <= x < x1 and y0 <= y < y1 and person.person[(y - y0) * (x1 - x0) + (x - x0)]:
             return person
     return None
+
+
+def _allowed_classes(layers: frozenset[str]) -> set[int]:
+    allowed: set[int] = set()
+    for name in layers:
+        allowed.update(GROUP_CLASSES.get(name) or GARMENT_CLASSES.get(name, ()))
+    return allowed
+
+
+def part_at(person: PersonLayers, x: int, y: int, layers: frozenset[str]) -> str | None:
+    """The single ticked part under a source pixel ("person" when only the silhouette applies), else None."""
+    x0, y0, x1, y1 = person.box
+    offset = (y - y0) * (x1 - x0) + (x - x0)
+    if not (x0 <= x < x1 and y0 <= y < y1) or not person.person[offset]:
+        return None
+    if person.classes is not None:
+        value = person.classes[offset]
+        if value:
+            part = _CLASS_PART.get(value - 1)
+            if part is not None and (value - 1) in _allowed_classes(layers):
+                return part
+    return "person" if "person" in layers else None
+
+
+def colored_preview(person: PersonLayers, layers: frozenset[str], active: str | None = None) -> bytes:
+    """Box-sized RGBA preview: each ticked part in its own colour, the ``active`` part (under the pointer) stronger."""
+    x0, y0, x1, y1 = person.box
+    shape = (y1 - y0, x1 - x0)
+    rgba = np.zeros((*shape, 4), dtype=np.uint8)
+    inside = np.frombuffer(person.person, dtype=np.uint8).reshape(shape) > 0
+    if "person" in layers:
+        rgba[inside] = (*PART_COLORS["person"], 90)
+    if person.classes is not None:
+        classes = np.frombuffer(person.classes, dtype=np.uint8).reshape(shape)
+        allowed = _allowed_classes(layers)
+        for k, name in _CLASS_PART.items():
+            if k not in allowed:
+                continue
+            hit = classes == k + 1
+            rgba[hit] = (*PART_COLORS[name], 255 if name == active else 150)
+    if active == "person" and "person" in layers:
+        plain = inside & (rgba[..., 3] == 90)
+        rgba[plain, 3] = 200
+    return rgba.tobytes()
 
 
 def layers_union(person: PersonLayers, layers: frozenset[str]) -> bytes:
