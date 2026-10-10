@@ -43,6 +43,14 @@ The [implementation plan](../plans/2026-10-10-smart-mask-inpainting.md) requires
 - The session returns registered final bytes for display and the effective attempt-bound request. Gallery/export/recycle operate on registered finals only. Inputs, masks and raw evidence are durable, not cache; no cleanup scans/registers them automatically. Raw provider inspection UI and image-operation portable export acceptance remain pending.
 - Generic `generate_once`, CLI/config, queues, planners and batches remain txt2img-only. Dedicated APIs do not broaden those contracts. No default permits or live acceptance commands are introduced.
 
+## Manual editor support helpers (source-only)
+
+- services/session.image_operation_status inspects supplied exact-scope permits and bundled description digests without backend/client/state open, credential resolution, writes, network or inference. core/image_operations.inspect_image_operation is the pure status/reason function. No permit registry ships; probe status is not consent and dispatch still revalidates.
+- core/image_inputs.suggest_generation_size derives a bounded 64-multiple target from oriented source dimensions and an explicitly chosen max_edge, with no automatic request mutation. max_mask_grow reports the exact source-size pixel-pass radius limit shared with preparation.
+- services/image_preparation.mask_coverage measures supplied binary pixels without PNG decoding. preview_mask_pixels works only on an already downsampled binary grid <=512x512, scaled grow/feather and approximate thumbnail coverage; no full-source RGB fit. It is deliberately approximate, not provider evidence or a performance benchmark. Caller runs it on a worker and owns cancellation/stale-result handling.
+- load_mask_bytes/file return fresh, unadjusted source-grid binary masks. save_mask_file (or save_mask_pixels_file for an editor binary buffer) exclusively writes a new PNG, fsyncs and never overwrites or makes an attempt; failed writes may retain partial files. Save the editor base mask, not the already-grown prepared.source_mask. These helpers do not provide a Qt file picker or edit history.
+- The [UX alignment addendum](../plans/2026-10-10-inpaint-editor-ux.md#backend-alignment-addendum-2026-10-10-source-only-supersedes-conflicting-demo-wording) documents normalized-source preservation, OFF result fit/tint, signed size-budgeted grow, single-shot-only actions and one-invocation inline probe consent. No mockup, Qt or ONNX implementation is added here.
+
 ## UI handoff
 
 Use worker-facing `prepare_image_bytes` / `prepare_image_files` for offline previews, not a generation entry. `PreparedImageInputs.fit` gives the immutable source-to-target transform; edits remain in the original oriented source grid. Helpers return no Qt/Pillow/provider objects. Source import, Edit, mask selection, preview and save-mask must not dispatch or create attempts.
@@ -63,7 +71,9 @@ Only an explicit Generate action may call the dedicated single-shot entry with a
 
 ## Verification boundary
 
-No new tests, test execution, validation commands, builds, renders, inference or paid calls were performed under python-gui-fast-implement. The existing import-boundary allowlist is adapted for the new headless preparation service only; core and Qt remain Pillow-free. Owner/CI validation must cover limits, orientation/alpha, fitting/polarity, mask loss/empty adjustments, content corruption, compositing support, privacy and source preservation before acceptance. The dedicated single-shot dispatch path is source-present but unverified; no UI wiring or permit-free image dispatch is available.
+No new tests, test execution, builds, renders, inference or paid calls were performed. The owner explicitly authorized uv run ruff format . and uv run ruff check . for the manual-support checkpoint; final lint passes. These static checks are not runtime acceptance. The existing import-boundary allowlist is adapted for the new headless preparation service only; core and Qt remain Pillow-free. Owner/CI validation must cover limits, orientation/alpha, fitting/polarity, mask loss/empty adjustments, content corruption, compositing support, privacy and source preservation before acceptance. The dedicated single-shot dispatch path is source-present but unverified; no UI wiring or permit-free image dispatch is available.
+
+
 
 
 

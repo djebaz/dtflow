@@ -6,6 +6,23 @@ from dtflow.core.models import ValidationError
 
 
 @dataclass(frozen=True, slots=True)
+class ImageOperationSupport:
+    """Read-only evidence status, not dispatch authorization or server discovery."""
+
+    status: str
+    reason: str
+    evidence_id: str | None = None
+
+    @property
+    def confirmed(self) -> bool:
+        return self.status == "owner_verified"
+
+    @property
+    def requires_probe_consent(self) -> bool:
+        return self.status == "owner_probe"
+
+
+@dataclass(frozen=True, slots=True)
 class ImageOperationPermit:
     """Exact backend/endpoint/checkpoint/operation acceptance or explicit owner probe.
 
@@ -68,3 +85,54 @@ class ImageOperationPermit:
             raise ValidationError("Image-operation permit does not match the selected exact scope.")
         if self.status == "owner_probe" and not allow_probe:
             raise ValidationError("Owner-probe image generation requires explicit per-invocation authorization.")
+
+
+def inspect_image_operation(
+    backend_id: str,
+    endpoint: str,
+    model_id: str,
+    operation: str,
+    permits: tuple[ImageOperationPermit, ...] = (),
+    *,
+    exact_description_sha256: str | None = None,
+) -> ImageOperationSupport:
+    """Inspect supplied evidence only: no file, client, credential or state access.
+
+    Probe status never grants consent. Dispatch must revalidate the actual scope
+    and supplied description, regardless of a previously displayed status.
+    """
+    if not isinstance(permits, tuple) or any(not isinstance(p, ImageOperationPermit) for p in permits):
+        raise ValidationError("Capability inspection requires an immutable tuple of owner permits.")
+    if backend_id not in ("drawthings-grpc", "drawthings-cloud") or operation not in ("img2img", "inpaint"):
+        return ImageOperationSupport("unsupported", "This backend or operation does not support image editing.")
+    if backend_id == "drawthings-cloud" and exact_description_sha256 is None:
+        return ImageOperationSupport(
+            "missing_exact_description", "No published exact-file cloud description is available."
+        )
+    matching = tuple(
+        p
+        for p in permits
+        if (p.backend_id, p.endpoint, p.model_id, p.operation) == (backend_id, endpoint, model_id, operation)
+    )
+    if not matching:
+        return ImageOperationSupport(
+            "no_permit", "No owner evidence exists for this exact backend, endpoint, checkpoint and operation."
+        )
+    if len(matching) != 1:
+        return ImageOperationSupport("conflicting_permits", "Duplicate exact-scope permits require owner review.")
+    permit = matching[0]
+    if (backend_id == "drawthings-cloud" or permit.model_description_sha256 is not None) and (
+        exact_description_sha256 is None or permit.model_description_sha256 != exact_description_sha256
+    ):
+        return ImageOperationSupport(
+            "description_changed", "The exact model description differs from the owner evidence."
+        )
+    if permit.status == "owner_probe":
+        return ImageOperationSupport(
+            "owner_probe",
+            "Unverified checkpoint: each probe requires explicit consent; cloud may consume credits.",
+            permit.evidence_id,
+        )
+    return ImageOperationSupport(
+        "owner_verified", "Owner-confirmed for this exact checkpoint and scope.", permit.evidence_id
+    )

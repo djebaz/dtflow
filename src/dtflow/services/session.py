@@ -19,7 +19,8 @@ from uuid import uuid4
 
 from dtflow.composition import BackendSelection, create_backend, endpoint_label, image_endpoint_label
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
-from dtflow.core.image_operations import ImageOperationPermit
+from dtflow.core.image_operations import ImageOperationPermit, ImageOperationSupport, inspect_image_operation
+from dtflow.core.model_profiles import exact_model_description_digest
 from dtflow.core.models import (
     AssetReconciliation,
     BackendError,
@@ -45,6 +46,37 @@ from dtflow.services.image_preparation import prepare_image_files, validate_prep
 from dtflow.services.preflight import apply_trigger_prefixes
 
 log = logging.getLogger(__name__)
+
+
+def image_operation_status(
+    selection: BackendSelection,
+    model_id: str,
+    operation: str,
+    *,
+    image_permits: tuple[ImageOperationPermit, ...] = (),
+) -> ImageOperationSupport:
+    """Read-only capability line: no backend/client/state open, auth or dispatch.
+
+    Reads bundled local description data only; schedule off Qt for cold imports.
+    Caller supplies reviewed permits. Probe status does not grant consent, and
+    inspection never verifies deployed checkpoint behavior or creates a permit.
+    """
+    backend_id = {"local": "drawthings-grpc", "cloud": "drawthings-cloud"}.get(selection.name)
+    if backend_id is None:
+        return ImageOperationSupport("unsupported", "Image editing requires a real selected backend.")
+    try:
+        endpoint = image_endpoint_label(selection)
+    except ValidationError:
+        return ImageOperationSupport("missing_endpoint", "Select a valid generation endpoint first.")
+    return inspect_image_operation(
+        backend_id,
+        endpoint,
+        model_id,
+        operation,
+        image_permits,
+        exact_description_sha256=exact_model_description_digest(model_id),
+    )
+
 
 ASSET_NOTE = (
     "Local registry view of what this machine measured and a server once acknowledged; not remote account "

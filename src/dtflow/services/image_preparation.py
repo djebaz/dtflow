@@ -1,4 +1,4 @@
-"""Headless, non-generative source/mask preparation for future Phase 9A/9B dispatch.
+"""Headless, non-generative source/mask preparation and explicit editor-mask I/O.
 
 No provider calls, persistence, metadata copying or source writes. Callers run these
 bounded CPU operations on a worker, never on the Qt/orchestration event-loop thread.
@@ -7,7 +7,9 @@ bounded CPU operations on a worker, never on the Qt/orchestration event-loop thr
 import hashlib
 import io
 import math
+import os
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageFilter, ImageOps
@@ -18,12 +20,13 @@ from dtflow.core.image_inputs import (
     ImageContent,
     ImageFit,
     PreparedImageInputs,
+    max_mask_grow,
+    validate_source_dimensions,
 )
 from dtflow.core.models import ValidationError
 
 ALGORITHM = "dtflow-image-preparation-v1"
 MASK_THRESHOLD = 127  # strictly greater -> selected; canonical binary output is 0/255
-MORPHOLOGY_PIXEL_PASS_LIMIT = 32_000_000
 
 
 def _binary_mask(mask: Image.Image) -> Image.Image:
@@ -49,6 +52,115 @@ def _check_mask_fit(source: Image.Image, target: Image.Image, fit: ImageFit) -> 
         raise ValidationError(
             "Mask loses over 25% of selected area at generation resolution; increase target size or broaden the selection."
         )
+
+
+def _adjust_binary(mask: Image.Image, grow: int) -> Image.Image:
+    if not grow:
+        return mask.copy()
+    border = abs(grow)
+    if border > max_mask_grow(mask.width, mask.height):
+        raise ValidationError("Mask grow/shrink exceeds the bounded pixel-pass budget; reduce grow or source size.")
+    padded = ImageOps.expand(mask, border=border, fill=0)
+    kernel = ImageFilter.MaxFilter if grow > 0 else ImageFilter.MinFilter
+    for _ in range(border):
+        padded = padded.filter(kernel(3))
+    return padded.crop((border, border, border + mask.width, border + mask.height))
+
+
+def mask_coverage(pixels: bytes, width: int, height: int) -> float:
+    """Exact selected percentage of supplied binary pixels; no PNG decode/resample."""
+    validate_source_dimensions(width, height)
+    if not isinstance(pixels, bytes) or len(pixels) != width * height:
+        raise ValidationError("Mask coverage requires immutable bytes matching the source grid.")
+    selected = pixels.count(b"\xff")
+    if selected + pixels.count(b"\x00") != len(pixels):
+        raise ValidationError("Mask pixels must be binary 0/255.")
+    return 100.0 * selected / len(pixels)
+
+
+@dataclass(frozen=True, slots=True)
+class MaskPreview:
+    binary: ImageContent
+    blend: ImageContent
+    coverage_percent: float
+    approximate: bool = True
+
+
+def preview_mask_pixels(
+    pixels: bytes,
+    width: int,
+    height: int,
+    *,
+    source_width: int,
+    source_height: int,
+    grow: int = 0,
+    feather: float = 0.0,
+) -> MaskPreview:
+    """Bounded thumbnail-only approximation, not canonical generation evidence.
+
+    Caller supplies an already downsampled binary grid at most 512x512; no source
+    decode, RGB fit, durable write or inference. Run on a worker and discard stale
+    replies in the editor. Coverage refers to this adjusted thumbnail, not the
+    full source or eventual fitted mask. Subpixel grow/strokes may disappear.
+    """
+    validate_source_dimensions(width, height)
+    validate_source_dimensions(source_width, source_height)
+    if width > min(512, source_width) or height > min(512, source_height):
+        raise ValidationError("Mask preview must be a downsampled grid of at most 512x512.")
+    mask_coverage(pixels, width, height)
+    if type(grow) is not int or abs(grow) > max_mask_grow(source_width, source_height):
+        raise ValidationError("Mask grow exceeds the source-size work budget.")
+    if type(feather) not in (int, float) or not math.isfinite(feather) or not 0 <= feather <= 64:
+        raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+    scale = min(width / source_width, height / source_height)
+    mask = _adjust_binary(Image.frombytes("L", (width, height), pixels), round(grow * scale))
+    blend = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(feather * scale))) if feather else mask
+    coverage = 100.0 * mask.histogram()[255] / (width * height)
+    return MaskPreview(_content(mask), _content(blend), coverage)
+
+
+def load_mask_bytes(encoded: bytes, source_width: int, source_height: int) -> ImageContent:
+    """Load an unadjusted editor mask; grow/feather must not be baked into edits."""
+    validate_source_dimensions(source_width, source_height)
+    image = _decode(encoded, "Mask image")
+    if image.size != (source_width, source_height):
+        raise ValidationError("Mask dimensions must match the EXIF-oriented source image.")
+    mask = _binary_mask(image)
+    if mask.getbbox() is None:
+        raise ValidationError("Inpainting mask is empty after threshold.")
+    return _content(mask)
+
+
+def load_mask_file(path: Path, source_width: int, source_height: int) -> ImageContent:
+    """Worker file-read wrapper for the unadjusted editor mask."""
+    return load_mask_bytes(_read(path, "Mask image"), source_width, source_height)
+
+
+def save_mask_file(path: Path, mask: ImageContent) -> None:
+    """Worker-only, explicit new-file save of the unadjusted source-grid editor mask.
+
+    No overwrite, automatic parent creation, generation or durable attempt commit.
+    Caller must pass the editor's base mask, not prepared.source_mask (which already
+    includes grow). Failed writes can leave a partial new file for inspection.
+    """
+    image = _verified(mask)
+    if image.mode != "L" or image.getbbox() is None:
+        raise ValidationError("Mask save requires a nonempty source-grid binary mask.")
+    mask_coverage(image.tobytes(), image.width, image.height)
+    try:
+        with Path(path).open("xb") as stream:
+            stream.write(mask.encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError as exc:
+        raise ValidationError("Mask could not be saved as a new file; existing files are never overwritten.") from exc
+
+
+def save_mask_pixels_file(path: Path, pixels: bytes, width: int, height: int) -> None:
+    """Worker save wrapper for the unadjusted binary editor buffer, not a preview."""
+    if mask_coverage(pixels, width, height) == 0:
+        raise ValidationError("Mask save requires a nonempty source-grid binary mask.")
+    save_mask_file(path, _content(Image.frombytes("L", (width, height), pixels)))
 
 
 def _read(path: Path, label: str) -> bytes:
@@ -220,19 +332,8 @@ def prepare_image_bytes(
     if mask.size != source.size:
         raise ValidationError("Mask dimensions must match the EXIF-oriented source image.")
     mask = _binary_mask(mask)
-    if grow:
-        # Explicit black border makes erosion at source edges honest and prevents
-        # implicit edge replication from inventing selected outside-source pixels.
-        border = abs(grow)
-        if (mask.width + 2 * border) * (mask.height + 2 * border) * border > MORPHOLOGY_PIXEL_PASS_LIMIT:
-            raise ValidationError("Mask grow/shrink exceeds the bounded pixel-pass budget; reduce grow or source size.")
-        padded = ImageOps.expand(mask, border=border, fill=0)
-        kernel = ImageFilter.MaxFilter if grow > 0 else ImageFilter.MinFilter
-        # Repeated radius-one square morphology has the same radius-border
-        # support, without a potentially 129x129 rank filter per pixel.
-        for _ in range(border):
-            padded = padded.filter(kernel(3))
-        mask = padded.crop((border, border, border + mask.width, border + mask.height))
+    # Radius-one passes match square-radius morphology, with black source edges.
+    mask = _adjust_binary(mask, grow)
     if mask.getbbox() is None:
         raise ValidationError("Inpainting mask is empty after threshold/adjustments.")
     blend = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(feather))) if feather else mask.copy()

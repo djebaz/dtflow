@@ -9,6 +9,36 @@ IMAGE_PIXEL_LIMIT = 16_000_000
 IMAGE_BYTE_LIMIT = 64 * 1024 * 1024
 INPUT_SET_BYTE_LIMIT = 128 * 1024 * 1024
 INPUT_NAMES = ("source", "image", "source_mask", "mask", "blend_mask")
+MORPHOLOGY_PIXEL_PASS_LIMIT = 32_000_000
+
+
+def validate_source_dimensions(width: int, height: int) -> None:
+    if any(type(v) is not int or v < 1 for v in (width, height)) or width * height > IMAGE_PIXEL_LIMIT:
+        raise ValidationError("Source dimensions must be positive integers within 16 million pixels.")
+
+
+def max_mask_grow(width: int, height: int) -> int:
+    """Absolute grow/shrink radius permitted by the exact padded-pixel-pass budget."""
+    validate_source_dimensions(width, height)
+    return max(b for b in range(65) if (width + 2 * b) * (height + 2 * b) * b <= MORPHOLOGY_PIXEL_PASS_LIMIT)
+
+
+def suggest_generation_size(width: int, height: int, *, max_edge: int) -> tuple[int, int]:
+    """Suggest a 64-multiple box from oriented source dimensions, without decoding.
+
+    Caller explicitly chooses max_edge (128..2048, multiple of 64); no hidden
+    quality/model policy. No upscaling except the 128 minimum/64 rounding. The
+    canonical fit still pads, especially for extreme aspect ratios. No dispatch
+    entry applies this suggestion automatically or rewrites an existing request.
+    """
+    validate_source_dimensions(width, height)
+    if type(max_edge) is not int or not 128 <= max_edge <= 2048 or max_edge % 64:
+        raise ValidationError("Suggested maximum edge must be a multiple of 64 in 128..2048.")
+    longest = max(width, height)
+    numerator = min(longest, max_edge)
+    return tuple(
+        min(max_edge, max(128, ((v * numerator + longest * 32) // (longest * 64)) * 64)) for v in (width, height)
+    )
 
 
 @dataclass(frozen=True, slots=True)
