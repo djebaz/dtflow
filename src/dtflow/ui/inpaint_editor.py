@@ -151,8 +151,8 @@ class InpaintEditor(QObject):
             text, state = f"Capability could not be checked. {error or ''}".strip(), "error"
         elif support.status == "owner_probe":
             text = (
-                "Unverified checkpoint: nothing confirms this model edits images. Each edit is an explicit probe "
-                "you confirm first; the source and mask are sent to the backend and cloud may consume credits."
+                "Unverified checkpoint: nothing confirms this model edits images. Edit image runs it as a probe; "
+                "the source and mask are sent to the backend and cloud may consume credits."
             )
             state = "warning"
         elif support.status == "owner_verified":
@@ -409,19 +409,10 @@ class InpaintEditor(QObject):
         self.replace_source(path)
 
     def generate(self):
-        """Edit image: validate, then ask for explicit consent before anything leaves this machine."""
+        """Edit image: the click is the per-run probe consent; the capability line discloses what is sent."""
         if self._busy or self._loading or not self._ready() or self.controller is None:
             return
-        name, endpoint = self.controller._backend()
-        where = "DT+ cloud" if name == "cloud" else f"the Draw Things server{f' at {endpoint}' if endpoint else ''}"
-        confirm_action(
-            self.page,
-            self.page.generateButton,
-            "Edit image",
-            f"Sends the source image and mask to {where}. This checkpoint is an unverified owner probe"
-            + ("; cloud may consume credits." if name == "cloud" else "."),
-            self._dispatch,
-        )
+        self._dispatch()
 
     def _dispatch(self):
         if self._source is None or self._busy or self._loading or self.controller is None:
