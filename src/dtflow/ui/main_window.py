@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
@@ -149,6 +150,7 @@ class MainWindow:
         self.form = load_form()
         self.generation_page = load_ui(GENERATION_UI_FILE)
         self.queue_page = load_ui(QUEUE_UI_FILE)
+        startup.mark("main/generation/queue forms")
         self._disable_preview_controls(self.generation_page)
         self._disable_preview_controls(self.queue_page)
         self.form.workspaceStack.addWidget(self.generation_page)
@@ -186,6 +188,7 @@ class MainWindow:
             export_callback=self._open_checked_export,
             recycle_callback=self._request_gallery_recycle if trash_supported() else None,
         )
+        startup.mark("images form and page")
         self.gallery.delete_button.setToolTip(f"Move eligible checked originals to {TRASH_NAME} after confirmation.")
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
@@ -269,6 +272,7 @@ class MainWindow:
         )
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
+        startup.mark("pages wired, session restored")
         form.statusBar().showMessage(display_identity())
         # The former Help menu is a small status-bar icon so no menu bar takes vertical room.
         help_icon = ASSETS_CONTROLS / "help.svg"
