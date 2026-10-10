@@ -84,6 +84,7 @@ class MaskPreview:
     blend: ImageContent
     coverage_percent: float
     approximate: bool = True
+    note: str = "Approximate preview; subpixel grow may not be visible. Exact mask is prepared for submission."
 
 
 def preview_mask_pixels(

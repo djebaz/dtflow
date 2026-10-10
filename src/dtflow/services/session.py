@@ -60,6 +60,8 @@ def image_operation_status(
     Reads bundled local description data only; schedule off Qt for cold imports.
     Caller supplies reviewed permits. Probe status does not grant consent, and
     inspection never verifies deployed checkpoint behavior or creates a permit.
+    It does not check installation/availability: keep inventory filtering separate
+    and display owner-confirmed evidence, never a general compatible verdict.
     """
     backend_id = {"local": "drawthings-grpc", "cloud": "drawthings-cloud"}.get(selection.name)
     if backend_id is None:

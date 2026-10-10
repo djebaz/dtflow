@@ -25,6 +25,8 @@
 
 ## Fixed
 
+- Manual-editor handoff now explicitly labels approximate previews/subpixel grow, documents possible small-source upscaling and actual fit evidence, and distinguishes owner-confirmed permits from installed checkpoint availability. Inventory filtering remains independent; no fitting algorithm or dispatch authorization change.
+
 - Owner-requested Python-wide Ruff formatting and lint fixes (import order, ResourceLimits defaults created per call, explicit queue exception chaining), in separate formatting/lint-only commit 977ed66. Final Ruff lint passes; no tests or runtime acceptance.
 
 - Image-operation saving records RGB8/white-alpha/no-ICC-transform source normalization and its preservation limits explicitly, with distinct final/raw artifact IDs and a raw-evidence link. Grow +/-64 is documented as an absolute bound constrained by source-size work budget, not universal availability. Source-only; no runtime acceptance.
@@ -35,6 +37,7 @@
 
 - PRs: #63, #64
 - Scope: Standalone CPU person-zone mask PoC, headless image preparation, durable input snapshot/restore and provider-local tensor encoding; no image-operation dispatch or production acceptance.
+
 
 
 

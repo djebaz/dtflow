@@ -7,7 +7,7 @@ from dtflow.core.models import ValidationError
 
 @dataclass(frozen=True, slots=True)
 class ImageOperationSupport:
-    """Read-only evidence status, not dispatch authorization or server discovery."""
+    """Read-only owner evidence, not availability, compatibility or authorization."""
 
     status: str
     reason: str
@@ -98,7 +98,9 @@ def inspect_image_operation(
 ) -> ImageOperationSupport:
     """Inspect supplied evidence only: no file, client, credential or state access.
 
-    Probe status never grants consent. Dispatch must revalidate the actual scope
+    Installed/current checkpoint availability is not checked; presentation must
+    retain independent inventory filtering. Probe status never grants consent.
+    Dispatch must revalidate the actual scope
     and supplied description, regardless of a previously displayed status.
     """
     if not isinstance(permits, tuple) or any(not isinstance(p, ImageOperationPermit) for p in permits):
@@ -134,5 +136,7 @@ def inspect_image_operation(
             permit.evidence_id,
         )
     return ImageOperationSupport(
-        "owner_verified", "Owner-confirmed for this exact checkpoint and scope.", permit.evidence_id
+        "owner_verified",
+        "Owner-confirmed for this exact checkpoint and scope; current checkpoint availability is not checked.",
+        permit.evidence_id,
     )

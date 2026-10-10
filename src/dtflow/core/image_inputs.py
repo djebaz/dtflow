@@ -27,8 +27,11 @@ def suggest_generation_size(width: int, height: int, *, max_edge: int) -> tuple[
     """Suggest a 64-multiple box from oriented source dimensions, without decoding.
 
     Caller explicitly chooses max_edge (128..2048, multiple of 64); no hidden
-    quality/model policy. No upscaling except the 128 minimum/64 rounding. The
-    canonical fit still pads, especially for extreme aspect ratios. No dispatch
+    quality/model policy. This suggests a target box, not a no-upscaling policy:
+    the 128 minimum/64 rounding can enlarge it and canonical fitting may upscale
+    source pixels to fill it. Padding occurs when fitted and target aspect ratios
+    differ, not merely because a source is small (64x64 -> 128x128 fills the box).
+    Show the recorded ImageFit instead of assuming a scale or padding. No dispatch
     entry applies this suggestion automatically or rewrites an existing request.
     """
     validate_source_dimensions(width, height)
