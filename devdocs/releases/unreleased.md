@@ -87,7 +87,7 @@
 - The mouse wheel no longer changes presets, dropdowns or numeric fields while scrolling a panel: inside a panel that can scroll, combo boxes never take the wheel and spin boxes only while focused, and the wheel scrolls the panel; in panels that do not scroll (such as Images) the wheel still changes them.
 - FLUX.1 Canny and Depth [dev] are image-to-image only in the catalogue (they need a control image; text-to-image with them returns noise), and the FLUX.1 Redux adapter is no longer listed as a checkpoint.
 - The Images Size filter now offers Small, Medium, Large and Big classes (<400, <600, <1200, ≥1200 px) by the longer side; typing a size still works.
-- The Images detail full-screen button now also collapses the filter/search bar, the selection action bar and the metadata/prompt panels below the image; Escape or the button restores them.
+- The Images detail full-screen button now also collapses the filter/search bar, the selection action bar and the metadata/prompt panels below the image; Escape or the button restores them. A full-screen toggle in the Images header (beside refresh) does the same in Grid, List and Detail.
 - The window no longer has a menu bar holding only "Help"; About DTFlow is a small help icon at the right of the bottom status bar on every page, giving the pages the vertical room back.
 - Informational overlays such as About now close with a × button (instead of "Dismiss") or a click anywhere outside them; errors and confirmations still stay until answered.
 - Unclassified checkpoints no longer appear under every base-model family (they have none); they are listed under a separate "Unclassified" base-model entry, and in the custom-identifier action and unclassified inspector.

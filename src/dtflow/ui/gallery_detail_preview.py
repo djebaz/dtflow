@@ -163,6 +163,9 @@ def toggle_image_focus(page, enter: bool | None = None) -> None:
     if enter == focused:
         return
     page.setProperty("imageFocus", enter)
+    toggle = page.findChild(QWidget, "galleryFocusButton")
+    if toggle is not None:
+        toggle.setChecked(enter)
     if enter:
         targets = [page.findChild(QWidget, name) for name in FOCUS_HIDDEN_ROWS]
         column = page.findChild(QWidget, "galleryMainColumn")
@@ -202,6 +205,7 @@ def apply_gallery_button_icons(page, assets=ASSETS):
         ("galleryDetailButton", "image"),
         ("galleryRefreshButton", "refresh"),
         ("galleryFullscreenButton", "fullscreen"),
+        ("galleryFocusButton", "fullscreen"),
         ("galleryAdditionalButton", "document"),
         ("galleryRawButton", "json"),
     ]:
@@ -215,6 +219,7 @@ def apply_gallery_button_icons(page, assets=ASSETS):
         get(name).setIconSize(QSize(14, 14))
     get("galleryRefreshButton").setText("")
     get("galleryFullscreenButton").setText("")
+    get("galleryFocusButton").setText("")
 
 
 def apply_gallery(page, assets=ASSETS, sample=False):
@@ -288,6 +293,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     get("galleryActualSizeButton").clicked.connect(lambda: set_view("100%"))
     get("galleryFullscreenButton").setEnabled(True)
     get("galleryFullscreenButton").clicked.connect(lambda: toggle_image_focus(page))
+    get("galleryFocusButton").clicked.connect(lambda: toggle_image_focus(page))
     paths = [assets / f"thumb{i}.png" for i in range(1, 7)]
     badges = [
         ("1536 × 1024", "Sample"),
