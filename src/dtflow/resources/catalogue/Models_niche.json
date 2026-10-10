@@ -2246,15 +2246,7 @@
   },
   {
     "file": "dhxl_v1.0_f16.ckpt",
-    "base_model": "sd_1",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
-    "file": "dis_v1.0_f16.ckpt",
-    "base_model": "sd_1",
+    "base_model": "sdxl",
     "modes": [
       "t2i",
       "i2i"
@@ -2978,7 +2970,7 @@
   },
   {
     "file": "indigo_void_furry_fused_xl_furry_noobai_noobai_v1.7_1569147_f16.ckpt",
-    "base_model": "sd_1",
+    "base_model": "sdxl",
     "modes": [
       "t2i",
       "i2i"
@@ -2986,7 +2978,7 @@
   },
   {
     "file": "indigo_void_furry_fused_xl_furry_noobai_noobai_v1.8_1731573_f16.ckpt",
-    "base_model": "sd_1",
+    "base_model": "sdxl",
     "modes": [
       "t2i",
       "i2i"
@@ -3017,14 +3009,6 @@
   {
     "file": "ionsyx_f16.ckpt",
     "base_model": "sdxl",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
-    "file": "is_net_v1.1_fp16.ckpt",
-    "base_model": "sd_1",
     "modes": [
       "t2i",
       "i2i"
@@ -3542,14 +3526,6 @@
     ]
   },
   {
-    "file": "parsenet_v1.0_f16.ckpt",
-    "base_model": "sd_1",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
     "file": "photonic_fusion_sdxl_f16.ckpt",
     "base_model": "sdxl",
     "modes": [
@@ -3829,14 +3805,6 @@
   },
   {
     "file": "redshift_v1_f16.ckpt",
-    "base_model": "sd_1",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
-    "file": "restoreformer_v1.0_f16.ckpt",
     "base_model": "sd_1",
     "modes": [
       "t2i",

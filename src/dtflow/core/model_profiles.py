@@ -110,13 +110,18 @@ _DERIVED: dict[str, tuple[str, str | None, str]] = {
 # requested trial: derive one from a plain sibling of the same family, with the checkpoint's own file and (SDXL) CLIP
 # companions. Derived, not published by Draw Things; Copax Pony XL is owner-confirmed on direct cloud 2026-10-10, the rest
 # are unconfirmed. Edit/fill/inpaint/v-prediction files are excluded: they carry modifier or objective fields a plain
-# sibling does not have. SDXL files need the ``_f16`` / ``_q6p_q8p`` naming that carries per-checkpoint CLIP companions.
+# sibling does not have, as are the official Stable Diffusion bases DT+ lists itself. SDXL and SD 1.x files need the
+# ``_f16`` / ``_q6p_q8p`` naming that carries per-checkpoint CLIP companions.
 _CATALOGUE = Path(__file__).parents[1] / "resources" / "catalogue"
 _SDXL_BASE = "juggernaut_xl_ragnarok_f16.ckpt"
+_SD1_BASE = "dreamshaper_v8_f16.ckpt"
 _FLUX_DEV_BASE = "flux_1_dev_q8p.ckpt"
 _FLUX_SCHNELL_BASE = "pixelwave_flux_1_schnell_04_q8p.ckpt"
-_SKIP = re.compile(r"fill|kontext|redux|canny|depth|inpaint|pix2pix|v_?pred|lcm|turbo|lightning|hyper", re.IGNORECASE)
-_SDXL_STEM = re.compile(r"(.+?)(?:_f16|_q6p_q8p)\.ckpt$")
+_SKIP = re.compile(
+    r"^sd[-_]v|^wd-|minisd|fill|kontext|redux|canny|depth|inpaint|pix2pix|v_?pred|lcm|turbo|lightning|hyper",
+    re.IGNORECASE,
+)
+_FLAT_STEM = re.compile(r"(.+?)(?:_f16|_q6p_q8p)\.ckpt$")
 _NAMES = {"copax_pony_xl_f16.ckpt": "Copax Pony XL"}
 
 
@@ -135,11 +140,11 @@ def _niche_families() -> dict[str, str]:
 
 def _catalogue_derived(model_id: str) -> dict | None:
     family = _niche_families().get(model_id)
-    if family not in ("sdxl", "flux_1") or _SKIP.search(model_id):
+    if family not in ("sdxl", "sd_1", "flux_1") or _SKIP.search(model_id):
         return None
     specs = _community_specs()
     if family == "sdxl":
-        stem = _SDXL_STEM.match(model_id)
+        stem = _FLAT_STEM.match(model_id)
         base = specs.get(_SDXL_BASE)
         if stem is None or base is None:
             return None
@@ -150,6 +155,19 @@ def _catalogue_derived(model_id: str) -> dict | None:
             "clip_encoder": f"{stem.group(1)}_clip_vit_l14_f16.ckpt",
             "text_encoder": f"{stem.group(1)}_open_clip_vit_bigg14_f16.ckpt",
         }
+    if family == "sd_1":
+        stem = _FLAT_STEM.match(model_id)
+        base = specs.get(_SD1_BASE)
+        if stem is None or base is None:
+            return None
+        spec = {
+            **base,
+            "name": _NAMES.get(model_id, stem.group(1)),
+            "file": model_id,
+            "text_encoder": f"{stem.group(1)}_clip_vit_l14_f16.ckpt",
+        }
+        spec.pop("download", None)
+        return spec
     base = specs.get(_FLUX_SCHNELL_BASE if "schnell" in model_id.lower() else _FLUX_DEV_BASE)
     if base is None:
         return None
