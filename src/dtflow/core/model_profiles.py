@@ -108,7 +108,7 @@ _DERIVED: dict[str, tuple[str, str | None, str]] = {
 
 # Community checkpoints (catalogue tier "niche") that DT+ cloud serves without a Draw Things community description. Owner
 # requested trial: derive one from a plain sibling of the same family, with the checkpoint's own file and (SDXL) CLIP
-# companions. Derived, not published by Draw Things; Copax Pony XL is owner-confirmed on direct cloud 2026-10-10, the rest
+# companions. Derived, not published by Draw Things; Owner-tested on direct cloud 2026-10-10 (Copax Pony XL fixed, most SDXL and FLUX.1 files working); the rest
 # are unconfirmed. Edit/fill/inpaint/v-prediction files are excluded: they carry modifier or objective fields a plain
 # sibling does not have, as are the official Stable Diffusion bases DT+ lists itself. SDXL and SD 1.x files need the
 # ``_f16`` / ``_q6p_q8p`` naming that carries per-checkpoint CLIP companions.
