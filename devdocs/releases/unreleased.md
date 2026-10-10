@@ -14,5 +14,5 @@
 
 ## Release audit
 
-- PRs: #63
+- PRs: #63, #64
 - Scope: Standalone CPU person-zone mask PoC with owner-supplied FastSeg export support; no production image-operation acceptance.
