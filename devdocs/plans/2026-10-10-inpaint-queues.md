@@ -80,7 +80,7 @@ Each step updates `devdocs/releases/unreleased.md`, `devdocs/current_dev_status.
 ## Owner decisions (2026-10-10)
 
 1. Seed-sweep items share one staged snapshot rather than one per item.
-2. **Queue edit** is available on cloud when no model description is published, like **Edit image** (the capability line still discloses it).
+2. Queued edits are available on cloud when no model description is published, like **Edit image** (the capability line still discloses it).
 3. Strength is a per-item value and joins the cross and pair plan systems, not only the seed sweep.
 
 ## Validation

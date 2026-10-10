@@ -118,13 +118,14 @@ class QueuePage:
         activity: Activity,
         simulation_source: Callable[[], dict] = dict,
         edit_source: Callable = lambda: None,
+        editing_source: Callable[[], bool] = lambda: False,
         created_hook: Callable[[], None] = lambda: None,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
-        self._edit_source = edit_source
+        self._edit_source, self._editing = edit_source, editing_source
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
         self._select_after: str | None = None
@@ -413,11 +414,15 @@ class QueuePage:
             )
         )
 
+    def sync_edit_fields(self) -> None:
+        """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode."""
+        editing = self._editing()
+        self.page.planStrengthsLabel.setVisible(editing)
+        self.page.planStrengthsEdit.setVisible(editing)
+
     def _sync(self) -> None:
         page = self.page
-        editing = self._edit_source() is not None
-        page.planStrengthsLabel.setVisible(editing)
-        page.planStrengthsEdit.setVisible(editing)
+        self.sync_edit_fields()
         view = self._view()
         available = self._controls_for(view)
         page.startQueueButton.setEnabled(available.start)

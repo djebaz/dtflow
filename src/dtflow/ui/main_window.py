@@ -284,10 +284,12 @@ class MainWindow:
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
             edit_source=self.generation.queue_edit_job,
+            editing_source=lambda: self.generation.inpaint.active,
             simulation_source=self.generation.simulation,
             created_hook=self.generation.queue_created,
             activity=self.activity,
         )
+        self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
         startup.mark("pages wired, session restored")
