@@ -7,6 +7,7 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -200,6 +201,8 @@ class GenerationPage:
         self._future = None
         self._generating = False
         self._request = None
+        self._stage_started = 0.0
+        self._stage_seen: dict[str, float] = {}
         self._busy = False
         self._config_name: str | None = None
         self._reuse_source_identity: str | None = None
@@ -719,6 +722,8 @@ class GenerationPage:
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
         self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
+        self._stage_started = time.monotonic()
+        self._stage_seen = {}
         self._generating = True
         self._activity.set(
             generating=True,
@@ -762,6 +767,9 @@ class GenerationPage:
     def _event(self, event: BackendEvent) -> None:
         if not self._busy:
             return  # a late event after completion never changes the settled view
+        label = event.stage if event.kind == "progress" else {"preview": "first preview"}.get(event.kind, event.kind)
+        if label:
+            self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)
         if event.kind == "progress":
             self._present_progress(event.stage or "Generating", event.completed, event.total)
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
@@ -806,7 +814,7 @@ class GenerationPage:
         self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
         self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
         self.page.effectiveRequestBrowser.setPlainText(
-            describe_request(outcome.request, outcome.backend_id, self._backend()[1])
+            describe_request(outcome.request, outcome.backend_id, self._backend()[1]) + self._timing_text()
         )
         for label, path in (*(("Output", p) for p in outcome.output_paths), ("Metadata", outcome.metadata_path)):
             item = QListWidgetItem(f"{label}: {path}")
@@ -822,12 +830,23 @@ class GenerationPage:
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
 
+    def _timing_text(self) -> str:
+        """Development mode: when each stage was first reported, in seconds since the request was submitted."""
+        if not dev_enabled() or not self._stage_seen:
+            return ""
+        lines = [f"  {name}: {seconds:.1f} s" for name, seconds in self._stage_seen.items()]
+        total = time.monotonic() - self._stage_started
+        return "\n\nstage timings (first reported, since submit):\n" + "\n".join(lines) + f"\n  settled: {total:.1f} s"
+
     def _show_failure_details(self, failure: BaseException) -> None:
         """Development mode only: keep the request and the backend's failure evidence in the Attempt details box."""
         backend, endpoint = self._backend()
         self.page.attemptIdentityLabel.setText("Attempt failed (development mode details below).")
         self.page.effectiveRequestBrowser.setPlainText(
-            describe_request(self._request, backend, endpoint) + "\n\nfailure:\n" + describe_failure(failure)
+            describe_request(self._request, backend, endpoint)
+            + "\n\nfailure:\n"
+            + describe_failure(failure)
+            + self._timing_text()
         )
         self.page.detailsToggle.setChecked(True)
 
