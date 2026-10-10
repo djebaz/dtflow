@@ -309,10 +309,9 @@ class Catalogue:
                 if entry.kind == "model":
                     raw_unknown.add(entry.identifier)
                 elif entry.kind == "unknown" and not metadata:
-                    if entry.identifier in community:
-                        raw_unknown.add(entry.identifier)
-                    elif not _COMPANION.search(entry.identifier):
-                        raw_other.add(entry.identifier)
+                    if _COMPANION.search(entry.identifier):
+                        continue
+                    (raw_unknown if entry.identifier in community else raw_other).add(entry.identifier)
             classified_unknown = {
                 entry.identifier
                 for entry in known_entries
