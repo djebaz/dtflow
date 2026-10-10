@@ -425,8 +425,11 @@ class DrawThingsBackend:
             seen["signposts"] = [betterproto.which_one_of(item, "signpost")[0] for item in response.signposts]
         if response.current_signpost:
             seen["signpost"] = betterproto.which_one_of(response.current_signpost, "signpost")[0]
+        if response.preview_image:
+            seen["preview_bytes"] = len(response.preview_image)
         if response.generated_images:
             seen["images"] = len(response.generated_images)
+            seen["image_bytes"] = [len(item) for item in response.generated_images]
         if seen:
             log.debug("server response %s", seen)
 
