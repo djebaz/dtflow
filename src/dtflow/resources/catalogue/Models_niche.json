@@ -30,9 +30,10 @@
   },
   {
     "file": "1006775_iniversemixsfwnsfw_f1drealguofengfp8v20_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -58,9 +59,10 @@
   },
   {
     "file": "1031531_iniversemixsfwnsfw_f1drealnsfwguofengv2_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -139,7 +141,8 @@
     "file": "1085190_copaxtimeless_xplus2basetrain_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -225,7 +228,8 @@
     "file": "1134093_copaxtimeless_xplusmix3_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -254,7 +258,8 @@
     "file": "1148473_copaxtimeless_xplusmix3dark_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -360,7 +365,8 @@
     "file": "1217501_copaxtimeless_xplusmix4_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -375,7 +381,8 @@
     "file": "1224657_edgeofreality_v30_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -387,9 +394,10 @@
   },
   {
     "file": "1247362_majicflus_v10_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -541,7 +549,8 @@
     "file": "1338565_copaxtimeless_xpluscartoon_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -763,7 +772,8 @@
     "file": "1677057_edgeofreality_32beyondreality_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -990,14 +1000,16 @@
     "file": "778112_copaxtimeless_xplus1_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
     "file": "783956_copaxtimeless_xplusunrealfast_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1034,7 +1046,8 @@
     "file": "801556_copaxtimeless_xplusposes_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1249,7 +1262,8 @@
     "file": "897535_copaxtimeless_stylemix1fp8_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1272,7 +1286,8 @@
     "file": "907183_copaxtimeless_xplus2_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1366,7 +1381,8 @@
     "file": "954640_copaxtimeless_xplusmix1_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1381,7 +1397,8 @@
     "file": "962412_copaxtimeless_xplusmix1fp8_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1425,7 +1442,8 @@
     "file": "975743_copaxtimeless_stylemix2_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1455,7 +1473,8 @@
     "file": "982160_copaxtimeless_xplusmix2_q8p.ckpt",
     "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
@@ -1482,9 +1501,10 @@
   },
   {
     "file": "988886_verusvision10b_10btransformer_q8p.ckpt",
-    "base_model": "unknown",
+    "base_model": "flux_1",
     "modes": [
-      "unknown"
+      "t2i",
+      "i2i"
     ]
   },
   {
