@@ -52,13 +52,15 @@ def test_timeout_policy_refuses_unbounded_values(value):
 
 
 def forbidden_imports(
-    source: str, package: str, *, backends: bool = True, allow_pillow: bool = False
+    source: str, package: str, *, backends: bool = True, allow_pillow: bool = False, allow_numpy: bool = False
 ) -> tuple[str, ...]:
     """Resolve absolute, relative and function-local imports through AST traversal."""
     bad = []
     banned = ("PySide6", "PyQt", "drawthings_py", "grpclib", "numpy", "PIL", "betterproto", "flatbuffers", "httpx")
     if allow_pillow:
         banned = tuple(module for module in banned if module != "PIL")
+    if allow_numpy:
+        banned = tuple(module for module in banned if module != "numpy")
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             modules = [x.name for x in node.names]
@@ -87,7 +89,10 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
                 "image_preparation.py",
                 "person_selection.py",
             )
-            assert not forbidden_imports(path.read_text(), f"dtflow.{directory}", allow_pillow=allow_pillow), path
+            allow_numpy = directory == "services" and path.name == "person_selection.py"
+            assert not forbidden_imports(
+                path.read_text(), f"dtflow.{directory}", allow_pillow=allow_pillow, allow_numpy=allow_numpy
+            ), path
     importlib.import_module("dtflow.core.models")
     importlib.import_module("dtflow.services.generation")
 
@@ -105,7 +110,10 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "image_preparation.py"),
             ("services", "person_selection.py"),
         )
-        assert not forbidden_imports(path.read_text(), package, backends=False, allow_pillow=allow_pillow), path
+        allow_numpy = relative.parts == ("services", "person_selection.py")
+        assert not forbidden_imports(
+            path.read_text(), package, backends=False, allow_pillow=allow_pillow, allow_numpy=allow_numpy
+        ), path
 
 
 def test_boundary_check_covers_relative_and_local_imports():
@@ -115,6 +123,8 @@ def test_boundary_check_covers_relative_and_local_imports():
     assert not forbidden_imports("from ..core.models import Backend", "dtflow.services")
     assert forbidden_imports("from PIL import Image", "dtflow.services")
     assert not forbidden_imports("from PIL import Image", "dtflow.services", allow_pillow=True)
+    assert forbidden_imports("import numpy", "dtflow.services", allow_pillow=True)
+    assert not forbidden_imports("import numpy", "dtflow.services", allow_numpy=True)
     assert forbidden_imports("import PySide6", "dtflow.services", allow_pillow=True)
     assert forbidden_imports("import drawthings_py", "dtflow.services", allow_pillow=True)
 
