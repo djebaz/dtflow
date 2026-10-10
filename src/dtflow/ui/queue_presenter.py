@@ -57,6 +57,15 @@ class ItemRow:
     outputs: tuple[str, ...]
     metadata: str | None
     failure_code: str | None
+    operation: str = "txt2img"
+    strength: float | None = None
+
+    @property
+    def edit_text(self) -> str:
+        if self.operation == "txt2img":
+            return "—"
+        name = "Inpaint" if self.operation == "inpaint" else "Image to image"
+        return f"{name} · {self.strength:g}" if self.strength is not None else name
 
     @property
     def level(self) -> str:
@@ -105,6 +114,8 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 tuple(path for path in artifacts if path != metadata),
                 metadata,
                 failure.get("code"),
+                item.get("operation") or "txt2img",
+                item.get("strength"),
             )
         )
     return tuple(rows)

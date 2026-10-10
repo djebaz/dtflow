@@ -73,7 +73,7 @@ def test_offline_inpaint_mode_and_mask_history_do_not_dispatch(window, qtbot, tm
     assert page.inpaintModeButton.isChecked() and not page.textToImageModeButton.isChecked()
     assert page.generateButton.text() == "Edit image" and not page.generateButton.isEnabled()
     assert not page.loadConfigurationButton.isEnabled()
-    with pytest.raises(Exception, match="single-shot only"):
+    with pytest.raises(Exception, match="Choose a source image"):
         window.generation.request_for_queue()
     canvas = editor.canvas
     canvas.set_source(bytes([127, 127, 127]) * 35, 5, 7)

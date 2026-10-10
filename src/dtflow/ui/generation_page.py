@@ -692,14 +692,18 @@ class GenerationPage:
     def queue_created(self) -> None:
         self._previewed_seed = None
 
+    def queue_edit_job(self):
+        """The current Inpaint edit for the Queues tab, or None outside Inpaint mode."""
+        return self.inpaint.queue_job() if self.inpaint.active else None
+
     def request_for_queue(self, *, preview: bool = False):
         """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking.
 
         A random seed (form seed 0) picked for a plan preview is kept until a queue is created (``queue_created``),
         so the dry-run table shows the seeds the queue will really use, even after a rejected attempt.
         """
-        if self.inpaint.active:
-            raise FormError("Inpaint mode is single-shot only; queues and plans are unavailable.", None)
+        if self.inpaint.active and self.inpaint.queue_job() is None:
+            raise FormError("Choose a source image and paint or select the area to change first.", None)
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()

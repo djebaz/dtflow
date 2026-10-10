@@ -147,7 +147,7 @@ Development attempts use `.dtflow/attempts.sqlite3`; final outputs and reproduci
 
 ## Queues
 
-The Queues page creates paused seed sweeps or Pair/Cross batches from the Generate form. Review the count and Dry run table before creation. See [queues and batch plans](queues.md) for controls, concurrency, restart and unknown-outcome handling.
+The Queues page creates paused seed sweeps or Pair/Cross batches from the Generate form. Review the count and Dry run table before creation. With Generate in Inpaint mode and a source plus mask ready, **Create queue** stages the edit once (durable under `<state>/inputs/`) and queues seed, Pair or Cross items over it; the Plan area shows a **Strengths** field (for example `0.5; 0.7; 1`), and the item table an Edit column. Size cannot vary. Nothing is uploaded until Start, and cloud runs may use credits. See [queues and batch plans](queues.md) for controls, concurrency, restart and unknown-outcome handling.
 
 During generation or queue dispatch, the window owns the state directory. Generate is disabled during dispatch and competing CLI owners fail clearly as busy; another CLI operation can own generation between desktop operations. Reading and posting queue controls do not require ownership. Closing during dispatch asks first and does not imply remote cancellation.
 

@@ -114,8 +114,10 @@ def render_inpaint_states(shell, state, capture):
                 1,
                 0.93,
                 (width // 3, height // 4, 2 * width // 3, 3 * height // 4),
-                bytes([255]) * ((width // 3) * (height // 2)),
-                bytes([4 + 1]) * ((width // 3) * (height // 4)) + bytes([6 + 1]) * ((width // 3) * (height // 4)),
+                bytes([255]) * (((2 * width // 3) - width // 3) * ((3 * height // 4) - height // 4)),
+                (bytes([4 + 1]) * (((2 * width // 3) - width // 3) * ((3 * height // 4) - height // 4) // 2)).ljust(
+                    ((2 * width // 3) - width // 3) * ((3 * height // 4) - height // 4), bytes([6 + 1])
+                ),
             ),
         ),
         True,

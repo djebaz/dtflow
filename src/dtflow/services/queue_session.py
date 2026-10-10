@@ -7,10 +7,13 @@ duration (the store's ownership lock); controls and reads need no ownership. Not
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from dtflow.composition import BackendSelection
+from dtflow.core.image_inputs import PreparedImageInputs
 from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
@@ -18,11 +21,13 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.core.tasks import settle
 from dtflow.persistence.queues import delete_idle_queues, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
+from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
 from dtflow.services.queue import QueueDispatcher
 
@@ -63,6 +68,50 @@ async def create_queue(
         await store.aclose()
 
 
+async def create_edit_queue(
+    state: Path,
+    backend: dict[str, Any],
+    selection: BackendSelection,
+    base: ResolvedGenerationRequest,
+    prepared: PreparedImageInputs,
+    *,
+    strength: float,
+    preserve_outside: bool,
+    plan: Plan | None = None,
+    count: int = 1,
+    cap: int | None = None,
+) -> tuple[str, int]:
+    """Stage one prepared edit once and persist a paused queue of items that share it.
+
+    Each item records the owner-probe consent for its exact backend, checkpoint and operation; nothing is uploaded or
+    dispatched until Start, and the staged inputs stay durable evidence. Returns (queue id, cap).
+    """
+    operation = "inpaint" if prepared.mask is not None else "img2img"
+    evidence_id = f"queue-{uuid4().hex}"
+    permit = session.owner_probe_permit(selection, base.model_id, operation, evidence_id)
+    permit.validate_scope(
+        permit.backend_id, session.image_endpoint_label(selection), base.model_id, operation, allow_probe=True
+    )
+    # Pixel validation and the exclusive durable write run on a worker, never on the orchestration loop.
+    staged = await settle(
+        asyncio.to_thread(snapshot_image_inputs, state, uuid4().hex, prepared, preserve_outside=preserve_outside)
+    )
+    edit = replace(
+        base,
+        request_id=uuid4().hex,
+        operation=operation,
+        strength=strength,
+        image_inputs=staged,
+        resolution_evidence=(
+            *base.resolution_evidence,
+            ("image_permit_evidence", evidence_id),
+            ("image_permit_status", permit.status),
+        ),
+    )
+    items = expand_items(edit, count) if plan is None else expand_plan(edit, plan)
+    return await create_queue(state, backend, items, cap)
+
+
 async def dispatch_queue(
     state: Path,
     queue_id: str,
@@ -93,11 +142,31 @@ async def dispatch_queue(
             recorded.get("delay", 0.0),
             recorded.get("previews", False),
         )
-        backend = session.create_backend(selection, timeouts=policy, saved=saved)
+        # Staged edits carry their own recorded per-item consent; each distinct checkpoint/operation gets one exact
+        # owner-probe permit for this dispatch. No consent, no permit: such items are refused before any upload.
+        permits = tuple(
+            session.owner_probe_permit(selection, model, operation, evidence)
+            for model, operation, evidence in await store.image_scopes(queue_id)
+        )
+        image_options = (
+            {
+                "image_permits": permits,
+                "image_inputs_loader": lambda snapshot: restore_image_inputs(state, snapshot),
+                "allow_image_probe": True,
+            }
+            if permits
+            else {}
+        )
+        backend = session.create_backend(selection, timeouts=policy, saved=saved, **image_options)
         async with asyncio.timeout(policy.connect):
             await backend.open()
         service = GenerationService(
-            backend, store, out or state / "outputs", timeouts=policy, assets=session.asset_validator(backend)
+            backend,
+            store,
+            out or state / "outputs",
+            timeouts=policy,
+            assets=session.asset_validator(backend),
+            input_state=state if permits else None,
         )
         # Real adapters accept only inventory-listed models, so refresh once before dispatching.
         await service.get_inventory(refresh=True)

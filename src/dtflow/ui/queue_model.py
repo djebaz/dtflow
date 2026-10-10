@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor
 from dtflow.ui.queue_presenter import ItemRow
 from dtflow.ui.theme import load_tokens
 
-COLUMNS = ("#", "Item", "Seed", "State", "Attempt", "Outputs")
+COLUMNS = ("#", "Item", "Seed", "State", "Attempt", "Outputs", "Edit")
 # Shared state tokens; "secondary" keeps the default text color. Unknown is neutral gray, never tinted.
 _TOKENS = load_tokens()
 LEVEL_COLORS = {
@@ -44,6 +44,7 @@ class QueueItemModel(QAbstractTableModel):
             row.state_text,
             (row.attempt_id or "—")[:8],
             f"{len(row.outputs)} file(s)" if row.outputs else "—",
+            row.edit_text,
         )[column]
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):

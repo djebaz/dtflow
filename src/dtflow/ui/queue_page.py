@@ -19,9 +19,11 @@ from dtflow.core.models import BackendEvent, ValidationError
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
+from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan
 from dtflow.services.queue_session import (
     clear_queues,
+    create_edit_queue,
     create_queue,
     dispatch_queue,
     expand_items,
@@ -29,7 +31,7 @@ from dtflow.services.queue_session import (
     read_queue_views,
     set_concurrency,
 )
-from dtflow.services.session import bind_prepared
+from dtflow.services.session import bind_prepared, selection_for
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
@@ -115,12 +117,15 @@ class QueuePage:
         request_source: Callable,
         activity: Activity,
         simulation_source: Callable[[], dict] = dict,
+        edit_source: Callable = lambda: None,
+        editing_source: Callable[[], bool] = lambda: False,
         created_hook: Callable[[], None] = lambda: None,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
+        self._edit_source, self._editing = edit_source, editing_source
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
         self._select_after: str | None = None
@@ -409,8 +414,15 @@ class QueuePage:
             )
         )
 
+    def sync_edit_fields(self) -> None:
+        """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode."""
+        editing = self._editing()
+        self.page.planStrengthsLabel.setVisible(editing)
+        self.page.planStrengthsEdit.setVisible(editing)
+
     def _sync(self) -> None:
         page = self.page
+        self.sync_edit_fields()
         view = self._view()
         available = self._controls_for(view)
         page.startQueueButton.setEnabled(available.start)
@@ -491,10 +503,37 @@ class QueuePage:
         count, cap = self.page.queueCountSpinBox.value(), self.page.concurrencySpinBox.value()
         self._message(Presentation("warning", "Creating", "Persisting a paused queue; no backend is contacted."))
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
-        self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan), self._created)
+        job = self._edit_source()
+        self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan, job), self._created)
 
-    async def _create(self, backend, request, asset_ids, count, cap, plan: Plan | None = None):
+    async def _create(self, backend, request, asset_ids, count, cap, plan: Plan | None = None, job=None):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
+        if job is not None:
+            # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
+            selection = await asyncio.to_thread(
+                selection_for, backend["name"], backend["endpoint"], self._state, **self._simulation()
+            )
+            prepared = await asyncio.to_thread(
+                prepare_edit_inputs,
+                job.source,
+                job.mask,
+                request.width_px,
+                request.height_px,
+                grow=job.grow,
+                feather=job.feather,
+            )
+            return await create_edit_queue(
+                self._state,
+                backend,
+                selection,
+                request,
+                prepared,
+                strength=job.strength,
+                preserve_outside=job.keep_outside,
+                plan=plan,
+                count=count,
+                cap=cap,
+            )
         items = expand_plan(request, plan) if plan is not None else expand_items(request, count)
         return await create_queue(self._state, backend, items, cap)
 
@@ -512,6 +551,7 @@ class QueuePage:
             page.planSizesEdit.text(),
             page.planLorasEdit.toPlainText(),
             page.planIncrementCheck.isChecked(),
+            page.planStrengthsEdit.text(),
         )
 
     def _mark_plan(self, widget_name: str | None) -> None:
@@ -555,7 +595,7 @@ class QueuePage:
         self._mark_plan(None)
         try:
             plan = build_plan(self._plan_form())
-            table = describe_plan(request, plan)
+            table = describe_plan(request, plan, edit=self._edit_source() is not None)
         except ValidationError as exc:
             # One place for the error: beside the plan, with the owning field marked.
             error = plan_error(exc)
