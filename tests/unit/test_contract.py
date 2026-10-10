@@ -81,7 +81,11 @@ def forbidden_imports(
 def test_core_and_services_have_no_provider_or_presentation_imports():
     for directory in ("core", "services"):
         for path in (ROOT / "src/dtflow" / directory).glob("*.py"):
-            allow_pillow = directory == "services" and path.name in ("image_export.py", "image_quality.py")
+            allow_pillow = directory == "services" and path.name in (
+                "image_export.py",
+                "image_quality.py",
+                "image_preparation.py",
+            )
             assert not forbidden_imports(path.read_text(), f"dtflow.{directory}", allow_pillow=allow_pillow), path
     importlib.import_module("dtflow.core.models")
     importlib.import_module("dtflow.services.generation")
@@ -94,7 +98,11 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
         if relative.parts[:2] == ("backends", "drawthings") or relative.parts[:1] == ("ui",):
             continue  # the Qt shell may import Qt; every other package may not
         package = ".".join(("dtflow", *relative.parts[:-1]))
-        allow_pillow = relative.parts in (("services", "image_export.py"), ("services", "image_quality.py"))
+        allow_pillow = relative.parts in (
+            ("services", "image_export.py"),
+            ("services", "image_quality.py"),
+            ("services", "image_preparation.py"),
+        )
         assert not forbidden_imports(path.read_text(), package, backends=False, allow_pillow=allow_pillow), path
 
 

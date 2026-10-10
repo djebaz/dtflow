@@ -65,3 +65,8 @@ Noise/blank export routing is a default-on advisory option: flagged copies and m
 ## Disposable-cache coordination
 
 `<state>/cache.lock` is the shared OS-lock coordination file for cache readers/writers and cleanup. It is outside `cache/` categories, not durable generation ownership, and must not be deleted to clear active ownership. Inventory/image-analysis persistence, export computation/checkpoints and bounded category measurement/purge use the common nonblocking lease. No-cache export bypasses persistent cache; busy cache export falls back to uncached work. See [cache-management architecture](cache-management.md) for redirected-path refusal, partial-failure semantics and acceptance boundaries.
+
+
+## Planned image-operation inputs (not yet written)
+
+The [image-operation architecture](image-operations.md) reserves `<state>/inputs/<attempt-id>/` for durable immutable source/mask/blend/transform snapshots. The current headless preparation slice returns content in memory and writes no inputs or outputs. Future raw/final evidence stays in `outputs/<attempt-id>/`; only explicitly registered final gallery artifacts participate in export/recycle. Inputs/masks/raw evidence are not disposable cache and must never become export/recycle targets by scanning attempt folders. No schema migration or input cleanup is introduced by this preparation slice.

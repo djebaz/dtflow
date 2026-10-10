@@ -411,6 +411,9 @@ The [Qt system Trash follow-up](2026-10-09-qt-system-trash.md) provides a source
 Planned separately from the implemented 8A–8D scope: add multi-image selection in Images and bulk deletion of selected saved originals or all images matching the current gallery filter across all pages. Require confirmation showing the affected count, preserve exported copies/unrelated outputs and execution audit history, reconcile artifact availability and report partial failures without regeneration or attempt replay. See the [8E image-management plan](2026-10-09-phase-8e-image-management.md); deletion/recovery policy and selection lifetime must be settled before implementation. Other organisation candidates are not implicitly approved.
 ### Phase 9 — Advanced image operations
 
+Draft PR #64 starts a [backend-first 9A/9B/9C integration](2026-10-10-smart-mask-inpainting.md), not a declaration that earlier image-operation slices are implemented. Headless preparation/compositing building blocks are source-present only; wire, durable inputs, schema migration, owner checkpoint acceptance and editor/analysis remain pending. No tests or inference under fast-implement. See [image-operation architecture](../architecture/image-operations.md).
+
+
 Deliver bounded slices: 9A verified image-to-image, 9B inpainting with existing mask files, and 9C interactive mask painting plus selected controls/reference combinations. Release useful slices independently; do not wait for every model/control combination.
 
 New image operations create genuinely new request/content paths, so test their operation-specific semantics while inheriting common authentication, TLS, generic streaming, output validation and persistence behavior when the same implementation path is reused.

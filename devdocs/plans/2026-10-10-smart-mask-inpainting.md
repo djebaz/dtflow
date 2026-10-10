@@ -30,7 +30,7 @@ This plan implements the owner's approved conversation design, archived below un
 - [ ] Packaging: CPU ONNX runtime/new forms; no bundled weights
 
 ## Action items in dependency order
-- [ ] 1. Headless preparation: bounded EXIF/RGB decoding, binary polarity, mask-file validation, aspect-preserving fitting/padding, grow/shrink, inward feather and immutable content hashes. Document this slice immediately.
+- [x] 1. Headless preparation (source only, unverified): bounded EXIF/RGB decoding, binary polarity, mask-file validation, aspect-preserving fitting/padding, grow/shrink, inward feather and immutable content hashes. Document this slice immediately.
 - [ ] 2. Durable source-image path: request/attempt/storage schema changes, immutable input snapshots, strength and capability checks, CLI/queue/planner refusal, reproducible migration and failure evidence. Update architecture/runtime/status/release docs with this slice.
 - [ ] 3. Local and DT+ img2img/inpaint wire encoding: exact cloud descriptions, image/mask transport before authorization, verification of effective settings and no unsupported fallback. Update backend docs with code.
 - [ ] 4. USER: separately authorize and record one bounded exact checkpoint/backend headless img2img plus mask-file inpaint acceptance. Nothing runs automatically under fast-implement; keep unsupported combinations refused. No editor/analysis promotion before this gate.
@@ -70,3 +70,6 @@ No tests added/run, validation commands, smoke runs, renders, builds or inferenc
 - Reviewer identified missing 9A/9B prerequisites and backend-first ordering. This revision supersedes the original action order while retaining the approved interaction contract.
 - Uncommitted selector extraction parked under ignored `tmp/smart-mask-deferred-scaffolding/`; it is not production code and is not part of the PR.
 - Starting headless preparation only; request schema, adapters, acceptance gate and UI remain pending.
+
+- First runtime slice adds `core/image_inputs.py` and `services/image_preparation.py`. Optional compositor exists as a pure pixel helper only; output registration/persistence and the rest of slice 5 remain pending. No request/storage schema is bumped yet.
+- AGENTS and the existing authoritative import-boundary allowlist are updated narrowly for Pillow in the new headless service. No tests added or run; owner/CI validation remains required. No ONNX production dependency is introduced in this slice.

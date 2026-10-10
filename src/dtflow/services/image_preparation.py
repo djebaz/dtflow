@@ -1,0 +1,209 @@
+"""Headless, non-generative source/mask preparation for future Phase 9A/9B dispatch.
+
+No provider calls, persistence, metadata copying or source writes. Callers run these
+bounded CPU operations on a worker, never on the Qt/orchestration event-loop thread.
+"""
+
+import hashlib
+import io
+import math
+import warnings
+from pathlib import Path
+
+from PIL import Image, ImageChops, ImageFilter, ImageOps
+
+from dtflow.core.image_inputs import (
+    IMAGE_BYTE_LIMIT,
+    IMAGE_PIXEL_LIMIT,
+    ImageContent,
+    ImageFit,
+    PreparedImageInputs,
+)
+from dtflow.core.models import ValidationError
+
+ALGORITHM = "dtflow-image-preparation-v1"
+MASK_THRESHOLD = 127  # strictly greater -> selected; canonical binary output is 0/255
+
+
+def _read(path: Path, label: str) -> bytes:
+    """Bound actual bytes read, not only a racy filesystem size observation."""
+    try:
+        with Path(path).open("rb") as stream:
+            encoded = stream.read(IMAGE_BYTE_LIMIT + 1)
+    except OSError as exc:
+        raise ValidationError(f"{label} could not be read.") from exc
+    if not encoded or len(encoded) > IMAGE_BYTE_LIMIT:
+        raise ValidationError(f"{label} is empty or exceeds 64 MiB.")
+    return encoded
+
+
+def _decode(encoded: bytes, label: str) -> Image.Image:
+    if not isinstance(encoded, bytes) or not 0 < len(encoded) <= IMAGE_BYTE_LIMIT:
+        raise ValidationError(f"{label} is empty or exceeds 64 MiB.")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(encoded)) as opened:
+                if opened.width * opened.height > IMAGE_PIXEL_LIMIT:
+                    raise ValidationError(f"{label} exceeds 16 million pixels.")
+                if getattr(opened, "n_frames", 1) != 1 and opened.format != "MPO":
+                    raise ValidationError(f"{label} must be a single image; animated inputs are unsupported.")
+                opened.seek(0)
+                return ImageOps.exif_transpose(opened).copy()
+    except ValidationError:
+        raise
+    except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise ValidationError(f"{label} could not be decoded safely.") from exc
+
+
+def _content(image: Image.Image) -> ImageContent:
+    """Encode fresh pixels without inherited EXIF, ICC, prompts or arbitrary PNG chunks."""
+    clean = Image.new(image.mode, image.size)
+    clean.paste(image)
+    stream = io.BytesIO()
+    clean.save(stream, format="PNG")
+    encoded = stream.getvalue()
+    return ImageContent(encoded, hashlib.sha256(encoded).hexdigest(), image.width, image.height, len(image.getbands()))
+
+
+def _verified(content: ImageContent) -> Image.Image:
+    if hashlib.sha256(content.encoded).hexdigest() != content.sha256:
+        raise ValidationError("Prepared image content digest mismatch.")
+    image = _decode(content.encoded, "Prepared content")
+    expected_mode = "RGB" if content.channels == 3 else "L"
+    if image.mode != expected_mode or image.size != (content.width, content.height):
+        raise ValidationError("Prepared image content does not match its recorded pixels.")
+    return image
+
+
+def _fit(source: tuple[int, int], target: tuple[int, int]) -> ImageFit:
+    width, height = target
+    if any(type(x) is not int or not 128 <= x <= 2048 or x % 64 for x in target):
+        raise ValidationError("Generation dimensions must be multiples of 64 in 128..2048.")
+    scale = min(width / source[0], height / source[1])
+    fitted_width = min(width, max(1, round(source[0] * scale)))
+    fitted_height = min(height, max(1, round(source[1] * scale)))
+    return ImageFit(
+        source[0],
+        source[1],
+        width,
+        height,
+        (width - fitted_width) // 2,
+        (height - fitted_height) // 2,
+        fitted_width,
+        fitted_height,
+    )
+
+
+def prepare_image_bytes(
+    source_bytes: bytes,
+    width: int,
+    height: int,
+    *,
+    mask_bytes: bytes | None = None,
+    grow: int = 0,
+    feather: float = 0.0,
+) -> PreparedImageInputs:
+    """Snapshot oriented RGB/source mask and jointly fit them without stretching.
+
+    Mask alpha is ignored: luminance strictly >127 selects pixels. Masks must match
+    the oriented source grid; no implicit mask resize. Grow/shrink is a square-kernel
+    source-pixel adjustment. Feather is Gaussian edge softness clipped *inside* the
+    final binary support, not a promise of anatomy-aware segmentation.
+    """
+    if type(grow) is not int or not -64 <= grow <= 64:
+        raise ValidationError("Mask grow must be an integer in -64..64 source pixels.")
+    if type(feather) not in (int, float) or not math.isfinite(feather) or not 0 <= feather <= 64:
+        raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+    if mask_bytes is None and (grow or feather):
+        raise ValidationError("Mask adjustments require a mask.")
+    oriented = _decode(source_bytes, "Source image").convert("RGBA")
+    source = Image.new("RGBA", oriented.size, "white")
+    source.alpha_composite(oriented)
+    source = source.convert("RGB")
+    fit = _fit(source.size, (width, height))
+    fitted = Image.new("RGB", (width, height), "white")
+    fitted.paste(
+        source.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS),
+        (fit.left, fit.top),
+    )
+    if mask_bytes is None:
+        return PreparedImageInputs(_content(source), _content(fitted), fit)
+    mask = _decode(mask_bytes, "Mask image")
+    if mask.size != source.size:
+        raise ValidationError("Mask dimensions must match the EXIF-oriented source image.")
+    mask = mask.convert("L").point(lambda x: 255 if x > MASK_THRESHOLD else 0)
+    if grow:
+        # Explicit black border makes erosion at source edges honest and prevents
+        # implicit edge replication from inventing selected outside-source pixels.
+        border = abs(grow)
+        padded = ImageOps.expand(mask, border=border, fill=0)
+        kernel = ImageFilter.MaxFilter if grow > 0 else ImageFilter.MinFilter
+        mask = padded.filter(kernel(2 * border + 1)).crop(
+            (border, border, border + mask.width, border + mask.height)
+        )
+    if mask.getbbox() is None:
+        raise ValidationError("Inpainting mask is empty after threshold/adjustments.")
+    blend = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(feather))) if feather else mask.copy()
+    fitted_mask = Image.new("L", (width, height), 0)
+    fitted_mask.paste(
+        mask.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST),
+        (fit.left, fit.top),
+    )
+    if fitted_mask.getbbox() is None:
+        raise ValidationError("Selected mask disappears at the generation resolution; enlarge the region or target.")
+    return PreparedImageInputs(
+        _content(source),
+        _content(fitted),
+        fit,
+        _content(mask),
+        _content(fitted_mask),
+        _content(blend),
+        grow,
+        float(feather),
+    )
+
+
+def prepare_image_files(
+    source: Path,
+    width: int,
+    height: int,
+    *,
+    mask: Path | None = None,
+    grow: int = 0,
+    feather: float = 0.0,
+) -> PreparedImageInputs:
+    """Read external inputs once; returned snapshots never depend on their mutable paths."""
+    return prepare_image_bytes(
+        _read(source, "Source image"),
+        width,
+        height,
+        mask_bytes=_read(mask, "Mask image") if mask is not None else None,
+        grow=grow, feather=feather,
+    )
+
+
+def composite_image(prepared: PreparedImageInputs, generated_png: bytes) -> ImageContent:
+    """Return a source-sized composite; preserve prepared-source pixels outside support.
+
+    Raw generated bytes must be durably retained separately by the caller. This pure
+    function does not register outputs, update attempts or establish provider success.
+    """
+    if prepared.mask is None or prepared.blend_mask is None:
+        raise ValidationError("Compositing requires prepared inpainting masks.")
+    generated = _decode(generated_png, "Generated image")
+    if generated.size != (prepared.fit.target_width, prepared.fit.target_height):
+        raise ValidationError("Generated dimensions do not match the prepared generation target.")
+    generated = generated.convert("RGB").crop(prepared.fit.crop_box)
+    generated = generated.resize((prepared.source.width, prepared.source.height), Image.Resampling.LANCZOS)
+    source = _verified(prepared.source)
+    alpha = _verified(prepared.blend_mask)
+    binary = _verified(prepared.source_mask)
+    if any(count for value, count in enumerate(binary.histogram()) if value not in (0, 255)):
+        raise ValidationError("Prepared source mask must be binary.")
+    # Reject forged/inconsistent support instead of allowing a blend mask to modify
+    # pixels which the authoritative binary mask says must be preserved.
+    outside_alpha = ImageChops.multiply(alpha, ImageOps.invert(binary))
+    if outside_alpha.getbbox() is not None:
+        raise ValidationError("Blend mask extends outside selected mask support.")
+    return _content(Image.composite(generated, source, alpha))
