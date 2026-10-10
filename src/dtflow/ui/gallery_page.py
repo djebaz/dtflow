@@ -1547,6 +1547,13 @@ class GalleryPage(QObject):
         self._widget("galleryPositivePrompt").setPlainText(item.prompt or "Not recorded")
         self._widget("galleryAdditionalNegativePromptValue", QLabel).setText(item.negative or "Not recorded")
         self._widget("galleryAdditionalSeedValue", QLabel).setText(self._value(request.get("seed")))
+        operation = request.get("operation")
+        self._widget("galleryAdditionalOperationValue", QLabel).setText(
+            {"txt2img": "Text to image", "img2img": "Image to image", "inpaint": "Inpaint"}.get(
+                operation, self._value(operation)
+            )
+        )
+        self._widget("galleryAdditionalStrengthValue", QLabel).setText(self._value(request.get("strength")))
         self._widget("galleryAdditionalFilenameValue", QLabel).setText(Path(item.path).name)
         self._widget("galleryAdditionalProviderValue", QLabel).setText(item.backend_id or "Not recorded")
         self._widget("galleryAdditionalFileSizeValue", QLabel).setText(_human_size(item.file_size))
@@ -1972,6 +1979,8 @@ class GalleryPage(QObject):
         for name in (
             "galleryAdditionalNegativePromptValue",
             "galleryAdditionalSeedValue",
+            "galleryAdditionalOperationValue",
+            "galleryAdditionalStrengthValue",
             "galleryAdditionalFilenameValue",
             "galleryAdditionalProviderValue",
             "galleryAdditionalFileSizeValue",
