@@ -95,7 +95,8 @@ def load_detail(item: GalleryItem) -> GalleryDetail:
         metadata = json.loads(encoded)
         if (
             not isinstance(metadata, dict)
-            or metadata.get("schema_version") != 1
+            or type(metadata.get("schema_version")) is not int
+            or metadata.get("schema_version") not in (1, 2)
             or metadata.get("attempt_id") != item.attempt_id
         ):
             raise ValueError

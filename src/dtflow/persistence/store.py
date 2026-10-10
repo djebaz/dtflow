@@ -12,13 +12,22 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from dtflow.core.models import BackendFailure, RemoteOutcome, ResolvedGenerationRequest, SubmissionStage
+from dtflow.core.models import (
+    BackendFailure,
+    RemoteOutcome,
+    ResolvedGenerationRequest,
+    SubmissionStage,
+    ValidationError,
+)
+from dtflow.core.request_records import upgraded_request_record
 from dtflow.core.tasks import settle
 from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin
 
-# 1: attempts only (release 0.1.0). 2: adds queues, items, controls and events; a 1 -> 2 open migrates atomically.
-SCHEMA_VERSION = 2
+# 1: attempts only. 2: queues. 3: explicit request v2/image-input references.
+# A supported older writer open backs up, then migrates/reconciles transactionally.
+SCHEMA_VERSION = 3
 
 
 class PersistenceError(RuntimeError):
@@ -96,12 +105,14 @@ class SQLiteAttempts(QueueMixin):
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=2000")
-            if version == 1:
-                # Keep a recoverable copy of the release 0.1.0 records before the first write by this version.
-                copy = self.directory / "attempts.pre-v2.sqlite3"
-                if not copy.exists():
-                    with closing(sqlite3.connect(copy)) as destination:
-                        connection.backup(destination)
+            if version in (1, 2):
+                # A fresh consistent backup for each migration attempt; never rely
+                # on an old/partial backup left by a previously failed upgrade.
+                copy = self.directory / f"attempts.pre-v3-from-v{version}-{uuid4().hex}.sqlite3"
+                with copy.open("xb"):
+                    pass
+                with closing(sqlite3.connect(copy)) as destination:
+                    connection.backup(destination)
             # One transaction covers creation or migration and ownership reconciliation: failure keeps the old state.
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -119,6 +130,8 @@ class SQLiteAttempts(QueueMixin):
                 )""")
                 for statement in QUEUE_SCHEMA:
                     connection.execute(statement)
+                if version in (1, 2):
+                    self._migrate_requests(connection)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 # Ownership lock ensures we are not reconciling another live dispatcher.
                 now = self._now()
@@ -147,6 +160,34 @@ class SQLiteAttempts(QueueMixin):
             raise
 
     @staticmethod
+    def _migrate_requests(connection: sqlite3.Connection) -> None:
+        """Preserve identities/artifacts/state; only make txt2img request fields explicit."""
+        for table, key in (("attempts", "attempt_id"), ("queue_items", "item_id")):
+            after = None
+            while True:
+                condition = f"WHERE {key}>?" if after is not None else ""
+                rows = connection.execute(
+                    f"SELECT {key}, request_json FROM {table} {condition} ORDER BY {key} LIMIT 128",
+                    (after,) if after is not None else (),
+                ).fetchall()
+                if not rows:
+                    break
+                updates = []
+                for row in rows:
+                    try:
+                        record = json.loads(row["request_json"])
+                        if not isinstance(record, dict) or record.get("operation", "txt2img") != "txt2img":
+                            raise ValidationError("Historical execution requests must remain text-to-image.")
+                        upgraded = upgraded_request_record(record)
+                        updates.append((json.dumps(upgraded, allow_nan=False), row[key]))
+                    except (ValueError, TypeError, KeyError) as exc:
+                        raise PersistenceError(
+                            "Request migration refused; original execution state was preserved."
+                        ) from exc
+                connection.executemany(f"UPDATE {table} SET request_json=? WHERE {key}=?", updates)
+                after = rows[-1][key]
+
+    @staticmethod
     def _now() -> str:
         return datetime.now(UTC).isoformat()
 
@@ -159,6 +200,8 @@ class SQLiteAttempts(QueueMixin):
         await self._run(self._create, attempt_id, backend_id, request)
 
     def _create(self, attempt_id: str, backend_id: str, request: ResolvedGenerationRequest) -> None:
+        if request.image_inputs is not None and request.image_inputs.attempt_id != attempt_id:
+            raise PersistenceError("Image inputs must belong to the newly created attempt.")
         db = self._db()
         with db:
             db.execute(

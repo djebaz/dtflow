@@ -177,6 +177,8 @@ def _combinations(plan: Plan, total: int):
 
 def expand_plan(base: ResolvedGenerationRequest, plan: Plan) -> list[ResolvedGenerationRequest]:
     """Ordered, fully resolved requests for the plan; every failure is raised before anything is enqueued."""
+    if base.operation != "txt2img":
+        raise PlanError("Image-operation batches/plans are not supported.")
     total = plan_size(plan)
     if total > MAX_QUEUE_ITEMS:
         raise PlanError(f"The plan would create {total} items; one queue holds at most {MAX_QUEUE_ITEMS}.")

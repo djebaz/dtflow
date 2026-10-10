@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTFlow — Inpaint Interaction Reference</title>
+<style>
+:root{color-scheme:dark;--bg:#1f1f1f;--surface:#252525;--input:#1e1e1e;--canvas:#151515;--text:#e6e6e6;--secondary:#b2b2b2;--border:#3a3a3a;--accent:#0068b8;--accentHover:#0078d4;--focus:#60b6f6;--selection:#173852;--selectionEdge:#285d84;--success:#78c97c;--warning:#ffbf59;--danger:#ff8179;--dangerSurface:#432323;--dangerBorder:#c62828;--button:#2d2d2d;--buttonEdge:#424242;--toolbar:#242424;--sectionHeader:#2b2b2b;--sectionBorder:#343434;--itemSurface:#222;font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:13px}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#10151d;color:var(--text)}
+button,input,select{font:inherit}button{color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button:disabled{color:#777;border-color:#303030;cursor:not-allowed;background:var(--button)}
+[hidden]{display:none!important}
+#page{min-height:100vh;padding:19px 20px 28px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.demo-toolbar{max-width:1500px;width:100%;display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:space-between;border:1px solid #303b4e;border-radius:11px;background:#172130;padding:12px 15px}
+.demo-title{font-size:14px;font-weight:650;color:#f0f4fb}.demo-kicker{color:#879fb8;font-size:11px;margin-top:2px}
+.demo-control{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.demo-label{font-size:11px;color:#a8b7c8;margin-right:4px}
+.demo-control button{background:#212d3b;border:1px solid #35475a;border-radius:6px;padding:7px 11px;font-size:11px;color:#c9d5e4;white-space:nowrap}
+.demo-control button:hover{background:#30445c}
+.demo-guide{max-width:1500px;width:100%;color:#93a5b8;font-size:11px;line-height:1.5}
+.app-window{width:min(1500px,100%);height:860px;background:var(--bg);display:flex;flex-direction:column;border-radius:8px;border:1px solid #373e4a;box-shadow:0 20px 55px #0009;overflow:hidden;position:relative}
+.windows-bar{height:28px;flex:none;display:flex;align-items:center;padding:0 11px 0 8px;background:#0b0b0c;color:#eee;font-size:12px}
+.shell{flex:1;display:flex;gap:8px;padding:8px;min-height:0}
+.rail{width:284px;flex:none;display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto;scrollbar-width:thin}
+.center{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.brand{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 2px}
+.brand b{font-size:21px;font-weight:600;letter-spacing:-.5px;display:flex;align-items:center;gap:9px}
+.mark{width:30px;height:30px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:#fff;font-size:15px;font-weight:700}
+.run-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;border:3px dashed #47484b;background:#252628;color:#737679;font-size:14px}
+.nav{display:flex;gap:5px;align-items:center}
+.nav button{height:32px;border:1px solid transparent;background:transparent;color:#bcbcbc;border-radius:6px;padding:0 12px}
+.nav button.active{background:var(--selection);color:var(--text);border-color:#275372}
+.nav .conn{width:38px;border:1px solid var(--buttonEdge);background:var(--button);padding:0}
+.card{background:var(--surface);border:1px solid #333;border-radius:8px;flex:none;overflow:hidden}
+.hd{background:var(--sectionHeader);border-bottom:1px solid var(--sectionBorder);padding:7px 12px;font-size:12px;font-weight:600}
+.bd{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.cap{font-size:12px;font-weight:500;color:var(--secondary)}.sup{font-size:12px;color:var(--secondary)}
+.form{display:grid;grid-template-columns:78px 1fr;gap:8px;align-items:center}
+.fld,select,input[type=text],input[type=number]{background:var(--input);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:#eaeaea;min-height:28px;width:100%}
+select:hover,input:hover{border-color:#606060}
+.row{display:flex;gap:6px;align-items:center}.row>*{min-width:0}
+.btn{background:var(--button);border:1px solid var(--buttonEdge);border-radius:6px;color:#eee;font-weight:500;padding:5px 10px;min-height:30px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn:hover:not(:disabled){background:#353535;border-color:#5a5a5a}
+.btn.pri{background:var(--accent);border-color:#1085dd;color:#fff;font-weight:600}.btn.pri:hover:not(:disabled){background:var(--accentHover)}
+.btn.pri:disabled{background:var(--button);color:#777}
+.btn.on{background:var(--selection);border-color:var(--selectionEdge);color:#d5ecff}
+.btn.danger{background:var(--dangerSurface);border-color:var(--dangerBorder);color:#ff9d97}
+.seg{display:flex;border:1px solid var(--buttonEdge);border-radius:6px;overflow:hidden}
+.seg button{flex:1;border:0;border-radius:0;background:var(--button);color:var(--secondary);padding:6px 8px;white-space:nowrap;font-weight:500}
+.seg button.on{background:var(--selection);color:#d5ecff}
+.chkrow{display:flex;gap:7px;align-items:center}.chkrow input{width:14px;height:14px;min-height:0;accent-color:var(--accent)}
+.item{background:var(--itemSurface);border:1px solid #333;border-radius:6px;padding:6px 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.item.on{background:var(--selection);border-color:var(--selectionEdge);color:#d5ecff}
+.item button{background:none;border:0;color:var(--secondary);padding:0;font-size:12px;text-decoration:underline}
+.prompt{background:var(--input);border:1px solid var(--border);border-radius:5px;padding:8px 10px;min-height:52px;position:relative;color:var(--text)}
+.stage{flex:1;min-height:0;background:var(--canvas);border:1px solid #353535;border-radius:8px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.stage .holder{position:relative;box-shadow:0 0 0 1px #2a2a2a}
+.stage canvas{display:block}
+.stage .over{position:absolute;inset:0;cursor:crosshair}
+.tb{position:absolute;background:var(--toolbar);border:1px solid var(--buttonEdge);border-radius:6px;padding:3px;display:flex;gap:3px;align-items:center;z-index:3;flex-wrap:wrap;max-width:calc(100% - 20px)}
+.tb .btn{min-height:26px;padding:2px 9px;font-size:12px}
+.grp{display:flex;gap:3px;align-items:center}.muted{opacity:.38;filter:grayscale(1)}[inert]{pointer-events:none}
+.glyph{height:16px;width:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}.btn.icon{width:30px;padding:2px 0}
+.tb .sep{width:1px;height:18px;background:var(--buttonEdge)}
+.tb input[type=range]{width:78px;accent-color:#1695e0}
+.badge{position:absolute;z-index:2;background:var(--toolbar);border-radius:4px;padding:4px 8px;font-size:12px;color:var(--secondary);display:flex;gap:6px;align-items:center}
+.chess{width:26px;height:14px;border-radius:3px;border:1px solid var(--buttonEdge);background-color:#fff;background-image:linear-gradient(45deg,#bbb 25%,transparent 25%,transparent 75%,#bbb 75%),linear-gradient(45deg,#bbb 25%,transparent 25%,transparent 75%,#bbb 75%);background-size:8px 8px;background-position:0 0,4px 4px;position:relative;overflow:hidden;flex:none}
+.chess i{position:absolute;inset:0;background:#0078d4;opacity:.45}
+.status{font-size:12px;color:var(--secondary);min-height:17px;padding:0 2px}.status.warn{color:var(--warning)}.status.ok{color:var(--success)}
+.thumb{background:#000;border:1px solid var(--border);border-radius:6px;display:block;width:100%}
+.empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--secondary);z-index:1}
+.statusbar{height:24px;flex:none;background:var(--toolbar);border-top:1px solid #333;display:flex;align-items:center;justify-content:space-between;padding:0 8px;font-size:12px}
+/* Shared bottom overlay: absolute, never a layout participant. */
+.dock{position:absolute;left:8px;right:8px;bottom:30px;z-index:10;border-radius:7px;border:1px solid #31668b;background:linear-gradient(100deg,#1d2935,#202426);padding:8px 12px;display:flex;align-items:center;gap:12px;min-height:46px;overflow:hidden;box-shadow:0 -3px 14px #0005}
+.dock.success{background:linear-gradient(108deg,#123e36,#202627 85%);border-color:#16947e}
+.dock.error{background:linear-gradient(105deg,#432323,#242424);border-color:var(--dangerBorder)}
+.srcrow{display:flex;gap:10px;align-items:center}.srcthumb{width:56px;height:42px;border-radius:4px;border:1px solid var(--border);background:#000;flex:none}.srcerr{color:#ff9d97;font-size:12px}
+.dock.confirm{background:linear-gradient(105deg,#432323,#242424);border-color:var(--dangerBorder)}
+.dock .t{font-weight:600}.dock .s{color:#c3cdd6;flex:1;font-size:12px}
+.dock .bar{height:5px;background:#2a2a2a;border-radius:3px;width:240px;flex:none;overflow:hidden}.dock .bar i{display:block;height:100%;background:#1695e0;width:0}
+.dock .life{position:absolute;left:0;bottom:0;width:100%;height:2px;background:#38d6ac;transform-origin:left center}
+</style>
+</head>
+<body>
+<div id="page">
+  <div class="demo-toolbar">
+    <div><div class="demo-title">DTFlow — Inpaint Interaction Reference</div><div class="demo-kicker">Offline illustrative mockup. Nothing is generated, uploaded or detected: zones are hand-drawn vectors.</div></div>
+    <div class="demo-control"><span class="demo-label">State</span>
+      <button data-demo="reset">Reset</button><button data-demo="selected">Person selected</button><button data-demo="nosource">No source</button><button data-demo="rejected">Rejected file</button><button data-demo="unconfirmed">Unconfirmed checkpoint</button><button data-demo="find">Find people</button><button data-demo="result">Saved result</button>
+    </div>
+  </div>
+  <div class="demo-guide"><b>Try:</b> <b>Select</b> and <b>Paint</b> are two modes of one mask: edits from both add up, and the right panel swaps to that mode's controls. In Select, hover a person and click to add (Alt removes); in Paint, Brush, Erase, Rectangle and Circle draw on the same mask; Undo/Redo; Source / Mask / Result views; <b>Edit image</b> runs a simulated edit. The blue tint is a fixed 45% accent, not a user setting. Grow and Feather are not simulated.</div>
+
+  <div class="app-window" id="app">
+    <div class="windows-bar">DTFlow</div>
+    <div class="shell">
+      <div class="rail">
+        <div class="brand"><b><span class="mark">D</span>DTFlow</b><span class="run-icon" aria-label="Run control">&#9654;</span></div>
+        <div class="nav"><button class="conn" aria-label="Connection">&#9211;</button><button class="active">Generate</button><button>Queues</button><button>Images</button></div>
+        <div class="card"><div class="hd">Source image</div><div class="bd">
+          <div class="srcrow"><canvas id="srcthumb" class="srcthumb" width="56" height="42" aria-hidden="true"></canvas><div style="min-width:0;flex:1"><div class="fld" id="srcname">portrait-street.jpg</div></div></div>
+          <div class="sup" id="srcmeta">2048 × 1536 · EXIF orientation applied · alpha flattened onto white · RGB</div>
+          <div class="srcerr" id="srcerr" role="alert" hidden></div>
+          <div class="row"><button class="btn" id="choose" style="flex:1">Choose image…</button><button class="btn" id="fromimages" style="flex:1">From Images</button></div>
+          <button class="btn" id="removesrc" style="width:100%">Remove image</button>
+          <div class="sup" id="srclimits">Up to 64 MiB and 16 MP. Animated or unreadable files are rejected. You can also drop an image on the canvas.</div>
+        </div></div>
+        <div class="card"><div class="hd">Backend</div><div class="bd">
+          <div class="form">
+            <span class="cap">Provider</span><select id="provider"><option>DT+ cloud</option><option>Local server</option></select>
+            <span class="cap">Generation</span><select><option>All</option><option>Image</option></select>
+            <span class="cap">Base model</span><select><option>SD 1.5</option></select>
+            <span class="cap">Checkpoint</span><select id="ckpt"><option value="ok">SD 1.5 Inpainting (f16)</option><option value="no">Flux.1 dev (q6p)</option></select>
+          </div>
+          <div class="sup" id="ckptnote" style="font-weight:600;color:var(--success)">Inpainting confirmed for this checkpoint.</div>
+        </div></div>
+        <div class="card"><div class="hd">Parameters</div><div class="bd"><div class="form">
+          <span class="cap">Seed</span><input type="text" value="0">
+          <span class="cap">Steps</span><input type="number" value="20">
+          <span class="cap">Guidance</span><input type="number" value="4.5" step=".5">
+          <span class="cap">Strength</span><input type="number" value="0.75" step=".05" min="0" max="1">
+          <span class="cap">Sampler</span><select><option>dpmpp_2m_karras</option></select>
+        </div><label class="chkrow"><input type="checkbox" checked>Keep everything outside the mask</label><div class="sup">Width and height follow the source image, fitted to 64 px. Off uses the raw provider result.</div></div></div>
+      </div>
+
+      <div class="center">
+        <div class="row" style="justify-content:space-between;height:36px">
+          <span class="row" style="gap:14px"><b style="font-size:15px;font-weight:600">Prompt</b>
+            <span class="seg" style="width:250px"><button>Text to image</button><button class="on">Inpaint</button></span></span>
+          <button class="btn pri" id="go" style="min-height:36px;padding:4px 16px">&#10022; Edit image</button>
+        </div>
+        <div class="prompt">a woman in a green wool coat, wet street, evening light</div>
+        <div class="prompt" style="min-height:30px;color:#a8a8a8;padding:5px 10px">Negative prompt (optional)</div>
+        <div class="stage" id="stage">
+          <div class="empty" id="empty" hidden><div><b style="font-size:14px;color:var(--text)">Choose a source image</b><br>Then click a person or paint the area to change.<br><span style="color:var(--secondary)">Choose a file, pick from Images, or drop an image here.</span></div></div>
+          <div class="holder" id="holder">
+            <canvas id="base" width="760" height="560"></canvas>
+            <canvas id="over" class="over" width="760" height="560"></canvas>
+          </div>
+          <div class="tb" style="left:10px;top:10px" id="tools">
+            <button class="btn icon" id="undo" aria-label="Undo" title="Undo"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button><button class="btn icon" id="redo" aria-label="Redo" title="Redo"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+          </div>
+          <div class="badge" style="left:12px;top:78px" id="legend"><span class="chess"><i></i></span><span id="legendt">Blue tint = will change · fixed colour · Illustrative sample</span></div>
+          <div class="tb" style="right:10px;top:10px"><span class="seg" style="border:0" id="views" role="group" aria-label="Image view"><button class="on" data-view="source">Source</button><button data-view="mask">Mask</button><button data-view="result">Result</button></span></div>
+          <div class="tb" style="left:10px;bottom:10px"><button class="btn">Fit</button><button class="btn">100%</button><button class="btn">−</button><button class="btn">+</button></div>
+          <div class="tb" style="right:10px;bottom:10px;color:var(--secondary);padding:5px 9px;font-size:12px" id="hint">Click adds a person · Alt removes · Shift + click also adds</div>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="rail">
+        <div class="card"><div class="hd">Mask</div><div class="bd">
+          <div class="seg" id="modes" role="group" aria-label="Edit mode"><button class="on" data-mode="select">Select</button><button data-mode="paint">Paint</button></div>
+          <div id="selpanel" class="bd" style="padding:0">
+            <button class="btn" id="find">Find people</button>
+            <div id="people" class="bd" style="padding:0"></div>
+            <div class="sup" id="findnote">Suggestions can be wrong; refine in Paint mode.</div>
+            <div class="row" style="gap:12px"><label class="chkrow"><input type="checkbox" id="lbody" checked>Body</label><label class="chkrow"><input type="checkbox" id="lcloth" checked>Clothes</label><label class="chkrow"><input type="checkbox" id="lperson">Person</label></div>
+            <div class="seg" id="bfilter"><button class="on" data-f="all">All pixels</button><button data-f="skin">Skin only</button><button data-f="cloth">Clothing only</button></div>
+            <label class="chkrow"><input type="checkbox">Expand to nearby region</label>
+          </div>
+          <div id="paintpanel" class="bd" style="padding:0" hidden>
+            <div class="seg" id="ptools"><button class="on" data-tool="brush">Brush</button><button data-tool="erase">Erase</button><button data-tool="rect">Rectangle</button><button data-tool="circle">Circle</button></div>
+            <div class="row"><label class="cap" for="bsize" style="width:78px">Brush size</label><input type="range" id="bsize" min="4" max="60" value="14" style="flex:1;accent-color:#1695e0"><span class="sup" id="bsizev" style="width:38px;text-align:right">14 px</span></div>
+            <div class="sup">Drag on the image to paint. Alt switches to erase. Edits add to the Select mode mask.</div>
+          </div>
+          <button class="btn" id="advt" aria-expanded="false" style="justify-content:space-between"><span>Advanced</span><span class="sup">Grow 0 · Feather 0 &#9656;</span></button>
+          <div id="adv" hidden class="form"><span class="cap">Grow</span><input type="number" value="0" min="0"><span class="cap">Edge feather</span><input type="number" value="0" min="0"></div>
+        </div></div>
+        <div class="card"><div class="hd">Live mask</div><div class="bd">
+          <canvas id="thumb" class="thumb" width="228" height="168"></canvas>
+          <div class="row" style="justify-content:space-between"><span class="sup" id="cover">Covers 0% of the image</span><span class="sup" id="plus" style="color:var(--focus)"></span></div>
+          <button class="btn" id="clear" style="width:100%">Clear mask</button>
+          <div class="row"><button class="btn" style="flex:1">Load mask…</button><button class="btn" style="flex:1">Save mask…</button></div>
+          <div class="cap">Edits</div><div id="edits" class="bd" style="padding:0;gap:5px"></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="statusbar"><span>DTFlow 4.0.0 | inpaint mockup | source: dev</span><span class="sup">?</span></div>
+    <section class="dock" id="dock" hidden role="status" aria-live="polite">
+      <span class="t" id="dt"></span><span class="s" id="ds"></span>
+      <span class="bar" id="dbar" hidden><i id="dfill"></i></span>
+      <button class="btn" id="dbtn" hidden></button><span class="sup" id="dcount" hidden></span>
+      <div class="life" id="dlife" hidden></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const W=760,H=560,$=id=>document.getElementById(id);
+const base=$('base'),over=$('over'),bctx=base.getContext('2d'),octx=over.getContext('2d');
+const mask=document.createElement('canvas');mask.width=380;mask.height=280;const mctx=mask.getContext('2d');mctx.scale(.5,.5);
+const probe=document.createElement('canvas').getContext('2d');
+const tmp=document.createElement('canvas');tmp.width=W;tmp.height=H;const tctx=tmp.getContext('2d');
+const tmp2=document.createElement('canvas');tmp2.width=W;tmp2.height=H;const t2=tmp2.getContext('2d');
+
+/* Hand-drawn illustrative zones in 760x560 space. Not detected from any image. */
+const P=s=>new Path2D(s);
+const circ=(x,y,r)=>{const p=new Path2D();p.arc(x,y,r,0,Math.PI*2);return p};
+const zones=[
+ {id:'p1skin',person:1,kind:'skin',path:(()=>{const p=circ(250,170,34);p.addPath(P('M215 420 L225 540 L252 540 L255 420 Z M262 420 L268 540 L296 540 L300 420 Z'));return p})()},
+ {id:'p1cloth',person:1,kind:'cloth',path:P('M205 215 Q250 200 295 215 L318 420 L182 420 Z')},
+ {id:'p2skin',person:2,kind:'skin',path:(()=>{const p=circ(500,190,31);p.addPath(P('M462 430 L468 545 L495 545 L498 430 Z M505 430 L510 545 L538 545 L540 430 Z'));return p})()},
+ {id:'p2cloth',person:2,kind:'cloth',path:P('M458 232 Q500 220 542 232 L558 430 L442 430 Z')}
+];
+function scene(c,alt){
+ const g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'#3b4258');g.addColorStop(1,'#6b5a58');c.fillStyle=g;c.fillRect(0,0,W,H);
+ c.fillStyle='#2c2a2e';c.fillRect(0,400,W,160);c.fillStyle='#2b3040';c.fillRect(40,90,120,310);c.fillStyle='#30343f';c.fillRect(600,60,130,340);
+ c.fillStyle='#c9a58d';c.fill(circ(250,170,34));c.fillStyle=alt?'#2f7a4d':'#a8322e';c.fill(zones[1].path);c.fillStyle='#2a2d3a';c.fill(P('M215 420 L225 540 L252 540 L255 420 Z M262 420 L268 540 L296 540 L300 420 Z'));
+ c.fillStyle='#b88e76';c.fill(circ(500,190,31));c.fillStyle='#3c5a78';c.fill(zones[3].path);c.fillStyle='#26282f';c.fill(P('M462 430 L468 545 L495 545 L498 430 Z M505 430 L510 545 L538 545 L540 430 Z'));
+}
+
+const T=()=>S.mode==='select'?'click':S.tool;
+const S={hasSource:true,mode:'select',tool:'brush',view:'source',people:false,found:false,running:null,hover:null,edits:[],confirm:false,result:false,drag:null,timers:[]};
+
+function coverage(canvas=mask){const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>127)n++;return n/(canvas.width*canvas.height)}
+function layers(){return{body:$('lbody').checked,cloth:$('lcloth').checked,person:$('lperson').checked,filter:document.querySelector('#bfilter .on').dataset.f}}
+function partsFor(person){const L=layers();return zones.filter(z=>z.person===person&&(L.person||(z.kind==='skin'?L.body&&L.filter!=='cloth':L.cloth&&L.filter!=='skin')))}
+function zoneAt(x,y){for(const z of zones){if(probe.isPointInPath(z.path,x,y))return z}return null}
+function pos(e){const r=over.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}}
+S.history=[];S.redoStack=[];
+function resetMask(){mctx.save();mctx.setTransform(1,0,0,1,0,0);mctx.clearRect(0,0,380,280);mctx.restore();S.history=[mctx.getImageData(0,0,380,280)];S.redoStack=[];S.edits=[]}
+function restore(img){mctx.save();mctx.setTransform(1,0,0,1,0,0);mctx.putImageData(img,0,0);mctx.restore()}
+function applyZones(parts,subtract){mctx.globalCompositeOperation=subtract?'destination-out':'source-over';mctx.fillStyle='#fff';parts.forEach(z=>mctx.fill(z.path));mctx.globalCompositeOperation='source-over'}
+function selectPerson(person,mode){const parts=partsFor(person);if(!parts.length)return;
+ applyZones(parts,mode==='sub');S.edits.push((mode==='sub'?'Remove ':'Click ')+'Person '+person+' · '+parts.map(p=>p.kind==='skin'?'Body':'Clothes').filter((v,i,a)=>a.indexOf(v)===i).join(' + '));S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0}
+function selectedPersons(){const out=[];for(const n of [1,2]){const t=zones.filter(z=>z.person===n);const probeC=document.createElement('canvas');probeC.width=380;probeC.height=280;const c=probeC.getContext('2d');c.scale(.5,.5);c.fillStyle='#fff';t.forEach(z=>c.fill(z.path));const a=c.getImageData(0,0,380,280).data,m=mctx.getImageData(0,0,380,280).data;let tot=0,hit=0;for(let i=3;i<a.length;i+=4){if(a[i]>127){tot++;if(m[i]>127)hit++}}out.push(hit/tot>.5)}return out}
+
+function whiteMask(){t2.clearRect(0,0,W,H);t2.drawImage(mask,0,0,W,H);t2.globalCompositeOperation='source-in';t2.fillStyle='#fff';t2.fillRect(0,0,W,H);t2.globalCompositeOperation='source-over';return tmp2}
+function tinted(){t2.clearRect(0,0,W,H);t2.drawImage(mask,0,0,W,H);t2.globalCompositeOperation='source-in';t2.fillStyle='#0078d4';t2.fillRect(0,0,W,H);t2.globalCompositeOperation='source-over';return tmp2}
+function resultImg(){tctx.clearRect(0,0,W,H);scene(tctx,true);tctx.globalCompositeOperation='destination-in';tctx.drawImage(mask,0,0,W,H);tctx.globalCompositeOperation='source-over';return tmp}
+function render(){
+ $('empty').hidden=S.hasSource;$('holder').hidden=!S.hasSource;
+ if(S.hasSource){
+  bctx.clearRect(0,0,W,H);
+  if(S.view==='mask'){bctx.fillStyle='#000';bctx.fillRect(0,0,W,H);bctx.drawImage(whiteMask(),0,0)}
+  else{scene(bctx,false);
+   if(S.view==='result'){if(S.result){bctx.drawImage(resultImg(),0,0)}}
+   if(S.view==='source'||S.view==='result'){bctx.globalAlpha=.45;bctx.drawImage(tinted(),0,0);bctx.globalAlpha=1}}
+  octx.clearRect(0,0,W,H);
+  if(S.hover&&S.view==='source'&&T()==='click'){const parts=partsFor(S.hover);octx.save();octx.fillStyle='rgba(96,182,246,.28)';octx.strokeStyle='#60b6f6';octx.lineWidth=2;octx.setLineDash([6,5]);parts.forEach(z=>{octx.fill(z.path);octx.stroke(z.path)});octx.restore()}
+  if(S.drag&&S.drag.rect){const r=S.drag.rect;octx.save();octx.strokeStyle='#60b6f6';octx.setLineDash([6,5]);octx.lineWidth=2;if(S.drag.tool==='circle'){octx.beginPath();octx.ellipse(r.x+r.w/2,r.y+r.h/2,r.w/2,r.h/2,0,0,Math.PI*2);octx.stroke()}else octx.strokeRect(r.x,r.y,r.w,r.h);octx.restore()}
+ }
+ // live thumbnail + coverage
+ const th=$('thumb').getContext('2d');th.fillStyle='#000';th.fillRect(0,0,228,168);th.drawImage(whiteMask(),0,0,228,168);
+ if(S.hover&&T()==='click'&&S.view==='source'){th.save();th.scale(228/W,168/H);th.fillStyle='rgba(255,255,255,.35)';th.strokeStyle='#60b6f6';th.lineWidth=4;th.setLineDash([12,8]);partsFor(S.hover).forEach(z=>{th.fill(z.path);th.stroke(z.path)});th.restore()}
+ const cov=coverage();$('cover').textContent='Covers '+Math.round(cov*100)+'% of the image';
+ $('plus').textContent=S.hover&&T()==='click'?'+'+Math.max(0,Math.round(addArea(S.hover)*100))+'% if added':'';
+ $('edits').innerHTML=S.edits.slice(-4).map((e,i,a)=>'<div class="item'+(i===a.length-1?' on':'')+'"><span>'+e+'</span></div>').join('')||'<div class="sup">No edits yet.</div>';
+ $('undo').disabled=S.history.length<2||!!S.running;$('redo').disabled=!S.redoStack.length||!!S.running;$('clear').disabled=cov===0||!!S.running;
+ document.querySelectorAll('#views button').forEach(b=>b.classList.toggle('on',b.dataset.view===S.view));
+ $('legendt').textContent=S.view==='mask'?'White = changes · black = stays · exactly what the provider receives':S.view==='result'&&S.result?'Blue tint = area that was edited · Illustrative sample':'Blue tint = will change · fixed colour · Illustrative sample';
+ $('legend').querySelector('.chess').hidden=S.view==='mask';
+ // people list
+ const sel=selectedPersons();$('people').innerHTML=S.found?[1,2].map(n=>'<div class="item'+(sel[n-1]?' on':'')+'"><span>Person '+n+'</span><button data-p="'+n+'">'+(sel[n-1]?'selected':'click to select')+'</button></div>').join(''):'<div class="sup">No people found yet. Hover zones in the image, or run Find people.</div>';
+ $('findnote').hidden=!S.found;
+ // disabled state + reason
+ const ck=$('ckpt').value==='ok';$('ckptnote').textContent=ck?'Inpainting confirmed for this checkpoint.':'Not confirmed for inpainting. Choose another checkpoint, or use a local server.';
+ $('ckptnote').style.color=ck?'var(--success)':'var(--warning)';
+ let reason='';if(!S.hasSource)reason='Edit image is unavailable: choose a source image first.';else if(cov===0)reason='Edit image is unavailable: the mask is empty. Click a person or paint the area to change.';else if(!ck)reason='Edit image is unavailable: this checkpoint is not confirmed for inpainting.';
+ $('go').disabled=!!reason||!!S.running;$('find').disabled=!S.hasSource||!!S.running;
+ const st=$('status');st.className='status'+(reason?' warn':S.result&&S.view==='result'?' ok':'');
+ st.textContent=reason||(S.result?'Saved inpaint · 1024 × 768 · seed 0 · strength 0.75 · raw provider output is kept with the composite.':'Live preview: tint, thumbnail and coverage update on every edit, before anything is generated.');
+ $('hint').textContent=T()==='click'?'Click adds a person · Alt removes · Shift + click also adds':T()==='rect'?'Drag to select a rectangle · Alt removes':T()==='circle'?'Drag to select a circle or ellipse · Alt removes':'Drag to paint · Alt switches to erase';
+ $('srcname').textContent=S.hasSource?'portrait-street.jpg':'No image chosen';$('srcmeta').textContent=S.hasSource?'2048 × 1536 · EXIF orientation applied · alpha flattened onto white · RGB':'JPEG, PNG or WebP. EXIF orientation is applied.';
+ $('removesrc').hidden=!S.hasSource;$('srcthumb').hidden=!S.hasSource;$('srcerr').hidden=!S.srcerr;$('srcerr').textContent=S.srcerr||'';if(S.hasSource)drawThumb();syncSrc();
+ const paint=S.mode==='paint';$('selpanel').hidden=paint;$('paintpanel').hidden=!paint;
+ document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===S.mode));
+ document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('on',S.mode==='paint'&&b.dataset.tool===S.tool));
+}
+function addArea(person){const parts=partsFor(person);const c=document.createElement('canvas');c.width=190;c.height=140;const x=c.getContext('2d');x.scale(.25,.25);x.fillStyle='#fff';parts.forEach(z=>x.fill(z.path));const a=x.getImageData(0,0,190,140).data;
+ const m=document.createElement('canvas');m.width=190;m.height=140;const mx=m.getContext('2d');mx.drawImage(mask,0,0,190,140);const md=mx.getImageData(0,0,190,140).data;let add=0;for(let i=3;i<a.length;i+=4)if(a[i]>127&&md[i]<128)add++;return add/(190*140)}
+
+/* Pointer interaction */
+function brushLine(a,b,sub){mctx.globalCompositeOperation=sub?'destination-out':'source-over';mctx.strokeStyle='#fff';mctx.lineCap='round';mctx.lineWidth=+$('bsize').value;mctx.beginPath();mctx.moveTo(a.x,a.y);mctx.lineTo(b.x,b.y);mctx.stroke();mctx.globalCompositeOperation='source-over'}
+over.addEventListener('pointermove',e=>{const p=pos(e);
+ if(S.running)return;
+ if(S.drag){if(S.drag.tool==='rect'||S.drag.tool==='circle'){S.drag.rect={x:Math.min(S.drag.s.x,p.x),y:Math.min(S.drag.s.y,p.y),w:Math.abs(p.x-S.drag.s.x),h:Math.abs(p.y-S.drag.s.y)}}else{brushLine(S.drag.last,p,S.drag.sub);S.drag.last=p}render();return}
+ const z=T()==='click'?zoneAt(p.x,p.y):null;const n=z?z.person:null;if(n!==S.hover){S.hover=n;render()}});
+over.addEventListener('pointerleave',()=>{if(S.hover){S.hover=null;render()}});
+over.addEventListener('pointerdown',e=>{if(S.running||!S.hasSource)return;if(S.view!=='source'){S.view='source';}const p=pos(e);over.setPointerCapture(e.pointerId);const sub=e.altKey||S.tool==='erase';
+ if(T()==='click'){const z=zoneAt(p.x,p.y);if(z){if(e.altKey)selectPerson(z.person,'sub');else{selectPerson(z.person,'add')}}S.hover=null;render()}
+ else if(T()==='rect'||T()==='circle'){S.drag={tool:T(),s:p,sub,rect:{x:p.x,y:p.y,w:0,h:0}}}
+ else{S.drag={tool:T(),last:p,sub,label:(sub?'Erase':'Brush')+' · '+$('bsize').value+' px'};brushLine(p,p,sub);render()}});
+function resetAndKeep(){/* Clear mask: empties both Select and Paint contributions. */mctx.save();mctx.setTransform(1,0,0,1,0,0);mctx.clearRect(0,0,380,280);mctx.restore()}
+over.addEventListener('pointerup',e=>{const d=S.drag;if(!d)return;S.drag=null;
+ if(d.tool==='rect'||d.tool==='circle'){const r=d.rect,c=d.tool==='circle';if(r.w>3&&r.h>3){mctx.globalCompositeOperation=d.sub?'destination-out':'source-over';mctx.fillStyle='#fff';if(c){mctx.beginPath();mctx.ellipse(r.x+r.w/2,r.y+r.h/2,r.w/2,r.h/2,0,0,Math.PI*2);mctx.fill()}else mctx.fillRect(r.x,r.y,r.w,r.h);mctx.globalCompositeOperation='source-over';S.edits.push((d.sub?'Remove':'Add')+(c?' circle':' rectangle'));S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0}}
+ else{S.edits.push(d.label);S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0}
+ render()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(S.confirm||S.pend)cancelPending();else if(!$('dock').hidden&&$('dock').classList.contains('error'))showDock(null)}});
+document.addEventListener('click',e=>{const m=e.target.closest('[data-mode]');if(m){S.mode=m.dataset.mode;S.hover=null;render();return}const b=e.target.closest('[data-tool]');if(b){S.tool=b.dataset.tool;S.hover=null;render()}});
+$('bsize').addEventListener('input',()=>{$('bsizev').textContent=$('bsize').value+' px'});
+$('undo').onclick=()=>{if(S.history.length>1){S.redoStack.push(S.history.pop());restore(S.history[S.history.length-1]);S.edits.pop();render()}};
+$('redo').onclick=()=>{const r=S.redoStack.pop();if(r){S.history.push(r);restore(r);S.edits.push('Redo');render()}};
+document.querySelectorAll('#views button').forEach(b=>b.onclick=()=>{S.view=b.dataset.view;render()});
+document.querySelectorAll('#bfilter button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#bfilter button').forEach(x=>x.classList.remove('on'));b.classList.add('on');render()});
+['lbody','lcloth','lperson'].forEach(i=>$(i).onchange=render);
+$('ckpt').onchange=render;
+$('advt').onclick=()=>{const o=$('adv').hidden;$('adv').hidden=!o;$('advt').setAttribute('aria-expanded',o)};
+$('people').addEventListener('click',e=>{const b=e.target.closest('[data-p]');if(b){const n=+b.dataset.p;const sel=selectedPersons();if(sel[n-1])selectPerson(n,'sub');else selectPerson(n,'add');render()}});
+/* Source image: choose / replace / remove. Replacing or removing with a mask asks first (red in-place Confirm, Cancel in the overlay). */
+function drawThumb(){const c=$('srcthumb').getContext('2d');c.save();c.scale(56/W,42/H);scene(c,false);c.restore()}
+function maskCov(){const d=mctx.getImageData(0,0,380,280).data;for(let i=3;i<d.length;i+=4)if(d[i]>10)return true;return false}
+function cancelPending(){if(S.pend||S.confirm){S.pend=null;S.confirm=false;showDock(null);syncClear();syncSrc()}}
+function syncSrc(){const p=S.pend;$('choose').textContent=p==='replace'?'Confirm replace':'Choose image…';$('choose').classList.toggle('danger',p==='replace');$('removesrc').textContent=p==='remove'?'Confirm remove':'Remove image';$('removesrc').classList.toggle('danger',p==='remove')}
+function newSource(){resetMask();S.result=false;S.view='source';S.found=false;S.srcerr=null;S.hasSource=true;S.pend=null;showDock(null);syncSrc();render()}
+function pickSource(){if(S.running)return;if(S.pend==='replace'){newSource();return}cancelPending();S.srcerr=null;
+ if(S.hasSource&&(maskCov()||S.result)){S.pend='replace';syncSrc();showDock('confirm','Replace the source image?','The mask, result and Undo history belong to the current image and will be discarded.','Cancel',()=>cancelPending())}else newSource()}
+const stg=$('stage');stg.addEventListener('dragover',e=>e.preventDefault());stg.addEventListener('drop',e=>{e.preventDefault();pickSource()});
+$('choose').onclick=pickSource;$('fromimages').onclick=pickSource;
+$('removesrc').onclick=()=>{if(S.running)return;if(S.pend==='remove'){resetMask();S.result=false;S.found=false;S.hasSource=false;S.pend=null;showDock(null);syncSrc();render();return}cancelPending();
+ if(maskCov()||S.result){S.pend='remove';syncSrc();showDock('confirm','Remove the source image?','The mask, result and Undo history are discarded with it.','Cancel',()=>cancelPending())}else{S.hasSource=false;render()}};
+const REJECTS=[['The file is 80 MiB. Source images must be 64 MiB or smaller.','File too large'],['The image is 5472 × 3648 (20 MP). Source images must be 16 MP or smaller.','Image too large'],['animated.gif is animated. Choose a still image.','Animated image'],['broken.jpg could not be read as an image.','Unreadable file']];let rj=0;
+function rejectFile(){const [m,t]=REJECTS[rj++%REJECTS.length];cancelPending();S.srcerr=m;render();showDock('error',t,m+' The current source and mask are unchanged.','Dismiss',()=>{showDock(null)})}
+
+/* Clear mask: in-place red Confirm, Cancel in the shared bottom overlay. */
+function syncClear(){const b=$('clear');b.textContent=S.confirm?'Confirm clear':'Clear mask';b.classList.toggle('danger',S.confirm)}
+$('clear').onclick=()=>{if(!S.confirm){S.pend=null;syncSrc();S.confirm=true;syncClear();showDock('confirm','Clear mask?','Removes the whole mask. Undo stays available.','Cancel',()=>{S.confirm=false;showDock(null);syncClear()})}else{S.confirm=false;resetAndKeep();S.edits.push('Clear mask');S.history.push(mctx.getImageData(0,0,380,280));S.redoStack.length=0;showDock(null);syncClear();render()}};
+
+/* Shared bottom overlay */
+let tm=null,life=null;
+function stopDock(){clearTimeout(tm);cancelAnimationFrame(life)}
+function stopTimers(){S.timers.forEach(clearInterval);S.timers=[];stopDock()}
+function showDock(kind,title,sub,btn,onbtn,progress){
+ stopDock();const d=$('dock');if(!kind){d.hidden=true;return}
+ d.hidden=false;d.className='dock '+(kind||'');$('dt').textContent=title||'';$('ds').textContent=sub||'';
+ $('dbar').hidden=progress==null;if(progress!=null)$('dfill').style.width=progress+'%';
+ $('dbtn').hidden=!btn;$('dbtn').textContent=btn||'';$('dbtn').onclick=onbtn||null;
+ const timed=kind==='success';$('dcount').hidden=!timed;$('dlife').hidden=!timed;
+ if(timed){let left=6000,last=performance.now(),paused=false;d.onmouseenter=()=>paused=true;d.onmouseleave=()=>{paused=false;last=performance.now()};
+  const tick=now=>{if(!paused){left-=now-last}last=now;$('dcount').textContent=Math.ceil(left/1000)+'s';$('dlife').style.transform='scaleX('+Math.max(0,left/6000)+')';if(left<=0)showDock(null);else life=requestAnimationFrame(tick)};life=requestAnimationFrame(tick)}}
+
+/* Simulated tasks. No detection and no generation occur. */
+function runFind(){if(S.running||!S.hasSource)return;S.running='find';let step=0;render();
+ showDock('running','Find people','Step 1 of 3 · loading person model',10,()=>{},10);$('dbtn').hidden=false;$('dbtn').textContent='Stop after current';
+ S.timers.push(setInterval(()=>{step++;if(step>=3){stopTimers();S.running=null;S.found=true;showDock('success','Found 2 people','Click one to select.');render();return}
+  showDock('running','Find people','Step '+(step+1)+' of 3 · '+(step===1?'segmenting people':'separating clothes'),null,null,10+step*35);$('dbtn').hidden=false;$('dbtn').textContent='Stop after current';$('dbtn').onclick=()=>{stopTimers();S.running=null;showDock('success','Stopped','Stopped after the current step. The mask is unchanged.');render()}},1100));
+ $('dbtn').onclick=()=>{stopTimers();S.running=null;showDock('success','Stopped','Stopped after the current step. The mask is unchanged.');render()}}
+$('find').onclick=runFind;
+$('go').onclick=()=>{if($('go').disabled)return;S.running='edit';let n=0;render();
+ const upd=()=>{showDock('running','Edit image','Step '+n+' of 9 · sampling',null,null,n/9*100);$('dbtn').hidden=false;$('dbtn').textContent='Stop waiting';$('dbtn').onclick=()=>{stopTimers();S.running=null;showDock('success','Stopped waiting','The provider may still finish. Nothing is replayed automatically.');render()}};upd();
+ S.timers.push(setInterval(()=>{n++;if(n>9){stopTimers();S.running=null;S.result=true;S.view='result';showDock('success','Saved','1 image with reproducibility metadata. Original pixels kept outside the mask.');render();return}upd()},380))};
+
+function reset(){stopTimers();showDock(null);S.hasSource=true;S.view='source';S.mode='select';S.tool='brush';S.found=false;S.result=false;S.running=null;S.confirm=false;S.pend=null;S.srcerr=null;S.hover=null;$('ckpt').value='ok';resetMask();syncClear();render()}
+function demo(k){reset();if(k==='rejected'){rejectFile();return}if(k==='selected'||k==='result'){S.found=true;selectPerson(1,'add')}if(k==='nosource')S.hasSource=false;if(k==='unconfirmed'){selectPerson(1,'add');$('ckpt').value='no'}if(k==='result'){S.result=true;S.view='result'}render();if(k==='find')runFind()}
+document.querySelectorAll('[data-demo]').forEach(b=>b.onclick=()=>{b.dataset.demo==='reset'?reset():demo(b.dataset.demo)});
+reset();
+</script>
+</body>
+</html>

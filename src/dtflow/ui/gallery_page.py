@@ -188,6 +188,7 @@ class GalleryPage(QObject):
         state_dir: Path,
         reuse_callback=None,
         regenerate_callback=None,
+        edit_callback=None,
         export_callback=None,
         recycle_callback=None,
     ):
@@ -197,6 +198,7 @@ class GalleryPage(QObject):
         self.state_dir = Path(state_dir)
         self._reuse_callback = reuse_callback
         self._regenerate_callback = regenerate_callback
+        self._edit_callback = edit_callback
         self.recycle_scope_revision = 0
         self._export_callback = export_callback
         self._recycle_callback = recycle_callback
@@ -442,6 +444,8 @@ class GalleryPage(QObject):
         self.use_settings_button = self._widget("galleryUseSettingsButton", QPushButton)
         self.regenerate_button = self._widget("galleryRegenerateButton", QPushButton)
         self.use_settings_button.clicked.connect(self._use_settings)
+        self.edit_button = self._widget("galleryEditImageButton", QPushButton)
+        self.edit_button.clicked.connect(self._edit_image)
         self.regenerate_button.clicked.connect(self._regenerate)
         self.copy_button = self._widget("galleryCopyPathButton", QPushButton)
         self.folder_button = self._widget("galleryOpenFolderButton", QPushButton)
@@ -1551,6 +1555,7 @@ class GalleryPage(QObject):
         reusable = bool(request.get("model_id"))
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
+        self.edit_button.setEnabled(not item.issue and bool(item.path) and self._edit_callback is not None)
         self.copy_button.setEnabled(bool(item.path))
         available = not item.issue
         self.folder_button.setEnabled(available)
@@ -1682,6 +1687,11 @@ class GalleryPage(QObject):
         item = self._selected()
         if item is not None and self._reuse_callback is not None:
             self._reuse_callback(self._request(item), item.identity)
+
+    def _edit_image(self) -> None:
+        item = self._selected()
+        if item is not None and self._edit_callback is not None:
+            self._edit_callback(item.path)
 
     def _regenerate(self) -> None:
         item = self._selected()
@@ -1972,6 +1982,7 @@ class GalleryPage(QObject):
         self._widget("galleryRawMetadata").setPlainText("{}")
         self.use_settings_button.setEnabled(False)
         self.regenerate_button.setEnabled(False)
+        self.edit_button.setEnabled(False)
         self.copy_button.setEnabled(False)
         self.folder_button.setEnabled(False)
         self.external_button.setEnabled(False)

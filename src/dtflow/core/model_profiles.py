@@ -7,8 +7,10 @@ quantization suffix ignored, then by base family; unknown models get no profile 
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -77,6 +79,21 @@ def _community_specs() -> dict[str, dict]:
 def community_model_ids() -> frozenset[str]:
     """Exact checkpoint files the bundled Draw Things community descriptions cover (models only, never LoRAs/controls)."""
     return frozenset(_community_specs())
+
+
+def exact_model_spec(model_id: str) -> dict | None:
+    """Published exact-file description only; never invoke either derived fallback."""
+    spec = _community_specs().get(model_id)
+    return deepcopy(spec) if isinstance(spec, dict) and spec.get("file") == model_id else None
+
+
+def exact_model_description_digest(model_id: str) -> str | None:
+    """Identity for an owner permit; retains all published modifier/objective/companion fields."""
+    spec = exact_model_spec(model_id)
+    if spec is None:
+        return None
+    encoded = json.dumps(spec, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def fallback_spec(model_id: str) -> dict | None:

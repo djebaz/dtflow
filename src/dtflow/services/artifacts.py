@@ -62,6 +62,8 @@ def save_artifacts(
     build_identity: dict[str, str],
     limits: ResourceLimits,
 ) -> tuple[tuple[str, ...], str]:
+    if request.operation != "txt2img":
+        raise ValueError("Image-operation output saving requires dedicated raw/final evidence handling.")
     validate_result(result, request, limits)
     output.mkdir(parents=True, exist_ok=True)
     directory = output / attempt_id
@@ -72,8 +74,35 @@ def save_artifacts(
         path = directory / f"final-{index}.png"
         atomic_write(path, artifact.encoded)
         paths.append(str(path.resolve()))
+    metadata = generation_metadata(
+        attempt_id,
+        request,
+        result,
+        build_identity,
+        [artifact_record(path, artifact) for path, artifact in zip(paths, result.artifacts, strict=True)],
+    )
+    metadata_path = directory / "metadata.json"
+    atomic_write(metadata_path, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
+    return tuple(paths), str(metadata_path.resolve())
+
+
+def artifact_record(path, artifact) -> dict:
+    """One canonical sidecar representation for registered final or retained raw evidence."""
+    return {
+        "path": str(path),
+        "artifact_id": artifact.artifact_id,
+        "designation": artifact.designation,
+        "media_type": artifact.media_type,
+        "width_px": artifact.width_px,
+        "height_px": artifact.height_px,
+        "metadata": dict(artifact.metadata),
+    }
+
+
+def generation_metadata(attempt_id, request, result, build_identity, artifacts: list[dict]) -> dict:
+    """Shared generation provenance; output dimensions/roles belong to explicit artifact records."""
     metadata = {
-        "schema_version": 1,
+        "schema_version": 2,
         "attempt_id": attempt_id,
         "request": asdict(request),
         "backend_id": result.backend_id,
@@ -82,21 +111,8 @@ def save_artifacts(
         "completion": asdict(result.completion),
         "warnings": result.warnings,
         "build": build_identity,
-        "artifacts": [
-            {
-                "path": path,
-                "artifact_id": artifact.artifact_id,
-                "designation": artifact.designation,
-                "media_type": artifact.media_type,
-                "width_px": artifact.width_px,
-                "height_px": artifact.height_px,
-                "metadata": dict(artifact.metadata),
-            }
-            for path, artifact in zip(paths, result.artifacts, strict=True)
-        ],
+        "artifacts": artifacts,
     }
     if result.backend_elapsed_seconds is not None:
         metadata["timing"] = {"backend_elapsed_seconds": result.backend_elapsed_seconds}
-    metadata_path = directory / "metadata.json"
-    atomic_write(metadata_path, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
-    return tuple(paths), str(metadata_path.resolve())
+    return metadata

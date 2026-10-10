@@ -23,7 +23,7 @@ from dtflow.core.models import (
     SubmissionStage,
 )
 from dtflow.persistence.queues import QueueError, post_control, read_queues
-from dtflow.persistence.store import PersistenceError, SQLiteAttempts
+from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, SQLiteAttempts
 from dtflow.services.generation import GenerationService
 from dtflow.services.queue import QueueDispatcher
 
@@ -355,8 +355,12 @@ def v1_database(state: Path, *extra: str) -> Path:
     with sqlite3.connect(path) as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.execute(V1_ATTEMPTS)
+        legacy = dataclasses.asdict(dataclasses.replace(item(0), request_id="r1"))
+        for name in ("schema_version", "strength", "image_inputs"):
+            legacy.pop(name)
         db.execute(
-            "INSERT INTO attempts VALUES ('a1','r1','fake','{}','succeeded','terminal_observed','succeeded','t',NULL,'[\"x\"]')"
+            "INSERT INTO attempts VALUES ('a1','r1','fake',?,'succeeded','terminal_observed','succeeded','t',NULL,'[\"x\"]')",
+            (json.dumps(legacy),),
         )
         for statement in extra:
             db.execute(statement)
@@ -385,8 +389,9 @@ async def test_release_0_1_state_migrates_atomically_and_failures_keep_the_origi
         assert (await store.inspect_queue(queue_id))["state"] == "paused"
     finally:
         await store.aclose()
-    assert snapshot(path)[0] == 2
-    assert snapshot(state / "good" / "attempts.pre-v2.sqlite3")[0] == 1  # recoverable pre-migration copy
+    assert snapshot(path)[0] == SCHEMA_VERSION
+    backup = next((state / "good").glob("attempts.pre-v3-from-v1-*.sqlite3"))
+    assert snapshot(backup)[0] == 1  # recoverable pre-migration copy
     # A conflicting object makes the migration fail midway; the rollback must leave version 1 exactly as it was.
     bad = v1_database(state / "bad", "CREATE TABLE queue_items (unrelated TEXT)")
     before = snapshot(bad)

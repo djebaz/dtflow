@@ -220,3 +220,29 @@ The status bar displays `DTFlow <version> | revision <value> | source: <status>`
 ## Offline simulation
 
 For fake, `fake-fixture` produces the bundled illustrative lighthouse at the requested aspect and size, while `fake-grid` produces a calibration grid. No model inference or network request occurs. The fake-only Simulation group selects outcome, duration and previews so progress and Stop waiting can be exercised; queues created from the form record those settings.
+
+## Previewing UI states
+
+Only when requested, run the offline renderer from the repository root:
+
+```powershell
+$env:QT_QPA_PLATFORM = 'offscreen'
+$env:QT_QPA_FONTDIR = 'C:\Windows\Fonts'
+uv run python tools/ui/render_states.py --out tmp/ui-renders
+```
+
+On Windows, offscreen rendering needs `QT_QPA_FONTDIR=C:\Windows\Fonts` for fonts;
+alternatively use `QT_QPA_PLATFORM=windows` (visible windows). The renderer blocks
+provider network traffic and uses temporary state, fixture images/masks and fake
+providers. It renders only explicitly listed states; an unlisted view has no preview.
+
+Besides the existing Generate/Queues/Images states (01–14), the editor list is:
+15 Inpaint empty, 16 source loaded, 17 mask painted, 18 Source view, 19 Mask view,
+20 Result with no result yet (current Source fallback), 21 Clear confirmation,
+22 Find people overlay and 23 Edit image overlay. The last two are explicitly
+labelled presentation fixtures, not functioning analysis or image dispatch.
+The manual editor remains work in progress; its default strength is 0.7.
+
+Screenshots are layout evidence only, not Windows/native-DPI, interaction,
+generation, ONNX or packaged acceptance. Extending the script does not mean it
+has been rendered; rendering remains owner-requested.
