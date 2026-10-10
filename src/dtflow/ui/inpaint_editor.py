@@ -58,6 +58,7 @@ class InpaintEditor(QObject):
         self.controller = None
         self._support = None
         self._support_revision = 0
+        self._source_path = None
         self._models = PersonModels()
         self._analysis = None
         file = QFile(str(Path(__file__).with_name("forms") / "inpaint_editor.ui"))
@@ -390,7 +391,7 @@ class InpaintEditor(QObject):
         else:
             callback()
 
-    def replace_source(self, path):
+    def replace_source(self, path, *, quiet=False):
         if self._busy or self._loading:
             return
 
@@ -401,6 +402,7 @@ class InpaintEditor(QObject):
 
             def apply(value):
                 self._source, pixels = value
+                self._source_path = str(path)
                 self._coverage = 0
                 self._set_analysis(None)
                 self.canvas.set_source(pixels, self._source.width, self._source.height)
@@ -410,7 +412,7 @@ class InpaintEditor(QObject):
                 )
                 self._fit_to_source()
 
-            self._task("Load source image", worker, apply)
+            self._task("Load source image", worker, apply, quiet=quiet)
 
         self._discard_then(self.form.chooseSourceButton, "Replace source image", load)
 
@@ -437,6 +439,7 @@ class InpaintEditor(QObject):
 
         def remove():
             self._source = None
+            self._source_path = None
             self._coverage = 0
             self._set_analysis(None)
             self.canvas.remove_source()
@@ -485,6 +488,52 @@ class InpaintEditor(QObject):
             pixels = self.canvas.mask_pixels()
             width, height = self._source.width, self._source.height
             self._task("Save mask", lambda: save_mask_pixels_file(Path(path), pixels, width, height), lambda _: None)
+
+    def session_document(self):
+        """What the next launch restores: mode, last source image path and edit settings (never the mask)."""
+        form = self.form
+        return {
+            "mode": "inpaint" if self.active else "text",
+            "select": form.selectModeButton.isChecked(),
+            "source": self._source_path,
+            "layers": [
+                form.layerList.item(row).data(Qt.ItemDataRole.UserRole)
+                for row in range(form.layerList.count())
+                if form.layerList.item(row).checkState() == Qt.CheckState.Checked
+            ],
+            "strength": form.strengthSpinBox.value(),
+            "keep_outside": form.keepOutsideCheck.isChecked(),
+            "grow": form.growSpin.value(),
+            "feather": float(form.featherSpin.value()),
+        }
+
+    def restore(self, document):
+        """Apply a remembered document; anything missing or unusable keeps the defaults."""
+        if not isinstance(document, dict):
+            return
+        form = self.form
+        strength, grow, feather = document.get("strength"), document.get("grow"), document.get("feather")
+        if isinstance(strength, (int, float)) and not isinstance(strength, bool):
+            form.strengthSpinBox.setValue(float(strength))
+        if type(grow) is int:
+            form.growSpin.setValue(grow)
+        if isinstance(feather, (int, float)) and not isinstance(feather, bool):
+            form.featherSpin.setValue(float(feather))
+        if isinstance(document.get("keep_outside"), bool):
+            form.keepOutsideCheck.setChecked(document["keep_outside"])
+        layers = document.get("layers")
+        if isinstance(layers, list):
+            for row in range(form.layerList.count()):
+                item = form.layerList.item(row)
+                wanted = item.data(Qt.ItemDataRole.UserRole) in layers
+                item.setCheckState(Qt.CheckState.Checked if wanted else Qt.CheckState.Unchecked)
+        if document.get("select") is True:
+            form.selectModeButton.setChecked(True)
+        source = document.get("source")
+        if isinstance(source, str) and Path(source).is_file():
+            self.replace_source(source, quiet=True)
+        if document.get("mode") == "inpaint":
+            self.page.inpaintModeButton.setChecked(True)
 
     def edit_saved_image(self, path):
         """Images handoff: load a saved output as the source, after the usual discard consent."""
