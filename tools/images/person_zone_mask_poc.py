@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import platform
 import re
-import sys
 import time
 import warnings
 from pathlib import Path
@@ -38,6 +38,7 @@ PROFILES = {
 }
 MAX_BYTES = 64 * 1024 * 1024
 MAX_PIXELS = 16_000_000
+LOGGER = logging.getLogger("person_zone_mask_poc")
 
 
 def thread_count(value: str) -> int:
@@ -77,8 +78,11 @@ def load_image(path: Path):
         with Image.open(path) as source:
             if source.width * source.height > MAX_PIXELS:
                 raise ValueError("Source exceeds 16 million pixels")
-            if getattr(source, "n_frames", 1) != 1:
-                raise ValueError("Only single-frame images are supported")
+            frames = getattr(source, "n_frames", 1)
+            if frames != 1 and source.format != "MPO":
+                raise ValueError("Animated/multiframe images are unsupported; MPO uses primary frame 0")
+            source.seek(0)
+            LOGGER.info("IMAGE format=%s frames=%d selected_frame=0", source.format, frames)
             raw_size = source.size
             oriented = ImageOps.exif_transpose(source).convert("RGBA")
             rgb = Image.new("RGBA", oriented.size, "white")
@@ -113,6 +117,49 @@ def masks_from_logits(logits, size: tuple[int, int], box: list[int], profile: st
     return person, zone, np.bitwise_and(person, zone)
 
 
+
+def prediction_diagnostics(tensor, logits, profile: str) -> dict:
+    """Summaries only: no raw image/tensor data or extra inference."""
+    import numpy as np
+
+    def stats(values):
+        return {
+            "min": float(values.min()),
+            "max": float(values.max()),
+            "mean": float(values.mean(dtype=np.float64)),
+            "std": float(values.std(dtype=np.float64)),
+        }
+
+    spec = PROFILES[profile]
+    labels = logits[0].argmax(axis=0)
+    counts = np.bincount(labels.ravel(), minlength=spec["classes"])
+    pixels = int(labels.size)
+    person_logits = logits[0, spec["person"]]
+    winning_logits = logits[0].max(axis=0)
+    margin = person_logits.astype(np.float64) - winning_logits.astype(np.float64)
+    histogram = [
+        {"class_id": index, "model_pixels": int(count), "fraction": float(count / pixels)}
+        for index, count in enumerate(counts)
+    ]
+    dominant = int(counts.argmax())
+    return {
+        "input_shape": list(tensor.shape),
+        "input_dtype": str(tensor.dtype),
+        "normalized_rgb_channels": {name: stats(tensor[0, index]) for index, name in enumerate(("R", "G", "B"))},
+        "output_shape": list(logits.shape),
+        "output_dtype": str(logits.dtype),
+        "output_finite": True,  # masks_from_logits validated this before diagnostics.
+        "class_histogram_model_grid": histogram,
+        "dominant_class_id": dominant,
+        "dominant_fraction": float(counts[dominant] / pixels),
+        "person_class_id": spec["person"],
+        "person_model_pixels": int(counts[spec["person"]]),
+        "class_logits": [{"class_id": index, **stats(channel)} for index, channel in enumerate(logits[0])],
+        "person_minus_winning_logit": stats(margin),
+        "logit_note": "Raw scores, not calibrated confidence; person-minus-winner is <=0, ties may not win argmax",
+    }
+
+
 def create_session(model_bytes: bytes, threads: int, profile: str = "torchvision"):
     import onnxruntime as ort
 
@@ -135,7 +182,12 @@ def create_session(model_bytes: bytes, threads: int, profile: str = "torchvision
         raise ValueError(f"Contract requires float32 output [1,{spec['classes']},320,320]")
     declared = session.get_modelmeta().custom_metadata_map.get("mask_poc_contract")
     if declared != spec["contract"] and (spec["metadata_required"] or declared is not None):
-        raise ValueError(f"Model must declare mask_poc_contract={spec['contract']}; see README")
+        if spec["metadata_required"]:
+            raise ValueError(f"Required model metadata mask_poc_contract must equal {spec['contract']}")
+        raise ValueError(
+            f"Optional mask_poc_contract metadata is present but conflicts with selected profile: "
+            f"expected {spec['contract']}, got {declared!r}"
+        )
     return session
 
 
@@ -145,6 +197,7 @@ def run(args: argparse.Namespace) -> Path:
     from PIL import Image
 
     spec = PROFILES[args.profile]
+    LOGGER.info("START profile=%s person_class=%d threads=%d", args.profile, spec["person"], args.threads)
     total_start = time.perf_counter()
     destination = output_path(args.out)
     if not re.fullmatch(r"[a-fA-F0-9]{64}", args.sha256):
@@ -157,29 +210,57 @@ def run(args: argparse.Namespace) -> Path:
     if checksum != args.sha256.lower():
         raise ValueError("Model SHA-256 mismatch")
     model_read_ms = (time.perf_counter() - start) * 1000
+    LOGGER.info("MODEL checksum verified sha256=%s bytes=%d read_ms=%.1f", checksum, len(model_bytes), model_read_ms)
     start = time.perf_counter()
     image, raw_size = load_image(args.source)
     validate_box(args.box, image.size)
     image_load_ms = (time.perf_counter() - start) * 1000
+    LOGGER.info("IMAGE raw_wh=%s oriented_wh=%s box_xyxy=%s decode_ms=%.1f", raw_size, image.size, args.box, image_load_ms)
     start = time.perf_counter()
     session = create_session(model_bytes, args.threads, args.profile)
     session_load_ms = (time.perf_counter() - start) * 1000
+    LOGGER.info("SESSION providers=%s load_ms=%.1f", session.get_providers(), session_load_ms)
+    LOGGER.info("TENSORS input=%s output=%s", session.get_inputs()[0].shape, session.get_outputs()[0].shape)
     del model_bytes
     start = time.perf_counter()
     tensor = preprocess(image)
     preprocess_ms = (time.perf_counter() - start) * 1000
+    LOGGER.info("INFERENCE starting one CPU call; preprocess_ms=%.1f", preprocess_ms)
     start = time.perf_counter()
     logits = session.run([session.get_outputs()[0].name], {session.get_inputs()[0].name: tensor})[0]
     inference_ms = (time.perf_counter() - start) * 1000
+    LOGGER.info("INFERENCE completed cold_run_ms=%.1f", inference_ms)
     start = time.perf_counter()
     person, zone, edit = masks_from_logits(logits, image.size, args.box, args.profile)
+    mask_processing_ms = (time.perf_counter() - start) * 1000
+    diagnostic_start = time.perf_counter()
+    diagnostics = prediction_diagnostics(tensor, logits, args.profile)
+    diagnostics_ms = (time.perf_counter() - diagnostic_start) * 1000
+    LOGGER.info("PREDICTIONS model-grid class_id:pixels=%s",
+                ", ".join(f"{row['class_id']}:{row['model_pixels']}" for row in diagnostics["class_histogram_model_grid"]))
+    LOGGER.info("PERSON class=%d model_pixels=%d source_pixels=%d edit_pixels=%d",
+                spec["person"], diagnostics["person_model_pixels"], int(np.count_nonzero(person)), int(np.count_nonzero(edit)))
+    LOGGER.info("LOGITS person=%s person_minus_winner=%s",
+                diagnostics["class_logits"][spec["person"]], diagnostics["person_minus_winning_logit"])
+    diagnostic_warnings = []
+    if not np.any(person):
+        diagnostic_warnings.append("Empty person mask before box intersection: review class scores, preprocessing and export")
+    elif not np.any(edit):
+        diagnostic_warnings.append("Person detected, but the manual box does not intersect the person mask")
+    if diagnostics["dominant_fraction"] == 1.0:
+        diagnostic_warnings.append(f"Every model pixel predicts class {diagnostics['dominant_class_id']}")
+    for message in diagnostic_warnings:
+        LOGGER.warning(message)
     del logits, tensor
+    start = time.perf_counter()
     highlight = Image.new("RGB", image.size, (255, 64, 64))
     tinted = Image.blend(image, highlight, 0.45)
     overlay = Image.composite(tinted, image, Image.fromarray(edit))
-    postprocess_ms = (time.perf_counter() - start) * 1000
+    postprocess_ms = mask_processing_ms + (time.perf_counter() - start) * 1000
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "diagnostics": diagnostics,
+        "warnings": diagnostic_warnings,
         "model": {
             "contract": spec["contract"],
             "profile": args.profile,
@@ -209,6 +290,8 @@ def run(args: argparse.Namespace) -> Path:
             "path": str(args.source.resolve()),
             "raw_size_wh": list(raw_size),
             "oriented_size_wh": list(image.size),
+            "selected_frame": 0,
+            "multiframe_policy": "MPO primary frame 0 only; other multiframe inputs rejected",
         },
         "preprocessing": {
             "orientation": "EXIF transpose",
@@ -242,13 +325,20 @@ def run(args: argparse.Namespace) -> Path:
             "preprocessing": preprocess_ms,
             "inference_cold_single_run": inference_ms,
             "postprocessing": postprocess_ms,
+            "diagnostics": diagnostics_ms,
         },
         "limitations": [
             "Semantic union of people, not instance selection",
             "No inpainting compatibility claim",
             "One cold run, not a throughput benchmark",
             "Paths and overlay may be sensitive",
-        ],
+            "320-square stretch and argmax-before-nearest resize may distort shapes and produce blocky edges",
+            "Pillow resize is not verified numerically identical to the upstream tensor pipeline",
+        ] + ([
+            "Cityscapes street-scene training: portrait/indoor segmentation quality is not established",
+            "FastSeg selects person class 11 only; rider class 12 is deliberately excluded",
+            "Owner pooling/export adaptation and INT8 parity are not established",
+        ] if args.profile == "fastseg" else []),
     }
     # New directory only; exclusive files ensure even partial runs are never overwritten.
     destination.mkdir(parents=True, exist_ok=False)
@@ -263,6 +353,7 @@ def run(args: argparse.Namespace) -> Path:
     with (destination / "report.json").open("x", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2, allow_nan=False)
         handle.write("\n")
+    LOGGER.info("DONE wrote five outputs; timings_ms=%s", report["timings_ms"])
     return destination
 
 
@@ -284,12 +375,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("-o", "--out", type=Path, required=True, help="New directory below repository tmp/")
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:
         destination = run(args)
     except Exception as exc:
         # ORT has its own exception types; report failure, never retry with another provider.
-        print(f"Mask PoC failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 2
+        LOGGER.exception("Mask PoC failed: %s: %s", type(exc).__name__, exc)
+        LOGGER.error("Requested output directory: %s (may contain partial output; nothing removed)", args.out.absolute())
+        return 1
     print(f"Saved masks and report to {destination}")
     return 0
 
