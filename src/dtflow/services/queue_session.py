@@ -28,7 +28,7 @@ from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
-from dtflow.services.planning import Plan, PlanError, expand_plan, seed_range
+from dtflow.services.planning import Plan, PlanError, expand_plan
 from dtflow.services.queue import QueueDispatcher
 
 log = logging.getLogger(__name__)
@@ -68,26 +68,6 @@ async def create_queue(
         await store.aclose()
 
 
-def edit_queue_plan(
-    seed: int, strengths: tuple[float, ...], count: int, mode: str
-) -> tuple[Plan | None, tuple[float, ...]]:
-    """Plan for a staged edit: strengths x seeds (``cross``) or strengths zipped with consecutive seeds (``pair``).
-
-    Fewer than two strengths is a plain seed sweep of ``count`` items (no plan). Returns (plan, strengths used).
-    """
-    values = tuple(dict.fromkeys(strengths))
-    if len(values) < 2:
-        return None, values
-    try:
-        if mode == "pair":
-            return Plan("pair", (("strength", values), ("seed", seed_range(seed, len(values))))), values
-        if mode == "cross":
-            return Plan("cross", (("strength", values), ("seed", seed_range(seed, count)))), values
-    except PlanError as exc:
-        raise ValidationError(str(exc)) from exc
-    raise ValidationError("Edit plans are cross or pair.")
-
-
 async def create_edit_queue(
     state: Path,
     backend: dict[str, Any],
@@ -97,15 +77,14 @@ async def create_edit_queue(
     *,
     strength: float,
     preserve_outside: bool,
-    strengths: tuple[float, ...] = (),
+    plan: Plan | None = None,
     count: int = 1,
-    mode: str = "cross",
     cap: int | None = None,
-) -> tuple[str, int, int]:
+) -> tuple[str, int]:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
     Each item records the owner-probe consent for its exact backend, checkpoint and operation; nothing is uploaded or
-    dispatched until Start, and the staged inputs stay durable evidence. Returns (queue id, cap, item count).
+    dispatched until Start, and the staged inputs stay durable evidence. Returns (queue id, cap).
     """
     operation = "inpaint" if prepared.mask is not None else "img2img"
     evidence_id = f"queue-{uuid4().hex}"
@@ -117,9 +96,6 @@ async def create_edit_queue(
     staged = await settle(
         asyncio.to_thread(snapshot_image_inputs, state, uuid4().hex, prepared, preserve_outside=preserve_outside)
     )
-    plan, used = edit_queue_plan(base.seed, tuple(strengths), count, mode)
-    if used and plan is None:
-        strength = used[0]
     edit = replace(
         base,
         request_id=uuid4().hex,
@@ -133,8 +109,7 @@ async def create_edit_queue(
         ),
     )
     items = expand_items(edit, count) if plan is None else expand_plan(edit, plan)
-    queue_id, cap = await create_queue(state, backend, items, cap)
-    return queue_id, cap, len(items)
+    return await create_queue(state, backend, items, cap)
 
 
 async def dispatch_queue(

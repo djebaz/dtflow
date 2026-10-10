@@ -129,11 +129,6 @@ def render_inpaint_states(shell, state, capture):
     capture("29-inpaint-select-hover-preview")
     editor.canvas.clear_hover()
     editor.form.paintModeButton.setChecked(True)
-    editor.form.advancedToggle.setChecked(True)
-    editor.form.queueStrengthsEdit.setText("0.5, 0.7, 1.0")
-    editor.form.queueCountSpin.setValue(2)
-    capture("30-inpaint-queue-plan")
-    editor.form.advancedToggle.setChecked(False)
 
     strip = activity_strip(page)
     for key, label, stop_text, done, total, detail, name in (

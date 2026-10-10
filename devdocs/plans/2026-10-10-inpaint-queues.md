@@ -33,7 +33,7 @@ Today an edit runs immediately: **Edit image** builds an owner-probe permit, pre
 ### In
 
 - Stage an edit (source, mask, grow, feather, keep-outside, size) once and enqueue 1..N items that share it. Items may differ by seed and by **strength**, in all three planner modes: `seed` (count items), `pair` (zip) and `cross` (product). Example: strength `0.5, 0.7, 1.0` crossed with seeds `1, 2` gives six items over one staged edit.
-- A **Queue edit** action beside **Edit image** in the Inpaint editor; same capability line and disclosure text as Edit image.
+- The Queues tab's Create queue and Plan area queue the current Inpaint edit when Generate is in Inpaint mode; same disclosure text as Edit image.
 - Planner and dry run: `strength` as a dimension for `seed`, `pair` and `cross` plans over a staged edit, shown in the dry-run table. The Queues page Plan area offers it only when the queue is an edit queue.
 - Dispatcher path for image items: restore the snapshot, rebuild the permit from the recorded consent, call the existing image generation path, save raw and final outputs and settle the item from the attempt.
 - Queues page: an operation badge (Inpaint or Image to image), strength, and a small source thumbnail per queue; Start disclosure for cloud uploads.
@@ -64,7 +64,7 @@ Today an edit runs immediately: **Edit image** builds an owner-probe permit, pre
 
 ### UI
 
-- Inpaint editor: **Queue edit** (enabled under the same conditions as Edit image, plus a count spinner defaulting to 1). It stages inputs on a worker, creates the paused queue and reports through the shared bottom overlay with a link to Queues. It never starts dispatch.
+- Queues tab: in Inpaint mode, **Create queue** stages the editor's inputs on a worker and creates the paused queue; the Plan area shows a Strengths field. It never starts dispatch.
 - Queues page: shows operation, strength, thumbnail and the cloud disclosure; Start and Clear keep their current semantics. Preview states for `tools/ui/render_states.py` are added with the view change.
 - No new modal dialogs; inline feedback only.
 
@@ -72,7 +72,7 @@ Today an edit runs immediately: **Edit image** builds an owner-probe permit, pre
 
 1. **Persistence and request acceptance.** Pre-allocated attempt id (or item-keyed inputs), consent record, relaxed queue validation for well-formed image items, planner `seed`/`pair`/`cross` modes with the `strength` dimension for staged edits. Offline contract tests with the fake backend: enqueue, restart, hash mismatch, scope mismatch, unknown outcome keeps its reservation.
 2. **Dispatcher and session path.** Image item execution, outcome settlement, raw/final saving, cloud and local scope checks. Fake-backend tests for success, failure, cancellation and no-replay.
-3. **Desktop.** **Queue edit**, Queues page display, disclosure, render states, desktop guide.
+3. **Desktop.** Queues tab Create queue/Plan wiring, Queues page display, disclosure, render states, desktop guide.
 4. **Owner acceptance.** Owner-run Windows smoke on local and DT+ cloud with one exact checkpoint each. No live generation in CI, nothing billable by the author.
 
 Each step updates `devdocs/releases/unreleased.md`, `devdocs/current_dev_status.md` and the image-operations architecture document in the same change. No version bump is implied; this belongs with the 0.5.0 image-to-image milestone in [the release roadmap](releases.md).

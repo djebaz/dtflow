@@ -283,6 +283,7 @@ class MainWindow:
             saved_source=lambda: self._saved if self._saved.available() else None,
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
+            edit_source=self.generation.queue_edit_job,
             simulation_source=self.generation.simulation,
             created_hook=self.generation.queue_created,
             activity=self.activity,

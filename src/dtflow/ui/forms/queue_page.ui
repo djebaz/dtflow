@@ -780,6 +780,29 @@
                    </property>
                   </widget>
                  </item>
+                 <item row="9" column="0">
+                  <widget class="QLabel" name="planStrengthsLabel">
+                   <property name="text">
+                    <string>Strengths</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item row="9" column="1">
+                  <widget class="QLineEdit" name="planStrengthsEdit">
+                   <property name="placeholderText">
+                    <string>e.g. 0.5; 0.7; 1</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Inpaint edits only: numbers 0..1 separated by ;</string>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Plan strengths</string>
+                   </property>
+                  </widget>
+                 </item>
                 </layout>
                </item>
                <item>

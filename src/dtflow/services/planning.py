@@ -161,6 +161,8 @@ def _set(loras: list, name: str, value: Any) -> dict[str, Any]:
 
 
 def _read(request: ResolvedGenerationRequest, name: str) -> str:
+    if name == "strength" and request.operation == "txt2img":  # dry run of an edit that is not staged yet
+        return dict(request.resolution_evidence)["plan.dimension.strength"]
     if name == "size":
         return f"{request.width_px}x{request.height_px}"
     if name == "sampler":
@@ -182,12 +184,17 @@ def _combinations(plan: Plan, total: int):
     return combos
 
 
-def expand_plan(base: ResolvedGenerationRequest, plan: Plan) -> list[ResolvedGenerationRequest]:
-    """Ordered, fully resolved requests for the plan; every failure is raised before anything is enqueued."""
+def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = False) -> list[ResolvedGenerationRequest]:
+    """Ordered, fully resolved requests for the plan; every failure is raised before anything is enqueued.
+
+    ``edit`` previews a staged edit from its text-to-image settings base (dry run): strength is validated and shown
+    in the evidence only; the real items carry it once the edit is staged.
+    """
     varied = {name for name, _ in plan.dimensions}
-    if base.operation == "txt2img" and "strength" in varied:
+    preview = edit and base.operation == "txt2img"
+    if base.operation == "txt2img" and not edit and "strength" in varied:
         raise PlanError("Strength applies to staged image edits only.")
-    if base.operation != "txt2img" and "size" in varied:
+    if (edit or base.operation != "txt2img") and "size" in varied:
         raise PlanError("A staged edit is fitted to one size; size cannot vary.")
     total = plan_size(plan)
     if total > MAX_QUEUE_ITEMS:
@@ -214,6 +221,10 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan) -> list[ResolvedGen
         try:
             for (name, _), value in zip(plan.dimensions, combo, strict=True):
                 changes.update(_set(loras, name, value))
+                if preview and name == "strength":
+                    if type(value) not in (int, float) or not 0 <= value <= 1:
+                        raise PlanError("Strength must be a number in 0..1.")
+                    changes.pop("strength")
                 evidence.append((f"plan.dimension.{name}", f"{value[0]}x{value[1]}" if name == "size" else str(value)))
             if policy == "increment":
                 changes["seed"] = base.seed + index
@@ -233,9 +244,9 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan) -> list[ResolvedGen
     return items
 
 
-def describe_plan(base: ResolvedGenerationRequest, plan: Plan) -> PlanTable:
+def describe_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = False) -> PlanTable:
     """The dry-run table: the exact items ``expand_plan`` would produce, as plain rows (nothing is persisted)."""
-    items = expand_plan(base, plan)
+    items = expand_plan(base, plan, edit=edit)
     varied = [name for name, _ in plan.dimensions]
     columns = ("#", *varied, *(() if "seed" in varied else ("seed",)))
     rows = tuple(
