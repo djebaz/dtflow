@@ -1,0 +1,1595 @@
+{
+ "schema": "dtflow.model-profiles",
+ "version": 1,
+ "source": "Draw Things community configs.json",
+ "samplers_inferred": true,
+ "families": {
+  "cosmos2.5_2b": {
+   "name": "Anima Base 1.0",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ernie_image": {
+   "name": "ERNIE Image Turbo 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 4,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux1": {
+   "name": "FLUX.1 [dev]",
+   "sampler": "euler_a_trailing",
+   "steps": 28,
+   "guidance": 4.5,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 4.5,
+    "resolution_dependent_shift": true,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux2": {
+   "name": "FLUX.2 [dev]",
+   "sampler": "ddim_trailing",
+   "steps": 28,
+   "guidance": 4.5,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 4.5,
+    "resolution_dependent_shift": true,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux2_4b": {
+   "name": "FLUX.2 [klein] 4B",
+   "sampler": "ddim_trailing",
+   "steps": 4,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux2_9b": {
+   "name": "FLUX.2 [klein] 9B",
+   "sampler": "ddim_trailing",
+   "steps": 4,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_1": {
+   "name": "FLUX.1 [dev]",
+   "sampler": "euler_a_trailing",
+   "steps": 28,
+   "guidance": 4.5,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 4.5,
+    "resolution_dependent_shift": true,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_2": {
+   "name": "FLUX.2 [klein] 9B Base",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "hidream_i1": {
+   "name": "HiDream-I1 [full]",
+   "sampler": "euler_a_trailing",
+   "steps": 40,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3,
+    "tea_cache_threshold": 0.25,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "hunyuan_video": {
+   "name": "Hunyuan Video T2V 720p",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 6,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 6,
+    "resolution_dependent_shift": false,
+    "shift": 7,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.15,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ideogram_4": {
+   "name": "Ideogram 4",
+   "sampler": "euler_a_trailing",
+   "steps": 48,
+   "guidance": 7,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 1,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "krea_2": {
+   "name": "Krea 2 Turbo",
+   "sampler": "euler_a_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 3,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ltx2": {
+   "name": "LTX-2.3 22B [dev] 720p",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ltx_2": {
+   "name": "LTX-2.3 22B [dev] 720p",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "minimax_h3": {
+   "name": "MiniMax H3",
+   "sampler": "ddim_trailing",
+   "steps": 50,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "resolution_dependent_shift": false,
+    "shift": 12
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image": {
+   "name": "Qwen Image 2.1",
+   "sampler": "ddim_trailing",
+   "steps": 40,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 1,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
+    "resolution_dependent_shift": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_2.1": {
+   "name": "Qwen Image 2.1",
+   "sampler": "ddim_trailing",
+   "steps": 40,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 1,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
+    "resolution_dependent_shift": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "sd_1": {
+   "name": "Stable Diffusion v1.5",
+   "sampler": "dpmpp_2m_ays",
+   "steps": 16,
+   "guidance": 5,
+   "extras": {},
+   "samplers": [
+    "dpmpp_2m_karras",
+    "euler_a",
+    "ddim",
+    "plms",
+    "dpmpp_sde_karras",
+    "unipc",
+    "lcm",
+    "euler_a_substep",
+    "dpmpp_sde_substep",
+    "tcd",
+    "dpmpp_2m_ays",
+    "euler_a_ays",
+    "dpmpp_sde_ays",
+    "unipc_ays"
+   ]
+  },
+  "sdxl": {
+   "name": "SDXL v1.0",
+   "sampler": "dpmpp_2m_ays",
+   "steps": 16,
+   "guidance": 5,
+   "extras": {},
+   "samplers": [
+    "dpmpp_2m_karras",
+    "euler_a",
+    "ddim",
+    "plms",
+    "dpmpp_sde_karras",
+    "unipc",
+    "lcm",
+    "euler_a_substep",
+    "dpmpp_sde_substep",
+    "tcd",
+    "dpmpp_2m_ays",
+    "euler_a_ays",
+    "dpmpp_sde_ays",
+    "unipc_ays"
+   ]
+  },
+  "sdxl_base_v0.9": {
+   "name": "SDXL v1.0",
+   "sampler": "dpmpp_2m_ays",
+   "steps": 16,
+   "guidance": 5,
+   "extras": {},
+   "samplers": [
+    "dpmpp_2m_karras",
+    "euler_a",
+    "ddim",
+    "plms",
+    "dpmpp_sde_karras",
+    "unipc",
+    "lcm",
+    "euler_a_substep",
+    "dpmpp_sde_substep",
+    "tcd",
+    "dpmpp_2m_ays",
+    "euler_a_ays",
+    "dpmpp_sde_ays",
+    "unipc_ays"
+   ]
+  },
+  "v1": {
+   "name": "Stable Diffusion v1.5",
+   "sampler": "dpmpp_2m_ays",
+   "steps": 16,
+   "guidance": 5,
+   "extras": {},
+   "samplers": [
+    "dpmpp_2m_karras",
+    "euler_a",
+    "ddim",
+    "plms",
+    "dpmpp_sde_karras",
+    "unipc",
+    "lcm",
+    "euler_a_substep",
+    "dpmpp_sde_substep",
+    "tcd",
+    "dpmpp_2m_ays",
+    "euler_a_ays",
+    "dpmpp_sde_ays",
+    "unipc_ays"
+   ]
+  },
+  "wan_2_2": {
+   "name": "Wan v2.2 T2V 14B",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 8,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "wan_v2.1_14b": {
+   "name": "Wan v2.1 T2V 14B 720p",
+   "sampler": "euler_a_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "z_image": {
+   "name": "Z Image Base 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  }
+ },
+ "models": {
+  "anima_aesthetic_1.1": {
+   "name": "Anima Aesthetic 1.1",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "anima_base_1.0": {
+   "name": "Anima Base 1.0",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ernie_image": {
+   "name": "ERNIE Image Base 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ernie_image_turbo": {
+   "name": "ERNIE Image Turbo 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 4,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_1_dev": {
+   "name": "FLUX.1 [dev]",
+   "sampler": "euler_a_trailing",
+   "steps": 28,
+   "guidance": 4.5,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 4.5,
+    "resolution_dependent_shift": true,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_1_fill_dev": {
+   "name": "FLUX.1 Fill [dev]",
+   "sampler": "euler_a_trailing",
+   "steps": 28,
+   "guidance": 50,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 50,
+    "resolution_dependent_shift": true,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_1_schnell": {
+   "name": "FLUX.1 [schnell]",
+   "sampler": "euler_a_trailing",
+   "steps": 4,
+   "guidance": 4.5,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 3.5,
+    "resolution_dependent_shift": false,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_2_dev": {
+   "name": "FLUX.2 [dev]",
+   "sampler": "ddim_trailing",
+   "steps": 28,
+   "guidance": 4.5,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 4.5,
+    "resolution_dependent_shift": true,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_2_klein_4b": {
+   "name": "FLUX.2 [klein] 4B",
+   "sampler": "ddim_trailing",
+   "steps": 4,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_2_klein_9b": {
+   "name": "FLUX.2 [klein] 9B",
+   "sampler": "ddim_trailing",
+   "steps": 4,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_2_klein_9b_kv": {
+   "name": "FLUX.2 [klein] 9B KV",
+   "sampler": "ddim_trailing",
+   "steps": 4,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_2_klein_base_4b": {
+   "name": "FLUX.2 [klein] 4B Base",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "flux_2_klein_base_9b": {
+   "name": "FLUX.2 [klein] 9B Base",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.3,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "hidream_i1_dev": {
+   "name": "HiDream-I1 [dev]",
+   "sampler": "euler_a_trailing",
+   "steps": 28,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 6
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "hidream_i1_fast": {
+   "name": "HiDream-I1 [fast]",
+   "sampler": "euler_a_trailing",
+   "steps": 16,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "hidream_i1_full": {
+   "name": "HiDream-I1 [full]",
+   "sampler": "euler_a_trailing",
+   "steps": 40,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 2,
+    "resolution_dependent_shift": false,
+    "shift": 3,
+    "tea_cache_threshold": 0.25,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "hunyuan_video_t2v_720p": {
+   "name": "Hunyuan Video T2V 720p",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 6,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 6,
+    "resolution_dependent_shift": false,
+    "shift": 7,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true,
+    "tea_cache_threshold": 0.15,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ideogram_4": {
+   "name": "Ideogram 4",
+   "sampler": "euler_a_trailing",
+   "steps": 48,
+   "guidance": 7,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 1,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ideogram_4_fast": {
+   "name": "Ideogram 4 Fast",
+   "sampler": "euler_a_trailing",
+   "steps": 20,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 1,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ideogram_4_instant": {
+   "name": "Ideogram 4 Instant",
+   "sampler": "euler_a_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 1,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "krea_2_raw": {
+   "name": "Krea 2 Raw",
+   "sampler": "euler_a_trailing",
+   "steps": 52,
+   "guidance": 3.5,
+   "extras": {
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "krea_2_turbo": {
+   "name": "Krea 2 Turbo",
+   "sampler": "euler_a_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 3,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ltx_2.3_22b_dev": {
+   "name": "LTX-2.3 22B [dev] 720p",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ltx_2.3_22b_distilled": {
+   "name": "LTX-2.3 22B [distilled] 720p",
+   "sampler": "tcd_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ltx_2_19b_dev": {
+   "name": "LTX-2 19B [dev] 720p",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "ltx_2_19b_distilled": {
+   "name": "LTX-2 19B [distilled] 720p",
+   "sampler": "tcd_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "minimax_h3_fl2va": {
+   "name": "MiniMax H3",
+   "sampler": "ddim_trailing",
+   "steps": 50,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "resolution_dependent_shift": false,
+    "shift": 12
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "minimax_h3_ref2va": {
+   "name": "MiniMax H3 [ref2va]",
+   "sampler": "ddim_trailing",
+   "steps": 50,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "resolution_dependent_shift": false,
+    "shift": 12
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_1.0": {
+   "name": "Qwen Image 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_2.1": {
+   "name": "Qwen Image 2.1",
+   "sampler": "ddim_trailing",
+   "steps": 40,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 1,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
+    "resolution_dependent_shift": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_2.1_turbo": {
+   "name": "Qwen Image 2.1 Turbo",
+   "sampler": "ddim_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 6.5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3,
+    "resolution_dependent_shift": false
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_2512": {
+   "name": "Qwen Image 2512",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_edit_1.0": {
+   "name": "Qwen Image Edit 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_edit_2509": {
+   "name": "Qwen Image Edit 2509",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "qwen_image_edit_2511": {
+   "name": "Qwen Image Edit 2511",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 2,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "sd_v1.5": {
+   "name": "Stable Diffusion v1.5",
+   "sampler": "dpmpp_2m_ays",
+   "steps": 16,
+   "guidance": 5,
+   "extras": {},
+   "samplers": [
+    "dpmpp_2m_karras",
+    "euler_a",
+    "ddim",
+    "plms",
+    "dpmpp_sde_karras",
+    "unipc",
+    "lcm",
+    "euler_a_substep",
+    "dpmpp_sde_substep",
+    "tcd",
+    "dpmpp_2m_ays",
+    "euler_a_ays",
+    "dpmpp_sde_ays",
+    "unipc_ays"
+   ]
+  },
+  "sd_xl_base_1.0": {
+   "name": "SDXL v1.0",
+   "sampler": "dpmpp_2m_ays",
+   "steps": 16,
+   "guidance": 5,
+   "extras": {},
+   "samplers": [
+    "dpmpp_2m_karras",
+    "euler_a",
+    "ddim",
+    "plms",
+    "dpmpp_sde_karras",
+    "unipc",
+    "lcm",
+    "euler_a_substep",
+    "dpmpp_sde_substep",
+    "tcd",
+    "dpmpp_2m_ays",
+    "euler_a_ays",
+    "dpmpp_sde_ays",
+    "unipc_ays"
+   ]
+  },
+  "skyreels_v1_hunyuan_i2v": {
+   "name": "SkyReels v1 Hunyuan I2V 544p",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 6,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 1,
+    "resolution_dependent_shift": false,
+    "shift": 7,
+    "speed_up_with_guidance_embed": false,
+    "t5_text_encoder": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "skyreels_v1_hunyuan_t2v": {
+   "name": "SkyReels v1 Hunyuan T2V 544p",
+   "sampler": "ddim_trailing",
+   "steps": 30,
+   "guidance": 6,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 1,
+    "resolution_dependent_shift": false,
+    "shift": 7,
+    "speed_up_with_guidance_embed": false,
+    "t5_text_encoder": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "wan_v2.1_1.3b_480p": {
+   "name": "Wan v2.1 T2V 1.3B 480p",
+   "sampler": "euler_a_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.15,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "wan_v2.1_14b_720p": {
+   "name": "Wan v2.1 T2V 14B 720p",
+   "sampler": "euler_a_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "wan_v2.1_14b_i2v_480p": {
+   "name": "Wan v2.1 I2V 14B 480p",
+   "sampler": "euler_a_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "wan_v2.1_14b_i2v_720p": {
+   "name": "Wan v2.1 I2V 14B 720p",
+   "sampler": "euler_a_trailing",
+   "steps": 30,
+   "guidance": 5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "wan_v2.2_a14b_hne_i2v": {
+   "name": "Wan v2.2 I2V 14B",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 3.5,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 5,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "wan_v2.2_a14b_hne_t2v": {
+   "name": "Wan v2.2 T2V 14B",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 8,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "z_image_1.0": {
+   "name": "Z Image Base 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 30,
+   "guidance": 4,
+   "extras": {
+    "clip_skip": 1,
+    "resolution_dependent_shift": true,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
+  "z_image_turbo_1.0": {
+   "name": "Z Image Turbo 1.0",
+   "sampler": "unipc_trailing",
+   "steps": 8,
+   "guidance": 1,
+   "extras": {
+    "clip_skip": 1,
+    "shift": 3,
+    "resolution_dependent_shift": false,
+    "tea_cache_threshold": 0.2,
+    "tea_cache_start": 5,
+    "tea_cache_end": -1,
+    "tea_cache_max_skip_steps": 3
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  }
+ }
+}

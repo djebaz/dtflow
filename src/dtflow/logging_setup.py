@@ -167,6 +167,11 @@ def configure_logging(
     return LogSession(session, path, listener, handler)
 
 
+def dev_enabled() -> bool:
+    """True when this process runs in explicit development mode (``-x``); it only adds diagnostic detail."""
+    return logging.getLogger(LOGGER).isEnabledFor(logging.DEBUG)
+
+
 def _attach_attempt(record: logging.LogRecord) -> bool:
     record.attempt = ATTEMPT.get()
     return True

@@ -4,6 +4,7 @@ import pytest
 from drawthings_py.configs.gen_config import GenConfig
 
 from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE, build_generation_message, float32
+from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import (
     BackendError,
     ErrorCategory,
@@ -12,6 +13,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     Sampler,
 )
+from dtflow.services.presets import SAMPLER_TO_DRAW_THINGS  # noqa: E402
 
 
 def request(**overrides):
@@ -20,7 +22,7 @@ def request(**overrides):
 
 
 @pytest.mark.parametrize("seed", [0, 1, 4294967295])
-@pytest.mark.parametrize("sampler,wire", [(Sampler.EULER_A, 1), (Sampler.DPMPP_2M_KARRAS, 0)])
+@pytest.mark.parametrize("sampler,wire", [(item, SAMPLER_TO_DRAW_THINGS[item.value]) for item in Sampler])
 @pytest.mark.parametrize("size", [(128, 128), (512, 768), (2048, 2048)])
 def test_serialized_configuration_equals_the_resolved_request(seed, sampler, wire, size):
     resolved = request(
@@ -108,6 +110,13 @@ def test_prepared_custom_loras_are_described_in_the_override_with_the_base_versi
     assert not build_generation_message(
         request(loras=selections, prepared_assets=(asset,)), None
     ).message.override.loras
+    # The catalogue's family name is mapped to Draw Things' version string; an exact description's version wins.
+    flux = build_generation_message(request(loras=selections, prepared_assets=(asset,)), None, "flux_1")
+    assert json.loads(flux.message.override.loras)[0]["version"] == "flux1"
+    exact = build_generation_message(
+        request(loras=selections, prepared_assets=(asset,)), None, "flux_2", {"version": "flux2_9b", "file": "x"}
+    )
+    assert json.loads(exact.message.override.loras)[0]["version"] == "flux2_9b"
     assert not build_generation_message(request(loras=selections), None, "z_image").message.override.loras
 
 
@@ -116,3 +125,23 @@ def test_bundled_catalogue_supplies_a_base_version_when_inventory_has_none():
 
     assert bundled_base_version("z_image_turbo_1.0_q6p.ckpt") == "z_image"
     assert bundled_base_version("unknown.ckpt") is None
+
+
+def test_flux_profiles_send_the_family_fields_and_other_models_stay_bare():
+    dev = dict(
+        build_generation_message(
+            request(model_id="flux_1_dev_q8p.ckpt", sampler_id=Sampler.EULER_A_TRAILING), None
+        ).effective_configuration
+    )
+    schnell = dict(
+        build_generation_message(
+            request(model_id="flux_1_schnell_f16.ckpt", sampler_id=Sampler.EULER_A_TRAILING), None
+        ).effective_configuration
+    )
+    assert (dev["guidance_embed"], dev["resolution_dependent_shift"], dev["t5_text_encoder"]) == ("4.5", "True", "True")
+    assert (schnell["guidance_embed"], schnell["resolution_dependent_shift"]) == ("3.5", "False")
+    # Unknown checkpoints use the family default; epsilon models send no extras.
+    assert profile_for("someone_flux_finetune_q8p.ckpt", "flux_1").name == "FLUX.1 [dev]"
+    assert profile_for("sd_v1.5_f16.ckpt").extras == () and profile_for("unknown.ckpt") is None
+    assert Sampler.EULER_A_TRAILING in profile_for("flux_1_dev_q8p.ckpt").samplers
+    assert Sampler.EULER_A not in profile_for("flux_1_dev_q8p.ckpt").samplers

@@ -221,3 +221,5 @@ deletes or remote cancellation. GitHub CI on the implementation head
 ad0f09c passed 434 offline tests with 3 skipped; the documentation-only
 commit requires its own CI check. Packaging and final squash merge remain
 separate actions. No agent-run native GUI test or billable work.
+
+- PR #60 (owner-tested on Windows with direct DT+ cloud, no agent generation): model-aware sampler filtering and Flux profiles, Draw Things' official presets as `DT · <name>`, bundled model descriptions for checkpoints the cloud does not describe, the FLUX.1 LoRA version fix (output differed from no-LoRA and matched local at the same seed), and `-x` Attempt details evidence (failure, stage timings, image-quality verdict). Derived Schnell f16/q4p and dev q6p/q5p_svd/de-distill f16 descriptions and image quality of several newer models remain unconfirmed.
