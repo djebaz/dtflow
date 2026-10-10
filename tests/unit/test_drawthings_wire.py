@@ -3,7 +3,7 @@
 import pytest
 from drawthings_py.configs.gen_config import GenConfig
 
-from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE, build_generation_message, float32
+from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE, build_generation_message, float32, flux_resolved_shift
 from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import (
     BackendError,
@@ -131,7 +131,13 @@ def test_flux_profiles_send_the_family_fields_and_other_models_stay_bare():
             request(model_id="flux_1_schnell_f16.ckpt", sampler_id=Sampler.EULER_A_TRAILING), None
         ).effective_configuration
     )
-    assert (dev["guidance_embed"], dev["resolution_dependent_shift"], dev["t5_text_encoder"]) == ("4.5", "True", "True")
+    # Flux 1 dev resolves its resolution-dependent shift (3.158 at 1024x1024 tokens) instead of leaving it to the server.
+    assert (dev["guidance_embed"], dev["resolution_dependent_shift"], dev["t5_text_encoder"]) == (
+        "4.5",
+        "False",
+        "True",
+    )
+    assert abs(flux_resolved_shift(1024, 1024) - 3.1582) < 1e-3
     assert (schnell["guidance_embed"], schnell["resolution_dependent_shift"]) == ("3.5", "False")
     # Unknown checkpoints use the family default; epsilon models send no extras.
     assert profile_for("someone_flux_finetune_q8p.ckpt", "flux_1").name == "FLUX.1 [dev]"

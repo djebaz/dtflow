@@ -7,6 +7,7 @@ The resolved seed is serialized through the public ``GenConfig.to_fbs(seed)`` pa
 from __future__ import annotations
 
 import json
+import math
 import struct
 from dataclasses import dataclass
 from importlib.metadata import version
@@ -114,6 +115,15 @@ def custom_lora_override(request: ResolvedGenerationRequest, version: str | None
     return json.dumps(entries).encode() if entries else b""
 
 
+def flux_resolved_shift(width: int, height: int) -> float:
+    """Shift a resolution-dependent Flux 1 request resolves to (standard Flux scheduler: mu interpolated between 0.5 at
+    256 and 1.15 at 4096 latent tokens, shift = exp(mu)). Experiment: direct DT+ requests that leave the flag on return
+    noise for Flux dev, while presets with the flag off work, so the resolved value is sent instead."""
+    tokens = (width // 16) * (height // 16)
+    mu = 0.5 + (1.15 - 0.5) * (tokens - 256) / (4096 - 256)
+    return round(math.exp(mu), 4)
+
+
 def with_guidance_embed(configuration: bytes, value: float) -> bytes:
     """drawthings-py 0.4.0 skips ``guidance_embed`` while ``speed_up_with_guidance_embed`` is on and writes the 3.5
     default, which is exactly when Flux uses it; set the preset value on the generated table instead."""
@@ -132,6 +142,8 @@ def build_generation_message(
     # Flow models (Flux, ...) need version-specific fields that a bare configuration leaves at library defaults.
     profile = profile_for(request.model_id, base_version)
     extras = dict(profile.extras) if profile else {}
+    if extras.get("resolution_dependent_shift") is True and profile and profile.name.startswith("FLUX.1"):
+        extras.update(resolution_dependent_shift=False, shift=flux_resolved_shift(request.width_px, request.height_px))
     config = GenConfig(
         model=request.model_id,
         width=request.width_px,
