@@ -55,13 +55,15 @@ def save_image_artifacts(
     final = replace(raw, artifact_id=f"{raw.artifact_id}.dtflow-final")
     if request.image_inputs.preserve_outside:
         composite = composite_image(prepared, raw.encoded)
-        if len(composite.encoded) > limits.artifact_bytes or len(raw.encoded) + len(composite.encoded) > limits.final_bytes:
-            raise ValueError("Raw/composite output exceeds the encoded byte limit.")
+        if len(composite.encoded) > limits.artifact_bytes:
+            raise ValueError("Composite output exceeds the encoded artifact byte limit.")
         validate_png(composite.encoded, composite.width, composite.height, decoded_limit=limits.tensor_bytes)
         final = replace(
             final, encoded=composite.encoded, width_px=composite.width, height_px=composite.height,
             metadata=(*raw.metadata, ("dtflow_output_role", "source_sized_composite")),
         )
+    if len(raw.encoded) + len(final.encoded) > limits.final_bytes:
+        raise ValueError("Retained raw/final output exceeds the aggregate encoded byte limit.")
     final_path = directory / "final-1.png"
     atomic_write(final_path, final.encoded)
     paths = (str(final_path.resolve()),)

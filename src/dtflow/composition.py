@@ -76,6 +76,17 @@ def endpoint_label(selection: BackendSelection) -> str | None:
     return parse_endpoint(selection.endpoint).label
 
 
+def image_endpoint_label(selection: BackendSelection) -> str:
+    """Exact generation endpoint identity for permit checks, without a client."""
+    if selection.name == "local" and selection.endpoint:
+        return parse_endpoint(selection.endpoint).label
+    if selection.name == "cloud":
+        from dtflow.backends.drawthings.cloud import DirectCloudBackend
+
+        return DirectCloudBackend.default_endpoint().label
+    raise ValidationError("Image generation requires an explicit real backend endpoint.")
+
+
 def create_backend(
     selection: BackendSelection,
     *,
@@ -117,6 +128,12 @@ def create_backend(
             image_permits=image_permits, image_inputs_loader=image_inputs_loader, allow_image_probe=allow_image_probe,
         )
     if selection.name == "cloud":
+        if type(selection.cloud_concurrency) is not int or not 1 <= selection.cloud_concurrency <= 4:
+            raise ValidationError("Cloud concurrency must be in 1..4.")
+        if image_permits or allow_image_probe:
+            DirectCloudBackend.validate_image_permits(
+                DirectCloudBackend.default_endpoint(), image_permits, image_inputs_loader, allow_image_probe
+            )
         if saved is None:
             saved = _NoSavedCredentials()
         if KEY not in environ and isinstance(saved, _NoSavedCredentials):

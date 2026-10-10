@@ -6,6 +6,8 @@
 
 ## Added
 
+- Dedicated permit-scoped headless single-shot image session with worker file preparation, immutable managed-input loader, durable attempt binding and registered final/effective-request handoff. Cloud allocation preflight and aggregate raw-copy limits are source-present. No default permits, accepted checkpoints, UI/ONNX or generic CLI/queue/config image dispatch; no tests/validation/inference.
+
 - Unfinished headless dispatch checkpoint: exact-scope image permits/cloud description digests, image wire configuration, attempt snapshot binding and raw/final saver source. Session image entry/loader and output handoff remain pending; no default image capability, GUI change or runtime acceptance.
 
 - Durable image-input snapshot/restore helpers with exclusive attempt-owned sets, bounded manifest/content reads, content and pixel/fit verification; provider-local RGB/mask 0/2 tensor preparation with SHA-256 content references. Not integrated with dispatch; no GUI change, runtime acceptance or inference. Request/DB integration progresses separately below.
@@ -29,6 +31,7 @@
 
 - PRs: #63, #64
 - Scope: Standalone CPU person-zone mask PoC, headless image preparation, durable input snapshot/restore and provider-local tensor encoding; no image-operation dispatch or production acceptance.
+
 
 
 

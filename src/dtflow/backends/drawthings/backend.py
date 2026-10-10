@@ -112,31 +112,38 @@ class DrawThingsBackend:
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
         self._model_specs: dict[str, dict] = {}
-        if type(allow_image_probe) is not bool or not isinstance(image_permits, tuple):
-            raise ValidationError("Image-operation permits must be an immutable tuple with explicit probe policy.")
-        self._image_permits = {}
-        self._image_specs = {}
         self._image_inputs_loader = image_inputs_loader
         self._allow_image_probe = allow_image_probe
+        self._image_permits, self._image_specs = self.validate_image_permits(
+            endpoint, image_permits, image_inputs_loader, allow_image_probe
+        )
+
+    @classmethod
+    def validate_image_permits(cls, endpoint, image_permits, image_inputs_loader, allow_image_probe):
+        """Pure preflight, also used before composition allocates cloud auth clients."""
+        if type(allow_image_probe) is not bool or not isinstance(image_permits, tuple):
+            raise ValidationError("Image-operation permits must be an immutable tuple with explicit probe policy.")
+        permits, specs = {}, {}
         for permit in image_permits:
             if not isinstance(permit, ImageOperationPermit):
                 raise ValidationError("Image-operation permit is malformed.")
             permit.validate_scope(
-                self.backend_id, endpoint.label, permit.model_id, permit.operation, allow_probe=allow_image_probe
+                cls.backend_id, endpoint.label, permit.model_id, permit.operation, allow_probe=allow_image_probe
             )
             if image_inputs_loader is None or not callable(image_inputs_loader):
                 raise ValidationError("Image operations require a managed input loader.")
             key = (permit.model_id, permit.operation)
-            if key in self._image_permits:
+            if key in permits:
                 raise ValidationError("Duplicate exact image-operation permits are refused.")
             spec = exact_model_spec(permit.model_id)
             digest = exact_model_description_digest(permit.model_id)
-            if (self.backend_id == "drawthings-cloud" or permit.model_description_sha256 is not None) and (
+            if (cls.backend_id == "drawthings-cloud" or permit.model_description_sha256 is not None) and (
                 spec is None or digest != permit.model_description_sha256
             ):
                 raise ValidationError("Exact published model description is missing or differs from the owner permit.")
-            self._image_permits[key] = permit
-            self._image_specs[permit.model_id] = spec if self.backend_id == "drawthings-cloud" else None
+            permits[key] = permit
+            specs[permit.model_id] = spec if cls.backend_id == "drawthings-cloud" else None
+        return permits, specs
 
     # -- contract ------------------------------------------------------------------------------------------------
 
