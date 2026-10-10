@@ -21,7 +21,7 @@
 ## Changed
 
 - Explicit resolved-request v2 and new attempt metadata v2; execution DB v3 with fresh consistent v1/v2 backups and transactional historical txt2img request migration. Preserve output files, identities and existing no-replay/uncertainty reconciliation; unsupported schemas/malformed requests fail closed. Source-present only; owner migration acceptance pending.
-- Explicit image-operation refusal in queues/plans and generic configuration/CLI resolution/import/export; no silent loss of inputs/strength. Read-only gallery and queue listing retain supported older DB access. Providers still advertise txt2img only; image dispatch/raw-final saving remains pending.
+- Explicit image-operation refusal in CLI queues/plans (Queues-tab staged edits excepted, see below) and generic configuration/CLI resolution/import/export; no silent loss of inputs/strength. Read-only gallery and queue listing retain supported older DB access. Providers still advertise txt2img only; image dispatch/raw-final saving remains pending.
 
 ## Fixed
 
