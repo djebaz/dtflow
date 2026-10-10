@@ -11,11 +11,16 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
     QAbstractSpinBox,
+    QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
+    QGroupBox,
+    QLabel,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
+    QPushButton,
     QToolButton,
     QWidget,
 )
@@ -25,6 +30,7 @@ from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
+from dtflow.logging_setup import dev_enabled
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -152,6 +158,10 @@ class MainWindow:
         startup.mark("ui loader created")
         QWidget().ensurePolished()
         startup.mark("first widget polished")
+        if dev_enabled():  # development diagnosis only: which widget class pays the first-use cost
+            for widget_class in (QLabel, QFrame, QPushButton, QLineEdit, QComboBox, QCheckBox, QGroupBox, QMainWindow):
+                widget_class().ensurePolished()
+                startup.mark(f"first {widget_class.__name__}")
         self.form = load_form()
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
