@@ -31,7 +31,7 @@ def _check(path: Path, *, directory: bool) -> None:
     except FileNotFoundError:
         return
     if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
-        raise ValidationError("Durable input paths must not redirect.")
+        raise ValidationError("Durable input paths and all state-directory ancestors must not be symlinks or junctions; choose a non-redirected state location.")
     if directory and not stat.S_ISDIR(info.st_mode):
         raise ValidationError("Durable input directory is not a directory.")
     if not directory and not stat.S_ISREG(info.st_mode):

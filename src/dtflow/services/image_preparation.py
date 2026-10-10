@@ -23,6 +23,30 @@ from dtflow.core.models import ValidationError
 
 ALGORITHM = "dtflow-image-preparation-v1"
 MASK_THRESHOLD = 127  # strictly greater -> selected; canonical binary output is 0/255
+MORPHOLOGY_PIXEL_PASS_LIMIT = 32_000_000
+
+
+def _binary_mask(mask: Image.Image) -> Image.Image:
+    if mask.mode.startswith("I;16") or mask.mode == "I":
+        values = mask.convert("I")
+        low, high = values.getextrema()
+        if low < 0 or high > 65535:
+            raise ValidationError("Integer masks must use unsigned 16-bit values in 0..65535.")
+        # Full-range scaling, never per-image contrast stretching or Pillow's
+        # clipping I->L conversion. I->L point requires a 65536-entry LUT.
+        return values.point([255 if value // 257 > MASK_THRESHOLD else 0 for value in range(65536)], "L")
+    if mask.mode == "F":
+        raise ValidationError("Floating-point masks are unsupported; use an 8-bit or unsigned 16-bit mask.")
+    return mask.convert("L").point(lambda value: 255 if value > MASK_THRESHOLD else 0)
+
+
+def _check_mask_fit(source: Image.Image, target: Image.Image, fit: ImageFit) -> None:
+    selected = source.histogram()[255]
+    retained = target.histogram()[255]
+    # Normalize by the exact fitted grids, not padding or rounded scale factors.
+    # This is an area guard, not a connected-component/topology guarantee.
+    if retained * fit.source_width * fit.source_height * 4 < selected * fit.fitted_width * fit.fitted_height * 3:
+        raise ValidationError("Mask loses over 25% of selected area at generation resolution; increase target size or broaden the selection.")
 
 
 def _read(path: Path, label: str) -> bytes:
@@ -113,6 +137,7 @@ def validate_prepared_inputs(prepared: PreparedImageInputs) -> None:
     fitted_mask.paste(binary.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST), (fit.left, fit.top))
     if ImageChops.difference(mask, fitted_mask).getbbox() is not None:
         raise ValidationError("Prepared mask pixels do not match the recorded fit/padding.")
+    _check_mask_fit(binary, mask, fit)
     wanted_blend = ImageChops.multiply(binary, binary.filter(ImageFilter.GaussianBlur(prepared.feather))) if prepared.feather else binary
     if ImageChops.difference(blend, wanted_blend).getbbox() is not None:
         raise ValidationError("Prepared blend mask does not match bounded feather evidence.")
@@ -179,14 +204,20 @@ def prepare_image_bytes(
     mask = _decode(mask_bytes, "Mask image")
     if mask.size != source.size:
         raise ValidationError("Mask dimensions must match the EXIF-oriented source image.")
-    mask = mask.convert("L").point(lambda x: 255 if x > MASK_THRESHOLD else 0)
+    mask = _binary_mask(mask)
     if grow:
         # Explicit black border makes erosion at source edges honest and prevents
         # implicit edge replication from inventing selected outside-source pixels.
         border = abs(grow)
+        if (mask.width + 2 * border) * (mask.height + 2 * border) * border > MORPHOLOGY_PIXEL_PASS_LIMIT:
+            raise ValidationError("Mask grow/shrink exceeds the bounded pixel-pass budget; reduce grow or source size.")
         padded = ImageOps.expand(mask, border=border, fill=0)
         kernel = ImageFilter.MaxFilter if grow > 0 else ImageFilter.MinFilter
-        mask = padded.filter(kernel(2 * border + 1)).crop(
+        # Repeated radius-one square morphology has the same radius-border
+        # support, without a potentially 129x129 rank filter per pixel.
+        for _ in range(border):
+            padded = padded.filter(kernel(3))
+        mask = padded.crop(
             (border, border, border + mask.width, border + mask.height)
         )
     if mask.getbbox() is None:
@@ -199,6 +230,7 @@ def prepare_image_bytes(
     )
     if fitted_mask.getbbox() is None:
         raise ValidationError("Selected mask disappears at the generation resolution; enlarge the region or target.")
+    _check_mask_fit(mask, fitted_mask, fit)
     return PreparedImageInputs(
         _content(source),
         _content(fitted),

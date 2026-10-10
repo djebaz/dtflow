@@ -273,19 +273,48 @@ class QueueMixin:
             blocked, reserved = self._accounting(db, queue["backend_key"])
             if blocked or reserved >= min(queue["cap"], limit):
                 return None
-            row = db.execute(
-                "SELECT item_id, request_json FROM queue_items WHERE queue_id=? AND state='pending'"
-                " ORDER BY position LIMIT 1",
-                (queue_id,),
-            ).fetchone()
-            if row is None:
-                return None
-            request = request_from_record(json.loads(row["request_json"]))
-            db.execute(
-                "UPDATE queue_items SET state='running', updated_at_utc=? WHERE item_id=?",
-                (self._now(), row["item_id"]),
-            )
-            return row["item_id"], request
+            # Bound one claim transaction even if externally corrupted rows exceed
+            # the normal queue creation limit. Never reserve an invalid request.
+            for _ in range(MAX_ITEMS):
+                row = db.execute(
+                    "SELECT item_id, request_json, attempt_id FROM queue_items WHERE queue_id=? AND state='pending'"
+                    " ORDER BY position LIMIT 1",
+                    (queue_id,),
+                ).fetchone()
+                if row is None:
+                    return None
+                record = None
+                try:
+                    record = json.loads(row["request_json"])
+                    request = request_from_record(record)
+                except (TypeError, ValueError):
+                    request_id = record.get("request_id") if isinstance(record, dict) else None
+                    associated = db.execute(
+                        "SELECT 1 FROM attempts WHERE request_id=? LIMIT 1", (request_id,)
+                    ).fetchone() if isinstance(request_id, str) else None
+                    if row["attempt_id"] is not None or associated is not None:
+                        raise QueueError("Invalid pending request has attempt evidence; owner inspection is required.")
+                    now = self._now()
+                    failure = {
+                        "category": "validation", "code": "stored_request_invalid",
+                        "message": "Stored queue request is malformed or unsupported; not dispatched by this claim.",
+                    }
+                    # Retain the original request for inspection, without copying
+                    # prompts, paths or decoder exception details into diagnostics.
+                    db.execute(
+                        "UPDATE queue_items SET state='failed', failure_json=?, updated_at_utc=? WHERE item_id=?",
+                        (json.dumps(failure), now, row["item_id"]),
+                    )
+                    self._event(db, queue_id, "request_rejected", now, {
+                        "item_id": row["item_id"], "code": "stored_request_invalid",
+                    })
+                    continue
+                db.execute(
+                    "UPDATE queue_items SET state='running', updated_at_utc=? WHERE item_id=?",
+                    (self._now(), row["item_id"]),
+                )
+                return row["item_id"], request
+            return None
 
     @staticmethod
     def _accounting(db: sqlite3.Connection, key: str) -> tuple[bool, int]:
@@ -483,7 +512,12 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
             WHERE i.queue_id=? ORDER BY i.position""",
             (row["queue_id"],),
         ):
-            request = json.loads(item["request_json"])
+            try:
+                request = json.loads(item["request_json"])
+            except (TypeError, ValueError):
+                request = {}
+            if not isinstance(request, dict):
+                request = {}
             items.append(
                 {
                     "position": item["position"],
@@ -491,8 +525,8 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "state": item["state"],
                     "overridden": bool(item["overridden"]),
                     "attempt_id": item["attempt_id"],
-                    "request_id": request["request_id"],
-                    "seed": request["seed"],
+                    "request_id": request.get("request_id"),
+                    "seed": request.get("seed"),
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
                 }
