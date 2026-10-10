@@ -280,6 +280,7 @@ class MainWindow:
         about_button.setAutoRaise(True)
         about_button.setAccessibleName("About DTFlow")
         form.statusBar().addPermanentWidget(about_button)
+        form.statusBar().setSizeGripEnabled(False)
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
