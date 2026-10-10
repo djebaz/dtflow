@@ -513,3 +513,7 @@ slots, expiry timers and deferred positioning are Qt-owned by their overlay widg
 No idle layout space is reserved. Native DPI, clipping/overlap, resize, focus, scroll
 continuity and packaged acceptance require owner verification; static/CI checks do
 not establish pixel-perfect parity with a web mockup.
+
+### Generate image-operation mode switch (step 6, work in progress)
+
+Place the joined Text to image | Inpaint buttons beside Prompt in the canonical Designer header, not a dropdown. The shared `segmented` frame role inherits ordinary button typography, control height and padding. Exterior corners use the button `size.radius` token (6 px), not the panel radius (8 px); interior corners are square only to join segments. Selected, selected-hover, selected-pressed and disabled states use the existing selection/button/disabled tokens. The initializer owns zero layout margins and spacing. No new palette or duplicated inline style is introduced. The manual editor default strength is 0.7, as selected by the owner; UI/runtime acceptance remains separate.

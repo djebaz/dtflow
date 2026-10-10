@@ -1621,3 +1621,37 @@ QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="
   color: ${color.onAccent};
   border-color: ${color.dangerBorder};
 }
+
+/* Shared segmented controls inherit ordinary button typography, sizing and padding. */
+QFrame[role="segmented"] {
+  background: transparent;
+  border: 0;
+}
+QFrame[role="segmented"] QPushButton {
+  border-radius: 0;
+}
+QFrame[role="segmented"] QPushButton[segmentEdge="first"] {
+  border-top-left-radius: ${size.radius};
+  border-bottom-left-radius: ${size.radius};
+}
+QFrame[role="segmented"] QPushButton[segmentEdge="last"] {
+  border-top-right-radius: ${size.radius};
+  border-bottom-right-radius: ${size.radius};
+}
+QFrame[role="segmented"] QPushButton:checked:enabled {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+  color: ${color.selectionText};
+  font-weight: ${type.weightEmphasis};
+}
+QFrame[role="segmented"] QPushButton:checked:hover:enabled {
+  background: ${color.selectionHover};
+}
+QFrame[role="segmented"] QPushButton:checked:pressed:enabled {
+  background: ${color.selectionPressed};
+}
+QFrame[role="segmented"] QPushButton:disabled {
+  background: ${color.buttonPressed};
+  border-color: ${color.disabledEdge};
+  color: ${color.disabled};
+}

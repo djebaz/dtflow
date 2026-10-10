@@ -68,6 +68,7 @@ from dtflow.ui.generation_presenter import (
     values_from_request,
 )
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
+from dtflow.ui.inpaint_editor import InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -292,6 +293,9 @@ class GenerationPage:
         page.resultPreviewLabel.enable_inspection()
         self.sync_backend()
         self._scan_configs()
+        self.inpaint = InpaintEditor(page, runner)
+        page.textToImageModeButton.toggled.connect(self._sync_activity)
+        page.inpaintModeButton.toggled.connect(self._sync_activity)
 
     def _set_prompt_expanded(self, expanded: bool) -> None:
         """Match prompt height, icon and accessible label to the toggle state."""
@@ -659,6 +663,8 @@ class GenerationPage:
         self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
         self.lora.set_enabled(not busy)
+        if hasattr(self, "inpaint"):
+            self.inpaint.set_busy(busy or self._activity.dispatching)
 
     def _unlisten_activity(self) -> None:
         """Detach before Qt destroys the page and its generation controls."""
@@ -667,6 +673,8 @@ class GenerationPage:
     def _sync_activity(self) -> None:
         """A queue dispatch holds the state lock, so single generation waits for it (and vice versa)."""
         self.page.generateButton.setEnabled(not self._busy and not self._activity.dispatching)
+        if hasattr(self, "inpaint"):
+            self.inpaint.set_busy(self._busy or self._activity.dispatching)
         if self._activity.dispatching:
             self._status(
                 Presentation("warning", "Queue dispatch is running", "Single generation is unavailable until it stops.")
@@ -681,6 +689,8 @@ class GenerationPage:
         A random seed (form seed 0) picked for a plan preview is kept until a queue is created (``queue_created``),
         so the dry-run table shows the seeds the queue will really use, even after a rejected attempt.
         """
+        if self.inpaint.active:
+            raise FormError("Inpaint mode is single-shot only; queues and plans are unavailable.", None)
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()
@@ -736,6 +746,9 @@ class GenerationPage:
 
     # -- generation ------------------------------------------------------------------------------------------------
     def generate(self) -> None:
+        if self.inpaint.active:
+            self.inpaint.generate()
+            return
         if self._busy:
             return
         self._mark(None)

@@ -63,6 +63,41 @@ def settled(window):
     return lambda: window.generation_page.generateButton.isEnabled() and not window.activity.generating
 
 
+def test_offline_inpaint_mode_and_mask_history_do_not_dispatch(window, qtbot, tmp_path):
+    page, editor = window.generation_page, window.generation.inpaint
+    assert page.textToImageModeButton.isChecked() and not page.inpaintModeButton.isChecked()
+    assert page.promptHeader.indexOf(page.generationModeSwitch) > page.promptHeader.indexOf(page.promptLabel)
+    qtbot.waitUntil(page.inpaintModeButton.isEnabled)
+    assert editor.form.strengthSpinBox.value() == 0.7
+    page.inpaintModeButton.click()
+    assert page.inpaintModeButton.isChecked() and not page.textToImageModeButton.isChecked()
+    assert page.generateButton.text() == "Edit image" and not page.generateButton.isEnabled()
+    assert not page.loadConfigurationButton.isEnabled()
+    with pytest.raises(Exception, match="single-shot only"):
+        window.generation.request_for_queue()
+    canvas = editor.canvas
+    canvas.set_source(bytes([127, 127, 127]) * 35, 5, 7)
+    pixels = bytes([0, 255, 0, 0, 0]) * 7
+    canvas.replace_mask(pixels)
+    assert canvas.mask_pixels() == pixels  # strips Qt row alignment on an odd-width grid
+    canvas.clear_mask()
+    assert canvas.mask_pixels() == bytes(35)
+    canvas.undo()
+    assert canvas.mask_pixels() == pixels
+    canvas.undo()
+    assert canvas.mask_pixels() == bytes(35)
+    canvas.redo()
+    assert canvas.mask_pixels() == pixels
+    canvas.remove_source()
+    assert canvas.mask_pixels() == b"" and not canvas._undo and not canvas._redo
+    assert not (tmp_path / "state" / "attempts.sqlite3").exists()
+    page.textToImageModeButton.click()
+    assert page.generateButton.text() == "Generate image" and page.generateButton.isEnabled()
+    editor._debounce.start()
+    window.runner.shutdown()
+    assert not editor._debounce.isActive()
+
+
 def test_generate_action_lives_in_compact_prompt_header(window):
     page = window.generation_page
     assert page.promptHeader.indexOf(page.generateButton) >= 0

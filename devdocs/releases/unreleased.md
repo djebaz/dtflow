@@ -2,11 +2,11 @@
 
 ## Highlights
 
-- Smart mask selection and inpainting work is starting in a separate draft PR. Headless preparation, durable input snapshot/restore and tensor-encoding helpers are source-present; request v2 and backed-up DB v3 migration are source-present; provider-dispatch/raw-output/editor integration and owner acceptance are pending. Existing generation behavior is unchanged.
+- Smart mask selection and inpainting work is starting in a separate draft PR. Headless preparation, durable input snapshot/restore and tensor-encoding helpers are source-present; request v2 and backed-up DB v3 migration are source-present; dedicated provider dispatch/raw-output saving are source-present. Owner passed the bounded step-4 bridge/direct-cloud probe gate; the offline manual editor is in progress, not a usable app image-dispatch feature. Existing generation behavior is unchanged.
 
 ## Added
 
-- Source-only manual-editor support: read-only permit status/reason, generation-size suggestion/shared grow limits, bounded thumbnail previews and binary coverage, unadjusted mask load/new-file save. UX alignment clarifies normalized preservation, raw-result geometry, unsupported actions and explicit per-run probe consent. No Qt/ONNX or live acceptance.
+- Source-only manual-editor support: read-only permit status/reason, generation-size suggestion/shared grow limits, bounded thumbnail previews and binary coverage, unadjusted mask load/new-file save. UX alignment clarifies normalized preservation, raw-result geometry, unsupported actions and explicit per-run probe consent. Offline Qt manual-editor wiring is in progress; ONNX and app dispatch remain pending. Bounded owner CLI evidence is recorded separately.
 
 - Dedicated permit-scoped headless single-shot image session with worker file preparation, immutable managed-input loader, durable attempt binding and registered final/effective-request handoff. Cloud allocation preflight and aggregate raw-copy limits are source-present. No default permits, accepted checkpoints, UI/ONNX or generic CLI/queue/config image dispatch; no tests/validation/inference.
 
@@ -47,3 +47,5 @@
 
 - Added the bounded `dtflow edit` owner-probe acceptance harness (single shot, explicit consent, exact cloud description gate, permit evidence in request/output). Generic generation and queues remain txt2img-only; no live checkpoint acceptance is claimed.
 - The edit harness now exposes explicit local-to-DT+ bridge opt-in (`-c/--bridge`), recording unlisted-model authorization in the request without weakening defaults or direct-cloud description checks. Live bridge acceptance remains pending.
+
+- Offline manual-editor checkpoint: joined token-based mode buttons, default strength 0.7, source/mask canvas, bounded undo/redo, worker load/save and inline Clear confirmation. Listed preview fixtures and the desktop font-directory guide accompany the UI; no render/native-DPI acceptance is claimed. Smart-selection and Edit image overlay previews are synthetic presentation fixtures, not implemented operations.

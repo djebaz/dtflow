@@ -931,6 +931,27 @@
          </widget>
         </item>
         <item>
+         <widget class="QFrame" name="generationModeSwitch">
+          <property name="accessibleName"><string>Generation mode</string></property>
+          <property name="role" stdset="0"><string>segmented</string></property>
+          <layout class="QHBoxLayout" name="generationModeLayout">
+           <item><widget class="QPushButton" name="textToImageModeButton">
+            <property name="segmentEdge" stdset="0"><string>first</string></property>
+            <property name="text"><string>Text to image</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="checked"><bool>true</bool></property>
+            <property name="autoExclusive"><bool>true</bool></property>
+           </widget></item>
+           <item><widget class="QPushButton" name="inpaintModeButton">
+            <property name="segmentEdge" stdset="0"><string>last</string></property>
+            <property name="text"><string>Inpaint</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="autoExclusive"><bool>true</bool></property>
+           </widget></item>
+          </layout>
+         </widget>
+        </item>
+        <item>
          <spacer name="promptHeaderSpace">
           <property name="orientation">
            <enum>Qt::Horizontal</enum>
