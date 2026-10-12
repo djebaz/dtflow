@@ -39,7 +39,10 @@ SQLite version is diagnostic information, not acceptance of persistence behavior
 
 On Debian/Ubuntu Linux, setup installs `libegl1`, `libgl1`, `libxkbcommon0`,
 `libdbus-1-3` and `libfontconfig1` through apt-get. Root or non-interactive
-sudo is required. Other Linux distributions fail clearly and require manual
+sudo is required. Both APT commands use `-o APT::Sandbox::User=root` to avoid
+switching to the `_apt` user in disposable containers that block user/group
+changes. This does not grant container permissions or package-mirror access;
+APT failures still stop setup. Other Linux distributions fail clearly and require manual
 system-library setup. macOS and Windows Bash (Git Bash/MSYS/Cygwin) skip the Linux
 package step; this platform routing is not evidence of native runtime acceptance.
 Windows needs Bash to run this file; it is not a PowerShell script.

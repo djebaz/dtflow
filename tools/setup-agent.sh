@@ -33,8 +33,8 @@ case "$(uname -s)" in
             fi
             apt_command=(sudo -n apt-get)
         fi
-        "${apt_command[@]}" update -q
-        "${apt_command[@]}" install -y -q libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
+        "${apt_command[@]}" -o APT::Sandbox::User=root update -q
+        "${apt_command[@]}" -o APT::Sandbox::User=root install -y -q libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
         ;;
     Darwin*|MINGW*|MSYS*|CYGWIN*)
         printf 'Skipping Linux system libraries on %s.\n' "$(uname -s)"

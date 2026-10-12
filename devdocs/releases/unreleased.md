@@ -27,6 +27,8 @@
 
 ## Fixed
 
+- Agent setup runs APT update/install with `APT::Sandbox::User=root`, avoiding the `_apt` user/group switch rejected by restricted disposable containers. Package-mirror access and installation permissions remain environment requirements; failures still stop setup.
+
 - Manual-editor handoff now explicitly labels approximate previews/subpixel grow, documents possible small-source upscaling and actual fit evidence, and distinguishes owner-confirmed permits from installed checkpoint availability. Inventory filtering remains independent; no fitting algorithm or dispatch authorization change.
 
 - Owner-requested Python-wide Ruff formatting and lint fixes (import order, ResourceLimits defaults created per call, explicit queue exception chaining), in separate formatting/lint-only commit 977ed66. Final Ruff lint passes; no tests or runtime acceptance.
