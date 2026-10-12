@@ -128,6 +128,7 @@ def guarded_python(fake_fixture_image):
                 "from pathlib import Path\nfrom fake_image import use_fake_image\n"
                 f"with use_fake_image(Path({str(fake_fixture_image)!r})):\n"
             )
+            # Indenting also changes multiline string contents; use this opt-in only for indentation-safe code.
             code = indent(code, "    ")
         command = [sys.executable, "-c", bootstrap + code]
         with child_command(command):
