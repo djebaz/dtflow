@@ -16,6 +16,62 @@ These are implementation requirements, not a claim that every feature exists tod
 
 Run project tools through `uv run` so they use the project environment. The lockfile records resolved dependencies. The current compatibility path pins NumPy 2.3.5 for the tested legacy Windows machine; see the [recorded dependency findings](../research/drawthings-grpc-proof.md#observed-compatibility-evidence). Source execution does not establish packaged Windows compatibility.
 
+## Agent environment setup
+
+Run the setup script once in a fresh disposable development/agent environment:
+
+```bash
+bash tools/setup-agent.sh
+```
+
+The default project root is the checkout containing the script, independent of the
+working directory. To target another checkout, pass its absolute path:
+
+```bash
+DTFLOW_PROJECT_ROOT="/path/to/dtflow" bash "/path/to/tools/setup-agent.sh"
+```
+
+The target must contain `pyproject.toml`, `uv.lock` and `.python-version`.
+Python comes from that file rather than a hard-coded checkout path or Python
+version. Setup installs a uv-managed interpreter, runs `uv sync --frozen` and
+prints the Python/SQLite versions. It does not update the lockfile. Printing a
+SQLite version is diagnostic information, not acceptance of persistence behavior.
+
+On Debian/Ubuntu Linux, setup installs `libegl1`, `libgl1`, `libxkbcommon0`,
+`libdbus-1-3` and `libfontconfig1` through apt-get. Root or non-interactive
+sudo is required. Other Linux distributions fail clearly and require manual
+system-library setup. macOS and Windows Bash (Git Bash/MSYS/Cygwin) skip the Linux
+package step; this platform routing is not evidence of native runtime acceptance.
+Windows needs Bash to run this file; it is not a PowerShell script.
+
+Existing uv is reused. When missing, Python with venv/pip support bootstraps
+`uv==0.12.23` in ignored `tmp/agent-bootstrap/`, separate from the project's
+`.venv`. Setup requires network access to package repositories and Python
+downloads; failures stop dependent commands.
+
+For every later agent shell, apply the same environment explicitly:
+
+```bash
+export UV_LINK_MODE=copy
+export QT_QPA_PLATFORM=offscreen
+export UV_SYSTEM_CERTS=true
+export UV_PYTHON_PREFERENCE=only-managed
+```
+
+These settings copy cached packages instead of linking, run Qt headlessly, use
+system TLS certificates for uv, and select only uv-managed Python. Setup exports
+them for its own subprocesses; executing it with Bash does not export them back
+into the caller or future shells. If uv was bootstrapped, also export
+`PATH="$DTFLOW_PROJECT_ROOT/tmp/agent-bootstrap/bin:$PATH"` after setting
+`DTFLOW_PROJECT_ROOT` to the absolute checkout path (use `Scripts` instead of
+`bin` in Windows Bash).
+
+Use `uv run --frozen` for later agent commands to retain the committed lockfile.
+Unset `QT_QPA_PLATFORM` or select the native platform when explicitly performing
+interactive desktop acceptance. This setup is not intended for immutable
+production/prebuilt runtimes. It runs no tests, UI renders, training, inference,
+model downloads or provider calls.
+
 ## Diagnostic probes
 
 The diagnostic probes' help is available without submitting generation:
