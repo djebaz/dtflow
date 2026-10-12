@@ -6,10 +6,12 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from textwrap import indent
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from support.fake_image import use_fake_image
 from support.network_guard import child_command, endpoint, install, live_allowed, reset_registry
 
 install()
@@ -76,6 +78,22 @@ def live_scope(request):
     return request.config.getoption("--dtflow-live-scope")
 
 
+@pytest.fixture(scope="session")
+def fake_fixture_image(tmp_path_factory):
+    """Generate a small RGB PNG for fake outputs without requiring bundled artwork."""
+    from dtflow.core.png import fixture_png
+
+    path = tmp_path_factory.mktemp("fake-image") / "fixture.png"
+    path.write_bytes(fixture_png(96, 64, 42, grid=True))
+    return path
+
+
+@pytest.fixture(autouse=True)
+def fake_image_source(fake_fixture_image):
+    with use_fake_image(fake_fixture_image):
+        yield
+
+
 @pytest_asyncio.fixture
 async def owning_loop():
     """Resolve the pytest-asyncio runner before installing per-test client state."""
@@ -97,12 +115,21 @@ def fixture_endpoint():
 
 
 @pytest.fixture
-def guarded_python():
-    """Run a fixed Python child that installs the same guard before application imports."""
+def guarded_python(fake_fixture_image):
+    """Install the child guard first; fake image substitution is explicitly selected."""
     support = Path(__file__).parent / "support"
 
-    def run(code: str, *, env=None, timeout=10):
-        bootstrap = f"import sys; sys.path.insert(0, {str(support)!r}); from network_guard import install; install(); "
+    def run(code: str, *, env=None, timeout=10, fake_image=False):
+        bootstrap = (
+            f"import sys; sys.path.insert(0, {str(support)!r}); from network_guard import install; install(); \n"
+        )
+        if fake_image:
+            bootstrap += (
+                "from pathlib import Path\nfrom fake_image import use_fake_image\n"
+                f"with use_fake_image(Path({str(fake_fixture_image)!r})):\n"
+            )
+            # Indenting also changes multiline string contents; use this opt-in only for indentation-safe code.
+            code = indent(code, "    ")
         command = [sys.executable, "-c", bootstrap + code]
         with child_command(command):
             return subprocess.run(command, text=True, capture_output=True, env=env, timeout=timeout)
