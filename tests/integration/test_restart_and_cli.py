@@ -22,6 +22,7 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts, patched_s
 async def test_process_exit_at_durable_boundary_never_replays(tmp_path, guarded_python, boundary, expected):
     state = tmp_path / "state"
     child = f"""
+assert "dtflow.backends.fake" not in sys.modules  # ordinary guarded children preserve import-time setup
 import asyncio, os
 from pathlib import Path
 from dtflow.persistence.store import SQLiteAttempts
@@ -57,7 +58,9 @@ def test_headless_cli_success_unknown_and_inspection(tmp_path, guarded_python):
 
     def command(*args):
         argv = ["-q", str(tmp_path / "logs"), *args]
-        return guarded_python(f"from dtflow.cli import main; raise SystemExit(main({argv!r}))", env=environment)
+        return guarded_python(
+            f"from dtflow.cli import main; raise SystemExit(main({argv!r}))", env=environment, fake_image=True
+        )
 
     help_result = command("--help")
     assert help_result.returncode == 0 and "generate" in help_result.stdout
