@@ -21,20 +21,37 @@ fi
 
 case "$(uname -s)" in
     Linux*)
-        if ! command -v apt-get >/dev/null 2>&1; then
-            printf 'Linux setup requires apt-get (Debian/Ubuntu). Install Qt libraries manually on other distributions.\n' >&2
+        if ! command -v apt-get >/dev/null 2>&1 \
+            || ! command -v dpkg-query >/dev/null 2>&1; then
+            printf 'Linux setup requires Debian/Ubuntu. Install Qt libraries manually on other distributions.\n' >&2
             exit 1
         fi
-        apt_command=(apt-get)
-        if (( EUID != 0 )); then
-            if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true; then
-                printf 'Installing Qt libraries requires root or non-interactive sudo.\n' >&2
-                exit 1
+
+        qt_packages=(libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1)
+        missing_packages=()
+        for package in "${qt_packages[@]}"; do
+            if status="$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" \
+                && [[ "$status" == "install ok installed" ]]; then
+                continue
             fi
-            apt_command=(sudo -n apt-get)
+            missing_packages+=("$package")
+        done
+
+        if (( ${#missing_packages[@]} == 0 )); then
+            printf 'All required Qt libraries are already installed; skipping APT.\n'
+        else
+            apt_command=(apt-get)
+            if (( EUID != 0 )); then
+                if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true; then
+                    printf 'Missing Qt packages: %s\n' "${missing_packages[*]}" >&2
+                    printf 'Installing them requires root or non-interactive sudo.\n' >&2
+                    exit 1
+                fi
+                apt_command=(sudo -n apt-get)
+            fi
+            "${apt_command[@]}" -o APT::Sandbox::User=root update -q
+            "${apt_command[@]}" -o APT::Sandbox::User=root install -y -q "${missing_packages[@]}"
         fi
-        "${apt_command[@]}" -o APT::Sandbox::User=root update -q
-        "${apt_command[@]}" -o APT::Sandbox::User=root install -y -q libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1
         ;;
     Darwin*|MINGW*|MSYS*|CYGWIN*)
         printf 'Skipping Linux system libraries on %s.\n' "$(uname -s)"
@@ -68,4 +85,5 @@ if [[ -z "$python_version" ]]; then
 fi
 uv python install "$python_version"
 uv sync --frozen --python "$python_version"
-uv run --frozen --python "$python_version" python -c 'import sqlite3, sys; print("python", sys.version.split()[0]); print("sqlite", sqlite3.sqlite_version)'
+uv run --frozen --python "$python_version" python -c \
+    'import sqlite3, sys; print("python", sys.version.split()[0]); print("sqlite", sqlite3.sqlite_version)'
