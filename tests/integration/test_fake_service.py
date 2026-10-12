@@ -2,10 +2,14 @@
 
 import asyncio
 import json
+import struct
+import zlib
 from dataclasses import replace
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from dtflow.backends.fake import FakeBackend
 from dtflow.core.models import (
@@ -18,6 +22,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     TimeoutPolicy,
 )
+from dtflow.core.png import validate_png
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.generation import GenerationService
 
@@ -336,7 +341,7 @@ async def test_connectivity_and_inventory_deadlines_are_typed(state, operation):
 
 
 @pytest.mark.asyncio
-async def test_fake_result_is_the_illustration_fitted_to_the_request_and_simulation_is_stepped():
+async def test_fake_result_fits_generated_fixture_to_the_request_and_simulation_is_stepped(fake_fixture_image):
     slept, events = [], []
 
     async def sleep(seconds):
@@ -347,7 +352,27 @@ async def test_fake_result_is_the_illustration_fitted_to_the_request_and_simulat
     sized = replace(request(), width_px=448, height_px=640)
     result = await backend.generate(sized, on_event=events.append)
     final = result.artifacts[0]
-    assert (final.width_px, final.height_px) == (448, 640) and len(final.encoded) > 100_000  # not the tiny swatch
+    assert (final.width_px, final.height_px) == (448, 640)
+    validate_png(final.encoded, 448, 640, decoded_limit=640 * (1 + 448 * 3))
+    source_bytes = fake_fixture_image.read_bytes()
+    validate_png(source_bytes, 96, 64, decoded_limit=64 * (1 + 96 * 3))
+    assert struct.unpack(">IIBBBBB", source_bytes[16:29]) == (96, 64, 8, 2, 0, 0, 0)
+    offset, compressed = 8, bytearray()
+    while offset < len(source_bytes):
+        length = struct.unpack_from(">I", source_bytes, offset)[0]
+        if source_bytes[offset + 4 : offset + 8] == b"IDAT":
+            compressed.extend(source_bytes[offset + 8 : offset + 8 + length])
+        offset += 12 + length
+    raw = zlib.decompress(compressed)
+    assert len(raw) == 64 * (1 + 96 * 3)
+    assert all(raw[row * (1 + 96 * 3)] == 0 for row in range(64))  # decoder requires unfiltered RGB8 rows
+    # Cover fitting uses the source's full height and crops its sides to x=25.6..70.4.
+    # Fixed samples independently distinguish centered cropping from stretching or a replacement swatch.
+    samples = (((0, 0), (25, 0)), ((0, 320), (25, 32)), ((223, 319), (47, 31)), ((447, 320), (70, 32)))
+    with Image.open(BytesIO(source_bytes)) as source, Image.open(BytesIO(final.encoded)) as fitted:
+        assert len({source.getpixel(source_xy) for _, source_xy in samples}) > 1
+        for target_xy, source_xy in samples:
+            assert fitted.getpixel(target_xy) == source.getpixel(source_xy)
     assert sum(slept) == pytest.approx(3) and len(slept) == 6
     kinds = [event.kind for event in events]
     assert kinds.count("preview") == 2 and kinds.count("progress") == 7  # six simulated steps plus completion

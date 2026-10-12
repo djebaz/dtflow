@@ -27,6 +27,8 @@
 
 ## Fixed
 
+- Offline fake-backend tests use a temporary deterministic PNG instead of depending on the bundled lighthouse illustration. A shared test-only patch supports explicit guarded CLI subprocess opt-in; ordinary guarded children preserve their import setup. The fitting contract checks centered-crop pixels and unfiltered RGB8 source encoding; desktop simulation artwork is unchanged.
+
 - Agent setup runs APT update/install with `APT::Sandbox::User=root`, avoiding the `_apt` user/group switch rejected by restricted disposable containers. Package-mirror access and installation permissions remain environment requirements; failures still stop setup.
 
 - Manual-editor handoff now explicitly labels approximate previews/subpixel grow, documents possible small-source upscaling and actual fit evidence, and distinguishes owner-confirmed permits from installed checkpoint availability. Inventory filtering remains independent; no fitting algorithm or dispatch authorization change.
