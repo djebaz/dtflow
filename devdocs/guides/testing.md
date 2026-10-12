@@ -11,6 +11,12 @@ uv run ruff format --check .
 uv run pytest
 ```
 
+Offline fake-backend tests generate a deterministic 96 x 64 RGB calibration PNG
+in pytest's temporary directory and use it as the fake provider's image source.
+Guarded Python child processes use the same generated file. Tests still exercise
+the real fitting, artifact validation and persistence paths without downloading
+bundled artwork. Desktop fake simulation continues to use its bundled illustration.
+
 The source checkout provides a pytest wrapper that preserves pytest output/exit status and requires development dependencies:
 
 ```bash

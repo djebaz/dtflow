@@ -431,6 +431,7 @@ def test_preview_fits_entire_original_image_and_zoom_adds_overflow(window, qtbot
     assert viewer.verticalScrollBar().maximum() == 0
     page.generateButton.click()  # a new run clears the preview and the frame returns to its resting height
     assert page.previewHost.minimumHeight() == 180
+    qtbot.waitUntil(settled(window), timeout=5000)  # deliver the owned result before tearing down the window
 
 
 def test_canvas_zoom_anchor_expand_lifecycle_and_narrow_navigation(window, qtbot):

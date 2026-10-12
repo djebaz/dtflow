@@ -76,6 +76,23 @@ def live_scope(request):
     return request.config.getoption("--dtflow-live-scope")
 
 
+@pytest.fixture(scope="session")
+def fake_fixture_image(tmp_path_factory):
+    """Generate a small RGB PNG for fake outputs without requiring bundled artwork."""
+    from dtflow.core.png import fixture_png
+
+    path = tmp_path_factory.mktemp("fake-image") / "fixture.png"
+    path.write_bytes(fixture_png(96, 64, 42, grid=True))
+    return path
+
+
+@pytest.fixture(autouse=True)
+def fake_image_source(monkeypatch, fake_fixture_image):
+    from dtflow.backends import fake
+
+    monkeypatch.setattr(fake, "FIXTURE_IMAGE", fake_fixture_image)
+
+
 @pytest_asyncio.fixture
 async def owning_loop():
     """Resolve the pytest-asyncio runner before installing per-test client state."""
@@ -97,12 +114,16 @@ def fixture_endpoint():
 
 
 @pytest.fixture
-def guarded_python():
+def guarded_python(fake_fixture_image):
     """Run a fixed Python child that installs the same guard before application imports."""
     support = Path(__file__).parent / "support"
 
     def run(code: str, *, env=None, timeout=10):
-        bootstrap = f"import sys; sys.path.insert(0, {str(support)!r}); from network_guard import install; install(); "
+        bootstrap = (
+            f"import sys; sys.path.insert(0, {str(support)!r}); from network_guard import install; install(); "
+            f"from pathlib import Path; import dtflow.backends.fake as fake; "
+            f"fake.FIXTURE_IMAGE = Path({str(fake_fixture_image)!r}); "
+        )
         command = [sys.executable, "-c", bootstrap + code]
         with child_command(command):
             return subprocess.run(command, text=True, capture_output=True, env=env, timeout=timeout)

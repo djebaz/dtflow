@@ -18,6 +18,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     TimeoutPolicy,
 )
+from dtflow.core.png import validate_png
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.generation import GenerationService
 
@@ -336,7 +337,7 @@ async def test_connectivity_and_inventory_deadlines_are_typed(state, operation):
 
 
 @pytest.mark.asyncio
-async def test_fake_result_is_the_illustration_fitted_to_the_request_and_simulation_is_stepped():
+async def test_fake_result_fits_generated_fixture_to_the_request_and_simulation_is_stepped(fake_fixture_image):
     slept, events = [], []
 
     async def sleep(seconds):
@@ -347,7 +348,9 @@ async def test_fake_result_is_the_illustration_fitted_to_the_request_and_simulat
     sized = replace(request(), width_px=448, height_px=640)
     result = await backend.generate(sized, on_event=events.append)
     final = result.artifacts[0]
-    assert (final.width_px, final.height_px) == (448, 640) and len(final.encoded) > 100_000  # not the tiny swatch
+    assert (final.width_px, final.height_px) == (448, 640)
+    validate_png(final.encoded, 448, 640, decoded_limit=640 * (1 + 448 * 3))
+    assert final.encoded != fake_fixture_image.read_bytes()  # the 96 x 64 source was fitted, not passed through
     assert sum(slept) == pytest.approx(3) and len(slept) == 6
     kinds = [event.kind for event in events]
     assert kinds.count("preview") == 2 and kinds.count("progress") == 7  # six simulated steps plus completion
