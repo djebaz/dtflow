@@ -6,6 +6,8 @@
 
 ## Added
 
+- Disposable agent environment setup via `tools/setup-agent.sh`: automatic checkout discovery or `DTFLOW_PROJECT_ROOT`, managed Python from `.python-version`, frozen uv sync, Linux Qt libraries and explicit headless/TLS/link-mode settings. Setup does not run tests, render UI or submit generation; native platform acceptance remains separate.
+
 - Source-only manual-editor support: read-only permit status/reason, generation-size suggestion/shared grow limits, bounded thumbnail previews and binary coverage, unadjusted mask load/new-file save. UX alignment clarifies normalized preservation, raw-result geometry, unsupported actions and explicit per-run probe consent. Offline Qt manual-editor wiring is in progress; ONNX and app dispatch remain pending. Bounded owner CLI evidence is recorded separately.
 
 - Dedicated permit-scoped headless single-shot image session with worker file preparation, immutable managed-input loader, durable attempt binding and registered final/effective-request handoff. Cloud allocation preflight and aggregate raw-copy limits are source-present. No default permits, accepted checkpoints, UI/ONNX or generic CLI/queue/config image dispatch; no tests/validation/inference.
