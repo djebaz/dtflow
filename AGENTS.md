@@ -37,11 +37,12 @@ These instructions apply throughout `dtflow`.
 - Do not mutate a supposedly reproducible environment with arbitrary package upgrades during normal validation.
 - When changing `pyproject.toml` tool configuration, keep documented commands and CI behavior aligned with the canonical configuration.
 
-### Fresh agent environments
+### Agent environment readiness
 
-- Before running project Python commands in a fresh disposable agent environment, run `bash tools/setup-agent.sh` once per environment/check-out. Stop dependent work and report any setup failure; never hide it with `|| true`.
+- Apply the shell settings below and run the linked readiness check before project Python commands. If it passes, proceed without running setup.
+- If prerequisites are missing, run `bash tools/setup-agent.sh` in a disposable agent environment and repeat the check. Report failures; never hide them with `|| true`. Stop only commands whose prerequisites remain unavailable.
 - The script defaults to the checkout containing it. Set `DTFLOW_PROJECT_ROOT` to an absolute checkout path when another location is needed. It reads the Python version from that checkout's `.python-version` and synchronizes its committed `uv.lock` with `uv sync --frozen`.
-- In each subsequent agent shell, export `UV_LINK_MODE=copy`, `QT_QPA_PLATFORM=offscreen`, `UV_SYSTEM_CERTS=true`, and `UV_PYTHON_PREFERENCE=only-managed` before `uv`/Python commands. A separately executed setup script cannot retain exports in its parent or later shells. If setup bootstrapped uv, add `<checkout>/tmp/agent-bootstrap/bin` (Windows Bash: `Scripts`) to that shell's `PATH`.
+- In every agent shell, export `UV_LINK_MODE=copy`, `QT_QPA_PLATFORM=offscreen`, `UV_SYSTEM_CERTS=true`, and `UV_PYTHON_PREFERENCE=only-managed` before `uv`/Python commands, including readiness checks. A separately executed setup script cannot retain exports in its parent or later shells. If setup bootstrapped uv, add `<checkout>/tmp/agent-bootstrap/bin` (Windows Bash: `Scripts`) to that shell's `PATH`.
 - This is development/agent setup, not a production-runtime bootstrap or native desktop launch configuration. Do not use offscreen mode for interactive desktop acceptance. Setup must not run tests, render UI states, download model checkpoints, submit generation or call providers.
 - See [agent setup](devdocs/guides/development.md#agent-environment-setup) for platform requirements and commands.
 
