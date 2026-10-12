@@ -6,10 +6,12 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from textwrap import indent
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from support.fake_image import use_fake_image
 from support.network_guard import child_command, endpoint, install, live_allowed, reset_registry
 
 install()
@@ -87,10 +89,9 @@ def fake_fixture_image(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def fake_image_source(monkeypatch, fake_fixture_image):
-    from dtflow.backends import fake
-
-    monkeypatch.setattr(fake, "FIXTURE_IMAGE", fake_fixture_image)
+def fake_image_source(fake_fixture_image):
+    with use_fake_image(fake_fixture_image):
+        yield
 
 
 @pytest_asyncio.fixture
@@ -115,15 +116,19 @@ def fixture_endpoint():
 
 @pytest.fixture
 def guarded_python(fake_fixture_image):
-    """Run a fixed Python child that installs the same guard before application imports."""
+    """Install the child guard first; fake image substitution is explicitly selected."""
     support = Path(__file__).parent / "support"
 
-    def run(code: str, *, env=None, timeout=10):
+    def run(code: str, *, env=None, timeout=10, fake_image=False):
         bootstrap = (
-            f"import sys; sys.path.insert(0, {str(support)!r}); from network_guard import install; install(); "
-            f"from pathlib import Path; import dtflow.backends.fake as fake; "
-            f"fake.FIXTURE_IMAGE = Path({str(fake_fixture_image)!r}); "
+            f"import sys; sys.path.insert(0, {str(support)!r}); from network_guard import install; install(); \n"
         )
+        if fake_image:
+            bootstrap += (
+                "from pathlib import Path\nfrom fake_image import use_fake_image\n"
+                f"with use_fake_image(Path({str(fake_fixture_image)!r})):\n"
+            )
+            code = indent(code, "    ")
         command = [sys.executable, "-c", bootstrap + code]
         with child_command(command):
             return subprocess.run(command, text=True, capture_output=True, env=env, timeout=timeout)

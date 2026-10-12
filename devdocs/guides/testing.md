@@ -13,9 +13,15 @@ uv run pytest
 
 Offline fake-backend tests generate a deterministic 96 x 64 RGB calibration PNG
 in pytest's temporary directory and use it as the fake provider's image source.
-Guarded Python child processes use the same generated file. Tests still exercise
-the real fitting, artifact validation and persistence paths without downloading
-bundled artwork. Desktop fake simulation continues to use its bundled illustration.
+Only children launched with `guarded_python(..., fake_image=True)` use that same
+generated file through the shared test-only image-source helper. The default
+`guarded_python` bootstrap installs the network/process guard without importing
+the fake backend ahead of the supplied code. The substitution is process-local;
+direct subprocesses and grandchildren do not inherit it, and child subprocess
+commands still require explicit guard registration. Tests exercise the real
+fitting, artifact validation and persistence paths without downloading bundled
+artwork. The fitting contract checks RGB8/unfiltered source encoding and sampled
+pixels for centered cover cropping. Desktop fake simulation keeps its bundled illustration.
 
 The source checkout provides a pytest wrapper that preserves pytest output/exit status and requires development dependencies:
 

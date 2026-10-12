@@ -27,7 +27,7 @@
 
 ## Fixed
 
-- Offline fake-backend tests use a temporary deterministic PNG, including guarded CLI subprocesses, instead of depending on the bundled lighthouse illustration. Output fitting and validation remain exercised; desktop simulation artwork is unchanged.
+- Offline fake-backend tests use a temporary deterministic PNG instead of depending on the bundled lighthouse illustration. A shared test-only patch supports explicit guarded CLI subprocess opt-in; ordinary guarded children preserve their import setup. The fitting contract checks centered-crop pixels and unfiltered RGB8 source encoding; desktop simulation artwork is unchanged.
 
 - Agent setup runs APT update/install with `APT::Sandbox::User=root`, avoiding the `_apt` user/group switch rejected by restricted disposable containers. Package-mirror access and installation permissions remain environment requirements; failures still stop setup.
 
