@@ -18,7 +18,36 @@ Run project tools through `uv run` so they use the project environment. The lock
 
 ## Agent environment setup
 
-Run the setup script once in a fresh disposable development/agent environment:
+The requirement is a usable environment for the checkout. Custom environment
+startup or a preconfigured image may already provide the prerequisites; proof
+that the setup script ran is not required.
+
+In every agent shell, including the first, apply these settings before running
+uv or Python:
+
+```bash
+export UV_LINK_MODE=copy
+export QT_QPA_PLATFORM=offscreen
+export UV_SYSTEM_CERTS=true
+export UV_PYTHON_PREFERENCE=only-managed
+```
+
+From the target checkout root, check the selected Python version, SQLite,
+development dependencies and headless Qt initialization:
+
+```bash
+uv run --frozen python -c 'import pathlib, sqlite3, sys; import dtflow, pytest, pytestqt; from PySide6.QtWidgets import QApplication; expected = pathlib.Path(".python-version").read_text().strip(); actual = ".".join(map(str, sys.version_info[:len(expected.split("."))])); assert actual == expected, (actual, expected); app = QApplication([]); print("Environment ready:", sys.version.split()[0], "SQLite", sqlite3.sqlite_version)'
+```
+
+`uv run --frozen` synchronizes the project environment from the committed lockfile
+as needed. A successful check is sufficient to proceed with the requested
+command, such as `uv run --frozen pytest`; do not rerun setup merely because this
+is a new agent session. This smoke check establishes basic test-environment
+readiness, not native desktop or full application acceptance. Report any failure
+and identify the missing prerequisite.
+
+When prerequisites are missing in a disposable development/agent environment,
+use the setup script, then repeat the readiness check:
 
 ```bash
 bash tools/setup-agent.sh
@@ -50,16 +79,11 @@ Windows needs Bash to run this file; it is not a PowerShell script.
 Existing uv is reused. When missing, Python with venv/pip support bootstraps
 `uv==0.12.23` in ignored `tmp/agent-bootstrap/`, separate from the project's
 `.venv`. Setup requires network access to package repositories and Python
-downloads; failures stop dependent commands.
-
-For every later agent shell, apply the same environment explicitly:
-
-```bash
-export UV_LINK_MODE=copy
-export QT_QPA_PLATFORM=offscreen
-export UV_SYSTEM_CERTS=true
-export UV_PYTHON_PREFERENCE=only-managed
-```
+downloads. Report setup failures without hiding them with `|| true`, and stop
+dependent commands while their prerequisites remain unavailable. If a redundant
+setup attempt fails because root/sudo is unavailable but the readiness check
+passes, continue with the requested command; installed system libraries do not
+need to be reinstalled.
 
 These settings copy cached packages instead of linking, run Qt headlessly, use
 system TLS certificates for uv, and select only uv-managed Python. Setup exports
