@@ -15,6 +15,15 @@
 
 - Smart mask selection and inpainting work is starting in a separate draft PR. Headless preparation, durable input snapshot/restore and tensor-encoding helpers are source-present; request v2 and backed-up DB v3 migration are source-present; dedicated provider dispatch/raw-output saving are source-present. Owner passed the bounded step-4 bridge/direct-cloud probe gate; the offline manual editor is in progress, not a usable app image-dispatch feature. Existing generation behavior is unchanged.
 
+## PR #76 compatibility and accepted limitations (pending implementation/acceptance)
+
+- **New feature:** Images split action **Move to Trash / Delete permanently**, with separate Windows, WSL and native-Linux mode preferences. Permanent deletion requires fresh irreversible-action consent.
+- **Ledger schema 2:** the first schema-2 write upgrades the removal ledger; older application versions refuse the upgraded ledger. No rollback through the older application is supported.
+- **WSL source requirement:** Windows-hosted DTFlow state requires this checkout's Windows `.venv/Scripts/python.exe` and a verified shared-file lock bridge.
+- **WSL2 behavior change:** unverified/ambiguous Windows-drive mounts, including WSL2 9p `/mnt/c`, refuse operations touching originals: generation, image loading in Gallery, export, Trash and permanent deletion. These paths previously worked using Linux-only locking. **Workaround:** keep DTFlow application state on the WSL Linux filesystem (ext4). WSL2 Windows-drive support is deferred to issue #77 pending real WSL2 probes; do not claim that it works now.
+- **Accepted local-save risk:** after successful remote generation, a local-save failure can lose the generated result; another request may incur provider charges. There is no new generation-output staging or automatic recovery in PR #76.
+- **Uncertain deletion messaging:** planned amber warning only when permanent deletion newly becomes `uncertain`, including a newly reconciled `delete_pending` row on any successful reconciliation pass; pre-existing uncertain rows never re-alert. Interrupted Trash rows do not generate this new warning. An unavailable shared lock can defer reconciliation, without making the blocked intent retryable.
+
 ## Added
 
 - Disposable agent environment setup via `tools/setup-agent.sh`: automatic checkout discovery or `DTFLOW_PROJECT_ROOT`, managed Python from `.python-version`, frozen uv sync, Linux Qt libraries and explicit headless/TLS/link-mode settings. Setup does not run tests, render UI or submit generation; native platform acceptance remains separate.
