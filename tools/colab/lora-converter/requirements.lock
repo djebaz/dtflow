@@ -1,0 +1,1 @@
+# Standard library application; the official Swift/Bazel converter has a separate pinned toolchain.

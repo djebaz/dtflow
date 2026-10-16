@@ -120,6 +120,9 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
 - [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
 
+
+- [Experimental Colab LoRA converter](devdocs/guides/colab-lora-converter.md) — standalone source-generated workflow; final Colab conversion acceptance is pending.
+
 ### Desktop interaction mockup
 
 The [PR #58 inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)

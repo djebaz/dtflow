@@ -245,3 +245,5 @@ Source-present, not runtime-accepted: headless preparation, request v2/DB v3 bac
 - 2026-10-10: Inpaint Select mode (local YOLO26 seg + SegFormer clothes ONNX via `services/person_selection.py`) is source-present. Owner acceptance pending: ONNX runtime on the target CPU, packaged-exe collection of onnxruntime, and real-image selection quality.
 - 2026-10-10: A [plan for Inpaint and image-to-image in queues](plans/2026-10-10-inpaint-queues.md) is proposed (plan only, nothing implemented; queues, planner and CLI still refuse image operations).
 - 2026-10-10: queued Inpaint edits (Queues tab Create queue/Plan with a Strengths dimension in Seed, Pair and Cross) are source-present on PR #66; see [plan](plans/2026-10-10-inpaint-queues.md). Not runtime-accepted: owner Windows smoke on local and DT+ cloud (step 4) is pending.
+
+- Added scope (2026-10-16, draft/source only): standalone [Colab LoRA converter](guides/colab-lora-converter.md), with generated notebooks, Civitai defaults and Linux build repairs. Final Colab compilation/conversion and Drive delivery remain unverified; this is separate from DTFlow cloud Prepare/upload.

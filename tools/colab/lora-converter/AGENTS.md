@@ -1,0 +1,3 @@
+# Colab converter source contract
+
+Follow the repository AGENTS.md and the productionize-colab-notebooks skill. Python modules and source cells are authoritative; notebooks are generated. Run tools/check.sh from this tool directory after changes. Preserve the existing user defaults, immutable pending job, checksum-addressed input cache, build receipts and provenance. Do not replace Python/CUDA, start inference/training, upload to DT+, or claim Colab success from offline checks. This isolated tool's requirements-test.txt is a Colab validation compatibility dependency, not an application runtime requirements file.

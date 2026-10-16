@@ -1,0 +1,31 @@
+{
+  "colab": {
+    "provenance": [],
+    "collapsed_sections": [
+      "10_h_runtime",
+      "20_h_pipeline",
+      "30_h_results",
+      "90_h_maintenance"
+    ]
+  },
+  "kernelspec": {
+    "display_name": "Python 3",
+    "language": "python",
+    "name": "python3"
+  },
+  "language_info": {
+    "name": "python",
+    "version": "3.x"
+  },
+  "production_colab": {
+    "generated_artifact": true,
+    "authoritative_sources": [
+      "src/cells",
+      "src/project_app",
+      "tools/build_notebook.py"
+    ],
+    "required_skill": "productionize-colab-notebooks",
+    "validation_command": "tools/check.sh",
+    "policy_revision": "production-colab-v4"
+  }
+}
