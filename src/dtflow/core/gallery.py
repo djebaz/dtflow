@@ -89,6 +89,17 @@ class GalleryItem:
     request_json: str
     file_size: int | None
     issue: str = ""
+    access_path: str | None = None
+    access_metadata_path: str | None = None
+
+    @property
+    def read_path(self) -> str:
+        """Local read alias only; path remains the authoritative stored reference."""
+        return self.path if self.access_path is None else self.access_path
+
+    @property
+    def read_metadata_path(self) -> str:
+        return self.metadata_path if self.access_metadata_path is None else self.access_metadata_path
 
 
 @dataclass(frozen=True, slots=True)

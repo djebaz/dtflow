@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -288,7 +289,9 @@ def selection_candidates(
     return tuple(additions), len(existing) - len(matched_checked), omitted, tuple(matched_checked)
 
 
-def selection_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
+def selection_paths(
+    state: Path, identities: tuple[str, ...], *, read_path: Callable[[str], str] | None = None
+) -> tuple[tuple[str, ...], int]:
     """Read source paths for checked recorded originals without Qt or image decodes."""
     targets = set(identities)
     if not targets:
@@ -299,9 +302,12 @@ def selection_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str
             return (), len(targets)
         for row in db.execute(BASE + "SELECT identity, path FROM records"):
             if row["identity"] in targets:
-                source = Path(row["path"])
-                if source.is_file() and not source.is_symlink():
-                    found[row["identity"]] = str(source)
+                try:
+                    source = Path(read_path(row["path"]) if read_path else row["path"])
+                    if source.is_file() and not source.is_symlink():
+                        found[row["identity"]] = str(source)
+                except OSError:
+                    continue
     return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
 
 
