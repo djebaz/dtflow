@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QMenu, QPushButton, QWidget
 from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence.image_removal_preferences import load_mode, save_mode
 from dtflow.persistence.original_io import OriginalImagesBusyError
-from dtflow.services.image_recycle import prepare_recycle, recycle_outputs
+from dtflow.services.image_recycle import RecycleUnavailable, prepare_recycle, recycle_outputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, feedback
 from dtflow.ui.runner import AsyncRunner
@@ -39,6 +39,7 @@ class ImageRecyclePanel(QObject):
         self._stop = threading.Event()
         self._confirmation_revision = None
         self._action = "trash"
+        self._phase = "idle"
         gallery._permanent_callback = self.request
         gallery.removal_ready = False
         self.menu_button = gallery._widget("galleryRemovalMenuButton", QPushButton)
@@ -127,6 +128,7 @@ class ImageRecyclePanel(QObject):
         if action == "trash" and self.gallery._recycle_callback is None:
             return
         self._running = True
+        self._phase = "preflight"
         self.gallery.set_recycle_busy(True)
         self.runner.submit(
             asyncio.to_thread(
@@ -211,6 +213,7 @@ class ImageRecyclePanel(QObject):
             )
             return
         self._running = True
+        self._phase = "executing"
         self._action = plan.action
         self.gallery.set_recycle_busy(True)
         self._stop = threading.Event()
@@ -265,6 +268,14 @@ class ImageRecyclePanel(QObject):
                         f"Qt reported a successful move to {TRASH_NAME}, but the destination could not "
                         "be verified. Inspect system Trash; do not retry automatically."
                     )
+                elif reason == "delete_refused":
+                    detail = "Delete refused before mutation; original unchanged, so this item may be retried."
+                elif reason == "delete_uncertain":
+                    detail = "Delete outcome unconfirmed; inspect the original before any manual action."
+                elif reason == "delete_unsupported":
+                    detail = "Windows mutation support is unavailable for this original."
+                elif reason == "source_changed":
+                    detail = "Original changed or became unsafe; removal was refused."
                 else:
                     detail = reason
                 summary += f"\n{identity}: {detail}"
@@ -276,18 +287,29 @@ class ImageRecyclePanel(QObject):
         activity_strip(self.parent_widget).complete("trash", f"{label} result", summary, state)
 
     def _finish_with_error(self, error) -> None:
+        phase = self._phase
+        self._phase = "idle"
         self._running = False
         self.gallery.set_recycle_busy(False)
-        log.warning("image recycling failed reason=%s", type(error).__name__)
-        if isinstance(error, OriginalImagesBusyError):
-            message = str(error)
+        log.warning("image recycling failed phase=%s reason=%s", phase, type(error).__name__)
+        if phase == "preflight":
+            if isinstance(error, RecycleUnavailable):
+                reason = str(error)
+            elif isinstance(error, OriginalImagesBusyError):
+                reason = str(error)
+            else:
+                reason = "Image-removal prerequisites could not be verified."
+            message = f"{reason} This request changed no originals."
+            title = "Removal preflight refused"
         else:
+            # A previously settled image must not be described as untouched.
             message = (
-                "The operation could not be completed or its durable outcome could not be verified. "
-                "Inspect the original files and retry only after checking their status."
+                "The removal run stopped without verifying every result. "
+                "Some originals may already have changed; review the durable outcomes "
+                "and inspect affected files before taking further action."
             )
-        label = "Permanent deletion" if self._action == "permanent" else TRASH_NAME
-        activity_strip(self.parent_widget).complete("trash", f"{label} unavailable", message, "error")
+            title = "Removal result needs review"
+        activity_strip(self.parent_widget).complete("trash", title, message, "error")
 
     def cancel(self) -> None:
         """Request a safe stop between files without undoing successful moves."""
