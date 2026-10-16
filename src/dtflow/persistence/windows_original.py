@@ -21,6 +21,10 @@ from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 
 
+class RefusedBeforeMutation(OSError):
+    """Windows deletion was confirmed not to have reached the disposition call."""
+
+
 def windows_path(path: Path, mounts) -> str:
     """Invert one verified whole-drive mapping, rejecting redirected components."""
     path = path.absolute()
@@ -97,7 +101,7 @@ def _start(command, request):
     return process
 
 
-def _reply(process, timeout):
+def _reply(process, timeout, *, allow_refusal: bool = False):
     messages = queue.Queue(maxsize=1)
 
     def receive():
@@ -112,9 +116,13 @@ def _reply(process, timeout):
         if not line or len(line) > 65536:
             raise ValueError
         response = json.loads(line)
-        if not isinstance(response, dict) or response.get("ok") is not True:
+        if not isinstance(response, dict):
             raise ValueError
-        return response
+        if response.get("ok") is True:
+            return response
+        if allow_refusal and response.get("ok") is False and response.get("phase") == "pre":
+            raise RefusedBeforeMutation("Windows deletion was refused before mutation.")
+        raise ValueError
     except (queue.Empty, ValueError, TypeError) as exc:
         raise OSError("Windows original-file helper did not confirm its result.") from exc
 
@@ -169,48 +177,54 @@ def delete_managed(state: Path, target) -> None:
         ),
     )
     try:
-        _reply(process, 30)
+        _reply(process, 30, allow_refusal=True)
     finally:
         _close(process)
 
 
 def _delete(request):
-    """Windows only: never delete a caller-supplied arbitrary pathname."""
+    """Windows only: classify failures by disposition phase, never error code."""
     import msvcrt
     from ctypes import wintypes
 
-    identity = re.fullmatch(r"([0-9a-f]{32}):(0|[1-9][0-9]{0,5})", request["identity"])
-    state = Path(request["state"])
-    if identity is None or not state.is_absolute() or str(state).startswith("\\\\"):
-        raise ValueError("Invalid managed original")
-    path = state / "outputs" / identity[1] / f"final-{int(identity[2]) + 1}.png"
-    for component in (path, *path.parents):
-        if component.is_symlink() or os.path.isjunction(component):
-            raise ValueError("Redirected original")
-    if not (path.parent / "metadata.json").is_file():
-        raise ValueError("Missing metadata")
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    create = kernel.CreateFileW
-    create.argtypes = [
-        wintypes.LPCWSTR,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        ctypes.c_void_p,
-        wintypes.DWORD,
-        wintypes.DWORD,
-        wintypes.HANDLE,
-    ]
-    create.restype = wintypes.HANDLE
-    # DELETE | FILE_READ_ATTRIBUTES; share reads only, open the reparse point itself.
-    handle = create(str(path), 0x10000 | 0x80, 1, None, 3, 0x00200000, None)
-    if handle == ctypes.c_void_p(-1).value:
-        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        identity = re.fullmatch(r"([0-9a-f]{32}):(0|[1-9][0-9]{0,5})", request["identity"])
+        state = Path(request["state"])
+        if identity is None or not state.is_absolute() or str(state).startswith("\\\\"):
+            raise ValueError("Invalid managed original")
+        path = state / "outputs" / identity[1] / f"final-{int(identity[2]) + 1}.png"
+        for component in (path, *path.parents):
+            if component.is_symlink() or os.path.isjunction(component):
+                raise ValueError("Redirected original")
+        if not (path.parent / "metadata.json").is_file():
+            raise ValueError("Missing metadata")
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        create = kernel.CreateFileW
+        create.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        ]
+        create.restype = wintypes.HANDLE
+        # DELETE | FILE_READ_ATTRIBUTES; share reads only, open the reparse point itself.
+        handle = create(str(path), 0x10000 | 0x80, 1, None, 3, 0x00200000, None)
+        if handle == ctypes.c_void_p(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise RefusedBeforeMutation("Windows original was refused before mutation.") from exc
+
     try:
         descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY)
-    except BaseException:
+    except (OSError, ValueError, TypeError) as exc:
         kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-        kernel.CloseHandle(handle)
-        raise
+        if not kernel.CloseHandle(handle):
+            raise OSError("Windows original handle cleanup was not confirmed.") from exc
+        raise RefusedBeforeMutation("Windows original was refused before mutation.") from exc
+
     try:
         info = os.fstat(descriptor)
         if (
@@ -220,13 +234,21 @@ def _delete(request):
             or getattr(info, "st_file_attributes", 0) & 0x400
         ):
             raise ValueError("Original identity changed")
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        # Even a pre-disposition refusal is unconfirmed if handle release fails.
+        os.close(descriptor)
+        raise RefusedBeforeMutation("Windows original was refused before mutation.") from exc
+
+    try:
         disposition = wintypes.BOOL(True)
         remove = kernel.SetFileInformationByHandle
         remove.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
         remove.restype = wintypes.BOOL
+        # From this call onward, neither an error nor a lost reply proves no mutation.
         if not remove(handle, 4, ctypes.byref(disposition), ctypes.sizeof(disposition)):
             raise ctypes.WinError(ctypes.get_last_error())
     finally:
+        # The filesystem may execute the disposition as this handle closes.
         os.close(descriptor)
 
 
@@ -265,8 +287,11 @@ def _main():
             print('{"ok":true}', flush=True)
         else:
             raise ValueError
+    except RefusedBeforeMutation:
+        print('{"ok":false,"phase":"pre"}', flush=True)
+        return 1
     except Exception:
-        print('{"ok":false}', flush=True)  # Never print OS errors or private paths.
+        print('{"ok":false}', flush=True)  # No phase means mutation is unconfirmed.
         return 1
     return 0
 

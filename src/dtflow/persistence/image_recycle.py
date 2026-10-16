@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import NamedTuple
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+
+class ReconcileResult(NamedTuple):
+    """Newly unsettled Trash and permanent intents from this pass only."""
+
+    trash_uncertain: int
+    delete_uncertain: int
+    withdrawn_restorations: int
+
 
 SCHEMA_VERSION = 2
 FILENAME = "image_recycle.sqlite3"
@@ -145,26 +154,29 @@ def outcomes(state: Path) -> dict[str, tuple[str, str, int, int]]:
         connection.close()
 
 
-def reconcile(state: Path) -> tuple[int, int]:
+def reconcile(state: Path) -> ReconcileResult:
     """Settle interrupted intent and withdraw unverified historical restorations.
 
-    Return interrupted and withdrawn-restoration counts. No file at an old path
+    Return newly uncertain Trash/deletion counts and withdrawn restorations. No old path
     proves original content identity, even when size and timestamps match. Keep
     these records recycled until an explicit content-verified recovery exists.
     Never retry a Trash operation or remove any reappearing file.
     """
     file = Path(state).resolve() / FILENAME
     if not file.is_file():
-        return 0, 0
+        return ReconcileResult(0, 0, 0)
     with writer(state) as db:
-        pending = db.execute(
-            "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome IN ('pending','delete_pending')",
+        trash_uncertain = db.execute(
+            "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome='pending'",
             (_now(),),
-        )
-        uncertain = pending.rowcount
+        ).rowcount
+        delete_uncertain = db.execute(
+            "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome='delete_pending'",
+            (_now(),),
+        ).rowcount
         db.execute("UPDATE operations SET outcome='interrupted' WHERE outcome='running'")
         withdrawn = db.execute(
             "UPDATE records SET outcome='recycled',updated_utc=? WHERE outcome='restored'",
             (_now(),),
         ).rowcount
-    return uncertain, withdrawn
+    return ReconcileResult(trash_uncertain, delete_uncertain, withdrawn)

@@ -227,12 +227,18 @@ def prepare_recycle(
 
 def _permanent_remove(state: Path, target: RecycleTarget) -> None:
     """Only reached after fresh service checks and committed permanent intent."""
-    if os.name == "nt" or windows_original.bridge(state) is not None:
+    try:
+        windows_boundary = os.name == "nt" or windows_original.bridge(state) is not None
+    except OSError as exc:
+        # No helper or disposition call could have been reached.
+        raise RecycleUnavailable("Shared Windows deletion boundary is unavailable.", stage="delete_refused") from exc
+    if windows_boundary:
         try:
             windows_original.delete_managed(state, target)
-        except OSError as exc:
-            # Child loss/timeout may outlive our observation. Never classify this
-            # as retryable merely because the source still appears unchanged.
+        except windows_original.RefusedBeforeMutation as exc:
+            raise RecycleUnavailable("Windows deletion was refused before mutation.", stage="delete_refused") from exc
+        except (OSError, ValueError) as exc:
+            # Disposition, helper loss or acknowledgment may be unconfirmed.
             raise RecycleUnavailable("Windows deletion was not confirmed.", stage="delete_uncertain") from exc
         return
     if foreign_windows_path(target.recorded_path):
