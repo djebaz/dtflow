@@ -20,7 +20,7 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
 from dtflow.persistence import windows_original
-from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
+from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock, require_originals_ready
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 
 
@@ -172,6 +172,7 @@ def prepare_recycle(
     """
     if action not in ("trash", "permanent"):
         raise ValueError("Unknown image-removal action.")
+    require_originals_ready(state)
     permanent = action == "permanent"
     paths = ArtifactReadPaths.discover() if permanent else ArtifactReadPaths()
     if permanent:

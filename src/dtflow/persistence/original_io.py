@@ -17,25 +17,55 @@ class OriginalImagesBusyError(RuntimeError):
     """The shared original-image operation lease could not be acquired."""
 
 
+class OriginalImagesUnavailableError(RuntimeError):
+    """Required Windows/WSL original-image locking support is unavailable."""
+
+
+def windows_originals_bridge(state: Path):
+    """Check static bridge prerequisites without starting any helper or taking a lock."""
+    if os.name == "nt":
+        return None
+    from dtflow.persistence.windows_original import bridge
+
+    try:
+        return bridge(Path(state))
+    except (OSError, UnicodeError, ValueError) as exc:
+        message = str(exc)
+        if "Windows .venv" in message:
+            reason = "This checkout needs a Windows .venv/Scripts/python.exe for shared originals."
+        elif "Windows lock boundary" in message or "Mount information" in message:
+            reason = "The Windows-drive mount has no verified shared-lock support."
+        else:
+            reason = "The required Windows original-file bridge is unavailable."
+        raise OriginalImagesUnavailableError(
+            f"{reason} Use a WSL Linux (ext4) state directory or restore the required Windows bridge."
+        ) from exc
+
+
+def require_originals_ready(state: Path) -> None:
+    """Cheap static pre-dispatch check; never acquire a lock or spawn a process."""
+    windows_originals_bridge(state)
+
+
 @contextmanager
 def _file_lock(state: Path, filename: str, *, timeout: float):
     """Acquire an OS-released file lock; never delete the lock file during cleanup."""
     if os.name != "nt":
-        from dtflow.persistence.windows_original import bridge, shared_lock
+        from dtflow.persistence.windows_original import shared_lock
 
-        with ExitStack() as stack:
-            try:
-                connection = bridge(Path(state))
-                if connection is not None:
-                    command, native_state = connection
+        # Capability checks are static. Actual I/O still requires a real lease.
+        connection = windows_originals_bridge(state)
+        if connection is not None:
+            command, native_state = connection
+            with ExitStack() as stack:
+                try:
                     stack.enter_context(shared_lock(command, native_state, filename, timeout))
-            except (OSError, UnicodeError, ValueError) as exc:
-                raise OriginalImagesBusyError(
-                    "Shared Windows originals are busy or their lock helper is unavailable."
-                ) from exc
-            if connection is not None:
+                except (OSError, UnicodeError, ValueError) as exc:
+                    raise OriginalImagesBusyError(
+                        "Shared Windows original-file lease could not be acquired."
+                    ) from exc
                 yield
-                return
+            return
     directory = Path(state).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / filename).open("a+b") as handle:

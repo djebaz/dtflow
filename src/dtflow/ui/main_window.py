@@ -31,7 +31,11 @@ from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
 from dtflow.persistence.last_session import load_last_session, save_last_session
-from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock
+from dtflow.persistence.original_io import (
+    original_images_lock,
+    recycle_batch_lock,
+    require_originals_ready,
+)
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
@@ -368,6 +372,14 @@ class MainWindow:
         self._workspace_changed(0)
         self._responsive_workspace()
         self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
+        self.runner.submit(
+            asyncio.to_thread(require_originals_ready, self.state_dir), self._originals_ready_checked
+        )
+
+    def _originals_ready_checked(self, _result, error) -> None:
+        if error is not None:
+            log.warning("original-image readiness unavailable reason=%s", type(error).__name__)
+            InlineNotice.warning(self.form, "Original images unavailable", str(error))
 
     @staticmethod
     def _disable_preview_controls(page: QWidget) -> None:

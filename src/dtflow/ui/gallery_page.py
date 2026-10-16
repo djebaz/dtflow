@@ -47,7 +47,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as gallery_storage
-from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
+from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError, original_images_lock
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery import copy_output_paths, filter_choices, inspect_output, locate_output, query_outputs
@@ -122,6 +122,8 @@ def _image(path: str, max_side: int, state: Path | None = None) -> tuple[QImage 
     try:
         with original_images_lock(state, timeout=12):
             return decode()
+    except OriginalImagesUnavailableError as exc:
+        return None, str(exc)
     except OriginalImagesBusyError:
         return None, "Original temporarily busy"
 

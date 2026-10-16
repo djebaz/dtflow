@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QMenu, QPushButton, QWidget
 
 from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence.image_removal_preferences import load_mode, save_mode
-from dtflow.persistence.original_io import OriginalImagesBusyError
+from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
 from dtflow.services.image_recycle import RecycleUnavailable, prepare_recycle, recycle_outputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, feedback
@@ -295,7 +295,7 @@ class ImageRecyclePanel(QObject):
         if phase == "preflight":
             if isinstance(error, RecycleUnavailable):
                 reason = str(error)
-            elif isinstance(error, OriginalImagesBusyError):
+            elif isinstance(error, (OriginalImagesBusyError, OriginalImagesUnavailableError)):
                 reason = str(error)
             else:
                 reason = "Image-removal prerequisites could not be verified."

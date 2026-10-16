@@ -27,7 +27,7 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.logging_setup import ATTEMPT
-from dtflow.persistence.original_io import original_images_lock
+from dtflow.persistence.original_io import OriginalImagesUnavailableError, original_images_lock, require_originals_ready
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
@@ -188,6 +188,21 @@ class GenerationService:
                     request.request_id,
                 )
             )
+        # One authoritative gate covers desktop, CLI, queues and image operations.
+        # No child process, lock or Windows handshake is performed before dispatch.
+        try:
+            await asyncio.to_thread(
+                require_originals_ready, getattr(self.store, "directory", self.output.parent)
+            )
+        except OriginalImagesUnavailableError as exc:
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory.PERSISTENCE,
+                    "originals_unavailable",
+                    f"{exc} Generation was not submitted; no provider generation was billed for this request.",
+                    request.request_id,
+                )
+            ) from exc
         reserved = False
         attempt_id = uuid4().hex
         if image_operation:
