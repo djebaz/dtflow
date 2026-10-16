@@ -2,7 +2,7 @@
 
 ## Status and working rules
 
-Draft PR #76, branch `feature/image-removal-modes`. Plan checkpoint only; no removal code implemented. Reuse the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner additionally permits focused, non-destructive WSL CLI probes.
+Draft PR #76, branch `feature/image-removal-modes`. Split action, environment preferences, explicit permanent mode and Windows/WSL safeguards are source-present; runtime removal acceptance is pending. Reused the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner additionally permits focused, non-destructive WSL CLI probes.
 
 ## Scope and agreed contract
 
@@ -34,28 +34,30 @@ Execution must revalidate the exact confirmed managed original, its current comm
 
 ### Safety gate before permanent-removal code
 
-The exact shared-lock and mutation implementation remains to be established by source inspection/probes. Do not substitute a raw mapped-path unlink if this gate cannot be met. Record the chosen small boundary and its evidence here.
+The focused probe found that WSL `flock`/`lockf` and Windows `msvcrt` do not exclude one another, in either direction. Windows/WSL size, mtime_ns and inode matched for the disposable drive file; device did not. Chosen boundary: one source-only Windows helper for native named leases and fingerprinted managed-file handle deletion, leaving all orchestration/ledger work in the existing service. Missing Windows checkout `.venv`, unsupported mappings or helper failure refuses shared access rather than using Linux-only locks. Permanent Windows targets are derived from state/identity, never an arbitrary delete pathname. POSIX-native originals retain guarded descriptor-relative removal.
+
+The implemented helper's lock-only probe showed: WSL-started holder blocks native Windows contender; native holder causes WSL-started contender to refuse; parent-pipe EOF releases the lock. A further non-mutating Windows handle probe using the intended open/access flags confirmed path/handle size, mtime_ns, inode and link-count equality for the same disposable file. Disposable files only (`tmp/removal-lock-probe-fa3xpnke`); no disposition/delete request or user-image mutation. Actual handle deletion, application composition and failure/restart behavior remain owner acceptance, not established by these probes.
 
 ## GUI components
 
-- [ ] Canonical Images Designer split-control layout and shared QSS.
-- [ ] Mode menu, independent availability and mode persistence.
-- [ ] Inline preflight/confirmation/progress/results and cancellation.
-- [ ] Offline fixture states for unavailable Trash and permanent consent.
+- [x] Canonical Images Designer split-control layout and shared QSS.
+- [x] Mode menu, independent availability and mode persistence.
+- [x] Inline preflight/confirmation/progress/results and cancellation.
+- [x] Offline fixture states for unavailable Trash and permanent consent (not rendered).
 - No provider, model, packaging or dependency changes planned.
 
 ## Action items
 
 - [x] Read current removal service, ledger, gallery and inline consent paths.
-- [ ] Implement mode state and explicit policy change in AGENTS/design/docs.
-- [ ] Complete focused path/lock probes and record the minimal safe boundary.
-- [ ] Extend the existing service with guarded permanent mode/distinct outcomes.
-- [ ] Wire split UI and invalidate stale consent on mode changes.
-- [ ] Update offline previews, docs, release notes and PR body.
+- [x] Implement mode state and explicit policy change in AGENTS/design/docs.
+- [x] Complete focused path/lock probes and record the minimal safe boundary.
+- [x] Extend the existing service with guarded permanent mode/distinct outcomes; ledger schema 2 preserves schema-1 records and refuses old-app access after upgrade.
+- [x] Wire split UI and invalidate stale consent on mode changes.
+- [x] Finish offline previews, docs, release notes and PR body; implementation goes to the same draft PR.
 
 ## Probes / acceptance
 
-Restrict agent probes through wsl.exe to non-mutating capability/path/lock inspection and disposable-file locks; never delete user images or run generation. No tests, builds, renders or broad validation under fast-implement. Record exact probes performed separately from source presence.
+Restrict agent probes through wsl.exe to non-mutating capability/path/handle inspection and disposable-file locks; never delete user images or run generation. No tests, builds or renders under fast-implement. Owner additionally requested Ruff lint/format: environment readiness passed; `uv run --frozen ruff check .` passed; Ruff formatted 9 changed Python files and repository-wide `ruff format --check .` passed (320 files). Record these static checks separately from runtime acceptance.
 
 - [ ] Owner Windows/WSL split-menu and separate preference acceptance.
 - [ ] Owner mixed native/Windows-recorded managed-source checks and confirmations.

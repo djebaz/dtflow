@@ -277,7 +277,9 @@ def feedback(parent):
     return window._inline_feedback
 
 
-def confirm_action(parent, button, title, text, callback: Callable, canceled=None, *, danger=False, confirm_text="Confirm"):
+def confirm_action(
+    parent, button, title, text, callback: Callable, canceled=None, *, danger=False, confirm_text="Confirm"
+):
     feedback(parent).arm(button, title, text, callback, canceled, danger=danger, confirm_text=confirm_text)
 
 

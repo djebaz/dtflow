@@ -607,9 +607,7 @@ class GalleryPage(QObject):
         self.delete_button.setEnabled(
             count > 0 and not self._recycle_busy and self.removal_ready and callback is not None
         )
-        self._widget("galleryRemovalMenuButton", QPushButton).setEnabled(
-            self.removal_ready and not self._recycle_busy
-        )
+        self._widget("galleryRemovalMenuButton", QPushButton).setEnabled(self.removal_ready and not self._recycle_busy)
         self._sync_detail_checkbox()
         for row, item in enumerate(self.items):
             self._paint_checked_item(row, item.identity)

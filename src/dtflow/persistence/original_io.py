@@ -30,7 +30,9 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                     command, native_state = connection
                     stack.enter_context(shared_lock(command, native_state, filename, timeout))
             except (OSError, UnicodeError, ValueError) as exc:
-                raise OriginalImagesBusyError("Shared Windows originals are busy or their lock helper is unavailable.") from exc
+                raise OriginalImagesBusyError(
+                    "Shared Windows originals are busy or their lock helper is unavailable."
+                ) from exc
             if connection is not None:
                 yield
                 return

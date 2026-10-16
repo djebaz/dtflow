@@ -24,8 +24,10 @@ def load_mode(state: Path) -> str:
             raise ValueError
         document = json.loads(path.read_text(encoding="utf-8"))
         if (
-            document.get("schema") != "dtflow.image-removal" or type(document.get("version")) is not int
-            or document["version"] != 1 or document.get("mode") not in ("trash", "permanent")
+            document.get("schema") != "dtflow.image-removal"
+            or type(document.get("version")) is not int
+            or document["version"] != 1
+            or document.get("mode") not in ("trash", "permanent")
         ):
             raise ValueError
         return document["mode"]

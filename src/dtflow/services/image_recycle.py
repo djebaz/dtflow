@@ -93,8 +93,12 @@ def _managed_key(path: str) -> str:
 
 
 def _regular_managed_file(
-    state: Path, record: dict, *, reference_counts: dict[str, int] | None = None,
-    permanent: bool = False, paths: ArtifactReadPaths | None = None,
+    state: Path,
+    record: dict,
+    *,
+    reference_counts: dict[str, int] | None = None,
+    permanent: bool = False,
+    paths: ArtifactReadPaths | None = None,
 ) -> RecycleTarget | None:
     """Reject custom output roots, shared/redirected files and non-final images."""
     attempt = str(record["attempt_id"])
@@ -153,8 +157,13 @@ def _regular_managed_file(
 
 
 def prepare_recycle(
-    state: Path, identities: tuple[str, ...], hidden: int = 0, query: GalleryQuery | None = None,
-    *, trash_check=None, action: str = "trash",
+    state: Path,
+    identities: tuple[str, ...],
+    hidden: int = 0,
+    query: GalleryQuery | None = None,
+    *,
+    trash_check=None,
+    action: str = "trash",
 ) -> RecyclePlan:
     """Resolve exactly the checked identities, with no filesystem mutation.
 
@@ -235,6 +244,7 @@ def _permanent_remove(state: Path, target: RecycleTarget) -> None:
         try:
             info = os.fstat(descriptor)
             named = os.stat(source.name, dir_fd=directory, follow_symlinks=False)
+
             def fingerprint(value):
                 return value.st_size, value.st_mtime_ns, value.st_ino, value.st_dev
 
@@ -310,8 +320,13 @@ def recycle_outputs(
                     if confirmed != target:
                         ineligible += 1
                     elif not ledger.claim_recycle_intent(
-                        state, operation_id, target.identity, target.recorded_path or target.path,
-                        target.size, target.mtime_ns, permanent=permanent,
+                        state,
+                        operation_id,
+                        target.identity,
+                        target.recorded_path or target.path,
+                        target.size,
+                        target.mtime_ns,
+                        permanent=permanent,
                     ):
                         # A preflight plan may predate another process's intent.
                         # Never overwrite pending/uncertain/removed evidence or
@@ -347,7 +362,11 @@ def recycle_outputs(
                             if len(failure_details) < 100:
                                 failure_details.append((target.identity, detail))
                         else:
-                            state_value = ("deleted" if permanent else "recycled") if not Path(target.path).exists() else "uncertain"
+                            state_value = (
+                                ("deleted" if permanent else "recycled")
+                                if not Path(target.path).exists()
+                                else "uncertain"
+                            )
                         ledger.record_outcome(
                             state,
                             operation_id,

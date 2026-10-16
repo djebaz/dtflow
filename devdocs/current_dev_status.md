@@ -1,9 +1,11 @@
 # Current development status
 
-Snapshot: 2026-10-10. Release 4.0.0 is in preparation ([notes](releases/v4.0.0.md)); the application version does not declare completion of provisional roadmap gates. Final clean packaged acceptance is pending. Phase 8A viewing, the catalogue-driven Generate discovery from PR #40 and the 8B–8D presets, reuse and cache management from PR #46 are implemented on main. The 0.3.0 publication evidence below is retained from the earlier snapshot; PR #31 build/draft workflow status is not re-verified here.
+Snapshot: 2026-10-17. Release 4.0.0 is in preparation ([notes](releases/v4.0.0.md)); the application version does not declare completion of provisional roadmap gates. Final clean packaged acceptance is pending. Phase 8A viewing, the catalogue-driven Generate discovery from PR #40 and the 8B–8D presets, reuse and cache management from PR #46 are implemented on main. The 0.3.0 publication evidence below is retained from the earlier snapshot; PR #31 build/draft workflow status is not re-verified here.
 This is coding orientation against [initial.md](plans/initial.md), not a release declaration. Implementation scope comes from source/plan inspection; owner-reported tests and interactive smoke observations are recorded separately. The agent ran no live generation or provider operations.
 
 ## Implemented on main
+
+PR #76 branch scope (not yet merged/accepted): explicit Trash/permanent split action, separate environment mode preferences, fresh irreversible confirmation and guarded Windows-recorded managed-original removal from WSL. Reuses the existing service/ledger, advancing removal schema to 2; metadata/history/exports remain. Focused disposable-file probes established the need for native Windows leases and helper lock exclusion/EOF release, not end-to-end removal. No tests, renders, builds or real deletion ran. See [plan and pending owner acceptance](plans/2026-10-17-image-removal-modes.md).
 
 WSL follow-up (PR #75, source-present branch work): read-only access aliases for
 legacy Windows output/sidecar references through WSL 1 drive mounts, plus local

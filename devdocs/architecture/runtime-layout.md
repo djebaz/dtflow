@@ -61,25 +61,11 @@ translation is used. Multiple mount roots for one drive, redirected components,
 traversal, device/UNC/drive-relative paths and missing mappings are refused.
 Arbitrary `9p`, bind and network mounts are not inferred as drive mappings.
 
-Gallery models carry optional local access aliases separately from authoritative
-`path` and `metadata_path`. Queries discover once per worker page; image decodes
-and metadata reads refresh the foreign-path mapping at the read boundary. No
-process-global mount cache persists across refreshes. Metadata artifact matching
-still compares the exact stored path, never the alias. Thumbnail identity keys
-include the access alias so changing mounts invalidates retained presentation.
-Copy path(s), Open folder and external viewing use local read paths; provenance
-inspection continues to show the stored reference. UI callbacks receive no new
-destructive permissions: foreign Windows items disable edit/use/regenerate and
-export refuses foreign Windows sources before reading/encoding. Trash retains its
-native-path/root/ownership checks and never translates destructive targets.
+Gallery models carry optional local access aliases separately from authoritative `path` and `metadata_path`. Queries discover once per worker page; image decodes and metadata reads refresh the foreign-path mapping at the read boundary. No process-global mount cache persists across refreshes. Metadata artifact matching still compares the exact stored path, never the alias. Thumbnail identity keys include the access alias so changing mounts invalidates retained presentation. Copy path(s), Open folder and external viewing use local read paths; provenance inspection continues to show the stored reference. Foreign Windows items disable edit/use/regenerate and export refuses foreign Windows sources before reading/encoding. Trash retains its native-path/root/ownership checks. Explicit permanent mode has a separate reviewed mutation boundary; read aliases alone never authorize destruction.
 
-Browsing still uses the existing original-file lease within its platform. This
-does not establish interoperability of Windows `msvcrt` and Linux `flock` locks:
-do not run simultaneous Windows/WSL original mutations against shared state.
-Cross-platform concurrent writes, portable-reference schema migration and new
-external-root mappings remain separate work. Future managed artifacts should use
-state-root-relative references via an explicit supported migration, not a bulk
-rewrite of historical absolute paths.
+WSL shared-drive original-file and removal-batch leases now use the narrow source-only native Windows helper because focused probes showed `msvcrt` and Linux `flock`/`lockf` do not exclude each other. Missing checkout Windows `.venv` or unsupported mount/helper support refuses shared access, not a Linux-only lock fallback. Native root filesystems keep POSIX leases. This is not general cross-platform SQLite/generation/state-owner concurrency support; avoid concurrent Windows/WSL generation/state writes. Portable-reference migration and external-root mappings remain separate work.
+
+`image_recycle.sqlite3` schema 2 preserves schema-1 records and adds permanent intent/outcomes without altering attempt metadata/history. Old applications reject the upgraded ledger. Environment-specific `image_removal.<environment>.json` files (schema `dtflow.image-removal`, version 1) contain only mode preferences, not consent/identities; cache cleanup and `--no-cache` do not own them. See [removal architecture](image-recycling.md) for exact eligibility, helper, uncertainty and no-replay boundaries. Source presence and lock-only probes do not establish removal runtime acceptance.
 
 ## User-selected image exports
 

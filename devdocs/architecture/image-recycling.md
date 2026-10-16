@@ -16,7 +16,7 @@ Focused WSL 1 probes on 2026-10-17 found that `flock` and `lockf` do **not** exc
 
 Permanent Windows removal derives only `<state>/outputs/<attempt>/final-<ordinal+1>.png`, checks ancestors and metadata, opens a non-reparse handle denying other writers/deleters, checks size/mtime/inode/single-link/regular-file identity, then requests `FileDispositionInfo` and closes that exact handle. No arbitrary caller-supplied deletion path, shell command, provider operation or duplicate ledger exists in the helper. Native POSIX removal opens the parent/file with no-follow flags and rechecks descriptor/name identity before descriptor-relative unlink under application leases. External uncooperative filesystem modifications are not synchronized by advisory leases; they are not supported concurrent operations.
 
-The authorized lock-only helper probe established Windows contention in both directions and release on parent-pipe EOF using disposable files. No permanent deletion, GUI smoke, tests, renders or build ran. Owner mutation, changed-source/mount, helper-interruption and restart acceptance remain pending. The Windows handle operation follows [Microsoft's SetFileInformationByHandle contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle); source presence and lock probes do not establish end-to-end deletion acceptance.
+The authorized lock-only helper probe established Windows contention in both directions and release on parent-pipe EOF using disposable files. A non-mutating handle probe confirmed path/handle fingerprint equality with the intended access/open flags for that disposable file; no disposition/delete request was issued. Owner-requested Ruff lint/format passed. No permanent deletion, GUI smoke, tests, renders or build ran. Owner mutation, changed-source/mount, helper-interruption and restart acceptance remain pending. The Windows handle operation follows [Microsoft's SetFileInformationByHandle contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle); source presence and probes do not establish end-to-end deletion acceptance.
 
 ### Durable removal outcomes
 
@@ -36,11 +36,7 @@ The locked and installed Qt version inspected on 2026-10-09 is 6.11.2. The adapt
 
 Qt capability detection is the only platform gate. Managed-original validation remains in the shared service; there is no OS allowlist, filesystem-type allowlist or fixed-drive restriction. Qt determines whether Trash is usable for each file. Its inspected Windows implementation requests recycling and vetoes non-recycling; Linux uses Freedesktop Trash and macOS its system Trash API. Qt may fail on permissions, settings or unusual mounts. Capability detection is not a per-file guarantee. Custom output roots and exported copies remain excluded; failed moves never trigger permanent deletion or automatic retry.
 
-When `QFile.supportsMoveToTrash` is absent or not callable (for example, Qt 6.8.3),
-the adapter reports Trash unavailable without probing files. Desktop startup
-continues with the Trash main action disabled and the mode menu usable; direct source checks refuse the operation. This
-does not certify older Qt or WSL application support, change dependencies, or add
-a permanent-delete fallback. Explicit permanent mode is independent of Trash capability.
+When `QFile.supportsMoveToTrash` is absent or not callable (for example, Qt 6.8.3), the adapter reports Trash unavailable without probing files. Desktop startup continues with the Trash main action disabled and the mode menu usable; direct source checks refuse the operation. This does not certify older Qt or WSL application support, change dependencies, or add a permanent-delete fallback. Explicit permanent mode is independent of Trash capability.
 
 ## Evidence, persistence and concurrency
 

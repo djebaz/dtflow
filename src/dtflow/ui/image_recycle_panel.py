@@ -77,7 +77,8 @@ class ImageRecyclePanel(QObject):
         button.setAccessibleName(label)
         button.setToolTip(
             "Irreversibly delete checked managed originals after explicit confirmation; no Undo."
-            if mode == "permanent" else f"Move eligible checked originals to {TRASH_NAME} after confirmation."
+            if mode == "permanent"
+            else f"Move eligible checked originals to {TRASH_NAME} after confirmation."
         )
         button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete permanently") + 42)
         for key, action in self._mode_actions.items():
@@ -129,8 +130,13 @@ class ImageRecyclePanel(QObject):
         self.gallery.set_recycle_busy(True)
         self.runner.submit(
             asyncio.to_thread(
-                prepare_recycle, self.state_dir, identities, hidden, query,
-                trash_check=check_trash_source, action=action,
+                prepare_recycle,
+                self.state_dir,
+                identities,
+                hidden,
+                query,
+                trash_check=check_trash_source,
+                action=action,
             ),
             self._prepared,
         )
@@ -142,7 +148,10 @@ class ImageRecyclePanel(QObject):
         if self.busy_source():
             self._finish_with_error(OriginalImagesBusyError("An original-image operation started. Try again later."))
             return
-        if self._confirmation_revision != self.gallery.recycle_scope_revision or plan.action != self.gallery.removal_mode:
+        if (
+            self._confirmation_revision != self.gallery.recycle_scope_revision
+            or plan.action != self.gallery.removal_mode
+        ):
             self._cancel_confirmation()
             return
         eligible = len(plan.targets)
@@ -164,8 +173,8 @@ class ImageRecyclePanel(QObject):
         message += (
             "PERMANENT AND IRREVERSIBLE: originals will be destroyed, bypassing Trash/Recycle Bin. "
             "No Undo or recovery guarantee. Metadata, exports and generation history are preserved."
-            if permanent else
-            f"Restore manually through {TRASH_NAME}; no DTFlow Undo or restoration guarantee. "
+            if permanent
+            else f"Restore manually through {TRASH_NAME}; no DTFlow Undo or restoration guarantee. "
             "Recovered files stay hidden pending content-verified recovery. Exports and generation history preserved."
         )
         # Keep scope editable while awaiting consent, but invalidate it on any
@@ -175,7 +184,9 @@ class ImageRecyclePanel(QObject):
         confirm_action(
             self.parent_widget,
             self.gallery.delete_button,
-            f"Permanently delete {eligible} selected originals?" if permanent else f"Move {eligible} selected originals to {TRASH_NAME}?",
+            f"Permanently delete {eligible} selected originals?"
+            if permanent
+            else f"Move {eligible} selected originals to {TRASH_NAME}?",
             message,
             lambda: self._execute(plan),
             self._cancel_confirmation,
@@ -190,7 +201,8 @@ class ImageRecyclePanel(QObject):
 
     def _execute(self, plan):
         if (
-            self.busy_source() or self._confirmation_revision != self.gallery.recycle_scope_revision
+            self.busy_source()
+            or self._confirmation_revision != self.gallery.recycle_scope_revision
             or plan.action != self.gallery.removal_mode
         ):
             self._cancel_confirmation()
@@ -203,8 +215,10 @@ class ImageRecyclePanel(QObject):
         self.gallery.set_recycle_busy(True)
         self._stop = threading.Event()
         activity_strip(self.parent_widget).start(
-            "trash", "Deleting originals permanently" if self._action == "permanent" else f"Moving originals to {TRASH_NAME}",
-            self.cancel, total=len(plan.targets)
+            "trash",
+            "Deleting originals permanently" if self._action == "permanent" else f"Moving originals to {TRASH_NAME}",
+            self.cancel,
+            total=len(plan.targets),
         )
         self.runner.submit(
             asyncio.to_thread(
@@ -232,9 +246,12 @@ class ImageRecyclePanel(QObject):
         self.gallery.recycle_completed(result.recycled + result.deleted)
         label = "Permanent deletion" if self._action == "permanent" else TRASH_NAME
         summary = (
-            (f"{len(result.deleted)} permanently deleted.\n" if self._action == "permanent" else
-             f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.\n") +
-            f"{len(result.failed)} failed; {len(result.uncertain)} uncertain (manual review required).\n"
+            (
+                f"{len(result.deleted)} permanently deleted.\n"
+                if self._action == "permanent"
+                else f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.\n"
+            )
+            + f"{len(result.failed)} failed; {len(result.uncertain)} uncertain (manual review required).\n"
             f"{result.missing} missing; {result.ineligible} ineligible; "
             f"{result.unprocessed} unprocessed."
         )

@@ -142,7 +142,11 @@ def render_mapped_gallery_states(app, state, out):
             print(target)
             plan = RecyclePlan(
                 (RecycleTarget(item.identity, str(root / "saved.png"), 1, 1, 1, 1),),
-                0, 0, 0, 1, "permanent",
+                0,
+                0,
+                0,
+                1,
+                "permanent",
             )
             shell.image_recycle._confirmation_revision = shell.gallery.recycle_scope_revision
             with patch.object(shell.image_recycle, "_execute", side_effect=RuntimeError("Preview cannot remove files")):
@@ -300,11 +304,17 @@ def main():
             unavailable.form.imagesNavigationButton.click()
             wait_for(lambda: unavailable.gallery.removal_ready)
             unavailable.image_recycle.menu_button.menu().popup(
-                unavailable.image_recycle.menu_button.mapToGlobal(QPoint(0, unavailable.image_recycle.menu_button.height()))
+                unavailable.image_recycle.menu_button.mapToGlobal(
+                    QPoint(0, unavailable.image_recycle.menu_button.height())
+                )
             )
             QTest.qWait(100)
             target = args.out / "30-images-trash-unavailable.png"
             if not unavailable.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            target = args.out / "36-images-removal-mode-menu.png"
+            if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
             unavailable.image_recycle.menu_button.menu().hide()

@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76 source-present Images split action: choose Trash or Delete permanently, with separate Windows/WSL preferences and fresh inline irreversible-action confirmation every time. No automatic permanent fallback or persisted consent. Guarded WSL removal of Windows-recorded managed originals uses a narrow native Windows lock/handle boundary; unsupported support refuses access. Metadata/history/exports remain intact. Removal ledger upgrades to schema 2, preserving old records while older applications refuse it. Focused disposable-file lock probes only; no tests, renders, builds or real deletion. Owner runtime acceptance remains pending: [implementation plan](../plans/2026-10-17-image-removal-modes.md).
+
 - Source-present WSL gallery read-path resolution and selected-toggle font follow-up:
   [implementation plan](../plans/2026-10-17-wsl-gallery-paths-and-fonts.md).
   Windows references remain unchanged; verified WSL 1 mounts supply read aliases.
@@ -54,8 +56,8 @@
 
 ## Release audit
 
-- PRs: #63, #64, #73, #75
-- Scope: CPU mask PoC, image preparation/editor/owner-probe and queue work, agent setup, Qt Trash capability guard, WSL read-only gallery aliases and local font loading; production/platform acceptance remains separate.
+- PRs: #63, #64, #73, #75, #76
+- Scope: CPU mask PoC, image preparation/editor/owner-probe and queue work, agent setup, Qt Trash capability guard, WSL gallery aliases/fonts and explicit guarded Trash/permanent removal modes; production/platform acceptance remains separate. PR #76 Ruff lint/format passed; no actual removal acceptance is claimed.
 
 
 

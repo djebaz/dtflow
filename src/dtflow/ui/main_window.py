@@ -918,7 +918,7 @@ class MainWindow:
             self.image_recycle.cancel()
             InlineNotice.information(
                 self.form,
-                "Image recycling in progress",
+                "Image removal in progress",
                 "Stop requested. Wait for the current image and result summary before closing.",
             )
             return False

@@ -28,6 +28,8 @@ def windows_path(path: Path, mounts) -> str:
     if len(candidates) != 1:
         raise OSError("Shared Windows path is unavailable or ambiguous.")
     drive, root = candidates[0]
+    if len({mounted for letter, mounted in mounts if letter == drive}) != 1:
+        raise OSError("Windows drive has ambiguous mount roots.")
     for component in (path, *path.parents):
         if component.is_symlink():
             raise OSError("Redirected shared paths are not supported.")
@@ -71,14 +73,20 @@ def bridge(state: Path):
     executable = root / ".venv" / "Scripts" / "python.exe"
     if not executable.is_file():
         raise OSError("WSL shared originals require this checkout's Windows .venv.")
+    windows_path(executable, paths.mounts)
     script = windows_path(Path(__file__).resolve(), paths.mounts)
     return [str(executable), script], native_state
 
 
 def _start(command, request):
     process = subprocess.Popen(
-        command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, encoding="utf-8", bufsize=1,
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        bufsize=1,
     )
     try:
         process.stdin.write(json.dumps(request) + "\n")
@@ -135,15 +143,31 @@ def shared_lock(command, state, filename, timeout):
 def delete_managed(state: Path, target) -> None:
     """Delete a verified Windows file by handle; uncertain child results never replay."""
     if os.name == "nt":
-        _delete(dict(state=str(state), identity=target.identity, size=target.size,
-                     mtime_ns=target.mtime_ns, inode=target.inode))
+        _delete(
+            dict(
+                state=str(Path(state).absolute()),
+                identity=target.identity,
+                size=target.size,
+                mtime_ns=target.mtime_ns,
+                inode=target.inode,
+            )
+        )
         return
     connection = bridge(state)
     if connection is None:
         raise OSError("No Windows mutation boundary for this state.")
     command, native_state = connection
-    process = _start(command, dict(action="delete", state=native_state, identity=target.identity,
-                                   size=target.size, mtime_ns=target.mtime_ns, inode=target.inode))
+    process = _start(
+        command,
+        dict(
+            action="delete",
+            state=native_state,
+            identity=target.identity,
+            size=target.size,
+            mtime_ns=target.mtime_ns,
+            inode=target.inode,
+        ),
+    )
     try:
         _reply(process, 30)
     finally:
@@ -167,8 +191,15 @@ def _delete(request):
         raise ValueError("Missing metadata")
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     create = kernel.CreateFileW
-    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
-                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
     create.restype = wintypes.HANDLE
     # DELETE | FILE_READ_ATTRIBUTES; share reads only, open the reparse point itself.
     handle = create(str(path), 0x10000 | 0x80, 1, None, 3, 0x00200000, None)
@@ -183,10 +214,10 @@ def _delete(request):
     try:
         info = os.fstat(descriptor)
         if (
-            (info.st_size, info.st_mtime_ns, info.st_ino) !=
-            (request["size"], request["mtime_ns"], request["inode"])
+            (info.st_size, info.st_mtime_ns, info.st_ino) != (request["size"], request["mtime_ns"], request["inode"])
             or not stat.S_ISREG(info.st_mode)
-            or info.st_nlink != 1 or getattr(info, "st_file_attributes", 0) & 0x400
+            or info.st_nlink != 1
+            or getattr(info, "st_file_attributes", 0) & 0x400
         ):
             raise ValueError("Original identity changed")
         disposition = wintypes.BOOL(True)
