@@ -51,9 +51,9 @@ Present sanitized readiness/preflight reasons directly and state that the refuse
 
 The owner explicitly accepts the risk that a provider-completed generation may be lost if its final local save fails, including the possibility of paying again to regenerate. **Do not implement** a new durable output-staging area, save-retry state machine, startup generation-recovery pass, scheduled/local automatic retries, special retention policy, or recovery notification/UI in this PR. Keep the existing generation attempt/history records and normal save/error handling; surface a clear failure when the actual original-file lock or local save is unavailable. Do not automatically resubmit potentially billable generation. The cheap static bridge capability check before provider dispatch and the interoperable original-file lock at actual save time remain required. This simplification applies **only to generation-output recovery**; deletion-ledger restart reconciliation, durable outcomes, no-replay and amber warnings for uncertain deletes remain in scope.
 
-### Owner decision — show uncertain-delete warnings immediately and at restart
+### Owner decision — warn only on newly uncertain deletions
 
-If a permanent-delete attempt has an unconfirmed outcome, keep it `uncertain`, do not retry automatically and show the existing amber/orange warning overlay then. Also reconcile interrupted `delete_pending` records at application startup and warn when any unresolved `uncertain` records remain. Explain that deletion **may or may not have occurred** and that inspecting the original is necessary. Do not falsely claim success or failure, clear the ledger when the overlay expires, or introduce a dedicated deletion-recovery UI. A *confirmed* refusal before the delete-disposition boundary, with an unchanged original, can still be a retryable `failed` result as defined by A3.
+When a permanent-delete attempt first settles as `uncertain` during normal operation, show the existing amber/orange warning overlay once for that newly uncertain outcome. At startup, reconcile interrupted `delete_pending` records as before, but **warn only for records newly transitioned to `uncertain` by that startup reconciliation pass** (aggregate a count when appropriate). Do not show an overlay for `uncertain` records that were already present before startup, even if they remain unresolved across many restarts. Determine the new transitions from the existing ledger reconciliation/result, rather than creating a notification-tracking table, timestamp-based re-alert logic or dedicated recovery UI. Explain that deletion **may or may not have occurred** and manual inspection is necessary. The durable `uncertain` outcome remains unchanged and blocks automatic replay; dismissal/expiry of the warning does not modify ledger state. A *confirmed* refusal before the disposition boundary, with an unchanged original, remains retryable `failed` as defined by A3. **Known limitation accepted by the owner:** if the app crashes after recording `uncertain` but before showing its warning, that outcome may never generate an overlay; durable evidence and no-replay behavior still protect the original.
 
 ### Owner decision — refine the split-action dropdown visually
 
@@ -70,9 +70,9 @@ Keep `RecycleTarget.mounts` and fresh per-file mapping discovery: the frozen-tar
 - [ ] Gate every generation submission path using cheap static readiness checks only; do not spawn/test a Windows lock helper before billable provider dispatch; retain actual save/read/mutation leases.
 - [ ] Add the native/helper confirmed-pre-mutation refusal contract; contain expected native validation exceptions and settle unchanged refusals as `failed` without aborting later files.
 - [ ] Retain `uncertain` for possible mutation, acknowledgment loss, changed originals and unsettled durable writes; preserve no-replay behavior.
-- [ ] Separate readiness/preflight, per-item refusal and execution-uncertainty UI messages; warn for unresolved uncertain deletions both on attempt and startup with the existing amber overlay.
+- [ ] Separate readiness/preflight, per-item refusal and execution-uncertainty UI messages; use the amber overlay for **new** uncertain deletion outcomes only, including newly reconciled transitions on startup.
 - [ ] Show a clear local-save failure if generation succeeds remotely but its original-file lock or disk save fails; preserve existing attempt/history evidence, without new generation staging, local retry machinery or provider resubmission.
-- [ ] Reuse the amber overlay for unresolved uncertain deletes without clearing durable ledger status.
+- [ ] Avoid repeated startup overlays for previously recorded `uncertain` deletions; reconcile as usual, announce only newly transitioned cases, and preserve their durable ledger status.
 - [ ] Polish the two-item split dropdown with shared Qt tokens/QSS, checkmark/icon treatment and an offline open-menu preview fixture.
 - [ ] Synchronize architecture, desktop/policy/release docs and PR body when the remediation is implemented, then run owner-authorized Ruff lint/format and report runtime acceptance separately.
 
@@ -130,5 +130,5 @@ Those Ruff results and probes cover the initial implementation, not the pending 
 - [ ] Owner exports/history/metadata untouched and Trash regression checks.
 
 - [ ] Owner local-save lock/disk failure acceptance: report the failure accurately, retain existing attempt/history evidence, and do not stage images, attempt automatic generation recovery or resubmit provider work.
-- [ ] Owner amber/orange startup warning for unresolved uncertain deletions, plus immediate warning on uncertain permanent-delete attempts; overlay expiry does not alter durable ledger state.
+- [ ] Owner amber/orange warning once when deletion first becomes `uncertain`, and at startup only for `delete_pending` entries newly reconciled to `uncertain`; old unresolved entries never re-alert, while overlay expiry leaves durable ledger state intact.
 - [ ] Owner split-menu visual, keyboard, accessibility/DPI and disabled-Trash acceptance; choosing a mode never performs deletion.
