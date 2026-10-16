@@ -5,6 +5,12 @@ This is coding orientation against [initial.md](plans/initial.md), not a release
 
 ## Implemented on main
 
+WSL follow-up (PR #75, source-present branch work): read-only access aliases for
+legacy Windows output/sidecar references through WSL 1 drive mounts, plus local
+Segoe UI face registration when Windows fonts are accessible. No durable path
+migration or cross-platform destructive operations. Owner acceptance remains
+pending; see [the implementation plan](plans/2026-10-17-wsl-gallery-paths-and-fonts.md).
+
 Compatibility follow-up (2026-10-16, branch scope): missing Qt Trash capability
 APIs fail closed without preventing startup. Bounded WSL 1/E6500 owner smoke,
 installation/display workarounds and unresolved path/credential limitations are

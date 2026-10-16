@@ -153,6 +153,26 @@ During generation or queue dispatch, the window owns the state directory. Genera
 
 ## Images
 
+#### Windows history viewed in WSL 1
+
+The Images reader can resolve saved Windows drive paths through the current WSL
+`drvfs` mount table, including non-default mount roots, without changing database
+or metadata paths. Thumbnails, Detail and sidecars use local read aliases; Copy
+path(s), Open folder and external opening use the local location. Unmapped or
+unsupported paths remain unavailable; UNC/device paths and guessed file searches
+are not supported. Native Linux/Windows paths retain their existing behavior.
+
+This is read-only interoperability, not shared-state editing support: use Windows
+for export, Trash and edit/reuse/regeneration of Windows-recorded outputs. Do not
+run concurrent Windows/WSL original mutations against the same state directory.
+Qt 6.8.3 still disables Trash when its capability API is absent.
+
+When the Windows Segoe UI regular/semibold/bold files are accessible on drive C,
+the WSL theme registers them only for this application process. Nothing is
+installed or bundled; unavailable fonts keep Qt's normal fallback. This avoids
+the observed DejaVu Sans Bold substitution for selected-toggle semibold, but
+exact appearance and DPI behavior remain owner checks.
+
 Images browses committed final outputs recorded in the selected state directory.
 With no saved viewer preference it opens in Grid; later launches restore the
 saved Grid/List/Detail mode, filters, sort, selection, scroll positions,

@@ -10,7 +10,7 @@ import re
 from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import (
@@ -49,7 +49,8 @@ from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.viewer import load_viewer, save_viewer
-from dtflow.services.gallery import filter_choices, inspect_output, locate_output, query_outputs
+from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
+from dtflow.services.gallery import copy_output_paths, filter_choices, inspect_output, locate_output, query_outputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_detail_preview import (
@@ -93,11 +94,19 @@ SIZE_CLASS_LABELS = {
 DATE_RANGE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\s*\.\.\s*(\d{4}-\d{2}-\d{2})\s*$")
 
 
+def _filename(path: str) -> str:
+    return PureWindowsPath(path).name if foreign_windows_path(path) else Path(path).name
+
+
 def _image(path: str, max_side: int, state: Path | None = None) -> tuple[QImage | None, str]:
     """Decode one original while holding its shared cross-process read lease."""
 
     def decode() -> tuple[QImage | None, str]:
-        reader = QImageReader(path)
+        try:
+            access = ArtifactReadPaths.discover().resolve(path) if foreign_windows_path(path) else path
+        except OSError:
+            return None, "Windows output drive is unavailable or the path is unsupported."
+        reader = QImageReader(access)
         reader.setAutoTransform(True)
         if max_side:
             source = reader.size()
@@ -445,6 +454,7 @@ class GalleryPage(QObject):
         self.regenerate_button = self._widget("galleryRegenerateButton", QPushButton)
         self.use_settings_button.clicked.connect(self._use_settings)
         self.edit_button = self._widget("galleryEditImageButton", QPushButton)
+        self._edit_tip = self.edit_button.toolTip()
         self.edit_button.clicked.connect(self._edit_image)
         self.regenerate_button.clicked.connect(self._regenerate)
         self.copy_button = self._widget("galleryCopyPathButton", QPushButton)
@@ -902,7 +912,7 @@ class GalleryPage(QObject):
         if not ids:
             return
         self.runner.submit(
-            asyncio.to_thread(gallery_storage.selection_paths, self.state_dir, ids),
+            asyncio.to_thread(copy_output_paths, self.state_dir, ids),
             self._paths_resolved,
         )
 
@@ -1251,7 +1261,7 @@ class GalleryPage(QObject):
 
     @staticmethod
     def _image_key(item: GalleryItem) -> tuple[str, int | None, str]:
-        return item.path, item.file_size, item.issue
+        return item.read_path, item.file_size, item.issue
 
     def _create_card(self, item: GalleryItem) -> None:
         card = QFrame(self.grid_cards)
@@ -1265,7 +1275,7 @@ class GalleryPage(QObject):
         check = QCheckBox(button)
         check.setObjectName("galleryCardCheck")
         check.setToolTip("Check image for bulk actions")
-        check.setAccessibleName(f"Check {Path(item.path).name}")
+        check.setAccessibleName(f"Check {_filename(item.path)}")
         check.setGeometry(9, 9, 28, 28)
         check.setChecked(item.identity in self.selection.checked)
         check.toggled.connect(lambda value, identity=item.identity: self._set_checked(identity, value))
@@ -1319,7 +1329,8 @@ class GalleryPage(QObject):
     def _update_entry(self, row: int, item: GalleryItem) -> None:
         """Update only changed metadata, without replacing retained image widgets/cells."""
         dimensions, size = self._dimensions(item), _human_size(item.file_size)
-        filename, tooltip = Path(item.path).name, item.issue or item.path
+        filename = _filename(item.path)
+        tooltip = item.issue or item.path
         button = self._grid_buttons[item.identity]
         button.setAccessibleName(f"Open {filename} in Detail")
         button.setToolTip(tooltip)
@@ -1557,13 +1568,15 @@ class GalleryPage(QObject):
             )
         )
         self._widget("galleryAdditionalStrengthValue", QLabel).setText(self._value(request.get("strength")))
-        self._widget("galleryAdditionalFilenameValue", QLabel).setText(Path(item.path).name)
+        filename = _filename(item.path)
+        self._widget("galleryAdditionalFilenameValue", QLabel).setText(filename)
         self._widget("galleryAdditionalProviderValue", QLabel).setText(item.backend_id or "Not recorded")
         self._widget("galleryAdditionalFileSizeValue", QLabel).setText(_human_size(item.file_size))
         self._widget("galleryAdditionalDurationValue", QLabel).setText("Not recorded")
         self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
         edited = request.get("operation", "txt2img") != "txt2img"
-        reusable = bool(request.get("model_id")) and not edited
+        foreign = foreign_windows_path(item.path)
+        reusable = bool(request.get("model_id")) and not edited and not foreign
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
         for button, tip in (
@@ -1575,7 +1588,13 @@ class GalleryPage(QObject):
                 if edited
                 else tip
             )
-        self.edit_button.setEnabled(not item.issue and bool(item.path) and self._edit_callback is not None)
+        self.edit_button.setEnabled(
+            not item.issue and bool(item.path) and not foreign and self._edit_callback is not None
+        )
+        self.edit_button.setToolTip(self._edit_tip)
+        if foreign:
+            for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
+                button.setToolTip("Windows-recorded outputs are read-only here; use Windows for this action.")
         self.copy_button.setEnabled(bool(item.path))
         available = not item.issue
         self.folder_button.setEnabled(available)
@@ -1705,17 +1724,17 @@ class GalleryPage(QObject):
 
     def _use_settings(self) -> None:
         item = self._selected()
-        if item is not None and self._reuse_callback is not None:
+        if item is not None and not foreign_windows_path(item.path) and self._reuse_callback is not None:
             self._reuse_callback(self._request(item), item.identity)
 
     def _edit_image(self) -> None:
         item = self._selected()
-        if item is not None and self._edit_callback is not None:
+        if item is not None and not foreign_windows_path(item.path) and self._edit_callback is not None:
             self._edit_callback(item.path)
 
     def _regenerate(self) -> None:
         item = self._selected()
-        if item is not None and self._regenerate_callback is not None:
+        if item is not None and not foreign_windows_path(item.path) and self._regenerate_callback is not None:
             self._regenerate_callback(self._request(item), item.identity)
 
     def step(self, delta: int) -> None:
@@ -1945,17 +1964,17 @@ class GalleryPage(QObject):
     def _copy_path(self) -> None:
         item = self._selected()
         if item is not None:
-            QApplication.clipboard().setText(item.path)
+            QApplication.clipboard().setText(item.read_path or item.path)
 
     def _open_folder(self) -> None:
         item = self._selected()
-        if item is not None:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(item.path).parent)))
+        if item is not None and not item.issue and item.read_path:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(item.read_path).parent)))
 
     def _open_external(self) -> None:
         item = self._selected()
-        if item is not None:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(item.path))
+        if item is not None and not item.issue and item.read_path:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(item.read_path))
 
     def export_query(self) -> GalleryQuery:
         """Capture current filters without changing selection, paging or viewer state."""

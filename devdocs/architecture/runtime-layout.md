@@ -51,6 +51,36 @@ Use an integer `CACHE_VERSION = 2`, written as `cache_version` in inventory JSON
 
 Future disposable-cache readers must treat a missing or mismatched version as a cache miss and fetch a fresh inventory. No conversion, legacy folder search or old-tree fallback is required. Retained live snapshots are historical evidence and are not rewritten on a version change. Existing old-layout files are neither read, moved nor deleted.
 
+## Legacy Windows references viewed from WSL 1
+
+The database and metadata retain original paths unchanged. `services/artifact_paths.py`
+discovers bounded `/proc/self/mountinfo` snapshots on Microsoft WSL kernels and
+recognizes only whole-drive `drvfs` mounts with drive-root sources. No `/mnt/c`
+assumption, `wslpath` subprocess, basename search or reverse Linux-to-Windows
+translation is used. Multiple mount roots for one drive, redirected components,
+traversal, device/UNC/drive-relative paths and missing mappings are refused.
+Arbitrary `9p`, bind and network mounts are not inferred as drive mappings.
+
+Gallery models carry optional local access aliases separately from authoritative
+`path` and `metadata_path`. Queries discover once per worker page; image decodes
+and metadata reads refresh the foreign-path mapping at the read boundary. No
+process-global mount cache persists across refreshes. Metadata artifact matching
+still compares the exact stored path, never the alias. Thumbnail identity keys
+include the access alias so changing mounts invalidates retained presentation.
+Copy path(s), Open folder and external viewing use local read paths; provenance
+inspection continues to show the stored reference. UI callbacks receive no new
+destructive permissions: foreign Windows items disable edit/use/regenerate and
+export refuses foreign Windows sources before reading/encoding. Trash retains its
+native-path/root/ownership checks and never translates destructive targets.
+
+Browsing still uses the existing original-file lease within its platform. This
+does not establish interoperability of Windows `msvcrt` and Linux `flock` locks:
+do not run simultaneous Windows/WSL original mutations against shared state.
+Cross-platform concurrent writes, portable-reference schema migration and new
+external-root mappings remain separate work. Future managed artifacts should use
+state-root-relative references via an explicit supported migration, not a bulk
+rewrite of historical absolute paths.
+
 ## User-selected image exports
 
 Connection's middle-panel export hub copies committed outputs into one

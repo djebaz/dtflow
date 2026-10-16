@@ -158,6 +158,15 @@ The shared QSS uses Segoe UI with a sans-serif fallback. Body controls are 10pt,
 
 Use short labels and specific status text. Keep long paths, model identifiers, timestamps and request evidence in scrolling or expandable regions rather than truncating the identity needed for diagnosis. Placeholders describe the expected input and never stand in for a persistent field label when the field's meaning would disappear on entry.
 
+On WSL 1, Qt may substitute DejaVu Sans Bold for Segoe UI semibold (600),
+making selected toggles appear heavier. At startup the theme may register the
+existing `segoeui.ttf`, `seguisb.ttf` and `segoeuib.ttf` faces from
+`C:\Windows\Fonts` through the verified drive-mount resolver. This is
+process-local font use, not installation or redistribution; all three faces must
+be available/loadable or Qt retains its normal fallback. Windows and ordinary
+Linux keep their existing behavior. Tokens and selected-state weights do not
+change; native rasterization/DPI parity still needs owner review.
+
 Use the same text hierarchy in Connection, Generate, Queues and Images. Designer
 `textRole` properties describe typography independently of `role` and runtime
 `state` properties, so presentation does not erase status or action semantics.

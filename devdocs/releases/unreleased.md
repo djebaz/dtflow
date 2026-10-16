@@ -2,9 +2,13 @@
 
 ## Highlights
 
-- Planned WSL gallery read-path resolution and selected-toggle font follow-up:
+- Source-present WSL gallery read-path resolution and selected-toggle font follow-up:
   [implementation plan](../plans/2026-10-17-wsl-gallery-paths-and-fonts.md).
-  Same-PR implementation is pending; no runtime behavior changes at this checkpoint.
+  Windows references remain unchanged; verified WSL 1 mounts supply read aliases.
+  Process-local Windows Segoe UI faces avoid heavier fallback toggles when available.
+  Export/edit/reuse/regeneration remain restricted for foreign Windows outputs;
+  no schema migration or new destructive support. No agent tests/renders/validation;
+  owner runtime acceptance pending.
 
 - Smart mask selection and inpainting work is starting in a separate draft PR. Headless preparation, durable input snapshot/restore and tensor-encoding helpers are source-present; request v2 and backed-up DB v3 migration are source-present; dedicated provider dispatch/raw-output saving are source-present. Owner passed the bounded step-4 bridge/direct-cloud probe gate; the offline manual editor is in progress, not a usable app image-dispatch feature. Existing generation behavior is unchanged.
 
@@ -49,8 +53,8 @@
 
 ## Release audit
 
-- PRs: #63, #64
-- Scope: Standalone CPU person-zone mask PoC, headless image preparation, durable input snapshot/restore and provider-local tensor encoding; no image-operation dispatch or production acceptance.
+- PRs: #63, #64, #73, #75
+- Scope: CPU mask PoC, image preparation/editor/owner-probe and queue work, agent setup, Qt Trash capability guard, WSL read-only gallery aliases and local font loading; production/platform acceptance remains separate.
 
 
 

@@ -7,6 +7,7 @@ same in-memory API/transport as the asset tests; no real file upload occurs.
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -29,11 +30,15 @@ from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
+from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
-from dtflow.services import session  # noqa: E402
+from dtflow.services import artifact_paths, session  # noqa: E402
+from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.services.gallery import item_from_record, load_detail  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
+from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui import system_trash  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
@@ -47,6 +52,89 @@ def wait_for(predicate, timeout=8):
             raise RuntimeError("Offline UI fixture timed out.")
         QTest.qWait(10)
     QTest.qWait(30)
+
+
+def render_mapped_gallery_states(app, state, out):
+    """Synthetic drive mount/reference; never opens an owner DB or Windows image."""
+    root = state / "mapped-fixture"
+    root.mkdir()
+    image = QImage(512, 384, QImage.Format.Format_RGB32)
+    image.fill(QColor("#8094a8"))
+    if not image.save(str(root / "saved.png")):
+        raise RuntimeError("Could not save synthetic mapped-image fixture")
+    stored = r"W:\saved.png"
+    (root / "metadata.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "attempt_id": "fixture",
+                "artifacts": [{"path": stored, "designation": "final"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    record = dict(
+        identity="fixture:0",
+        attempt_id="fixture",
+        request_id="fixture-request",
+        path=stored,
+        metadata_path=r"W:\metadata.json",
+        saved_at_utc="2026-10-17T00:00:00+00:00",
+        backend_id="fake",
+        model="offline-fixture",
+        prompt="Synthetic mapped output; no inference",
+        negative="",
+        width=512,
+        height=384,
+        request_json=json.dumps({"model_id": "offline-fixture", "prompt": "Synthetic fixture"}),
+    )
+    paths = ArtifactReadPaths((("W", str(root)),))
+
+    def foreign(value):
+        return value.startswith(("W:\\", "W:/"))
+
+    async def query(_state, options):
+        return GalleryResults((item,), 1, options.offset, options.limit)
+
+    async def choices(_state):
+        return (), ()
+
+    async def detail(_state, _identity):
+        return load_detail(item)
+
+    with (
+        patch.object(artifact_paths, "foreign_windows_path", foreign),
+        patch("dtflow.services.gallery.foreign_windows_path", foreign),
+        patch.object(gallery_ui, "foreign_windows_path", foreign),
+        patch.object(ArtifactReadPaths, "discover", return_value=paths),
+        patch.object(gallery_ui, "query_outputs", query),
+        patch.object(gallery_ui, "filter_choices", choices),
+        patch.object(gallery_ui, "inspect_output", detail),
+    ):
+        item = item_from_record(record, paths)
+        shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "mapped-state")
+        try:
+            shell.form.resize(1600, 1000)
+            shell.show()
+            shell.form.imagesNavigationButton.click()
+            wait_for(lambda: not shell.gallery._loading and bool(shell.gallery.items))
+            for mode, name in (("Grid", "31-mapped-grid-toggle-font"), ("List", "32-mapped-list-toggle-font")):
+                shell.gallery.show_view(mode)
+                QTest.qWait(150)
+                target = out / f"{name}.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+            shell.gallery.select(item.identity)
+            QTest.qWait(150)
+            target = out / "33-mapped-detail-metadata.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+        finally:
+            shell.runner.shutdown()
+            shell.form.close()
+            app.processEvents()
 
 
 def render_inpaint_states(shell, state, capture):
@@ -180,6 +268,7 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
+        render_mapped_gallery_states(app, state, args.out)
         # Missing Qt capability API: startup succeeds with Trash unavailable.
         with patch.object(system_trash, "QFile", object):
             unavailable = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "no-trash")

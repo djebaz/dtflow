@@ -26,6 +26,7 @@ from dtflow.persistence.cache_coordination import cache_access
 from dtflow.persistence.image_analysis_cache import load_image_analysis, save_image_analysis
 from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
 from dtflow.persistence.store import PersistenceError
+from dtflow.services.artifact_paths import foreign_windows_path
 from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
 from dtflow.services.image_quality import ALGORITHM, assess_rgb
 
@@ -390,6 +391,8 @@ def _reserve(destination: Path, stem: str):
 def _export_one(
     item: GalleryItem, destination: Path, options: ExportOptions, computations: dict
 ) -> tuple[tuple[str, ...], str]:
+    if foreign_windows_path(item.path):
+        raise ValidationError("Windows-recorded outputs are read-only here; export them from Windows.")
     source = Path(item.path).resolve()
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
