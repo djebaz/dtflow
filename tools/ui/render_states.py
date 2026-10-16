@@ -37,6 +37,7 @@ from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.gallery import item_from_record, load_detail  # noqa: E402
+from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui import system_trash  # noqa: E402
@@ -131,6 +132,27 @@ def render_mapped_gallery_states(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            # Presentation only: synthetic scope, with execution explicitly blocked.
+            wait_for(lambda: shell.gallery.removal_ready)
+            shell.gallery._set_checked(item.identity, True)
+            shell.image_recycle._apply_mode("permanent")
+            target = out / "34-images-permanent-mode.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            plan = RecyclePlan(
+                (RecycleTarget(item.identity, str(root / "saved.png"), 1, 1, 1, 1),),
+                0, 0, 0, 1, "permanent",
+            )
+            shell.image_recycle._confirmation_revision = shell.gallery.recycle_scope_revision
+            with patch.object(shell.image_recycle, "_execute", side_effect=RuntimeError("Preview cannot remove files")):
+                shell.image_recycle._prepared(plan, None)
+                QTest.qWait(100)
+                target = out / "35-images-permanent-confirmation.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+                shell.inline.dismiss()
         finally:
             shell.runner.shutdown()
             shell.form.close()
@@ -276,11 +298,16 @@ def main():
             unavailable.form.resize(1600, 1000)
             unavailable.show()
             unavailable.form.imagesNavigationButton.click()
+            wait_for(lambda: unavailable.gallery.removal_ready)
+            unavailable.image_recycle.menu_button.menu().popup(
+                unavailable.image_recycle.menu_button.mapToGlobal(QPoint(0, unavailable.image_recycle.menu_button.height()))
+            )
             QTest.qWait(100)
             target = args.out / "30-images-trash-unavailable.png"
             if not unavailable.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            unavailable.image_recycle.menu_button.menu().hide()
         finally:
             unavailable.runner.shutdown()
             unavailable.form.close()

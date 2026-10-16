@@ -1,4 +1,4 @@
-"""Qt presentation for confirmed, durable system Trash operations."""
+"""Qt presentation for explicit, confirmed Trash or permanent removal."""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QActionGroup
+from PySide6.QtWidgets import QMenu, QPushButton, QWidget
 
 from dtflow.core.gallery import GalleryQuery
+from dtflow.persistence.image_removal_preferences import load_mode, save_mode
 from dtflow.persistence.original_io import OriginalImagesBusyError
 from dtflow.services.image_recycle import prepare_recycle, recycle_outputs
 from dtflow.ui.activity_strip import activity_strip
@@ -22,7 +24,7 @@ log = logging.getLogger(__name__)
 
 
 class ImageRecyclePanel(QObject):
-    """Confirm checked originals on the GUI thread and run system Trash operations off-thread."""
+    """Keep mode/consent on the GUI thread and removal off-thread."""
 
     progress = Signal(int, int)
 
@@ -36,7 +38,70 @@ class ImageRecyclePanel(QObject):
         self._running = False
         self._stop = threading.Event()
         self._confirmation_revision = None
+        self._action = "trash"
+        gallery._permanent_callback = self.request
+        gallery.removal_ready = False
+        self.menu_button = gallery._widget("galleryRemovalMenuButton", QPushButton)
+        menu = QMenu(self.menu_button)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        self._mode_actions = {}
+        for mode, label in (("trash", f"Move to {TRASH_NAME}"), ("permanent", "Delete permanently")):
+            if mode == "trash" and gallery._recycle_callback is None:
+                label += " (unavailable)"
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            group.addAction(action)
+            action.triggered.connect(lambda _checked=False, mode=mode: self._choose_mode(mode))
+            self._mode_actions[mode] = action
+        menu.aboutToShow.connect(lambda: feedback(self.parent_widget).dismiss())
+        self.menu_button.setMenu(menu)
+        gallery._sync_selection_ui()
         self.progress.connect(self._update_progress, Qt.ConnectionType.QueuedConnection)
+        self.runner.submit(asyncio.to_thread(load_mode, self.state_dir), self._mode_loaded)
+
+    def _mode_loaded(self, mode, error):
+        self.gallery.removal_ready = True
+        self._apply_mode(mode if error is None else "trash")
+        if error is not None:
+            InlineNotice.warning(self.parent_widget, "Removal preferences unavailable", str(error))
+
+    def _apply_mode(self, mode):
+        feedback(self.parent_widget).dismiss()
+        self.gallery.recycle_scope_revision += 1
+        self._confirmation_revision = None
+        self.gallery.removal_mode = mode
+        label = "Delete permanently" if mode == "permanent" else f"Move to {TRASH_NAME}"
+        button = self.gallery.delete_button
+        button.setText(label)
+        button.setAccessibleName(label)
+        button.setToolTip(
+            "Irreversibly delete checked managed originals after explicit confirmation; no Undo."
+            if mode == "permanent" else f"Move eligible checked originals to {TRASH_NAME} after confirmation."
+        )
+        button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete permanently") + 42)
+        for key, action in self._mode_actions.items():
+            action.setChecked(key == mode)
+        self.gallery._sync_selection_ui()
+
+    def _choose_mode(self, mode):
+        if self._running or not self.gallery.removal_ready:
+            return
+        feedback(self.parent_widget).dismiss()
+        self.gallery.recycle_scope_revision += 1
+        self._confirmation_revision = None
+        self.gallery.removal_ready = False
+        self.gallery._sync_selection_ui()
+
+        def saved(_result, error):
+            self.gallery.removal_ready = True
+            if error is None:
+                self._apply_mode(mode)
+            else:
+                self._apply_mode(self.gallery.removal_mode)
+                InlineNotice.warning(self.parent_widget, "Removal mode not saved", str(error))
+
+        self.runner.submit(asyncio.to_thread(save_mode, self.state_dir, mode), saved)
 
     @property
     def running(self) -> bool:
@@ -52,15 +117,20 @@ class ImageRecyclePanel(QObject):
             InlineNotice.information(
                 self.parent_widget,
                 "Images are busy",
-                "Wait for generation, queue dispatch or image export to finish before moving originals.",
+                "Wait for generation, queue dispatch or image export to finish before removing originals.",
             )
             return
         self._confirmation_revision = self.gallery.recycle_scope_revision
+        action = self.gallery.removal_mode
+        self._action = action
+        if action == "trash" and self.gallery._recycle_callback is None:
+            return
         self._running = True
         self.gallery.set_recycle_busy(True)
         self.runner.submit(
             asyncio.to_thread(
-                prepare_recycle, self.state_dir, identities, hidden, query, trash_check=check_trash_source
+                prepare_recycle, self.state_dir, identities, hidden, query,
+                trash_check=check_trash_source, action=action,
             ),
             self._prepared,
         )
@@ -72,7 +142,7 @@ class ImageRecyclePanel(QObject):
         if self.busy_source():
             self._finish_with_error(OriginalImagesBusyError("An original-image operation started. Try again later."))
             return
-        if self._confirmation_revision != self.gallery.recycle_scope_revision:
+        if self._confirmation_revision != self.gallery.recycle_scope_revision or plan.action != self.gallery.removal_mode:
             self._cancel_confirmation()
             return
         eligible = len(plan.targets)
@@ -81,17 +151,22 @@ class ImageRecyclePanel(QObject):
             self.gallery.set_recycle_busy(False)
             InlineNotice.information(
                 self.parent_widget,
-                "Nothing to recycle",
+                "Nothing to remove",
                 f"No eligible managed original images. {plan.missing} missing; "
                 f"{plan.ineligible} ineligible or require manual review.",
             )
             return
+        permanent = plan.action == "permanent"
         message = (
             f"{eligible} eligible · {plan.hidden} checked images hidden by filters included · "
-            f"{plan.missing} missing · {plan.ineligible} ineligible (not moved). "
+            f"{plan.missing} missing · {plan.ineligible} ineligible (untouched). "
+        )
+        message += (
+            "PERMANENT AND IRREVERSIBLE: originals will be destroyed, bypassing Trash/Recycle Bin. "
+            "No Undo or recovery guarantee. Metadata, exports and generation history are preserved."
+            if permanent else
             f"Restore manually through {TRASH_NAME}; no DTFlow Undo or restoration guarantee. "
-            "Recovered files stay hidden pending content-verified recovery. "
-            "Exports and generation history preserved."
+            "Recovered files stay hidden pending content-verified recovery. Exports and generation history preserved."
         )
         # Keep scope editable while awaiting consent, but invalidate it on any
         # selection/filter/navigation change. The destructive worker still revalidates.
@@ -100,11 +175,12 @@ class ImageRecyclePanel(QObject):
         confirm_action(
             self.parent_widget,
             self.gallery.delete_button,
-            f"Move {eligible} selected originals to {TRASH_NAME}?",
+            f"Permanently delete {eligible} selected originals?" if permanent else f"Move {eligible} selected originals to {TRASH_NAME}?",
             message,
             lambda: self._execute(plan),
             self._cancel_confirmation,
             danger=True,
+            confirm_text="Delete permanently" if permanent else "Confirm",
         )
 
     def _cancel_confirmation(self):
@@ -113,17 +189,22 @@ class ImageRecyclePanel(QObject):
         self.gallery.set_recycle_busy(False)
 
     def _execute(self, plan):
-        if self.busy_source() or self._confirmation_revision != self.gallery.recycle_scope_revision:
+        if (
+            self.busy_source() or self._confirmation_revision != self.gallery.recycle_scope_revision
+            or plan.action != self.gallery.removal_mode
+        ):
             self._cancel_confirmation()
             InlineNotice.warning(
                 self.parent_widget, "Images changed or busy", "Review the checked scope and try again."
             )
             return
         self._running = True
+        self._action = plan.action
         self.gallery.set_recycle_busy(True)
         self._stop = threading.Event()
         activity_strip(self.parent_widget).start(
-            "trash", f"Moving originals to {TRASH_NAME}", self.cancel, total=len(plan.targets)
+            "trash", "Deleting originals permanently" if self._action == "permanent" else f"Moving originals to {TRASH_NAME}",
+            self.cancel, total=len(plan.targets)
         )
         self.runner.submit(
             asyncio.to_thread(
@@ -148,9 +229,11 @@ class ImageRecyclePanel(QObject):
             self._finish_with_error(error)
             self.gallery.refresh(preserve=True)
             return
-        self.gallery.recycle_completed(result.recycled)
+        self.gallery.recycle_completed(result.recycled + result.deleted)
+        label = "Permanent deletion" if self._action == "permanent" else TRASH_NAME
         summary = (
-            f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.\n"
+            (f"{len(result.deleted)} permanently deleted.\n" if self._action == "permanent" else
+             f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.\n") +
             f"{len(result.failed)} failed; {len(result.uncertain)} uncertain (manual review required).\n"
             f"{result.missing} missing; {result.ineligible} ineligible; "
             f"{result.unprocessed} unprocessed."
@@ -171,9 +254,9 @@ class ImageRecyclePanel(QObject):
             if len(result.failure_details) > 5:
                 summary += f"\n… and {len(result.failure_details) - 5} more (see DTFlow logs)."
         if result.canceled:
-            summary += "\nStopped after the current image; completed moves remain."
+            summary += "\nStopped after the current image; completed removals remain."
         state = "partial" if result.failed or result.uncertain else "stopped" if result.canceled else "success"
-        activity_strip(self.parent_widget).complete("trash", f"{TRASH_NAME} result", summary, state)
+        activity_strip(self.parent_widget).complete("trash", f"{label} result", summary, state)
 
     def _finish_with_error(self, error) -> None:
         self._running = False
@@ -186,7 +269,8 @@ class ImageRecyclePanel(QObject):
                 "The operation could not be completed or its durable outcome could not be verified. "
                 "Inspect the original files and retry only after checking their status."
             )
-        activity_strip(self.parent_widget).complete("trash", f"{TRASH_NAME} unavailable", message, "error")
+        label = "Permanent deletion" if self._action == "permanent" else TRASH_NAME
+        activity_strip(self.parent_widget).complete("trash", f"{label} unavailable", message, "error")
 
     def cancel(self) -> None:
         """Request a safe stop between files without undoing successful moves."""

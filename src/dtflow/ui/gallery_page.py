@@ -211,6 +211,9 @@ class GalleryPage(QObject):
         self.recycle_scope_revision = 0
         self._export_callback = export_callback
         self._recycle_callback = recycle_callback
+        self._permanent_callback = None
+        self.removal_mode = "trash"
+        self.removal_ready = True
         self._recycle_busy = False
         self.selection = GallerySelection()
         self._tokens = load_tokens()
@@ -600,7 +603,13 @@ class GalleryPage(QObject):
         self.clear_selection_button.setEnabled(count > 0)
         self.copy_paths_button.setEnabled(count > 0)
         self.export_button.setEnabled(self._export_callback is not None)
-        self.delete_button.setEnabled(count > 0 and not self._recycle_busy and self._recycle_callback is not None)
+        callback = self._permanent_callback if self.removal_mode == "permanent" else self._recycle_callback
+        self.delete_button.setEnabled(
+            count > 0 and not self._recycle_busy and self.removal_ready and callback is not None
+        )
+        self._widget("galleryRemovalMenuButton", QPushButton).setEnabled(
+            self.removal_ready and not self._recycle_busy
+        )
         self._sync_detail_checkbox()
         for row, item in enumerate(self.items):
             self._paint_checked_item(row, item.identity)
@@ -932,13 +941,14 @@ class GalleryPage(QObject):
 
     def _request_recycle(self) -> None:
         """Only the confirmation controller can authorize a Recycle Bin operation."""
-        if self.selection.checked and not self._recycle_busy and self._recycle_callback is not None:
+        callback = self._permanent_callback if self.removal_mode == "permanent" else self._recycle_callback
+        if self.selection.checked and self.removal_ready and not self._recycle_busy and callback is not None:
             try:
                 query = self.export_query()
             except ValidationError as exc:
                 self._selection_notice(str(exc))
                 return
-            self._recycle_callback(self.selection.snapshot(), self._hidden_checks, query)
+            callback(self.selection.snapshot(), self._hidden_checks, query)
 
     def set_recycle_busy(self, busy: bool) -> None:
         """Prevent overlapping deletion requests without blocking ordinary browsing."""

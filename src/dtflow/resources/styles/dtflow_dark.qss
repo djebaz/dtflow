@@ -1426,6 +1426,8 @@ QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled {
   color: ${color.dangerText};
   border: 1px solid ${color.dangerBorder};
 }
+QPushButton#galleryRemovalMenuButton { min-width: 24px; max-width: 24px; padding-left: 2px; padding-right: 2px; }
+QPushButton#galleryRemovalMenuButton::menu-indicator { image: none; width: 0px; }
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled:hover {
   background: ${color.dangerSurface};
 }

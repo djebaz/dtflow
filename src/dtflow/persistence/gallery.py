@@ -27,7 +27,7 @@ WITH outputs AS (
    AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
    AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
                    WHERE r.identity = a.attempt_id || ':' || CAST(p.key AS INTEGER)
-                     AND r.outcome IN ('recycled', 'restored'))
+                     AND r.outcome IN ('recycled', 'restored', 'deleted'))
 ), records AS (
  SELECT *, attempt_id || ':' || ordinal AS identity,
    json_extract(request_json, '$.model_id') AS model,
@@ -208,7 +208,7 @@ def available_export_identities(state: Path, identities: tuple[str, ...]) -> fro
                  AND json_type(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END,
                                '$[' || s.ordinal || ']')='text'
                  AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
-                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored'))""",
+                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored', 'deleted'))""",
             (json.dumps(selected),),
         )
         return frozenset(row[0] for row in rows)
@@ -311,7 +311,9 @@ def selection_paths(
     return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
 
 
-def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[dict[str, dict], dict[str, int]]:
+def recycle_preflight_batch(
+    state: Path, identities: tuple[str, ...], *, path_key: Callable[[str], str] | None = None
+) -> tuple[dict[str, dict], dict[str, int]]:
     """Read selected records and committed path ownership in one bounded snapshot.
 
     Path counts include recycled references, just like execution revalidation.
@@ -339,6 +341,20 @@ def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[d
         paths = tuple(dict.fromkeys(record["path"] for record in records.values()))
         if not paths:
             return records, {}
+        if path_key is not None:
+            # Normalize only for reference counting, never persist access aliases.
+            db.create_function("original_key", 1, path_key)
+            keys = tuple(dict.fromkeys(path_key(path) for path in paths))
+            counts = dict(db.execute(
+                """SELECT original_key(p.value),count(*) FROM attempts a,
+                         json_each(CASE WHEN json_valid(a.artifacts_json)
+                           THEN a.artifacts_json ELSE '[]' END) p
+                   WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                     AND p.type='text' AND original_key(p.value) IN (SELECT value FROM json_each(?))
+                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
+                   GROUP BY original_key(p.value)""", (json.dumps(keys),)
+            ))
+            return records, counts
         counts = {
             row[0]: int(row[1])
             for row in db.execute(
@@ -355,11 +371,22 @@ def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[d
         return records, counts
 
 
-def path_reference_count(state: Path, path: str) -> int:
+def path_reference_count(state: Path, path: str, *, path_key: Callable[[str], str] | None = None) -> int:
     """Count committed final-output references regardless of recycle state."""
     with reader(state) as db:
         if db is None:
             return 0
+        if path_key is not None:
+            db.create_function("original_key", 1, path_key)
+            return int(db.execute(
+                """SELECT count(*) FROM attempts a,
+                         json_each(CASE WHEN json_valid(a.artifacts_json)
+                           THEN a.artifacts_json ELSE '[]' END) p
+                   WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                     AND p.type='text' AND original_key(p.value)=?
+                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1""",
+                (path_key(path),),
+            ).fetchone()[0])
         row = db.execute(
             """SELECT count(*) FROM attempts a,
                      json_each(CASE WHEN json_valid(a.artifacts_json)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 
@@ -20,6 +20,20 @@ class OriginalImagesBusyError(RuntimeError):
 @contextmanager
 def _file_lock(state: Path, filename: str, *, timeout: float):
     """Acquire an OS-released file lock; never delete the lock file during cleanup."""
+    if os.name != "nt":
+        from dtflow.persistence.windows_original import bridge, shared_lock
+
+        with ExitStack() as stack:
+            try:
+                connection = bridge(Path(state))
+                if connection is not None:
+                    command, native_state = connection
+                    stack.enter_context(shared_lock(command, native_state, filename, timeout))
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise OriginalImagesBusyError("Shared Windows originals are busy or their lock helper is unavailable.") from exc
+            if connection is not None:
+                yield
+                return
     directory = Path(state).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     with (directory / filename).open("a+b") as handle:

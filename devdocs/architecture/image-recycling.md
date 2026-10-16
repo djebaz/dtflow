@@ -1,4 +1,30 @@
-# Saved-image system Trash architecture
+# Saved-image removal architecture
+
+## Explicit action contract (PR #76)
+
+The Images split control performs the selected **Move to Trash** or **Delete permanently** action. Its adjacent menu only selects a mode. Default Trash; missing Qt capability disables the Trash main action but not mode selection. Preferences are separate `<state>/image_removal.windows.json`, `image_removal.wsl.json` and native-platform files (schema `dtflow.image-removal`, version 1). They store only the mode, never identities or consent, and are not cache. Unreadable/newer preference files are preserved; startup reports a warning and defaults to Trash, while saving refuses to overwrite them.
+
+Every permanent operation requires a fresh inline count and irreversible/no-Undo warning, followed by an explicit **Delete permanently** confirmation. Scope, filters, navigation, or mode changes discard consent. There is no timer, automatic permanent fallback, typed phrase, or saved consent. Only managed originals are removed; metadata, generation history and exported copies remain. Stop takes effect between files and does not undo completed removals.
+
+The existing service, batch/per-image leases, preflight, atomic intent and outcome settlement serve both modes. Permanent mode adds fresh mapping snapshots and conservative alias-aware reference counts: references sharing a managed attempt/output suffix count together, even across different roots, rather than risking missed Windows/Linux aliases. Unverifiable, redirected, hardlinked, custom-root, changed-fingerprint or multiply referenced files are ineligible. No authorization comes from the read alias alone.
+
+### Windows and WSL boundary
+
+Focused WSL 1 probes on 2026-10-17 found that `flock` and `lockf` do **not** exclude a native Windows `msvcrt` byte lock in either direction. A disposable file exposed equal size, nanosecond mtime and inode through Windows/WSL, but different devices; execution still compares actual fingerprints and refuses mismatches, rather than assuming all mounts behave alike.
+
+`persistence/windows_original.py` supplies only named shared leases and one fingerprinted managed-original deletion. Source-run WSL requires this checkout's Windows `.venv/Scripts/python.exe` and verified whole-drive `drvfs` mappings for state and helper. Shared original readers/removers acquire the native Windows lease through the child, so participating Windows exports/readers/mutations use the same lock. Missing interpreter, unsupported/ambiguous mapping, failed lock, or helper loss refuses access; it never silently falls back to a Linux-only lock on an unrecognized shared filesystem. WSL-native root filesystems retain POSIX leases. This is not general concurrent Windows/WSL SQLite, generation, queue or state-owner support; avoid concurrent cross-platform generation/state writes.
+
+Permanent Windows removal derives only `<state>/outputs/<attempt>/final-<ordinal+1>.png`, checks ancestors and metadata, opens a non-reparse handle denying other writers/deleters, checks size/mtime/inode/single-link/regular-file identity, then requests `FileDispositionInfo` and closes that exact handle. No arbitrary caller-supplied deletion path, shell command, provider operation or duplicate ledger exists in the helper. Native POSIX removal opens the parent/file with no-follow flags and rechecks descriptor/name identity before descriptor-relative unlink under application leases. External uncooperative filesystem modifications are not synchronized by advisory leases; they are not supported concurrent operations.
+
+The authorized lock-only helper probe established Windows contention in both directions and release on parent-pipe EOF using disposable files. No permanent deletion, GUI smoke, tests, renders or build ran. Owner mutation, changed-source/mount, helper-interruption and restart acceptance remain pending. The Windows handle operation follows [Microsoft's SetFileInformationByHandle contract](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle); source presence and lock probes do not establish end-to-end deletion acceptance.
+
+### Durable removal outcomes
+
+The existing `image_recycle.sqlite3` advances to schema 2 on the next writer, preserving schema-1 rows and history in the same transaction; unsupported schemas fail closed. Schema-1/2 readers are supported by this code, but older schema-1 applications refuse the upgraded store. Permanent intent is `delete_pending`, successful removal is `deleted`, and permanent operation IDs have a `delete-` prefix; Trash uses `pending`/`recycled` and `trash-`. Interruption reconciles either pending intent to `uncertain` without replay. Unknown, pending, uncertain, recycled, restored and deleted records cannot be claimed; only absent/known-failed identities can. Gallery and export availability hide `deleted` as well as recycled/restored identities, even if a file reappears.
+
+Intent commits before the external operation. Success requires a confirmed operation and source absence; disappearance alone is not success. Lost/failed Windows deletion acknowledgments remain uncertain even if the source still appears unchanged. Partial outcomes settle per image; durable-write failure leaves intent for manual review, not automatic retry. No metadata deletion, automatic recovery or replay is introduced.
+
+## Existing Trash-specific behavior
 
 ## Boundaries
 
@@ -12,13 +38,13 @@ Qt capability detection is the only platform gate. Managed-original validation r
 
 When `QFile.supportsMoveToTrash` is absent or not callable (for example, Qt 6.8.3),
 the adapter reports Trash unavailable without probing files. Desktop startup
-continues with Delete disabled; direct source checks refuse the operation. This
+continues with the Trash main action disabled and the mode menu usable; direct source checks refuse the operation. This
 does not certify older Qt or WSL application support, change dependencies, or add
-a permanent-delete fallback.
+a permanent-delete fallback. Explicit permanent mode is independent of Trash capability.
 
 ## Evidence, persistence and concurrency
 
-Success requires Qt success, source absence and a verifiable regular-file receipt at the returned Trash path with matching size/mtime. Qt can report success without a destination path. Missing/inaccessible/mismatched receipt evidence retains strict verification and produces a sanitized receipt uncertainty; the UI says Qt reported success but the destination could not be verified, rather than claiming the operation failed; the service records uncertain if the original disappeared or changed. Neither receipt paths nor raw Qt errors are logged or persisted. No permanent-delete fallback, automatic replay or DTFlow Undo exists. The existing separately versioned `image_recycle.sqlite3` ledger and original-file / batch leases remain unchanged; cache cleanup never owns these durable files. Interrupted records remain uncertain. Refresh does not automatically restore availability when a file reappears at its old path: matching size/mtime is not proof of original content. Recycled records remain hidden, and old heuristic `restored` outcomes are conservatively returned to `recycled` without touching files. Reconciliation still converts interrupted pending intent to uncertain, without replay; its second returned count now reports withdrawn unverified restorations, allowing the gallery to refresh. A future explicit content-verified recovery workflow is required before making recovered artifacts available; none is introduced here and no schema migration is needed. macOS Qt does not provide Finder's automatic Put Back integration; manual recovery must not be advertised as guaranteed restoration.
+Success requires Qt success, source absence and a verifiable regular-file receipt at the returned Trash path with matching size/mtime. Qt can report success without a destination path. Missing/inaccessible/mismatched receipt evidence retains strict verification and produces a sanitized receipt uncertainty; the UI says Qt reported success but the destination could not be verified, rather than claiming the operation failed; the service records uncertain if the original disappeared or changed. Neither receipt paths nor raw Qt errors are logged or persisted. No permanent-delete fallback, automatic replay or DTFlow Undo exists. Cache cleanup never owns durable ledgers or leases. Refresh does not automatically restore availability when a file reappears at its old path: matching size/mtime is not proof of original content. Recycled records remain hidden, and old heuristic `restored` outcomes are conservatively returned to `recycled` without touching files. A future explicit content-verified recovery workflow is required before making recovered artifacts available. macOS Qt does not provide Finder's automatic Put Back integration; manual recovery must not be advertised as guaranteed restoration.
 
 ## Acceptance
 
@@ -29,14 +55,9 @@ Static implementation evidence only. No tests, GUI smoke, actual recycling, infe
 `persistence/gallery.recycle_preflight_batch` reads at most 128 selected records (identity, attempt, ordinal, original and metadata paths only), then grouped committed path-reference counts, in one read-only transaction. Selected attempt IDs constrain discovery; path counts include references irrespective of recycle state. The service keeps all per-file managed-root, redirect, regular-file, ownership and capability checks. Preflight snapshots are advisory: execution still takes a per-image original-file lease and performs fresh record/path-count and filesystem revalidation immediately before mutation. This does not alter Qt receipt verification, durable intent or per-image outcomes. See the [review follow-up plan](../plans/2026-10-09-pr57-review-followup.md); new runtime acceptance remains pending.
 
 ## Atomic execution intent
-After fresh per-image filesystem/ownership checks, while holding both the operation batch lease and original-file lease, execution calls `persistence/image_recycle.claim_recycle_intent`. The shared record UPSERT has a conditional conflict update permitting only a previous `failed` outcome; a new identity can be inserted. This checks the latest durable outcome and writes `pending` atomically in the existing `BEGIN IMMEDIATE` transaction, without a separate read/write race or full-ledger scan. Pending, uncertain, recycled, historical restored and unknown outcomes are not overwritten. A rejected claim becomes ineligible/manual review (`ledger_requires_review`) and never calls the adapter. Intent commits before the external Trash operation; completion still uses per-image durable checkpoints. No schema, Qt receipt or export-controller changes. Cross-process stale-plan/crash acceptance remains pending; source/static checks are not runtime verification.
+After fresh per-image filesystem/ownership checks, while holding both leases, execution calls `persistence/image_recycle.claim_recycle_intent`. The conditional UPSERT permits only absent/known-failed identities and atomically writes the selected mode's intent in `BEGIN IMMEDIATE`, without a separate read/write race. A rejected claim becomes ineligible/manual review (`ledger_requires_review`) and never calls removal. Intent commits before the external operation; settlement remains per image. Cross-process stale-plan/crash acceptance remains pending.
 
 
 ## Inline desktop presentation
 
-The desktop freezes preflight scope and presents eligibility/hidden-count/recovery warnings
-in the shared inline details surface. Only the existing Delete button becomes red Confirm;
-Cancel is separate. Selection/filter/navigation revisions invalidate preflight/consent.
-A fresh busy check precedes worker execution; leases, per-file revalidation and atomic durable
-intent claims remain unchanged. Trash progress and safe stop live in the shared bottom
-activity overlay; results are inline. No new actual Trash/platform acceptance is implied.
+The desktop freezes preflight scope and presents eligibility/hidden-count/warnings in the shared inline surface. Only the main button becomes red Confirm for Trash or red Delete permanently for permanent mode; Cancel remains in the bottom overlay. Fresh busy/mode/revision checks precede worker execution. Progress, safe stop and partial outcomes use the existing shared activity overlay. Offline preview fixtures list unavailable Trash/menu, permanent mode and permanent consent; they block removal and have not been rendered for this PR.

@@ -764,12 +764,27 @@
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="galleryDeleteButton">
-       <property name="text"><string>Delete</string></property>
-       <property name="accessibleName"><string>Delete</string></property>
-       <property name="toolTip"><string>Move eligible checked originals to system Trash after confirmation.</string></property>
-       <property name="role" stdset="0"><string>danger</string></property>
-       <property name="enabled"><bool>false</bool></property>
+      <widget class="QFrame" name="galleryRemovalControl">
+       <property name="role" stdset="0"><string>segmented</string></property>
+       <layout class="QHBoxLayout" name="galleryRemovalLayout">
+        <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+        <property name="spacing"><number>0</number></property>
+        <item><widget class="QPushButton" name="galleryDeleteButton">
+         <property name="text"><string>Move to Trash</string></property>
+         <property name="accessibleName"><string>Move to Trash</string></property>
+         <property name="toolTip"><string>Move eligible checked originals to system Trash after confirmation.</string></property>
+         <property name="role" stdset="0"><string>danger</string></property>
+         <property name="segmentEdge" stdset="0"><string>first</string></property>
+         <property name="enabled"><bool>false</bool></property>
+        </widget></item>
+        <item><widget class="QPushButton" name="galleryRemovalMenuButton">
+         <property name="text"><string>▼</string></property>
+         <property name="accessibleName"><string>Choose image removal action</string></property>
+         <property name="toolTip"><string>Choose Trash or permanent deletion. Choosing never removes images.</string></property>
+         <property name="segmentEdge" stdset="0"><string>last</string></property>
+        </widget></item>
+       </layout>
       </widget>
      </item>
      </layout>

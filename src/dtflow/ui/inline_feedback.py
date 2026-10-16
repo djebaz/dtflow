@@ -206,7 +206,7 @@ class InlineFeedback(QObject):
         button.clicked.connect(callback)
         self.strip._position()
 
-    def arm(self, button, title, text, callback, canceled=None, *, danger=False):
+    def arm(self, button, title, text, callback, canceled=None, *, danger=False, confirm_text="Confirm"):
         self.show(title, text, "confirm")
         self._set_dismiss_label(cross=False)
         self.escape.setEnabled(True)
@@ -225,7 +225,7 @@ class InlineFeedback(QObject):
             canceled,
         )
         button.setFixedWidth(button.width())
-        button.setText("Confirm")
+        button.setText(confirm_text)
         button.setAccessibleName("Confirm " + title)
         button.setToolTip(title + " — see the inline details before confirming")
         button.setProperty("confirmationDanger", danger)
@@ -277,8 +277,8 @@ def feedback(parent):
     return window._inline_feedback
 
 
-def confirm_action(parent, button, title, text, callback: Callable, canceled=None, *, danger=False):
-    feedback(parent).arm(button, title, text, callback, canceled, danger=danger)
+def confirm_action(parent, button, title, text, callback: Callable, canceled=None, *, danger=False, confirm_text="Confirm"):
+    feedback(parent).arm(button, title, text, callback, canceled, danger=danger, confirm_text=confirm_text)
 
 
 class InlineNotice:

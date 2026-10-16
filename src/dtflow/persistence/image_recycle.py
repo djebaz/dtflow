@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 FILENAME = "image_recycle.sqlite3"
 _RECORD_UPSERT = """INSERT INTO records(identity,path,outcome,operation_id,size,mtime_ns,updated_utc)
     VALUES(?,?,?,?,?,?,?)
@@ -28,7 +28,7 @@ def writer(state: Path):
     connection = sqlite3.connect(directory / FILENAME, timeout=10)
     try:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, SCHEMA_VERSION):
+        if version not in (0, 1, SCHEMA_VERSION):
             raise ValueError("Unsupported image-recycle ledger schema.")
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -65,7 +65,7 @@ def attach_read_only(connection: sqlite3.Connection, state: Path) -> None:
     if file.is_file():
         uri = file.as_uri() + "?mode=ro"
         connection.execute("ATTACH DATABASE ? AS image_recycle", (uri,))
-        if connection.execute("PRAGMA image_recycle.user_version").fetchone()[0] != SCHEMA_VERSION:
+        if connection.execute("PRAGMA image_recycle.user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
             raise ValueError("Unsupported image-recycle ledger schema.")
     else:
         connection.execute("ATTACH DATABASE ':memory:' AS image_recycle")
@@ -103,7 +103,9 @@ def record_outcome(
             )
 
 
-def claim_recycle_intent(state: Path, operation_id: str, identity: str, path: str, size: int, mtime_ns: int) -> bool:
+def claim_recycle_intent(
+    state: Path, operation_id: str, identity: str, path: str, size: int, mtime_ns: int, *, permanent: bool = False
+) -> bool:
     """Atomically claim new/known-failed originals; leave unsafe ledger evidence intact.
 
     Called under the batch and original-file leases after filesystem revalidation.
@@ -114,7 +116,7 @@ def claim_recycle_intent(state: Path, operation_id: str, identity: str, path: st
     with writer(state) as db:
         changed = db.execute(
             _RECORD_UPSERT + " WHERE records.outcome='failed'",
-            (identity, path, "pending", operation_id, size, mtime_ns, _now()),
+            (identity, path, "delete_pending" if permanent else "pending", operation_id, size, mtime_ns, _now()),
         ).rowcount
     return changed == 1
 
@@ -131,7 +133,7 @@ def outcomes(state: Path) -> dict[str, tuple[str, str, int, int]]:
         return {}
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=3)
     try:
-        if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+        if connection.execute("PRAGMA user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
             raise ValueError("Unsupported image-recycle ledger schema.")
         return {
             identity: (outcome, file, size, mtime)
@@ -156,7 +158,7 @@ def reconcile(state: Path) -> tuple[int, int]:
         return 0, 0
     with writer(state) as db:
         pending = db.execute(
-            "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome='pending'",
+            "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome IN ('pending','delete_pending')",
             (_now(),),
         )
         uncertain = pending.rowcount
