@@ -281,6 +281,11 @@ class ImageRecyclePanel(QObject):
                 summary += f"\n{identity}: {detail}"
             if len(result.failure_details) > 5:
                 summary += f"\n… and {len(result.failure_details) - 5} more (see DTFlow logs)."
+        if self._action == "permanent" and result.uncertain:
+            summary += (
+                "\nSome permanent deletions may or may not have occurred. "
+                "Inspect the originals manually; no automatic retry will take place."
+            )
         if result.canceled:
             summary += "\nStopped after the current image; completed removals remain."
         state = "partial" if result.failed or result.uncertain else "stopped" if result.canceled else "success"

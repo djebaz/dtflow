@@ -971,9 +971,24 @@ class MainWindow:
     def _images_reconciled(self, outcome, error) -> None:
         if error is not None:
             log.warning("image-recycle reconciliation skipped reason=%s", type(error).__name__)
+            InlineNotice.warning(
+                self.form,
+                "Removal reconciliation deferred",
+                "Interrupted removals could not be reconciled while original-file access is unavailable "
+                "or busy. Pending items remain blocked. Restore shared-lock readiness, then refresh Images.",
+            )
             return
         if outcome and any(outcome):
             self.gallery.refresh(preserve=True)
+        if outcome is not None and outcome.delete_uncertain:
+            count = outcome.delete_uncertain
+            InlineNotice.warning(
+                self.form,
+                "Permanent deletion requires review",
+                f"{count} interrupted permanent deletion(s) became uncertain. "
+                "Deletion may or may not have occurred. Inspect the originals manually; "
+                "DTFlow will not retry or repeat this alert on later starts.",
+            )
 
     def _open_checked_export(self) -> None:
         """Follow the Images Export toggle without changing tabs or submitting work."""
