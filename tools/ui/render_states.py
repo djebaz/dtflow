@@ -135,7 +135,28 @@ def render_mapped_gallery_states(app, state, out):
             # Presentation only: synthetic scope, with execution explicitly blocked.
             wait_for(lambda: shell.gallery.removal_ready)
             shell.gallery._set_checked(item.identity, True)
+            # Offline two-choice popups: selecting a mode never executes removal.
+            menu = shell.image_recycle.menu_button.menu()
+            shell.image_recycle._apply_mode("trash")
+            menu.popup(shell.image_recycle.menu_button.mapToGlobal(
+                QPoint(0, shell.image_recycle.menu_button.height())
+            ))
+            QTest.qWait(100)
+            target = out / "37-images-removal-menu-trash-selected.png"
+            if not menu.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            menu.hide()
             shell.image_recycle._apply_mode("permanent")
+            menu.popup(shell.image_recycle.menu_button.mapToGlobal(
+                QPoint(0, shell.image_recycle.menu_button.height())
+            ))
+            QTest.qWait(100)
+            target = out / "38-images-removal-menu-permanent-selected.png"
+            if not menu.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            menu.hide()
             target = out / "34-images-permanent-mode.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")

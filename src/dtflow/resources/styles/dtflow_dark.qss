@@ -1428,6 +1428,41 @@ QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled {
 }
 QPushButton#galleryRemovalMenuButton { min-width: 24px; max-width: 24px; padding-left: 2px; padding-right: 2px; }
 QPushButton#galleryRemovalMenuButton::menu-indicator { image: none; width: 0px; }
+QMenu#imageRemovalMenu {
+  background: ${color.surface};
+  color: ${color.menuText};
+  border: 1px solid ${color.buttonBorder};
+  border-radius: ${size.radius};
+  padding: 3px;
+}
+QMenu#imageRemovalMenu::item {
+  min-height: 22px;
+  padding: 6px 18px 6px 30px;
+  margin: 1px 2px;
+  border-radius: ${size.radiusSm};
+  background: transparent;
+}
+QMenu#imageRemovalMenu::item:selected {
+  background: ${color.buttonHover};
+  color: ${color.buttonText};
+}
+QMenu#imageRemovalMenu::item:pressed {
+  background: ${color.buttonPressed};
+}
+QMenu#imageRemovalMenu::item:checked {
+  background: ${color.selection};
+}
+QMenu#imageRemovalMenu[permanentSelected="true"]::item:checked {
+  color: ${color.dangerText};
+  background: ${color.dangerSurface};
+}
+QMenu#imageRemovalMenu::indicator {
+  width: 14px;
+  height: 14px;
+}
+QMenu#imageRemovalMenu::indicator:checked {
+  image: url(../images/controls/check.svg);
+}
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled:hover {
   background: ${color.dangerSurface};
 }

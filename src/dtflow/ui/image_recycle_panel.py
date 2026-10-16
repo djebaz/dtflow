@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QActionGroup
+from PySide6.QtGui import QActionGroup, QIcon
 from PySide6.QtWidgets import QMenu, QPushButton, QWidget
 
 from dtflow.core.gallery import GalleryQuery
@@ -44,19 +44,24 @@ class ImageRecyclePanel(QObject):
         gallery.removal_ready = False
         self.menu_button = gallery._widget("galleryRemovalMenuButton", QPushButton)
         menu = QMenu(self.menu_button)
+        menu.setObjectName("imageRemovalMenu")
         group = QActionGroup(menu)
         group.setExclusive(True)
         self._mode_actions = {}
+        icon_root = Path(__file__).resolve().parents[1] / "resources" / "images" / "gallery"
         for mode, label in (("trash", f"Move to {TRASH_NAME}"), ("permanent", "Delete permanently")):
+            action = menu.addAction(
+                QIcon(str(icon_root / ("arrow-left.svg" if mode == "trash" else "delete.svg"))), label
+            )
             if mode == "trash" and gallery._recycle_callback is None:
-                label += " (unavailable)"
-            action = menu.addAction(label)
+                action.setToolTip("System Trash is unavailable; selecting this mode will not remove images.")
             action.setCheckable(True)
             group.addAction(action)
             action.triggered.connect(lambda _checked=False, mode=mode: self._choose_mode(mode))
             self._mode_actions[mode] = action
         menu.aboutToShow.connect(lambda: feedback(self.parent_widget).dismiss())
         self.menu_button.setMenu(menu)
+        self.menu_button.setAccessibleName("Choose image removal mode")
         gallery._sync_selection_ui()
         self.progress.connect(self._update_progress, Qt.ConnectionType.QueuedConnection)
         self.runner.submit(asyncio.to_thread(load_mode, self.state_dir), self._mode_loaded)
@@ -84,6 +89,10 @@ class ImageRecyclePanel(QObject):
         button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete permanently") + 42)
         for key, action in self._mode_actions.items():
             action.setChecked(key == mode)
+        menu = self.menu_button.menu()
+        menu.setProperty("permanentSelected", mode == "permanent")
+        menu.style().unpolish(menu)
+        menu.style().polish(menu)
         self.gallery._sync_selection_ui()
 
     def _choose_mode(self, mode):
