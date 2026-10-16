@@ -2,6 +2,10 @@
 
 ## Highlights
 
+- Planned WSL gallery read-path resolution and selected-toggle font follow-up:
+  [implementation plan](../plans/2026-10-17-wsl-gallery-paths-and-fonts.md).
+  Same-PR implementation is pending; no runtime behavior changes at this checkpoint.
+
 - Smart mask selection and inpainting work is starting in a separate draft PR. Headless preparation, durable input snapshot/restore and tensor-encoding helpers are source-present; request v2 and backed-up DB v3 migration are source-present; dedicated provider dispatch/raw-output saving are source-present. Owner passed the bounded step-4 bridge/direct-cloud probe gate; the offline manual editor is in progress, not a usable app image-dispatch feature. Existing generation behavior is unchanged.
 
 ## Added
