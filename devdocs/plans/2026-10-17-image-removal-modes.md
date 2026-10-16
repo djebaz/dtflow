@@ -39,7 +39,7 @@ For this PR, source-run WSL requires this checkout's Windows `.venv/Scripts/pyth
 
 Normalize expected native Windows validation/fingerprint `ValueError` refusals into the same handled result contract as helper refusals, so they settle the current image rather than aborting the batch after `delete_pending`. Keep the helper narrow; use stable phase/status information instead of raw exceptions, private paths or a blanket `ok:false` with no mutation-phase distinction.
 
-Distinguish confirmed refusal before the delete-disposition call from unconfirmed execution. A confirmed pre-mutation refusal becomes retryable `failed` only when the original is still unchanged; if it disappeared or changed, retain `uncertain`. This includes validation refusal and a known open/sharing/permission failure before mutation. Continue with later files after a settled per-image refusal.
+Distinguish confirmed refusal before the delete-disposition call from unconfirmed execution. A confirmed pre-mutation refusal becomes retryable `failed` only when the original is still unchanged; if it disappeared or changed, retain `uncertain`. Classify by execution phase rather than Windows error codes: request/path validation, redirect and metadata checks, every `CreateFile` failure, `open_osfhandle` failure before disposition, and `fstat`/fingerprint/link-count/reparse validation are confirmed pre-mutation refusals. The Windows helper returns a stable phase (for example `{"ok":false,"phase":"pre"}`) only for such confirmed failures. Native Windows raises a dedicated handled `OSError` subclass such as `RefusedBeforeMutation`, never an escaping `ValueError`. Any error at `SetFileInformationByHandle`, handle close or acknowledgment, and any absent/malformed helper response, is unconfirmed. Do not whitelist Win32 error codes. A confirmed pre-mutation refusal settles to retryable `failed` only if `_unchanged(target)` succeeds; otherwise `uncertain`. Continue later batch items after a settled refusal.
 
 Timeout, killed/lost helper, missing/malformed acknowledgment, or a failure at/after the disposition-call boundary remains `uncertain`, even when the original appears unchanged. Never infer refusal from source presence alone. Preserve durable intent before mutation, per-image settlement, interruption reconciliation and the prohibition on replaying pending/uncertain/removed outcomes. Durable-write failure is not a confirmed pre-mutation refusal and must not be downgraded into a safe retry.
 
@@ -51,9 +51,19 @@ Present sanitized readiness/preflight reasons directly and state that the refuse
 
 The owner explicitly accepts the risk that a provider-completed generation may be lost if its final local save fails, including the possibility of paying again to regenerate. **Do not implement** a new durable output-staging area, save-retry state machine, startup generation-recovery pass, scheduled/local automatic retries, special retention policy, or recovery notification/UI in this PR. Keep the existing generation attempt/history records and normal save/error handling; surface a clear failure when the actual original-file lock or local save is unavailable. Do not automatically resubmit potentially billable generation. The cheap static bridge capability check before provider dispatch and the interoperable original-file lock at actual save time remain required. This simplification applies **only to generation-output recovery**; deletion-ledger restart reconciliation, durable outcomes, no-replay and amber warnings for uncertain deletes remain in scope.
 
-### Owner decision — warn only on newly uncertain deletions
+### Owner decision — warn only on newly uncertain permanent deletions
 
-When a permanent-delete attempt first settles as `uncertain` during normal operation, show the existing amber/orange warning overlay once for that newly uncertain outcome. At startup, reconcile interrupted `delete_pending` records as before, but **warn only for records newly transitioned to `uncertain` by that startup reconciliation pass** (aggregate a count when appropriate). Do not show an overlay for `uncertain` records that were already present before startup, even if they remain unresolved across many restarts. Determine the new transitions from the existing ledger reconciliation/result, rather than creating a notification-tracking table, timestamp-based re-alert logic or dedicated recovery UI. Explain that deletion **may or may not have occurred** and manual inspection is necessary. The durable `uncertain` outcome remains unchanged and blocks automatic replay; dismissal/expiry of the warning does not modify ledger state. A *confirmed* refusal before the disposition boundary, with an unchanged original, remains retryable `failed` as defined by A3. **Known limitation accepted by the owner:** if the app crashes after recording `uncertain` but before showing its warning, that outcome may never generate an overlay; durable evidence and no-replay behavior still protect the original.
+When a permanent-delete attempt first settles as `uncertain` during normal operation, show the existing amber/orange warning overlay once for that newly uncertain outcome. `persistence/image_recycle.py:reconcile()` currently transitions both Trash `pending` and permanent `delete_pending` and returns a combined count. Change the result/signature minimally to distinguish newly reconciled Trash from permanent-delete rows. **After any successful reconciliation pass** (startup or later `_request_recycle_reconciliation`), warn only for that pass's newly transitioned `delete_pending` → `uncertain` records; do not start warning for Trash rows that previously reconciled silently. Aggregate counts when appropriate. Preexisting `uncertain` rows never re-alert. Do not add a tracking table, timestamp-based alerts or recovery UI.
+
+Reconciliation requires both `recycle_batch_lock` and `original_images_lock`. When unavailable, log the skipped pass and explain in the existing readiness UI that interrupted removal intents cannot be reconciled until shared-lock readiness returns. Do not claim that they were settled. Rows still in `delete_pending` remain ineligible for retry; that is intentional. Only a successful pass can generate newly reconciled warnings. Do not assume reconciliation runs only once per session, and never replay removal. Explain that deletion **may or may not have occurred** and manual inspection is necessary. The durable `uncertain` outcome remains unchanged and blocks automatic replay; dismissal/expiry of the warning does not modify ledger state. A *confirmed* refusal before the disposition boundary, with an unchanged original, remains retryable `failed` as defined by A3. **Known limitation accepted by the owner:** if the app crashes after recording `uncertain` but before showing its warning, that outcome may never generate an overlay; durable evidence and no-replay behavior still protect the original.
+
+### Local-save failure contract (no recovery)
+
+In `services/generation.py`, distinguish errors raised while `saving` after the provider has returned successfully from pre-dispatch capability refusal. A lock/bridge-unavailable error (separate from ordinary contention) or `OSError` from `commit_originals` should produce a distinct `PERSISTENCE` failure such as `local_save_unavailable`, with remote outcome `SUCCEEDED` and attempt state `save_failed`. Explain: "The image was generated but could not be saved locally. The result was not kept; generating again may be billed." Retain current attempt/history evidence and do not stage, retry, re-submit or claim the result was durably saved. For pre-dispatch refusal, say nothing was submitted and therefore no provider charge was incurred by that refused request. Verify that the UI presents `failure.message` rather than replacing it with a generic error.
+
+### WSL2 release note and refusal contract
+
+Document in `devdocs/releases/unreleased.md` the split action, per-Windows/WSL/native-Linux preference files, ledger schema 2 and the incompatible older-reader/no-rollback consequence after first schema-2 write. Source-run WSL on Windows-hosted state requires the checkout's Windows `.venv/Scripts/python.exe`. WSL2 9p/unverified Windows mappings now fail closed for gallery original loads, generation, export, Trash and permanent deletion, even where these worked before. Give an explicit workaround: move DTFlow application state to the WSL Linux filesystem (ext4), and defer WSL2 drive-mount support to issue #77 after real WSL2 probes. Mention the accepted possibility of losing remote generation output on local save failure. The refusal UI must explain the ext4 workaround.
 
 ### Owner decision — refine the split-action dropdown visually
 
@@ -76,14 +86,15 @@ Keep `RecycleTarget.mounts` and fresh per-file mapping discovery: the frozen-tar
 - [ ] Polish the two-item split dropdown with shared Qt tokens/QSS, checkmark/icon treatment and an offline open-menu preview fixture.
 - [ ] Synchronize architecture, desktop/policy/release docs and PR body when the remediation is implemented, then run owner-authorized Ruff lint/format and report runtime acceptance separately.
 
-## Ordered implementation steps
+## Ordered implementation steps (remaining, coherent commits)
 
-1. Inspect existing preflight, eligibility, reference counting, intent claim and settlement; identify the smallest reusable changes for an explicit mode.
-2. Probe WSL path identity and Windows/WSL lock exclusion using disposable files. Resolve the mutation/lock boundary before implementing permanent file removal.
-3. Extend the existing service/ledger for distinct permanent outcomes. Keep per-file revalidation, durable intent before mutation, and no automatic replay.
-4. Add environment-specific mode persistence, then the canonical split control. Mode selection alone does no work; all consent remains session-only.
-5. Wire explicit irreversible consent, progress/results and stop-between-files through the existing controller. Invalidate consent on mode/scope/navigation.
-6. Extend offline preview states, synchronize policy/design/docs/release notes, push implementation to this same draft PR and hand runtime acceptance to owner.
+1. Implement helper phase-based refusal protocol, native `RefusedBeforeMutation` handling and service settlement (A2/A3); distinguish Trash/permanent newly uncertain counts in `reconcile`.
+2. Fix phase-correct readiness/preflight, refused-before-mutation and unconfirmed-execution UI messages (B1).
+3. Add static-only shared-lock readiness, distinct unavailable-vs-contention errors, nonblocking startup availability, and one authoritative gate covering desktop/CLI/queue/image-operation generation submission (A1).
+4. Add `local_save_unavailable` handling and precise remote-success/local-failure messaging while preserving `save_failed` and no recovery.
+5. Implement one-shot amber alerts for newly uncertain permanent deletions on execution or any successful reconcile pass; report skipped reconciliation without replay.
+6. Polish split-action dropdown using shared QSS/Designer style and extend offline `tools/ui/render_states.py` fixtures.
+7. Sync architecture, desktop/policy and concrete `unreleased.md` compatibility notes plus PR body; perform owner-authorized Ruff checks and report runtime acceptance separately.
 
 ### Safety gate before permanent-removal code
 
@@ -116,19 +127,19 @@ Restrict agent probes through wsl.exe to non-mutating capability/path/handle ins
 
 Those Ruff results and probes cover the initial implementation, not the pending remediation. This plan-only update runs no new runtime checks, probes, tests, builds, renders, training, inference or billable operations.
 
+### Owner acceptance
+
 - [ ] Owner missing Windows `.venv`, unavailable helper and unsupported-mapping checks: app remains open, settings/metadata remain usable, original reads refuse clearly and no generation is submitted.
 - [ ] Owner readiness-change checks after startup and before operation start, including queue/image-operation dispatch; no silent `flock` fallback or stale readiness authorization.
 - [ ] Owner native/helper pre-mutation sharing/permission/validation refusal: unchanged file settles `failed`, later files continue, and a fresh user-authorized retry is possible.
 - [ ] Owner helper timeout/termination or post-disposition uncertainty: retain manual-review/no-replay outcomes, never relabel as a safe retry because the source still exists.
 - [ ] Owner refusal wording distinguishes zero-mutation preflight from partial execution and unconfirmed/durable outcomes; unsupported WSL2 remains explicitly deferred.
-
 - [ ] Owner Windows/WSL split-menu and separate preference acceptance.
 - [ ] Owner mixed native/Windows-recorded managed-source checks and confirmations.
 - [ ] Owner permanent deletion, partial/failed/uncertain and restart/no-replay.
 - [ ] Owner two-process Windows/WSL lock exclusion and helper interruption.
 - [ ] Owner cancellation, changed file/reference/mount and redirect refusals.
 - [ ] Owner exports/history/metadata untouched and Trash regression checks.
-
-- [ ] Owner local-save lock/disk failure acceptance: report the failure accurately, retain existing attempt/history evidence, and do not stage images, attempt automatic generation recovery or resubmit provider work.
-- [ ] Owner amber/orange warning once when deletion first becomes `uncertain`, and at startup only for `delete_pending` entries newly reconciled to `uncertain`; old unresolved entries never re-alert, while overlay expiry leaves durable ledger state intact.
+- [ ] Owner local-save lock/disk failure acceptance: remote `SUCCEEDED` plus `save_failed`, `PERSISTENCE`/`local_save_unavailable` and explicit potential re-billing text; UI preserves `failure.message` and does not stage or resubmit.
+- [ ] Owner amber/orange warning once when permanent deletion first becomes `uncertain`, and after any successful reconcile pass only for newly transitioned `delete_pending` entries (not Trash `pending`); no alerts for old rows, no replay, and skipped reconciliation is reported as not settled.
 - [ ] Owner split-menu visual, keyboard, accessibility/DPI and disabled-Trash acceptance; choosing a mode never performs deletion.
