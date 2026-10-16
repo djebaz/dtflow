@@ -3,9 +3,12 @@
 ## Status
 
 Source implementation checkpoint in PR #75 (`fix/wsl-gallery-paths-and-fonts`).
-Owner approved the non-mutating path direction. Runtime acceptance is pending.
+Owner approved the non-mutating path direction and reported smoke tests passed
+on 2026-10-17 for the current implementation head `a12d583`. No exact executable
+identity or individual scenario results were supplied; this is owner source-smoke
+acceptance, not agent verification or packaged/platform certification.
 Fast-implement: no tests, validation, renders or builds by the agent; owner accepts
-the final runtime behavior. Do not merge without a separate owner request.
+the final runtime behavior. Owner explicitly requested squash merge on 2026-10-17.
 
 ## Scope
 
@@ -72,6 +75,9 @@ the final runtime behavior. Do not merge without a separate owner request.
 
 ## Owner acceptance (not agent-run tests)
 
+Owner reports smoke tests passed (2026-10-17). The detailed scenarios below remain
+individually unverified coverage, not blanket passes.
+
 - [ ] Existing Windows history: Grid/List thumbnails, Detail zoom/pan, metadata,
   Copy path and Open folder behavior from WSL with the expected mounted drive.
 - [ ] Non-default WSL mount root; unmapped drive; missing/corrupt file; malformed,
@@ -114,7 +120,8 @@ the final runtime behavior. Do not merge without a separate owner request.
 
 ## Remaining work
 
-- Owner runtime/visual acceptance and all checks listed above. No agent tests,
+- Scenario-specific and packaged acceptance beyond the owner-reported smoke
+  remain unverified. No agent tests,
   syntax/import checks, lint, rendering, build or other validation were run for
   this implementation, per the selected workflow. No training, inference or
   potentially billable action was performed.

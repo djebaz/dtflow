@@ -8,7 +8,8 @@
   Process-local Windows Segoe UI faces avoid heavier fallback toggles when available.
   Export/edit/reuse/regeneration remain restricted for foreign Windows outputs;
   no schema migration or new destructive support. No agent tests/renders/validation;
-  owner runtime acceptance pending.
+  owner reports current-PR smoke tests passed on 2026-10-17. Individual edge cases,
+  concurrent cross-platform mutations and packaged acceptance remain unverified.
 
 - Smart mask selection and inpainting work is starting in a separate draft PR. Headless preparation, durable input snapshot/restore and tensor-encoding helpers are source-present; request v2 and backed-up DB v3 migration are source-present; dedicated provider dispatch/raw-output saving are source-present. Owner passed the bounded step-4 bridge/direct-cloud probe gate; the offline manual editor is in progress, not a usable app image-dispatch feature. Existing generation behavior is unchanged.
 
