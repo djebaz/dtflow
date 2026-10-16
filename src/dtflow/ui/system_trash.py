@@ -19,7 +19,8 @@ TRASH_NAME = "Recycle Bin" if os.name == "nt" else "Trash"
 
 def trash_supported() -> bool:
     """OS capability only; individual files may still be ineligible or fail."""
-    return QFile.supportsMoveToTrash()
+    supports = getattr(QFile, "supportsMoveToTrash", None)
+    return bool(supports()) if callable(supports) else False
 
 
 def check_trash_source(path: Path) -> None:

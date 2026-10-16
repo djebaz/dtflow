@@ -21,6 +21,13 @@
 
 - 2026-10-09 review follow-up: remove restrictive drive/filesystem/OS policy while retaining managed-original checks. Missing or unverifiable receipts still produce durable uncertainty, but the result UI distinguishes Qt-reported success from confirmed moves. Runtime receipt relaxation remains an owner-tested decision.
 
+## Compatibility follow-up
+- 2026-10-16 compatibility follow-up: missing/non-callable `supportsMoveToTrash`
+  reports unavailable, preserving startup with Delete disabled and refusing source
+  checks before filesystem access. No dependency pin, generation, receipt or
+  permanent-delete changes; older-Qt/WSL acceptance remains separate.
+- Evidence and validation limits: [WSL 1/E6500 source smoke](../research/wsl1-e6500-smoke-2026-10-16.md).
+
 ## Open questions
 - None blocking. Windows, Debian and macOS actual trash/restore acceptance remains owner work.
 

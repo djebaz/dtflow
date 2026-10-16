@@ -27,6 +27,10 @@
 
 ## Fixed
 
+- Desktop startup tolerates Qt bindings without `QFile.supportsMoveToTrash`:
+  Delete remains disabled and Trash source checks refuse safely. No dependency,
+  generation or permanent-delete behavior changes; WSL/older-Qt acceptance remains separate.
+
 - Offline fake-backend tests use a temporary deterministic PNG instead of depending on the bundled lighthouse illustration. A shared test-only patch supports explicit guarded CLI subprocess opt-in; ordinary guarded children preserve their import setup. The fitting contract checks centered-crop pixels and unfiltered RGB8 source encoding; desktop simulation artwork is unchanged.
 
 - Agent setup runs APT update/install with `APT::Sandbox::User=root`, avoiding the `_apt` user/group switch rejected by restricted disposable containers. Package-mirror access and installation permissions remain environment requirements; failures still stop setup.

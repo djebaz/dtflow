@@ -34,6 +34,7 @@ from dtflow.core.models import LoRASelection  # noqa: E402
 from dtflow.services import session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
+from dtflow.ui import system_trash  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
@@ -179,6 +180,22 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
+        # Missing Qt capability API: startup succeeds with Trash unavailable.
+        with patch.object(system_trash, "QFile", object):
+            unavailable = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "no-trash")
+        try:
+            unavailable.form.resize(1600, 1000)
+            unavailable.show()
+            unavailable.form.imagesNavigationButton.click()
+            QTest.qWait(100)
+            target = args.out / "30-images-trash-unavailable.png"
+            if not unavailable.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+        finally:
+            unavailable.runner.shutdown()
+            unavailable.form.close()
+            app.processEvents()
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
         shell.show()

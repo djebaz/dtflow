@@ -18,6 +18,10 @@ Run project tools through `uv run` so they use the project environment. The lock
 
 ## Agent environment setup
 
+For bounded Ubuntu/WSL 1 testing on the Pentium E6500, see the
+[2026-10-16 compatibility evidence and limitations](../research/wsl1-e6500-smoke-2026-10-16.md).
+This workaround is not a replacement for the locked environment or general Linux support.
+
 Check readiness first; custom environment startup may already have provisioned
 the checkout.
 
