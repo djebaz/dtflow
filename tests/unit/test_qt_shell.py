@@ -44,6 +44,33 @@ def test_lifecycle_from_designer_file_and_clean_shutdown(window, qtbot):
     assert delivered == [] and not window.queue._timer.isActive()
 
 
+@pytest.mark.parametrize("capability", [None, False, True])
+def test_trash_capability_gates_startup_and_source_checks(capability, monkeypatch, qtbot, tmp_path):
+    from dtflow.services.image_recycle import RecycleUnavailable
+    from dtflow.ui import system_trash
+
+    class FileCapability:
+        pass
+
+    if capability is not None:
+        FileCapability.supportsMoveToTrash = staticmethod(lambda: capability)
+    monkeypatch.setattr(system_trash, "QFile", FileCapability)
+    assert system_trash.trash_supported() is bool(capability)
+    if not capability:
+        # Refuse before inspecting an original, let alone moving/deleting it.
+        with pytest.raises(RecycleUnavailable, match="System Trash is unavailable"):
+            system_trash.check_trash_source(tmp_path / "nonexistent.png")
+
+    shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=tmp_path / "state")
+    qtbot.addWidget(shell.form)
+    try:
+        assert (shell.gallery._recycle_callback is not None) is bool(capability)
+        if not capability:
+            assert not shell.gallery.delete_button.isEnabled()
+    finally:
+        shell.runner.shutdown()
+
+
 def test_feedback_child_deleted_before_activity_strip_remains_safe(window, qtbot):
     """A dying inline child must not leave the strip with a stale Qt pointer."""
     window.show()

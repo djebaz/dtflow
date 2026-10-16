@@ -5,6 +5,12 @@ This is coding orientation against [initial.md](plans/initial.md), not a release
 
 ## Implemented on main
 
+Compatibility follow-up (2026-10-16, branch scope): missing Qt Trash capability
+APIs fail closed without preventing startup. Bounded WSL 1/E6500 owner smoke,
+installation/display workarounds and unresolved path/credential limitations are
+recorded in [the evidence note](research/wsl1-e6500-smoke-2026-10-16.md); no general
+Linux or packaged acceptance is implied.
+
 | Initial-plan phase | Implemented scope |
 | --- | --- |
 | 1 — Connectivity proof | Diagnostic gRPC/direct-cloud feasibility probes and recorded evidence. |
