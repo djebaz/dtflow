@@ -2,7 +2,7 @@
 
 ## Status and working rules
 
-Draft PR #76, branch `feature/image-removal-modes`. Initial implementation is source-present at `b935bca`; review identified blocking A1–A3 issues and the related B1 refusal-message issue. The agreed remediation below is planned, not implemented. Runtime removal acceptance remains pending. Reuse the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner permits focused, non-destructive WSL CLI probes and has separately requested Ruff lint/format.
+Open, unmerged PR #76, branch `feature/image-removal-modes`. The initial implementation was source-present at `b935bca`. The A1–A3/B1 review fixes and the later owner decisions on lightweight generation recovery, uncertain-delete alerts and split-menu styling are **planned, not yet implemented**. Runtime removal acceptance remains pending. Reuse the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner permits focused, non-destructive WSL CLI probes and has separately requested Ruff lint/format.
 
 ## Scope and agreed contract
 
@@ -31,7 +31,7 @@ Keep one interoperable shared-lock boundary on every path that touches originals
 
 Keep DTFlow open for settings and metadata-only browsing when that boundary is unavailable. Show a clear availability state identifying the specific prerequisite or unsupported setup; do not misreport missing bridge support as ordinary lock contention. Original-image loading, generation, export and removal must refuse affected work until readiness is established. Unrelated settings/metadata/connection operations remain usable; do not decode originals behind the refusal state.
 
-Check readiness off the GUI thread at startup and recheck it when each affected operation starts. Gate generation in the shared submission path, covering desktop, CLI, queue dispatch and image-operation submission before provider dispatch or potentially billable preparation, not only when saving the returned result. Startup readiness is not a permanent authorization: retain actual per-operation/per-file leases and handle later contention or capability loss without weakening existing durable outcome rules. A readiness probe must release its lease; do not hold the originals lease throughout remote generation.
+Surface bridge capability at startup without blocking the GUI and recheck cheap static prerequisites at every affected operation start. Gate desktop, CLI, queue and image-operation generation submission before provider dispatch, but **do not spawn a helper process, test/acquire the originals lock or perform a Windows handshake solely as a pre-generation readiness probe**. Keep this check limited to static interpreter/mapping/capability facts. Actual reads, saves, exports and removals still take the same interoperable shared lock at their normal original-file I/O boundary, and readiness at startup is never permanent authorization. If a paid result arrives but the save lease has become unavailable, preserve it with the durable staging/recovery contract below; never hold the originals lock throughout remote generation.
 
 For this PR, source-run WSL requires this checkout's Windows `.venv/Scripts/python.exe`; do not add interpreter discovery or a configurable Windows Python. Missing interpreter, unavailable interop/helper, or unsupported/unverified/ambiguous mappings must produce a sanitized, actionable reason. Refuse unsupported WSL2/9p mappings clearly and defer WSL2 support; no real WSL2 behavior has been verified and no support claim follows from source inspection.
 
@@ -47,19 +47,38 @@ Timeout, killed/lost helper, missing/malformed acknowledgment, or a failure at/a
 
 Present sanitized readiness/preflight reasons directly and state that the refused operation changed no originals; distinguish unavailable support from a busy lease. Reserve durable-outcome uncertainty/manual-review wording for execution that may have mutated an original or could not settle its durable result. In a partial batch, a later refused item must not produce an operation-wide claim that nothing changed.
 
+### Owner decision — preserve generated images and recover on startup only
+
+Include the following **lightweight generation recovery in PR #76 before merge**, reusing the existing generation attempt store, save pipeline and request/effective metadata. After a valid provider response arrives, persist the returned image payloads plus the minimum information required to finish the normal local save in **durable, non-cache staging**, before attempting the original-file save. Use atomic staging completion evidence to distinguish complete files from partial writes; never claim recoverability from an in-memory-only result or incomplete staging. Preserve staged data and record the save failure if the original-file lock, filesystem write or attempt-state commit fails. No new dependency, separate recovery service or remote provider request is allowed for this path; do not add any predispatch I/O/lock check merely to support it.
+
+On DTFlow startup, make **one nonblocking local recovery pass** over complete unsaved staged generations. Each eligible generation gets at most one final-save retry per startup, under the actual original-file lock. If locking or saving is still unavailable, keep the original staged files and durable failure state untouched for the next restart. **No periodic background check, no retry when other operations begin, and no provider resubmission.** Use the existing attempt identity and idempotent final paths to avoid duplicated saved images. Discard staged copies only after confirming the final files and durable successful save state. **Never automatically purge unsaved generated images**, including for age or cache cleanup; redundant staging after verified recovery is safe to clean.
+
+When the startup pass leaves unsaved generated images, show the existing **amber/orange warning overlay** with the number of images and say they remain preserved for the next startup. The overlay may expire according to existing rules; dismissing it never changes durable save/recovery state. No separate recovery screen, manual retry button, loop, scheduler or provider call.
+
+### Owner decision — show uncertain-delete warnings immediately and at restart
+
+If a permanent-delete attempt has an unconfirmed outcome, keep it `uncertain`, do not retry automatically and show the existing amber/orange warning overlay then. Also reconcile interrupted `delete_pending` records at application startup and warn when any unresolved `uncertain` records remain. Explain that deletion **may or may not have occurred** and that inspecting the original is necessary. Do not falsely claim success or failure, clear the ledger when the overlay expires, or introduce a dedicated deletion-recovery UI. A *confirmed* refusal before the delete-disposition boundary, with an unchanged original, can still be a retryable `failed` result as defined by A3.
+
+### Owner decision — refine the split-action dropdown visually
+
+Polish the existing joined Images action/menu control, not a redesigned component. Its compact dropdown should look like part of the button family: consistent DTFlow dark surface, shared border and rounded corners, typography, hover/focus/pressed states, and tidy alignment. Show exactly two icon-labeled choices: **Move to Trash** and **Delete permanently**. Indicate the selected mode with a small checkmark and a restrained danger-red accent for permanent deletion. Keep the popup compact and closely aligned with the button; do not add a third action or custom UI framework. Use the canonical Designer form, shared QSS and tokens where appropriate. Selecting a mode only updates the existing environment-specific preference; it **never executes removal**, saves destructive consent or bypasses the required fresh confirmation. Preserve keyboard, DPI, unavailable-Trash and state-change behavior. Extend `tools/ui/render_states.py` with offline menu-open/selected/disabled fixtures; render only if separately requested.
+
 ### Preserve safety; defer unmeasured optimizations
 
-Keep `RecycleTarget.mounts` and fresh per-file mapping discovery: the frozen-target comparison uses the snapshot to reject changed mappings. Recompute committed ownership at execution time under the original-file lease; never substitute preflight counts or narrow ownership to only the selected attempt. Process-spawn and normalized-query costs remain unmeasured follow-ups, not defects to optimize in this remediation. No recovery/reset UI, new dependency, general cross-platform state-owner/SQLite concurrency support or WSL2 implementation is included.
+Keep `RecycleTarget.mounts` and fresh per-file mapping discovery: the frozen-target comparison uses the snapshot to reject changed mappings. Recompute committed ownership at execution time under the original-file lease; never substitute preflight counts or narrow ownership to only the selected attempt. Process-spawn and normalized-query costs remain unmeasured follow-ups, not defects to optimize in this remediation. No dedicated recovery/reset UI, new dependency, general cross-platform state-owner/SQLite concurrency support or WSL2 implementation is included.
 
 ### Remediation action items (pending)
 
 - [ ] Add a reusable, sanitized readiness result distinguishing unsupported bridge prerequisites from transient contention, while preserving the shared lock on every original-touching path.
 - [ ] Wire nonblocking startup availability and operation-start rechecks, preserving settings/metadata browsing and blocking original reads and affected work when unavailable.
-- [ ] Gate every generation submission path before provider dispatch/potentially billable preparation; retain the actual save/read/mutation leases and later-failure safeguards.
+- [ ] Gate every generation submission path using cheap static readiness checks only; do not spawn/test a Windows lock helper before billable provider dispatch; retain actual save/read/mutation leases.
 - [ ] Add the native/helper confirmed-pre-mutation refusal contract; contain expected native validation exceptions and settle unchanged refusals as `failed` without aborting later files.
 - [ ] Retain `uncertain` for possible mutation, acknowledgment loss, changed originals and unsettled durable writes; preserve no-replay behavior.
-- [ ] Separate readiness/preflight, per-item refusal and execution-uncertainty UI messages; extend offline availability/refusal fixture states without rendering them.
-- [ ] Synchronize architecture, desktop/policy/release docs and PR body with the implemented remediation, then run owner-authorized Ruff lint/format and report remaining runtime acceptance separately.
+- [ ] Separate readiness/preflight, per-item refusal and execution-uncertainty UI messages; warn for unresolved uncertain deletions both on attempt and startup with the existing amber overlay.
+- [ ] Add durable staged generation outputs and idempotent, local-only, one-pass startup recovery; keep unsaved images indefinitely, never resubmit the provider or retry periodically.
+- [ ] Reuse amber overlay for startup-recovery failures and unresolved uncertain deletes without clearing durable status.
+- [ ] Polish the two-item split dropdown with shared Qt tokens/QSS, checkmark/icon treatment and an offline open-menu preview fixture.
+- [ ] Synchronize architecture, desktop/policy/release docs and PR body when the remediation is implemented, then run owner-authorized Ruff lint/format and report runtime acceptance separately.
 
 ## Ordered implementation steps
 
@@ -99,7 +118,7 @@ The completed items below describe the initial implementation only; they do not 
 
 Restrict agent probes through wsl.exe to non-mutating capability/path/handle inspection and disposable-file locks; never delete user images or run generation. No tests, builds or renders under fast-implement. Owner additionally requested Ruff lint/format: environment readiness passed; `uv run --frozen ruff check .` passed; Ruff formatted 9 changed Python files and repository-wide `ruff format --check .` passed (320 files). Record these static checks separately from runtime acceptance.
 
-Those Ruff results and probes cover the initial implementation, not the pending remediation. This plan-only update runs no new runtime checks, probes or validation.
+Those Ruff results and probes cover the initial implementation, not the pending remediation. This plan-only update runs no new runtime checks, probes, tests, builds, renders, training, inference or billable operations.
 
 - [ ] Owner missing Windows `.venv`, unavailable helper and unsupported-mapping checks: app remains open, settings/metadata remain usable, original reads refuse clearly and no generation is submitted.
 - [ ] Owner readiness-change checks after startup and before operation start, including queue/image-operation dispatch; no silent `flock` fallback or stale readiness authorization.
@@ -113,3 +132,7 @@ Those Ruff results and probes cover the initial implementation, not the pending 
 - [ ] Owner two-process Windows/WSL lock exclusion and helper interruption.
 - [ ] Owner cancellation, changed file/reference/mount and redirect refusals.
 - [ ] Owner exports/history/metadata untouched and Trash regression checks.
+
+- [ ] Owner staging and interrupted/disk-failed save acceptance: unsaved provider results survive restart and cache cleanup, idempotent recovery retries the local save only once at startup, and neither provider resubmission nor automatic purge occurs.
+- [ ] Owner amber/orange startup warnings for unresolved generated images and uncertain deletions, plus immediate warning on uncertain permanent-delete attempts; overlay expiry does not alter durable states.
+- [ ] Owner split-menu visual, keyboard, accessibility/DPI and disabled-Trash acceptance; choosing a mode never performs deletion.
