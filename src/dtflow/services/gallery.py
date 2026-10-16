@@ -9,6 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as storage
+from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 
 MAX_METADATA_BYTES = 1024 * 1024
 SECRET = re.compile(r"api.?key|token|password|secret|authorization|cookie|credential|signed.?url|base64", re.I)
@@ -32,20 +33,27 @@ def safe_metadata(value):
     return value
 
 
-def item_from_record(record: dict) -> GalleryItem:
+def item_from_record(record: dict, paths: ArtifactReadPaths | None = None) -> GalleryItem:
     try:
         request = json.loads(record["request_json"])
         loras = tuple((str(x["identifier"]), float(x["weight"])) for x in request.get("loras", []))
     except (ValueError, KeyError, TypeError):
         request, loras = {}, ()
     issue, size = "", None
+    paths = paths or ArtifactReadPaths.discover()
+    access_path, access_metadata_path = "", ""
     try:
-        path = Path(record["path"])
+        access_path = paths.resolve(record["path"])
+        path = Path(access_path)
         if not path.is_file():
             raise OSError
         size = path.stat().st_size
     except OSError:
         issue = "Image is missing or unreadable."
+    try:
+        access_metadata_path = paths.resolve(record["metadata_path"])
+    except OSError:
+        pass  # load_detail retains durable evidence when the sidecar is unavailable.
     return GalleryItem(
         record["identity"],
         record["attempt_id"],
@@ -63,6 +71,8 @@ def item_from_record(record: dict) -> GalleryItem:
         json.dumps(safe_metadata(request), allow_nan=False),
         size,
         issue,
+        access_path,
+        access_metadata_path,
     )
 
 
@@ -72,13 +82,19 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
 
     def read():
         records, total = storage.query_records(state, query)
-        return GalleryPage(tuple(item_from_record(x) for x in records), total, query.offset, query.limit)
+        paths = ArtifactReadPaths.discover()
+        return GalleryPage(tuple(item_from_record(x, paths) for x in records), total, query.offset, query.limit)
 
     return await asyncio.to_thread(read)
 
 
 async def locate_output(state: Path, query: GalleryQuery, identity: str) -> int | None:
     return await asyncio.to_thread(storage.locate_record, state, query, identity)
+
+
+def copy_output_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
+    """Worker-only clipboard paths; aliases never replace recorded references."""
+    return storage.selection_paths(state, identities, read_path=ArtifactReadPaths.discover().resolve)
 
 
 async def filter_choices(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -88,7 +104,12 @@ async def filter_choices(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]
 def load_detail(item: GalleryItem) -> GalleryDetail:
     """Read a bounded sidecar, checking its recorded identity; fall back to explicit durable evidence."""
     try:
-        with Path(item.metadata_path).open("rb") as stream:
+        access = (
+            ArtifactReadPaths.discover().resolve(item.metadata_path)
+            if foreign_windows_path(item.metadata_path)
+            else item.read_metadata_path
+        )
+        with Path(access).open("rb") as stream:
             encoded = stream.read(MAX_METADATA_BYTES + 1)
         if len(encoded) > MAX_METADATA_BYTES:
             raise ValueError

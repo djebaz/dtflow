@@ -7,7 +7,10 @@ import sys
 from ctypes import wintypes
 from pathlib import Path
 
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
+
+from dtflow.services.artifact_paths import ArtifactReadPaths
 
 THEME_FILE = Path(__file__).parents[1] / "resources" / "styles" / "dtflow_dark.qss"
 TOKENS_FILE = THEME_FILE.with_name("tokens.json")
@@ -42,7 +45,37 @@ def load_theme() -> str:
 
 def apply_theme(application: QApplication) -> None:
     """Apply the shared stylesheet once at application startup."""
+    _load_wsl_fonts(application)
     application.setStyleSheet(load_theme())
+
+
+def _load_wsl_fonts(application: QApplication) -> None:
+    """Use this PC's existing Windows faces in WSL, never copy/install fonts.
+
+    Run before the event loop starts. No change on Windows or ordinary Linux;
+    missing/unusable font files retain Qt's normal sans-serif fallback.
+    """
+    if application.property("dtflowWslFontsLoaded"):
+        return
+    application.setProperty("dtflowWslFontsLoaded", True)
+    paths = ArtifactReadPaths.discover()
+    if not paths.mounts or load_tokens()["type.family"] != "Segoe UI":
+        return
+    names = ("segoeui.ttf", "seguisb.ttf", "segoeuib.ttf")
+    try:
+        files = [paths.resolve("C:\\Windows\\Fonts\\" + name) for name in names]
+        if not all(Path(name).is_file() for name in files):
+            return
+    except OSError:
+        return
+    loaded = []
+    for name in files:
+        font_id = QFontDatabase.addApplicationFont(name)
+        if font_id < 0:
+            for previous in loaded:
+                QFontDatabase.removeApplicationFont(previous)
+            return
+        loaded.append(font_id)
 
 
 def apply_native_dark_titlebar(window) -> bool:
