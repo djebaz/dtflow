@@ -2,7 +2,7 @@
 
 ## Status and working rules
 
-Draft PR #76, branch `feature/image-removal-modes`. Split action, environment preferences, explicit permanent mode and Windows/WSL safeguards are source-present; runtime removal acceptance is pending. Reused the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner additionally permits focused, non-destructive WSL CLI probes.
+Draft PR #76, branch `feature/image-removal-modes`. Initial implementation is source-present at `b935bca`; review identified blocking A1–A3 issues and the related B1 refusal-message issue. The agreed remediation below is planned, not implemented. Runtime removal acceptance remains pending. Reuse the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner permits focused, non-destructive WSL CLI probes and has separately requested Ruff lint/format.
 
 ## Scope and agreed contract
 
@@ -22,6 +22,44 @@ Keep orchestration, confirmation and ledger settlement in the existing removal w
 Before implementing mapped Windows deletion from WSL, use focused probes to establish path identity and shared-lock behavior. Do not assume Linux `flock` and Windows `msvcrt` exclude each other. If a Windows-side helper is necessary, keep it limited to the demonstrated platform boundary; choose its interface after the probes, not before. Missing support refuses the operation clearly.
 
 Execution must revalidate the exact confirmed managed original, its current committed references and its mapping while holding the relevant leases. Reject changed files, redirected paths, hardlinks, ambiguous mounts and custom output roots. A missing file after an unconfirmed operation is uncertain, not proof of successful deletion. Never replay pending/uncertain/removed outcomes.
+
+## Agreed review fix scope: A1–A3 and B1
+
+### A1 — Clear, early shared-lock readiness
+
+Keep one interoperable shared-lock boundary on every path that touches originals, including gallery image reads, generation saves, export and both removal modes. Do not restrict native Windows leases to permanent deletion and do not silently fall back to Linux `flock` when the Windows boundary is required.
+
+Keep DTFlow open for settings and metadata-only browsing when that boundary is unavailable. Show a clear availability state identifying the specific prerequisite or unsupported setup; do not misreport missing bridge support as ordinary lock contention. Original-image loading, generation, export and removal must refuse affected work until readiness is established. Unrelated settings/metadata/connection operations remain usable; do not decode originals behind the refusal state.
+
+Check readiness off the GUI thread at startup and recheck it when each affected operation starts. Gate generation in the shared submission path, covering desktop, CLI, queue dispatch and image-operation submission before provider dispatch or potentially billable preparation, not only when saving the returned result. Startup readiness is not a permanent authorization: retain actual per-operation/per-file leases and handle later contention or capability loss without weakening existing durable outcome rules. A readiness probe must release its lease; do not hold the originals lease throughout remote generation.
+
+For this PR, source-run WSL requires this checkout's Windows `.venv/Scripts/python.exe`; do not add interpreter discovery or a configurable Windows Python. Missing interpreter, unavailable interop/helper, or unsupported/unverified/ambiguous mappings must produce a sanitized, actionable reason. Refuse unsupported WSL2/9p mappings clearly and defer WSL2 support; no real WSL2 behavior has been verified and no support claim follows from source inspection.
+
+### A2/A3 — Expected refusal versus unconfirmed mutation
+
+Normalize expected native Windows validation/fingerprint `ValueError` refusals into the same handled result contract as helper refusals, so they settle the current image rather than aborting the batch after `delete_pending`. Keep the helper narrow; use stable phase/status information instead of raw exceptions, private paths or a blanket `ok:false` with no mutation-phase distinction.
+
+Distinguish confirmed refusal before the delete-disposition call from unconfirmed execution. A confirmed pre-mutation refusal becomes retryable `failed` only when the original is still unchanged; if it disappeared or changed, retain `uncertain`. This includes validation refusal and a known open/sharing/permission failure before mutation. Continue with later files after a settled per-image refusal.
+
+Timeout, killed/lost helper, missing/malformed acknowledgment, or a failure at/after the disposition-call boundary remains `uncertain`, even when the original appears unchanged. Never infer refusal from source presence alone. Preserve durable intent before mutation, per-image settlement, interruption reconciliation and the prohibition on replaying pending/uncertain/removed outcomes. Durable-write failure is not a confirmed pre-mutation refusal and must not be downgraded into a safe retry.
+
+### B1 — Phase-correct refusal presentation
+
+Present sanitized readiness/preflight reasons directly and state that the refused operation changed no originals; distinguish unavailable support from a busy lease. Reserve durable-outcome uncertainty/manual-review wording for execution that may have mutated an original or could not settle its durable result. In a partial batch, a later refused item must not produce an operation-wide claim that nothing changed.
+
+### Preserve safety; defer unmeasured optimizations
+
+Keep `RecycleTarget.mounts` and fresh per-file mapping discovery: the frozen-target comparison uses the snapshot to reject changed mappings. Recompute committed ownership at execution time under the original-file lease; never substitute preflight counts or narrow ownership to only the selected attempt. Process-spawn and normalized-query costs remain unmeasured follow-ups, not defects to optimize in this remediation. No recovery/reset UI, new dependency, general cross-platform state-owner/SQLite concurrency support or WSL2 implementation is included.
+
+### Remediation action items (pending)
+
+- [ ] Add a reusable, sanitized readiness result distinguishing unsupported bridge prerequisites from transient contention, while preserving the shared lock on every original-touching path.
+- [ ] Wire nonblocking startup availability and operation-start rechecks, preserving settings/metadata browsing and blocking original reads and affected work when unavailable.
+- [ ] Gate every generation submission path before provider dispatch/potentially billable preparation; retain the actual save/read/mutation leases and later-failure safeguards.
+- [ ] Add the native/helper confirmed-pre-mutation refusal contract; contain expected native validation exceptions and settle unchanged refusals as `failed` without aborting later files.
+- [ ] Retain `uncertain` for possible mutation, acknowledgment loss, changed originals and unsettled durable writes; preserve no-replay behavior.
+- [ ] Separate readiness/preflight, per-item refusal and execution-uncertainty UI messages; extend offline availability/refusal fixture states without rendering them.
+- [ ] Synchronize architecture, desktop/policy/release docs and PR body with the implemented remediation, then run owner-authorized Ruff lint/format and report remaining runtime acceptance separately.
 
 ## Ordered implementation steps
 
@@ -48,6 +86,8 @@ The implemented helper's lock-only probe showed: WSL-started holder blocks nativ
 
 ## Action items
 
+The completed items below describe the initial implementation only; they do not establish completion of the pending review-remediation checklist above.
+
 - [x] Read current removal service, ledger, gallery and inline consent paths.
 - [x] Implement mode state and explicit policy change in AGENTS/design/docs.
 - [x] Complete focused path/lock probes and record the minimal safe boundary.
@@ -58,6 +98,14 @@ The implemented helper's lock-only probe showed: WSL-started holder blocks nativ
 ## Probes / acceptance
 
 Restrict agent probes through wsl.exe to non-mutating capability/path/handle inspection and disposable-file locks; never delete user images or run generation. No tests, builds or renders under fast-implement. Owner additionally requested Ruff lint/format: environment readiness passed; `uv run --frozen ruff check .` passed; Ruff formatted 9 changed Python files and repository-wide `ruff format --check .` passed (320 files). Record these static checks separately from runtime acceptance.
+
+Those Ruff results and probes cover the initial implementation, not the pending remediation. This plan-only update runs no new runtime checks, probes or validation.
+
+- [ ] Owner missing Windows `.venv`, unavailable helper and unsupported-mapping checks: app remains open, settings/metadata remain usable, original reads refuse clearly and no generation is submitted.
+- [ ] Owner readiness-change checks after startup and before operation start, including queue/image-operation dispatch; no silent `flock` fallback or stale readiness authorization.
+- [ ] Owner native/helper pre-mutation sharing/permission/validation refusal: unchanged file settles `failed`, later files continue, and a fresh user-authorized retry is possible.
+- [ ] Owner helper timeout/termination or post-disposition uncertainty: retain manual-review/no-replay outcomes, never relabel as a safe retry because the source still exists.
+- [ ] Owner refusal wording distinguishes zero-mutation preflight from partial execution and unconfirmed/durable outcomes; unsupported WSL2 remains explicitly deferred.
 
 - [ ] Owner Windows/WSL split-menu and separate preference acceptance.
 - [ ] Owner mixed native/Windows-recorded managed-source checks and confirmations.
