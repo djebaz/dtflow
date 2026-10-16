@@ -2,7 +2,7 @@
 
 ## Status and working rules
 
-Open, unmerged PR #76, branch `feature/image-removal-modes`. The initial implementation was source-present at `b935bca`. The A1–A3/B1 review fixes and the later owner decisions on lightweight generation recovery, uncertain-delete alerts and split-menu styling are **planned, not yet implemented**. Runtime removal acceptance remains pending. Reuse the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner permits focused, non-destructive WSL CLI probes and has separately requested Ruff lint/format.
+Open, unmerged PR #76, branch `feature/image-removal-modes`. The initial implementation was source-present at `b935bca`. The A1–A3/B1 review fixes and the later owner decisions on **no new generation recovery**, uncertain-delete alerts and split-menu styling are **planned, not yet implemented**. Runtime removal acceptance remains pending. Reuse the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner permits focused, non-destructive WSL CLI probes and has separately requested Ruff lint/format.
 
 ## Scope and agreed contract
 
@@ -31,7 +31,7 @@ Keep one interoperable shared-lock boundary on every path that touches originals
 
 Keep DTFlow open for settings and metadata-only browsing when that boundary is unavailable. Show a clear availability state identifying the specific prerequisite or unsupported setup; do not misreport missing bridge support as ordinary lock contention. Original-image loading, generation, export and removal must refuse affected work until readiness is established. Unrelated settings/metadata/connection operations remain usable; do not decode originals behind the refusal state.
 
-Surface bridge capability at startup without blocking the GUI and recheck cheap static prerequisites at every affected operation start. Gate desktop, CLI, queue and image-operation generation submission before provider dispatch, but **do not spawn a helper process, test/acquire the originals lock or perform a Windows handshake solely as a pre-generation readiness probe**. Keep this check limited to static interpreter/mapping/capability facts. Actual reads, saves, exports and removals still take the same interoperable shared lock at their normal original-file I/O boundary, and readiness at startup is never permanent authorization. If a paid result arrives but the save lease has become unavailable, preserve it with the durable staging/recovery contract below; never hold the originals lock throughout remote generation.
+Surface bridge capability at startup without blocking the GUI and recheck cheap static prerequisites at every affected operation start. Gate desktop, CLI, queue and image-operation generation submission before provider dispatch, but **do not spawn a helper process, test/acquire the originals lock or perform a Windows handshake solely as a pre-generation readiness probe**. Keep this check limited to static interpreter/mapping/capability facts. Actual reads, saves, exports and removals still take the same interoperable shared lock at their normal original-file I/O boundary, and readiness at startup is never permanent authorization. If a provider result arrives but the save lease has become unavailable, report local-save failure clearly and retain the existing attempt/history evidence. The owner accepts that such a generation may be lost, potentially requiring another paid request; do not add special staging or automatic recovery. Never hold the originals lock throughout remote generation.
 
 For this PR, source-run WSL requires this checkout's Windows `.venv/Scripts/python.exe`; do not add interpreter discovery or a configurable Windows Python. Missing interpreter, unavailable interop/helper, or unsupported/unverified/ambiguous mappings must produce a sanitized, actionable reason. Refuse unsupported WSL2/9p mappings clearly and defer WSL2 support; no real WSL2 behavior has been verified and no support claim follows from source inspection.
 
@@ -47,13 +47,9 @@ Timeout, killed/lost helper, missing/malformed acknowledgment, or a failure at/a
 
 Present sanitized readiness/preflight reasons directly and state that the refused operation changed no originals; distinguish unavailable support from a busy lease. Reserve durable-outcome uncertainty/manual-review wording for execution that may have mutated an original or could not settle its durable result. In a partial batch, a later refused item must not produce an operation-wide claim that nothing changed.
 
-### Owner decision — preserve generated images and recover on startup only
+### Owner decision — omit generation recovery from PR #76
 
-Include the following **lightweight generation recovery in PR #76 before merge**, reusing the existing generation attempt store, save pipeline and request/effective metadata. After a valid provider response arrives, persist the returned image payloads plus the minimum information required to finish the normal local save in **durable, non-cache staging**, before attempting the original-file save. Use atomic staging completion evidence to distinguish complete files from partial writes; never claim recoverability from an in-memory-only result or incomplete staging. Preserve staged data and record the save failure if the original-file lock, filesystem write or attempt-state commit fails. No new dependency, separate recovery service or remote provider request is allowed for this path; do not add any predispatch I/O/lock check merely to support it.
-
-On DTFlow startup, make **one nonblocking local recovery pass** over complete unsaved staged generations. Each eligible generation gets at most one final-save retry per startup, under the actual original-file lock. If locking or saving is still unavailable, keep the original staged files and durable failure state untouched for the next restart. **No periodic background check, no retry when other operations begin, and no provider resubmission.** Use the existing attempt identity and idempotent final paths to avoid duplicated saved images. Discard staged copies only after confirming the final files and durable successful save state. **Never automatically purge unsaved generated images**, including for age or cache cleanup; redundant staging after verified recovery is safe to clean.
-
-When the startup pass leaves unsaved generated images, show the existing **amber/orange warning overlay** with the number of images and say they remain preserved for the next startup. The overlay may expire according to existing rules; dismissing it never changes durable save/recovery state. No separate recovery screen, manual retry button, loop, scheduler or provider call.
+The owner explicitly accepts the risk that a provider-completed generation may be lost if its final local save fails, including the possibility of paying again to regenerate. **Do not implement** a new durable output-staging area, save-retry state machine, startup generation-recovery pass, scheduled/local automatic retries, special retention policy, or recovery notification/UI in this PR. Keep the existing generation attempt/history records and normal save/error handling; surface a clear failure when the actual original-file lock or local save is unavailable. Do not automatically resubmit potentially billable generation. The cheap static bridge capability check before provider dispatch and the interoperable original-file lock at actual save time remain required. This simplification applies **only to generation-output recovery**; deletion-ledger restart reconciliation, durable outcomes, no-replay and amber warnings for uncertain deletes remain in scope.
 
 ### Owner decision — show uncertain-delete warnings immediately and at restart
 
@@ -75,8 +71,8 @@ Keep `RecycleTarget.mounts` and fresh per-file mapping discovery: the frozen-tar
 - [ ] Add the native/helper confirmed-pre-mutation refusal contract; contain expected native validation exceptions and settle unchanged refusals as `failed` without aborting later files.
 - [ ] Retain `uncertain` for possible mutation, acknowledgment loss, changed originals and unsettled durable writes; preserve no-replay behavior.
 - [ ] Separate readiness/preflight, per-item refusal and execution-uncertainty UI messages; warn for unresolved uncertain deletions both on attempt and startup with the existing amber overlay.
-- [ ] Add durable staged generation outputs and idempotent, local-only, one-pass startup recovery; keep unsaved images indefinitely, never resubmit the provider or retry periodically.
-- [ ] Reuse amber overlay for startup-recovery failures and unresolved uncertain deletes without clearing durable status.
+- [ ] Show a clear local-save failure if generation succeeds remotely but its original-file lock or disk save fails; preserve existing attempt/history evidence, without new generation staging, local retry machinery or provider resubmission.
+- [ ] Reuse the amber overlay for unresolved uncertain deletes without clearing durable ledger status.
 - [ ] Polish the two-item split dropdown with shared Qt tokens/QSS, checkmark/icon treatment and an offline open-menu preview fixture.
 - [ ] Synchronize architecture, desktop/policy/release docs and PR body when the remediation is implemented, then run owner-authorized Ruff lint/format and report runtime acceptance separately.
 
@@ -133,6 +129,6 @@ Those Ruff results and probes cover the initial implementation, not the pending 
 - [ ] Owner cancellation, changed file/reference/mount and redirect refusals.
 - [ ] Owner exports/history/metadata untouched and Trash regression checks.
 
-- [ ] Owner staging and interrupted/disk-failed save acceptance: unsaved provider results survive restart and cache cleanup, idempotent recovery retries the local save only once at startup, and neither provider resubmission nor automatic purge occurs.
-- [ ] Owner amber/orange startup warnings for unresolved generated images and uncertain deletions, plus immediate warning on uncertain permanent-delete attempts; overlay expiry does not alter durable states.
+- [ ] Owner local-save lock/disk failure acceptance: report the failure accurately, retain existing attempt/history evidence, and do not stage images, attempt automatic generation recovery or resubmit provider work.
+- [ ] Owner amber/orange startup warning for unresolved uncertain deletions, plus immediate warning on uncertain permanent-delete attempts; overlay expiry does not alter durable ledger state.
 - [ ] Owner split-menu visual, keyboard, accessibility/DPI and disabled-Trash acceptance; choosing a mode never performs deletion.
