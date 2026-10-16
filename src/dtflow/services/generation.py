@@ -27,7 +27,12 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.logging_setup import ATTEMPT
-from dtflow.persistence.original_io import OriginalImagesUnavailableError, original_images_lock, require_originals_ready
+from dtflow.persistence.original_io import (
+    OriginalImagesBusyError,
+    OriginalImagesUnavailableError,
+    original_images_lock,
+    require_originals_ready,
+)
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
@@ -375,11 +380,21 @@ class GenerationService:
             )
             raise BackendError(failure) from exc
         except Exception as exc:
+            local_save_failure = (
+                state == "saving"
+                and outcome == RemoteOutcome.SUCCEEDED
+                and isinstance(exc, (OriginalImagesUnavailableError, OriginalImagesBusyError, OSError))
+            )
             category = ErrorCategory.PERSISTENCE if state in ("saving", "prepared") else ErrorCategory.PROTOCOL
             failure = BackendFailure(
                 category,
-                "output_or_protocol_failure",
-                "Output could not be validated or durably saved.",
+                "local_save_unavailable" if local_save_failure else "output_or_protocol_failure",
+                (
+                    "The image was generated but could not be saved locally; it may not have been saved "
+                    "or may be incomplete, and generating again may be billed."
+                    if local_save_failure
+                    else "Output could not be validated or durably saved."
+                ),
                 request.request_id,
                 stage,
                 outcome,
