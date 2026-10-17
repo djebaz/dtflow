@@ -1515,6 +1515,15 @@ class GalleryPage(QObject):
         if self._loading or self._adjacent_loading or not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
             return
         target = (page_number - 1) * PAGE_SIZE
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=page_jump page=%d target_offset=%d mounted_start=%d mounted=%d resident=%s",
+                page_number,
+                target,
+                self.offset,
+                len(self.items),
+                self.offset <= target < self.offset + len(self.items),
+            )
         if self.items and self.offset <= target < self.offset + len(self.items):
             index = target - self.offset
             if self.mode == "Grid":
