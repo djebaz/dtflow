@@ -376,12 +376,14 @@ def recycle_preflight_batch(
             db.create_function("original_key", 1, path_key)
             keys = tuple(dict.fromkeys(path_key(path) for path in paths))
             attempts = _candidate_attempts(keys)
-            # SQLite evaluates these terms in written order: the cheap attempt
-            # substring filter must precede the Python original_key callback.
-            prefilter = (
-                " AND EXISTS (SELECT 1 FROM json_each(?) allowed WHERE instr(lower(p.value), allowed.value) > 0)"
+            # SQLite moves correlated EXISTS terms after plain ones, so the cheap
+            # attempt filter gates the Python original_key callback through CASE.
+            match = "original_key(p.value) IN (SELECT value FROM json_each(?))"
+            condition = (
+                " AND CASE WHEN EXISTS (SELECT 1 FROM json_each(?) allowed"
+                f" WHERE instr(lower(p.value), allowed.value) > 0) THEN {match} ELSE 0 END"
                 if attempts is not None
-                else ""
+                else f" AND {match}"
             )
             parameters = (json.dumps(attempts), json.dumps(keys)) if attempts is not None else (json.dumps(keys),)
             counts = dict(
@@ -391,8 +393,7 @@ def recycle_preflight_batch(
                            THEN a.artifacts_json ELSE '[]' END) p
                    WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
                      AND p.type='text' AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
-                    + prefilter
-                    + " AND original_key(p.value) IN (SELECT value FROM json_each(?))"
+                    + condition
                     + " GROUP BY original_key(p.value)",
                     parameters,
                 )
@@ -423,7 +424,7 @@ def path_reference_count(state: Path, path: str, *, path_key: Callable[[str], st
             db.create_function("original_key", 1, path_key)
             key = path_key(path)
             attempts = _candidate_attempts((key,))
-            # Cheap substring filter first; SQLite evaluates terms in written order.
+            # The plain instr term precedes the callback, so SQLite checks it first.
             prefilter = " AND instr(lower(p.value), ?) > 0" if attempts is not None else ""
             parameters = (attempts[0], key) if attempts is not None else (key,)
             return int(

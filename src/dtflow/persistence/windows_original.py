@@ -180,6 +180,8 @@ class _LeaseHelper:
         self.local = {name: threading.Lock() for name in _LEASE_NAMES}
         self.process = None
         self.messages: queue.Queue = queue.Queue()
+        # Bumped on every start; a lease taken under an older helper was lost with it.
+        self.generation = 0
 
     def _spawn(self):
         process = _start(self.command, dict(action="serve", state=self.state))
@@ -195,6 +197,7 @@ class _LeaseHelper:
 
         threading.Thread(target=receive, daemon=True, name="dtflow-windows-lease").start()
         self.process, self.messages = process, messages
+        self.generation += 1
         if not self._answer(30)["ok"]:
             self._discard()
             raise OSError("Windows original-file helper could not open the shared state.")
@@ -241,6 +244,8 @@ class _LeaseHelper:
             while True:
                 response = self._call(dict(op="try", filename=filename))
                 if response["ok"]:
+                    with self.io:
+                        generation = self.generation
                     break
                 if response.get("error") or time.monotonic() >= deadline:
                     raise OSError("Original-file lease is held by another process.")
@@ -248,14 +253,21 @@ class _LeaseHelper:
             try:
                 yield
             finally:
-                try:
-                    released = self._call(dict(op="release", filename=filename))["ok"]
-                except OSError:
-                    released = True  # The failed helper was discarded, which released its locks.
-                if not released:
-                    # Unknown lock state: dropping the helper releases its Windows locks.
-                    with self.io:
-                        self._discard()
+                with self.io:
+                    lost = self.process is None or self.process.poll() is not None or self.generation != generation
+                if lost:
+                    # Windows released this lock when its helper was discarded, so other
+                    # processes could have entered while this thread still worked.
+                    log.warning("windows original-file lease lost lease=%s", filename.removesuffix(".lock"))
+                else:
+                    try:
+                        released = self._call(dict(op="release", filename=filename))["ok"]
+                    except OSError:
+                        released = True  # The failed helper was discarded, which released its locks.
+                    if not released:
+                        # Unknown lock state: dropping the helper releases its Windows locks.
+                        with self.io:
+                            self._discard()
         finally:
             self.local[filename].release()
 
