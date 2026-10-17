@@ -938,9 +938,51 @@ def render_gallery_composition_states(shell, state, out):
             assert len(gallery._grid_buttons) == len(gallery.items)
             return records
 
+        def grid_visible(*, loaded, loading=False):
+            """Present the actual visible Grid card range, not a hardcoded fixture range."""
+            QTest.qWait(60)
+            viewport = gallery.grid_viewport
+            visible = []
+            for position, record in enumerate(gallery.items, gallery.offset + 1):
+                card = gallery._grid_buttons[record.identity].parentWidget()
+                y = card.mapTo(viewport, QPoint(0, 0)).y()
+                if y < viewport.height() and y + card.height() > 0:
+                    visible.append(position)
+            assert visible, "Grid viewport has no visible synthetic cards"
+            first, last = visible[0], visible[-1]
+            gallery.pager.present(
+                total=gallery.total,
+                visible_start=first,
+                visible_end=last,
+                loaded=loaded,
+                active_page=(first - 1) // gallery_ui.PAGE_SIZE + 1,
+                loading=loading,
+            )
+            return first, last, set(visible)
+
+        def list_visible(*, loaded):
+            """Read displayed List rows from the real table viewport."""
+            QTest.qWait(60)
+            top = gallery.table.rowAt(0)
+            assert top >= 0, "No visible List row"
+            bottom = gallery.table.rowAt(gallery.table.viewport().height() - 1)
+            if bottom < 0:
+                bottom = gallery.table.rowCount() - 1
+            first, last = gallery.offset + top + 1, gallery.offset + bottom + 1
+            gallery.pager.present(
+                total=gallery.total,
+                visible_start=first,
+                visible_end=last,
+                loaded=loaded,
+                active_page=(first - 1) // gallery_ui.PAGE_SIZE + 1,
+            )
+            return first, last
+
         gallery.show_view("Grid")
         first_batch = multi_window(1, 80, first_visible=1, last_visible=24)
-        assert gallery.pager.range.text() == "1–24 of 342"
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        start, end, _ = grid_visible(loaded=80)
+        assert start == 1 and end <= 80
         assert gallery.pager.buttons[1].isChecked()
         snap("images-73-pager-first-batch-grid")
 
@@ -948,10 +990,8 @@ def render_gallery_composition_states(shell, state, out):
         gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[first_batch[-1].identity])
         QTest.qWait(50)
         assert gallery.grid_scroll.verticalScrollBar().maximum() > 0
-        gallery.pager.present(
-            total=342, visible_start=65, visible_end=80,
-            loaded=80, active_page=1, loading=True,
-        )
+        at_edge, _end, positions = grid_visible(loaded=80, loading=True)
+        assert at_edge <= 80 and 80 in positions
         snap("images-74-pager-prefetch-boundary-grid")
 
         # The second batch is appended to the *same mounted listing* and the
@@ -961,15 +1001,22 @@ def render_gallery_composition_states(shell, state, out):
         assert gallery._grid_buttons[first_batch[0].identity] is saved_first_button
         assert second_batch[79].identity in gallery._grid_buttons
         assert second_batch[80].identity in gallery._grid_buttons
-        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[second_batch[80].identity])
-        QTest.qWait(50)
+        # Position the actual viewport at the 80/81 seam, then measure it.
+        # The extra QGridLayout reflow after append can reset an earlier scroll.
+        card_81 = gallery._grid_buttons[second_batch[80].identity].parentWidget()
+        gallery.grid_scroll.verticalScrollBar().setValue(
+            max(0, card_81.y() - gallery.grid_viewport.height() // 2)
+        )
+        _first, _last, visible = grid_visible(loaded=160)
+        assert 80 in visible and 81 in visible, "Appended Grid batch boundary is not on screen"
         snap("images-75-pager-two-batches-grid")
 
-        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[second_batch[128].identity])
-        gallery.pager.present(
-            total=342, visible_start=129, visible_end=152, loaded=160, active_page=2
+        card_129 = gallery._grid_buttons[second_batch[128].identity].parentWidget()
+        gallery.grid_scroll.verticalScrollBar().setValue(
+            max(0, card_129.y() - gallery.grid_viewport.height() // 3)
         )
-        QTest.qWait(50)
+        first, _last, visible = grid_visible(loaded=160)
+        assert 129 in visible and first >= 81
         assert gallery.pager.buttons[2].isChecked()
         snap("images-76-pager-scrolled-second-batch-grid")
         gallery._widget("galleryFocusButton", QPushButton).click()
@@ -980,11 +1027,9 @@ def render_gallery_composition_states(shell, state, out):
 
         gallery.show_view("List")
         # The List really contains 160 distinct table rows and can scroll into batch 2.
-        gallery.table.scrollToItem(gallery.table.item(80, 2))
-        gallery.pager.present(
-            total=342, visible_start=81, visible_end=98, loaded=160, active_page=2
-        )
-        QTest.qWait(50)
+        gallery.table.scrollToItem(gallery.table.item(100, 2))
+        start, _end = list_visible(loaded=160)
+        assert start >= 81 and gallery.pager.buttons[2].isChecked()
         assert gallery.table.item(79, 2).text() == "image-0080.png"
         assert gallery.table.item(80, 2).text() == "image-0081.png"
         snap("images-78-pager-two-batches-list")
@@ -1000,23 +1045,35 @@ def render_gallery_composition_states(shell, state, out):
             first = (page_number - 1) * gallery_ui.PAGE_SIZE + 1
             last = min(342, first + gallery_ui.PAGE_SIZE - 1)
             multi_window(first, last, first_visible=first, last_visible=min(last, first + 17))
+            # Direct jumps should start at the selected batch, not inherit the
+            # scroll offset of the previous 160-image listing.
+            gallery.table.verticalScrollBar().setValue(0)
+            gallery.grid_scroll.verticalScrollBar().setValue(0)
+            list_visible(loaded=last - first + 1)
 
         gallery.pager.on_jump = fixture_jump
         gallery.pager.buttons[5].click()
         assert gallery.offset == 320 and gallery.total == 342 and len(gallery.items) == 22
         assert gallery.pager.buttons[5].isChecked()
-        assert gallery.pager.range.text() == "321–338 of 342"
+        assert gallery.pager.range.text().startswith("321–")
         snap("images-80-pager-direct-jump-last-batch-list")
         gallery.show_view("Grid")
+        first, _last, _visible = grid_visible(loaded=22)
+        assert first == 321 and gallery.pager.buttons[5].isChecked()
         snap("images-81-pager-direct-jump-last-batch-grid")
 
         # A larger library forces ellipses and tests that 7+ chip controls
         # still remain inside the pager at a reduced window width.
         multi_window(961, 1040, total=1540, first_visible=961, last_visible=984)
-        assert gallery.pager.buttons[13].isChecked() and len(gallery.pager._gaps) == 2
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        first, _last, _visible = grid_visible(loaded=80)
+        assert first == 961 and gallery.pager.buttons[13].isChecked()
+        assert len(gallery.pager._gaps) == 2
         snap("images-82-pager-many-pages-ellipsis")
         form.resize(800, 680)
         QTest.qWait(130)
+        first, _last, _visible = grid_visible(loaded=80)
+        assert first == 961
         snap("images-83-pager-many-pages-narrow")
         form.resize(1600, 1000)
         QTest.qWait(100)
