@@ -23,6 +23,8 @@ from dtflow.persistence.store import PersistenceError
 log = logging.getLogger(__name__)
 FILENAME = "gallery_snapshot.sqlite3"
 VERSION = 1
+MAX_SNAPSHOT_BYTES = 2 * 1024**3
+PUBLICATION_SECONDS = 10
 _enabled = True
 _pool = None
 _pool_lock = threading.Lock()
@@ -59,7 +61,7 @@ def _reader(state: Path):
     from dtflow.persistence.gallery import lora_order
 
     path = path_for(state)
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > 2 * 1024**3:
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_SNAPSHOT_BYTES:
         raise PersistenceError("No supported gallery snapshot is available.")
     uri = path.as_uri() + "?mode=ro&immutable=1"
     db = sqlite3.connect(uri, uri=True, timeout=1)
@@ -118,6 +120,15 @@ def _source(state):
                 db.close()
 
 
+def _publication_budget(db, deadline):
+    if time.monotonic() > deadline:
+        raise TimeoutError("Gallery publication exceeded its work budget.")
+    pages = db.execute("PRAGMA page_count").fetchone()[0]
+    page_size = db.execute("PRAGMA page_size").fetchone()[0]
+    if pages * page_size > MAX_SNAPSHOT_BYTES:
+        raise OSError("Gallery publication exceeds the supported size.")
+
+
 def publish_if_changed(state: Path) -> bool:
     """Best-effort worker publication after a session/clean close; retain old on failure."""
     if not _enabled:
@@ -125,6 +136,7 @@ def publish_if_changed(state: Path) -> bool:
 
     temporary = None
     started = time.monotonic()
+    deadline = started + PUBLICATION_SECONDS
     stage = "source"
     try:
         # Prevent removal/reconciliation from changing the availability projection
@@ -166,6 +178,8 @@ def publish_if_changed(state: Path) -> bool:
                 pass
             output = sqlite3.connect(temporary)
             try:
+                output.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+                _publication_budget(output, deadline)
                 output.execute("PRAGMA journal_mode=DELETE")
                 output.execute("PRAGMA synchronous=FULL")
                 output.execute(_ATTEMPTS_SQL)
@@ -174,28 +188,34 @@ def publish_if_changed(state: Path) -> bool:
                     WHERE state='succeeded' AND remote_outcome='succeeded'""")
                 count = 0
                 while batch := rows.fetchmany(128):
-                    if time.monotonic() - started > 10:
-                        raise TimeoutError("Gallery publication exceeded its work budget.")
+                    _publication_budget(output, deadline)
                     output.executemany("INSERT INTO attempts VALUES (?,?,?,?,?,?,?,?)", batch)
+                    _publication_budget(output, deadline)
                     count += len(batch)
                 output.execute("CREATE TABLE records (identity TEXT PRIMARY KEY, outcome TEXT NOT NULL)")
                 outcomes = source.execute("SELECT identity,outcome FROM image_recycle.records")
                 while batch := outcomes.fetchmany(128):
+                    _publication_budget(output, deadline)
                     output.executemany("INSERT INTO records VALUES (?,?)", batch)
+                    _publication_budget(output, deadline)
                 output.execute("CREATE TABLE snapshot_info (version INTEGER,published_utc TEXT,signature TEXT)")
                 output.execute(
                     "INSERT INTO snapshot_info VALUES (?,?,?)", (VERSION, datetime.now(UTC).isoformat(), signature)
                 )
                 output.execute(f"PRAGMA user_version={VERSION}")
+                _publication_budget(output, deadline)
                 output.commit()
+                _publication_budget(output, deadline)
             finally:
                 output.close()
             stage = "flush"
             # Windows _commit/FlushFileBuffers requires a writable descriptor.
             with temporary.open("r+b") as stream:
-                if os.fstat(stream.fileno()).st_size > 2 * 1024**3:
+                if os.fstat(stream.fileno()).st_size > MAX_SNAPSHOT_BYTES:
                     raise OSError("Gallery publication exceeds the supported size.")
                 os.fsync(stream.fileno())
+            if time.monotonic() > deadline:
+                raise TimeoutError("Gallery publication exceeded its finalization budget.")
             stage = "replace"
             os.replace(temporary, destination)
         log.info("gallery snapshot published attempts=%d elapsed_ms=%d", count, (time.monotonic() - started) * 1000)
