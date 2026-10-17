@@ -21,6 +21,9 @@ from support.network_guard import install  # noqa: E402
 
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
+    # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
+    os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402

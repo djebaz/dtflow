@@ -256,13 +256,13 @@ For fake, `fake-fixture` produces the bundled illustrative lighthouse at the req
 Only when requested, run the offline renderer from the repository root:
 
 ```powershell
-$env:QT_QPA_PLATFORM = 'offscreen'
-$env:QT_QPA_FONTDIR = 'C:\Windows\Fonts'
 uv run python tools/ui/render_states.py --out tmp/ui-renders
 ```
 
-On Windows, offscreen rendering needs `QT_QPA_FONTDIR=C:\Windows\Fonts` for fonts;
-alternatively use `QT_QPA_PLATFORM=windows` (visible windows). The renderer blocks
+The renderer defaults to `QT_QPA_PLATFORM=offscreen`. On Windows, offscreen rendering
+needs `QT_QPA_FONTDIR=C:\Windows\Fonts` for fonts (otherwise text renders as squares);
+the script sets it to `%WINDIR%\Fonts` when unset, and an explicit value wins.
+Alternatively use `QT_QPA_PLATFORM=windows` (visible windows). The renderer blocks
 provider network traffic and uses temporary state, fixture images/masks and fake
 providers. It renders only explicitly listed states; an unlisted view has no preview.
 
