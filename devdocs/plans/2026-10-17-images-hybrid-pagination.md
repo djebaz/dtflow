@@ -1,7 +1,7 @@
 # Images Option 2a — hybrid pagination and lazy scroll
 
 Date: 2026-10-17  
-Status: Implementation in progress  
+Status: Qt presentation and offline review complete; production bounded hybrid scrolling in implementation  
 Base: latest `main` when branch was created
 
 ## Approved UX contract
@@ -33,7 +33,7 @@ Follow `AGENTS.md`, `DESIGN.md`, `README.md`, `devdocs/current_dev_status.md`, `
 - Capture state names and visual output; compare geometry, contrast, truncation and fullscreen placement with Option 2a. Repair visual issues before advancing.
 - Push immediately. Renders/CI must report only checks actually run.
 
-**Artifact layout:** Option 2a captures are collected under `images/pagination/` in the UI renders ZIP and separately enumerated in the Actions run summary. All other existing preview filenames and locations remain unchanged.
+**Artifact layout:** Approved pager captures are collected under `image-navigation/`, shown as **Image Navigation** in the Actions summary (not a slash-separated category). Other preview names and locations remain unchanged.
 
 ### 3. Live hybrid browsing (commit 4)
 - Make Grid/List vertical scroll load further 80-record batches seamlessly; prefetch before reaching the bottom. Expose direct jump-chip navigation, correct visible-range/active-chip tracking, and a bounded window for widgets and decode work so gallery growth does not exhaust memory.
@@ -57,3 +57,11 @@ Follow `AGENTS.md`, `DESIGN.md`, `README.md`, `devdocs/current_dev_status.md`, `
 7. Offline rendering remains provider-free; normal/fullscreen captures expose design mismatch before live integration.
 
 Record what was actually verified and what still needs owner smoke testing.
+
+## Progress and current evidence (2026-10-17)
+
+- **Completed:** approved [standalone 2a HTML reference](../../devdocs/mockups/images_hybrid_pager_2a.html); canonical 46 px Designer pager and bounded jump chips; shared position normal/fullscreen; corrected chip clipping; Qt offscreen fullscreen virtual display at 1600×1000; 19 multipage/navigation screenshots organized in **Image Navigation**. Preview now simulates 80-image batches, direct jump to the partial last page, loading and large-library ellipsis.
+- **Completed:** modern 36 px centered Qt ring in its own Designer form. During first entry, live DB or snapshot fallback with no committed cards, appear after 180 ms; loaded cards remain usable during refresh. Empty-read failure becomes a Retry state. Additional offline loader screenshots included. Do not confuse it with generation or remote progress.
+- **Evidence:** run [39040948400](https://github.com/djebaz/dtflow/actions/runs/39040948400) passed UI renders; CI [39040948377 attempt 2](https://github.com/djebaz/dtflow/actions/runs/39040948377) passed **612 tests, 3 skipped** after an intermittent unrelated queue reservation test timeout on attempt 1. This is not native Windows/DPI acceptance.
+- **Pending production phase:** live contiguous append/prepend, bounded Qt window, active chip from visible viewport, jumped batch fetching and snapshot fallback. Existing per-80 replacement navigation is a transitional implementation, not yet hybrid.
+- **Safety gates:** keep cursor/anchor while clipping the loaded window, six decoder concurrency, mutation authority and snapshot warnings. Never infer that screenshot mocks prove the background paging service.

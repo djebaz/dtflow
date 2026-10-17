@@ -1,5 +1,7 @@
 # Current development status
 
+**Active PR #89 (2026-10-17):** approved Option 2a Images hybrid pager presentation, fullscreen consistency, centered first-read/snapshot loading ring and provider-free Image Navigation renders are implemented on the PR branch; **live continuous bounded lazy loading remains in progress**. CI rerun at `48aaff8` passed 612 tests / 3 skipped after an isolated queue-test timeout; UI render workflow passed. Offscreen evidence is not Windows acceptance. See [hybrid pagination plan](plans/2026-10-17-images-hybrid-pagination.md).
+
 Snapshot: 2026-10-17. Release 4.0.0 is in preparation ([notes](releases/v4.0.0.md)); the application version does not declare completion of provisional roadmap gates. Final clean packaged acceptance is pending. Phase 8A viewing, the catalogue-driven Generate discovery from PR #40 and the 8B–8D presets, reuse and cache management from PR #46 are implemented on main. The 0.3.0 publication evidence below is retained from the earlier snapshot; PR #31 build/draft workflow status is not re-verified here.
 This is coding orientation against [initial.md](plans/initial.md), not a release declaration. Implementation scope comes from source/plan inspection; owner-reported tests and interactive smoke observations are recorded separately. The agent ran no live generation or provider operations.
 

@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #89 review: image-navigation screenshots are grouped in a dedicated artifact folder; corrected Qt pager chip alignment and 1600×1000 fullscreen screenshots. The delayed gallery loading ring now covers the initial saved-output DB/snapshot read and empty-card retry only. Live bounded hybrid scrolling remains under implementation; offline screenshots are not proof of deployed behavior.
+
 - PR #89 (in progress): Images gains a delayed centered 36 px Qt spinning ring for the first empty-card database/snapshot read and empty-card retries. Existing Grid/List/Detail cards are not obscured during background updates; failed initial reads show Retry rather than an indefinite spinner. The states are included in offline Image Navigation screenshots. Production/native UI acceptance remains separate; no image generation or provider charges were performed.
 
 - PR #87 remaining-state slices B2/C/D1: add Generate 36–40 (asset receipt/error/reconciliation), Queues 11–23 (ownership, uncertainty, row states, planners, settled tables and narrow layout), and Images 53–64 (shared export column, Detail metadata/focus/availability/provenance/LoRAs/native zoom and empty filters). The source-listed total is 200; Ruff lint/format passed. These reuse the isolated shell with synthetic read views/GUI settlements and closed worker coroutines; no queue dispatch, reservation acknowledgement, copying, uploads, tests, local renders, inference or provider actions ran. The owner reports Actions passed through the previous commit `c24f7c5`; latest execution/visual acceptance is pending.

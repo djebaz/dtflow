@@ -154,6 +154,8 @@ During generation or queue dispatch, the window owns the state directory. Genera
 
 ## Images
 
+The approved **Option 2a** pager above the gallery viewport shows the actual visible image range, total and numbered 80-image batch chips. Its position and appearance do not change in fullscreen. The **Image Navigation** artifact folder contains the dedicated offline screenshots. The initially rendered pager UI and loading ring are present in PR #89; live continuous-scroll integration is tracked in [the implementation plan](../plans/2026-10-17-images-hybrid-pagination.md).
+
 When Images first opens, its saved-output database query can be followed by a read-only
 snapshot fallback. While that read is pending **and no committed image cards are on
 screen**, a thin animated ring appears after 180 ms in the center of the gallery
