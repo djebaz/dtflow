@@ -2593,17 +2593,20 @@ class GalleryPage(QObject):
     def _scrollbar_action(self, mode: str, action: int) -> None:
         if mode != self.mode.casefold():
             return
-        # SliderMove is handled by sliderMoved, which also yields drag direction.
-        if action in (
-            QAbstractSlider.SliderAction.SliderSingleStepAdd,
-            QAbstractSlider.SliderAction.SliderPageStepAdd,
-            QAbstractSlider.SliderAction.SliderToMaximum,
+        # actionTriggered(int) emits a plain integer under Qt; compare the
+        # explicit enum values rather than relying on Enum/int equality.
+        action_value = action.value if isinstance(action, QAbstractSlider.SliderAction) else action
+        # SliderMove is handled by sliderMoved, which yields drag direction.
+        if action_value in (
+            QAbstractSlider.SliderAction.SliderSingleStepAdd.value,
+            QAbstractSlider.SliderAction.SliderPageStepAdd.value,
+            QAbstractSlider.SliderAction.SliderToMaximum.value,
         ):
             self._request_boundary_prefetch(1, "scrollbar")
-        elif action in (
-            QAbstractSlider.SliderAction.SliderSingleStepSub,
-            QAbstractSlider.SliderAction.SliderPageStepSub,
-            QAbstractSlider.SliderAction.SliderToMinimum,
+        elif action_value in (
+            QAbstractSlider.SliderAction.SliderSingleStepSub.value,
+            QAbstractSlider.SliderAction.SliderPageStepSub.value,
+            QAbstractSlider.SliderAction.SliderToMinimum.value,
         ):
             self._request_boundary_prefetch(-1, "scrollbar")
 
