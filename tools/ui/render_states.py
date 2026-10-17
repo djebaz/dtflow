@@ -235,6 +235,18 @@ def render_mapped_gallery_states(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            # WSL Open Folder that could not reach the Windows shell: an amber reason, never a silent no-op.
+            activity_strip(shell.form).complete(
+                "export-folder",
+                "Could not open the export folder",
+                "Windows interop is unavailable here, so the Windows shell cannot be started.",
+                "warning",
+            )
+            QTest.qWait(50)
+            target = out / "45-images-open-folder-unavailable.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
         finally:
             shell.runner.shutdown()
             shell.form.close()

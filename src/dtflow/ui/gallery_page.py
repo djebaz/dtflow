@@ -12,9 +12,8 @@ from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtGui import (
-    QDesktopServices,
     QIcon,
     QImage,
     QImageReader,
@@ -61,6 +60,7 @@ from dtflow.services.gallery import (
 )
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
+from dtflow.ui.desktop_open import open_local
 from dtflow.ui.gallery_detail_preview import (
     ASSETS,
     CoverPainter,
@@ -2070,11 +2070,9 @@ class GalleryPage(QObject):
         if action == "copy":
             QApplication.clipboard().setText(result)
         elif action == "folder":
-            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(result).parent))):
-                self._selection_notice("Could not open the image folder with the system file manager.")
+            open_local(self.runner, Path(result).parent, folder=True, failed=self._selection_notice)
         elif action == "external":
-            if not QDesktopServices.openUrl(QUrl.fromLocalFile(result)):
-                self._selection_notice("Could not open the image with the system viewer.")
+            open_local(self.runner, Path(result), folder=False, failed=self._selection_notice)
         elif action == "edit" and self._edit_callback is not None:
             self._edit_callback(result)
 

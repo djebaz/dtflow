@@ -60,6 +60,8 @@
 
 ## Fixed
 
+- Under WSL, Images **Open Folder** / **Open in External Viewer** and the export panel's **Open Folder** hand the path to Windows Explorer through `wslpath` and Windows interop (discrete arguments, no shell string), instead of a Linux desktop opener that silently did nothing. Native Windows and Linux keep Qt desktop services, and every platform now reports a launch it could not start (#81). Explorer cannot confirm that a window opened. Source-only; owner WSL1 smoke pending.
+
 - Images under WSL1 no longer blanket-disables Use settings, Regenerate and Edit image for Windows-recorded outputs: settings and regeneration need only the recorded request, Edit reuses the verified leased read handoff, and each button's tooltip states its own reason when unavailable (#80). Source-only; owner WSL1 smoke pending.
 
 - Find people reads a person model chosen in Windows through its verified WSL drive mount (the saved path and SHA-256 stay unchanged), names a model that is not found, unreadable or chosen in the other environment before Find people is pressed, and logs only the error type (#78). Source-only; owner WSL1/Windows smoke pending.
