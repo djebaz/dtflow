@@ -1,12 +1,12 @@
 # Plan: remaining offline desktop render states
 
-Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: Connection 01–15 is source-present (A1 and A2). The owner reports A1 passed validation at `ecd58d0`; exact scenarios/platform were not supplied. A2 execution and visual acceptance remain pending; all other catalog additions remain planned.
+Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: Connection 01–35 is source-present (A1–A3). The owner reports A1 passed validation at `ecd58d0`; exact scenarios/platform were not supplied. A2/A3 execution and visual acceptance are not claimed here; all other catalog additions remain planned.
 
 ## Scope
 
 - In: extend `tools/ui/render_states.py` with dedicated offline screenshots of already implemented desktop states that are still absent, using the real forms, shared styles and existing presentation handlers. Complete the batches below in this same PR, updating this plan at each coherent checkpoint.
-- Out: new product features, changes to provider protocols or persistence semantics, GUI redesign, new dependencies, packaging, native file-picker screenshots, live credential access, network traffic, real generation, uploads, ONNX execution, real Trash/permanent deletion, tests and local validation/render execution.
-- The initial change wrote the plan and documentation links only. The owner subsequently requested Connection 01–05, then the next ten states (06–15). Checked catalog entries below mean source-present fixtures, not independently verified screenshots. No local execution/validation is authorized; the owner controls further implementation and CI/manual execution.
+- Out: new product features, changes to provider protocols or persistence semantics, GUI redesign, new dependencies, packaging, native file-picker screenshots, live credential access, network traffic, real generation, uploads, ONNX execution, real Trash/permanent deletion, tests, local renders and validation beyond owner-requested Ruff lint/format.
+- The initial change wrote the plan and documentation links only. The owner subsequently requested Connection 01–05, then the next ten states (06–15), then the next twenty (16–35), and explicitly requested lint/format for A3. Checked catalog entries below mean source-present fixtures, not independently verified screenshots. Only the requested static lint/format is authorized locally; the owner controls further implementation and CI/manual execution.
 
 ## GUI components affected by future fixtures
 
@@ -48,6 +48,7 @@ The baseline has 115 listed workflow renders. Existing screenshots can contain i
 - [x] Define named batches, safe fixture seams and excluded/deferred cases below.
 - [x] Implement A1 only: Connection 01–05, using one isolated temporary shell, a private synthetic environment mapping and an in-memory vault. Unused Generate inventory restoration is suppressed within this helper so a Cloud selection cannot consult process-environment credentials. No Check or credential action button is clicked; storage unavailability is injected at the saved-store boundary.
 - [x] Implement A2 only: Connection 06–15, reusing the A1 temporary shell. Intercept Check submission and key/preset services before real handlers run; close the unsubmitted check coroutine, inject neutral check outcomes, and replace native pickers with synthetic temporary paths. Scroll the preset card into view before capturing its controls and errors.
+- [x] Implement A3 only: Connection 16–35, reusing the same shell. Use a count-only mock catalogue with refused unlink/import, synthetic cache summaries/results, closed purge/export/measurement coroutines and synthetic export outcomes. No extra worker or window is introduced. Cache measuring reuses the canonical initial label; partial cleanup uses the existing red error presenter, not an invented amber result.
 - [ ] Implement A: Connection and the shared export flow.
 - [ ] Implement B: Generate editors, inventory/configuration and asset outcomes.
 - [ ] Implement C: active/problem Queues and planner composition.
@@ -135,26 +136,26 @@ Use injected status/credential observations and temporary library/cache summarie
 | [x] | `connection-13-presets-unreadable` | Unreadable preset-library presentation. |
 | [x] | `connection-14-preset-import-failed` | Import failure notice, no library replacement. |
 | [x] | `connection-15-preset-export-failed` | Export failure notice, no destination write. |
-| [ ] | `connection-16-clear-custom-loras-confirmation` | Danger confirmation with populated synthetic custom catalogue. |
-| [ ] | `connection-17-custom-lora-import-failed` | Invalid custom-LoRA import presentation. |
-| [ ] | `connection-18-custom-lora-clear-failed` | Custom catalogue clear failure presentation. |
-| [ ] | `connection-19-cache-measuring` | Measuring label with the applicable controls busy. |
-| [ ] | `connection-20-cache-measured` | Distinct bounded category counts/sizes from a synthetic usage result. |
-| [ ] | `connection-21-cache-unavailable` | Measurement-unavailable label/error. |
-| [ ] | `connection-22-cache-clear-confirmation` | Danger confirmation naming selected disposable categories. |
-| [ ] | `connection-23-cache-busy` | Busy refusal; no purge worker. |
-| [ ] | `connection-24-cache-clearing` | Real cache-operation overlay presentation with a non-executing worker seam. |
-| [ ] | `connection-25-cache-cleared` | Successful category-clear result. |
-| [ ] | `connection-26-cache-partial` | Partial clear result with retained busy/failed categories if that outcome has distinct presentation; otherwise document reuse of the real warning handler. |
-| [ ] | `connection-27-cache-clear-failed` | Clear failure result, without deleting anything. |
-| [ ] | `connection-28-export-idle` | Destination, scope combo, privacy/sidecar/routing choices and Start in the Connection card. |
-| [ ] | `connection-29-export-collecting` | Inputs disabled, Cancel available and indeterminate collecting presentation. |
-| [ ] | `connection-30-export-progress` | Named export overlay with a known completed/total count. |
-| [ ] | `connection-31-export-stopping` | Stop-after-current text and disabled Cancel. |
-| [ ] | `connection-32-export-success` | Exported/skipped counts, noise/blank advisory routing and enabled Open folder; do not launch it. |
-| [ ] | `connection-33-export-partial` | Partial result containing genuine failure/warning evidence, not informational notices alone. |
-| [ ] | `connection-34-export-stopped` | Stopped result preserving completed export counts. |
-| [ ] | `connection-35-export-failed` | Persistent failure presentation. |
+| [x] | `connection-16-clear-custom-loras-confirmation` | Danger confirmation with populated synthetic custom catalogue. |
+| [x] | `connection-17-custom-lora-import-failed` | Invalid custom-LoRA import presentation. |
+| [x] | `connection-18-custom-lora-clear-failed` | Custom catalogue clear failure presentation. |
+| [x] | `connection-19-cache-measuring` | Canonical initial measuring label; controls retain their real existing availability (the refresh handler does not disable them). |
+| [x] | `connection-20-cache-measured` | Distinct bounded category counts/sizes from a synthetic usage result. |
+| [x] | `connection-21-cache-unavailable` | Measurement-unavailable label/error. |
+| [x] | `connection-22-cache-clear-confirmation` | Danger confirmation naming selected disposable categories. |
+| [x] | `connection-23-cache-busy` | Busy refusal; no purge worker. |
+| [x] | `connection-24-cache-clearing` | Real cache-operation overlay presentation with a non-executing worker seam. |
+| [x] | `connection-25-cache-cleared` | Successful category-clear result. |
+| [x] | `connection-26-cache-partial` | Existing red Cache not cleared result for `CacheCleanupError`, naming completed categories and possible partial cleanup, alongside a synthetic retained Derived size. No separate amber partial presenter exists here. |
+| [x] | `connection-27-cache-clear-failed` | Clear failure result, without deleting anything. |
+| [x] | `connection-28-export-idle` | Destination, scope combo, privacy/sidecar/routing choices and Start in the Connection card. |
+| [x] | `connection-29-export-collecting` | Inputs disabled, Cancel available and indeterminate collecting presentation. |
+| [x] | `connection-30-export-progress` | Named export overlay with a known completed/total count. |
+| [x] | `connection-31-export-stopping` | Stop-after-current text and disabled Cancel. |
+| [x] | `connection-32-export-success` | Exported/skipped counts, noise/blank advisory routing and enabled Open folder; do not launch it. |
+| [x] | `connection-33-export-partial` | Partial result containing genuine failure/warning evidence, not informational notices alone. |
+| [x] | `connection-34-export-stopped` | Stopped result preserving completed export counts. |
+| [x] | `connection-35-export-failed` | Persistent failure presentation. |
 | [ ] | `connection-36-export-not-started` | Invalid/missing destination refusal through the real validation presentation. |
 | [ ] | `connection-37-export-no-matches` | Empty-scope result rather than a fabricated success count. |
 | [ ] | `connection-38-export-preferences-unavailable` | Saved-preference read failure/defaults message. |
@@ -291,8 +292,8 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 
 ## Validation and ownership
 
-- Current A2 slice: source editing/review only. No tests, lint, format checks, syntax checks, rendering, builds, training/inference or provider operations are run by the agent under the requested fast workflow.
-- [x] Owner: requested A1 (Connection 01–05), reported its validation passed, and requested A2 (06–15). Remaining batches still require a separate implementation request.
+- Current A3 slice: source editing/review and explicitly owner-requested Ruff lint/format only. The changed script was formatted; repository-wide Ruff lint and format checks passed. No tests, separate syntax checks, rendering, builds, training/inference or provider operations were run.
+- [x] Owner: requested A1 (Connection 01–05), reported its validation passed, and requested A2 (06–15) and A3 (16–35). Remaining batches still require a separate implementation request.
 - [ ] Owner/CI: execute the explicitly requested offline render batches and inspect the saved states/timings, including the known intermittent Detail-transition stall.
 - [ ] Owner: manual native Windows/DPI interaction acceptance where needed; no executable build is required by this fixture-only scope.
 
@@ -302,3 +303,4 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 - 2026-10-17: added stall-prevention methods, narrow transition markers, readiness/lifecycle guidance and an evidence-to-action triage table. This is documentation only; no stall fix or runtime result is claimed.
 - 2026-10-17: implemented A1 (Connection 01–05) in the renderer source. The five additions bring the source-listed total from 115 to 120; no new screenshots were produced locally. One temporary shell is reused only within this credential/layout batch and is shut down before the existing fixtures continue. The source uses real backend-selection/credential presentation and an injected in-memory vault; no connection check, generation, upload or real credential access was performed. No tests, lint, format checks, syntax checks or renders were run.
 - 2026-10-17: owner reports A1 passed validation after `ecd58d0`, without specifying exact scenarios/platform. Implemented the requested next ten states (Connection 06–15) in source, bringing the listed total to 130. No extra shell or pending check worker is introduced: the check coroutine is closed before submission, results are synthetic, and key/preset service calls fail at patched boundaries. Temporary picker paths are never read/written by import/export. No local tests, validation, renders, inference or provider operations were run; A2 acceptance remains pending.
+- 2026-10-17: implemented the requested next twenty states (A3, Connection 16–35), bringing the source-listed total to 150. The same isolated shell is reused; catalogue changes are refused at mock boundaries, cache/export work coroutines are closed before submission and GUI settlements use synthetic data. At the owner's explicit request, formatted the changed script and ran repository-wide Ruff lint/format checks; both passed. No local tests, renders, cache purge, export copying, inference or provider actions were run. Source inspection corrected two planned assumptions: measuring does not disable cache controls, and partial cache cleanup is an existing red error. Execution, native visual acceptance and the intermittent Detail-stall diagnosis remain separate.

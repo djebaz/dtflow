@@ -35,15 +35,18 @@ from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
+from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import ConnectionStatus, LoRASelection, ValidationError  # noqa: E402
+from dtflow.persistence.cache_coordination import CacheCleanupError  # noqa: E402
 from dtflow.persistence.image_recycle import ReconcileResult  # noqa: E402
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError  # noqa: E402
 from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.persistence.store import PersistenceError, StateBusyError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
+from dtflow.services.cache_management import CacheCategory  # noqa: E402
 from dtflow.services.credentials import KEY, SavedCredentials, SecureStorageUnavailable  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleResult, RecycleTarget, RecycleUnavailable  # noqa: E402
@@ -141,6 +144,7 @@ def render_connection_states(app, state, out):
         with patch.object(saved, "_store", side_effect=SecureStorageUnavailable):
             snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
         render_connection_outcomes(shell, out)
+        render_connection_management(shell, out)
     finally:
         shell.runner.shutdown()
         shell.form.close()
@@ -215,7 +219,9 @@ def render_connection_outcomes(shell, out):
         shell.refresh_presets()
     with (
         patch.object(window_ui.QFileDialog, "getOpenFileName", return_value=(chosen, "")),
-        patch.object(window_ui, "import_presets", side_effect=ValidationError("Offline fixture: preset import refused.")),
+        patch.object(
+            window_ui, "import_presets", side_effect=ValidationError("Offline fixture: preset import refused.")
+        ),
     ):
         form.importPresetsButton.click()
         assert form.importPresetsButton.property("confirmationPending")
@@ -233,6 +239,162 @@ def render_connection_outcomes(shell, out):
         snap("connection-15-preset-export-failed")
         shell.inline.dismiss()
     shell.refresh_presets()
+
+
+def render_connection_management(shell, out):
+    """Catalogue/cache/export presentation; mutations and queued workers never execute."""
+    form, strip = shell.form, shell.progress_strip
+
+    def snap(name):
+        QTest.qWait(100)
+        save(form, out, name)
+
+    def clear():
+        shell.inline.dismiss()
+        for key in tuple(strip.rows):
+            strip.finish(key)
+
+    def hold_worker(coroutine, callback):
+        coroutine.close()  # No purge, export, preference write or cache measurement is started.
+
+    shell.shell.leftScroll.ensureWidgetVisible(form.customLorasBox)
+    with patch.object(window_ui, "Catalogue") as catalogue_type:
+        catalogue = catalogue_type.return_value
+        catalogue.user_loras.return_value = ("offline-count-only-definition",)
+        catalogue.user_loras_path.exists.return_value = True
+        catalogue.user_loras_path.unlink.side_effect = OSError("Offline fixture: catalogue removal refused.")
+        shell.refresh_custom_loras()
+        assert form.clearCustomLorasButton.isEnabled()
+        form.clearCustomLorasButton.click()
+        assert form.clearCustomLorasButton.property("confirmationPending")
+        assert form.clearCustomLorasButton.property("confirmationDanger")
+        snap("connection-16-clear-custom-loras-confirmation")
+        clear()
+        with (
+            patch.object(
+                window_ui.QFileDialog,
+                "getOpenFileName",
+                return_value=(str(shell.state_dir / "offline-loras.json"), ""),
+            ),
+            patch.object(window_ui, "import_user_loras", side_effect=ValueError("Offline fixture: invalid LoRA JSON.")),
+        ):
+            form.importCustomLorasButton.click()
+            assert shell.inline.form.inlineTitleLabel.text() == "Custom LoRAs not imported"
+            snap("connection-17-custom-lora-import-failed")
+            clear()
+        form.clearCustomLorasButton.click()
+        assert form.clearCustomLorasButton.property("confirmationPending")
+        form.clearCustomLorasButton.click()
+        assert shell.inline.form.inlineTitleLabel.text() == "Custom LoRAs not cleared"
+        snap("connection-18-custom-lora-clear-failed")
+        clear()
+    shell.refresh_custom_loras()
+    shell.shell.leftScroll.verticalScrollBar().setValue(0)
+
+    with patch.object(shell.runner, "submit", side_effect=hold_worker):
+        form.connectionWorkspaceScroll.ensureWidgetVisible(form.cacheManagementBox)
+        # Presentation fixture: refresh_cache does not reset its label, so restore the canonical initial text.
+        form.cacheStatusLabel.setText("Measuring cache…")
+        shell.refresh_cache()
+        snap("connection-19-cache-measuring")
+        usage = (
+            CacheCategory("inventory", 2, 4096),
+            CacheCategory("thumbnails", 0, 0),
+            CacheCategory("derived", 3, 8192),
+        )
+        shell._cache_measured(usage, None)
+        assert "Inventory" in form.cacheStatusLabel.text() and "Derived" in form.cacheStatusLabel.text()
+        snap("connection-20-cache-measured")
+        shell._cache_measured(None, OSError("Offline fixture"))
+        assert "unavailable" in form.cacheStatusLabel.text()
+        snap("connection-21-cache-unavailable")
+        shell._cache_measured(usage, None)
+        form.clearAllCacheButton.click()
+        assert form.clearAllCacheButton.property("confirmationPending")
+        assert form.clearAllCacheButton.property("confirmationDanger")
+        snap("connection-22-cache-clear-confirmation")
+        clear()
+        shell.activity.set(dispatching=True)
+        try:
+            form.clearAllCacheButton.click()
+            assert any(row.activityLabel.text() == "Cache is busy" for row in strip.rows.values())
+            snap("connection-23-cache-busy")
+        finally:
+            shell.activity.set(dispatching=False)
+            clear()
+        form.clearAllCacheButton.click()
+        assert form.clearAllCacheButton.property("confirmationPending")
+        form.clearAllCacheButton.click()
+        assert strip.rows["cache"].activityLabel.text() == "Clearing disposable cache"
+        snap("connection-24-cache-clearing")
+        names = "inventory, thumbnails, derived"
+        shell._cache_cleared(names, None)
+        shell._cache_measured(tuple(CacheCategory(item.name, 0, 0) for item in usage), None)
+        snap("connection-25-cache-cleared")
+        clear()
+        # Partial cleanup is an error in the existing presenter, never a fabricated amber success.
+        shell._cache_cleared(
+            names,
+            CacheCleanupError(
+                "Cache cleanup stopped at derived; completed categories: inventory, thumbnails. "
+                "Partial cleanup may have occurred; refresh sizes and retry."
+            ),
+        )
+        shell._cache_measured((CacheCategory("inventory", 0, 0), CacheCategory("thumbnails", 0, 0), usage[2]), None)
+        snap("connection-26-cache-partial")
+        clear()
+        shell._cache_cleared(names, OSError("Offline fixture"))
+        snap("connection-27-cache-clear-failed")
+        clear()
+
+        export = shell.image_export
+        destination = str(shell.state_dir / "offline-export")
+        form.connectionWorkspaceScroll.ensureWidgetVisible(form.imageExportBox)
+        form.imageExportFolderEdit.setText(destination)
+        form.imageExportScopeCombo.setCurrentIndex(form.imageExportScopeCombo.findData("all"))
+        assert form.imageExportStartButton.isEnabled() and not form.imageExportCancelButton.isEnabled()
+        snap("connection-28-export-idle")
+        form.imageExportStartButton.click()
+        assert export.running and not form.imageExportStartButton.isEnabled()
+        assert form.imageExportCancelButton.isEnabled()
+        snap("connection-29-export-collecting")
+        export._progress(2, 5)
+        snap("connection-30-export-progress")
+        form.imageExportCancelButton.click()
+        assert export._stop.is_set() and not form.imageExportCancelButton.isEnabled()
+        snap("connection-31-export-stopping")
+        export._done(ExportResult(destination, 5, 3, 0, False, noise=1, blank=1, skipped=2), None)
+        assert not export.running and form.imageExportOpenButton.isEnabled()
+        snap("connection-32-export-success")
+        clear()
+        form.imageExportStartButton.click()
+        assert export.running
+        export._done(
+            ExportResult(
+                destination,
+                5,
+                3,
+                1,
+                False,
+                warnings=("Offline fixture: one source was unavailable.",),
+                skipped=1,
+            ),
+            None,
+        )
+        snap("connection-33-export-partial")
+        clear()
+        form.imageExportStartButton.click()
+        assert export.running
+        export._progress(1, 5)
+        export.cancel()
+        export._done(ExportResult(destination, 5, 2, 0, True, skipped=1), None)
+        snap("connection-34-export-stopped")
+        clear()
+        form.imageExportStartButton.click()
+        assert export.running
+        export._done(None, OSError("Offline fixture"))
+        snap("connection-35-export-failed")
+        clear()
 
 
 def render_removal_and_selection_states(shell, item, plan, out):
