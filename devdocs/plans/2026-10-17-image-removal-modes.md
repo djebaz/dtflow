@@ -6,6 +6,8 @@ Post-review follow-up (2026-10-17, after `f36a339`): P1 widget recovery and P2 m
 
 ### Gallery recovery and snapshot checkpoint
 
+CI run `39007127663` at `82943f4`: lockfile/Ruff/SQLite steps passed; offline pytest reported 22 failed, 590 passed and 3 skipped. All failures traced to snapshot launch configuration assuming every CLI namespace has `no_cache`. Fix uses the existing false default when that optional attribute is absent; no new tests or local pytest run. Remote CI must confirm the follow-up.
+
 - [x] P1: force refresh recovery through normal reconciliation, not the first-render sentinel; clear an initial failure-label reference with its layout.
 - [x] P1 fixture review: gate the first query before window construction, refuse snapshot fallback, assert no successful render occurred, then allow the real query/recovery path and explicitly deliver deferred deletion before inspecting the replacement label. Existing offline renderer only; not executed and no new test file.
 - [x] P2: derive and validate native image/sidecar locations independently of image existence, including surviving metadata inspection.

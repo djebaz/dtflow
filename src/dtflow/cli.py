@@ -669,7 +669,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     from dtflow.persistence.gallery_snapshot import configure
 
-    configure(no_cache=args.no_cache)
+    configure(no_cache=getattr(args, "no_cache", False))
     logging_session = None if args.command == "test" else start_logging(args)
     try:
         if args.command == "gui":

@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76 CI follow-up: snapshot initialization defaults cache bypass to false for CLI subcommands without `--no-cache`, fixing their pre-dispatch `Namespace.no_cache` crash. No flags or command semantics changed; no tests added.
+
 - PR #76 fixture review: initial gallery query failure is now gated before window construction and goes through the real query callback, with no snapshot fallback. Recovery checks first-render state and the replacement label after deferred deletion. Production code unchanged; fixture not rendered and no new test file.
 
 - PR #76: browsing-only gallery snapshot when live cross-runtime database reads fail, with UTC timestamp, filters/paging and automatic return to live browsing. Publish after generation/queue sessions and clean close only when changed or missing; retain the prior snapshot on failure. Snapshot state cannot authorize export, editing or deletion; original-file safeguards remain. Derived cleanup and `--no-cache` apply. Separate review fixes preserve widget ownership on recovery and classify missing WSL1-recorded originals/sidecars on Windows. Ruff lint passed; no new tests, renders or actual generation/deletion. Owner snapshot acceptance remains pending; see [architecture](../architecture/gallery-snapshot.md).
