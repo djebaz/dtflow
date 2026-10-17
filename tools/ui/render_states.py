@@ -37,7 +37,7 @@ from support.fake_vault import Vault  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
-from dtflow.core.models import LoRASelection  # noqa: E402
+from dtflow.core.models import ConnectionStatus, LoRASelection, ValidationError  # noqa: E402
 from dtflow.persistence.image_recycle import ReconcileResult  # noqa: E402
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError  # noqa: E402
 from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
@@ -50,6 +50,7 @@ from dtflow.services.image_recycle import RecyclePlan, RecycleResult, RecycleTar
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
+from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.generation_page import GenerationPage  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
@@ -101,7 +102,7 @@ def save(widget, out, name):
 
 @patch.object(GenerationPage, "request_cached", new=lambda self, **_: None)
 def render_connection_states(app, state, out):
-    """Connection layout/credential sources only; no check, key action or provider work is submitted."""
+    """Connection fixtures with synthetic credentials and intercepted provider/file mutations."""
     # Unused Generate inventory restoration can otherwise resolve the real process environment on Cloud selection.
     environ = {}
     saved = SavedCredentials(Vault())
@@ -139,10 +140,99 @@ def render_connection_states(app, state, out):
 
         with patch.object(saved, "_store", side_effect=SecureStorageUnavailable):
             snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
+        render_connection_outcomes(shell, out)
     finally:
         shell.runner.shutdown()
         shell.form.close()
         app.processEvents()
+
+
+def render_connection_outcomes(shell, out):
+    """Check/key/preset presentation through real handlers; all service work is intercepted."""
+    form, saved = shell.form, shell._saved
+
+    def snap(name):
+        QTest.qWait(100)
+        save(form, out, name)
+
+    def hold_check(coroutine, callback):
+        coroutine.close()  # Show Checking without starting a backend or leaving a gated task behind.
+
+    with patch.object(shell.runner, "submit", side_effect=hold_check), patch.object(shell, "remember"):
+        shell.check()
+        assert not form.checkButton.isEnabled() and form.statusCard.property("state") == "warning"
+        snap("connection-06-checking")
+        status = ConnectionStatus(
+            "cloud", "offline://connection-fixture", "2026-10-17T12:00:00+00:00", "ok", "ok", "unknown"
+        )
+        shell._checked(status, None)
+        assert form.checkButton.isEnabled() and form.statusCard.property("state") == "ok"
+        snap("connection-07-connected")
+        shell._checked(None, TimeoutError())
+        assert form.statusCard.property("state") == "error"
+        snap("connection-08-check-failed")
+
+    shell._selection_changed()
+    shell.refresh_credentials()
+    assert form.removeKeyButton.isEnabled()
+    form.removeKeyButton.click()
+    assert form.removeKeyButton.property("confirmationPending")
+    assert not form.removeKeyButton.property("confirmationDanger")
+    snap("connection-09-remove-key-confirmation")
+    shell.inline.dismiss()
+    with patch.object(saved, "save", side_effect=SecureStorageUnavailable):
+        form.keyEdit.setText("offline-saved-key")
+        form.saveKeyButton.click()
+        assert form.credentialStatusLabel.text().startswith("Key not saved:") and not form.keyEdit.text()
+        snap("connection-10-key-save-failed")
+    shell.refresh_credentials()
+    with patch.object(saved, "remove", side_effect=SecureStorageUnavailable):
+        form.removeKeyButton.click()
+        assert form.removeKeyButton.property("confirmationPending")
+        form.removeKeyButton.click()
+        assert form.credentialStatusLabel.text().startswith("Key not removed:")
+        snap("connection-11-key-remove-failed")
+    shell.refresh_credentials()
+
+    # Native picker selections are synthetic; import/export services never read or write these paths.
+    chosen = str(shell.state_dir / "offline-presets.json")
+    library = [{"name": "Offline fixture", "configuration": {}}]
+    with patch.object(window_ui, "load_presets", return_value=library):
+        shell.refresh_presets()
+    form.connectionWorkspaceScroll.ensureWidgetVisible(form.presetLibraryBox)
+    with patch.object(window_ui.QFileDialog, "getOpenFileName", return_value=(chosen, "")):
+        form.importPresetsButton.click()
+        assert form.importPresetsButton.property("confirmationPending")
+        assert not form.importPresetsButton.property("confirmationDanger")
+        snap("connection-12-replace-presets-confirmation")
+        shell.inline.dismiss()
+    with patch.object(window_ui, "load_presets", side_effect=ValidationError("Offline fixture: invalid preset JSON.")):
+        shell.refresh_presets()
+        assert not form.exportPresetsButton.isEnabled()
+        assert "unreadable" in form.presetLibraryStatusLabel.text()
+        snap("connection-13-presets-unreadable")
+    with patch.object(window_ui, "load_presets", return_value=library):
+        shell.refresh_presets()
+    with (
+        patch.object(window_ui.QFileDialog, "getOpenFileName", return_value=(chosen, "")),
+        patch.object(window_ui, "import_presets", side_effect=ValidationError("Offline fixture: preset import refused.")),
+    ):
+        form.importPresetsButton.click()
+        assert form.importPresetsButton.property("confirmationPending")
+        form.importPresetsButton.click()
+        assert shell.inline.form.inlineTitleLabel.text() == "Presets not imported"
+        snap("connection-14-preset-import-failed")
+        shell.inline.dismiss()
+    with (
+        patch.object(window_ui.QFileDialog, "getSaveFileName", return_value=(chosen, "")),
+        patch.object(window_ui, "export_presets", side_effect=OSError("Offline fixture: preset destination refused.")),
+    ):
+        assert form.exportPresetsButton.isEnabled()
+        form.exportPresetsButton.click()
+        assert shell.inline.form.inlineTitleLabel.text() == "Presets not exported"
+        snap("connection-15-preset-export-failed")
+        shell.inline.dismiss()
+    shell.refresh_presets()
 
 
 def render_removal_and_selection_states(shell, item, plan, out):
