@@ -1191,14 +1191,10 @@ def render_gallery_composition_states(shell, state, out):
             gallery.eventFilter(gallery.grid_viewport, SyntheticWheel(120))
             request.assert_called_once_with(-1, "wheel")
         with patch.object(gallery, "_request_boundary_prefetch") as request:
-            gallery._scrollbar_action(
-                "grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepAdd.value
-            )
+            gallery._scrollbar_action("grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepAdd.value)
             request.assert_called_once_with(1, "scrollbar")
         with patch.object(gallery, "_request_boundary_prefetch") as request:
-            gallery._scrollbar_action(
-                "grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepSub.value
-            )
+            gallery._scrollbar_action("grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepSub.value)
             request.assert_called_once_with(-1, "scrollbar")
         snap("images-82-pager-many-pages-ellipsis")
         form.resize(800, 680)
