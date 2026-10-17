@@ -41,7 +41,9 @@ def matches_managed_state(state: Path, recorded: str, tail: tuple[str, ...]) -> 
     )
 
 
-def verify_managed_sidecar(image: Path, sidecar: Path, row: dict, *, check_digest: bool = True) -> None:
+def verify_managed_sidecar(
+    image: Path, sidecar: Path, row: dict, *, check_digest: bool = True, check_size: bool = True
+) -> None:
     """Prove recorded sidecar ownership; check output SHA when it is available."""
     try:
         with sidecar.open("rb") as stream:
@@ -69,7 +71,7 @@ def verify_managed_sidecar(image: Path, sidecar: Path, row: dict, *, check_diges
         if len(matches) != 1:
             raise ValueError
         size = matches[0].get("size_bytes")
-        if size is not None and (type(size) is not int or size != image.stat().st_size):
+        if check_size and size is not None and (type(size) is not int or size != image.stat().st_size):
             raise ValueError
         operation = document.get("image_operation")
         digest = operation.get("final_sha256") if isinstance(operation, dict) else None

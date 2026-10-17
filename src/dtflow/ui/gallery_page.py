@@ -974,7 +974,7 @@ class GalleryPage(QObject):
         self._sync_selection_ui()
 
     def recycle_completed(self, recycled: tuple[str, ...]) -> None:
-        """Reconcile only proven recycled identities; retain failed/uncertain checks."""
+        """Clear settled removal identities; retain failed/uncertain checks."""
         if recycled:
             self.selection.checked.difference_update(recycled)
             if self.selection.anchor in recycled:

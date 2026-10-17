@@ -131,6 +131,25 @@ def claim_recycle_intent(
     return changed == 1
 
 
+def record_confirmed_absent(state: Path, operation_id: str, identity: str, path: str) -> bool:
+    """Hide an explicitly confirmed absent original without claiming file deletion.
+
+    There is no external mutation to replay. Only a new or known-failed identity
+    may settle as absent; the ledger keeps the original path and attempt history.
+    """
+    with writer(state) as db:
+        changed = db.execute(
+            _RECORD_UPSERT + " WHERE records.outcome='failed'",
+            (identity, path, "absent", operation_id, 0, 0, _now()),
+        ).rowcount
+        if changed:
+            db.execute(
+                "UPDATE operations SET completed_count=completed_count+1 WHERE operation_id=?",
+                (operation_id,),
+            )
+    return changed == 1
+
+
 def finish_operation(state: Path, operation_id: str, outcome: str) -> None:
     with writer(state) as db:
         db.execute("UPDATE operations SET outcome=? WHERE operation_id=?", (outcome, operation_id))

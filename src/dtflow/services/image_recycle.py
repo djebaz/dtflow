@@ -62,6 +62,17 @@ class RecycleTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class AbsentTarget:
+    """A verified missing original and its immutable provenance snapshot."""
+
+    identity: str
+    path: str
+    recorded_path: str
+    metadata_fingerprint: tuple[int, int, int, int]
+    mounts: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class RecyclePlan:
     """An immutable, bounded target snapshot; never a live gallery query."""
 
@@ -71,6 +82,7 @@ class RecyclePlan:
     hidden: int
     requested: int
     action: str = "trash"
+    absent_targets: tuple[AbsentTarget, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +98,7 @@ class RecycleResult:
     canceled: bool
     failure_details: tuple[tuple[str, str], ...] = ()
     deleted: tuple[str, ...] = ()
+    absent: tuple[str, ...] = ()
 
 
 def _managed_key(path: str) -> str:
@@ -198,6 +211,90 @@ def _regular_managed_file(
     )
 
 
+def _confirmed_absent_final(
+    state: Path,
+    record: dict,
+    *,
+    reference_counts: dict[str, int] | None = None,
+    paths: ArtifactReadPaths,
+) -> AbsentTarget | None:
+    """Verify a missing final under a canonical managed state and matching sidecar.
+
+    A failed path mapping, unavailable parent or unreadable file is not absence.
+    Never use the read-only gallery alias as deletion authority.
+    """
+    attempt, ordinal = record.get("attempt_id"), record.get("ordinal")
+    if (
+        not isinstance(attempt, str)
+        or not _ATTEMPT_ID.fullmatch(attempt)
+        or type(ordinal) is not int
+        or ordinal < 0
+        or record.get("identity") != f"{attempt}:{ordinal}"
+    ):
+        return None
+    root = Path(state).absolute()
+    try:
+        if root.resolve(strict=True) != root:
+            return None
+    except OSError:
+        return None
+    image = root / "outputs" / attempt / f"final-{ordinal + 1}.png"
+    sidecar = image.parent / "metadata.json"
+    recorded, metadata = record.get("path"), record.get("metadata_path")
+    if not isinstance(recorded, str) or not isinstance(metadata, str):
+        return None
+    if os.name == "nt" and recorded.startswith("/"):
+        tail = ("outputs", attempt)
+        if not matches_managed_state(root, recorded, (*tail, image.name)) or not matches_managed_state(
+            root, metadata, (*tail, "metadata.json")
+        ):
+            return None
+    else:
+        try:
+            native, native_metadata = Path(paths.resolve(recorded)), Path(paths.resolve(metadata))
+        except (OSError, ValueError, TypeError):
+            return None
+        if not native.is_absolute() or os.path.normcase(os.path.normpath(str(native))) != os.path.normcase(
+            str(image)
+        ):
+            return None
+        if os.path.normcase(os.path.normpath(str(native_metadata))) != os.path.normcase(str(sidecar)):
+            return None
+    try:
+        for component in (*reversed(root.parents), root, root / "outputs", image.parent, sidecar):
+            attrs = component.lstat()
+            if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
+                return None
+            if getattr(attrs, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+                return None
+        if not stat.S_ISDIR(image.parent.stat().st_mode):
+            return None
+        info = sidecar.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or sidecar.resolve(strict=True) != sidecar:
+            return None
+        try:
+            image.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            return None
+        verify_managed_sidecar(image, sidecar, record, check_digest=False, check_size=False)
+        after = sidecar.stat()
+        fingerprint = (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev)
+        if fingerprint != (after.st_size, after.st_mtime_ns, after.st_ino, after.st_dev):
+            return None
+    except (OSError, ValueError):
+        return None
+    count = (
+        gallery_storage.path_reference_count(state, recorded, path_key=_managed_key)
+        if reference_counts is None
+        else reference_counts.get(_managed_key(recorded), 0)
+    )
+    if count != 1:
+        return None
+    return AbsentTarget(str(record["identity"]), str(image), recorded, fingerprint, paths.mounts)
+
+
 def prepare_recycle(
     state: Path,
     identities: tuple[str, ...],
@@ -229,6 +326,7 @@ def prepare_recycle(
         _added, hidden, _omitted, _matched = gallery_storage.selection_candidates(state, query, unique)
     states = ledger.outcomes(state)
     eligible = []
+    absent_targets = []
     missing = ineligible = 0
     for offset in range(0, len(unique), gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH):
         batch = unique[offset : offset + gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH]
@@ -247,6 +345,15 @@ def prepare_recycle(
                 state, record, reference_counts=reference_counts, permanent=permanent, paths=paths
             )
             if target is None:
+                if permanent:
+                    absent_target = _confirmed_absent_final(
+                        state, record, reference_counts=reference_counts, paths=paths
+                    )
+                    if absent_target is not None:
+                        absent_targets.append(absent_target)
+                    else:
+                        ineligible += 1
+                    continue
                 if os.name == "nt" and isinstance(record.get("path"), str) and record["path"].startswith("/"):
                     # Unverified WSL aliases are ineligible, not proven absent.
                     # Durable confirmed-absence handling is tracked separately.
@@ -268,7 +375,9 @@ def prepare_recycle(
                     ineligible += 1
                     continue
             eligible.append(target)
-    return RecyclePlan(tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique), action)
+    return RecyclePlan(
+        tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique), action, tuple(absent_targets)
+    )
 
 
 def _permanent_remove(state: Path, target: RecycleTarget) -> None:
@@ -347,6 +456,7 @@ def recycle_outputs(
     permanent = plan.action == "permanent"
     recycled: list[str] = []
     deleted: list[str] = []
+    absent: list[str] = []
     failed: list[str] = []
     uncertain: list[str] = []
     failure_details: list[tuple[str, str]] = []
@@ -354,9 +464,10 @@ def recycle_outputs(
     ineligible = plan.ineligible
     processed = 0
     operation_id = ("delete-" if permanent else "trash-") + uuid4().hex
+    targets = (*plan.targets, *plan.absent_targets)
     with recycle_batch_lock(state):
-        ledger.start_operation(state, operation_id, len(plan.targets))
-        for target in plan.targets:
+        ledger.start_operation(state, operation_id, len(targets))
+        for target in targets:
             if stop.is_set():
                 break
             # This lease MUST precede the per-image ledger claim and external mutation.
@@ -364,7 +475,20 @@ def recycle_outputs(
             # first lease cannot have modified an original.
             with original_images_lock(state):
                 record = gallery_storage.get_record(state, target.identity)
-                if record is None or not _unchanged(target):
+                if isinstance(target, AbsentTarget):
+                    paths = ArtifactReadPaths.discover()
+                    fresh = _confirmed_absent_final(state, record, paths=paths) if record is not None else None
+                    if fresh != target:
+                        ineligible += 1
+                    elif not ledger.record_confirmed_absent(
+                        state, operation_id, target.identity, target.recorded_path
+                    ):
+                        ineligible += 1
+                        if len(failure_details) < 100:
+                            failure_details.append((target.identity, "ledger_requires_review"))
+                    else:
+                        absent.append(target.identity)
+                elif record is None or not _unchanged(target):
                     if not Path(target.path).is_file():
                         missing += 1
                     else:
@@ -441,7 +565,7 @@ def recycle_outputs(
                             failed.append(target.identity)
             processed += 1
             if progress:
-                progress(processed, len(plan.targets))
+                progress(processed, len(targets))
         canceled = stop.is_set()
         ledger.finish_operation(state, operation_id, "canceled" if canceled else "complete")
     return RecycleResult(
@@ -450,8 +574,9 @@ def recycle_outputs(
         tuple(uncertain),
         missing,
         ineligible,
-        len(plan.targets) - processed,
+        len(targets) - processed,
         canceled,
         tuple(failure_details),
         tuple(deleted),
+        tuple(absent),
     )

@@ -218,7 +218,7 @@ class ImageRecyclePanel(QObject):
         ):
             self._cancel_confirmation()
             return
-        eligible = len(plan.targets)
+        eligible = len(plan.targets) + len(plan.absent_targets)
         if not eligible:
             self._running = False
             self.gallery.set_recycle_busy(False)
@@ -231,12 +231,14 @@ class ImageRecyclePanel(QObject):
             return
         permanent = plan.action == "permanent"
         message = (
-            f"{eligible} eligible · {plan.hidden} checked images hidden by filters included · "
+            f"{len(plan.targets)} originals · {len(plan.absent_targets)} confirmed missing cards · "
+            f"{plan.hidden} checked images hidden by filters included · "
             f"{plan.missing} missing · {plan.ineligible} ineligible (untouched). "
         )
         message += (
-            "PERMANENT AND IRREVERSIBLE: originals will be destroyed, bypassing Trash/Recycle Bin. "
-            "No Undo or recovery guarantee. Metadata, exports and generation history are preserved."
+            "PERMANENT AND IRREVERSIBLE: existing originals will be destroyed, bypassing Trash/Recycle Bin; "
+            "confirmed missing cards will be hidden without claiming physical deletion. "
+            "No Undo. Metadata, exports and generation history are preserved."
             if permanent
             else f"Restore manually through {TRASH_NAME}; no DTFlow Undo or restoration guarantee. "
             "Recovered files stay hidden pending content-verified recovery. Exports and generation history preserved."
@@ -248,7 +250,7 @@ class ImageRecyclePanel(QObject):
         confirm_action(
             self.parent_widget,
             self.gallery.delete_button,
-            f"Permanently delete {eligible} selected originals?"
+            f"Delete {eligible} selected gallery images?"
             if permanent
             else f"Move {eligible} selected originals to {TRASH_NAME}?",
             message,
@@ -284,7 +286,7 @@ class ImageRecyclePanel(QObject):
             "trash",
             "Deleting originals permanently" if self._action == "permanent" else f"Moving originals to {TRASH_NAME}",
             self.cancel,
-            total=len(plan.targets),
+            total=len(plan.targets) + len(plan.absent_targets),
         )
         self.runner.submit(
             asyncio.to_thread(
@@ -315,11 +317,12 @@ class ImageRecyclePanel(QObject):
             self.gallery.refresh(preserve=True)
             return
         self._phase = "idle"
-        self.gallery.recycle_completed(result.recycled + result.deleted)
+        self.gallery.recycle_completed(result.recycled + result.deleted + result.absent)
         label = "Permanent deletion" if self._action == "permanent" else TRASH_NAME
         summary = (
             (
-                f"{len(result.deleted)} permanently deleted.\n"
+                f"{len(result.deleted)} originals permanently deleted; "
+                f"{len(result.absent)} confirmed missing cards removed.\n"
                 if self._action == "permanent"
                 else f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.\n"
             )

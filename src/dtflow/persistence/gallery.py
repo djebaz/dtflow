@@ -38,7 +38,7 @@ WITH outputs AS (
    AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
    AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
                    WHERE r.identity = a.attempt_id || ':' || CAST(p.key AS INTEGER)
-                     AND r.outcome IN ('recycled', 'restored', 'deleted'))
+                     AND r.outcome IN ('recycled', 'restored', 'deleted', 'absent'))
 ), records AS (
  SELECT *, attempt_id || ':' || ordinal AS identity,
    json_extract(request_json, '$.model_id') AS model,
@@ -219,7 +219,7 @@ def available_export_identities(state: Path, identities: tuple[str, ...]) -> fro
                  AND json_type(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END,
                                '$[' || s.ordinal || ']')='text'
                  AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
-                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored', 'deleted'))""",
+                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored', 'deleted', 'absent'))""",
             (json.dumps(selected),),
         )
         return frozenset(row[0] for row in rows)
