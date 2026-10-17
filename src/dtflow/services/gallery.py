@@ -16,6 +16,7 @@ from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_locations, resolve_output_read
 
+
 @dataclass(frozen=True, slots=True)
 class GalleryEditSource:
     """A saved output selected for editing; never store its read-only access alias."""

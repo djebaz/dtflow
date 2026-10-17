@@ -53,8 +53,8 @@ from dtflow.persistence.store import PersistenceError
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery import (
-    GalleryEditSource,
     MISSING_ISSUE,
+    GalleryEditSource,
     copy_output_paths,
     filter_choices,
     inspect_output,
