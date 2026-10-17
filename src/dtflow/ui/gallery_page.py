@@ -496,6 +496,12 @@ class GalleryPage(QObject):
         self.film_scroll.verticalScrollBar().valueChanged.connect(
             lambda value: self._scroll_changed("filmstrip", value)
         )
+        # Qt emits valueChanged for programmatic anchor restore and reflow.
+        # Prefetch only on user scrollbar actions; viewport Wheel is handled
+        # separately in eventFilter.
+        for bar in (self.grid_scroll.verticalScrollBar(), self.table.verticalScrollBar()):
+            bar.actionTriggered.connect(lambda *_: QTimer.singleShot(0, self._maybe_load_boundary))
+            bar.sliderMoved.connect(lambda *_: QTimer.singleShot(0, self._maybe_load_boundary))
 
         for key, callback in (
             ("Left", lambda: self.step(-1)),
@@ -2548,7 +2554,6 @@ class GalleryPage(QObject):
         self._scroll[name] = max(0, value)
         if name in ("grid", "list") and (name == self.mode.casefold()):
             self._sync_pager()
-            QTimer.singleShot(0, self._maybe_load_boundary)
         self._schedule_save()
 
     def _capture_scroll(self) -> None:
