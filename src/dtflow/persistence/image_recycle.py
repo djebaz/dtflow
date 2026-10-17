@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import NamedTuple
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
+
 
 class ReconcileResult(NamedTuple):
     """Newly unsettled Trash and permanent intents from this pass only."""

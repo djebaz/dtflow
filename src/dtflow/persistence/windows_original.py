@@ -25,20 +25,34 @@ class RefusedBeforeMutation(OSError):
     """Windows deletion was confirmed not to have reached the disposition call."""
 
 
+class WindowsBridgeError(OSError):
+    """Stable, sanitized prerequisite or drive-mapping failure."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        messages = {
+            "mapping": "Windows drive mapping is unavailable or ambiguous.",
+            "redirect": "Redirected shared Windows paths are unsupported.",
+            "mount": "Shared filesystem has no verified Windows lock boundary.",
+            "interpreter": "This checkout requires a Windows .venv/Scripts/python.exe.",
+        }
+        super().__init__(messages[reason])
+
+
 def windows_path(path: Path, mounts) -> str:
     """Invert one verified whole-drive mapping, rejecting redirected components."""
     path = path.absolute()
     candidates = [(drive, Path(root)) for drive, root in mounts if path.is_relative_to(Path(root))]
     if len(candidates) != 1:
-        raise OSError("Shared Windows path is unavailable or ambiguous.")
+        raise WindowsBridgeError("mapping")
     drive, root = candidates[0]
     if len({mounted for letter, mounted in mounts if letter == drive}) != 1:
-        raise OSError("Windows drive has ambiguous mount roots.")
+        raise WindowsBridgeError("mapping")
     for component in (path, *path.parents):
         if component.is_symlink():
-            raise OSError("Redirected shared paths are not supported.")
+            raise WindowsBridgeError("redirect")
     if path.resolve() != path:
-        raise OSError("Shared path changed.")
+        raise WindowsBridgeError("redirect")
     return str(PureWindowsPath(drive + ":/", *path.relative_to(root).parts))
 
 
@@ -55,28 +69,33 @@ def bridge(state: Path):
         if "microsoft" in platform.release().lower():
             # Do not silently use Linux-only locks on an unrecognized Windows
             # mount (including failed discovery or unsupported WSL 2 mounts).
-            with Path("/proc/self/mountinfo").open("rb") as stream:
-                data = stream.read(1024 * 1024 + 1)
-            if len(data) > 1024 * 1024:
-                raise OSError("Mount information is unavailable.")
-            from dtflow.services.artifact_paths import _unescape
-
-            candidates = []
-            for line in data.decode("utf-8").splitlines():
-                before, separator, after = line.partition(" - ")
-                fields, filesystem = before.split(), after.split()
-                if separator and len(fields) >= 6 and filesystem:
-                    mount = Path(_unescape(fields[4]))
-                    if state.is_relative_to(mount):
-                        candidates.append((len(mount.parts), filesystem[0]))
-            if not candidates or max(candidates)[1] not in ("rootfs", "wslfs", "ext4"):
-                raise OSError("Shared filesystem has no verified Windows lock boundary.")
+            try:
+                with Path("/proc/self/mountinfo").open("rb") as stream:
+                    data = stream.read(1024 * 1024 + 1)
+                if len(data) > 1024 * 1024:
+                    raise WindowsBridgeError("mount")
+                from dtflow.services.artifact_paths import _unescape
+    
+                candidates = []
+                for line in data.decode("utf-8").splitlines():
+                    before, separator, after = line.partition(" - ")
+                    fields, filesystem = before.split(), after.split()
+                    if separator and len(fields) >= 6 and filesystem:
+                        mount = Path(_unescape(fields[4]))
+                        if state.is_relative_to(mount):
+                            candidates.append((len(mount.parts), filesystem[0]))
+                if not candidates or max(candidates)[1] not in ("rootfs", "wslfs", "ext4"):
+                    raise WindowsBridgeError("mount")
+            except WindowsBridgeError:
+                raise
+            except (OSError, UnicodeError, ValueError) as exc:
+                raise WindowsBridgeError("mount") from exc
         return None
     native_state = windows_path(state, paths.mounts)
     root = Path(__file__).resolve().parents[3]
     executable = root / ".venv" / "Scripts" / "python.exe"
     if not executable.is_file():
-        raise OSError("WSL shared originals require this checkout's Windows .venv.")
+        raise WindowsBridgeError("interpreter")
     windows_path(executable, paths.mounts)
     script = windows_path(Path(__file__).resolve(), paths.mounts)
     return [str(executable), script], native_state

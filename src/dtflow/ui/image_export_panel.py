@@ -15,6 +15,7 @@ from dtflow.core.export import ExportOptions
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence.export_preferences import load_export_preferences, save_export_preferences
+from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
 from dtflow.services.image_export import export_outputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
@@ -205,7 +206,7 @@ class ImageExportPanel(QObject):
             log.warning("image export stopped reason=%s", type(failure).__name__)
             message = (
                 str(failure)
-                if isinstance(failure, ValidationError)
+                if isinstance(failure, (ValidationError, OriginalImagesBusyError, OriginalImagesUnavailableError))
                 else "Export stopped; check destination permissions and saved outputs."
             )
             self.form.imageExportStatusLabel.setText(message)

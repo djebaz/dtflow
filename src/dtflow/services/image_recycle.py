@@ -20,7 +20,12 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
 from dtflow.persistence import windows_original
-from dtflow.persistence.original_io import original_images_lock, recycle_batch_lock, require_originals_ready
+from dtflow.persistence.original_io import (
+    original_images_lock,
+    recycle_batch_lock,
+    require_originals_ready,
+    windows_originals_bridge,
+)
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 
 
@@ -178,8 +183,6 @@ def prepare_recycle(
     if permanent:
         if Path(state).absolute() != Path(state).resolve():
             raise RecycleUnavailable("Redirected application state is ineligible.", stage="state_redirected")
-        # Discovery also refuses a shared-drive operation without the native helper.
-        windows_original.bridge(state)
     unique = tuple(dict.fromkeys(identities))
     if not 1 <= len(unique) <= 10_000:
         raise ValueError("Recycle selection must contain between 1 and 10,000 images.")
@@ -229,8 +232,8 @@ def prepare_recycle(
 def _permanent_remove(state: Path, target: RecycleTarget) -> None:
     """Only reached after fresh service checks and committed permanent intent."""
     try:
-        windows_boundary = os.name == "nt" or windows_original.bridge(state) is not None
-    except OSError as exc:
+        windows_boundary = os.name == "nt" or windows_originals_bridge(state) is not None
+    except (OSError, UnicodeError, ValueError) as exc:
         # No helper or disposition call could have been reached.
         raise RecycleUnavailable("Shared Windows deletion boundary is unavailable.", stage="delete_refused") from exc
     if windows_boundary:

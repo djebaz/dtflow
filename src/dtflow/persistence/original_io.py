@@ -25,16 +25,18 @@ def windows_originals_bridge(state: Path):
     """Check static bridge prerequisites without starting any helper or taking a lock."""
     if os.name == "nt":
         return None
-    from dtflow.persistence.windows_original import bridge
+    from dtflow.persistence.windows_original import WindowsBridgeError, bridge
 
     try:
         return bridge(Path(state))
     except (OSError, UnicodeError, ValueError) as exc:
-        message = str(exc)
-        if "Windows .venv" in message:
-            reason = "This checkout needs a Windows .venv/Scripts/python.exe for shared originals."
-        elif "Windows lock boundary" in message or "Mount information" in message:
-            reason = "The Windows-drive mount has no verified shared-lock support."
+        if isinstance(exc, WindowsBridgeError):
+            reason = {
+                "interpreter": "This checkout needs a Windows .venv/Scripts/python.exe for shared originals.",
+                "mapping": "The Windows/WSL drive mapping is unavailable or ambiguous.",
+                "redirect": "Redirected shared Windows paths are unsupported.",
+                "mount": "The Windows-drive mount has no verified shared-lock support.",
+            }[exc.reason]
         else:
             reason = "The required Windows original-file bridge is unavailable."
         raise OriginalImagesUnavailableError(
