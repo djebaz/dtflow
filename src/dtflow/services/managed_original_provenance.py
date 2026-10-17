@@ -12,6 +12,10 @@ import stat
 from pathlib import Path
 
 _MAX_METADATA_BYTES = 1024 * 1024
+# Display-only memo of digests already proven in this process, keyed by file
+# fingerprint. Removal and export never consult it; they always re-hash.
+_DISPLAY_DIGESTS: dict[tuple, bool] = {}
+_MAX_DISPLAY_DIGESTS = 4096
 
 
 def ensure_unredirected_path(path: Path) -> None:
@@ -93,7 +97,13 @@ def declared_raw_artifact(sidecar: Path, row: dict) -> tuple[str, str] | None:
 
 
 def verify_managed_sidecar(
-    image: Path, sidecar: Path, row: dict, *, check_digest: bool = True, check_size: bool = True
+    image: Path,
+    sidecar: Path,
+    row: dict,
+    *,
+    check_digest: bool = True,
+    check_size: bool = True,
+    display: bool = False,
 ) -> None:
     """Prove recorded sidecar ownership; check output SHA when it is available."""
     try:
@@ -129,7 +139,13 @@ def verify_managed_sidecar(
         if digest is not None and check_digest:
             if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
                 raise ValueError
-            if file_sha256(image) != digest:
-                raise ValueError
+            info = image.stat()
+            key = (str(image), info.st_size, info.st_mtime_ns, info.st_ino, digest)
+            if not (display and _DISPLAY_DIGESTS.get(key)):
+                if file_sha256(image) != digest:
+                    raise ValueError
+                if len(_DISPLAY_DIGESTS) >= _MAX_DISPLAY_DIGESTS:
+                    _DISPLAY_DIGESTS.clear()
+                _DISPLAY_DIGESTS[key] = True
     except (OSError, ValueError, KeyError, TypeError, UnicodeError) as exc:
         raise OSError("Managed output metadata or image content does not match its record.") from exc

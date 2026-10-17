@@ -208,8 +208,11 @@ async def inspect_output(state: Path, identity: str) -> GalleryDetail:
     return await asyncio.to_thread(read)
 
 
-def resolve_item_read(item: GalleryItem, state: Path) -> tuple[str, str]:
-    """Recheck a selected gallery row under the caller's original-file lease."""
+def resolve_item_read(item: GalleryItem, state: Path, *, display: bool = False) -> tuple[str, str]:
+    """Recheck a selected gallery row under the caller's original-file lease.
+
+    Display reads may reuse a digest proven earlier for the same file fingerprint.
+    """
     attempt, separator, number = item.identity.rpartition(":")
     if not separator or attempt != item.attempt_id or not number.isascii() or not number.isdecimal():
         raise OSError("Recorded output identity is inconsistent.")
@@ -226,5 +229,6 @@ def resolve_item_read(item: GalleryItem, state: Path) -> tuple[str, str]:
             "metadata_path": item.metadata_path,
         },
         verify=True,
+        display=display,
     )
     return image, metadata

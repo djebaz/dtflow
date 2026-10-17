@@ -105,7 +105,7 @@ Points 1–12 come from the owner's 2026-10-17 smoke comments on PR #76. [x] mea
 6. [x] **Windows inpaint outputs missing from the WSL grid** — retracted by the owner after retest; no change.
 7. [x] **Raw provider output disposed with its final** in both modes ([`c70ac91`](https://github.com/djebaz/dtflow/commit/c70ac91)).
 8. [x] **Read-action wording** — no exception class names, actionable busy text ([`f8343d2`](https://github.com/djebaz/dtflow/commit/f8343d2)). Per-item leases for Copy Paths are deferred: unmeasured, and they touch the verification boundary.
-9. [ ] **Thumbnail verification and mount-discovery cost** — deferred; no measurement was taken and a cheaper path would weaken the verified read boundary.
+9. [x] **Thumbnail lease and verification cost** — owner asked for items 1–3 of the performance review in this PR: one long-lived Windows lease helper per process instead of a process per lease; the ownership-count SQL applies its attempt substring filter before the Python key callback; thumbnails read bytes under the lease and decode outside it, and display reads reuse an image-edit digest already proven in this process for the same path/size/mtime/inode (removal and export always re-hash). Copy Paths batch leasing and per-file removal reference scans stay deferred.
 10. [x] **Legacy sidecar and alias limits** — documented as accepted limits in the release notes; no bypass added.
 11. [x] **Export decision record and lease scope** — recorded in [image export architecture](../architecture/image-export.md); PR title and body updated.
 12. [x] **Polish** — fonts built once per card ([`f8343d2`](https://github.com/djebaz/dtflow/commit/f8343d2)); icon DPI left as owner-accepted.

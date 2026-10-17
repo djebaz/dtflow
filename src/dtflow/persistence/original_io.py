@@ -16,8 +16,8 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 # Only report waits worth noticing; an uncontended lease is per-image routine.
 _SLOW_LEASE_SECONDS = 0.5
-# Every Windows-boundary lease starts a helper process (~1 s on WSL1), so only
-# waits well beyond that startup cost indicate a real competing owner.
+# The first Windows-boundary lease starts the long-lived helper (~1 s on WSL1),
+# so only waits well beyond that startup cost indicate a real competing owner.
 _SLOW_WINDOWS_LEASE_SECONDS = 5.0
 
 

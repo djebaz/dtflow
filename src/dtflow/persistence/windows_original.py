@@ -161,14 +161,155 @@ def _close(process):
         process.stdout.close()
 
 
+_LEASE_NAMES = ("original_images.lock", "image_recycle_operation.lock")
+
+
+class _LeaseHelper:
+    """One long-lived Windows helper per state; leases are cheap pipe round trips.
+
+    Starting Windows Python through WSL1 interop costs about a second, so the
+    helper is started once and asked to try, then release, each named lock.
+    Threads of this process are serialized by an in-process lock per name;
+    the helper's Windows lock excludes other processes. If the helper dies,
+    Windows releases its locks, so a broken helper is discarded and restarted.
+    """
+
+    def __init__(self, command, state):
+        self.command, self.state = command, state
+        self.io = threading.Lock()
+        self.local = {name: threading.Lock() for name in _LEASE_NAMES}
+        self.process = None
+        self.messages: queue.Queue = queue.Queue()
+
+    def _spawn(self):
+        process = _start(self.command, dict(action="serve", state=self.state))
+        messages: queue.Queue = queue.Queue()
+
+        def receive():
+            try:
+                for line in process.stdout:
+                    messages.put(line)
+            except (OSError, ValueError):
+                pass
+            messages.put("")
+
+        threading.Thread(target=receive, daemon=True, name="dtflow-windows-lease").start()
+        self.process, self.messages = process, messages
+        if not self._answer(30)["ok"]:
+            self._discard()
+            raise OSError("Windows original-file helper could not open the shared state.")
+
+    def _answer(self, timeout):
+        try:
+            line = self.messages.get(timeout=timeout)
+            if not line or len(line) > 65536:
+                raise ValueError
+            response = json.loads(line)
+            if not isinstance(response, dict) or not isinstance(response.get("ok"), bool):
+                raise ValueError
+            return response
+        except (queue.Empty, ValueError, TypeError) as exc:
+            self._discard()
+            raise OSError("Windows original-file helper did not confirm its result.") from exc
+
+    def _discard(self):
+        process, self.process = self.process, None
+        if process is not None:
+            _close(process)
+
+    def _call(self, request, timeout=15):
+        with self.io:
+            if self.process is None or self.process.poll() is not None:
+                self._discard()
+                self._spawn()
+            try:
+                self.process.stdin.write(json.dumps(request) + "\n")
+                self.process.stdin.flush()
+            except OSError:
+                self._discard()
+                raise
+            return self._answer(timeout)
+
+    @contextmanager
+    def lease(self, filename, timeout):
+        if filename not in self.local:
+            raise ValueError("Unknown DTFlow lease")
+        deadline = time.monotonic() + timeout
+        if not self.local[filename].acquire(timeout=max(timeout, 0)):
+            raise OSError("Original-file lease is held by this process.")
+        try:
+            while True:
+                response = self._call(dict(op="try", filename=filename))
+                if response["ok"]:
+                    break
+                if response.get("error") or time.monotonic() >= deadline:
+                    raise OSError("Original-file lease is held by another process.")
+                time.sleep(0.05)
+            try:
+                yield
+            finally:
+                try:
+                    released = self._call(dict(op="release", filename=filename))["ok"]
+                except OSError:
+                    released = True  # The failed helper was discarded, which released its locks.
+                if not released:
+                    # Unknown lock state: dropping the helper releases its Windows locks.
+                    with self.io:
+                        self._discard()
+        finally:
+            self.local[filename].release()
+
+
+_helpers: dict[tuple, _LeaseHelper] = {}
+_helpers_lock = threading.Lock()
+
+
 @contextmanager
 def shared_lock(command, state, filename, timeout):
-    process = _start(command, dict(action="lock", state=state, filename=filename, timeout=timeout))
-    try:
-        _reply(process, timeout + 10)
+    with _helpers_lock:
+        helper = _helpers.setdefault((tuple(command), state), _LeaseHelper(command, state))
+    with helper.lease(filename, timeout):
         yield
-    finally:
-        _close(process)
+
+
+def _serve(state: Path) -> None:
+    """Windows only: hold named locks for the WSL parent until it releases them or exits."""
+    import msvcrt
+
+    held = {}
+    print('{"ok":true}', flush=True)
+    for line in sys.stdin:  # EOF on parent death ends the loop; Windows releases the locks.
+        try:
+            request = json.loads(line)
+            filename = request["filename"]
+            if filename not in _LEASE_NAMES:
+                raise ValueError
+            if request["op"] == "try":
+                if filename in held:
+                    raise ValueError
+                handle = (state / filename).open("a+b")
+                try:
+                    if handle.seek(0, os.SEEK_END) == 0:
+                        handle.write(b"0")
+                        handle.flush()
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                except OSError:
+                    handle.close()
+                    print('{"ok":false}', flush=True)
+                    continue
+                held[filename] = handle
+            elif request["op"] == "release":
+                handle = held.pop(filename, None)  # A restarted helper never held it.
+                if handle is not None:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    handle.close()
+            else:
+                raise ValueError
+            print('{"ok":true}', flush=True)
+        except Exception:
+            print('{"ok":false,"error":true}', flush=True)
 
 
 def delete_managed(state: Path, target) -> None:
@@ -300,31 +441,12 @@ def _main():
         return 1
     try:
         request = json.loads(sys.stdin.readline(65537))
-        if request["action"] == "lock":
-            import msvcrt
-
-            if request["filename"] not in ("original_images.lock", "image_recycle_operation.lock"):
-                raise ValueError
+        if request["action"] == "serve":
             state = Path(request["state"])
             if not state.is_absolute():
                 raise ValueError
             state.mkdir(parents=True, exist_ok=True)
-            with (state / request["filename"]).open("a+b") as handle:
-                if handle.seek(0, os.SEEK_END) == 0:
-                    handle.write(b"0")
-                    handle.flush()
-                deadline = time.monotonic() + min(max(float(request["timeout"]), 0), 30)
-                while True:
-                    try:
-                        handle.seek(0)
-                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                        break
-                    except OSError:
-                        if time.monotonic() >= deadline:
-                            raise
-                        time.sleep(0.05)
-                print('{"ok":true}', flush=True)
-                sys.stdin.readline()  # EOF on parent death also releases the OS lock.
+            _serve(state)
         elif request["action"] == "delete":
             _delete(request)
             print('{"ok":true}', flush=True)

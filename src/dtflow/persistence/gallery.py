@@ -376,21 +376,23 @@ def recycle_preflight_batch(
             db.create_function("original_key", 1, path_key)
             keys = tuple(dict.fromkeys(path_key(path) for path in paths))
             attempts = _candidate_attempts(keys)
+            # SQLite evaluates these terms in written order: the cheap attempt
+            # substring filter must precede the Python original_key callback.
             prefilter = (
                 " AND EXISTS (SELECT 1 FROM json_each(?) allowed WHERE instr(lower(p.value), allowed.value) > 0)"
                 if attempts is not None
                 else ""
             )
-            parameters = (json.dumps(keys), json.dumps(attempts)) if attempts is not None else (json.dumps(keys),)
+            parameters = (json.dumps(attempts), json.dumps(keys)) if attempts is not None else (json.dumps(keys),)
             counts = dict(
                 db.execute(
                     """SELECT original_key(p.value),count(*) FROM attempts a,
                          json_each(CASE WHEN json_valid(a.artifacts_json)
                            THEN a.artifacts_json ELSE '[]' END) p
                    WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
-                     AND p.type='text' AND original_key(p.value) IN (SELECT value FROM json_each(?))
-                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
+                     AND p.type='text' AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
                     + prefilter
+                    + " AND original_key(p.value) IN (SELECT value FROM json_each(?))"
                     + " GROUP BY original_key(p.value)",
                     parameters,
                 )
@@ -421,17 +423,18 @@ def path_reference_count(state: Path, path: str, *, path_key: Callable[[str], st
             db.create_function("original_key", 1, path_key)
             key = path_key(path)
             attempts = _candidate_attempts((key,))
+            # Cheap substring filter first; SQLite evaluates terms in written order.
             prefilter = " AND instr(lower(p.value), ?) > 0" if attempts is not None else ""
-            parameters = (key, attempts[0]) if attempts is not None else (key,)
+            parameters = (attempts[0], key) if attempts is not None else (key,)
             return int(
                 db.execute(
                     """SELECT count(*) FROM attempts a,
                          json_each(CASE WHEN json_valid(a.artifacts_json)
                            THEN a.artifacts_json ELSE '[]' END) p
                    WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
-                     AND p.type='text' AND original_key(p.value)=?
-                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
-                    + prefilter,
+                     AND p.type='text' AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
+                    + prefilter
+                    + " AND original_key(p.value)=?",
                     parameters,
                 ).fetchone()[0]
             )

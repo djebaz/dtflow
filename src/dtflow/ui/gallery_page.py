@@ -12,7 +12,7 @@ from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import (
     QDesktopServices,
     QIcon,
@@ -107,45 +107,67 @@ def _filename(path: str) -> str:
     return PureWindowsPath(path).name if foreign_windows_path(path) else Path(path).name
 
 
+# Originals larger than this are decoded from the file under the lease instead of from memory.
+_MAX_BUFFERED_ORIGINAL = 256 * 1024 * 1024
+
+
 def _image(
     path: str, max_side: int, state: Path | None = None, *, item: GalleryItem | None = None
 ) -> tuple[QImage | None, str]:
-    """Decode one original while holding its shared cross-process read lease."""
+    """Read one original under the shared lease, then decode it outside the lease.
 
-    def decode() -> tuple[QImage | None, str]:
-        try:
-            access = (
-                resolve_item_read(item, state)[0]
-                if item is not None and state is not None
-                else ArtifactReadPaths.discover().resolve(path)
-                if foreign_windows_path(path)
-                else path
-            )
-        except OSError as exc:
-            return None, str(
-                exc
-            ) if item is not None else "Windows output drive is unavailable or the path is unsupported."
-        reader = QImageReader(access)
+    The lease keeps the bytes consistent with removal; decoding from memory lets
+    other thumbnails, saves and removals take the lease meanwhile.
+    """
+
+    def access() -> str:
+        return (
+            resolve_item_read(item, state, display=True)[0]
+            if item is not None and state is not None
+            else ArtifactReadPaths.discover().resolve(path)
+            if foreign_windows_path(path)
+            else path
+        )
+
+    def decode(source: str | QBuffer) -> tuple[QImage | None, str]:
+        reader = QImageReader(source)
         reader.setAutoTransform(True)
         if max_side:
-            source = reader.size()
-            if source.isValid() and (source.width() > max_side or source.height() > max_side):
-                reader.setScaledSize(source.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
+            size = reader.size()
+            if size.isValid() and (size.width() > max_side or size.height() > max_side):
+                reader.setScaledSize(size.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
         value = reader.read()
         if value.isNull():
             return None, reader.errorString() or "Image could not be decoded."
         return value, ""
 
+    def unreadable(exc: OSError) -> tuple[None, str]:
+        return None, str(exc) if item is not None else "Windows output drive is unavailable or the path is unsupported."
+
     if state is None:
-        return decode()
+        try:
+            return decode(access())
+        except OSError as exc:
+            return unreadable(exc)
     try:
         with original_images_lock(state, timeout=12):
-            return decode()
+            try:
+                source = access()
+                with open(source, "rb") as stream:
+                    data = stream.read(_MAX_BUFFERED_ORIGINAL + 1)
+            except OSError as exc:
+                return unreadable(exc)
+            if len(data) > _MAX_BUFFERED_ORIGINAL:
+                return decode(source)
     except OriginalImagesUnavailableError as exc:
         # Preserve the full sanitized prerequisite for the tooltip, not the thumbnail canvas.
         return None, str(exc)
     except OriginalImagesBusyError:
         return None, "Original temporarily busy"
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+    return decode(buffer)
 
 
 def _missing_icon() -> QIcon:

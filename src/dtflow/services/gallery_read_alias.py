@@ -54,9 +54,12 @@ def _managed_candidate(state: Path, row: dict) -> tuple[Path, Path]:
 
 
 def resolve_output_read(
-    state: Path, row: dict, *, verify: bool = False, paths: ArtifactReadPaths | None = None
+    state: Path, row: dict, *, verify: bool = False, paths: ArtifactReadPaths | None = None, display: bool = False
 ) -> tuple[str, str, bool]:
-    """Return image, sidecar and whether a state-derived read-only alias was used."""
+    """Return image, sidecar and whether a state-derived read-only alias was used.
+
+    ``display`` lets thumbnails reuse a digest already proven for an unchanged file.
+    """
     paths = paths or ArtifactReadPaths.discover()
     try:
         native = paths.resolve(row["path"])
@@ -65,7 +68,7 @@ def resolve_output_read(
                 # Verified WSL drive mappings permit reading, but not trusting
                 # an unrelated file or metadata under the recorded path.
                 metadata = paths.resolve(row["metadata_path"])
-                verify_managed_sidecar(Path(native), Path(metadata), row)
+                verify_managed_sidecar(Path(native), Path(metadata), row, display=display)
                 if paths.resolve(row["path"]) != native or paths.resolve(row["metadata_path"]) != metadata:
                     raise OSError("Recorded Windows output mapping changed during verification.")
             else:
@@ -81,6 +84,6 @@ def resolve_output_read(
         raise OSError("Recorded output image is missing or its path is unsupported.")
     image, sidecar = _managed_candidate(Path(state), row)
     if verify:
-        verify_managed_sidecar(image, sidecar, row)
+        verify_managed_sidecar(image, sidecar, row, display=display)
         _managed_candidate(Path(state), row)
     return str(image), str(sidecar), True
