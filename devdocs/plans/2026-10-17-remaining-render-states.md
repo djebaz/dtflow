@@ -1,12 +1,12 @@
 # Plan: remaining offline desktop render states
 
-Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: plan only; none of the additions below is implemented by this document.
+Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: first small implementation slice is source-present: Connection 01–05. Execution and visual acceptance remain pending; all other catalog additions remain planned.
 
 ## Scope
 
 - In: extend `tools/ui/render_states.py` with dedicated offline screenshots of already implemented desktop states that are still absent, using the real forms, shared styles and existing presentation handlers. Complete the batches below in this same PR, updating this plan at each coherent checkpoint.
 - Out: new product features, changes to provider protocols or persistence semantics, GUI redesign, new dependencies, packaging, native file-picker screenshots, live credential access, network traffic, real generation, uploads, ONNX execution, real Trash/permanent deletion, tests and local validation/render execution.
-- This change writes the plan and its documentation links only. The state catalog is future implementation work, not permission to execute rendering now. The owner controls subsequent implementation and CI/manual execution.
+- The initial change wrote the plan and documentation links only. The owner subsequently requested the first small implementation slice: Connection 01–05. Checked catalog entries below mean source-present fixtures, not executed screenshots. No local execution/validation is authorized; the owner controls further implementation and CI/manual execution.
 
 ## GUI components affected by future fixtures
 
@@ -46,6 +46,7 @@ The baseline has 115 listed workflow renders. Existing screenshots can contain i
 
 - [x] Reconcile the historical audit with the 115-state source baseline and remove already-covered entries from the remaining catalog.
 - [x] Define named batches, safe fixture seams and excluded/deferred cases below.
+- [x] Implement A1 only: Connection 01–05, using one isolated temporary shell, a private synthetic environment mapping and an in-memory vault. Unused Generate inventory restoration is suppressed within this helper so a Cloud selection cannot consult process-environment credentials. No Check or credential action button is clicked; storage unavailability is injected at the saved-store boundary.
 - [ ] Implement A: Connection and the shared export flow.
 - [ ] Implement B: Generate editors, inventory/configuration and asset outcomes.
 - [ ] Implement C: active/problem Queues and planner composition.
@@ -118,11 +119,11 @@ Use injected status/credential observations and temporary library/cache summarie
 
 | Done | Proposed state | Required visible state |
 | --- | --- | --- |
-| [ ] | `connection-01-local-idle` | Local endpoint controls, unchecked connection status and default nav indicator. |
-| [ ] | `connection-02-cloud-no-key` | Cloud controls, no credential and correctly disabled Remove. |
-| [ ] | `connection-03-cloud-env-key` | Synthetic environment credential source, without exposing key text. |
-| [ ] | `connection-04-cloud-saved-key` | Synthetic saved credential source and enabled Remove. |
-| [ ] | `connection-05-storage-unavailable` | Secure-storage-unavailable status and safe control availability. |
+| [x] | `connection-01-local-idle` | Local endpoint controls, unchecked connection status and default nav indicator. |
+| [x] | `connection-02-cloud-no-key` | Cloud controls, no credential and correctly disabled Remove. |
+| [x] | `connection-03-cloud-env-key` | Synthetic environment credential source, without exposing key text. |
+| [x] | `connection-04-cloud-saved-key` | Synthetic saved credential source and enabled Remove. |
+| [x] | `connection-05-storage-unavailable` | Secure-storage-unavailable status and safe control availability. |
 | [ ] | `connection-06-checking` | Checking status/nav indication with Check disabled; no request submitted. |
 | [ ] | `connection-07-connected` | Successful status card and nav indicator from a synthetic check result. |
 | [ ] | `connection-08-check-failed` | Failed status card and nav indicator from a synthetic refusal. |
@@ -289,8 +290,8 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 
 ## Validation and ownership
 
-- Planning change: source/document inspection only. No tests, lint, format checks, syntax checks, rendering, builds, training/inference or provider operations are run by the agent under the requested fast workflow.
-- [ ] Owner: approve the catalog/batch order before renderer implementation starts.
+- Current A1 slice: source editing/review only. No tests, lint, format checks, syntax checks, rendering, builds, training/inference or provider operations are run by the agent under the requested fast workflow.
+- [x] Owner: requested the first small implementation group, scoped to Connection 01–05. Remaining batches still require a separate implementation request.
 - [ ] Owner/CI: execute the explicitly requested offline render batches and inspect the saved states/timings, including the known intermittent Detail-transition stall.
 - [ ] Owner: manual native Windows/DPI interaction acceptance where needed; no executable build is required by this fixture-only scope.
 
@@ -298,3 +299,4 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 
 - 2026-10-17: plan written against `1443eff`, with current baseline reconciliation, append-only state reservations, safe handler/fixture boundaries, duplicate/deferred decisions and owner-only execution gates. Implementation has not started.
 - 2026-10-17: added stall-prevention methods, narrow transition markers, readiness/lifecycle guidance and an evidence-to-action triage table. This is documentation only; no stall fix or runtime result is claimed.
+- 2026-10-17: implemented A1 (Connection 01–05) in the renderer source. The five additions bring the source-listed total from 115 to 120; no new screenshots were produced locally. One temporary shell is reused only within this credential/layout batch and is shut down before the existing fixtures continue. The source uses real backend-selection/credential presentation and an injected in-memory vault; no connection check, generation, upload or real credential access was performed. No tests, lint, format checks, syntax checks or renders were run.

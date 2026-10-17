@@ -2,7 +2,9 @@
 
 ## Highlights
 
-- PR #87 planning only: [remaining offline render-state catalog](../plans/2026-10-17-remaining-render-states.md) reconciles the older audit with the 115-state baseline and defines named Connection/export, Generate-editor, active/problem-Queue, Images, Inpaint and overlay batches. It also documents deterministic fixture setup, bounded readiness, callback/worker cleanup and stack-led stall triage without extending CI timeouts. No additional fixtures are implemented or run by this plan.
+- PR #87 remaining-state slice A1: the renderer now lists five Connection fixtures, `connection-01-local-idle` through `connection-05-storage-unavailable`, covering Local/Cloud layout and synthetic absent/environment/saved/unavailable credential sources. It uses one isolated temporary shell and an in-memory vault, without clicking connection checks or key actions. The source-listed total is 120; new fixtures are not locally rendered or validated, and native/runtime acceptance remains pending.
+
+- The [remaining offline render-state catalog](../plans/2026-10-17-remaining-render-states.md) reconciles the older audit with the 115-state baseline and defines named Connection/export, Generate-editor, active/problem-Queue, Images, Inpaint and overlay batches. It also documents deterministic fixture setup, bounded readiness, callback/worker cleanup and stack-led stall triage without extending CI timeouts. Only Connection 01–05 is source-present from this catalog so far; other entries remain planned.
 
 - Offline renderer diagnostics: dump all Python thread stacks after 30 seconds without a saved screenshot, resetting the watchdog after each image. This captures stalls before the render workflow's two-minute step timeout; it does not change UI behavior or establish that the intermittent Detail-transition stall is fixed. Local validation is lint/format only; no local renders or tests.
 

@@ -24,9 +24,9 @@ uv run python tools/ui/preview_gallery_detail.py --capture out/gallery-detail-op
 
 ## Workflow-state filenames
 
-The [remaining-state implementation plan](../../devdocs/plans/2026-10-17-remaining-render-states.md) records the current 115-state baseline, missing workflow states, reserved filenames and safe offline fixture seams. Its unchecked entries are planned coverage, not existing screenshots.
+The [remaining-state implementation plan](../../devdocs/plans/2026-10-17-remaining-render-states.md) records the original 115-state baseline, missing workflow states, reserved filenames and safe offline fixture seams. The first small slice adds `connection-01-local-idle` through `connection-05-storage-unavailable` (120 source-listed states in total), using an isolated temporary shell and synthetic credential sources. Checked entries mean source-present fixtures, not executed screenshots; unchecked entries remain planned.
 
-`render_states.py` saves listed offline workflow states as `<tab>-<NN>-<state>.png`, for example `images-01-grid.png`, `generate-01-empty.png` and `queues-02-created-paused.png`. The groups are `generate`, `images`, `inpaint`, `queues` and `shell`; numbering is independent within each group. Keep existing names stable and append new numbers within the relevant group, so filenames sort by group without global numbering collisions. Render order may differ from filename order.
+`render_states.py` saves listed offline workflow states as `<tab>-<NN>-<state>.png`, for example `images-01-grid.png`, `generate-01-empty.png` and `queues-02-created-paused.png`. The groups are `connection`, `generate`, `images`, `inpaint`, `queues` and `shell`; numbering is independent within each group. Keep existing names stable and append new numbers within the relevant group, so filenames sort by group without global numbering collisions. Render order may differ from filename order.
 
 The separate `shots.py` / `design_shots.py` screen captures retain their matched `10-connection` / `11-generate` / `12-queues` / `13-images` names; `states.py` / `design_states.py` retain their component-sheet names. These are separate capture namespaces, not references to the workflow-state IDs. Use separate output directories and do not treat leftover screenshots from an earlier naming scheme as current evidence.
 

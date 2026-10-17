@@ -44,13 +44,14 @@ from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E40
 from dtflow.persistence.store import PersistenceError, StateBusyError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
-from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.services.credentials import KEY, SavedCredentials, SecureStorageUnavailable  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleResult, RecycleTarget, RecycleUnavailable  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
+from dtflow.ui.generation_page import GenerationPage  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
@@ -96,6 +97,52 @@ def save(widget, out, name):
     if not widget.grab().save(str(target)):
         raise RuntimeError(f"Could not save {target.name}")
     report(target)
+
+
+@patch.object(GenerationPage, "request_cached", new=lambda self, **_: None)
+def render_connection_states(app, state, out):
+    """Connection layout/credential sources only; no check, key action or provider work is submitted."""
+    # Unused Generate inventory restoration can otherwise resolve the real process environment on Cloud selection.
+    environ = {}
+    saved = SavedCredentials(Vault())
+    shell = MainWindow(saved=saved, environ=environ, state_dir=state / "connection-fixtures", no_cache=True)
+
+    def snap(name, expected_status, remove_enabled):
+        shell.refresh_credentials()
+        assert not shell.form.keyEdit.text()
+        assert shell.form.statusLabel.text().startswith("Not checked.")
+        assert expected_status in shell.form.credentialStatusLabel.text()
+        assert shell.form.removeKeyButton.isEnabled() == remove_enabled
+        QTest.qWait(100)
+        save(shell.form, out, name)
+
+    try:
+        form = shell.form
+        form.resize(1600, 1000)
+        shell.show()
+        form.connectionNavigationButton.click()
+        form.backendCombo.setCurrentText("local")
+        assert form.endpointEdit.isEnabled() and not form.credentialBox.isEnabled()
+        snap("connection-01-local-idle", "No API key available.", False)
+
+        form.backendCombo.setCurrentText("cloud")
+        assert not form.endpointEdit.isEnabled() and form.credentialBox.isEnabled()
+        snap("connection-02-cloud-no-key", "No API key available.", False)
+
+        # These are synthetic source observations, never the process environment or the OS vault.
+        environ[KEY] = "offline-environment-key"
+        snap("connection-03-cloud-env-key", "from the environment", True)
+
+        environ.clear()
+        saved.save("offline-saved-key")  # Writes only the injected in-memory Vault.
+        snap("connection-04-cloud-saved-key", "Using the key saved", True)
+
+        with patch.object(saved, "_store", side_effect=SecureStorageUnavailable):
+            snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
+    finally:
+        shell.runner.shutdown()
+        shell.form.close()
+        app.processEvents()
 
 
 def render_removal_and_selection_states(shell, item, plan, out):
@@ -860,6 +907,7 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
+        render_connection_states(app, state, args.out)
         render_mapped_gallery_states(app, state, args.out)
         # Missing Qt capability API: startup succeeds with Trash unavailable.
         with patch.object(system_trash, "QFile", object):
