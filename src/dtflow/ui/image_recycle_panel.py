@@ -7,9 +7,9 @@ import logging
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSize, Qt, Signal
-from PySide6.QtGui import QActionGroup, QIcon
-from PySide6.QtWidgets import QMenu, QPushButton, QWidget
+from PySide6.QtCore import QObject, QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QActionGroup, QGuiApplication, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import QFrame, QMenu, QPushButton, QWidget
 
 from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence.image_removal_preferences import load_mode, save_mode
@@ -21,6 +21,44 @@ from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.system_trash import TRASH_NAME, check_trash_source, recycle_file
 
 log = logging.getLogger(__name__)
+
+
+def _spaced_button_icon(source: QIcon) -> QIcon:
+    """Keep the glyph at 16px, with a 6px transparent gap before button text."""
+    icon = QIcon()
+    for mode in (QIcon.Mode.Normal, QIcon.Mode.Disabled):
+        canvas = QPixmap(22, 16)
+        canvas.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(canvas)
+        painter.drawPixmap(0, 0, source.pixmap(QSize(16, 16), mode))
+        painter.end()
+        icon.addPixmap(canvas, mode)
+    return icon
+
+
+class _RemovalModeMenu(QMenu):
+    """Anchor the popup to the whole split control, not only its arrow button."""
+
+    def __init__(self, control: QFrame, parent: QWidget):
+        super().__init__(parent)
+        self._control = control
+
+    def showEvent(self, event):
+        # Recalculate for responsive gallery widths and font/DPI changes.
+        self.setMinimumWidth(0)
+        self.setMaximumWidth(16777215)
+        self.setFixedWidth(max(self._control.width(), self.sizeHint().width()))
+        super().showEvent(event)
+        below = self._control.mapToGlobal(QPoint(0, self._control.height() - 1))
+        screen = QGuiApplication.screenAt(below)
+        x, y = below.x(), below.y()
+        if screen is not None:
+            available = screen.availableGeometry()
+            x = min(max(x, available.left()), max(available.left(), available.right() - self.width() + 1))
+            if y + self.height() > available.bottom():
+                top = self._control.mapToGlobal(QPoint(0, 0)).y()
+                y = max(available.top(), top - self.height() + 1)
+        self.move(x, y)
 
 
 class ImageRecyclePanel(QObject):
@@ -44,16 +82,22 @@ class ImageRecyclePanel(QObject):
         gallery._permanent_callback = self.request
         gallery.removal_ready = False
         self.menu_button = gallery._widget("galleryRemovalMenuButton", QPushButton)
-        menu = QMenu(self.menu_button)
+        menu = _RemovalModeMenu(gallery._widget("galleryRemovalControl", QFrame), self.menu_button)
         menu.setObjectName("imageRemovalMenu")
         group = QActionGroup(menu)
         group.setExclusive(True)
         self._mode_actions = {}
         icon_root = Path(__file__).resolve().parents[1] / "resources" / "images" / "gallery"
-        self._mode_icons = {
-            "trash": QIcon(str(icon_root / "delete.svg")),
-            "permanent": QIcon(str(icon_root / "circle-x.svg")),
-        }
+        self._mode_icons = {}
+        self._button_icons = {}
+        for mode, normal, disabled in (
+            ("trash", "delete.svg", "delete-disabled.svg"),
+            ("permanent", "circle-x.svg", "circle-x-disabled.svg"),
+        ):
+            icon = QIcon(str(icon_root / normal))
+            icon.addFile(str(icon_root / disabled), QSize(16, 16), QIcon.Mode.Disabled)
+            self._mode_icons[mode] = icon
+            self._button_icons[mode] = _spaced_button_icon(icon)
         for mode, label in (("trash", "Trash"), ("permanent", "Delete")):
             action = menu.addAction(self._mode_icons[mode], label)
             if mode == "permanent":
@@ -87,15 +131,15 @@ class ImageRecyclePanel(QObject):
         label = "Delete" if mode == "permanent" else "Trash"
         button = self.gallery.delete_button
         button.setText(label)
-        button.setIcon(self._mode_icons[mode])
-        button.setIconSize(QSize(16, 16))
+        button.setIcon(self._button_icons[mode])
+        button.setIconSize(QSize(22, 16))
         button.setAccessibleName(label)
         button.setToolTip(
             "Irreversibly delete checked managed originals after explicit confirmation; no Undo."
             if mode == "permanent"
             else f"Move eligible checked originals to {TRASH_NAME} after confirmation."
         )
-        button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete") + 52)
+        button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete") + 58)
         for key, action in self._mode_actions.items():
             action.setChecked(key == mode)
         menu = self.menu_button.menu()
@@ -211,7 +255,7 @@ class ImageRecyclePanel(QObject):
             lambda: self._execute(plan),
             self._cancel_confirmation,
             danger=True,
-            confirm_text="Delete permanently" if permanent else "Confirm",
+            confirm_text="Delete" if permanent else "Trash",
         )
 
     def _cancel_confirmation(self):

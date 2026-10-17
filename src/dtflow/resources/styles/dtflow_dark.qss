@@ -1426,19 +1426,33 @@ QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled {
   color: ${color.dangerText};
   border: 1px solid ${color.dangerBorder};
 }
-QPushButton#galleryRemovalMenuButton { min-width: 24px; max-width: 24px; padding-left: 2px; padding-right: 2px; }
+/* One joined split action. The popup is aligned to the entire control by the menu owner. */
+QFrame#gallerySelectionBar QPushButton#galleryDeleteButton {
+  padding-left: 10px;
+  padding-right: 12px;
+}
+QPushButton#galleryRemovalMenuButton {
+  min-width: 24px;
+  max-width: 24px;
+  padding-left: 2px;
+  padding-right: 2px;
+  border-left-width: 0;
+}
 QPushButton#galleryRemovalMenuButton::menu-indicator { image: none; width: 0px; }
 QMenu#imageRemovalMenu {
   background: ${color.surface};
   color: ${color.menuText};
   border: 1px solid ${color.buttonBorder};
-  border-radius: ${size.radius};
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: ${size.radius};
+  border-bottom-right-radius: ${size.radius};
   padding: 3px;
 }
 QMenu#imageRemovalMenu::item {
   min-height: 22px;
-  padding: 6px 18px 6px 30px;
-  margin: 1px 2px;
+  padding: 6px 12px 6px 20px;
+  margin: 1px 1px;
   border-radius: ${size.radiusSm};
   background: transparent;
 }
@@ -1456,13 +1470,9 @@ QMenu#imageRemovalMenu[permanentSelected="true"]::item:checked {
   color: ${color.dangerText};
   background: ${color.dangerSurface};
 }
-QMenu#imageRemovalMenu::indicator {
-  width: 14px;
-  height: 14px;
-}
-QMenu#imageRemovalMenu::indicator:checked {
-  image: url(../images/controls/check.svg);
-}
+/* Selection is indicated by the checked row background, not a competing icon column. */
+QMenu#imageRemovalMenu::indicator { width: 0px; height: 0px; }
+QMenu#imageRemovalMenu::indicator:checked { image: none; }
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton:enabled:hover {
   background: ${color.dangerSurface};
 }

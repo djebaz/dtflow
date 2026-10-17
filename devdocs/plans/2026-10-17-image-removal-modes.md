@@ -8,7 +8,7 @@ Open, unmerged PR #76, branch `feature/image-removal-modes`, ready for review so
 
 - One split control: main action is Move to Trash or Delete permanently; the adjacent menu only chooses a mode and never submits work.
 - Default Trash. Persist the mode separately for Windows, WSL and native Linux; never persist consent, substitute Permanent or replay uncertain work.
-- Disabled Trash leaves the mode menu usable. Every permanent deletion needs a fresh inline irreversible warning/count and explicit Delete permanently consent.
+- Disabled Trash leaves the mode menu usable. Every permanent deletion needs a fresh inline irreversible warning/count and explicit Delete consent; its overlay still says permanently delete and no Undo.
 - Remove managed original images only; retain metadata, audit history and exports.
 - Include Windows-recorded originals from WSL through an explicit mutation boundary, not the gallery's read-only path alias.
 - Cancel between files; mode/scope/navigation changes invalidate pending consent.

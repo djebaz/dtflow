@@ -22,10 +22,10 @@ from support.network_guard import install  # noqa: E402
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint  # noqa: E402
+from PySide6.QtCore import QPoint, QSize  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -141,7 +141,8 @@ def render_mapped_gallery_states(app, state, out):
             assert shell.gallery.delete_button.text() == "Trash"
             assert menu.actions()[0].text() == "Trash"
             assert menu.actions()[1].text() == "Delete"
-            assert shell.gallery.delete_button.icon().cacheKey() == menu.actions()[0].icon().cacheKey()
+            assert shell.gallery.delete_button.iconSize() == QSize(22, 16)
+            assert not shell.gallery.delete_button.icon().isNull()
             QTest.qWait(100)
             target = out / "39-images-trash-mode.png"
             if not shell.form.grab().save(str(target)):
@@ -149,6 +150,11 @@ def render_mapped_gallery_states(app, state, out):
             print(target)
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
+            control = shell.gallery._widget("galleryRemovalControl", QFrame)
+            expected_left = control.mapToGlobal(QPoint(0, 0)).x()
+            screen = menu.screen().availableGeometry()
+            expected_left = min(max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1))
+            assert menu.geometry().left() == expected_left
             target = out / "37-images-removal-menu-trash-selected.png"
             if not menu.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
@@ -156,7 +162,8 @@ def render_mapped_gallery_states(app, state, out):
             menu.hide()
             shell.image_recycle._apply_mode("permanent")
             assert shell.gallery.delete_button.text() == "Delete"
-            assert shell.gallery.delete_button.icon().cacheKey() == menu.actions()[1].icon().cacheKey()
+            assert shell.gallery.delete_button.iconSize() == QSize(22, 16)
+            assert not shell.gallery.delete_button.icon().isNull()
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
             target = out / "38-images-removal-menu-permanent-selected.png"
@@ -168,6 +175,15 @@ def render_mapped_gallery_states(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            # Show the disabled icon beside the same disabled text shade.
+            shell.gallery._set_checked(item.identity, False)
+            assert not shell.gallery.delete_button.isEnabled()
+            assert shell.gallery.delete_button.text() == "Delete"
+            target = out / "40-images-delete-disabled.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            shell.gallery._set_checked(item.identity, True)
             plan = RecyclePlan(
                 (RecycleTarget(item.identity, str(root / "saved.png"), 1, 1, 1, 1),),
                 0,
