@@ -254,9 +254,7 @@ def _confirmed_absent_final(
             native, native_metadata = Path(paths.resolve(recorded)), Path(paths.resolve(metadata))
         except (OSError, ValueError, TypeError):
             return None
-        if not native.is_absolute() or os.path.normcase(os.path.normpath(str(native))) != os.path.normcase(
-            str(image)
-        ):
+        if not native.is_absolute() or os.path.normcase(os.path.normpath(str(native))) != os.path.normcase(str(image)):
             return None
         if os.path.normcase(os.path.normpath(str(native_metadata))) != os.path.normcase(str(sidecar)):
             return None
@@ -480,9 +478,7 @@ def recycle_outputs(
                     fresh = _confirmed_absent_final(state, record, paths=paths) if record is not None else None
                     if fresh != target:
                         ineligible += 1
-                    elif not ledger.record_confirmed_absent(
-                        state, operation_id, target.identity, target.recorded_path
-                    ):
+                    elif not ledger.record_confirmed_absent(state, operation_id, target.identity, target.recorded_path):
                         ineligible += 1
                         if len(failure_details) < 100:
                             failure_details.append((target.identity, "ledger_requires_review"))
