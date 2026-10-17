@@ -216,10 +216,13 @@ seed when recorded, provider, file size/path and file actions. Raw metadata is
 bounded and sanitized; unavailable evidence is shown as `Not recorded` or
 `Unknown`, not inferred.
 
-Use settings populates Generate from the recorded request without dispatching. Regenerate asks for confirmation because it may consume provider credits, then creates a fresh request through the normal generation path and records the source output identity as lineage; the original output and attempt remain untouched.
+Use settings populates Generate from the recorded request without dispatching. Regenerate asks for confirmation because it may consume provider credits, then creates a fresh request through the normal generation path and records the source output identity as lineage; the original output and attempt remain untouched. Both use only the recorded request, so on WSL they also work for Windows-recorded outputs. Edit image stays unavailable for those, with its own tooltip, because the editor cannot hold the shared Windows/WSL original-file lock.
 
 Copy path, Open folder and external-viewer actions operate on the actual saved
-artifact. Missing or corrupt files remain represented without preventing other
+artifact. On WSL, Open folder, external viewer and the export panel's Open folder
+translate the path with `wslpath -w` and start Windows Explorer through WSL
+interop; when interop is unavailable or the launch fails, a notice says so
+instead of silently doing nothing. Missing or corrupt files remain represented without preventing other
 outputs from being browsed. Browsing does not generate, modify or delete saved
 outputs.
 

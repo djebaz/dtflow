@@ -29,6 +29,7 @@ from dtflow.services.person_selection import (
     apply_selection,
     classify_models,
     colored_preview,
+    model_issue,
     part_at,
     person_at,
 )
@@ -65,6 +66,7 @@ class InpaintEditor(QObject):
         self._source_path = None
         self._result_path = None
         self._models = PersonModels()
+        self._models_issue = None
         self._analysis = None
         file = QFile(str(Path(__file__).with_name("forms") / "inpaint_editor.ui"))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
@@ -165,7 +167,25 @@ class InpaintEditor(QObject):
         except Exception as exc:  # unreadable settings never block manual painting
             self.form.peopleStatus.setText(str(exc))
         self._people_status()
+        self._check_models()
         self.refresh_capability()
+
+    def _check_models(self):
+        """Stat saved models off the GUI thread; an unreachable one is reported now, not at Find people."""
+        models = self._models
+        if models.segmentation is None or self.runner.closed:
+            return
+
+        async def work():
+            return await asyncio.to_thread(model_issue, models)
+
+        def done(issue, error):
+            if self.runner.closed or self._models is not models or self._analysis is not None:
+                return
+            self._models_issue = issue if error is None else None
+            self._people_status()
+
+        self.runner.submit(work(), done)
 
     @property
     def active(self):
@@ -612,7 +632,9 @@ class InpaintEditor(QObject):
 
     def _people_status(self):
         models = self._models
-        if self._analysis is None and models.segmentation is None:
+        if self._analysis is None and self._models_issue:
+            text = self._models_issue
+        elif self._analysis is None and models.segmentation is None:
             text = "Choose a YOLO26 segmentation model (Models…) to find people. Painting works without it."
         elif self._analysis is None:
             text = (
@@ -723,6 +745,7 @@ class InpaintEditor(QObject):
 
         def apply(models):
             self._models = models
+            self._models_issue = None
             self._set_analysis(None)
 
         self._task("Choose person models", worker, apply)
