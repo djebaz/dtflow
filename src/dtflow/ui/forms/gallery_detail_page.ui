@@ -771,8 +771,8 @@
         <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
         <property name="spacing"><number>0</number></property>
         <item><widget class="QPushButton" name="galleryDeleteButton">
-         <property name="text"><string>Move to Trash</string></property>
-         <property name="accessibleName"><string>Move to Trash</string></property>
+         <property name="text"><string>Trash</string></property>
+         <property name="accessibleName"><string>Trash</string></property>
          <property name="toolTip"><string>Move eligible checked originals to system Trash after confirmation.</string></property>
          <property name="role" stdset="0"><string>danger</string></property>
          <property name="segmentEdge" stdset="0"><string>first</string></property>

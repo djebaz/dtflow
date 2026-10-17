@@ -138,6 +138,10 @@ def render_mapped_gallery_states(app, state, out):
             # Offline two-choice popups: selecting a mode never executes removal.
             menu = shell.image_recycle.menu_button.menu()
             shell.image_recycle._apply_mode("trash")
+            assert shell.gallery.delete_button.text() == "Trash"
+            assert menu.actions()[0].text() == "Trash"
+            assert menu.actions()[1].text() == "Delete"
+            assert shell.gallery.delete_button.icon().cacheKey() == menu.actions()[0].icon().cacheKey()
             QTest.qWait(100)
             target = out / "39-images-trash-mode.png"
             if not shell.form.grab().save(str(target)):
@@ -151,6 +155,8 @@ def render_mapped_gallery_states(app, state, out):
             print(target)
             menu.hide()
             shell.image_recycle._apply_mode("permanent")
+            assert shell.gallery.delete_button.text() == "Delete"
+            assert shell.gallery.delete_button.icon().cacheKey() == menu.actions()[1].icon().cacheKey()
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
             target = out / "38-images-removal-menu-permanent-selected.png"

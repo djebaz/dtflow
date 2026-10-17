@@ -52,10 +52,12 @@ class ImageRecyclePanel(QObject):
         icon_root = Path(__file__).resolve().parents[1] / "resources" / "images" / "gallery"
         self._mode_icons = {
             "trash": QIcon(str(icon_root / "delete.svg")),
-            "permanent": QIcon(str(icon_root / "trash-x.svg")),
+            "permanent": QIcon(str(icon_root / "circle-x.svg")),
         }
-        for mode, label in (("trash", f"Move to {TRASH_NAME}"), ("permanent", "Delete permanently")):
+        for mode, label in (("trash", "Trash"), ("permanent", "Delete")):
             action = menu.addAction(self._mode_icons[mode], label)
+            if mode == "permanent":
+                action.setToolTip("Permanently delete selected images after confirmation; no Undo.")
             if mode == "trash" and gallery._recycle_callback is None:
                 action.setToolTip(
                     "System Trash is unavailable. Selecting Trash disables the main removal action; you can still choose permanent deletion."
@@ -82,7 +84,7 @@ class ImageRecyclePanel(QObject):
         self.gallery.recycle_scope_revision += 1
         self._confirmation_revision = None
         self.gallery.removal_mode = mode
-        label = "Delete permanently" if mode == "permanent" else f"Move to {TRASH_NAME}"
+        label = "Delete" if mode == "permanent" else "Trash"
         button = self.gallery.delete_button
         button.setText(label)
         button.setIcon(self._mode_icons[mode])
@@ -93,7 +95,7 @@ class ImageRecyclePanel(QObject):
             if mode == "permanent"
             else f"Move eligible checked originals to {TRASH_NAME} after confirmation."
         )
-        button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete permanently") + 64)
+        button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete") + 52)
         for key, action in self._mode_actions.items():
             action.setChecked(key == mode)
         menu = self.menu_button.menu()
