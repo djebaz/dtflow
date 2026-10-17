@@ -299,6 +299,7 @@ class GalleryPage(QObject):
         self._loading = False
         self._adjacent_loading = False
         self._adjacent_failed_offset: int | None = None
+        self._suppress_batch_scroll = False
         self._pending_refresh: tuple[bool, bool] | None = None
         self._refresh_failing = False
         self._snapshot_at = None
@@ -1475,7 +1476,10 @@ class GalleryPage(QObject):
             if self.mode == "Grid":
                 button = self._grid_buttons.get(self.items[index].identity)
                 if button is not None:
-                    self.grid_scroll.ensureWidgetVisible(button, 0, 0)
+                    self.reflow_timer.stop()
+                    self._layout_cards()
+                    self.cards_layout.activate()
+                    self.grid_scroll.verticalScrollBar().setValue(button.parentWidget().y())
             elif self.mode == "List":
                 cell = self.table.item(index, 0)
                 if cell is not None:
@@ -1522,6 +1526,7 @@ class GalleryPage(QObject):
             or not self.items
             or self._loading
             or self._adjacent_loading
+            or self._suppress_batch_scroll
             or self._pending_refresh is not None
             or self.filter_timer.isActive()
         ):
@@ -1571,9 +1576,16 @@ class GalleryPage(QObject):
         try:
             current_query = self._query(offset=query.offset)
         except ValidationError:
+            self._sync_pager()
             return
         if query != current_query:
             # A debounced filter/sort edit invalidates this request.
+            self._sync_pager()
+            return
+        if self.mode == "Detail":
+            # A Grid/List prefetch must not evict the selected Detail image after
+            # the user switches views while that worker is still returning.
+            self._sync_pager()
             return
         if error is not None:
             self._adjacent_failed_offset = query.offset
@@ -1596,7 +1608,20 @@ class GalleryPage(QObject):
             self.refresh(preserve=True)
             return
         anchor = self._browsing_anchor()
-        old_scroll = dict(self._scroll)
+        mode = self.mode
+        pixel_offset = 0
+        if mode == "Grid" and anchor in self._grid_buttons:
+            pixel_offset = (
+                self._grid_buttons[anchor].parentWidget().y()
+                - self.grid_scroll.verticalScrollBar().value()
+            )
+        elif mode == "List":
+            row = self.table.rowAt(0)
+            pixel_offset = self.table.rowViewportPosition(row) if row >= 0 else 0
+
+        # Reflow and table reconciliation can emit scrollbar events. Do not
+        # launch another adjacent query before the anchor has been restored.
+        self._suppress_batch_scroll = True
         if direction > 0:
             combined = [*self.items, *page.items]
             if len(combined) > MAX_MOUNTED_IMAGES:
@@ -1610,11 +1635,30 @@ class GalleryPage(QObject):
         self.items = combined
         self._render_page()
         self._rendered_page = (self.offset, tuple(self.items))
-        self._scroll = old_scroll
         self._adjacent_failed_offset = None
-        self._restore_scroll_later(anchor if direction < 0 or self.offset != query.offset - len(self.items) else None)
-        self._sync_pager()
-        QTimer.singleShot(0, self._sync_pager)
+
+        def settle():
+            try:
+                if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
+                    if mode == "Grid":
+                        self.reflow_timer.stop()
+                        self._layout_cards()
+                        self.cards_layout.activate()
+                        button = self._grid_buttons.get(anchor)
+                        if button is not None:
+                            bar = self.grid_scroll.verticalScrollBar()
+                            bar.setValue(button.parentWidget().y() - pixel_offset)
+                    elif mode == "List":
+                        row = next(i for i, item in enumerate(self.items) if item.identity == anchor)
+                        cell = self.table.item(row, 0)
+                        if cell is not None:
+                            self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                self._capture_scroll()
+                self._sync_pager()
+            finally:
+                self._suppress_batch_scroll = False
+
+        QTimer.singleShot(0, settle)
         self._schedule_save()
 
     def _render_page(self) -> None:
@@ -1974,6 +2018,7 @@ class GalleryPage(QObject):
                 self._film_buttons[index].setChecked(record.identity == identity)
         self._present_item(item)
         self._update_navigation()
+        self._sync_pager()
         self._schedule_save()
 
     def _update_navigation(self) -> None:
