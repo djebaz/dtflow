@@ -8,11 +8,11 @@ import logging
 import math
 import os
 import re
-import time
 from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
+from time import monotonic
 
 from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import (
@@ -152,12 +152,12 @@ def _image(
         except OSError as exc:
             return unreadable(exc)
     try:
-        requested = time.monotonic()
+        requested = monotonic()
         with original_images_lock(state, timeout=12, background=True):
-            leased = time.monotonic()
+            leased = monotonic()
             try:
                 source = access()
-                resolved = time.monotonic()
+                resolved = monotonic()
                 with open(source, "rb") as stream:
                     # Size first: read(huge) would allocate the whole cap per thumbnail.
                     if os.fstat(stream.fileno()).st_size > _MAX_BUFFERED_ORIGINAL:
@@ -165,13 +165,13 @@ def _image(
                     data = stream.read()
             except OSError as exc:
                 return unreadable(exc)
-            held = time.monotonic() - leased
+            held = monotonic() - leased
             if held >= 0.5:
                 log.debug(
                     "thumbnail read slow lease_wait_ms=%d resolve_ms=%d read_ms=%d bytes=%d",
                     (leased - requested) * 1000,
                     (resolved - leased) * 1000,
-                    (time.monotonic() - resolved) * 1000,
+                    (monotonic() - resolved) * 1000,
                     len(data),
                 )
     except OriginalImagesUnavailableError as exc:
