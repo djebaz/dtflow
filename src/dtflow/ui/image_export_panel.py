@@ -246,7 +246,12 @@ class ImageExportPanel(QObject):
         )
 
     def open_folder(self) -> None:
-        if self._exported_folder and (reason := open_local_path(str(self._exported_folder))):
+        if not self._exported_folder:
+            return
+
+        def failed(reason):
             activity_strip(self.form).complete(
                 "export-open", "Open folder", f"Could not open the export folder: {reason}", "error"
             )
+
+        open_local_path(str(self._exported_folder), runner=self.runner, directory=True, on_error=failed)

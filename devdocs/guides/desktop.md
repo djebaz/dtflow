@@ -226,6 +226,8 @@ instead of silently doing nothing. Missing or corrupt files remain represented w
 outputs from being browsed. Browsing does not generate, modify or delete saved
 outputs.
 
+Desktop requests validate the current target on a worker before hand-off, including whether the remembered export destination still exists, is a directory and can be accessed. WSL translation and process spawning also run off the Qt thread; native Qt desktop-service calls and error notices return on Qt. Missing/inaccessible/wrong-kind targets produce a clear notice. A successful hand-off is not proof that the external application's window appeared. See the [PR #85 review correction plan](../plans/2026-10-17-wsl-followups.md); owner Windows/WSL smoke remains pending.
+
 
 The Images action bar keeps **Select all** visible at every width. It selects matching results across all pages, up to 10,000 checked images in total. When every current matching result is checked, the same button becomes **Unselect all** and clears all checks, including hidden ones. Partial selections at the limit do not show Unselect all. Selection coverage is refreshed after checkbox edits and gallery refresh; owner reports this Select all / Unselect all smoke passed on 2026-10-09 (follow-up to f3bc285).
 

@@ -2267,11 +2267,21 @@ class GalleryPage(QObject):
         if action == "copy":
             QApplication.clipboard().setText(result)
         elif action == "folder":
-            if reason := open_local_path(str(Path(result).parent)):
-                self._selection_notice(f"Could not open the image folder: {reason}")
+            open_local_path(
+                str(Path(result).parent),
+                runner=self.runner,
+                directory=True,
+                on_error=lambda reason: self._selection_notice(f"Could not open the image folder: {reason}"),
+            )
         elif action == "external":
-            if reason := open_local_path(result):
-                self._selection_notice(f"Could not open the image in an external viewer: {reason}")
+            open_local_path(
+                result,
+                runner=self.runner,
+                directory=False,
+                on_error=lambda reason: self._selection_notice(
+                    f"Could not open the image in an external viewer: {reason}"
+                ),
+            )
         elif action == "edit" and self._edit_callback is not None:
             self._edit_callback(result)
 

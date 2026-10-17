@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #85 review correction: desktop target validation, WSL path translation and process spawning now run through the existing async runner instead of blocking Qt. Folder/file kinds are explicit; a removed/renamed/inaccessible export destination refuses before launch, with GUI-thread feedback. Offline missing-folder preview defined, not rendered; no new tests or local pytest.
+
 - Issues #78, #80 and #81 (WSL/Windows follow-ups to PR #76): person-selection models chosen in the Windows build are read on WSL1 through the verified drvfs alias (stored path and SHA-256 unchanged; a WSL path opened from Windows asks to choose the model again); the editor checks saved models when it opens and names not-found, permission-denied or other-environment causes with a sanitized log line. Use settings and Regenerate work for Windows-recorded outputs on WSL, since they use only the recorded request; Regenerate keeps its confirmation and dispatch readiness checks, and Edit image keeps a specific fail-closed tooltip. On WSL, gallery Open folder/external viewer and the export panel's Open folder start Windows Explorer via `wslpath -w` with discrete arguments and report failures instead of a silent no-op. Source implementation only; WSL1 and Windows owner smoke pending, no provider calls.
 
 - **PR #76: Trash / Delete image removal and Windows/WSL1 shared state** (owner reports all current-PR source smoke passed on 2026-10-17 following `10650b9`; earlier scenario evidence at `6202404` is retained in the [plan](../plans/2026-10-17-image-removal-modes.md#owner-acceptance)).

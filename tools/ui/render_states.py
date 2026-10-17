@@ -40,8 +40,8 @@ from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
+from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
-from dtflow.ui import system_trash  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
@@ -111,6 +111,17 @@ def render_initial_refresh_recovery(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            # Offline failure presentation only; no real desktop process is started.
+            with patch.object(desktop_open, "_open_on_worker", return_value="the folder no longer exists."):
+                shell.image_export._exported_folder = state / "missing-export-folder-fixture"
+                shell.image_export.open_folder()
+                wait_for(lambda: "export-open" in activity_strip(shell.form).rows)
+            target = out / "52-export-folder-missing.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            activity_strip(shell.form).finish("export-open")
+            shell.image_export._exported_folder = None
         finally:
             shell.runner.shutdown()
             shell.form.close()
