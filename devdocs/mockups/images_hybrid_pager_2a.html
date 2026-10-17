@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTFlow Images — Approved Option 2a Pager Reference</title>
+<style>
+/* Standalone adaptation of user-approved "Images Pager Mockup.dc.html", Option 2a only.
+   Intent: portable review fixture, never a second production UI or backend. */
+:root {
+  --color-background:#1f1f1f;--color-surface:#252525;--color-canvas:#151515;
+  --color-text:#e6e6e6;--color-secondary:#b2b2b2;--color-border:#3a3a3a;
+  --color-section-border:#343434;--color-accent:#0068b8;--color-accent-hover:#0078d4;
+  --color-focus:#60b6f6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--color-background);color:var(--color-text);
+  font:13px "Segoe UI",Arial,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:24px 20px 48px}
+h1{font-size:22px;font-weight:650;margin:0 0 8px}
+h2{font-size:13px;font-weight:600;margin:20px 0 8px}
+.muted{color:var(--color-secondary)}
+.pager{background:var(--color-surface);border-radius:8px;min-height:46px;
+  padding:6px 10px;display:flex;align-items:center;gap:12px}
+.range{font-size:13px;font-variant-numeric:tabular-nums;min-width:150px}
+.status{font-size:12px;color:var(--color-secondary);flex:1}
+.chips{display:flex;gap:4px;max-width:55%;overflow-x:auto;scrollbar-width:thin}
+.chips button{min-width:28px;height:26px;padding:0 6px;border-radius:6px;
+  border:1px solid var(--color-border);background:var(--color-surface);
+  color:var(--color-text);font:12px "Segoe UI",Arial,sans-serif;cursor:pointer;
+  font-variant-numeric:tabular-nums}
+.chips button[aria-current="page"]{background:var(--color-accent);
+  border-color:var(--color-accent-hover);font-weight:600}
+.chips button:hover{border-color:var(--color-accent-hover)}
+.chips button:focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}
+.gallery{height:288px;overflow:auto;background:var(--color-canvas);
+  border:1px solid var(--color-section-border);border-radius:8px;padding:8px;
+  margin-top:8px}
+.tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.tile{height:64px;background:var(--color-surface);border:1px solid var(--color-border);
+  border-radius:6px;display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--color-secondary);font-variant-numeric:tabular-nums}
+.footer{padding:12px;text-align:center;font-size:12px;color:var(--color-secondary)}
+.note{font-size:12px;color:var(--color-secondary);margin-top:8px;line-height:1.5}
+@media(max-width:540px){
+  .pager{gap:6px;padding:6px}
+  .range{min-width:0;white-space:nowrap;font-size:12px}
+  .status{font-size:11px}
+  .chips{max-width:50%}
+  .tiles{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Compact pager — Images toolbar</h1>
+<div class="muted">Approved reference: 2a only · 80-image batches · synthetic 342-image dataset.</div>
+<h2><span class="muted">2a</span> Hybrid — infinite scroll + position scrubber + jump chips</h2>
+<div class="pager" role="navigation" aria-label="Images loaded-range and batch navigation">
+  <div class="range" id="range">1–24 <span class="muted">of 342</span></div>
+  <div class="status" id="status" aria-live="polite">80 loaded</div>
+  <div class="chips" id="chips" aria-label="Jump to image batch"></div>
+</div>
+<div class="gallery" id="gallery" tabindex="0" aria-label="Scrollable synthetic image gallery">
+  <div class="tiles" id="tiles"></div>
+  <div class="footer" id="footer">Scroll to load more</div>
+</div>
+<div class="note">Scroll the grid: 80 more load before you reach the end. The chips highlight the batch on screen. Chips jump to a batch (1 = first 80, 2 = 81–160 …) and load up to it. Selection scope in the original mockup: "Select all N loaded".</div>
+<div class="note">Reference only: the real DTFlow retains its existing all-matching selection semantics and must use bounded thumbnail widgets. Normal and fullscreen use the same Qt pager, at the same position.</div>
+</main>
+<script>
+"use strict";
+const total=342, size=80;
+const gallery=document.getElementById("gallery");
+const tiles=document.getElementById("tiles");
+const chips=document.getElementById("chips");
+const range=document.getElementById("range");
+const status=document.getElementById("status");
+const footer=document.getElementById("footer");
+let loaded=80, loading=false, from=1, to=24;
+const columns=()=>getComputedStyle(tiles).gridTemplateColumns.split(" ").length;
+const rowHeight=()=>{const el=tiles.firstElementChild;return el?el.getBoundingClientRect().height+8:72;};
+function appendTiles(){
+  for(let i=tiles.childElementCount+1;i<=loaded;i++){
+    const tile=document.createElement("div");
+    tile.className="tile";tile.textContent=String(i);
+    tiles.appendChild(tile);
+  }
+}
+function renderChips(){
+  chips.replaceChildren();
+  for(let n=1;n<=Math.ceil(total/size);n++){
+    const start=(n-1)*size+1, end=Math.min(total,n*size);
+    const btn=document.createElement("button");
+    btn.textContent=String(n);btn.title="Jump to "+start+"–"+end;
+    btn.type="button";
+    if(from>=start&&from<=end)btn.setAttribute("aria-current","page");
+    btn.addEventListener("click",()=>jumpTo(n));
+    chips.appendChild(btn);
+  }
+}
+function measure(){
+  const cols=columns(), height=rowHeight();
+  from=Math.min(loaded,Math.floor(Math.max(0,gallery.scrollTop)/height)*cols+1);
+  to=Math.min(loaded,Math.max(from,Math.ceil((gallery.scrollTop+gallery.clientHeight)/height)*cols));
+  range.innerHTML=from+"–"+to+' <span class="muted">of '+total+"</span>";
+  status.textContent=loading?"Loading 80 more…":loaded+" loaded";
+  footer.textContent=loaded>=total?"End of results · "+total+" images":
+    loading?"Loading 80 more…":"Scroll to load more";
+  renderChips();
+  if(to>=loaded-cols*2&&loaded<total&&!loading){
+    loading=true;status.textContent="Loading 80 more…";
+    window.setTimeout(()=>{loaded=Math.min(total,loaded+size);loading=false;appendTiles();measure();},200);
+  }
+}
+function jumpTo(batch){
+  const start=(batch-1)*size;
+  // The small *reference* demo fills all intermediate items, as in the source mockup.
+  loaded=Math.min(total,Math.max(loaded,start+size));
+  appendTiles();
+  const row=Math.floor(start/columns());
+  gallery.scrollTop=row*rowHeight();
+  measure();
+}
+gallery.addEventListener("scroll",measure,{passive:true});
+window.addEventListener("resize",measure);
+appendTiles();measure();
+</script>
+</body>
+</html>
