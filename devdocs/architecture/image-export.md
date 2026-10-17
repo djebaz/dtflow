@@ -106,7 +106,7 @@ not acceptance of production implementation. No agent tests or smoke tests were 
 this feature under fast-implement. Final source/Windows/packaged acceptance is the
 owner's responsibility; no inference or provider calls are needed to validate export.
 
-The owner later reported a source smoke export; see [evidence](../research/jpeg-export-smoke-2026-10-09.md). Remaining scenario/packaged acceptance is separate.
+The owner later reported a source smoke export; see [evidence](../research/jpeg-export-smoke-2026-10-09.md). For PR #76, the earlier Windows/WSL1 export scenarios were accepted at `6202404`, and the owner reports all current-PR source smoke passed on 2026-10-17 following `10650b9`. This includes the current shared-state/per-runtime export follow-up without inferring exact final executable, other-platform or benchmark acceptance. Snapshot-backed selection still cannot authorize export; Generate selection remains independent.
 
 ## Cache-cleanup coordination
 

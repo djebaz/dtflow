@@ -49,7 +49,7 @@ Success requires Qt success, source absence and a verifiable regular-file receip
 
 ## Acceptance
 
-Static implementation evidence only. No tests, GUI smoke, actual recycling, inference or billable actions ran for this change. Owner Windows/Debian/macOS trash/restore and interrupted-operation checks remain required; this adapter does not certify the whole DTFlow application on Debian or macOS.
+The owner accepted the Windows/WSL1 source scenarios at `6202404` and reports all current PR #76 smoke tests passed on 2026-10-17 following `10650b9`, including the later gallery/performance/snapshot follow-ups. The [plan](../plans/2026-10-17-image-removal-modes.md#owner-acceptance) retains the earlier scenario-level evidence. This supersedes earlier source-only/pending checkpoints in this document; those probes and CI alone did not establish runtime acceptance. No new tests, GUI smoke, actual recycling, inference or billable actions were performed by the agent for the follow-up. Debian/macOS, WSL2, exact final packaged acceptance and content-verified restoration are not certified by the owner's Windows/WSL1 source smoke.
 
 ## Review follow-up: bounded preflight
 
