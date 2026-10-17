@@ -67,7 +67,6 @@ from dtflow.services.gallery import (
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.desktop_open import open_local_path
-from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_detail_preview import (
     ASSETS,
     CoverPainter,
@@ -75,6 +74,7 @@ from dtflow.ui.gallery_detail_preview import (
     apply_gallery,
     toggle_image_focus,
 )
+from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.runner import AsyncRunner

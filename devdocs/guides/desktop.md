@@ -154,6 +154,17 @@ During generation or queue dispatch, the window owns the state directory. Genera
 
 ## Images
 
+When Images first opens, its saved-output database query can be followed by a read-only
+snapshot fallback. While that read is pending **and no committed image cards are on
+screen**, a thin animated ring appears after 180 ms in the center of the gallery
+canvas. The same presentation is used in Grid, List and Detail and is unchanged
+in fullscreen. It disappears when the read settles, including when there are
+zero matches; an unavailable read without cards shows an error and **Retry**.
+Existing cards remain visible and usable during background refresh; the centered
+overlay never interrupts them. The ring is not generation progress and does not
+imply a provider request. The separate bottom status row continues to disclose
+read-only snapshot fallback and recovery.
+
 While browsing a snapshot, a slim one-line amber bottom-overlay warning stays until live access is stable. A first live result updates that same row to recovering wording; another consecutive live success at least five seconds later clears it. Snapshot results or failed refreshes restart that recovery interval. Close it with × to hide it for the whole episode, including brief live successes, renewed snapshot reads, changing timestamps and tab navigation. Only a new fallback after stable recovery can warn again. Live results and their normal actions return immediately; this delay affects the warning only. The in-gallery snapshot timestamp remains visible while using a snapshot. This condition row never replaces an active confirmation/editor and has no six-second countdown; ordinary outcome warnings still expire normally.
 
 If live database reads fail while the other system is generating, Images tries the last published read-only snapshot and shows its UTC timestamp plus **Live updates unavailable**. It supports browsing, filters, paging and sidecar inspection while new results may be absent; original-file reads still require shared locking. Export, edit/reuse/regeneration and removal cannot use stale snapshot authority. The app retries live access automatically. A snapshot is published after a generation/queue session and on clean app close if committed gallery state changed, or if no snapshot exists (even for an empty library). Failed publication keeps the previous snapshot; none means the ordinary unavailable message remains. Derived-cache cleanup can remove it and `--no-cache` bypasses it. This is not simultaneous cross-runtime generation/database-writer support. See [snapshot architecture, owner acceptance and limitations](../architecture/gallery-snapshot.md).
