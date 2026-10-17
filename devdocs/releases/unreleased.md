@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #89 navigation correctness follow-up (owner smoke pending): gallery boundary prefetch is no longer scheduled from Qt programmatic scrollbar changes during jumps, layout reflow or anchor restoration; it reacts to user wheel/scrollbar input. A provider-free Qt fixture guards against the regression, and `-x --dev` includes sanitized page-jump offsets. An owner log recorded a direct jump to a final partial batch followed by backward loads, without recorded read errors; that trace does not establish the visible symptom's precise cause.
+
 - PR #89 smoothness follow-up (pending owner visual acceptance): avoid resizing and repainting unchanged Grid cards every time a batch arrives; skip no-op Grid cell repositions and suppress auto-refresh loading-chip flashes while existing cards remain visible. Under `-x --dev`, `gallery_perf` writes sanitized per-stage timings for query, background auto-refresh, adjacent batch, Qt reconciliation/reflow and thumbnail enqueue-to-result latency; normal logging and provider behavior are unchanged.
 
 - PR #89 review: image-navigation screenshots are grouped in a dedicated artifact folder; corrected Qt pager chip alignment and 1600×1000 fullscreen screenshots. The delayed gallery loading ring now covers the initial saved-output DB/snapshot read and empty-card retry only. Live bounded hybrid scrolling remains under implementation; offline screenshots are not proof of deployed behavior.
