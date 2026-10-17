@@ -220,8 +220,19 @@ def render_mapped_gallery_states(app, state, out):
                     if not shell.form.grab().save(str(target)):
                         raise RuntimeError(f"Could not save {target.name}")
                     print(target)
+                warning = activity_strip(shell.form).rows["gallery-snapshot"]
+                warning.activityStatusDismissButton.click()
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading)
+                assert "gallery-snapshot" not in activity_strip(shell.form).rows
+                QTest.qWait(100)
+                target = out / "49-images-snapshot-warning-dismissed.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
             shell.gallery.refresh()
             wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
+            assert "gallery-snapshot" not in activity_strip(shell.form).rows
             # Presentation only: synthetic scope, with execution explicitly blocked.
             wait_for(lambda: shell.gallery.removal_ready)
             shell.gallery._set_checked(item.identity, True)

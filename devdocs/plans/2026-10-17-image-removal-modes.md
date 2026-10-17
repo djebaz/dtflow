@@ -6,6 +6,8 @@ Post-review follow-up (2026-10-17, after `f36a339`): P1 widget recovery and P2 m
 
 ### Gallery recovery and snapshot checkpoint
 
+Owner requested a persistent super-slim snapshot warning, suppressed after voluntary dismissal. Source now adds a canonical single-line amber activity status row without timer/countdown, kept separate from active confirmations/editors. One keyed row is updated on retries and removed on live recovery; dismissal survives tab navigation and timestamp updates for that episode, resetting only after live access returns. Offline states 47/48 include it and 49 covers dismissal plus retry; no render/test run. Owner acceptance remains pending for height, coexistence, dismissal/retry/navigation and a later new fallback.
+
 CI run `39007127663` at `82943f4`: lockfile/Ruff/SQLite steps passed; offline pytest reported 22 failed, 590 passed and 3 skipped. All failures traced to snapshot launch configuration assuming every CLI namespace has `no_cache`. Fix uses the existing false default when that optional attribute is absent; no new tests or local pytest run. Remote CI run `39007332944` passed at `baca692`; the later P2 resolution follow-up needs its own CI result.
 
 - [x] P1: force refresh recovery through normal reconciliation, not the first-render sentinel; clear an initial failure-label reference with its layout.

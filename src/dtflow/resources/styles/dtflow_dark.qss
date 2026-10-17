@@ -1508,6 +1508,26 @@ QFrame#activityStrip {
   background: transparent;
   border: none;
 }
+QWidget#activityStatusRow {
+  background: ${color.warningSurface};
+  border: 1px solid ${color.statusWarningBorder};
+  border-radius: ${size.radiusChip};
+}
+QWidget#activityStatusRow QLabel {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: ${color.warning};
+  font-size: ${type.small};
+}
+QPushButton#activityStatusDismissButton {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: ${color.warning};
+}
 QFrame#inlineFeedback, QWidget#activityProgressRow {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.selection}, stop:1 ${color.surface});
   border: 1px solid ${color.selectionBorder};

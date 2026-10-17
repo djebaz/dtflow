@@ -92,6 +92,14 @@ class ActivityStrip(QObject):
         self.feedback = None
 
     def eventFilter(self, watched, event):
+        if (
+            not self._retired
+            and watched.objectName() == "activityStatusDismissButton"
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Escape
+        ):
+            watched.click()
+            return True
         if not self._retired and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
             self._position()
         return False
@@ -131,7 +139,12 @@ class ActivityStrip(QObject):
                 panel.fit_text(width)
             layout = self.form.activityRowsLayout
             height = layout.heightForWidth(width) if layout.hasHeightForWidth() else layout.sizeHint().height()
-            height = max(48, height)
+            compact_only = (
+                not visible_feedback
+                and self.rows
+                and all(isValid(row) and row.property("compactStatus") for row in self.rows.values())
+            )
+            height = max(1 if compact_only else 48, height)
             rect = QRect(8, max(0, self.host.height() - height - 8), width, height)
             if self.form.geometry() != rect:
                 self.form.setGeometry(rect)
@@ -139,6 +152,40 @@ class ActivityStrip(QObject):
             self.form.raise_()
         finally:
             self._positioning = False
+
+    def status(self, key, text, dismissed):
+        """One persistent single-line condition, independent of feedback/editors.
+
+        The caller owns episode/dismissal policy; retries update this keyed row
+        in place and never arm the transient-result expiry timer.
+        """
+        if not self._live():
+            return
+        row = self.rows.get(key)
+        if row is None or not isValid(row):
+            row = _load("activity_status_row.ui", self.form)
+            row.setProperty("compactStatus", True)
+            row.setProperty("feedbackState", "warning")
+            line = max(
+                row.activityStatusText.fontMetrics().height(), row.activityStatusDismissButton.fontMetrics().height()
+            )
+            row.setFixedHeight(line + 6)
+            row.activityStatusDismissButton.setFixedSize(line, line)
+
+            def close_status():
+                dismissed()
+                self.finish(key)
+
+            row.activityStatusDismissButton.clicked.connect(close_status)
+            # Local key handling never competes with an active editor's Escape.
+            row.activityStatusDismissButton.installEventFilter(self)
+            self.rows[key] = row
+            self.form.activityRowsLayout.addWidget(row)
+        if row.activityStatusText.text() != text:
+            row.activityStatusText.setText(text)
+            row.activityStatusText.setToolTip(text)
+            row.activityStatusText.setAccessibleName(text)
+        self._position()
 
     def start(self, key, label, stop=None, stop_text="Stop after current image", total=0, detail=""):
         if not self._live():

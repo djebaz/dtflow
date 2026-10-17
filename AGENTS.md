@@ -85,6 +85,8 @@ These instructions apply throughout `dtflow`.
 
 ## UI and Qt
 
+- The gallery snapshot condition is a narrow exception to transient amber expiry: use one persistent, single-line amber status row in the shared bottom overlay, without a title/detail stack, timer or lifetime bar. Update its keyed row in place, never replace active confirmations/editors, and remove it on live recovery. User dismissal stays suppressed for that whole fallback episode (including retries, snapshot timestamp changes and navigation); only a later new live-to-snapshot episode may show it again. Keep its canonical Designer form and shared token styles; other warning/result expiry rules stay unchanged.
+
 - **UI previews.** Every change that adds or alters a desktop view, state, overlay row or dialog must extend `tools/ui/render_states.py` in the same change, using offline fixtures (fixture images and masks, fake provider, no network). The script renders only the states it lists. A view that is not in the script has no preview. On Windows, offscreen rendering has no fonts unless `QT_QPA_FONTDIR=C:\Windows\Fonts` is set (or `QT_QPA_PLATFORM=windows`); document this in `devdocs/guides/`. Render only when asked, and report screenshots as layout evidence, not as Windows or DPI acceptance.
 - Use PySide6 and Qt Widgets initially.
 - Read the root `DESIGN.md` before adding or changing a desktop tab; follow its shared tokens, interaction states, layout principles and page checklist. Keep its token snapshot aligned with the runtime `tokens.json` when values change.

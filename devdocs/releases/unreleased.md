@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76: slim, single-line amber snapshot-condition overlay, persistent until live recovery or user dismissal. Retries reuse the row; dismissal stays suppressed for that fallback episode, including navigation/new snapshot timestamps. It coexists with active confirmations/editors; ordinary result-warning expiry is unchanged. Offline dismissal/retry preview extended, not rendered; no tests added or run locally.
+
 - PR #76 P2 review follow-up: use existence-independent location resolution only after normal image resolution fails, avoiding redundant alias probes on successful rows. Unavailable metadata mappings no longer suppress an otherwise readable image; strict provenance/removal checks are unchanged. No tests added or run locally.
 
 - PR #76 CI follow-up: snapshot initialization defaults cache bypass to false for CLI subcommands without `--no-cache`, fixing their pre-dispatch `Namespace.no_cache` crash. No flags or command semantics changed; no tests added.

@@ -296,6 +296,7 @@ class GalleryPage(QObject):
         self._pending_refresh: tuple[bool, bool] | None = None
         self._refresh_failing = False
         self._snapshot_at = None
+        self._snapshot_warning_dismissed = False
         self._restoring = True
         self._query_generation = 0
         self._image_generation = 0
@@ -1089,6 +1090,7 @@ class GalleryPage(QObject):
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
         self._active = active
+        self._sync_snapshot_warning()
         self._sync_auto_refresh()
         if first_activation:
             self.refresh(preserve=True)
@@ -1230,11 +1232,15 @@ class GalleryPage(QObject):
         mode_changed = self._snapshot_at != page.snapshot_at
         if mode_changed:
             self.recycle_scope_revision += 1
-            if feedback(self.page)._armed:
-                feedback(self.page).dismiss()
+            inline = feedback(self.page)
+            if inline._armed and inline._armed[0] is self.delete_button:
+                inline.dismiss()
             self._presented_item = None
             log.info("gallery browsing source=%s", "snapshot" if page.snapshot_at else "live")
+        if not self._snapshot_at or not page.snapshot_at:
+            self._snapshot_warning_dismissed = False
         self._snapshot_at = page.snapshot_at
+        self._sync_snapshot_warning()
         status = self._widget("gallerySnapshotStatus", QLabel)
         status.setVisible(bool(self._snapshot_at))
         if self._snapshot_at:
@@ -1292,6 +1298,24 @@ class GalleryPage(QObject):
         self.refresh_button.setToolTip(self._page_summary())
         self._restore_scroll_later(anchor if anchor_found else None)
         self._schedule_save()
+
+    def _dismiss_snapshot_warning(self):
+        self._snapshot_warning_dismissed = True
+
+    def _sync_snapshot_warning(self):
+        strip = activity_strip(self.page)
+        if strip is None:
+            return
+        key = "gallery-snapshot"
+        if not self._snapshot_at or not self._active or self._snapshot_warning_dismissed:
+            if key in strip.rows:
+                strip.finish(key)
+            return
+        strip.status(
+            key,
+            f"Live gallery unavailable · Read-only snapshot {self._snapshot_at} · Retrying automatically",
+            self._dismiss_snapshot_warning,
+        )
 
     def _populate_facets(self, models: tuple[str, ...], loras: tuple[str, ...]) -> None:
         for combo, placeholder, values in (
