@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.gallery import GalleryItem, GalleryQuery
+from dtflow.logging_setup import dev_enabled
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as gallery_storage
@@ -308,6 +309,7 @@ class GalleryPage(QObject):
         self._snapshot_live_since = None
         self._restoring = True
         self._query_generation = 0
+        self._query_started = 0.0
         self._image_generation = 0
         self._detail_generation = 0
         self._presented_item: GalleryItem | None = None
@@ -1123,7 +1125,11 @@ class GalleryPage(QObject):
         if not self._active or not self.auto_button.isChecked():
             return
         if self._loading or self._adjacent_loading or self._suppress_batch_scroll or self.filter_timer.isActive():
+            if dev_enabled():
+                log.debug("gallery_perf phase=auto_refresh action=skipped mounted=%d", len(self.items))
             return
+        if dev_enabled():
+            log.debug("gallery_perf phase=auto_refresh action=started mounted=%d", len(self.items))
         self.refresh(preserve=True)
 
     def _auto_refresh_changed(self, _checked: bool) -> None:
@@ -1208,6 +1214,12 @@ class GalleryPage(QObject):
     def _submit_query(self, query: GalleryQuery, *, anchor: str | None) -> None:
         self._query_generation += 1
         generation = self._query_generation
+        self._query_started = monotonic()
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=query_start offset=%d limit=%d mounted=%d",
+                query.offset, query.limit, len(self.items),
+            )
         self._loading = True
         self._adjacent_failed_offset = None
         if not self.items and self._rendered_page is None:
@@ -1257,6 +1269,15 @@ class GalleryPage(QObject):
     def _query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
             return
+        if dev_enabled():
+            elapsed_ms = (monotonic() - self._query_started) * 1000
+            log.debug(
+                "gallery_perf phase=query_done elapsed_ms=%.1f returned=%d source=%s error=%s",
+                elapsed_ms,
+                len(result[1].items) if result is not None and error is None else 0,
+                "snapshot" if result is not None and error is None and result[1].snapshot_at else "live",
+                type(error).__name__ if error else "none",
+            )
         self._loading = False
         self.refresh_button.setEnabled(True)
         self._sync_pager()
@@ -1562,6 +1583,15 @@ class GalleryPage(QObject):
             return
         generation = self._query_generation
         source = self._snapshot_at
+        started = monotonic()
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=adjacent_start direction=%s offset=%d mounted=%d source=%s",
+                "forward" if direction > 0 else "backward",
+                offset,
+                len(self.items),
+                "snapshot" if source else "live",
+            )
         self._adjacent_loading = True
         self._sync_pager()
 
@@ -1573,12 +1603,21 @@ class GalleryPage(QObject):
 
         self.runner.submit(
             read(),
-            lambda page, error: self._adjacent_done(generation, direction, query, source, page, error),
+            lambda page, error: self._adjacent_done(generation, direction, query, source, page, error, started),
         )
 
-    def _adjacent_done(self, generation: int, direction: int, query: GalleryQuery, source, page, error) -> None:
+    def _adjacent_done(
+        self, generation: int, direction: int, query: GalleryQuery, source, page, error, started: float | None = None
+    ) -> None:
         if generation != self._query_generation:
             return
+        if dev_enabled() and started is not None:
+            log.debug(
+                "gallery_perf phase=adjacent_read elapsed_ms=%.1f returned=%d error=%s",
+                (monotonic() - started) * 1000,
+                len(page.items) if page is not None else 0,
+                type(error).__name__ if error else "none",
+            )
         self._adjacent_loading = False
         if self._pending_refresh is not None:
             pending = self._pending_refresh
@@ -1631,6 +1670,7 @@ class GalleryPage(QObject):
         # Reflow and table reconciliation can emit scrollbar events. Do not
         # launch another adjacent query before the anchor has been restored.
         self._suppress_batch_scroll = True
+        render_started = monotonic()
         if direction > 0:
             combined = [*self.items, *page.items]
             if len(combined) > MAX_MOUNTED_IMAGES:
@@ -1645,6 +1685,11 @@ class GalleryPage(QObject):
         self._render_page()
         self._rendered_page = (self.offset, tuple(self.items))
         self._adjacent_failed_offset = None
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=adjacent_reconcile elapsed_ms=%.1f mounted=%d",
+                (monotonic() - render_started) * 1000, len(self.items),
+            )
 
         def settle():
             try:
@@ -1671,6 +1716,7 @@ class GalleryPage(QObject):
         self._schedule_save()
 
     def _render_page(self) -> None:
+        started = monotonic()
         previous = {item.identity: item for item in self._rendered_page[1]} if self._rendered_page else {}
         identities = {item.identity for item in self.items}
         image_changes = [
@@ -1736,6 +1782,15 @@ class GalleryPage(QObject):
                 widget.setUpdatesEnabled(enabled)
         self._sync_selection_ui()
         self._queue_thumbnails(image_changes)
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=render_page elapsed_ms=%.1f mounted=%d added=%d removed=%d decoded_enqueued=%d",
+                (monotonic() - started) * 1000,
+                len(self.items),
+                sum(item.identity not in previous for item in self.items),
+                len(set(previous) - identities),
+                len(image_changes),
+            )
 
     @staticmethod
     def _image_key(item: GalleryItem) -> tuple[str, int | None, str]:
@@ -1924,7 +1979,7 @@ class GalleryPage(QObject):
             if self._thumb_versions.get(identity) != generation:
                 continue
             self._thumb_active += 1
-
+            started = monotonic()
             selected = next(x for x in self.items if x.identity == identity)
 
             async def work(filename=path, item=selected):
@@ -1932,10 +1987,21 @@ class GalleryPage(QObject):
 
             self.runner.submit(
                 work(),
-                lambda result, error, gen=generation, ident=identity: self._thumbnail_done(gen, ident, result, error),
+                lambda result, error, gen=generation, ident=identity, stamp=started: self._thumbnail_done(
+                    gen, ident, result, error, stamp
+                ),
             )
 
-    def _thumbnail_done(self, generation: int, identity: str, result, error) -> None:
+    def _thumbnail_done(
+        self, generation: int, identity: str, result, error, started: float | None = None
+    ) -> None:
+        if dev_enabled() and started is not None:
+            log.debug(
+                "gallery_perf phase=thumbnail_end_to_end elapsed_ms=%.1f success=%s active=%d",
+                (monotonic() - started) * 1000,
+                bool(error is None and result and result[0] is not None),
+                self._thumb_active,
+            )
         self._thumb_active = max(0, self._thumb_active - 1)
         if generation == self._thumb_versions.get(identity) and error is None and result:
             image, issue = result
@@ -2426,6 +2492,7 @@ class GalleryPage(QObject):
     def _layout_cards(self) -> None:
         if not self._grid_buttons:
             return
+        started = monotonic()
         width = self._thumbnail_pixels(self.slider.value()) + 16
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
         keys = tuple(self._grid_buttons)
@@ -2446,6 +2513,12 @@ class GalleryPage(QObject):
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._grid_layout_keys = keys
         self._grid_layout_columns = columns
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d",
+                (monotonic() - started) * 1000,
+                len(keys), columns,
+            )
 
     def eventFilter(self, watched, event) -> bool:
         kind = event.type()
