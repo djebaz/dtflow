@@ -22,6 +22,7 @@ class GalleryPager:
         self.layout = self._widget("galleryPagerChips", QWidget).layout()
         assert isinstance(self.layout, QHBoxLayout)
         self.buttons: dict[int, QPushButton] = {}
+        self._gaps: list[QLabel] = []
         self._rendered_pages: tuple[int, ...] = ()
 
     def _widget(self, name: str, expected):
@@ -66,12 +67,17 @@ class GalleryPager:
                 self.layout.removeWidget(button)
                 button.deleteLater()
             self.buttons.clear()
+            for gap in self._gaps:
+                self.layout.removeWidget(gap)
+                gap.deleteLater()
+            self._gaps.clear()
             previous = 0
             for number in pages:
                 if previous and number > previous + 1:
                     gap = QLabel("…", self.page)
                     gap.setAccessibleName("Pages omitted")
                     self.layout.addWidget(gap)
+                    self._gaps.append(gap)
                 button = QPushButton(str(number), self.page)
                 button.setObjectName(f"galleryPagerPage{number}")
                 button.setProperty("role", "galleryPagerChip")

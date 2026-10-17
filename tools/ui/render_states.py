@@ -817,6 +817,50 @@ def render_gallery_composition_states(shell, state, out):
         present(item)
         gallery.show_view("Grid")
         gallery._unselect_all()
+        # The pager's static/fullscreen states are captured before live lazy loading is wired.
+        # Synthetic identities and solid-color fixture pixels never call a provider.
+        pager_records = [
+            replace(item, identity=f"offline-gallery:{index}", attempt_id=f"offline-attempt:{index}")
+            for index in range(81, 105)
+        ]
+        gallery.items, gallery.total, gallery.offset = pager_records, 342, 80
+        gallery._render_page()
+        gallery._rendered_page = (80, tuple(pager_records))
+        gallery.pager.present(total=342, visible_start=81, visible_end=104, loaded=160, active_page=2)
+        assert gallery.pager.buttons[2].isChecked()
+        assert gallery._widget("galleryPagerBar").isVisible()
+        snap("images-65-pager-grid-normal")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            assert gallery._widget("galleryPagerBar").isVisible()
+            snap("images-66-pager-grid-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+        gallery.show_view("List")
+        snap("images-67-pager-list-normal")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            assert gallery._widget("galleryPagerBar").isVisible()
+            snap("images-68-pager-list-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+        gallery.select(pager_records[0].identity)
+        gallery.show_view("Detail")
+        snap("images-69-pager-detail-normal")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            assert gallery._widget("galleryPagerBar").isVisible()
+            snap("images-70-pager-detail-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+        gallery.pager.present(total=342, visible_start=81, visible_end=104, loaded=160, active_page=2, loading=True)
+        snap("images-71-pager-loading")
+        gallery.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
+        snap("images-72-pager-empty")
+        present(item)
+        gallery._sync_pager()
+        gallery.show_view("Grid")
+        gallery._unselect_all()
         with patch.object(export, "start") as start:
             gallery.export_button.click()
             assert not start.called and not export.running and gallery.export_button.isEnabled()

@@ -67,6 +67,7 @@ from dtflow.services.gallery import (
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.desktop_open import open_local_path
+from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.gallery_detail_preview import (
     ASSETS,
     CoverPainter,
@@ -365,6 +366,8 @@ class GalleryPage(QObject):
         self._setup_views()
         self._setup_filmstrip()
         self._setup_actions()
+        self.pager = GalleryPager(self.page, self._jump_to_page)
+        self.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
         self._setup_selection_actions()
         self._restore_preferences()
         self._clear_detail()
@@ -1186,6 +1189,7 @@ class GalleryPage(QObject):
         generation = self._query_generation
         self._loading = True
         self.refresh_button.setEnabled(False)
+        self._sync_pager(loading=True)
 
         async def work():
             current = query
@@ -1224,6 +1228,7 @@ class GalleryPage(QObject):
             return
         self._loading = False
         self.refresh_button.setEnabled(True)
+        self._sync_pager()
         if error is not None or (result is not None and result[1].snapshot_at):
             self._snapshot_live_since = None
         if self._pending_refresh is not None:
@@ -1277,6 +1282,7 @@ class GalleryPage(QObject):
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
+        self._sync_pager()
         # Refresh may add/remove outputs even when filters and visible cards match.
         self._hidden_query = None
         self._all_filtered_checked = False
@@ -1390,6 +1396,24 @@ class GalleryPage(QObject):
             self._set_grid_message(message)
         if first:
             feedback(self.page).notice("Saved outputs unavailable", message, "warning")
+
+    def _jump_to_page(self, page_number: int) -> None:
+        """Use the existing bounded query path for explicit chip navigation."""
+        current = self.offset // PAGE_SIZE + 1
+        self._change_page(page_number - current)
+
+    def _sync_pager(self, *, loading: bool = False) -> None:
+        """Keep the compact pager consistent with the current committed result page."""
+        start = self.offset + 1 if self.items else 0
+        end = self.offset + len(self.items) if self.items else 0
+        self.pager.present(
+            total=self.total,
+            visible_start=start,
+            visible_end=end,
+            loaded=len(self.items),
+            active_page=(self.offset // PAGE_SIZE) + 1,
+            loading=loading,
+        )
 
     def _page_summary(self) -> str:
         if not self.total:
