@@ -5,6 +5,8 @@ This is coding orientation against [initial.md](plans/initial.md), not a release
 
 ## Implemented on main
 
+PR #76 / issue #83 includes a source-present native-Windows read-only fallback for WSL1-generated managed outputs under a proven same-drive shared state. Grid/List/Detail, metadata, clipboard/path open actions, Edit handoff and JPEG export now use verified access aliases while stored references and removal authorization stay intact. Sequential Windows owner smoke is pending; no native Windows reproduction or capability acceptance is claimed.
+
 PR #76 branch scope (not yet merged/accepted): explicit Trash/permanent split action, separate environment mode preferences, fresh irreversible confirmation and guarded Windows-recorded managed-original removal from WSL. Reuses the existing service/ledger, advancing removal schema to 2; metadata/history/exports remain. Focused disposable-file probes established the need for native Windows leases and helper lock exclusion/EOF release, not end-to-end removal. No tests, renders, builds or real deletion ran. See [plan and pending owner acceptance](plans/2026-10-17-image-removal-modes.md).
 
 WSL follow-up (PR #75, source-present branch work): read-only access aliases for

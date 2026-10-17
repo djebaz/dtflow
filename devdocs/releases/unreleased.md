@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76 / issue #83: native Windows can use verified read-only aliases for WSL1-managed images under the same Windows-hosted state, without rewriting recorded paths. Grid/List/Detail, bounded sidecars, Copy Path(s), Folder/External Viewer handoff, Edit handoff and copy-only JPEG export use revalidated access. The fallback requires a matching whole-state WSL1 drive reference, database identity, safe non-redirected managed files and sidecar provenance; edited-image SHA-256 is checked when recorded. Custom output roots, Linux-native locations and unverified mappings remain unavailable. Existing Windows-to-WSL read aliases and deletion eligibility remain unchanged. Source-present, Windows owner smoke pending; no provider requests.
+
 - PR #76 source-present Images split action: choose Trash or Delete permanently, with separate Windows/WSL preferences and fresh inline irreversible-action confirmation every time. No automatic permanent fallback or persisted consent. Guarded WSL removal of Windows-recorded managed originals uses a narrow native Windows lock/handle boundary; unsupported support refuses access. Metadata/history/exports remain intact. Removal ledger upgrades to schema 2, preserving old records while older applications refuse it. Focused disposable-file lock probes and subsequent successful automated offline CI (run 38984516615 at `46b7517`); no real deletion, GUI render or provider inference. Owner Windows/WSL runtime acceptance remains pending: [implementation plan](../plans/2026-10-17-image-removal-modes.md).
 
 - Source-present WSL gallery read-path resolution and selected-toggle font follow-up:

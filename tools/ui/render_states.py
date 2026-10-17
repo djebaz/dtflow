@@ -216,6 +216,14 @@ def render_mapped_gallery_states(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            # Present a safe unsupported-alias status without attempting a system launch.
+            shell.gallery._read_action_done(
+                "folder", item.identity, None, OSError("Recorded output is not under this shared Windows state.")
+            )
+            target = out / "41-images-read-alias-unavailable.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
         finally:
             shell.runner.shutdown()
             shell.form.close()

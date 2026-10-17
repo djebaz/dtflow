@@ -8,6 +8,10 @@ Images **Export** toggles a scrollable right-hand column beside the Grid/List/De
 
 The gallery's checked identity set is session-only and distinct from the focused image; hidden filtered checks are included in the frozen export snapshot. The owner reported that the earlier export action worked; this new inline layout/navigation/cancellation behavior still requires owner smoke acceptance. No second exporter or dialog, new dependency, encoding or metadata change is introduced.
 
+## Shared Windows/WSL1 read-only source aliases (PR #76 / issue #83)
+
+On native Windows, if the original WSL1-recorded absolute path is unreadable, a committed managed output can be read through its current shared-state location only when the *entire* recorded drive/state suffix agrees with the current Windows state, the attempt/ordinal match the DB identity, both output and sidecar are non-redirected regular files, and the bounded sidecar confirms the original artifact path and attempt. Image-operation final SHA-256 is compared when present. The source is revalidated under the existing original-file lease for JPEG export, preserving all destination/metadata/privacy protections. The fallback does not authorize Trash/Delete, does not rewrite stored evidence, and does not infer locations for custom output roots or Linux-native files. Owner Windows smoke, not code presence, determines runtime acceptance.
+
 ## Destination routing and file safety
 
 Normal JPGs and optional same-basename JSON are directly in the user-selected folder. Default-on `ExportOptions.separate_noise_blank` routes flagged copies only into `noise/` or `blank/`; disabling it restores flat export without analysis. Sidecars always follow their image. Category folders are created on demand and must not redirect elsewhere.

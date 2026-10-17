@@ -125,3 +125,7 @@ individually unverified coverage, not blanket passes.
   syntax/import checks, lint, rendering, build or other validation were run for
   this implementation, per the selected workflow. No training, inference or
   potentially billable action was performed.
+
+## PR #76 / issue #83 opposite-direction read-only follow-up
+
+Native Windows has no WSL mountinfo. When a saved WSL1 output path cannot be opened natively, this branch adds a limited alias into the *current Windows-hosted shared state* after matching the full WSL1 drive/state suffix, committed attempt/output identity, safe regular-file containment, and bounded sidecar provenance. Edited-image SHA-256 is also checked when recorded. This is not a general `/mnt/c` conversion, portable artifact relocation or concurrent Windows/WSL state-writer guarantee. Custom `--out` roots, WSL-native files and unsafe/ambiguous references remain unavailable. The existing Windows-recorded-to-WSL mount resolver continues to operate independently; destructive actions are not authorized by any read alias. Windows owner smoke is pending. No new test cases were introduced at owner request; reuse existing CI and manually inspect same-image identity and thumbnail tooltip.
