@@ -33,6 +33,8 @@ Follow `AGENTS.md`, `DESIGN.md`, `README.md`, `devdocs/current_dev_status.md`, `
 - Capture state names and visual output; compare geometry, contrast, truncation and fullscreen placement with Option 2a. Repair visual issues before advancing.
 - Push immediately. Renders/CI must report only checks actually run.
 
+**Artifact layout:** Option 2a captures are collected under `images/pagination/` in the UI renders ZIP and separately enumerated in the Actions run summary. All other existing preview filenames and locations remain unchanged.
+
 ### 3. Live hybrid browsing (commit 4)
 - Make Grid/List vertical scroll load further 80-record batches seamlessly; prefetch before reaching the bottom. Expose direct jump-chip navigation, correct visible-range/active-chip tracking, and a bounded window for widgets and decode work so gallery growth does not exhaust memory.
 - Retain stable ordering, filter/sort state, update-safe anchor retention during auto-refresh, existing checked identity semantics and snapshot read-only restrictions; don't submit redundant parallel queries.

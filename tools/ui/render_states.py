@@ -618,7 +618,10 @@ def render_active_queue_states(shell, out):
 
     def snap(name):
         QTest.qWait(100)
-        save(form, out, name)
+        # Keep this feature's review images together in the Actions archive.
+        target_dir = out / "images" / "pagination" if "-pager-" in name else out
+        target_dir.mkdir(parents=True, exist_ok=True)
+        save(form, target_dir, name)
 
     def hold_worker(coroutine, callback):
         coroutine.close()

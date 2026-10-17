@@ -132,7 +132,7 @@ jobs:
 
           out, log_path = Path("tmp/ui-renders"), Path("tmp/render.log")
           log = log_path.read_text(errors="replace").splitlines() if log_path.exists() else []
-          pngs = sorted(out.glob("*.png")) if out.exists() else []
+          pngs = sorted(out.rglob("*.png")) if out.exists() else []
           status = os.environ.get("RENDER_STATUS", "")
           verdict = {
               "0": "✅ Passed",
@@ -147,8 +147,10 @@ jobs:
               return struct.unpack(">II", head[16:24]) if head[:8] == b"\x89PNG\r\n\x1a\n" else (0, 0)
 
           # Accept tab-first names and retain compatibility with older numbered renders.
-          def area(name):
-              parts = name.split("-", 2)
+          def area(path):
+              if path.relative_to(out).parts[:2] == ("images", "pagination"):
+                  return "Images / Pagination"
+              parts = path.stem.split("-", 2)
               if len(parts) == 3 and parts[1].isdigit():
                   return parts[0]
               return parts[1] if len(parts) > 1 and parts[0].isdigit() else "other"
@@ -188,13 +190,24 @@ jobs:
               md += ["### Problems", "", "```", *problems[-20:], "```", ""]
           if pngs:
               # Group singleton areas together, including older unprefixed state names.
-              counts = Counter(area(p.stem) for p in pngs)
-              single = [p.stem for p in pngs if counts[area(p.stem)] == 1]
+              counts = Counter(area(p) for p in pngs)
+              single = [p.relative_to(out).as_posix() for p in pngs if counts[area(p)] == 1]
               md += ["### States by area", "", "| Area | States |", "|---|---:|"]
               md += [f"| {name} | {count} |" for name, count in counts.most_common() if count > 1]
               if single:
                   md.append(f"| other ({', '.join(single)}) | {len(single)} |")
               md.append("")
+              pagination = [p for p in pngs if area(p) == "Images / Pagination"]
+              if pagination:
+                  md += [
+                      "### Images / Pagination — review these together", "",
+                      f"Folder in artifact: `images/pagination/` · **{len(pagination)} screenshots**", "",
+                      "| Screenshot | Resolution | KB |", "|---|---|---:|",
+                  ]
+                  for path in pagination:
+                      width, height = size(path)
+                      md.append(f"| {path.name} | {width}×{height} | {path.stat().st_size // 1024} |")
+                  md.append("")
           if gaps:
               md += ["### Slowest states", "", "| State | Seconds |", "|---|---:|"]
               md += [f"| {name} | {gap:.1f} |" for gap, name in sorted(gaps, reverse=True)[:5]]
@@ -203,7 +216,7 @@ jobs:
               md += ["<details><summary>All rendered states</summary>", "", "| State | Size | KB |", "|---|---|---:|"]
               for path in pngs:
                   width, height = size(path)
-                  md.append(f"| {path.stem} | {width}×{height} | {path.stat().st_size // 1024} |")
+                  md.append(f"| {path.relative_to(out).as_posix()} | {width}×{height} | {path.stat().st_size // 1024} |")
               md += ["", "</details>", ""]
           if notes:
               md += ["<details><summary>Script messages (fixtures log expected failures on purpose)</summary>", "", "```"]
