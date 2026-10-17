@@ -1623,10 +1623,7 @@ class GalleryPage(QObject):
         mode = self.mode
         pixel_offset = 0
         if mode == "Grid" and anchor in self._grid_buttons:
-            pixel_offset = (
-                self._grid_buttons[anchor].parentWidget().y()
-                - self.grid_scroll.verticalScrollBar().value()
-            )
+            pixel_offset = self._grid_buttons[anchor].parentWidget().y() - self.grid_scroll.verticalScrollBar().value()
         elif mode == "List":
             row = self.table.rowAt(0)
             pixel_offset = self.table.rowViewportPosition(row) if row >= 0 else 0
