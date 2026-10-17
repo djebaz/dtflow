@@ -64,8 +64,9 @@ def _reader(state: Path):
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_SNAPSHOT_BYTES:
         raise PersistenceError("No supported gallery snapshot is available.")
     uri = path.as_uri() + "?mode=ro&immutable=1"
-    db = sqlite3.connect(uri, uri=True, timeout=1)
+    db = None
     try:
+        db = sqlite3.connect(uri, uri=True, timeout=1)
         db.row_factory = sqlite3.Row
         if db.execute("PRAGMA user_version").fetchone()[0] != VERSION:
             raise PersistenceError("Unsupported gallery snapshot version.")
@@ -89,7 +90,8 @@ def _reader(state: Path):
     except (sqlite3.Error, ValueError, TypeError, IndexError) as exc:
         raise PersistenceError("Gallery snapshot could not be read.") from exc
     finally:
-        db.close()
+        if db is not None:
+            db.close()
 
 
 def _signature(db) -> str:

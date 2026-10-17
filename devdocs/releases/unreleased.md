@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Snapshot review finding 3: normalize connection-opening SQLite failures as snapshot persistence failures and guard cleanup, preserving the original live-query error when fallback cannot open its file.
+
 - Snapshot review finding 2: publication checks its deadline and logical database size across both attempts/outcomes copy loops and finalization; a post-flush deadline prevents replacing the previous snapshot after over-budget work.
 
 - Snapshot review finding 1: selected-image export now rejects snapshot-backed gallery selection before destination setup, matching checked-image export. Generate export and fresh live-record verification remain independent.
