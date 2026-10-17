@@ -153,6 +153,8 @@ During generation or queue dispatch, the window owns the state directory. Genera
 
 ## Images
 
+If live database reads fail while the other system is generating, Images tries the last published read-only snapshot and shows its UTC timestamp plus **Live updates unavailable**. It supports browsing, filters, paging and sidecar inspection while new results may be absent; original-file reads still require shared locking. Export, edit/reuse/regeneration and removal cannot use stale snapshot authority. The app retries live access automatically. A snapshot is published after a generation/queue session and on clean app close if committed gallery state changed, or if no snapshot exists (even for an empty library). Failed publication keeps the previous snapshot; none means the ordinary unavailable message remains. Derived-cache cleanup can remove it and `--no-cache` bypasses it. This is not simultaneous cross-runtime generation/database-writer support. See [snapshot architecture and pending owner acceptance](../architecture/gallery-snapshot.md).
+
 #### Windows history viewed in WSL 1
 
 The Images reader can resolve saved Windows drive paths through the current WSL

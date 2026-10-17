@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76: browsing-only gallery snapshot when live cross-runtime database reads fail, with UTC timestamp, filters/paging and automatic return to live browsing. Publish after generation/queue sessions and clean close only when changed or missing; retain the prior snapshot on failure. Snapshot state cannot authorize export, editing or deletion; original-file safeguards remain. Derived cleanup and `--no-cache` apply. Separate review fixes preserve widget ownership on recovery and classify missing WSL1-recorded originals/sidecars on Windows. Ruff lint passed; no new tests, renders or actual generation/deletion. Owner snapshot acceptance remains pending; see [architecture](../architecture/gallery-snapshot.md).
+
 - PR #76 review P2: validate native managed-state read locations independently of image existence, so missing WSL1-recorded originals on Windows use File missing and retain access to surviving sidecar metadata. Strict content checks for actual reads/export and mutation authorization remain unchanged. No new tests or runtime acceptance claimed.
 
 - PR #76 review P1: refresh recovery reconciles existing gallery widgets without resetting first-render ownership; initial failure messages are cleared with their layout. Added an offline empty-recovery fixture, not rendered; no new tests.
@@ -87,7 +89,7 @@
 ## Release audit
 
 - PRs: #63, #64, #73, #75, #76
-- Scope: CPU mask PoC, image preparation/editor/owner-probe and queue work, agent setup, Qt Trash capability guard, WSL gallery aliases/fonts and explicit guarded Trash/permanent removal modes; production/platform acceptance remains separate. PR #76 CI (lockfile, Ruff, SQLite, offline pytest) passes; owner smoke covers the WSL1 permanent final-image path and the split control only.
+- Scope: CPU mask PoC, image preparation/editor/owner-probe and queue work, agent setup, Qt Trash capability guard, WSL gallery aliases/fonts and explicit guarded Trash/permanent removal modes, gallery recovery/missing-location fixes and browsing snapshot fallback. Prior PR #76 CI/owner smoke is separate from the new snapshot/review fixes; snapshot runtime acceptance remains pending.
 
 
 

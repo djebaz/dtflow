@@ -58,8 +58,10 @@ from dtflow.services.gallery import (
     copy_output_paths,
     filter_choices,
     inspect_output,
+    load_detail,
     locate_output,
     query_outputs,
+    query_snapshot,
     resolve_item_read,
 )
 from dtflow.ui.activity_strip import activity_strip
@@ -293,6 +295,7 @@ class GalleryPage(QObject):
         self._loading = False
         self._pending_refresh: tuple[bool, bool] | None = None
         self._refresh_failing = False
+        self._snapshot_at = None
         self._restoring = True
         self._query_generation = 0
         self._image_generation = 0
@@ -663,13 +666,17 @@ class GalleryPage(QObject):
             if self._all_filtered_checked
             else "Select matching images across all pages, up to 10,000 checked in total."
         )
-        self.select_filtered_button.setEnabled(self.total > 0 or self._selection_busy)
+        self.select_filtered_button.setEnabled(not self._snapshot_at and (self.total > 0 or self._selection_busy))
         self.clear_selection_button.setEnabled(count > 0)
-        self.copy_paths_button.setEnabled(count > 0)
+        self.copy_paths_button.setEnabled(count > 0 and not self._snapshot_at)
         self.export_button.setEnabled(self._export_callback is not None)
         callback = self._permanent_callback if self.removal_mode == "permanent" else self._recycle_callback
         self.delete_button.setEnabled(
-            count > 0 and not self._recycle_busy and self.removal_ready and callback is not None
+            count > 0
+            and not self._snapshot_at
+            and not self._recycle_busy
+            and self.removal_ready
+            and callback is not None
         )
         self._widget("galleryRemovalMenuButton", QPushButton).setEnabled(self.removal_ready and not self._recycle_busy)
         self._sync_detail_checkbox()
@@ -832,6 +839,8 @@ class GalleryPage(QObject):
             self._after_selection_edit()
 
     def _begin_selection_scan(self, *, mode: str) -> None:
+        if self._snapshot_at:
+            return
         if self._selection_busy:
             return
         try:
@@ -942,6 +951,9 @@ class GalleryPage(QObject):
             self._begin_selection_scan(mode="clear-hidden")
 
     def _refresh_hidden_count(self) -> None:
+        if self._snapshot_at:
+            self._sync_selection_ui()
+            return
         if self._selection_busy:
             return
         checked = self.selection.snapshot()
@@ -979,6 +991,8 @@ class GalleryPage(QObject):
         self._sync_selection_ui()
 
     def _copy_checked_paths(self) -> None:
+        if self._snapshot_at:
+            return
         ids = self.selection.snapshot()
         if not ids:
             return
@@ -1003,6 +1017,8 @@ class GalleryPage(QObject):
 
     def _request_recycle(self) -> None:
         """Only the confirmation controller can authorize a Recycle Bin operation."""
+        if self._snapshot_at:
+            return
         callback = self._permanent_callback if self.removal_mode == "permanent" else self._recycle_callback
         if self.selection.checked and self.removal_ready and not self._recycle_busy and callback is not None:
             try:
@@ -1176,7 +1192,16 @@ class GalleryPage(QObject):
             choices = await filter_choices(self.state_dir)
             return current, page, choices, anchor_found
 
-        self.runner.submit(work(), lambda result, error: self._query_done(generation, anchor, result, error))
+        async def with_fallback():
+            try:
+                return await work()
+            except PersistenceError as live_error:
+                try:
+                    return await query_snapshot(self.state_dir, query, anchor)
+                except (PersistenceError, OSError):
+                    raise live_error from None
+
+        self.runner.submit(with_fallback(), lambda result, error: self._query_done(generation, anchor, result, error))
 
     def _query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
@@ -1202,6 +1227,20 @@ class GalleryPage(QObject):
             log.info("gallery refresh recovered")
 
         query, page, choices, anchor_found = result
+        mode_changed = self._snapshot_at != page.snapshot_at
+        if mode_changed:
+            self.recycle_scope_revision += 1
+            if feedback(self.page)._armed:
+                feedback(self.page).dismiss()
+            self._presented_item = None
+            log.info("gallery browsing source=%s", "snapshot" if page.snapshot_at else "live")
+        self._snapshot_at = page.snapshot_at
+        status = self._widget("gallerySnapshotStatus", QLabel)
+        status.setVisible(bool(self._snapshot_at))
+        if self._snapshot_at:
+            status.setText(
+                f"Read-only snapshot · {self._snapshot_at} · Live updates unavailable; retrying automatically."
+            )
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
@@ -1215,6 +1254,7 @@ class GalleryPage(QObject):
         if (
             visible_page == self._rendered_page
             and not recovered
+            and not mode_changed
             and self._pending_page_selection is None
             and self._page_scroll_target is None
         ):
@@ -1713,7 +1753,7 @@ class GalleryPage(QObject):
         self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
         edited = request.get("operation", "txt2img") != "txt2img"
         foreign = foreign_windows_path(item.path)
-        reusable = bool(request.get("model_id")) and not edited and not foreign
+        reusable = bool(request.get("model_id")) and not edited and not foreign and not self._snapshot_at
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
         for button, tip in (
@@ -1726,9 +1766,16 @@ class GalleryPage(QObject):
                 else tip
             )
         self.edit_button.setEnabled(
-            not item.issue and bool(item.path) and not foreign and self._edit_callback is not None
+            not self._snapshot_at
+            and not item.issue
+            and bool(item.path)
+            and not foreign
+            and self._edit_callback is not None
         )
         self.edit_button.setToolTip(self._edit_tip)
+        if self._snapshot_at:
+            for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
+                button.setToolTip("Browsing a snapshot; wait for live state before using this action.")
         if foreign:
             for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
                 button.setToolTip("Windows-recorded outputs are read-only here; use Windows for this action.")
@@ -1758,7 +1805,9 @@ class GalleryPage(QObject):
         self._detail_generation += 1
         detail_generation = self._detail_generation
         self.runner.submit(
-            inspect_output(self.state_dir, item.identity),
+            asyncio.to_thread(load_detail, item, state=self.state_dir)
+            if self._snapshot_at
+            else inspect_output(self.state_dir, item.identity),
             lambda result, error: self._detail_done(detail_generation, item.identity, result, error),
         )
 
@@ -1868,11 +1917,15 @@ class GalleryPage(QObject):
         return f"{item.width} × {item.height}" if item.width and item.height else "Unknown"
 
     def _use_settings(self) -> None:
+        if self._snapshot_at:
+            return
         item = self._selected()
         if item is not None and not foreign_windows_path(item.path) and self._reuse_callback is not None:
             self._reuse_callback(self._request(item), item.identity)
 
     def _edit_image(self) -> None:
+        if self._snapshot_at:
+            return
         item = self._selected()
         if item is not None and not foreign_windows_path(item.path) and self._edit_callback is not None:
             if item.read_path != item.path:
@@ -1881,6 +1934,8 @@ class GalleryPage(QObject):
                 self._edit_callback(item.path)
 
     def _regenerate(self) -> None:
+        if self._snapshot_at:
+            return
         item = self._selected()
         if item is not None and not foreign_windows_path(item.path) and self._regenerate_callback is not None:
             self._regenerate_callback(self._request(item), item.identity)
@@ -2110,6 +2165,8 @@ class GalleryPage(QObject):
         QTimer.singleShot(0, restore)
 
     def _read_action(self, action: str) -> None:
+        if self._snapshot_at and action == "edit":
+            return
         """Revalidate source provenance under a lease without blocking the Qt thread."""
         item = self._selected()
         if item is None:
@@ -2125,6 +2182,8 @@ class GalleryPage(QObject):
         )
 
     def _read_action_done(self, action: str, identity: str, result, error) -> None:
+        if self._snapshot_at and action == "edit":
+            return
         if self.selected_id != identity:
             return
         if error is not None or not result:
@@ -2169,6 +2228,8 @@ class GalleryPage(QObject):
 
     def export_checked(self) -> tuple[str, ...]:
         """Freeze explicitly checked image identities for the shared exporter."""
+        if self._snapshot_at:
+            raise ValidationError("Snapshot browsing cannot authorize export; wait for live state access.")
         return self.selection.snapshot()
 
     def _selected(self) -> GalleryItem | None:

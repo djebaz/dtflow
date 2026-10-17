@@ -2,6 +2,21 @@
 
 ## Status and working rules
 
+Post-review follow-up (2026-10-17, after `f36a339`): P1 widget recovery and P2 missing cross-runtime locations are fixed in separate commits; a third implementation commit adds the owner-agreed browsing snapshot. These additions are source-present, not covered by the earlier owner acceptance below. No new tests, generation, deletion, builds or renders by the agent; Ruff lint/format is the bounded static gate.
+
+### Gallery recovery and snapshot checkpoint
+
+- [x] P1: force refresh recovery through normal reconciliation, not the first-render sentinel; clear an initial failure-label reference with its layout.
+- [x] P2: derive and validate native image/sidecar locations independently of image existence, including surviving metadata inspection.
+- [x] Publish a versioned committed-gallery/availability projection after a generation/queue session and clean app close; compare a source-change signature and skip unchanged publications. Clean close also creates a missing/empty snapshot.
+- [x] Use one background publication worker, bounded source work, cache coordination, private Derived storage and atomic replacement; retain the previous publication on failure. No per-image publication, raw database copy, directory scan or provider retry.
+- [x] Use one immutable snapshot for fallback page/filter/anchor queries; show its timestamp/read-only status, disable stale-authority actions and retry live access. Preserve all original-file leases and provenance checks.
+- [x] Extend offline empty/populated recovery and snapshot Grid/Detail fixtures, without rendering. Honor `--no-cache`; Derived cleanup may purge the snapshot.
+- [x] Inspect owner log `dtflow-80c45749e36a.log`: close publication reported generic `OSError`. A disposable standard-library Windows CLI probe reproduced read-only `fsync` errno 9 and confirmed writable-descriptor flush succeeds; fix that boundary and log sanitized stage/numeric codes.
+- [ ] Owner acceptance: publish after generation/queue/clean close, unchanged skip, initial missing/empty snapshot, retained prior snapshot on failure, cross-system browsing during live SQLite refusal, paging/filter/sidecar display, disabled mutations, return to live state, no-cache/purge and realistic-library timings.
+
+See [snapshot architecture](../architecture/gallery-snapshot.md). The agent ran no app generation or deletion and added no tests; disposable flush evidence does not establish snapshot runtime acceptance.
+
 PR #76, branch `feature/image-removal-modes`, ready for review and intended to be squash-merged after owner smoke. Scope grew during owner smoke on 2026-10-17 from the split Trash/Delete action into Windows/WSL1 shared-state support: cross-OS read aliases (#83), WSL1 export of Windows-recorded originals, native Windows removal of WSL1-recorded originals, raw provider output disposal, confirmed-missing card clearing and presentation, per-runtime export folders and removal/bridge logging (#79 initial scope). The [smoke follow-up checklist](#owner-smoke-follow-ups) maps each owner point to its commits.
 
 **Owner smoke accepted on 2026-10-17.** The owner reported every [Owner acceptance](#owner-acceptance) scenario passed at `6202404` (earlier items at `b10d962` and `e2b4930`). Concurrent use of one shared state from native Windows and WSL1 is an accepted limitation, not supported: SQLite WAL locking does not span the two systems, so the other side's gallery reports the store as busy. The owner declined generation-output staging or automatic recovery, and asked that no new test cases be added; GitHub Actions CI (lockfile, Ruff lint/format, SQLite, offline pytest) is the automated gate and passes on `6202404`. No agent ran real deletion, WSL2 probes, paid generation, GUI renders or inference; WSL2 remains deferred.

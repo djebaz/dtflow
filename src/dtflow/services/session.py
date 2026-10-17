@@ -35,6 +35,7 @@ from dtflow.core.models import (
 )
 from dtflow.core.tasks import settle
 from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts
@@ -244,6 +245,7 @@ async def open_session(
         finally:
             if store is not None:
                 await store.aclose()
+                schedule_publish(state)
 
 
 async def run_generation(

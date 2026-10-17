@@ -133,6 +133,34 @@ def render_mapped_gallery_states(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            shell.gallery._show_refresh_failure(PersistenceError("Offline refresh refusal fixture."), first=False)
+            shell.gallery._refresh_failing = True
+            shell.gallery.refresh()
+            wait_for(lambda: not shell.gallery._loading)
+            QTest.qWait(100)
+            target = out / "46-images-refresh-recovered-populated.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+
+            async def frozen_query(_state, options):
+                return GalleryResults((item,), 1, options.offset, options.limit, "2026-10-17T07:00:00+00:00")
+
+            # Synthetic publication presentation only; no owner database or mutation.
+            with patch.object(gallery_ui, "query_outputs", frozen_query):
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading and bool(shell.gallery._snapshot_at))
+                for view, name in (("Grid", "47-images-snapshot-grid"), ("Detail", "48-images-snapshot-detail")):
+                    shell.gallery.show_view(view)
+                    if view == "Detail":
+                        shell.gallery.select(item.identity)
+                    QTest.qWait(150)
+                    target = out / f"{name}.png"
+                    if not shell.form.grab().save(str(target)):
+                        raise RuntimeError(f"Could not save {target.name}")
+                    print(target)
+            shell.gallery.refresh()
+            wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
             # Presentation only: synthetic scope, with execution explicitly blocked.
             wait_for(lambda: shell.gallery.removal_ready)
             shell.gallery._set_checked(item.identity, True)

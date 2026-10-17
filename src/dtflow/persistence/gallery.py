@@ -5,7 +5,7 @@ import re
 import sqlite3
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from dtflow.core.gallery import SIZE_CLASSES, GalleryQuery
@@ -160,10 +160,10 @@ def clauses(query: GalleryQuery) -> tuple[str, list, str]:
     return where, values, order
 
 
-def query_records(state: Path, query: GalleryQuery) -> tuple[tuple[dict, ...], int]:
+def query_records(state: Path, query: GalleryQuery, *, database=None) -> tuple[tuple[dict, ...], int]:
     """Count and return one bounded page from the same read snapshot."""
     where, values, order = clauses(query)
-    with reader(state) as db:
+    with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return (), 0
         total = db.execute(BASE + "SELECT count(*) FROM records WHERE " + where, values).fetchone()[0]
@@ -174,10 +174,10 @@ def query_records(state: Path, query: GalleryQuery) -> tuple[tuple[dict, ...], i
         return tuple(dict(row) for row in rows), total
 
 
-def locate_record(state: Path, query: GalleryQuery, identity: str) -> int | None:
+def locate_record(state: Path, query: GalleryQuery, identity: str, *, database=None) -> int | None:
     """Find an anchor's position in filtered results without materializing those results."""
     where, values, order = clauses(query)
-    with reader(state) as db:
+    with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return None
         row = db.execute(
@@ -240,9 +240,9 @@ def available_export_identities(state: Path, identities: tuple[str, ...]) -> fro
         return frozenset(row[0] for row in rows)
 
 
-def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def facets(state: Path, *, database=None) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """At most 1000 exact model/LoRA choices; editable controls support identifiers beyond this list."""
-    with reader(state) as db:
+    with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return (), ()
         models = tuple(

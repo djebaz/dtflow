@@ -8,7 +8,7 @@
   <property name="windowTitle">
    <string>DTFlow — Images</string>
   </property>
-  <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,0,1">
+  <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,0,0,1">
    <item>
     <widget class="QWidget" name="galleryBrandRow">
      <layout class="QHBoxLayout" name="galleryBrandRowLayout" stretch="0,1">
@@ -678,6 +678,14 @@
    <property name="spacing">
     <number>8</number>
    </property>
+   <item>
+    <widget class="QLabel" name="gallerySnapshotStatus">
+     <property name="visible"><bool>false</bool></property>
+     <property name="wordWrap"><bool>true</bool></property>
+     <property name="role" stdset="0"><string>secondary</string></property>
+     <property name="text"><string>Read-only snapshot — live updates unavailable</string></property>
+    </widget>
+   </item>
    <item>
     <widget class="QFrame" name="gallerySelectionBar">
      <property name="role" stdset="0"><string>gallerySelectionBar</string></property>

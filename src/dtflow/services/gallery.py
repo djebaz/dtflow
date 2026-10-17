@@ -4,12 +4,14 @@ import asyncio
 import json
 import os
 import re
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as storage
+from dtflow.persistence import gallery_snapshot
 from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_locations, resolve_output_read
@@ -130,6 +132,37 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
     return await asyncio.to_thread(read)
 
 
+async def query_snapshot(state: Path, query: GalleryQuery, anchor: str | None):
+    """Browsing-only fallback; one immutable publication, never the live writer/WAL.
+
+    Caller keeps retrying live queries. No mutation/export/selection authority
+    is exposed by this path, even if the live database becomes readable later.
+    """
+
+    def read():
+        with gallery_snapshot.reader(state) as (db, stamp):
+            current, found = query, False
+            if anchor:
+                position = storage.locate_record(state, replace(query, offset=0), anchor, database=db)
+                if position is not None:
+                    current, found = replace(query, offset=(position // query.limit) * query.limit), True
+            rows, total = storage.query_records(state, current, database=db)
+            if total and not rows and current.offset >= total:
+                current = replace(current, offset=((total - 1) // current.limit) * current.limit)
+                rows, total = storage.query_records(state, current, database=db)
+            paths = ArtifactReadPaths.discover()
+            page = GalleryPage(
+                tuple(item_from_record(row, paths, state=state) for row in rows),
+                total,
+                current.offset,
+                current.limit,
+                stamp,
+            )
+            return current, page, storage.facets(state, database=db), found
+
+    return await asyncio.to_thread(read)
+
+
 async def locate_output(state: Path, query: GalleryQuery, identity: str) -> int | None:
     return await asyncio.to_thread(storage.locate_record, state, query, identity)
 
@@ -158,8 +191,13 @@ def load_detail(item: GalleryItem, *, state: Path | None = None) -> GalleryDetai
         access = (
             resolve_output_locations(
                 state,
-                dict(identity=item.identity, attempt_id=item.attempt_id, ordinal=int(item.identity.rpartition(":")[2]),
-                     path=item.path, metadata_path=item.metadata_path),
+                dict(
+                    identity=item.identity,
+                    attempt_id=item.attempt_id,
+                    ordinal=int(item.identity.rpartition(":")[2]),
+                    path=item.path,
+                    metadata_path=item.metadata_path,
+                ),
                 paths=ArtifactReadPaths.discover(),
             )[1]
             if state is not None
