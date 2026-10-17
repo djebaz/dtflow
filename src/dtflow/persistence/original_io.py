@@ -142,37 +142,96 @@ def _log_wait(filename: str, boundary: str, started: float) -> None:
         )
 
 
-# Foreground lease requests (saves, removal, export) waiting in this process.
-# Background display reads stand aside for them so a page of thumbnails
-# can never starve a generation save into save_failed.
-_foreground_waiting = 0
-_foreground_guard = threading.Lock()
+class _ReadGroup:
+    """Display reads of one process share a single original-file lease.
+
+    The first background reader takes the cross-process lease and the last one
+    releases it; readers never queue behind each other. A foreground request
+    (save, removal, export, user action) stops new readers from joining, then
+    takes the lease itself once the current readers finish, so a page of
+    thumbnails can never starve a generation save into save_failed.
+    """
+
+    def __init__(self):
+        self.cond = threading.Condition()
+        self.readers = 0
+        self.writers_waiting = 0
+        self.acquiring = False
+        self.stack: ExitStack | None = None
+
+
+_groups: dict[str, _ReadGroup] = {}
+_groups_guard = threading.Lock()
+
+
+def _group(state: Path) -> _ReadGroup:
+    with _groups_guard:
+        return _groups.setdefault(str(Path(state).resolve()), _ReadGroup())
+
+
+@contextmanager
+def _shared_read(state: Path, timeout: float):
+    group = _group(state)
+    deadline = time.monotonic() + timeout
+    with group.cond:
+        while group.writers_waiting or group.acquiring:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise OriginalImagesBusyError("Original images are busy with a save or removal.")
+            group.cond.wait(remaining)
+        joined = group.readers > 0
+        if joined:
+            group.readers += 1
+        else:
+            group.acquiring = True
+    if not joined:
+        stack = ExitStack()
+        try:
+            stack.enter_context(
+                _file_lock(state, "original_images.lock", timeout=max(0.0, deadline - time.monotonic()))
+            )
+        except BaseException:
+            with group.cond:
+                group.acquiring = False
+                group.cond.notify_all()
+            raise
+        with group.cond:
+            group.stack, group.acquiring, group.readers = stack, False, 1
+            group.cond.notify_all()
+    try:
+        yield
+    finally:
+        with group.cond:
+            group.readers -= 1
+            release = group.stack if group.readers == 0 else None
+            if release is not None:
+                group.stack = None
+            group.cond.notify_all()
+        if release is not None:
+            release.close()
 
 
 @contextmanager
 def original_images_lock(state: Path, *, timeout: float = 5.0, background: bool = False):
     """Serialize real original-file reads and writes across participating processes.
 
-    ``background`` reads (thumbnails) yield to foreground requests of this process.
+    ``background`` display reads of this process share one lease and yield to
+    foreground requests; foreground holders are exclusive as before.
     """
-    global _foreground_waiting
     if background:
-        deadline = time.monotonic() + timeout
-        while _foreground_waiting:
-            if time.monotonic() >= deadline:
-                raise OriginalImagesBusyError("Original images are busy with a save or removal.")
-            time.sleep(0.02)
-        with _file_lock(state, "original_images.lock", timeout=max(0.0, deadline - time.monotonic())):
+        with _shared_read(state, timeout):
             yield
         return
-    with _foreground_guard:
-        _foreground_waiting += 1
+    group = _group(state)
+    with group.cond:
+        group.writers_waiting += 1
     try:
         stack = ExitStack()
         stack.enter_context(_file_lock(state, "original_images.lock", timeout=timeout))
     finally:
-        with _foreground_guard:
-            _foreground_waiting -= 1
+        with group.cond:
+            group.writers_waiting -= 1
+            group.cond.notify_all()
     with stack:
         yield
 
