@@ -33,6 +33,7 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
+from dtflow.persistence.store import PersistenceError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
@@ -395,6 +396,19 @@ def main():
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
             unavailable.image_recycle.menu_button.menu().hide()
+            # Saved outputs unreadable before any card loaded (e.g. DTFlow open on the other OS).
+            unavailable.gallery._show_refresh_failure(
+                PersistenceError(
+                    "Saved outputs could not be read; DTFlow may be open on another system, "
+                    "or the disk failed (SQLITE_IOERR_TRUNCATE)."
+                ),
+                first=True,
+            )
+            QTest.qWait(100)
+            target = args.out / "44-images-refresh-failed.png"
+            if not unavailable.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
         finally:
             unavailable.runner.shutdown()
             unavailable.form.close()

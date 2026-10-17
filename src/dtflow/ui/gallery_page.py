@@ -1192,8 +1192,8 @@ class GalleryPage(QObject):
             # Auto-refresh retries every few seconds; report a failure streak once.
             detail = str(error) if isinstance(error, PersistenceError) else type(error).__name__
             (log.debug if self._refresh_failing else log.warning)("gallery refresh failed reason=%s", detail)
+            self._show_refresh_failure(error, first=not self._refresh_failing)
             self._refresh_failing = True
-            self.refresh_button.setToolTip(f"Saved outputs could not be refreshed: {error}")
             return
         if self._refresh_failing:
             self._refresh_failing = False
@@ -1266,6 +1266,27 @@ class GalleryPage(QObject):
             combo.setCurrentText(current or placeholder)
             combo.blockSignals(False)
 
+    def _set_grid_message(self, text: str) -> None:
+        """Show one wrapped status line in place of Grid cards."""
+        if self._grid_empty is None:
+            self._grid_empty = QLabel(self.grid_cards)
+            self._grid_empty.setProperty("role", "secondary")
+            self._grid_empty.setWordWrap(True)
+            self.cards_layout.addWidget(self._grid_empty, 0, 0)
+        self._grid_empty.setText(text)
+
+    def _show_refresh_failure(self, error: BaseException, *, first: bool) -> None:
+        """Make a failed refresh visible; cards already shown stay as they were."""
+        message = (
+            str(error) if isinstance(error, PersistenceError) else "Saved outputs could not be refreshed."
+        ) + " Retrying automatically."
+        self.refresh_button.setToolTip(f"Saved outputs could not be refreshed: {error}")
+        if not self.items:
+            # Nothing loaded yet: an empty Grid would otherwise look like an empty library.
+            self._set_grid_message(message)
+        if first:
+            feedback(self.page).notice("Saved outputs unavailable", message, "warning")
+
     def _page_summary(self) -> str:
         if not self.total:
             return "No committed saved outputs match these filters."
@@ -1325,10 +1346,8 @@ class GalleryPage(QObject):
                     self._grid_empty = None
                 # Dict order is the query order consumed by the shared grid reflow.
                 self._grid_buttons = {item.identity: self._grid_buttons[item.identity] for item in self.items}
-            elif self._grid_empty is None:
-                self._grid_empty = QLabel("No saved outputs match these filters.", self.grid_cards)
-                self._grid_empty.setProperty("role", "secondary")
-                self.cards_layout.addWidget(self._grid_empty, 0, 0)
+            else:
+                self._set_grid_message("No saved outputs match these filters.")
             self._density_changed()
         finally:
             self._syncing_selection = False
