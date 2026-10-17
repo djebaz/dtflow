@@ -25,6 +25,10 @@ permissions:
 env:
   UV_LOCKED: "1"
   QT_QPA_PLATFORM: offscreen
+  # Show each rendered file as it is written instead of buffering stdout until exit.
+  PYTHONUNBUFFERED: "1"
+  # On a fatal signal (including the hang watchdog below), print every thread's Python stack.
+  PYTHONFAULTHANDLER: "1"
 
 jobs:
   render:
@@ -73,8 +77,17 @@ jobs:
       - name: Sync environment
         run: uv sync --locked
 
+      # A normal run takes well under a minute. If a state hangs, the watchdog aborts Python
+      # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
-        run: uv run python tools/ui/render_states.py --out tmp/ui-renders
+        timeout-minutes: 6
+        run: |
+          start=$(date +%s)
+          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders \
+            2>&1 | while IFS= read -r line; do printf '[+%4ss] %s\n' "$(( $(date +%s) - start ))" "$line"; done
+          status=${PIPESTATUS[0]}
+          [ "$status" -eq 124 ] || [ "$status" -eq 134 ] && echo "::error::Render timed out after 300s; see the stack trace above."
+          exit "$status"
 
       - name: Summarize renders
         if: always()
