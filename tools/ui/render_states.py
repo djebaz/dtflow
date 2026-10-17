@@ -153,7 +153,9 @@ def render_mapped_gallery_states(app, state, out):
             control = shell.gallery._widget("galleryRemovalControl", QFrame)
             expected_left = control.mapToGlobal(QPoint(0, 0)).x()
             screen = menu.screen().availableGeometry()
-            expected_left = min(max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1))
+            expected_left = min(
+                max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
+            )
             assert menu.geometry().left() == expected_left
             target = out / "37-images-removal-menu-trash-selected.png"
             if not menu.grab().save(str(target)):
