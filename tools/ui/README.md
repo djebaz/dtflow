@@ -22,6 +22,12 @@ uv run python tools/ui/preview_gallery_detail.py --capture out/gallery-detail-op
 
 `states.py` families: buttons, connection, gallery, inputs, checks, lists, tabs, labels, popups.
 
+## Workflow-state filenames
+
+`render_states.py` saves listed offline workflow states as `<tab>-<NN>-<state>.png`, for example `images-01-grid.png`, `generate-01-empty.png` and `queues-02-created-paused.png`. The groups are `generate`, `images`, `inpaint`, `queues` and `shell`; numbering is independent within each group. Keep existing names stable and append new numbers within the relevant group, so filenames sort by group without global numbering collisions. Render order may differ from filename order.
+
+The separate `shots.py` / `design_shots.py` screen captures retain their matched `10-connection` / `11-generate` / `12-queues` / `13-images` names; `states.py` / `design_states.py` retain their component-sheet names. These are separate capture namespaces, not references to the workflow-state IDs. Use separate output directories and do not treat leftover screenshots from an earlier naming scheme as current evidence.
+
 Notes
 - Both scripts import `tests/support` (network guard, fake vault, fake cloud) from the repo, so they must run inside a checkout. They contact no provider.
 - Hover, pressed and focus are forced with real Qt mouse and keyboard events on a fresh widget per cell; the sheet cells are drawn at 2x.

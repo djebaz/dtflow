@@ -267,15 +267,11 @@ Alternatively use `QT_QPA_PLATFORM=windows` (visible windows). The renderer bloc
 provider network traffic and uses temporary state, fixture images/masks and fake
 providers. It renders only explicitly listed states; an unlisted view has no preview.
 
-Besides the existing Generate/Queues/Images states (01–14), the editor list is:
-15 Inpaint empty, 16 source loaded, 17 mask painted, 18 Source view, 19 Mask view,
-20 Result with no result yet (current Source fallback), 21 Clear confirmation,
-22 Find people overlay and 23 Edit image overlay. The last two are explicitly
-labelled presentation fixtures, not functioning analysis or image dispatch.
-The manual editor remains work in progress; its default strength is 0.7.
-Images also renders 60 Detail with Additional details open, 61 the Regenerate
-inline confirmation and 62 Regenerate confirmed (an offline fake-provider
-submission shown on Generate).
+Workflow screenshots use `<tab>-<NN>-<state>.png`, with independent numbering for `generate`, `images`, `inpaint`, `queues` and `shell`. For example, the initial Generate state is `generate-01-empty.png`, the Images grid is `images-01-grid.png`, and a newly created paused queue is `queues-02-created-paused.png`. See [the screenshot-tool guide](../../tools/ui/README.md) for naming and the separate screen/component capture namespaces.
+
+The initial editor states are `inpaint-01-empty`, `inpaint-02-source-loaded`, `inpaint-03-mask-painted`, `inpaint-04-source-view`, `inpaint-05-mask-view`, `inpaint-06-result-no-result` (current Source fallback), and `inpaint-07-clear-confirmation`. `inpaint-08-find-people-overlay` and `inpaint-09-edit-image-overlay` are explicitly labelled presentation fixtures, not functioning analysis or image dispatch. The manual editor remains work in progress; its default strength is 0.7.
+
+Images also renders `images-28-detail-additional`, `images-29-regenerate-confirmation` and `images-30-regenerate-confirmed` (an offline fake-provider submission shown on Generate).
 
 Screenshots are layout evidence only, not Windows/native-DPI, interaction,
 generation, ONNX or packaged acceptance. Extending the script does not mean it
