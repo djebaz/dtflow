@@ -65,3 +65,9 @@ Record what was actually verified and what still needs owner smoke testing.
 - **Evidence:** run [39040948400](https://github.com/djebaz/dtflow/actions/runs/39040948400) passed UI renders; CI [39040948377 attempt 2](https://github.com/djebaz/dtflow/actions/runs/39040948377) passed **612 tests, 3 skipped** after an intermittent unrelated queue reservation test timeout on attempt 1. This is not native Windows/DPI acceptance.
 - **Pending production phase:** live contiguous append/prepend, bounded Qt window, active chip from visible viewport, jumped batch fetching and snapshot fallback. Existing per-80 replacement navigation is a transitional implementation, not yet hybrid.
 - **Safety gates:** keep cursor/anchor while clipping the loaded window, six decoder concurrency, mutation authority and snapshot warnings. Never infer that screenshot mocks prove the background paging service.
+
+## Live browsing flicker and instrumentation follow-up
+
+The owner reports working pagination but excessive repaint/blinking in source smoke. Reconciliation now avoids repeat density sizing of retained cards; the Grid layout skips unchanged cell placements instead of removing/reinserting every card. Auto-refresh (five seconds) skips concurrent batch reads and filter debounce; while existing images remain displayed it no longer toggles the pager into a disabled/loading state. Source/snapshot changes still reconcile and the read-only snapshot recovery warning remains authoritative. User validation of smoothness is pending.
+
+Explicit `-x --dev` diagnostics use existing rotating sanitized logs, with `gallery_perf` query/batch/Qt layout/thumbnail timings. These are elapsed application measurements only; no benchmark or performance improvement is claimed without field observations. See [development guide](../guides/development.md#images-performance-diagnostics--x---dev).

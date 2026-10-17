@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #89 smoothness follow-up (pending owner visual acceptance): avoid resizing and repainting unchanged Grid cards every time a batch arrives; skip no-op Grid cell repositions and suppress auto-refresh loading-chip flashes while existing cards remain visible. Under `-x --dev`, `gallery_perf` writes sanitized per-stage timings for query, background auto-refresh, adjacent batch, Qt reconciliation/reflow and thumbnail enqueue-to-result latency; normal logging and provider behavior are unchanged.
+
 - PR #89 review: image-navigation screenshots are grouped in a dedicated artifact folder; corrected Qt pager chip alignment and 1600×1000 fullscreen screenshots. The delayed gallery loading ring now covers the initial saved-output DB/snapshot read and empty-card retry only. Live bounded hybrid scrolling remains under implementation; offline screenshots are not proof of deployed behavior.
 
 - PR #89 (in progress): Images gains a delayed centered 36 px Qt spinning ring for the first empty-card database/snapshot read and empty-card retries. Existing Grid/List/Detail cards are not obscured during background updates; failed initial reads show Retry rather than an indefinite spinner. The states are included in offline Image Navigation screenshots. Production/native UI acceptance remains separate; no image generation or provider charges were performed.
