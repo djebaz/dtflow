@@ -1,11 +1,12 @@
 """Prepare desktop requests off-thread and report safe hand-off failures on Qt.
 
-On WSL the Linux ``xdg-open`` hand-off often succeeds without opening anything, so a WSL path is translated with
-``wslpath -w`` and handed to Windows Explorer through WSL interop. Both programs are found on ``PATH`` and run
-with discrete arguments, never a shell string. Elsewhere Qt's desktop services decide.
+On WSL, translate with ``wslpath -w``; folders go to Explorer and files use Windows associations via PowerShell 7.
+The fixed script receives only JSON data on stdin, never an interpolated command. Native Qt hand-off stays on Qt.
 """
 
 import asyncio
+import base64
+import json
 import logging
 import os
 import platform
@@ -20,6 +21,17 @@ from PySide6.QtGui import QDesktopServices
 log = logging.getLogger(__name__)
 
 WSLPATH_TIMEOUT = 5
+ASSOCIATION_TIMEOUT = 10
+_ASSOCIATION_SCRIPT = """$ErrorActionPreference = 'Stop'
+try {
+    $target = [string](ConvertFrom-Json -InputObject ([Console]::In.ReadToEnd()))
+    Start-Process -FilePath $target -WindowStyle Normal -ErrorAction Stop
+    exit 0
+} catch {
+    exit 1
+}
+"""
+_ASSOCIATION_COMMAND = base64.b64encode(_ASSOCIATION_SCRIPT.encode("utf-16-le")).decode("ascii")
 
 
 def _wsl() -> bool:
@@ -54,10 +66,15 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
         return reason
     if not _wsl():
         return None  # Native Qt hand-off belongs on the GUI thread after validation.
-    wslpath, explorer = shutil.which("wslpath"), shutil.which("explorer.exe")
-    if wslpath is None or explorer is None:
-        log.warning("desktop open unavailable reason=%s", "no-wslpath" if wslpath is None else "no-interop")
-        return "Windows interop is unavailable in this WSL session, so Explorer cannot be started."
+    wslpath = shutil.which("wslpath")
+    launcher = shutil.which("explorer.exe" if directory else "pwsh.exe")
+    if wslpath is None:
+        log.warning("desktop open unavailable reason=no-wslpath")
+        return "wslpath is unavailable in this WSL session."
+    if launcher is None:
+        log.warning("desktop open unavailable reason=%s", "no-explorer" if directory else "no-pwsh")
+        name = "Windows Explorer" if directory else "PowerShell 7 (pwsh.exe)"
+        return f"{name} is unavailable through Windows interop; check this WSL session's PATH."
     try:
         converted = subprocess.run(
             [wslpath, "-w", path],
@@ -72,10 +89,38 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
         return "its location could not be translated to a Windows path."
     if not converted or "\n" in converted:
         return "its location could not be translated to a Windows path."
+    if not directory:
+        try:
+            # Only the fixed script is executable code. Even quotes/metacharacters
+            # in the translated path remain JSON data, not PowerShell syntax.
+            subprocess.run(
+                [
+                    launcher,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-EncodedCommand",
+                    _ASSOCIATION_COMMAND,
+                ],
+                input=json.dumps(converted, ensure_ascii=True).encode("ascii"),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=ASSOCIATION_TIMEOUT,
+                check=True,
+                start_new_session=True,
+            )
+        except subprocess.TimeoutExpired:
+            log.warning("desktop open association hand-off unconfirmed reason=timeout")
+            return "the Windows viewer hand-off could not be confirmed."
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("desktop open association failed reason=%s", type(exc).__name__)
+            return "Windows could not open the file with its associated application; check its default viewer."
+        return None  # Shell accepted the request, not proof that a viewer window appeared.
     try:
         # Explorer's exit status is not a success signal, so a started process is the hand-off.
         subprocess.Popen(
-            [explorer, converted],
+            [launcher, converted],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

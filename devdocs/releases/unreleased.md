@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #85 External Viewer correction: WSL folders use Explorer, but image files use the registered Windows application through PowerShell 7 with a fixed encoded script and JSON stdin. No path interpolation, shell string, legacy PowerShell or fallback to Explorer for files. Windows `pwsh.exe` must be on the WSL PATH. Missing association/interop and unconfirmed timeouts report safely; actual owner launch acceptance remains pending.
+
 - PR #85 review correction: desktop target validation, WSL path translation and process spawning now run through the existing async runner instead of blocking Qt. Folder/file kinds are explicit; a removed/renamed/inaccessible export destination refuses before launch, with GUI-thread feedback. Offline missing-folder preview defined, not rendered; no new tests or local pytest.
 
 - Issues #78, #80 and #81 (WSL/Windows follow-ups to PR #76): person-selection models chosen in the Windows build are read on WSL1 through the verified drvfs alias (stored path and SHA-256 unchanged; a WSL path opened from Windows asks to choose the model again); the editor checks saved models when it opens and names not-found, permission-denied or other-environment causes with a sanitized log line. Use settings and Regenerate work for Windows-recorded outputs on WSL, since they use only the recorded request; Regenerate keeps its confirmation and dispatch readiness checks, and Edit image keeps a specific fail-closed tooltip. On WSL, gallery Open folder/external viewer and the export panel's Open folder start Windows Explorer via `wslpath -w` with discrete arguments and report failures instead of a silent no-op. Source implementation only; WSL1 and Windows owner smoke pending, no provider calls.

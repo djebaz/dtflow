@@ -5,9 +5,13 @@ PR #85 targets `main` after PR #76's squash merge (`de948a0`). The narrow featur
 ## Review correction scope
 
 - [x] Desktop preparation: use the existing runner for target metadata/directory-access checks, WSL translation and interop spawning; native Qt hand-off and notices stay on Qt. A missing, wrong-kind or inaccessible export directory refuses clearly, without claiming a visible external window or reading image contents outside the existing original-file boundary.
-- [ ] Associated image opening: distinguish Explorer folder navigation from Windows-associated file opening, with discrete executable arguments and no user-controlled command interpolation.
+- [x] Associated image opening: Explorer is used only for folders. WSL External Viewer invokes PowerShell 7 `Start-Process -FilePath` through a fixed UTF-16LE encoded script and JSON stdin, never interpolating a path into executable code. Translation/association timeouts are bounded on the worker; missing interop/default association reports safely. Windows `pwsh.exe` must be reachable from WSL PATH. Success means hand-off, not a confirmed visible window.
 - [ ] Model readiness: perform a bounded read-access check on the existing worker rather than only `is_file()`. Full model SHA verification remains at actual loading, and saved references stay unchanged.
 - [ ] Owner source smoke for #78 model alias/readiness, #80 saved-request reuse and #81 Folder/External Viewer/export-folder opening, including missing/inaccessible targets and absent interop/association.
+
+Owner report (2026-10-17, WSL context): model loading, Find people and clothes segmentation work. This accepts the happy-path WSL model access/analysis observation, not the later unreadable-file readiness correction, native Windows behavior or new desktop-launch fixes. The runtime log records `commit=unknown`; no exact tested build identity is inferred.
+
+Association design follows Microsoft's [Start-Process file-association contract](https://github.com/MicrosoftDocs/PowerShell-Docs/blob/main/reference/7.6/Microsoft.PowerShell.Management/Start-Process.md) and [UTF-16LE EncodedCommand documentation](https://github.com/MicrosoftDocs/PowerShell-Docs/blob/main/reference/7.6/Microsoft.PowerShell.Core/About/about_Pwsh.md). PowerShell code can be parser-checked without executing the launch; parser success does not establish owner interop acceptance.
 
 Keep snapshot-backed settings/regeneration/export disabled, foreign Edit fail-closed, shared original-file leases/provenance and fresh dispatch checks unchanged. No new WSL2 or shared execution-database writer support. #79 remains open for broader missing logging coverage.
 

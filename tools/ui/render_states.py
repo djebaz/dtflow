@@ -122,6 +122,25 @@ def render_initial_refresh_recovery(app, state, out):
             print(target)
             activity_strip(shell.form).finish("export-open")
             shell.image_export._exported_folder = None
+            with patch.object(
+                desktop_open,
+                "_open_on_worker",
+                return_value="Windows could not open the file with its associated application; check its default viewer.",
+            ):
+                desktop_open.open_local_path(
+                    str(state / "viewer-fixture.png"),
+                    runner=shell.runner,
+                    directory=False,
+                    on_error=lambda reason: activity_strip(shell.form).complete(
+                        "viewer-open", "External Viewer", f"Could not open the image: {reason}", "error"
+                    ),
+                )
+                wait_for(lambda: "viewer-open" in activity_strip(shell.form).rows)
+            target = out / "54-external-viewer-unavailable.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            activity_strip(shell.form).finish("viewer-open")
         finally:
             shell.runner.shutdown()
             shell.form.close()

@@ -218,13 +218,7 @@ bounded and sanitized; unavailable evidence is shown as `Not recorded` or
 
 Use settings populates Generate from the recorded request without dispatching. Regenerate asks for confirmation because it may consume provider credits, then creates a fresh request through the normal generation path and records the source output identity as lineage; the original output and attempt remain untouched. Both use only the recorded request, so on WSL they also work for Windows-recorded outputs. Edit image stays unavailable for those, with its own tooltip, because the editor cannot hold the shared Windows/WSL original-file lock.
 
-Copy path, Open folder and external-viewer actions operate on the actual saved
-artifact. On WSL, Open folder, external viewer and the export panel's Open folder
-translate the path with `wslpath -w` and start Windows Explorer through WSL
-interop; when interop is unavailable or the launch fails, a notice says so
-instead of silently doing nothing. Missing or corrupt files remain represented without preventing other
-outputs from being browsed. Browsing does not generate, modify or delete saved
-outputs.
+Copy path, Open folder and external-viewer actions operate on the actual saved artifact. On WSL, paths are translated with `wslpath -w`: folders use Windows Explorer, while External Viewer uses Windows' registered file association through PowerShell 7 `Start-Process`. Windows `pwsh.exe` must be reachable from the WSL PATH for External Viewer; there is no legacy PowerShell or Explorer-for-images fallback. A fixed encoded script receives the path as JSON stdin, not executable command text. Missing interop/association or a failed invocation produces a sanitized notice; a timeout reports that hand-off could not be confirmed, not that nothing opened. Missing or corrupt files remain represented without preventing other outputs from being browsed. Browsing does not generate, modify or delete saved outputs.
 
 Desktop requests validate the current target on a worker before hand-off, including whether the remembered export destination still exists, is a directory and can be accessed. WSL translation and process spawning also run off the Qt thread; native Qt desktop-service calls and error notices return on Qt. Missing/inaccessible/wrong-kind targets produce a clear notice. A successful hand-off is not proof that the external application's window appeared. See the [PR #85 review correction plan](../plans/2026-10-17-wsl-followups.md); owner Windows/WSL smoke remains pending.
 
