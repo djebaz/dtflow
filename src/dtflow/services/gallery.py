@@ -9,9 +9,9 @@ from urllib.parse import urlsplit, urlunsplit
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as storage
+from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_read
-from dtflow.persistence.original_io import original_images_lock
 
 MAX_METADATA_BYTES = 1024 * 1024
 SECRET = re.compile(r"api.?key|token|password|secret|authorization|cookie|credential|signed.?url|base64", re.I)

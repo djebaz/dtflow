@@ -1466,8 +1466,10 @@ class GalleryPage(QObject):
                 continue
             self._thumb_active += 1
 
-            async def work(filename=path, selected=next(x for x in self.items if x.identity == identity)):
-                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir, item=selected)
+            selected = next(x for x in self.items if x.identity == identity)
+
+            async def work(filename=path, item=selected):
+                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item)
 
             self.runner.submit(
                 work(),
