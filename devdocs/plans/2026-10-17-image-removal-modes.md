@@ -7,6 +7,7 @@ Post-review follow-up (2026-10-17, after `f36a339`): P1 widget recovery and P2 m
 ### Gallery recovery and snapshot checkpoint
 
 - [x] P1: force refresh recovery through normal reconciliation, not the first-render sentinel; clear an initial failure-label reference with its layout.
+- [x] P1 fixture review: gate the first query before window construction, refuse snapshot fallback, assert no successful render occurred, then allow the real query/recovery path and explicitly deliver deferred deletion before inspecting the replacement label. Existing offline renderer only; not executed and no new test file.
 - [x] P2: derive and validate native image/sidecar locations independently of image existence, including surviving metadata inspection.
 - [x] Publish a versioned committed-gallery/availability projection after a generation/queue session and clean app close; compare a source-change signature and skip unchanged publications. Clean close also creates a missing/empty snapshot.
 - [x] Use one background publication worker, bounded source work, cache coordination, private Derived storage and atomic replacement; retain the previous publication on failure. No per-image publication, raw database copy, directory scan or provider retry.

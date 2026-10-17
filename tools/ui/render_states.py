@@ -22,7 +22,7 @@ from support.network_guard import install  # noqa: E402
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint, QSize  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
@@ -54,6 +54,67 @@ def wait_for(predicate, timeout=8):
             raise RuntimeError("Offline UI fixture timed out.")
         QTest.qWait(10)
     QTest.qWait(30)
+
+
+def render_initial_refresh_recovery(app, state, out):
+    """Drive the real first-query failure/recovery before any successful render."""
+    allow_success = False
+    failures = 0
+
+    async def query(_state, options):
+        nonlocal failures
+        if not allow_success:
+            failures += 1
+            raise PersistenceError("Offline first-query failure (SQLITE_IOERR_TRUNCATE).")
+        return GalleryResults((), 0, options.offset, options.limit)
+
+    async def choices(_state):
+        return (), ()
+
+    async def no_snapshot(*_args):
+        raise PersistenceError("Offline fixture has no browsing publication.")
+
+    with (
+        patch.object(gallery_ui, "query_outputs", query),
+        patch.object(gallery_ui, "filter_choices", choices),
+        patch.object(gallery_ui, "query_snapshot", no_snapshot),
+    ):
+        shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "initial-query-failure")
+        try:
+            shell.form.resize(1600, 1000)
+            shell.show()
+            shell.form.imagesNavigationButton.click()
+            wait_for(lambda: shell.gallery._refresh_failing and not shell.gallery._loading)
+            shell.gallery.auto_timer.stop()
+            shell.gallery.filter_timer.stop()
+            assert failures >= 1
+            assert shell.gallery._rendered_page is None
+            assert not shell.gallery._grid_buttons
+            failed_label = shell.gallery._grid_empty
+            assert failed_label is not None and "Offline first-query failure" in failed_label.text()
+            disposed = []
+            failed_label.destroyed.connect(lambda: disposed.append(True))
+            target = out / "44-images-refresh-failed.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+
+            allow_success = True
+            shell.gallery.refresh()
+            wait_for(lambda: shell.gallery._rendered_page is not None and not shell.gallery._loading)
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            app.processEvents()
+            assert disposed and not shell.gallery._refresh_failing
+            assert shell.gallery._grid_empty is not failed_label
+            assert shell.gallery._grid_empty.text() == "No saved outputs match these filters."
+            target = out / "45-images-refresh-recovered-empty.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+        finally:
+            shell.runner.shutdown()
+            shell.form.close()
+            app.processEvents()
 
 
 def render_mapped_gallery_states(app, state, out):
@@ -424,31 +485,11 @@ def main():
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
             unavailable.image_recycle.menu_button.menu().hide()
-            # Saved outputs unreadable before any card loaded (e.g. DTFlow open on the other OS).
-            unavailable.gallery._show_refresh_failure(
-                PersistenceError(
-                    "Saved outputs could not be read; DTFlow may be open on another system, "
-                    "or the disk failed (SQLITE_IOERR_TRUNCATE)."
-                ),
-                first=True,
-            )
-            QTest.qWait(100)
-            target = args.out / "44-images-refresh-failed.png"
-            if not unavailable.form.grab().save(str(target)):
-                raise RuntimeError(f"Could not save {target.name}")
-            print(target)
-            unavailable.gallery._refresh_failing = True
-            unavailable.gallery.refresh()
-            wait_for(lambda: not unavailable.gallery._loading)
-            QTest.qWait(100)
-            target = args.out / "45-images-refresh-recovered-empty.png"
-            if not unavailable.form.grab().save(str(target)):
-                raise RuntimeError(f"Could not save {target.name}")
-            print(target)
         finally:
             unavailable.runner.shutdown()
             unavailable.form.close()
             app.processEvents()
+        render_initial_refresh_recovery(app, state, args.out)
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
         shell.show()
