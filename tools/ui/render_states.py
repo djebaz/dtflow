@@ -791,8 +791,10 @@ def render_gallery_composition_states(shell, state, out):
             for number, button in gallery.pager.buttons.items():
                 origin = button.mapTo(bar, QPoint(0, 0))
                 if not button.isVisibleTo(bar) or not (
-                    8 <= origin.x() and origin.x() + button.width() <= bar.width() - 8
-                    and 0 <= origin.y() and origin.y() + button.height() <= bar.height()
+                    8 <= origin.x()
+                    and origin.x() + button.width() <= bar.width() - 8
+                    and 0 <= origin.y()
+                    and origin.y() + button.height() <= bar.height()
                 ):
                     raise AssertionError(
                         f"Pager chip {number} clipped in {name}: "
@@ -1004,17 +1006,13 @@ def render_gallery_composition_states(shell, state, out):
         # Position the actual viewport at the 80/81 seam, then measure it.
         # The extra QGridLayout reflow after append can reset an earlier scroll.
         card_81 = gallery._grid_buttons[second_batch[80].identity].parentWidget()
-        gallery.grid_scroll.verticalScrollBar().setValue(
-            max(0, card_81.y() - gallery.grid_viewport.height() // 2)
-        )
+        gallery.grid_scroll.verticalScrollBar().setValue(max(0, card_81.y() - gallery.grid_viewport.height() // 2))
         _first, _last, visible = grid_visible(loaded=160)
         assert 80 in visible and 81 in visible, "Appended Grid batch boundary is not on screen"
         snap("images-75-pager-two-batches-grid")
 
         card_129 = gallery._grid_buttons[second_batch[128].identity].parentWidget()
-        gallery.grid_scroll.verticalScrollBar().setValue(
-            max(0, card_129.y() - gallery.grid_viewport.height() // 3)
-        )
+        gallery.grid_scroll.verticalScrollBar().setValue(max(0, card_129.y() - gallery.grid_viewport.height() // 3))
         first, _last, visible = grid_visible(loaded=160)
         assert 129 in visible and first >= 81
         assert gallery.pager.buttons[2].isChecked()
