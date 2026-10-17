@@ -221,6 +221,11 @@ def render_mapped_gallery_states(app, state, out):
                 print(target)
             shell.gallery.select(item.identity)
             QTest.qWait(150)
+            # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
+            target = out / "34-mapped-edit-eligible.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
             target = out / "33-mapped-detail-metadata.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")

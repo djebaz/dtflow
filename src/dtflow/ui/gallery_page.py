@@ -53,6 +53,7 @@ from dtflow.persistence.store import PersistenceError
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery import (
+    GalleryEditSource,
     MISSING_ISSUE,
     copy_output_paths,
     filter_choices,
@@ -1831,15 +1832,11 @@ class GalleryPage(QObject):
                 else "Not available: this output has no recorded model."
             )
         self.edit_button.setEnabled(
-            not self._snapshot_at
-            and not item.issue
-            and bool(item.path)
-            and not foreign
-            and self._edit_callback is not None
+            not self._snapshot_at and not item.issue and bool(item.path) and self._edit_callback is not None
         )
         self.edit_button.setToolTip(
-            "Edit image is not available here for Windows-recorded outputs: the editor cannot hold the shared "
-            "original-file lock across Windows and WSL. Edit it from Windows."
+            "The editor will verify this Windows-recorded image under the shared original-file lock before "
+            "loading it. Missing or unsafe sources are refused."
             if foreign
             else self._edit_tip
         )
@@ -1994,8 +1991,10 @@ class GalleryPage(QObject):
         if self._snapshot_at:
             return
         item = self._selected()
-        if item is not None and not foreign_windows_path(item.path) and self._edit_callback is not None:
-            if item.read_path != item.path:
+        if item is not None and not item.issue and self._edit_callback is not None:
+            if foreign_windows_path(item.path):
+                self._edit_callback(GalleryEditSource(self.state_dir, item))
+            elif item.read_path != item.path:
                 self._read_action("edit")
             else:
                 self._edit_callback(item.path)

@@ -14,6 +14,7 @@ from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import ValidationError
 from dtflow.core.tasks import settle
 from dtflow.persistence.person_models import PersonModels, load_person_models, save_person_models
+from dtflow.services.gallery import GalleryEditSource, load_edit_source
 from dtflow.services.image_preparation import (
     adjusted_mask_alpha,
     image_content_pixels,
@@ -534,24 +535,27 @@ class InpaintEditor(QObject):
     def replace_source(self, path, *, quiet=False, button=None):
         if self._busy or self._loading:
             return
+        recorded_path = path.item.path if isinstance(path, GalleryEditSource) else str(path)
+        windows_path = PureWindowsPath(recorded_path)
+        filename = windows_path.name if windows_path.drive or "\\" in recorded_path else Path(recorded_path).name
 
         def load():
             def worker():
-                source = load_source_file(Path(path))
+                source = load_edit_source(path) if isinstance(path, GalleryEditSource) else load_source_file(Path(path))
                 return source, image_content_pixels(source)
 
             def apply(value):
                 self._source, pixels = value
-                self._source_path = str(path)
+                self._source_path = recorded_path
                 self._result_path = None
                 self._coverage = 0
                 self._set_analysis(None)
                 self.canvas.set_source(pixels, self._source.width, self._source.height)
                 self.form.sourceThumbnail.setPixmap(self.canvas.pixmap().scaledToHeight(80))
                 self.form.sourceFacts.setText(
-                    f"{self._short_name(path)}\n{self._source.width} × {self._source.height} · EXIF-oriented · RGB8 · alpha flattened onto white"
+                    f"{self._short_name(filename)}\n{self._source.width} × {self._source.height} · EXIF-oriented · RGB8 · alpha flattened onto white"
                 )
-                self.form.sourceFacts.setToolTip(Path(path).name)
+                self.form.sourceFacts.setToolTip(filename)
                 self._fit_to_source()
 
             self._task("Load source image", worker, apply, quiet=quiet)
