@@ -242,6 +242,20 @@ def model_issue(models: PersonModels) -> str | None:
     return None
 
 
+
+def model_issues(models: PersonModels) -> dict[str, str | None]:
+    """Check each configured model independently, without creating ONNX sessions."""
+    return {
+        role: model_issue(PersonModels(**{role: ref}))
+        for role, ref in (
+            ("segmentation", models.segmentation),
+            ("clothes", models.clothes),
+            ("faces", models.faces),
+        )
+        if ref is not None
+    }
+
+
 def _verified_session(ref: ModelRef, builder):
     data = _read_model(ref.path)
     if len(data) > MAX_MODEL_BYTES or hashlib.sha256(data).hexdigest() != ref.sha256:

@@ -1727,3 +1727,42 @@ QFrame[role="segmented"] QPushButton:disabled {
   border-color: ${color.disabledEdge};
   color: ${color.disabled};
 }
+
+/* Model file access indicator: semantic colors, not evidence of loaded ONNX sessions. */
+QPushButton#modelsButton {
+  padding-right: 26px;
+}
+QLabel#modelsBadge {
+  min-height: 18px;
+  max-height: 18px;
+  min-width: 18px;
+  max-width: 18px;
+  border-radius: 9px;
+  border: 1px solid ${color.borderStrong};
+  background: ${color.surface};
+  color: ${color.secondary};
+  font-size: 8pt;
+  font-weight: ${type.weightStrong};
+  padding: 0;
+}
+QLabel#modelsBadge[readiness="ok"] {
+  background: ${color.success};
+  border-color: ${color.success};
+  color: ${color.background};
+}
+QLabel#modelsBadge[readiness="missing"],
+QLabel#modelsBadge[readiness="checking"] {
+  background: ${color.warning};
+  border-color: ${color.warning};
+  color: ${color.background};
+}
+QLabel#modelsBadge[readiness="error"] {
+  background: ${color.error};
+  border-color: ${color.error};
+  color: ${color.background};
+}
+QLabel#modelsBadge[readiness="unknown"] {
+  background: ${color.surface};
+  border-color: ${color.borderStrong};
+  color: ${color.secondary};
+}

@@ -29,7 +29,7 @@ from dtflow.services.person_selection import (
     apply_selection,
     classify_models,
     colored_preview,
-    model_issue,
+    model_issues,
     part_at,
     person_at,
 )
@@ -67,6 +67,11 @@ class InpaintEditor(QObject):
         self._result_path = None
         self._models = PersonModels()
         self._models_issue = None
+        self._model_readiness: dict[str, str | None] = {}
+        self._model_check_error = None
+        self._model_checking = False
+        self._model_check_revision = 0
+        self._badge_phase = 0
         self._analysis = None
         file = QFile(str(Path(__file__).with_name("forms") / "inpaint_editor.ui"))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
@@ -112,6 +117,13 @@ class InpaintEditor(QObject):
         self.form.advancedToggle.toggled.connect(self.form.advancedBox.setVisible)
         self.form.selectModeButton.toggled.connect(self._mode)
         self.form.modelsButton.clicked.connect(self.choose_models)
+        self._models_tooltip = self.form.modelsButton.toolTip()
+        self.form.modelsBadge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.form.modelsBadge.raise_()
+        self._badge_timer = QTimer(self)
+        self._badge_timer.setInterval(400)
+        self._badge_timer.timeout.connect(self._advance_badge)
+        self._update_models_badge()
         self.form.findPeopleButton.clicked.connect(self.find_people)
         self.form.peopleList.currentRowChanged.connect(self._list_selected)
         self.form.peopleList.itemActivated.connect(lambda _item: self._add_selected(remove=False))
@@ -165,30 +177,107 @@ class InpaintEditor(QObject):
         try:
             self._models = load_person_models(controller._state)
         except Exception as exc:  # unreadable settings never block manual painting
-            self.form.peopleStatus.setText(str(exc))
-        self._people_status()
-        self._check_models()
+            self._model_check_error = str(exc)
+            self._models_issue = str(exc)
+        if self._model_check_error is None:
+            self._check_models()
+        else:
+            self._update_models_badge()
+            self._people_status()
         self.refresh_capability()
+
+    def _advance_badge(self):
+        """Animate only the compact status glyph while saved-file access is checked."""
+        if not self._model_checking:
+            self._badge_timer.stop()
+            return
+        self._badge_phase = (self._badge_phase + 1) % 3
+        self.form.modelsBadge.setText(("·", "··", "···")[self._badge_phase])
+
+    def _update_models_badge(self):
+        """Show verified file access, never claim ONNX sessions are already loaded."""
+        models = self._models
+        configured = (
+            ("Segmentation", "segmentation", models.segmentation),
+            ("Clothes", "clothes", models.clothes),
+            ("Faces", "faces", models.faces),
+        )
+        issues = self._model_readiness
+        if self._model_checking:
+            state, glyph, summary = "checking", "·", "Checking saved model files"
+        elif self._model_check_error:
+            state, glyph, summary = "unknown", "?", "Model availability could not be checked"
+        elif any(issue for issue in issues.values()):
+            state, glyph, summary = "error", "!", "One or more configured model files are unavailable"
+        elif models.segmentation is None:
+            state, glyph, summary = "missing", "0", "Segmentation model not configured"
+        elif not issues:
+            state, glyph, summary = "unknown", "?", "Saved model files not yet checked"
+        else:
+            count = sum(1 for _label, role, ref in configured if ref is not None and issues.get(role) is None)
+            state, glyph, summary = "ok", str(count), f"{count} model file(s) accessible"
+
+        details = [summary, "File access only; ONNX compatibility is verified when Find people runs."]
+        for label, role, ref in configured:
+            if ref is None:
+                status = "not configured"
+            elif self._model_checking:
+                status = "checking"
+            elif self._model_check_error or role not in issues:
+                status = "not verified"
+            elif issues[role]:
+                status = issues[role]
+            else:
+                status = "file accessible (not loaded)"
+            details.append(f"{label}: {status}")
+        tooltip = "\n".join(details)
+        badge = self.form.modelsBadge
+        badge.setText(glyph)
+        badge.setProperty("readiness", state)
+        badge.setAccessibleName(summary)
+        badge.setToolTip(tooltip)
+        badge.style().unpolish(badge)
+        badge.style().polish(badge)
+        self.form.modelsButton.setToolTip(f"{self._models_tooltip}\n\n{tooltip}")
+        if self._model_checking and not self._badge_timer.isActive():
+            self._badge_phase = 0
+            self._badge_timer.start()
+        elif not self._model_checking:
+            self._badge_timer.stop()
 
     def _check_models(self):
         """Check saved model read access off Qt; full model verification stays at Find people."""
+        self._model_check_revision += 1
+        revision = self._model_check_revision
         models = self._models
+        self._model_readiness = {}
+        self._model_check_error = None
+        self._model_checking = False
+        self._models_issue = None
         if models.segmentation is None or self.runner.closed:
+            self._update_models_badge()
+            self._people_status()
             return
+        self._model_checking = True
         self._models_issue = "Checking saved model read access…"
+        self._update_models_badge()
         self._people_status()
 
         async def work():
-            return await asyncio.to_thread(model_issue, models)
+            return await asyncio.to_thread(model_issues, models)
 
-        def done(issue, error):
-            if self.runner.closed or self._models is not models or self._analysis is not None:
+        def done(issues, error):
+            if self.runner.closed or self._models is not models or revision != self._model_check_revision:
                 return
-            self._models_issue = (
-                issue
-                if error is None
-                else "Saved model availability could not be checked; choose it again with Models…."
-            )
+            self._model_checking = False
+            if error is not None:
+                self._model_check_error = "Saved model availability could not be checked; choose it again with Models…."
+                self._models_issue = self._model_check_error
+                self._model_readiness = {}
+            else:
+                self._model_readiness = issues
+                self._models_issue = next((issue for issue in issues.values() if issue), None)
+            self._update_models_badge()
             self._people_status()
 
         self.runner.submit(work(), done)
@@ -852,3 +941,4 @@ class InpaintEditor(QObject):
     def shutdown(self):
         self._revision += 1
         self._debounce.stop()
+        self._badge_timer.stop()

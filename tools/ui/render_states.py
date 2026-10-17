@@ -39,6 +39,7 @@ from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
+from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
@@ -466,21 +467,45 @@ def render_inpaint_states(shell, state, capture):
     capture("26-inpaint-result-fixture")
     editor.canvas.set_view("Source")
 
-    # Select mode: offline fixtures only (a synthetic silhouette; no ONNX model is loaded).
+    # Model badges use fake file references only; no ONNX file is read or loaded.
     editor.form.selectModeButton.setChecked(True)
     capture("27-inpaint-select-no-models")
-    # Presentation only: no model or inference session is loaded by this fixture.
-    for issue, name in (
-        ("Checking saved model read access…", "55-inpaint-model-readiness-checking"),
+    fake = ModelRef("offline-only.onnx", "0" * 64)
+    for name, models, issues, checking, check_error in (
+        ("55-inpaint-model-readiness-checking", PersonModels(fake), {}, True, None),
+        ("56-inpaint-one-model", PersonModels(fake), {"segmentation": None}, False, None),
+        ("57-inpaint-two-models", PersonModels(fake, fake), {"segmentation": None, "clothes": None}, False, None),
+        ("58-inpaint-three-models", PersonModels(fake, fake, fake), {"segmentation": None, "clothes": None, "faces": None}, False, None),
         (
-            "The saved clothes model cannot be read (permission denied); choose it again with Models….",
             "53-inpaint-model-unreadable",
+            PersonModels(fake, fake),
+            {
+                "segmentation": None,
+                "clothes": "The saved clothes model cannot be read (permission denied); choose it again with Models….",
+            },
+            False,
+            None,
         ),
+        ("59-inpaint-model-unknown", PersonModels(fake), {}, False, "Availability could not be checked."),
     ):
-        editor._models_issue = issue
+        editor._models = models
+        editor._model_readiness = issues
+        editor._model_checking = checking
+        editor._model_check_error = check_error
+        editor._models_issue = (
+            "Checking saved model read access…"
+            if checking
+            else next((issue for issue in issues.values() if issue), check_error)
+        )
+        editor._update_models_badge()
         editor._people_status()
         capture(name)
+    editor._models = PersonModels()
+    editor._model_readiness = {}
+    editor._model_checking = False
+    editor._model_check_error = None
     editor._models_issue = None
+    editor._update_models_badge()
     editor._people_status()
     people = PersonAnalysis(
         width,
