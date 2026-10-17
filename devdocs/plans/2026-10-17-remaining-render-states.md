@@ -1,12 +1,12 @@
 # Plan: remaining offline desktop render states
 
-Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: Connection 01–35 is source-present (A1–A3). The owner reports A1 passed validation at `ecd58d0`; exact scenarios/platform were not supplied. A2/A3 execution and visual acceptance are not claimed here; all other catalog additions remain planned.
+Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: Connection 01–39 and Generate 20–35 are source-present (A1–A4/B1), bringing the listed total to 170. The owner reports CI and UI render Actions passed through `6d039db` (A3). The current A4/B1 additions have no execution or visual acceptance yet; other catalog additions remain planned.
 
 ## Scope
 
 - In: extend `tools/ui/render_states.py` with dedicated offline screenshots of already implemented desktop states that are still absent, using the real forms, shared styles and existing presentation handlers. Complete the batches below in this same PR, updating this plan at each coherent checkpoint.
 - Out: new product features, changes to provider protocols or persistence semantics, GUI redesign, new dependencies, packaging, native file-picker screenshots, live credential access, network traffic, real generation, uploads, ONNX execution, real Trash/permanent deletion, tests, local renders and validation beyond owner-requested Ruff lint/format.
-- The initial change wrote the plan and documentation links only. The owner subsequently requested Connection 01–05, then the next ten states (06–15), then the next twenty (16–35), and explicitly requested lint/format for A3. Checked catalog entries below mean source-present fixtures, not independently verified screenshots. Only the requested static lint/format is authorized locally; the owner controls further implementation and CI/manual execution.
+- The initial change wrote the plan and documentation links only. The owner subsequently requested Connection 01–05, then 06–15, then 16–35, and now Connection 36–39 plus Generate 20–35. Ruff lint/format remains explicitly requested. Checked catalog entries below mean source-present fixtures, not independently verified screenshots. Only static lint/format is authorized locally; the owner controls further implementation and CI/manual execution.
 
 ## GUI components affected by future fixtures
 
@@ -49,7 +49,9 @@ The baseline has 115 listed workflow renders. Existing screenshots can contain i
 - [x] Implement A1 only: Connection 01–05, using one isolated temporary shell, a private synthetic environment mapping and an in-memory vault. Unused Generate inventory restoration is suppressed within this helper so a Cloud selection cannot consult process-environment credentials. No Check or credential action button is clicked; storage unavailability is injected at the saved-store boundary.
 - [x] Implement A2 only: Connection 06–15, reusing the A1 temporary shell. Intercept Check submission and key/preset services before real handlers run; close the unsubmitted check coroutine, inject neutral check outcomes, and replace native pickers with synthetic temporary paths. Scroll the preset card into view before capturing its controls and errors.
 - [x] Implement A3 only: Connection 16–35, reusing the same shell. Use a count-only mock catalogue with refused unlink/import, synthetic cache summaries/results, closed purge/export/measurement coroutines and synthetic export outcomes. No extra worker or window is introduced. Cache measuring reuses the canonical initial label; partial cleanup uses the existing red error presenter, not an invented amber result.
-- [ ] Implement A: Connection and the shared export flow.
+- [x] Implement A4: Connection 36–39, using real export validation, synthetic empty-scope/preference-failure settlements and the existing narrow-layout handler.
+- [x] Implement A: Connection and the shared export flow.
+- [x] Implement B1: Generate 20–35, reusing the isolated shell for real selection editors and synthetic inventory/configuration/outcome presentation. Close submitted coroutines before execution, including inventory refresh and asset preparation.
 - [ ] Implement B: Generate editors, inventory/configuration and asset outcomes.
 - [ ] Implement C: active/problem Queues and planner composition.
 - [ ] Implement D: Images column, Detail and remaining operation/selection composition.
@@ -156,10 +158,10 @@ Use injected status/credential observations and temporary library/cache summarie
 | [x] | `connection-33-export-partial` | Partial result containing genuine failure/warning evidence, not informational notices alone. |
 | [x] | `connection-34-export-stopped` | Stopped result preserving completed export counts. |
 | [x] | `connection-35-export-failed` | Persistent failure presentation. |
-| [ ] | `connection-36-export-not-started` | Invalid/missing destination refusal through the real validation presentation. |
-| [ ] | `connection-37-export-no-matches` | Empty-scope result rather than a fabricated success count. |
-| [ ] | `connection-38-export-preferences-unavailable` | Saved-preference read failure/defaults message. |
-| [ ] | `connection-39-narrow` | Connection below the inspector-collapse breakpoint, with navigation still accessible. |
+| [x] | `connection-36-export-not-started` | Invalid/missing destination refusal through the real validation presentation. |
+| [x] | `connection-37-export-no-matches` | Empty-scope result rather than a fabricated success count. |
+| [x] | `connection-38-export-preferences-unavailable` | Saved-preference read failure/defaults message. |
+| [x] | `connection-39-narrow` | Connection below the inspector-collapse breakpoint, with navigation still accessible. |
 
 ## B. Generate editors, inventory and assets
 
@@ -167,22 +169,22 @@ Sources: `generation_page.py` (catalogue/inventory, configuration and generation
 
 | Done | Proposed state | Required visible state |
 | --- | --- | --- |
-| [ ] | `generate-20-local-controls` | Local-only Include DT+ Cloud control visible and fake Simulation absent. |
-| [ ] | `generate-21-checkpoint-editor` | Searchable checkpoint editor, active selection and scrim. |
-| [ ] | `generate-22-checkpoint-no-matches` | Search with no matching candidates and the existing custom-identifier affordance. |
-| [ ] | `generate-23-custom-checkpoint-editor` | Custom identifier input through the existing chooser, no invented family metadata. |
-| [ ] | `generate-24-lora-weight-editor` | Combined searchable LoRA/weight editor, Add/Cancel and scrim. |
-| [ ] | `generate-25-lora-weight-hint` | Existing out-of-range catalogue-weight explanation, without clamping saved values. |
-| [ ] | `generate-26-lora-not-added` | Real rejected-selection presentation. |
-| [ ] | `generate-27-unclassified-models` | Existing unclassified-files informational inspection. |
-| [ ] | `generate-28-inventory-refreshing` | Refreshing label and appropriate disabled controls. |
-| [ ] | `generate-29-inventory-refresh-failed` | Refresh failure while retaining last-observed counts/timestamp. |
-| [ ] | `generate-30-inventory-cache-only` | Restored observation/cache-only provenance, not a claimed live refresh. |
-| [ ] | `generate-31-config-loaded` | Loaded configuration and its existing warning/summary presentation. |
-| [ ] | `generate-32-config-load-failed` | Configuration refused/unreadable with current form preserved. |
-| [ ] | `generate-33-metadata-unavailable` | Missing metadata inspection/result, complementing existing successful inspection. |
-| [ ] | `generate-34-partial-result` | Amber partial-generation result from a synthetic settlement, without additional generation. |
-| [ ] | `generate-35-asset-preparing` | Preparing status and operation overlay; never call a real upload. |
+| [x] | `generate-20-local-controls` | Local-only Include DT+ Cloud control visible and fake Simulation absent. |
+| [x] | `generate-21-checkpoint-editor` | Searchable checkpoint editor, active selection and scrim. |
+| [x] | `generate-22-checkpoint-no-matches` | Search with no matching candidates and the existing custom-identifier affordance. |
+| [x] | `generate-23-custom-checkpoint-editor` | Custom identifier input through the existing chooser, no invented family metadata. |
+| [x] | `generate-24-lora-weight-editor` | Combined searchable LoRA/weight editor, Add/Cancel and scrim. |
+| [x] | `generate-25-lora-weight-hint` | Existing out-of-range catalogue-weight explanation, without clamping saved values. |
+| [x] | `generate-26-lora-not-added` | Real rejected-selection presentation. |
+| [x] | `generate-27-unclassified-models` | Existing unclassified-files informational inspection. |
+| [x] | `generate-28-inventory-refreshing` | Refreshing label and appropriate disabled controls. |
+| [x] | `generate-29-inventory-refresh-failed` | Refresh failure while retaining last-observed counts/timestamp. |
+| [x] | `generate-30-inventory-cache-only` | Restored observation/cache-only provenance, not a claimed live refresh. |
+| [x] | `generate-31-config-loaded` | Loaded configuration and its existing warning/summary presentation. |
+| [x] | `generate-32-config-load-failed` | Configuration refused/unreadable with current form preserved. |
+| [x] | `generate-33-metadata-unavailable` | Missing metadata inspection/result, complementing existing successful inspection. |
+| [x] | `generate-34-partial-result` | Amber partial-generation result from a synthetic settlement, without additional generation. |
+| [x] | `generate-35-asset-preparing` | Preparing status and operation overlay; never call a real upload. |
 | [ ] | `generate-36-asset-partial` | Non-confirmed receipt outcome through `_prepared`. Reuse existing successful receipt coverage rather than adding a duplicate. |
 | [ ] | `generate-37-asset-failed` | Preparation failure through the real failure presenter. |
 | [ ] | `generate-38-asset-registry-unavailable` | Local receipt-list failure. |
@@ -292,8 +294,8 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 
 ## Validation and ownership
 
-- Current A3 slice: source editing/review and explicitly owner-requested Ruff lint/format only. The changed script was formatted; repository-wide Ruff lint and format checks passed. No tests, separate syntax checks, rendering, builds, training/inference or provider operations were run.
-- [x] Owner: requested A1 (Connection 01–05), reported its validation passed, and requested A2 (06–15) and A3 (16–35). Remaining batches still require a separate implementation request.
+- Current A4/B1 slice: source editing/review and explicitly owner-requested Ruff lint/format only. The changed script was formatted; repository-wide Ruff lint and format checks passed (331 files already formatted). No tests, separate syntax checks, rendering, builds, training/inference or provider operations ran locally.
+- [x] Owner: requested A1–A4/B1 and reported CI and UI render Actions passed through A3 at `6d039db`. This is owner-reported CI evidence, not native Windows/DPI acceptance. Remaining batches still require a separate implementation request; the next pending state is Generate 36.
 - [ ] Owner/CI: execute the explicitly requested offline render batches and inspect the saved states/timings, including the known intermittent Detail-transition stall.
 - [ ] Owner: manual native Windows/DPI interaction acceptance where needed; no executable build is required by this fixture-only scope.
 
@@ -304,3 +306,4 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 - 2026-10-17: implemented A1 (Connection 01–05) in the renderer source. The five additions bring the source-listed total from 115 to 120; no new screenshots were produced locally. One temporary shell is reused only within this credential/layout batch and is shut down before the existing fixtures continue. The source uses real backend-selection/credential presentation and an injected in-memory vault; no connection check, generation, upload or real credential access was performed. No tests, lint, format checks, syntax checks or renders were run.
 - 2026-10-17: owner reports A1 passed validation after `ecd58d0`, without specifying exact scenarios/platform. Implemented the requested next ten states (Connection 06–15) in source, bringing the listed total to 130. No extra shell or pending check worker is introduced: the check coroutine is closed before submission, results are synthetic, and key/preset service calls fail at patched boundaries. Temporary picker paths are never read/written by import/export. No local tests, validation, renders, inference or provider operations were run; A2 acceptance remains pending.
 - 2026-10-17: implemented the requested next twenty states (A3, Connection 16–35), bringing the source-listed total to 150. The same isolated shell is reused; catalogue changes are refused at mock boundaries, cache/export work coroutines are closed before submission and GUI settlements use synthetic data. At the owner's explicit request, formatted the changed script and ran repository-wide Ruff lint/format checks; both passed. No local tests, renders, cache purge, export copying, inference or provider actions were run. Source inspection corrected two planned assumptions: measuring does not disable cache controls, and partial cache cleanup is an existing red error. Execution, native visual acceptance and the intermittent Detail-stall diagnosis remain separate.
+- 2026-10-17: owner reports CI and UI render Actions passed for A3 (`6d039db`). Implemented the next twenty fixtures: A4 (Connection 36–39) and B1 (Generate 20–35), bringing the source-listed total to 170. Connection completes export refusal/empty-scope/preference-failure and narrow layout. Generate uses the real shared checkpoint/custom-identifier and LoRA/weight editors, plus synthetic inventory/configuration and partial-result settlements. The empty-LoRA callback is a defensive failure fixture, not an interaction reachable through the validated chooser. Partial-result output paths are synthetic and never written. Asset selection is mocked and its upload coroutine is closed before execution; no new shell or worker is introduced. No local tests, renders, export copying, uploads, inference or provider actions ran. Current execution/visual acceptance and the intermittent Detail-stall diagnosis remain separate.

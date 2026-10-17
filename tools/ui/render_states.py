@@ -30,7 +30,7 @@ if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFrame, QPushButton, QScrollArea  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidget, QPushButton, QScrollArea  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -38,7 +38,7 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
-from dtflow.core.models import ConnectionStatus, LoRASelection, ValidationError  # noqa: E402
+from dtflow.core.models import ConnectionStatus, InventoryEntry, InventorySnapshot, LoRASelection, ValidationError  # noqa: E402
 from dtflow.persistence.cache_coordination import CacheCleanupError  # noqa: E402
 from dtflow.persistence.image_recycle import ReconcileResult  # noqa: E402
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError  # noqa: E402
@@ -53,6 +53,7 @@ from dtflow.services.image_recycle import RecyclePlan, RecycleResult, RecycleTar
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
+from dtflow.ui import lora_panel as lora_ui  # noqa: E402
 from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.generation_page import GenerationPage  # noqa: E402
@@ -145,6 +146,7 @@ def render_connection_states(app, state, out):
             snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
         render_connection_outcomes(shell, out)
         render_connection_management(shell, out)
+        render_generate_configuration_states(shell, out)
     finally:
         shell.runner.shutdown()
         shell.form.close()
@@ -394,6 +396,174 @@ def render_connection_management(shell, out):
         assert export.running
         export._done(None, OSError("Offline fixture"))
         snap("connection-35-export-failed")
+        clear()
+        form.imageExportFolderEdit.clear()
+        form.imageExportStartButton.click()
+        assert not export.running and strip.rows["export"].activityLabel.text() == "Export not started"
+        snap("connection-36-export-not-started")
+        clear()
+        form.imageExportFolderEdit.setText(destination)
+        form.imageExportStartButton.click()
+        assert export.running
+        export._done(ExportResult(destination, 0, 0, 0, False), None)
+        assert "No saved images match" in form.imageExportStatusLabel.text()
+        snap("connection-37-export-no-matches")
+        clear()
+        form.imageExportFolderEdit.clear()
+        form.imageExportPromptsCheck.setChecked(True)
+        form.imageExportSidecarsCheck.setChecked(False)
+        form.imageExportSeparateCheck.setChecked(True)
+        export._preferences_dirty = False
+        export._loaded(None, OSError("Offline fixture"))
+        assert "could not be read" in form.imageExportStatusLabel.text()
+        snap("connection-38-export-preferences-unavailable")
+        form.resize(1000, 900)
+        shell._responsive_workspace()
+        assert shell.shell.rightRail.isHidden()
+        snap("connection-39-narrow")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+
+
+def render_generate_configuration_states(shell, out):
+    """Local editors/inventory/configuration plus asset progress; no provider or upload worker runs."""
+    form, page, controller = shell.form, shell.generation_page, shell.generation
+    strip = shell.progress_strip
+
+    def snap(name):
+        QTest.qWait(100)
+        save(form, out, name)
+
+    def clear():
+        shell.inline.dismiss()
+        for key in tuple(strip.rows):
+            strip.finish(key)
+
+    def hold_worker(coroutine, callback):
+        coroutine.close()
+
+    def reject_selection(parent, **options):
+        # Defensive callback failure fixture; the real chooser normally prevents an empty identifier.
+        options["callback"](("", 1.0))
+
+    with patch.object(shell.runner, "submit", side_effect=hold_worker):
+        form.backendCombo.setCurrentText("local")
+        form.generationNavigationButton.click()
+        shell.shell.leftScroll.verticalScrollBar().setValue(0)
+        assert not page.includeCloudCheck.isHidden() and page.simulationBox.isHidden()
+        snap("generate-20-local-controls")
+        snapshot = InventorySnapshot(
+            "local",
+            "offline-fixture",
+            "2026-10-17T12:00:00+00:00",
+            False,
+            (
+                InventoryEntry(
+                    "offline-checkpoint.ckpt", "model", "Offline checkpoint", None, "present", "offline-fixture"
+                ),
+                InventoryEntry(
+                    "offline-style.ckpt",
+                    "lora",
+                    "Offline style",
+                    None,
+                    "present",
+                    "offline-fixture",
+                    default_weight=0.8,
+                ),
+            ),
+            (("model_metadata", "present"),),
+        )
+        controller._show_inventory(snapshot, "cached")
+        page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+        page.modelCombo.showPopup()
+        editor = shell.inline._editor
+        assert editor is not None
+        choices = editor.findChild(QListWidget, "inlineSelectionChoices")
+        assert choices.count() > 0
+        snap("generate-21-checkpoint-editor")
+        editor.findChild(QLineEdit, "inlineSelectionSearch").setText("no-offline-match")
+        assert choices.count() == 0
+        snap("generate-22-checkpoint-no-matches")
+        identifier = editor.findChild(QLineEdit, "inlineSelectionIdentifier")
+        assert not identifier.isReadOnly()
+        identifier.setText("offline-custom-checkpoint.ckpt")
+        snap("generate-23-custom-checkpoint-editor")
+        clear()  # Do not apply a different checkpoint or submit anything.
+
+        lora = controller.lora
+        with patch.object(lora, "_candidates", [("offline-style.ckpt", 0.8)]):
+            page.addLoraButton.click()
+            editor = shell.inline._editor
+            assert editor is not None
+            editor.findChild(QListWidget, "inlineSelectionChoices").setCurrentRow(0)
+            snap("generate-24-lora-weight-editor")
+            clear()
+        with patch.object(lora, "_candidates", [("offline-style.ckpt", 4.2)]):
+            page.addLoraButton.click()
+            editor = shell.inline._editor
+            assert editor is not None
+            editor.findChild(QListWidget, "inlineSelectionChoices").setCurrentRow(0)
+            assert any("outside 0.0" in label.text() for label in editor.findChildren(QLabel))
+            snap("generate-25-lora-weight-hint")
+            clear()
+        with patch.object(lora_ui, "choose_searchable", side_effect=reject_selection):
+            page.addLoraButton.click()
+            assert "LoRA not added" in page.compatibilityStatusLabel.text()
+            snap("generate-26-lora-not-added")
+        assert controller._catalogue.view().unclassified_checkpoints
+        controller._show_unclassified_models()
+        assert shell.inline.form.inlineTitleLabel.text() == "Unclassified files"
+        snap("generate-27-unclassified-models")
+        clear()
+        controller.refresh()
+        assert not page.refreshInventoryButton.isEnabled()
+        snap("generate-28-inventory-refreshing")
+        controller._refreshed(None, OSError("Offline fixture"))
+        assert "showing previous inventory" in page.inventoryEvidenceLabel.text()
+        snap("generate-29-inventory-refresh-failed")
+        controller._inventory_notice = controller._inventory_error = ""
+        controller._show_inventory(snapshot, "cached")
+        assert "cached" in page.inventoryEvidenceLabel.text()
+        snap("generate-30-inventory-cache-only")
+
+        page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+        page.promptEdit.setPlainText("Offline configuration fixture; no generation submitted.")
+        page.seedEdit.setText("123")
+        request = controller.request_for_queue()[0]  # Pure form resolution, never queue creation/dispatch.
+        config_path = shell.state_dir / "offline-config.json"
+        controller._loaded(config_path, request, None)
+        assert "Configuration loaded" in page.generationStatusLabel.text()
+        snap("generate-31-config-loaded")
+        previous_prompt = page.promptEdit.toPlainText()
+        controller._loaded(config_path, None, ValidationError("Offline fixture: invalid configuration."))
+        assert page.promptEdit.toPlainText() == previous_prompt
+        assert "Configuration not loaded" in page.generationStatusLabel.text()
+        snap("generate-32-config-load-failed")
+        controller._metadata_path = shell.state_dir / "missing-metadata.json"
+        controller.show_metadata()
+        assert shell.inline.form.inlineTitleLabel.text() == "Metadata unavailable"
+        snap("generate-33-metadata-unavailable")
+        clear()
+        # Synthetic saved-outcome presentation only: these paths are never written or exported.
+        outcome = session.GenerationOutcome(
+            "offline-partial-attempt",
+            "local",
+            (str(shell.state_dir / "offline-output.png"),),
+            str(shell.state_dir / "offline-metadata.json"),
+            ("Offline fixture: advisory warning.",),
+            (),
+            request,
+        )
+        controller._generated(outcome, None)
+        assert "generation-result" in strip.rows
+        snap("generate-34-partial-result")
+        clear()
+        form.backendCombo.setCurrentText("cloud")
+        with patch.object(lora, "choose_asset_file", return_value=str(shell.state_dir / "offline-asset.ckpt")):
+            page.prepareAssetButton.click()
+            assert "asset" in strip.rows and not page.prepareAssetButton.isEnabled()
+            snap("generate-35-asset-preparing")
+        controller._set_busy(False)
         clear()
 
 
