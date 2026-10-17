@@ -40,6 +40,7 @@ class ImageRecyclePanel(QObject):
         self._confirmation_revision = None
         self._action = "trash"
         self._phase = "idle"
+        self._processed_count = 0
         gallery._permanent_callback = self.request
         gallery.removal_ready = False
         self.menu_button = gallery._widget("galleryRemovalMenuButton", QPushButton)
@@ -51,10 +52,10 @@ class ImageRecyclePanel(QObject):
         icon_root = Path(__file__).resolve().parents[1] / "resources" / "images" / "gallery"
         for mode, label in (("trash", f"Move to {TRASH_NAME}"), ("permanent", "Delete permanently")):
             action = menu.addAction(
-                QIcon(str(icon_root / ("arrow-left.svg" if mode == "trash" else "delete.svg"))), label
+                QIcon(str(icon_root / "delete.svg")), label
             )
             if mode == "trash" and gallery._recycle_callback is None:
-                action.setToolTip("System Trash is unavailable; selecting this mode will not remove images.")
+                action.setToolTip("System Trash is unavailable. Selecting Trash disables the main removal action; you can still choose permanent deletion.")
             action.setCheckable(True)
             group.addAction(action)
             action.triggered.connect(lambda _checked=False, mode=mode: self._choose_mode(mode))
@@ -223,6 +224,7 @@ class ImageRecyclePanel(QObject):
             return
         self._running = True
         self._phase = "executing"
+        self._processed_count = 0
         self._action = plan.action
         self.gallery.set_recycle_busy(True)
         self._stop = threading.Event()
@@ -238,11 +240,16 @@ class ImageRecyclePanel(QObject):
                 self.state_dir,
                 plan,
                 self._stop,
-                self.progress.emit,
+                self._record_progress,
                 recycle_adapter=recycle_file,
             ),
             self._completed,
         )
+
+    def _record_progress(self, done: int, total: int) -> None:
+        """Called by the worker before GUI event delivery, including on early failures."""
+        self._processed_count = max(self._processed_count, done)
+        self.progress.emit(done, total)
 
     def _update_progress(self, done: int, total: int) -> None:
         activity_strip(self.parent_widget).update("trash", done, total)
@@ -255,6 +262,7 @@ class ImageRecyclePanel(QObject):
             self._finish_with_error(error)
             self.gallery.refresh(preserve=True)
             return
+        self._phase = "idle"
         self.gallery.recycle_completed(result.recycled + result.deleted)
         label = "Permanent deletion" if self._action == "permanent" else TRASH_NAME
         summary = (
@@ -278,13 +286,22 @@ class ImageRecyclePanel(QObject):
                         "be verified. Inspect system Trash; do not retry automatically."
                     )
                 elif reason == "delete_refused":
-                    detail = "Delete refused before mutation; original unchanged, so this item may be retried."
+                    detail = (
+                        "Delete refused before mutation; the original was not confirmed unchanged. "
+                        "Do not retry without manual review."
+                        if identity in result.uncertain
+                        else "Delete refused before mutation; the unchanged original may be retried with fresh consent."
+                    )
                 elif reason == "delete_uncertain":
                     detail = "Delete outcome unconfirmed; inspect the original before any manual action."
                 elif reason == "delete_unsupported":
                     detail = "Windows mutation support is unavailable for this original."
                 elif reason == "source_changed":
-                    detail = "Original changed or became unsafe; removal was refused."
+                    detail = (
+                        "Original changed; removal outcome needs manual review."
+                        if identity in result.uncertain
+                        else "Original changed and the operation was refused."
+                    )
                 else:
                     detail = reason
                 summary += f"\n{identity}: {detail}"
@@ -307,19 +324,24 @@ class ImageRecyclePanel(QObject):
         self.gallery.set_recycle_busy(False)
         log.warning("image recycling failed phase=%s reason=%s", phase, type(error).__name__)
         if phase == "preflight":
-            if isinstance(error, RecycleUnavailable):
-                reason = str(error)
-            elif isinstance(error, (OriginalImagesBusyError, OriginalImagesUnavailableError)):
-                reason = str(error)
-            else:
-                reason = "Image-removal prerequisites could not be verified."
+            reason = (
+                str(error)
+                if isinstance(error, (RecycleUnavailable, OriginalImagesBusyError, OriginalImagesUnavailableError))
+                else "Image-removal prerequisites could not be verified."
+            )
             message = f"{reason} This request changed no originals."
             title = "Removal preflight refused"
+        elif self._processed_count == 0 and isinstance(
+            error, (OriginalImagesBusyError, OriginalImagesUnavailableError, RecycleUnavailable)
+        ):
+            # Known lock/prerequisite refusal before the first file was processed.
+            message = f"{error} No originals were changed by this request."
+            title = "Removal not started"
         else:
-            # A previously settled image must not be described as untouched.
+            # A failure during/after a file cannot establish a zero-mutation result.
             message = (
                 "The removal run stopped without verifying every result. "
-                "Some originals may already have changed; review the durable outcomes "
+                "Originals may already have changed; review the durable outcomes "
                 "and inspect affected files before taking further action."
             )
             title = "Removal result needs review"

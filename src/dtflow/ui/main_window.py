@@ -32,6 +32,8 @@ from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupEr
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
 from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.persistence.original_io import (
+    OriginalImagesBusyError,
+    OriginalImagesUnavailableError,
     original_images_lock,
     recycle_batch_lock,
     require_originals_ready,
@@ -371,7 +373,8 @@ class MainWindow:
         self.refresh_presets()
         self._workspace_changed(0)
         self._responsive_workspace()
-        self.runner.submit(asyncio.to_thread(self._reconcile_images), self._images_reconciled)
+        # Readiness precedes reconciliation so an unsupported bridge gets one
+        # startup notice, not duplicate warnings from concurrent startup tasks.
         self.runner.submit(
             asyncio.to_thread(require_originals_ready, self.state_dir), self._originals_ready_checked
         )
@@ -379,7 +382,14 @@ class MainWindow:
     def _originals_ready_checked(self, _result, error) -> None:
         if error is not None:
             log.warning("original-image readiness unavailable reason=%s", type(error).__name__)
-            InlineNotice.warning(self.form, "Original images unavailable", str(error))
+            InlineNotice.warning(
+                self.form, "Original images unavailable",
+                f"{error} Interrupted removal intents remain blocked until shared-lock readiness returns."
+                if isinstance(error, OriginalImagesUnavailableError)
+                else "Original-file readiness could not be checked. Interrupted removals remain blocked.",
+            )
+            return
+        self._request_recycle_reconciliation()
 
     @staticmethod
     def _disable_preview_controls(page: QWidget) -> None:
@@ -971,12 +981,20 @@ class MainWindow:
     def _images_reconciled(self, outcome, error) -> None:
         if error is not None:
             log.warning("image-recycle reconciliation skipped reason=%s", type(error).__name__)
-            InlineNotice.warning(
-                self.form,
-                "Removal reconciliation deferred",
-                "Interrupted removals could not be reconciled while original-file access is unavailable "
-                "or busy. Pending items remain blocked. Restore shared-lock readiness, then refresh Images.",
-            )
+            if isinstance(error, (OriginalImagesUnavailableError, OriginalImagesBusyError)):
+                message = (
+                    "Interrupted removal intents could not be reconciled because original-file access "
+                    "is unavailable or busy. Pending items remain blocked; restore readiness, "
+                    "then refresh Images."
+                )
+                InlineNotice.warning(self.form, "Removal reconciliation deferred", message)
+            else:
+                InlineNotice.error(
+                    self.form,
+                    "Removal reconciliation failed",
+                    "The durable removal ledger could not be reconciled. Interrupted items remain "
+                    "blocked; inspect the local state before retrying.",
+                )
             return
         if outcome and any(outcome):
             self.gallery.refresh(preserve=True)

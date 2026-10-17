@@ -21,6 +21,7 @@ from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
 from dtflow.persistence import windows_original
 from dtflow.persistence.original_io import (
+    OriginalImagesUnavailableError,
     original_images_lock,
     recycle_batch_lock,
     require_originals_ready,
@@ -233,7 +234,7 @@ def _permanent_remove(state: Path, target: RecycleTarget) -> None:
     """Only reached after fresh service checks and committed permanent intent."""
     try:
         windows_boundary = os.name == "nt" or windows_originals_bridge(state) is not None
-    except (OSError, UnicodeError, ValueError) as exc:
+    except (OriginalImagesUnavailableError, OSError, UnicodeError, ValueError) as exc:
         # No helper or disposition call could have been reached.
         raise RecycleUnavailable("Shared Windows deletion boundary is unavailable.", stage="delete_refused") from exc
     if windows_boundary:
