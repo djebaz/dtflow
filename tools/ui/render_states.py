@@ -838,7 +838,14 @@ def main():
                 if tab == "imagesNavigationButton":
                     # The fake generations above are saved outputs; show them loaded, not a mid-refresh frame.
                     shell.gallery.show_view("Grid")
-                    wait_for(lambda: not shell.gallery._loading and bool(shell.gallery.items))
+                    wait_for(
+                        lambda: (
+                            not shell.gallery._loading
+                            and bool(shell.gallery.items)
+                            and not shell.gallery._thumb_waiting
+                            and not shell.gallery._thumb_active
+                        )
+                    )
                 QTest.qWait(300)
                 capture(name)
             # Detail of a fake-backend output with Additional details open, then the real
