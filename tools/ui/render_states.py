@@ -886,6 +886,139 @@ def render_gallery_composition_states(shell, state, out):
         gallery.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
         assert gallery._grid_empty is not None
         snap("images-72-pager-empty")
+
+        # Multi-batch UX fixtures deliberately build distinct numbered records:
+        # batch 1 (1-80), append batch 2 (81-160), then jump directly to the
+        # short final batch (321-342). These are *offline projections*, not a
+        # claim that production lazy-load orchestration is implemented yet.
+        def multi_item(index):
+            return replace(
+                item,
+                identity=f"offline-multipage:{index:04d}",
+                attempt_id=f"offline-multipage-attempt:{index:04d}",
+                path=str(root / f"image-{index:04d}.png"),
+                metadata_path=str(root / f"metadata-{index:04d}.json"),
+                prompt=f"Offline page fixture image {index:04d}; no generation.",
+            )
+
+        def paint_multi_thumbnail(record, index):
+            # Distinct colored, numbered preview pixels make it possible to
+            # inspect the actual viewport at a page boundary in the artifact.
+            preview = QImage(240, 160, QImage.Format.Format_RGB32)
+            palette = ("#526a83", "#64715d", "#7b6655", "#67627b", "#577879")
+            preview.fill(QColor(palette[(index // 8) % len(palette)]))
+            painter = QPainter(preview)
+            painter.setPen(QColor("#f4f4f4"))
+            painter.drawText(preview.rect(), Qt.AlignmentFlag.AlignCenter, f"IMAGE {index:04d}")
+            painter.end()
+            gallery._thumbnail_done(gallery._thumb_versions[record.identity], record.identity, (preview, ""), None)
+
+        def multi_window(first, last, *, total=342, loaded=None, first_visible=None, last_visible=None):
+            records = [multi_item(i) for i in range(first, last + 1)]
+            gallery.items, gallery.total, gallery.offset = records, total, first - 1
+            gallery._render_page()
+            gallery._rendered_page = (gallery.offset, tuple(records))
+            for index, record in zip(range(first, last + 1), records, strict=True):
+                paint_multi_thumbnail(record, index)
+            QTest.qWait(60)  # settle deferred Grid reflow before taking the screenshot
+            shown_start = first if first_visible is None else first_visible
+            shown_end = min(last, shown_start + 23) if last_visible is None else last_visible
+            gallery.pager.present(
+                total=total,
+                visible_start=shown_start,
+                visible_end=shown_end,
+                loaded=len(records) if loaded is None else loaded,
+                active_page=(shown_start - 1) // gallery_ui.PAGE_SIZE + 1,
+            )
+            assert len(gallery.items) == last - first + 1
+            assert gallery.table.rowCount() == len(gallery.items)
+            assert len(gallery._grid_buttons) == len(gallery.items)
+            return records
+
+        gallery.show_view("Grid")
+        first_batch = multi_window(1, 80, first_visible=1, last_visible=24)
+        assert gallery.pager.range.text() == "1–24 of 342"
+        assert gallery.pager.buttons[1].isChecked()
+        snap("images-73-pager-first-batch-grid")
+
+        # Move the real Qt viewport near the end of the first batch.
+        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[first_batch[-1].identity])
+        QTest.qWait(50)
+        assert gallery.grid_scroll.verticalScrollBar().maximum() > 0
+        gallery.pager.present(
+            total=342, visible_start=65, visible_end=80,
+            loaded=80, active_page=1, loading=True,
+        )
+        snap("images-74-pager-prefetch-boundary-grid")
+
+        # The second batch is appended to the *same mounted listing* and the
+        # first 80 stable widgets retain identity. Show rows around 80/81.
+        saved_first_button = gallery._grid_buttons[first_batch[0].identity]
+        second_batch = multi_window(1, 160, loaded=160, first_visible=73, last_visible=96)
+        assert gallery._grid_buttons[first_batch[0].identity] is saved_first_button
+        assert second_batch[79].identity in gallery._grid_buttons
+        assert second_batch[80].identity in gallery._grid_buttons
+        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[second_batch[80].identity])
+        QTest.qWait(50)
+        snap("images-75-pager-two-batches-grid")
+
+        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[second_batch[128].identity])
+        gallery.pager.present(
+            total=342, visible_start=129, visible_end=152, loaded=160, active_page=2
+        )
+        QTest.qWait(50)
+        assert gallery.pager.buttons[2].isChecked()
+        snap("images-76-pager-scrolled-second-batch-grid")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            snap("images-77-pager-two-batches-grid-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+
+        gallery.show_view("List")
+        # The List really contains 160 distinct table rows and can scroll into batch 2.
+        gallery.table.scrollToItem(gallery.table.item(80, 2))
+        gallery.pager.present(
+            total=342, visible_start=81, visible_end=98, loaded=160, active_page=2
+        )
+        QTest.qWait(50)
+        assert gallery.table.item(79, 2).text() == "image-0080.png"
+        assert gallery.table.item(80, 2).text() == "image-0081.png"
+        snap("images-78-pager-two-batches-list")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            snap("images-79-pager-two-batches-list-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+
+        # Exercise the actual numbered Qt button: an offline-only callback
+        # supplies the target batch without reading a DB or paging through 3/4.
+        def fixture_jump(page_number):
+            first = (page_number - 1) * gallery_ui.PAGE_SIZE + 1
+            last = min(342, first + gallery_ui.PAGE_SIZE - 1)
+            multi_window(first, last, first_visible=first, last_visible=min(last, first + 17))
+
+        gallery.pager.on_jump = fixture_jump
+        gallery.pager.buttons[5].click()
+        assert gallery.offset == 320 and gallery.total == 342 and len(gallery.items) == 22
+        assert gallery.pager.buttons[5].isChecked()
+        assert gallery.pager.range.text() == "321–338 of 342"
+        snap("images-80-pager-direct-jump-last-batch-list")
+        gallery.show_view("Grid")
+        snap("images-81-pager-direct-jump-last-batch-grid")
+
+        # A larger library forces ellipses and tests that 7+ chip controls
+        # still remain inside the pager at a reduced window width.
+        multi_window(961, 1040, total=1540, first_visible=961, last_visible=984)
+        assert gallery.pager.buttons[13].isChecked() and len(gallery.pager._gaps) == 2
+        snap("images-82-pager-many-pages-ellipsis")
+        form.resize(800, 680)
+        QTest.qWait(130)
+        snap("images-83-pager-many-pages-narrow")
+        form.resize(1600, 1000)
+        QTest.qWait(100)
+        gallery.pager.on_jump = gallery._jump_to_page
+
         present(item)
         gallery._sync_pager()
         gallery.show_view("Grid")
