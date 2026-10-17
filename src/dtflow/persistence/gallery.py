@@ -290,7 +290,11 @@ def selection_candidates(
 
 
 def selection_paths(
-    state: Path, identities: tuple[str, ...], *, read_path: Callable[[str], str] | None = None
+    state: Path,
+    identities: tuple[str, ...],
+    *,
+    read_path: Callable[[str], str] | None = None,
+    read_record: Callable[[dict], str] | None = None,
 ) -> tuple[tuple[str, ...], int]:
     """Read source paths for checked recorded originals without Qt or image decodes."""
     targets = set(identities)
@@ -300,10 +304,16 @@ def selection_paths(
     with reader(state) as db:
         if db is None:
             return (), len(targets)
-        for row in db.execute(BASE + "SELECT identity, path FROM records"):
+        for row in db.execute(BASE + "SELECT identity, attempt_id, ordinal, path, metadata_path FROM records"):
             if row["identity"] in targets:
                 try:
-                    source = Path(read_path(row["path"]) if read_path else row["path"])
+                    source = Path(
+                        read_record(dict(row))
+                        if read_record is not None
+                        else read_path(row["path"])
+                        if read_path is not None
+                        else row["path"]
+                    )
                     if source.is_file() and not source.is_symlink():
                         found[row["identity"]] = str(source)
                 except OSError:

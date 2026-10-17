@@ -11,6 +11,7 @@ from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as storage
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_read
+from dtflow.persistence.original_io import original_images_lock
 
 MAX_METADATA_BYTES = 1024 * 1024
 SECRET = re.compile(r"api.?key|token|password|secret|authorization|cookie|credential|signed.?url|base64", re.I)
@@ -101,7 +102,15 @@ async def locate_output(state: Path, query: GalleryQuery, identity: str) -> int 
 
 def copy_output_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
     """Worker-only clipboard paths; aliases never replace recorded references."""
-    return storage.selection_paths(state, identities, read_path=ArtifactReadPaths.discover().resolve)
+    def read():
+        with original_images_lock(state, timeout=30):
+            return storage.selection_paths(
+                state,
+                identities,
+                read_record=lambda record: resolve_output_read(state, record, verify=True)[0],
+            )
+
+    return read()
 
 
 async def filter_choices(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:

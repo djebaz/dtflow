@@ -1780,7 +1780,10 @@ class GalleryPage(QObject):
     def _edit_image(self) -> None:
         item = self._selected()
         if item is not None and not foreign_windows_path(item.path) and self._edit_callback is not None:
-            self._edit_callback(item.path)
+            if item.read_path != item.path:
+                self._read_action("edit")
+            else:
+                self._edit_callback(item.path)
 
     def _regenerate(self) -> None:
         item = self._selected()
@@ -2011,20 +2014,47 @@ class GalleryPage(QObject):
 
         QTimer.singleShot(0, restore)
 
-    def _copy_path(self) -> None:
+    def _read_action(self, action: str) -> None:
+        """Revalidate source provenance under a lease without blocking the Qt thread."""
         item = self._selected()
-        if item is not None:
-            QApplication.clipboard().setText(item.read_path or item.path)
+        if item is None:
+            return
+
+        def read():
+            with original_images_lock(self.state_dir, timeout=12):
+                return resolve_item_read(item, self.state_dir)[0]
+
+        self.runner.submit(
+            asyncio.to_thread(read),
+            lambda result, error: self._read_action_done(action, item.identity, result, error),
+        )
+
+    def _read_action_done(self, action: str, identity: str, result, error) -> None:
+        if self.selected_id != identity:
+            return
+        if error is not None or not result:
+            reason = str(error) if isinstance(error, OSError) else type(error).__name__ if error else "unknown"
+            self._selection_notice(f"Image action unavailable: {reason}")
+            return
+        if action == "copy":
+            QApplication.clipboard().setText(result)
+        elif action == "folder":
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(result).parent))):
+                self._selection_notice("Could not open the image folder with the system file manager.")
+        elif action == "external":
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(result)):
+                self._selection_notice("Could not open the image with the system viewer.")
+        elif action == "edit" and self._edit_callback is not None:
+            self._edit_callback(result)
+
+    def _copy_path(self) -> None:
+        self._read_action("copy")
 
     def _open_folder(self) -> None:
-        item = self._selected()
-        if item is not None and not item.issue and item.read_path:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(item.read_path).parent)))
+        self._read_action("folder")
 
     def _open_external(self) -> None:
-        item = self._selected()
-        if item is not None and not item.issue and item.read_path:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(item.read_path))
+        self._read_action("external")
 
     def export_query(self) -> GalleryQuery:
         """Capture current filters without changing selection, paging or viewer state."""

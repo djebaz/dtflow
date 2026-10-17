@@ -32,7 +32,7 @@ from dtflow.persistence.original_io import (
 )
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.artifact_paths import foreign_windows_path
-from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
+from dtflow.services.gallery import item_from_record, load_detail, resolve_item_read, safe_metadata
 from dtflow.services.image_quality import ALGORITHM, assess_rgb
 
 MAX_EXPORT_IMAGES = 10_000
@@ -208,8 +208,8 @@ def _identifier(value) -> str:
     return text
 
 
-def _portable(item: GalleryItem, options: ExportOptions) -> tuple[dict, list[str]]:
-    detail = load_detail(item)
+def _portable(item: GalleryItem, options: ExportOptions, *, state: Path | None = None) -> tuple[dict, list[str]]:
+    detail = load_detail(item, state=state)
     recorded = json.loads(detail.metadata_json)
     request = json.loads(item.request_json)
     requested = {key: request[key] for key in REQUEST_FIELDS if key in request}
@@ -394,11 +394,11 @@ def _reserve(destination: Path, stem: str):
 
 
 def _export_one(
-    item: GalleryItem, destination: Path, options: ExportOptions, computations: dict
+    item: GalleryItem, destination: Path, options: ExportOptions, computations: dict, *, state: Path | None = None
 ) -> tuple[tuple[str, ...], str]:
     if foreign_windows_path(item.path):
         raise ValidationError("Windows-recorded outputs are read-only here; export them from Windows.")
-    source = Path(item.path).resolve()
+    source = Path(resolve_item_read(item, state)[0] if state is not None else item.path).resolve()
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
     if not source.is_file() or source.stat().st_size > MAX_IMAGE_BYTES:
@@ -422,7 +422,7 @@ def _export_one(
     checksum = cached["source_png_sha256"] if cached else hashlib.sha256(original).hexdigest()
     assessment = cached.get("assessment") if cached else None
     category = "root"
-    document, notes = _portable(item, options)
+    document, notes = _portable(item, options, state=state)
     document.update(
         source_png_sha256=checksum,
         exported_at_utc=datetime.now(UTC).isoformat(),
@@ -577,7 +577,9 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                     record = storage.get_record(state, identity)
                     if record is None:
                         raise ValidationError("Saved original is not available.")
-                    item_notes, category = _export_one(item_from_record(record), destination, options, computations)
+                    item_notes, category = _export_one(
+                        item_from_record(record, state=Path(state)), destination, options, computations, state=Path(state)
+                    )
                     notes.update(item_notes)
                     noise += category == "noise"
                     blank += category == "blank"
