@@ -166,6 +166,17 @@ def _image_changes(current, previous, deadline):
     return added, removed, total
 
 
+def _validate_previous(db, deadline):
+    """Do not let valid metadata hide an unusable same-version publication."""
+    from dtflow.persistence.gallery import SNAPSHOT_BASE
+
+    _publication_budget(db, deadline)
+    db.execute(SNAPSHOT_BASE + "SELECT * FROM records LIMIT 0").close()
+    if db.execute("PRAGMA quick_check(1)").fetchone() != ("ok",):
+        raise ValueError("Previous gallery publication is unreadable.")
+    _publication_budget(db, deadline)
+
+
 def _close_summary(state, result, before=None, checked_stamp=None):
     with _stats_lock:
         stats = _session_stats.get(state, _PublicationStats())
@@ -237,6 +248,7 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                     stamp = datetime.fromisoformat(info[2])
                     if stamp.tzinfo is None:
                         raise ValueError("Invalid previous publication timestamp.")
+                    _validate_previous(previous, deadline)
                     baseline_known = True
                     checked_stamp = stamp.isoformat()
                     if info[1] == signature:
@@ -249,12 +261,13 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                             (time.monotonic() - started) * 1000,
                         )
                         return False
-            except (OSError, sqlite3.Error, ValueError, TypeError):
+            except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
                 if previous is not None:
                     previous.close()
                     previous = None
                 checked_stamp = None
                 baseline_known = False  # Rebuild, but do not invent deltas against an unreadable baseline.
+                log.info("gallery snapshot baseline unavailable; rebuilding reason=%s", type(exc).__name__)
             stage = "projection"
             with temporary.open("xb"):
                 pass
@@ -281,7 +294,19 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                     output.executemany("INSERT INTO records VALUES (?,?)", batch)
                     _publication_budget(output, deadline)
                 stage = "counts"
-                added, removed, images = _image_changes(output, previous, deadline)
+                try:
+                    added, removed, images = _image_changes(output, previous, deadline)
+                except sqlite3.Error as exc:
+                    if previous is None:
+                        raise
+                    # A later baseline read failure must not make diagnostics
+                    # block an otherwise valid live-state replacement.
+                    previous.close()
+                    previous = None
+                    baseline_known = False
+                    checked_stamp = None
+                    log.info("gallery snapshot baseline comparison unavailable reason=%s", type(exc).__name__)
+                    added, removed, images = _image_changes(output, None, deadline)
                 if not baseline_known:
                     added = removed = None
                 # Close the retained previous file before replacement on Windows.

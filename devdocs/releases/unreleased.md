@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Snapshot recovery review P2: a valid signature no longer skips an unusable same-version snapshot. Bounded query-structure/integrity validation and a baseline-comparison fallback permit live-state replacement with unknown deltas; unsupported versions and publication safety budgets remain protected. No tests added or run locally.
+
 - Snapshot diagnostics now separate added/removed visible images from included totals, record publication triggers and the actual saved timestamp, and summarize this app session's cumulative publication activity on close even when unchanged. Unknown prior baselines stay explicit; identity comparison streams inside the existing publication budget. No paths/prompts logged; owner runtime acceptance remains pending.
 
 - Snapshot review finding 4: reader setup is inside its deadline and canonical snapshot SQL reads the same publication's indexed availability table directly, removing the in-memory ledger copy. Count/page/anchor/facets retain one immutable connection; live SQL and all removal exclusions are unchanged.
