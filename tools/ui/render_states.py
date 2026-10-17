@@ -21,11 +21,14 @@ from support.network_guard import install  # noqa: E402
 
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
+    # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
+    os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize  # noqa: E402
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame, QPushButton, QScrollArea  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -328,11 +331,16 @@ def render_mapped_gallery_states(app, state, out):
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
             control = shell.gallery._widget("galleryRemovalControl", QFrame)
-            expected_left = control.mapToGlobal(QPoint(0, 0)).x()
-            screen = menu.screen().availableGeometry()
-            expected_left = min(
-                max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
-            )
+            anchor = control.mapToGlobal(QPoint(0, control.height() - 1))
+            expected_left = anchor.x()
+            # Mirror the menu: clamp only when the anchor lies on a screen
+            # (the offscreen screen can be smaller than the rendered window).
+            anchor_screen = QGuiApplication.screenAt(anchor)
+            if anchor_screen is not None:
+                screen = anchor_screen.availableGeometry()
+                expected_left = min(
+                    max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
+                )
             assert menu.geometry().left() == expected_left
             target = out / "37-images-removal-menu-trash-selected.png"
             if not menu.grab().save(str(target)):
@@ -467,7 +475,7 @@ def render_inpaint_states(shell, state, capture):
     editor._support = ImageOperationSupport("owner_probe", "Offline presentation fixture.")
     editor._render_support()
     capture("24-inpaint-capability-probe")
-    editor.canvas.set_result(QPixmap.fromImage(source.mirrored(True, False)))
+    editor.canvas.set_result(QPixmap.fromImage(source.flipped(Qt.Orientation.Horizontal)))
     editor.canvas.set_view("Result")
     capture("26-inpaint-result-fixture")
     editor.canvas.set_view("Source")
@@ -717,6 +725,26 @@ def main():
                 getattr(shell.form, tab).click()
                 QTest.qWait(300)
                 capture(name)
+            # Detail of a fake-backend output with Additional details open, then the real
+            # Regenerate consent and its confirmed fake-provider submission.
+            gallery = shell.gallery
+            wait_for(lambda: not gallery._loading and bool(gallery.items))
+            gallery.show_view("Detail")
+            gallery.select(gallery.items[0].identity)
+            gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
+            QTest.qWait(150)
+            capture("60-images-detail-additional")
+            assert gallery.regenerate_button.isEnabled()
+            # Regenerate lives at the end of Additional details; show the armed Confirm in place.
+            gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(gallery.regenerate_button)
+            gallery.regenerate_button.click()
+            QTest.qWait(150)
+            capture("61-images-regenerate-confirmation")
+            scenario = "success"
+            gallery.regenerate_button.click()
+            assert page.resultList.count() == 0  # submitted: Generate cleared its previous result
+            wait_for(lambda: page.resultList.count() > 0 and settled())
+            capture("62-images-regenerate-confirmed")
             render_inpaint_states(shell, state, capture)
         finally:
             shell.runner.shutdown()
