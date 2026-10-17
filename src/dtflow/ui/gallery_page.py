@@ -83,6 +83,7 @@ from dtflow.ui.theme import load_tokens
 log = logging.getLogger(__name__)
 
 PAGE_SIZE = 80
+MAX_MOUNTED_IMAGES = PAGE_SIZE * 2  # two contiguous batches, never an unbounded widget list
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
 THUMBNAIL_SIDE = 600
@@ -296,6 +297,8 @@ class GalleryPage(QObject):
         self._check_boxes: dict[str, QCheckBox] = {}
         self._active = False
         self._loading = False
+        self._adjacent_loading = False
+        self._adjacent_failed_offset: int | None = None
         self._pending_refresh: tuple[bool, bool] | None = None
         self._refresh_failing = False
         self._snapshot_at = None
@@ -1169,7 +1172,7 @@ class GalleryPage(QObject):
         )
 
     def refresh(self, *, reset: bool = False, preserve: bool = True) -> None:
-        if self._loading:
+        if self._loading or self._adjacent_loading:
             if self._pending_refresh is not None:
                 reset = reset or self._pending_refresh[0]
                 preserve = preserve and self._pending_refresh[1]
@@ -1185,12 +1188,17 @@ class GalleryPage(QObject):
             return
 
         anchor = self._browsing_anchor() if preserve else None
+        if preserve and not reset and self.items:
+            # A refresh of a two-batch window must not discard the adjacent batch.
+            # GalleryQuery allows up to 200 rows; our mounted window is <= 160.
+            query = replace(query, limit=min(MAX_MOUNTED_IMAGES, len(self.items)))
         self._submit_query(query, anchor=anchor)
 
     def _submit_query(self, query: GalleryQuery, *, anchor: str | None) -> None:
         self._query_generation += 1
         generation = self._query_generation
         self._loading = True
+        self._adjacent_failed_offset = None
         if not self.items and self._rendered_page is None:
             # The initial Designer examples are not saved-output records.
             self._clear_grid()
@@ -1205,7 +1213,10 @@ class GalleryPage(QObject):
                 position = await locate_output(self.state_dir, replace(current, offset=0), anchor)
                 if position is not None:
                     anchor_found = True
-                    current = replace(current, offset=(position // PAGE_SIZE) * PAGE_SIZE)
+                    # Keep the current contiguous window when the anchor is still
+                    # inside it; otherwise jump directly to its aligned batch.
+                    if not (current.offset <= position < current.offset + current.limit):
+                        current = replace(current, offset=(position // PAGE_SIZE) * PAGE_SIZE)
             page = await query_outputs(self.state_dir, current)
             if page.total and not page.items and current.offset >= page.total:
                 current = replace(current, offset=((page.total - 1) // PAGE_SIZE) * PAGE_SIZE)
@@ -1310,6 +1321,7 @@ class GalleryPage(QObject):
             # in-flight decodes or reset Detail zoom/pan and browsing position.
             # The total can change outside this page without changing its pixels.
             self._update_navigation()
+            QTimer.singleShot(0, self._sync_pager)
             if self.mode == "Detail" and self._selected() is not None:
                 position = (
                     self.offset + next(i for i, item in enumerate(self.items) if item.identity == self.selected_id) + 1
@@ -1339,6 +1351,7 @@ class GalleryPage(QObject):
 
         self.refresh_button.setToolTip(self._page_summary())
         self._restore_scroll_later(anchor if anchor_found else None)
+        QTimer.singleShot(0, self._sync_pager)
         self._schedule_save()
 
     def _end_snapshot_warning_episode(self):
@@ -1418,33 +1431,191 @@ class GalleryPage(QObject):
         else:
             self.canvas_loading.clear()
 
+    def _visible_range(self) -> tuple[int, int]:
+        """Resolve visible saved-output positions from mounted Qt widgets."""
+        if not self.items:
+            return 0, 0
+        if self.mode == "Detail":
+            try:
+                position = next(i for i, item in enumerate(self.items) if item.identity == self.selected_id)
+            except StopIteration:
+                position = 0
+            result = self.offset + position + 1
+            return result, result
+        if self.mode == "List":
+            start = self.table.rowAt(0)
+            if start < 0:
+                start = 0
+            last = self.table.rowAt(max(0, self.table_viewport.height() - 1))
+            if last < 0:
+                last = len(self.items) - 1
+            return self.offset + start + 1, self.offset + min(last + 1, len(self.items))
+        scroll_top = self.grid_scroll.verticalScrollBar().value()
+        scroll_bottom = scroll_top + self.grid_viewport.height()
+        visible = [
+            self.offset + index + 1
+            for index, item in enumerate(self.items)
+            if (button := self._grid_buttons.get(item.identity)) is not None
+            and button.parentWidget().geometry().bottom() > scroll_top
+            and button.parentWidget().geometry().top() < scroll_bottom
+        ]
+        if not visible:
+            # A queued grid reflow can briefly leave cards at stale positions.
+            first = self.offset + 1
+            return first, min(self.total, first + len(self.items) - 1)
+        return visible[0], visible[-1]
+
     def _jump_to_page(self, page_number: int) -> None:
-        """Use the existing bounded query path for explicit chip navigation."""
-        current = self.offset // PAGE_SIZE + 1
-        self._change_page(page_number - current)
+        """Jump within mounted cards or query the requested 80-row batch directly."""
+        if self._loading or self._adjacent_loading or not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
+            return
+        target = (page_number - 1) * PAGE_SIZE
+        if self.items and self.offset <= target < self.offset + len(self.items):
+            index = target - self.offset
+            if self.mode == "Grid":
+                button = self._grid_buttons.get(self.items[index].identity)
+                if button is not None:
+                    self.grid_scroll.ensureWidgetVisible(button, 0, 0)
+            elif self.mode == "List":
+                cell = self.table.item(index, 0)
+                if cell is not None:
+                    self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+            else:
+                self.select(self.items[index].identity, open_detail=False)
+            QTimer.singleShot(0, self._sync_pager)
+            return
+        try:
+            query = self._query(offset=target)
+        except ValidationError as exc:
+            self.refresh_button.setToolTip(str(exc))
+            return
+        self._capture_scroll()
+        self._page_scroll_target = "start"
+        self._submit_query(query, anchor=None)
 
     def _sync_pager(self, *, loading: bool = False) -> None:
-        """Keep the compact pager consistent with the current committed result page."""
-        start = self.offset + 1 if self.items else 0
-        end = self.offset + len(self.items) if self.items else 0
+        """Use the viewport's first visible image, not the fetched window offset."""
+        first, last = self._visible_range()
         self.pager.present(
             total=self.total,
-            visible_start=start,
-            visible_end=end,
+            visible_start=first,
+            visible_end=last,
             loaded=len(self.items),
-            active_page=(self.offset // PAGE_SIZE) + 1,
-            loading=loading,
+            active_page=((first - 1) // PAGE_SIZE + 1) if first else 0,
+            loading=loading or self._loading or self._adjacent_loading,
         )
 
     def _page_summary(self) -> str:
         if not self.total:
             return "No committed saved outputs match these filters."
-        first = self.offset + 1
-        last = self.offset + len(self.items)
+        first, last = self._visible_range()
         return (
-            f"Showing {first}–{last} of {self.total}. "
-            "Scroll beyond a Grid/List page edge or use Ctrl+PageUp/PageDown to paginate."
+            f"Showing {first}–{last} of {self.total}; {len(self.items)} loaded. "
+            "Scroll to load adjacent batches, or use the numbered batch chips to jump."
         )
+
+    def _maybe_load_boundary(self) -> None:
+        """Prefetch the next/previous batch near a viewport edge without a page swap."""
+        if (
+            not self._active
+            or self.mode not in ("Grid", "List")
+            or not self.items
+            or self._loading
+            or self._adjacent_loading
+            or self._pending_refresh is not None
+            or self.filter_timer.isActive()
+        ):
+            return
+        first, last = self._visible_range()
+        threshold = max(6, min(20, len(self.items) // 8))
+        end = self.offset + len(self.items)
+        if end < self.total and last >= end - threshold:
+            self._load_adjacent(1)
+        elif self.offset > 0 and first <= self.offset + threshold:
+            self._load_adjacent(-1)
+
+    def _load_adjacent(self, direction: int) -> None:
+        """Read one contiguous batch from the same browsing authority as the window."""
+        offset = self.offset + len(self.items) if direction > 0 else self.offset - PAGE_SIZE
+        if offset < 0 or offset >= self.total or offset == self._adjacent_failed_offset:
+            return
+        try:
+            query = self._query(offset=offset)
+        except ValidationError:
+            return
+        generation = self._query_generation
+        source = self._snapshot_at
+        self._adjacent_loading = True
+        self._sync_pager()
+
+        async def read():
+            if source:
+                _query, page, _choices, _found = await query_snapshot(self.state_dir, query, None)
+                return page
+            return await query_outputs(self.state_dir, query)
+
+        self.runner.submit(
+            read(),
+            lambda page, error: self._adjacent_done(generation, direction, query, source, page, error),
+        )
+
+    def _adjacent_done(self, generation: int, direction: int, query: GalleryQuery, source, page, error) -> None:
+        if generation != self._query_generation:
+            return
+        self._adjacent_loading = False
+        if self._pending_refresh is not None:
+            pending = self._pending_refresh
+            self._pending_refresh = None
+            self.refresh(reset=pending[0], preserve=pending[1])
+            return
+        try:
+            current_query = self._query(offset=query.offset)
+        except ValidationError:
+            return
+        if query != current_query:
+            # A debounced filter/sort edit invalidates this request.
+            return
+        if error is not None:
+            self._adjacent_failed_offset = query.offset
+            log.warning("gallery adjacent batch read failed reason=%s", type(error).__name__)
+            self.refresh_button.setToolTip("The next image batch could not be loaded. Refresh to retry.")
+            self._sync_pager()
+            return
+        if (
+            page is None
+            or page.total != self.total
+            or page.snapshot_at != source
+            or not page.items
+            or (direction > 0 and query.offset != self.offset + len(self.items))
+            or (direction < 0 and query.offset + len(page.items) != self.offset)
+        ):
+            # Never splice records from different snapshots or shifted sorts.
+            self.refresh(preserve=True)
+            return
+        if {item.identity for item in page.items} & {item.identity for item in self.items}:
+            self.refresh(preserve=True)
+            return
+        anchor = self._browsing_anchor()
+        old_scroll = dict(self._scroll)
+        if direction > 0:
+            combined = [*self.items, *page.items]
+            if len(combined) > MAX_MOUNTED_IMAGES:
+                combined = combined[PAGE_SIZE:]
+                self.offset += PAGE_SIZE
+        else:
+            combined = [*page.items, *self.items]
+            self.offset = query.offset
+            if len(combined) > MAX_MOUNTED_IMAGES:
+                combined = combined[:MAX_MOUNTED_IMAGES]
+        self.items = combined
+        self._render_page()
+        self._rendered_page = (self.offset, tuple(self.items))
+        self._scroll = old_scroll
+        self._adjacent_failed_offset = None
+        self._restore_scroll_later(anchor if direction < 0 or self.offset != query.offset - len(self.items) else None)
+        self._sync_pager()
+        QTimer.singleShot(0, self._sync_pager)
+        self._schedule_save()
 
     def _render_page(self) -> None:
         previous = {item.identity: item for item in self._rendered_page[1]} if self._rendered_page else {}
@@ -2064,25 +2235,20 @@ class GalleryPage(QObject):
             return
         if delta > 0 and self.offset + len(self.items) < self.total:
             self._pending_page_selection = "first"
-            self._change_page(1)
+            self._jump_to_page((self.offset + len(self.items)) // PAGE_SIZE + 1)
         elif delta < 0 and self.offset > 0:
             self._pending_page_selection = "last"
-            self._change_page(-1)
+            self._jump_to_page((self.offset - 1) // PAGE_SIZE + 1)
 
     def _change_page(self, delta: int) -> bool:
-        if self._loading:
+        if self._loading or self._adjacent_loading or not self.total:
             return False
-        new_offset = self.offset + delta * PAGE_SIZE
-        if new_offset < 0 or (delta > 0 and new_offset >= self.total):
+        first, _last = self._visible_range()
+        current = (first - 1) // PAGE_SIZE + 1 if first else self.offset // PAGE_SIZE + 1
+        target = current + delta
+        if target < 1 or target > math.ceil(self.total / PAGE_SIZE):
             return False
-        try:
-            query = self._query(offset=max(0, new_offset))
-        except ValidationError as exc:
-            self.refresh_button.setToolTip(str(exc))
-            return False
-        self._capture_scroll()
-        self._page_scroll_target = "start" if delta > 0 else "end"
-        self._submit_query(query, anchor=None)
+        self._jump_to_page(target)
         return True
 
     def show_view(self, mode: str, *, persist: bool = True) -> None:
@@ -2108,6 +2274,7 @@ class GalleryPage(QObject):
             if button is not None:
                 QTimer.singleShot(0, lambda: self._focus_grid_origin(button))
         self.canvas_loading.ensure_front()
+        QTimer.singleShot(0, self._sync_pager)
         if persist:
             self._schedule_save()
 
@@ -2196,20 +2363,14 @@ class GalleryPage(QObject):
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
             self.reflow_timer.start(0)
         if kind == QEvent.Type.Wheel and watched in (self.grid_viewport, self.table_viewport):
-            bar = (
-                self.grid_scroll.verticalScrollBar()
-                if watched is self.grid_viewport
-                else self.table.verticalScrollBar()
-            )
-            delta = event.angleDelta().y()
-            if delta < 0 and bar.value() >= bar.maximum() and self._change_page(1):
-                return True
-            if delta > 0 and bar.value() <= bar.minimum() and self._change_page(-1):
-                return True
+            QTimer.singleShot(0, self._maybe_load_boundary)
         return False
 
     def _scroll_changed(self, name: str, value: int) -> None:
         self._scroll[name] = max(0, value)
+        if name in ("grid", "list") and (name == self.mode.casefold()):
+            self._sync_pager()
+            QTimer.singleShot(0, self._maybe_load_boundary)
         self._schedule_save()
 
     def _capture_scroll(self) -> None:
