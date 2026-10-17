@@ -1091,6 +1091,7 @@ def render_gallery_composition_states(shell, state, out):
         # A five-second background refresh must leave populated cards and the
         # pager's active chip visually unchanged. Reconciliation of identical
         # records must not trigger another full density repaint.
+        gallery._adjacent_loading = False
         gallery._loading = True
         gallery._sync_pager(loading=True)
         assert gallery.pager.status.text() == "160 loaded"
