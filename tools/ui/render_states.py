@@ -134,7 +134,10 @@ def render_removal_and_selection_states(shell, item, plan, out):
     gallery._selection_scan_done(gallery._selection_generation, "add", None, PersistenceError("Offline fixture"))
     snap("77-images-selection-failed")
     for name, omitted in (("78-images-selection-limit-partial", 3), ("79-images-selection-all-checked-hidden", 0)):
-        gallery._selection_scan_done(gallery._selection_generation, "add", ((), 2, omitted, (item.identity,)), None)
+        # Same-filter settlement; one off-filter check shows the hidden count.
+        gallery._selection_query = gallery.export_query()
+        gallery.selection.checked.add("fixture:hidden")
+        gallery._selection_scan_done(gallery._selection_generation, "add", ((), 1, omitted, (item.identity,)), None)
         snap(name)
     strip.finish("selection")
     assert gallery.select_filtered_button.text() == "Unselect all"
