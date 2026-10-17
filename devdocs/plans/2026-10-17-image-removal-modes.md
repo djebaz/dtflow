@@ -6,6 +6,16 @@ Post-review follow-up (2026-10-17, after `f36a339`): P1 widget recovery and P2 m
 
 ### Gallery recovery and snapshot checkpoint
 
+#### Snapshot source review follow-up
+
+- [x] Finding 1: refuse snapshot-selected `export_identity()` before export setup, matching checked-scope refusal; Generate scope remains independent.
+- [ ] Finding 2: apply publication deadline/size checks throughout both copy loops and finalization.
+- [ ] Finding 3: normalize connection-opening failures and close only initialized snapshot connections.
+- [ ] Finding 4: budget reader setup and remove the in-memory ledger copy without changing canonical availability rules or single-publication consistency.
+- [ ] Separate logging commit: publication trigger, image additions/removals, last-update timestamp and session-wide close summary, with unknown baselines explicitly marked.
+
+No new tests or renderer runs. Ruff format/lint runs before pushes; CI and owner acceptance remain separate.
+
 Owner requested a persistent super-slim snapshot warning, suppressed after voluntary dismissal. Source now adds a canonical single-line amber activity status row without timer/countdown, kept separate from active confirmations/editors. One keyed row is updated on retries and removed on live recovery; dismissal survives tab navigation and timestamp updates for that episode, resetting only after live access returns. Offline states 47/48 include it and 49 covers dismissal plus retry; no render/test run. Owner acceptance remains pending for height, coexistence, dismissal/retry/navigation and a later new fallback.
 
 CI run `39007127663` at `82943f4`: lockfile/Ruff/SQLite steps passed; offline pytest reported 22 failed, 590 passed and 3 skipped. All failures traced to snapshot launch configuration assuming every CLI namespace has `no_cache`. Fix uses the existing false default when that optional attribute is absent; no new tests or local pytest run. Remote CI run `39007332944` passed at `baca692`; the later P2 resolution follow-up needs its own CI result.

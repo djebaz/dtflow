@@ -2247,6 +2247,8 @@ class GalleryPage(QObject):
 
     def export_identity(self) -> str | None:
         """Expose only the committed identity of the current single selection."""
+        if self._snapshot_at:
+            raise ValidationError("Snapshot browsing cannot authorize export; wait for live state access.")
         item = self._selected()
         return item.identity if item is not None else None
 

@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Snapshot review finding 1: selected-image export now rejects snapshot-backed gallery selection before destination setup, matching checked-image export. Generate export and fresh live-record verification remain independent.
+
 - PR #76: slim, single-line amber snapshot-condition overlay, persistent until live recovery or user dismissal. Retries reuse the row; dismissal stays suppressed for that fallback episode, including navigation/new snapshot timestamps. It coexists with active confirmations/editors; ordinary result-warning expiry is unchanged. Offline dismissal/retry preview extended, not rendered; no tests added or run locally.
 
 - PR #76 P2 review follow-up: use existence-independent location resolution only after normal image resolution fails, avoiding redundant alias probes on successful rows. Unavailable metadata mappings no longer suppress an otherwise readable image; strict provenance/removal checks are unchanged. No tests added or run locally.
