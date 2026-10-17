@@ -21,6 +21,9 @@ def _plain(path: Path) -> None:
     for component in (path, *path.parents):
         if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
             raise OSError("Managed output path is redirected.")
+        attributes = getattr(component.lstat(), "st_file_attributes", 0)
+        if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+            raise OSError("Managed output contains a Windows reparse point.")
 
 
 def _matches_state(state: Path, recorded: str, tail: tuple[str, ...]) -> bool:

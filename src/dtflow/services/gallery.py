@@ -123,7 +123,10 @@ def load_detail(item: GalleryItem, *, state: Path | None = None) -> GalleryDetai
     try:
         access = (
             resolve_item_read(item, state)[1]
-            if state is not None and item.access_path and item.access_path != item.path and item.path.startswith("/mnt/")
+            if state is not None
+            and item.access_path
+            and item.access_path != item.path
+            and item.path.startswith("/mnt/")
             else ArtifactReadPaths.discover().resolve(item.metadata_path)
             if foreign_windows_path(item.metadata_path)
             else item.read_metadata_path
