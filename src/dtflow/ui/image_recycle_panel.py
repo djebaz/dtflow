@@ -21,6 +21,7 @@ from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.system_trash import TRASH_NAME, check_trash_source, recycle_file
 
 log = logging.getLogger(__name__)
+ORPHAN_HINT = "Cards whose original file is missing can only be cleared with Delete."
 
 
 def _spaced_button_icon(source: QIcon) -> QIcon:
@@ -137,7 +138,7 @@ class ImageRecyclePanel(QObject):
         button.setToolTip(
             "Irreversibly delete checked managed originals after explicit confirmation; no Undo."
             if mode == "permanent"
-            else f"Move eligible checked originals to {TRASH_NAME} after confirmation."
+            else f"Move eligible checked originals to {TRASH_NAME} after confirmation. {ORPHAN_HINT}"
         )
         button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete") + 58)
         for key, action in self._mode_actions.items():
@@ -219,21 +220,28 @@ class ImageRecyclePanel(QObject):
             self._cancel_confirmation()
             return
         eligible = len(plan.targets) + len(plan.absent_targets)
+        permanent = plan.action == "permanent"
         if not eligible:
             self._running = False
             self.gallery.set_recycle_busy(False)
             InlineNotice.information(
                 self.parent_widget,
                 "Nothing to remove",
-                f"No eligible managed original images. {plan.missing} missing; "
-                f"{plan.ineligible} ineligible or require manual review.",
+                (
+                    f"No eligible managed originals or confirmed missing cards. {plan.ineligible} ineligible "
+                    "or require manual review."
+                    if permanent
+                    else f"No eligible managed original images. {plan.missing} missing; "
+                    f"{plan.ineligible} ineligible or require manual review. {ORPHAN_HINT}"
+                ),
             )
             return
-        permanent = plan.action == "permanent"
+        # Delete mode proves absence per card instead of counting a loose "missing" figure.
         message = (
             f"{len(plan.targets)} originals · {len(plan.absent_targets)} confirmed missing cards · "
             f"{plan.hidden} checked images hidden by filters included · "
-            f"{plan.missing} missing · {plan.ineligible} ineligible (untouched). "
+            + ("" if permanent else f"{plan.missing} missing · ")
+            + f"{plan.ineligible} ineligible (untouched). "
         )
         message += (
             "PERMANENT AND IRREVERSIBLE: existing originals will be destroyed, bypassing Trash/Recycle Bin; "
@@ -241,7 +249,8 @@ class ImageRecyclePanel(QObject):
             "No Undo. Metadata, exports and generation history are preserved."
             if permanent
             else f"Restore manually through {TRASH_NAME}; no DTFlow Undo or restoration guarantee. "
-            "Recovered files stay hidden pending content-verified recovery. Exports and generation history preserved."
+            "Recovered files stay hidden pending content-verified recovery. Exports and generation history preserved. "
+            + ORPHAN_HINT
         )
         # Keep scope editable while awaiting consent, but invalidate it on any
         # selection/filter/navigation change. The destructive worker still revalidates.

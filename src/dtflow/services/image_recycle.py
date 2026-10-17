@@ -182,10 +182,10 @@ def _regular_managed_file(
         ):
             return None
         if windows_wsl_alias:
-            # Bound sidecar provenance to the saved attempt/path, and compare
-            # image-operation SHA when recorded. Ledger and fingerprint checks
+            # Bound sidecar provenance to the saved attempt/path. The content hash is a separate step
+            # (_alias_content_verified) done before the original-file lease; ledger and fingerprint checks
             # remain independent, fresh removal-authorization gates.
-            verify_managed_sidecar(expected, metadata, record, check_digest=reference_counts is None)
+            verify_managed_sidecar(expected, metadata, record, check_digest=False)
         info = expected.stat()
     except OSError:
         return None
@@ -211,6 +211,39 @@ def _regular_managed_file(
     )
 
 
+def _is_wsl_alias(recorded: str) -> bool:
+    return os.name == "nt" and recorded.startswith("/")
+
+
+def _redirected(component: Path) -> bool:
+    attrs = component.lstat()
+    return (
+        component.is_symlink()
+        or (hasattr(os.path, "isjunction") and os.path.isjunction(component))
+        or bool(getattr(attrs, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+    )
+
+
+def _alias_content_verified(target: RecycleTarget) -> bool:
+    """Hash a WSL1-recorded original's image-operation digest before taking the original-file lease.
+
+    The result is bound to the frozen fingerprint: it must be identical before and after hashing. The
+    lease-held revalidation then proves the file still has that fingerprint, so hashing never lengthens it.
+    """
+    if not _is_wsl_alias(target.recorded_path):
+        return True
+    source = Path(target.path)
+    row = {"attempt_id": target.identity.partition(":")[0], "path": target.recorded_path}
+    frozen = (target.size, target.mtime_ns, target.inode, target.device)
+    try:
+        before = source.stat()
+        verify_managed_sidecar(source, source.parent / "metadata.json", row)
+        after = source.stat()
+    except OSError:
+        return False
+    return all((info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev) == frozen for info in (before, after))
+
+
 def _confirmed_absent_final(
     state: Path,
     record: dict,
@@ -218,9 +251,11 @@ def _confirmed_absent_final(
     reference_counts: dict[str, int] | None = None,
     paths: ArtifactReadPaths,
 ) -> AbsentTarget | None:
-    """Verify a missing final under a canonical managed state and matching sidecar.
+    """Verify a missing final under a canonical managed state.
 
-    A failed path mapping, unavailable parent or unreadable file is not absence.
+    With the attempt folder present, its matching sidecar must still prove the record. If the whole folder is
+    gone (for example deleted in a file manager) absence is trusted only while the managed outputs directory
+    is intact and listable. A failed path mapping, unavailable parent or unreadable file is not absence.
     Never use the read-only gallery alias as deletion authority.
     """
     attempt, ordinal = record.get("attempt_id"), record.get("ordinal")
@@ -243,7 +278,7 @@ def _confirmed_absent_final(
     recorded, metadata = record.get("path"), record.get("metadata_path")
     if not isinstance(recorded, str) or not isinstance(metadata, str):
         return None
-    if os.name == "nt" and recorded.startswith("/"):
+    if _is_wsl_alias(recorded):
         tail = ("outputs", attempt)
         if not matches_managed_state(root, recorded, (*tail, image.name)) or not matches_managed_state(
             root, metadata, (*tail, "metadata.json")
@@ -258,29 +293,40 @@ def _confirmed_absent_final(
             return None
         if os.path.normcase(os.path.normpath(str(native_metadata))) != os.path.normcase(str(sidecar)):
             return None
+    outputs = root / "outputs"
     try:
-        for component in (*reversed(root.parents), root, root / "outputs", image.parent, sidecar):
-            attrs = component.lstat()
-            if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
+        for component in (*reversed(root.parents), root, outputs):
+            if _redirected(component):
                 return None
-            if getattr(attrs, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
-                return None
-        if not stat.S_ISDIR(image.parent.stat().st_mode):
-            return None
-        info = sidecar.stat()
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or sidecar.resolve(strict=True) != sidecar:
+        if not stat.S_ISDIR(outputs.stat().st_mode):
             return None
         try:
-            image.lstat()
+            image.parent.lstat()
         except FileNotFoundError:
-            pass
+            # No sidecar remains to verify: require a readable outputs directory, so an unreachable or
+            # unlistable location is never mistaken for a deleted attempt folder.
+            with os.scandir(outputs):
+                pass
+            fingerprint = (0, 0, 0, 0)
         else:
-            return None
-        verify_managed_sidecar(image, sidecar, record, check_digest=False, check_size=False)
-        after = sidecar.stat()
-        fingerprint = (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev)
-        if fingerprint != (after.st_size, after.st_mtime_ns, after.st_ino, after.st_dev):
-            return None
+            if _redirected(image.parent) or _redirected(sidecar):
+                return None
+            if not stat.S_ISDIR(image.parent.stat().st_mode):
+                return None
+            info = sidecar.stat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or sidecar.resolve(strict=True) != sidecar:
+                return None
+            try:
+                image.lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                return None
+            verify_managed_sidecar(image, sidecar, record, check_digest=False, check_size=False)
+            after = sidecar.stat()
+            fingerprint = (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev)
+            if fingerprint != (after.st_size, after.st_mtime_ns, after.st_ino, after.st_dev):
+                return None
     except (OSError, ValueError):
         return None
     count = (
@@ -468,6 +514,8 @@ def recycle_outputs(
         for target in targets:
             if stop.is_set():
                 break
+            # Provenance hashing happens here, outside the lease, bound to the frozen fingerprint.
+            content_verified = isinstance(target, AbsentTarget) or _alias_content_verified(target)
             # This lease MUST precede the per-image ledger claim and external mutation.
             # UI zero-processed refusal wording relies on this ordering: a failed
             # first lease cannot have modified an original.
@@ -489,6 +537,8 @@ def recycle_outputs(
                         missing += 1
                     else:
                         ineligible += 1
+                elif not content_verified:
+                    ineligible += 1
                 else:
                     paths = ArtifactReadPaths.discover() if permanent else ArtifactReadPaths()
                     confirmed = _regular_managed_file(state, record, permanent=permanent, paths=paths)
