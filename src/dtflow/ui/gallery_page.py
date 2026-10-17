@@ -1197,6 +1197,8 @@ class GalleryPage(QObject):
             return
         if self._refresh_failing:
             self._refresh_failing = False
+            # Re-render even an unchanged page so the failure message is replaced.
+            self._rendered_page = None
             log.info("gallery refresh recovered")
 
         query, page, choices, anchor_found = result
