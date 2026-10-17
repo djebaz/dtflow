@@ -1103,6 +1103,19 @@ def render_gallery_composition_states(shell, state, out):
         gallery._loading = False
         gallery._sync_pager()
 
+        # A programmatic position restore must update the pager but never
+        # schedule more gallery reads. Qt valueChanged fires in this case,
+        # whereas a user Wheel or scrollbar action is a separate input.
+        with patch.object(gallery, "_maybe_load_boundary") as prefetch:
+            bar = gallery.table.verticalScrollBar()
+            if bar.maximum() > 0:
+                bar.setValue(0 if bar.value() else min(3, bar.maximum()))
+                QTest.qWait(30)
+                prefetch.assert_not_called()
+            gallery._scroll_changed("list", bar.value())
+            QTest.qWait(30)
+            prefetch.assert_not_called()
+
         # Exercise the actual numbered Qt button: an offline-only callback
         # supplies the target batch without reading a DB or paging through 3/4.
         def fixture_jump(page_number):
