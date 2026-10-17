@@ -286,7 +286,8 @@ class GenerationService:
                 def commit_originals():
                     # Keep committed originals behind the same OS-released lease
                     # used by export and Recycle Bin; no provider code runs here.
-                    with original_images_lock(getattr(self.store, "directory", self.output.parent)):
+                    # A paid result waits longer than ordinary leases before save_failed.
+                    with original_images_lock(getattr(self.store, "directory", self.output.parent), timeout=30):
                         if image_operation:
                             return save_image_artifacts(
                                 self.output, attempt_id, request, result, identity(), caps.limits, prepared_inputs

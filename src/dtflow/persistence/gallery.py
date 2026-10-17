@@ -94,9 +94,10 @@ def reader(state: Path):
         code = getattr(exc, "sqlite_errorname", "") or type(exc).__name__
         if code == "SQLITE_INTERRUPT":
             raise PersistenceError("Saved outputs could not be queried within the read budget.") from exc
-        if code.startswith(("SQLITE_BUSY", "SQLITE_LOCKED")):
-            # WAL locking is per operating system: a Windows reader cannot share a
-            # store that a WSL1 process is writing (or the reverse). Retry later.
+        if code.startswith(("SQLITE_BUSY", "SQLITE_LOCKED", "SQLITE_IOERR_SHM", "SQLITE_IOERR_TRUNCATE")):
+            # WAL locking and shared memory are per operating system: a Windows
+            # reader cannot share a store that a WSL1 process has open (or the
+            # reverse), which surfaces as busy or shared-memory I/O errors.
             raise PersistenceError(
                 f"Saved outputs are busy, possibly in use by DTFlow on another system ({code})."
             ) from exc

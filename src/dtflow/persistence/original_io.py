@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
@@ -141,10 +142,38 @@ def _log_wait(filename: str, boundary: str, started: float) -> None:
         )
 
 
+# Foreground lease requests (saves, removal, export) waiting in this process.
+# Background display reads stand aside for them so a page of thumbnails
+# can never starve a generation save into save_failed.
+_foreground_waiting = 0
+_foreground_guard = threading.Lock()
+
+
 @contextmanager
-def original_images_lock(state: Path, *, timeout: float = 5.0):
-    """Serialize real original-file reads and writes across participating processes."""
-    with _file_lock(state, "original_images.lock", timeout=timeout):
+def original_images_lock(state: Path, *, timeout: float = 5.0, background: bool = False):
+    """Serialize real original-file reads and writes across participating processes.
+
+    ``background`` reads (thumbnails) yield to foreground requests of this process.
+    """
+    global _foreground_waiting
+    if background:
+        deadline = time.monotonic() + timeout
+        while _foreground_waiting:
+            if time.monotonic() >= deadline:
+                raise OriginalImagesBusyError("Original images are busy with a save or removal.")
+            time.sleep(0.02)
+        with _file_lock(state, "original_images.lock", timeout=max(0.0, deadline - time.monotonic())):
+            yield
+        return
+    with _foreground_guard:
+        _foreground_waiting += 1
+    try:
+        stack = ExitStack()
+        stack.enter_context(_file_lock(state, "original_images.lock", timeout=timeout))
+    finally:
+        with _foreground_guard:
+            _foreground_waiting -= 1
+    with stack:
         yield
 
 

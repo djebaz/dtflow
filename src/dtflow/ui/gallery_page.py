@@ -150,7 +150,7 @@ def _image(
         except OSError as exc:
             return unreadable(exc)
     try:
-        with original_images_lock(state, timeout=12):
+        with original_images_lock(state, timeout=12, background=True):
             try:
                 source = access()
                 with open(source, "rb") as stream:

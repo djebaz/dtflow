@@ -974,7 +974,7 @@ class MainWindow:
     def _reconcile_images(self):
         """Inspect interrupted file operations under the original-file lease."""
         with recycle_batch_lock(self.state_dir):
-            with original_images_lock(self.state_dir):
+            with original_images_lock(self.state_dir, timeout=15):
                 return reconcile_images(self.state_dir)
 
     def _images_reconciled(self, outcome, error) -> None:
