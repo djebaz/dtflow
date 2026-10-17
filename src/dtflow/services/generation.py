@@ -196,9 +196,7 @@ class GenerationService:
         # One authoritative gate covers desktop, CLI, queues and image operations.
         # No child process, lock or Windows handshake is performed before dispatch.
         try:
-            await asyncio.to_thread(
-                require_originals_ready, getattr(self.store, "directory", self.output.parent)
-            )
+            await asyncio.to_thread(require_originals_ready, getattr(self.store, "directory", self.output.parent))
         except OriginalImagesUnavailableError as exc:
             raise BackendError(
                 BackendFailure(

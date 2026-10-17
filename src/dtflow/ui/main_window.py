@@ -375,15 +375,14 @@ class MainWindow:
         self._responsive_workspace()
         # Readiness precedes reconciliation so an unsupported bridge gets one
         # startup notice, not duplicate warnings from concurrent startup tasks.
-        self.runner.submit(
-            asyncio.to_thread(require_originals_ready, self.state_dir), self._originals_ready_checked
-        )
+        self.runner.submit(asyncio.to_thread(require_originals_ready, self.state_dir), self._originals_ready_checked)
 
     def _originals_ready_checked(self, _result, error) -> None:
         if error is not None:
             log.warning("original-image readiness unavailable reason=%s", type(error).__name__)
             InlineNotice.warning(
-                self.form, "Original images unavailable",
+                self.form,
+                "Original images unavailable",
                 f"{error} Interrupted removal intents remain blocked until shared-lock readiness returns."
                 if isinstance(error, OriginalImagesUnavailableError)
                 else "Original-file readiness could not be checked. Interrupted removals remain blocked.",

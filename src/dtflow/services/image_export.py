@@ -603,7 +603,10 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                 # Never expose decoder/OS exception strings, which can contain paths or source data.
                 reason = (
                     str(exc)
-                    if isinstance(exc, (ValidationError, PersistenceError, OriginalImagesBusyError, OriginalImagesUnavailableError))
+                    if isinstance(
+                        exc,
+                        (ValidationError, PersistenceError, OriginalImagesBusyError, OriginalImagesUnavailableError),
+                    )
                     else f"could not export ({type(exc).__name__})"
                 )
                 failures.extend(f"{candidate}: {reason}" for candidate in batch[: 100 - len(failures)])

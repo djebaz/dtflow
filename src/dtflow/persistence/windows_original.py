@@ -75,7 +75,7 @@ def bridge(state: Path):
                 if len(data) > 1024 * 1024:
                     raise WindowsBridgeError("mount")
                 from dtflow.services.artifact_paths import _unescape
-    
+
                 candidates = []
                 for line in data.decode("utf-8").splitlines():
                     before, separator, after = line.partition(" - ")

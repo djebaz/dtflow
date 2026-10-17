@@ -63,9 +63,7 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                 try:
                     stack.enter_context(shared_lock(command, native_state, filename, timeout))
                 except (OSError, UnicodeError, ValueError) as exc:
-                    raise OriginalImagesBusyError(
-                        "Shared Windows original-file lease could not be acquired."
-                    ) from exc
+                    raise OriginalImagesBusyError("Shared Windows original-file lease could not be acquired.") from exc
                 yield
             return
     directory = Path(state).resolve()
