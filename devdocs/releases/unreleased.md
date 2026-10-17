@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Render-state previews: 60 Images Detail with Additional details open, 61 Regenerate inline confirmation, 62 Regenerate confirmed (offline fake-provider submission on Generate). Layout evidence only.
+
 - Render-state script on Windows: offscreen runs default `QT_QPA_FONTDIR` to `%WINDIR%\Fonts` when unset, so previews no longer show square glyphs. Not a Windows/DPI acceptance.
 
 - Render-state script: the Trash/Delete menu position check now uses the menu's own screen rule, so it no longer fails when the rendered window is larger than the offscreen screen (owner Windows report; reproduced on Linux offscreen). Production positioning unchanged.

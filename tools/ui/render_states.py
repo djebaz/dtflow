@@ -28,7 +28,7 @@ if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame, QPushButton, QScrollArea  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -725,6 +725,26 @@ def main():
                 getattr(shell.form, tab).click()
                 QTest.qWait(300)
                 capture(name)
+            # Detail of a fake-backend output with Additional details open, then the real
+            # Regenerate consent and its confirmed fake-provider submission.
+            gallery = shell.gallery
+            wait_for(lambda: not gallery._loading and bool(gallery.items))
+            gallery.show_view("Detail")
+            gallery.select(gallery.items[0].identity)
+            gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
+            QTest.qWait(150)
+            capture("60-images-detail-additional")
+            assert gallery.regenerate_button.isEnabled()
+            # Regenerate lives at the end of Additional details; show the armed Confirm in place.
+            gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(gallery.regenerate_button)
+            gallery.regenerate_button.click()
+            QTest.qWait(150)
+            capture("61-images-regenerate-confirmation")
+            scenario = "success"
+            gallery.regenerate_button.click()
+            assert page.resultList.count() == 0  # submitted: Generate cleared its previous result
+            wait_for(lambda: page.resultList.count() > 0 and settled())
+            capture("62-images-regenerate-confirmed")
             render_inpaint_states(shell, state, capture)
         finally:
             shell.runner.shutdown()

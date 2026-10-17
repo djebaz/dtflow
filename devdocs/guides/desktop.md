@@ -272,6 +272,9 @@ Besides the existing Generate/Queues/Images states (01–14), the editor list is
 22 Find people overlay and 23 Edit image overlay. The last two are explicitly
 labelled presentation fixtures, not functioning analysis or image dispatch.
 The manual editor remains work in progress; its default strength is 0.7.
+Images also renders 60 Detail with Additional details open, 61 the Regenerate
+inline confirmation and 62 Regenerate confirmed (an offline fake-provider
+submission shown on Generate).
 
 Screenshots are layout evidence only, not Windows/native-DPI, interaction,
 generation, ONNX or packaged acceptance. Extending the script does not mean it
