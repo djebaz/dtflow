@@ -34,7 +34,7 @@ jobs:
   render:
     name: Render UI states
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Resolve target commit
         id: target
@@ -80,7 +80,7 @@ jobs:
       # A normal run takes well under a minute. If a state hangs, the watchdog aborts Python
       # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
-        timeout-minutes: 6
+        timeout-minutes: 2
         run: |
           start=$(date +%s)
           timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders \
