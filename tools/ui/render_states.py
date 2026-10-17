@@ -56,7 +56,7 @@ RENDERED = {}  # state name -> {"seconds", "blank"}, in render order
 STARTED = time.monotonic()
 
 
-def record(target):
+def report(target):
     """Print progress for one written state and remember it for the final summary."""
     image = QImage(str(target)).scaled(16, 16)
     colors = {image.pixel(x, y) for x in range(image.width()) for y in range(image.height())}
@@ -89,7 +89,7 @@ def save(widget, out, name):
     target = out / f"{name}.png"
     if not widget.grab().save(str(target)):
         raise RuntimeError(f"Could not save {target.name}")
-    record(target)
+    report(target)
 
 
 def render_removal_and_selection_states(shell, item, plan, out):
@@ -231,7 +231,7 @@ def render_initial_refresh_recovery(app, state, out):
             target = out / "44-images-refresh-failed.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
 
             allow_success = True
             shell.gallery.refresh()
@@ -244,7 +244,7 @@ def render_initial_refresh_recovery(app, state, out):
             target = out / "45-images-refresh-recovered-empty.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             shell.gallery.show_view("Detail")
             QTest.qWait(100)
             save(shell.form, out, "84-images-detail-no-selection")
@@ -257,7 +257,7 @@ def render_initial_refresh_recovery(app, state, out):
             target = out / "52-export-folder-missing.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             activity_strip(shell.form).finish("export-open")
             shell.image_export._exported_folder = None
             with patch.object(
@@ -277,7 +277,7 @@ def render_initial_refresh_recovery(app, state, out):
             target = out / "54-external-viewer-unavailable.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             activity_strip(shell.form).finish("viewer-open")
         finally:
             shell.runner.shutdown()
@@ -355,18 +355,18 @@ def render_mapped_gallery_states(app, state, out):
                 target = out / f"{name}.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
-                record(target)
+                report(target)
             shell.gallery.select(item.identity)
             QTest.qWait(150)
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
             target = out / "34-mapped-edit-eligible.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             target = out / "33-mapped-detail-metadata.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             shell.gallery._show_refresh_failure(PersistenceError("Offline refresh refusal fixture."), first=False)
             shell.gallery._refresh_failing = True
             shell.gallery.refresh()
@@ -375,7 +375,7 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "46-images-refresh-recovered-populated.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
 
             async def frozen_query(_state, options):
                 return GalleryResults((item,), 1, options.offset, options.limit, "2026-10-17T07:00:00+00:00")
@@ -393,7 +393,7 @@ def render_mapped_gallery_states(app, state, out):
                     target = out / f"{name}.png"
                     if not shell.form.grab().save(str(target)):
                         raise RuntimeError(f"Could not save {target.name}")
-                    record(target)
+                    report(target)
                 warning = activity_strip(shell.form).rows["gallery-snapshot"]
                 # One brief live success keeps the same slim row, with accurate
                 # recovering wording rather than stale read-only authority.
@@ -406,7 +406,7 @@ def render_mapped_gallery_states(app, state, out):
                 target = out / "50-images-live-recovery-stabilizing.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
-                record(target)
+                report(target)
                 shell.gallery.refresh()
                 wait_for(lambda: not shell.gallery._loading)
                 warning.activityStatusDismissButton.click()
@@ -424,7 +424,7 @@ def render_mapped_gallery_states(app, state, out):
                 target = out / "49-images-snapshot-warning-dismissed.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
-                record(target)
+                report(target)
             # Drive real recovery callbacks at two controlled clock readings;
             # no wall-clock wait, provider work or direct sentinel mutation.
             for now in (300.0, 300.0 + gallery_ui.AUTO_REFRESH_MS / 1000 + 1):
@@ -444,7 +444,7 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "51-images-manual-live-recovery.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             shell.gallery.auto_button.setChecked(True)
             # Presentation only: synthetic scope, with execution explicitly blocked.
             wait_for(lambda: shell.gallery.removal_ready)
@@ -461,7 +461,7 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "39-images-trash-mode.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
             control = shell.gallery._widget("galleryRemovalControl", QFrame)
@@ -479,7 +479,7 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "37-images-removal-menu-trash-selected.png"
             if not menu.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             menu.hide()
             shell.image_recycle._apply_mode("permanent")
             assert shell.gallery.delete_button.text() == "Delete"
@@ -490,12 +490,12 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "38-images-removal-menu-permanent-selected.png"
             if not menu.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             menu.hide()
             target = out / "34-images-permanent-mode.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             # Show the disabled icon beside the same disabled text shade.
             shell.gallery._set_checked(item.identity, False)
             assert not shell.gallery.delete_button.isEnabled()
@@ -503,7 +503,7 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "40-images-delete-disabled.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             shell.gallery._set_checked(item.identity, True)
             plan = RecyclePlan(
                 (RecycleTarget(item.identity, str(root / "saved.png"), 1, 1, 1, 1),),
@@ -520,7 +520,7 @@ def render_mapped_gallery_states(app, state, out):
                 target = out / "35-images-permanent-confirmation.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
-                record(target)
+                report(target)
                 shell.inline.dismiss()
             render_removal_and_selection_states(shell, item, plan, out)
             # Synthetic inaccessible-original state: short card text, full hover details.
@@ -535,7 +535,7 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "39-images-original-unavailable-thumbnail.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             # Confirmed-missing original: file-missing pictogram in Grid and List, distinct from unavailable.
             shell.gallery._show_unavailable(item.identity, MISSING_ISSUE)
             for view, name in (("Grid", "42-images-file-missing-grid"), ("List", "43-images-file-missing-list")):
@@ -544,7 +544,7 @@ def render_mapped_gallery_states(app, state, out):
                 target = out / f"{name}.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
-                record(target)
+                report(target)
             shell.gallery.show_view("Grid")
             # Present a safe unsupported-alias status without attempting a system launch.
             shell.gallery._read_action_done(
@@ -553,7 +553,7 @@ def render_mapped_gallery_states(app, state, out):
             target = out / "41-images-read-alias-unavailable.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
         finally:
             shell.runner.shutdown()
             shell.form.close()
@@ -752,11 +752,11 @@ def main():
             target = args.out / "30-images-trash-unavailable.png"
             if not unavailable.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             target = args.out / "36-images-removal-mode-menu.png"
             if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
             unavailable.image_recycle.menu_button.menu().hide()
         finally:
             unavailable.runner.shutdown()
@@ -778,7 +778,7 @@ def main():
             target = args.out / f"{name}.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
-            record(target)
+            report(target)
 
         def settled():
             return page.generateButton.isEnabled()
