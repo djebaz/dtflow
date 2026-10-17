@@ -1,18 +1,15 @@
 """Environment-specific removal mode; never store consent or selected identities."""
 
 import json
-import os
-import platform
-import sys
 from pathlib import Path
 
+from dtflow.persistence.runtime_environment import environment_key
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.artifacts import atomic_write
 
 
 def preference_path(state: Path) -> Path:
-    environment = "windows" if os.name == "nt" else "wsl" if "microsoft" in platform.release().lower() else sys.platform
-    return Path(state) / f"image_removal.{environment}.json"
+    return Path(state) / f"image_removal.{environment_key()}.json"
 
 
 def load_mode(state: Path) -> str:

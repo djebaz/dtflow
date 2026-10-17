@@ -88,7 +88,9 @@ class ImageExportPanel(QObject):
             self.form.imageExportStatusLabel.setText("Saved export preferences could not be read; defaults are shown.")
             return
         if document:
-            self.form.imageExportFolderEdit.setText(document["destination"])
+            # Only this runtime's remembered folder; a counterpart runtime's path is never shown or converted.
+            if document["destination"]:
+                self.form.imageExportFolderEdit.setText(document["destination"])
             self.form.imageExportPromptsCheck.setChecked(document["include_prompts"])
             self.form.imageExportSidecarsCheck.setChecked(document["json_sidecars"])
             self.form.imageExportSeparateCheck.setChecked(document.get("separate_noise_blank", True))

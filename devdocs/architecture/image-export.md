@@ -84,8 +84,14 @@ New JPEG EXIF DateTimeOriginal/DateTimeDigitized include UTC offsets and subseco
 
 ## Preferences and acceptance
 
-`export_preferences.json` (schema 1) stores destination and privacy/sidecar/routing
-choices under the state root. The additive `separate_noise_blank` boolean defaults to true for older schema-1 files; a present non-boolean is rejected. It is durable convenience data, not cache;
+`export_preferences.json` (schema 2) stores one destination per runtime (`windows`, `wsl`, or the platform name)
+plus common privacy/sidecar/routing choices under the state root, so Windows and WSL installations that share a
+state directory no longer overwrite each other's folder. A runtime loads and shows only its own destination and
+preserves the others when saving; a path is never translated between spellings. Schema-1 files (one destination)
+are still read: a drive/UNC destination belongs to `windows`, a POSIX destination to `wsl` (or the current
+POSIX platform), and any other form is ignored. The first save rewrites the file as schema 2; older applications
+refuse it and leave it unchanged. Two applications saving at the same instant can lose one update (atomic file
+replacement, no cross-process lock). The additive `separate_noise_blank` boolean defaults to true when absent; a present non-boolean is rejected. It is durable convenience data, not cache;
 `--no-cache` and cache cleanup do not remove it. Unsupported/unreadable preferences
 are not overwritten; exports can still proceed with a warning.
 

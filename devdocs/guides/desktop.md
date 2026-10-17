@@ -75,7 +75,7 @@ In Images, click **Export** to toggle the export panel beside the listing on the
 
 Click **Export** again or **Close export panel** to hide the Images column. Hiding it does not cancel export; use **Cancel export** to stop after the current image. Switching to Connection shows the same progress and controls; returning to Images remembers its open column. Destination/privacy settings and active progress are preserved across navigation.
 
-You can type an absolute folder path that does not yet exist; export creates it and missing parents before writing. Permission/path failures are reported, not redirected.
+The export folder is remembered separately for Windows and WSL, so installations that share one state directory keep their own folders; the privacy, JSON and noise/blank choices are common. A folder remembered by the other environment is not shown or converted. You can type an absolute folder path that does not yet exist; export creates it and missing parents before writing. Permission/path failures are reported, not redirected.
 
 Click **Export JPEGs**. Normal images go directly into the chosen folder: **no
 attempt, provider or date subfolders**. Filenames use saved-at UTC time, a short
