@@ -25,7 +25,7 @@ if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
@@ -475,7 +475,7 @@ def render_inpaint_states(shell, state, capture):
     editor._support = ImageOperationSupport("owner_probe", "Offline presentation fixture.")
     editor._render_support()
     capture("24-inpaint-capability-probe")
-    editor.canvas.set_result(QPixmap.fromImage(source.mirrored(True, False)))
+    editor.canvas.set_result(QPixmap.fromImage(source.flipped(Qt.Orientation.Horizontal)))
     editor.canvas.set_view("Result")
     capture("26-inpaint-result-fixture")
     editor.canvas.set_view("Source")
