@@ -1088,6 +1088,20 @@ def render_gallery_composition_states(shell, state, out):
         finally:
             gallery._widget("galleryFocusButton", QPushButton).click()
 
+        # A five-second background refresh must leave populated cards and the
+        # pager's active chip visually unchanged. Reconciliation of identical
+        # records must not trigger another full density repaint.
+        gallery._loading = True
+        gallery._sync_pager(loading=True)
+        assert gallery.pager.status.text() == "160 loaded"
+        assert gallery.pager.buttons[2].isEnabled()
+        with patch.object(gallery, "_density_changed") as repaint_all:
+            gallery._render_page()
+            repaint_all.assert_not_called()
+        snap("images-88-pager-auto-refresh-no-flash")
+        gallery._loading = False
+        gallery._sync_pager()
+
         # Exercise the actual numbered Qt button: an offline-only callback
         # supplies the target batch without reading a DB or paging through 3/4.
         def fixture_jump(page_number):
