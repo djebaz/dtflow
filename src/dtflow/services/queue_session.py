@@ -180,7 +180,7 @@ async def dispatch_queue(
                     await backend.aclose()
         finally:
             await store.aclose()
-            schedule_publish(state)
+            schedule_publish(state, reason="queue_session_end")
 
 
 async def read_queue_views(state: Path, queue_id: str | None = None) -> tuple[dict[str, Any], ...]:

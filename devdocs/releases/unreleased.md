@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Snapshot diagnostics now separate added/removed visible images from included totals, record publication triggers and the actual saved timestamp, and summarize this app session's cumulative publication activity on close even when unchanged. Unknown prior baselines stay explicit; identity comparison streams inside the existing publication budget. No paths/prompts logged; owner runtime acceptance remains pending.
+
 - Snapshot review finding 4: reader setup is inside its deadline and canonical snapshot SQL reads the same publication's indexed availability table directly, removing the in-memory ledger copy. Count/page/anchor/facets retain one immutable connection; live SQL and all removal exclusions are unchanged.
 
 - Snapshot review finding 3: normalize connection-opening SQLite failures as snapshot persistence failures and guard cleanup, preserving the original live-query error when fallback cannot open its file.

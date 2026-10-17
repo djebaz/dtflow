@@ -12,6 +12,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -28,10 +29,20 @@ PUBLICATION_SECONDS = 10
 _enabled = True
 _pool = None
 _pool_lock = threading.Lock()
+_stats_lock = threading.Lock()
+_session_stats = {}
 _ATTEMPTS_SQL = """CREATE TABLE attempts (
     attempt_id TEXT PRIMARY KEY, request_id TEXT, backend_id TEXT,
     updated_at_utc TEXT, request_json TEXT, artifacts_json TEXT,
     state TEXT, remote_outcome TEXT)"""
+
+
+@dataclass
+class _PublicationStats:
+    publications: int = 0
+    added: int | None = 0
+    removed: int | None = 0
+    last_updated: str | None = None
 
 
 def configure(*, no_cache: bool) -> None:
@@ -130,12 +141,68 @@ def _publication_budget(db, deadline):
         raise OSError("Gallery publication exceeds the supported size.")
 
 
-def publish_if_changed(state: Path) -> bool:
+def _image_changes(current, previous, deadline):
+    """Merge ordered visible identities with constant Python memory, inside the work budget."""
+    from dtflow.persistence.gallery import SNAPSHOT_BASE
+
+    sql = SNAPSHOT_BASE + "SELECT identity FROM records ORDER BY identity"
+    rows = iter(current.execute(sql))
+    old_rows = iter(previous.execute(sql)) if previous is not None else iter(())
+    new, old = next(rows, None), next(old_rows, None)
+    added = removed = total = 0
+    while new is not None or old is not None:
+        if time.monotonic() > deadline:
+            raise TimeoutError("Gallery publication counts exceeded their work budget.")
+        if old is None or (new is not None and new[0] < old[0]):
+            added += 1
+            total += 1
+            new = next(rows, None)
+        elif new is None or old[0] < new[0]:
+            removed += 1
+            old = next(old_rows, None)
+        else:
+            total += 1
+            new, old = next(rows, None), next(old_rows, None)
+    return added, removed, total
+
+
+def _close_summary(state, result, before=None, checked_stamp=None):
+    with _stats_lock:
+        stats = _session_stats.get(state, _PublicationStats())
+        log.info(
+            "gallery snapshot app close result=%s updated_before_close=%s updated_on_close=%s "
+            "session_publications=%d images_added_this_session=%s images_removed_this_session=%s "
+            "last_updated=%s timestamp_source=%s",
+            result,
+            bool(stats.publications if before is None else before),
+            result == "saved",
+            stats.publications,
+            stats.added if stats.added is not None else "unknown",
+            stats.removed if stats.removed is not None else "unknown",
+            checked_stamp or stats.last_updated or "unavailable",
+            "checked_snapshot"
+            if checked_stamp
+            else "last_known_session_publication"
+            if stats.last_updated
+            else "unavailable",
+        )
+
+
+def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
     """Best-effort worker publication after a session/clean close; retain old on failure."""
+    reason = reason if reason in {"generation_session_end", "queue_session_end", "app_close"} else "session_end"
+    state = Path(state).absolute()
+    with _stats_lock:
+        before = _session_stats.get(state, _PublicationStats()).publications
     if not _enabled:
+        if reason == "app_close":
+            _close_summary(state, "cache_bypassed", before)
         return False
 
     temporary = None
+    previous = None
+    checked_stamp = None
+    result = "not_published"
     started = time.monotonic()
     deadline = started + PUBLICATION_SECONDS
     stage = "source"
@@ -157,23 +224,37 @@ def publish_if_changed(state: Path) -> bool:
                 signature = json.dumps([VERSION, list(attempts), [0, None]])
             if destination.is_symlink():
                 raise PersistenceError("Redirected gallery publication refused.")
+            baseline_known = not destination.exists()
             try:
                 if destination.is_file():
-                    old = sqlite3.connect(destination.as_uri() + "?mode=ro&immutable=1", uri=True)
-                    try:
-                        if old.execute("PRAGMA user_version").fetchone()[0] != VERSION:
-                            raise PersistenceError("Unsupported existing gallery snapshot was preserved.")
-                        info = old.execute("SELECT version,signature FROM snapshot_info").fetchone()
-                    finally:
-                        old.close()
-                    if info is not None and info[0] == VERSION and info[1] == signature:
-                        log.debug(
-                            "gallery snapshot unchanged; publication skipped elapsed_ms=%d",
+                    previous = sqlite3.connect(destination.as_uri() + "?mode=ro&immutable=1", uri=True)
+                    previous.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+                    if previous.execute("PRAGMA user_version").fetchone()[0] != VERSION:
+                        raise PersistenceError("Unsupported existing gallery snapshot was preserved.")
+                    info = previous.execute("SELECT version,signature,published_utc FROM snapshot_info").fetchone()
+                    if info is None or info[0] != VERSION:
+                        raise ValueError("Invalid previous publication metadata.")
+                    stamp = datetime.fromisoformat(info[2])
+                    if stamp.tzinfo is None:
+                        raise ValueError("Invalid previous publication timestamp.")
+                    baseline_known = True
+                    checked_stamp = stamp.isoformat()
+                    if info[1] == signature:
+                        result = "unchanged"
+                        log.info(
+                            "gallery snapshot publication skipped trigger=%s reason=unchanged "
+                            "images_added=0 images_removed=0 last_updated=%s elapsed_ms=%d",
+                            reason,
+                            checked_stamp,
                             (time.monotonic() - started) * 1000,
                         )
                         return False
-            except (OSError, sqlite3.Error):
-                pass  # First publication or unsupported old projection; never touch source state.
+            except (OSError, sqlite3.Error, ValueError, TypeError):
+                if previous is not None:
+                    previous.close()
+                    previous = None
+                checked_stamp = None
+                baseline_known = False  # Rebuild, but do not invent deltas against an unreadable baseline.
             stage = "projection"
             with temporary.open("xb"):
                 pass
@@ -199,10 +280,17 @@ def publish_if_changed(state: Path) -> bool:
                     _publication_budget(output, deadline)
                     output.executemany("INSERT INTO records VALUES (?,?)", batch)
                     _publication_budget(output, deadline)
+                stage = "counts"
+                added, removed, images = _image_changes(output, previous, deadline)
+                if not baseline_known:
+                    added = removed = None
+                # Close the retained previous file before replacement on Windows.
+                if previous is not None:
+                    previous.close()
+                    previous = None
+                published_utc = datetime.now(UTC).isoformat()
                 output.execute("CREATE TABLE snapshot_info (version INTEGER,published_utc TEXT,signature TEXT)")
-                output.execute(
-                    "INSERT INTO snapshot_info VALUES (?,?,?)", (VERSION, datetime.now(UTC).isoformat(), signature)
-                )
+                output.execute("INSERT INTO snapshot_info VALUES (?,?,?)", (VERSION, published_utc, signature))
                 output.execute(f"PRAGMA user_version={VERSION}")
                 _publication_budget(output, deadline)
                 output.commit()
@@ -219,13 +307,32 @@ def publish_if_changed(state: Path) -> bool:
                 raise TimeoutError("Gallery publication exceeded its finalization budget.")
             stage = "replace"
             os.replace(temporary, destination)
-        log.info("gallery snapshot published attempts=%d elapsed_ms=%d", count, (time.monotonic() - started) * 1000)
+        result = "saved"
+        checked_stamp = published_utc
+        with _stats_lock:
+            stats = _session_stats.setdefault(state, _PublicationStats())
+            stats.publications += 1
+            stats.added = stats.added + added if stats.added is not None and added is not None else None
+            stats.removed = stats.removed + removed if stats.removed is not None and removed is not None else None
+            stats.last_updated = published_utc
+        log.info(
+            "gallery snapshot saved trigger=%s images_added=%s images_removed=%s images_total=%d "
+            "committed_attempts_total=%d last_updated=%s elapsed_ms=%d",
+            reason,
+            added if added is not None else "unknown",
+            removed if removed is not None else "unknown",
+            images,
+            count,
+            published_utc,
+            (time.monotonic() - started) * 1000,
+        )
         return True
     except Exception as exc:
         # Publication is advisory and must not change successful generation,
         # invoke retries, expose private paths or delete the previous snapshot.
         log.warning(
-            "gallery snapshot not published stage=%s reason=%s errno=%s winerror=%s",
+            "gallery snapshot not published trigger=%s stage=%s reason=%s errno=%s winerror=%s",
+            reason,
             stage,
             type(exc).__name__,
             getattr(exc, "errno", None),
@@ -233,6 +340,10 @@ def publish_if_changed(state: Path) -> bool:
         )
         return False
     finally:
+        if previous is not None:
+            previous.close()
+        if reason == "app_close":
+            _close_summary(state, result, before, checked_stamp)
         try:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
@@ -240,7 +351,7 @@ def publish_if_changed(state: Path) -> bool:
             log.debug("gallery snapshot scratch cleanup unavailable")
 
 
-def schedule_publish(state: Path):
+def schedule_publish(state: Path, *, reason="generation_session_end"):
     """One background worker; signature checks skip redundant queued requests."""
     global _pool
     if not _enabled:
@@ -249,7 +360,7 @@ def schedule_publish(state: Path):
         if _pool is None:
             _pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dtflow-gallery-publication")
         try:
-            return _pool.submit(publish_if_changed, Path(state))
+            return _pool.submit(publish_if_changed, Path(state), reason=reason)
         except RuntimeError:
             log.warning("gallery publication worker unavailable during shutdown")
             return None
@@ -257,9 +368,11 @@ def schedule_publish(state: Path):
 
 def finish_at_close(state: Path) -> None:
     """Called after Qt exits and generation settlement, never inside its event loop."""
-    future = schedule_publish(state)
+    future = schedule_publish(state, reason="app_close")
     if future is not None:
         try:
             future.result()
         except Exception as exc:
             log.warning("gallery close publication unavailable reason=%s", type(exc).__name__)
+    else:
+        _close_summary(Path(state).absolute(), "cache_bypassed" if not _enabled else "worker_unavailable")
