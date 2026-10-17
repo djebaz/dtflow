@@ -125,7 +125,7 @@ jobs:
             echo "This commit does not contain Python files; skipping CI."
           fi
 
-      - name: Skip CI: no Python files in this commit
+      - name: Skip CI no Python files in this commit
         if: steps.pyfiles.outputs.has_py != 'true'
         run: echo "No .py files in this commit; skipping CI."
 
