@@ -167,6 +167,9 @@ def render_removal_and_selection_states(shell, item, plan, out):
     strip.finish("selection")
     assert gallery.select_filtered_button.text() == "Unselect all"
     assert not gallery.hidden_count_label.isHidden()
+    gallery.selection.checked.discard("fixture:hidden")
+    gallery._unselect_all()
+    gallery._set_checked(item.identity, True)
 
     # Compact toolbar and its secondary-action menus.
     shell.form.resize(1180, 1000)
@@ -188,6 +191,7 @@ def render_removal_and_selection_states(shell, item, plan, out):
     menu.hide()
     gallery.show_view("Detail")
     gallery.select(item.identity)
+    assert item.identity in gallery.selection.checked
     snap("83-images-detail-checked")
     gallery.show_view("Grid")
 
@@ -648,19 +652,18 @@ def render_shell_states(shell, capture):
     strip.update("trash-run", 1, 4)
     capture("101-overlay-several-rows")
     clear()
+    queue, page = shell.queue, shell.queue_page
     shell.form.queueNavigationButton.click()
-    page = shell.queue_page
     page.createQueueButton.click()
-    wait_for(lambda: shell.queue._view() is not None and page.clearQueuesButton.isEnabled())
-    page.clearQueuesButton.click()
+    wait_for(lambda: queue._view() is not None and page.clearQueuesButton.isEnabled())
+    page.clearQueuesButton.click()  # arms the Clear confirmation
     assert page.clearQueuesButton.property("confirmationPending")
     InlineNotice.warning(shell.form, "Original images unavailable", "Offline fixture notice during a confirmation.")
     assert page.clearQueuesButton.property("confirmationPending")
     capture("102-overlay-notice-during-confirmation")
+    page.clearQueuesButton.click()  # confirms, leaving no queue for later renders
+    wait_for(lambda: queue._view() is None)
     clear()
-    page.clearQueuesButton.click()
-    page.clearQueuesButton.click()
-    wait_for(lambda: shell.queue._view() is None)
     strip.complete("info-result", "Nothing to export", "All checked images already exist at the destination.", "info")
     capture("103-overlay-info-result")
     clear()
