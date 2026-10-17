@@ -318,6 +318,9 @@ def recycle_outputs(
         for target in plan.targets:
             if stop.is_set():
                 break
+            # This lease MUST precede the per-image ledger claim and external mutation.
+            # UI zero-processed refusal wording relies on this ordering: a failed
+            # first lease cannot have modified an original.
             with original_images_lock(state):
                 record = gallery_storage.get_record(state, target.identity)
                 if record is None or not _unchanged(target):

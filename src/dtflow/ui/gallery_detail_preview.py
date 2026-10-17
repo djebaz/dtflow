@@ -41,6 +41,7 @@ class CoverPainter(QObject):
         self.tokens = load_tokens()
         self.pixmap = QPixmap(str(path))
         self.badges = badges
+        self.placeholder = ""
         self.mode = "Cover"
         self.zoom = 1.0
         self.offset = [0.0, 0.0]
@@ -65,6 +66,16 @@ class CoverPainter(QObject):
                 w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
                 dest = QRectF((rect.width() - w) / 2 + self.offset[0], (rect.height() - h) / 2 + self.offset[1], w, h)
                 painter.drawPixmap(dest, self.pixmap, QRectF(self.pixmap.rect()))
+            elif self.placeholder:
+                # Keep compact error text inside small cards; actionable detail is in the widget tooltip.
+                placeholder_font = QFont(self.tokens["type.family"], int(self.tokens["type.small"].removesuffix("pt")))
+                painter.setFont(placeholder_font)
+                painter.setPen(QColor(self.tokens["color.secondary"]))
+                painter.drawText(
+                    rect.adjusted(8, 8, -8, -8),
+                    Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
+                    self.placeholder,
+                )
             if obj.property("role") == "galleryCardImage" and obj.property("checkedSelection"):
                 painter.setBrush(Qt.NoBrush)
                 painter.setPen(QColor(self.tokens["color.selectionBorder"]))

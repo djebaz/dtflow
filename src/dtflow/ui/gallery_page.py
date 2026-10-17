@@ -123,6 +123,7 @@ def _image(path: str, max_side: int, state: Path | None = None) -> tuple[QImage 
         with original_images_lock(state, timeout=12):
             return decode()
     except OriginalImagesUnavailableError as exc:
+        # Preserve the full sanitized prerequisite for the tooltip, not the thumbnail canvas.
         return None, str(exc)
     except OriginalImagesBusyError:
         return None, "Original temporarily busy"
@@ -1466,6 +1467,7 @@ class GalleryPage(QObject):
                 pixmap = QPixmap.fromImage(image)
                 painter = self._grid_painters.get(identity)
                 if painter is not None:
+                    painter.placeholder = ""
                     painter.pixmap = pixmap
                     painter.widget.update()
                 try:
@@ -1477,15 +1479,38 @@ class GalleryPage(QObject):
                     if table_item is not None:
                         table_item.setIcon(QIcon(pixmap))
                     if row < len(self._film_painters):
+                        self._film_painters[row].placeholder = ""
                         self._film_painters[row].pixmap = pixmap
                         self._film_buttons[row].update()
             elif issue:
                 if issue == "Original temporarily busy":
                     QTimer.singleShot(2000, lambda: self._retry_thumbnail(generation, identity))
                 else:
+                    # A short placeholder fits a small card; the full safe error stays on hover.
+                    detail = f"Image unavailable: {issue}"
                     button = self._grid_buttons.get(identity)
                     if button is not None:
-                        button.setToolTip(f"Image is corrupt or unreadable: {issue}")
+                        button.setToolTip(detail)
+                    painter = self._grid_painters.get(identity)
+                    if painter is not None:
+                        painter.pixmap = QPixmap()
+                        painter.placeholder = "Image unavailable"
+                        painter.widget.update()
+                    try:
+                        row = next(i for i, item in enumerate(self.items) if item.identity == identity)
+                    except StopIteration:
+                        row = -1
+                    if row >= 0:
+                        table_item = self.table.item(row, 1)
+                        if table_item is not None:
+                            table_item.setToolTip(detail)
+                            table_item.setIcon(QIcon())
+                        if row < len(self._film_painters):
+                            film_painter = self._film_painters[row]
+                            film_painter.pixmap = QPixmap()
+                            film_painter.placeholder = "Image unavailable"
+                            self._film_buttons[row].setToolTip(detail)
+                            self._film_buttons[row].update()
         self._pump_thumbnails()
 
     def _retry_thumbnail(self, generation: int, identity: str) -> None:

@@ -174,6 +174,19 @@ def render_mapped_gallery_states(app, state, out):
                     raise RuntimeError(f"Could not save {target.name}")
                 print(target)
                 shell.inline.dismiss()
+            # Synthetic inaccessible-original state: short card text, full hover details.
+            shell.gallery.show_view("Grid")
+            generation = shell.gallery._thumb_versions[item.identity]
+            shell.gallery._thumbnail_done(
+                generation,
+                item.identity,
+                (None, "The Windows-drive mount has no verified shared-lock support. Use WSL ext4."),
+                None,
+            )
+            target = out / "39-images-original-unavailable-thumbnail.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
         finally:
             shell.runner.shutdown()
             shell.form.close()
