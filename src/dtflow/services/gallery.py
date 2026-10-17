@@ -79,15 +79,19 @@ def item_from_record(record: dict, paths: ArtifactReadPaths | None = None, *, st
         if state is None:
             access_path = paths.resolve(record["path"])
         else:
-            access_path, access_metadata_path = resolve_output_locations(state, record, paths=paths)
             access_path, access_metadata_path, _ = resolve_output_read(state, record, paths=paths)
         path = Path(access_path)
         if not path.is_file():
             raise OSError
         size = path.stat().st_size
     except OSError:
+        if state is not None and not access_path:
+            try:
+                access_path, access_metadata_path = resolve_output_locations(state, record, paths=paths)
+            except OSError:
+                pass  # An unvalidated native alias must remain unavailable.
         try:
-            candidate = access_path or paths.resolve(record["path"])
+            candidate = access_path or (paths.resolve(record["path"]) if state is None else "")
         except OSError:
             candidate = ""
         issue = MISSING_ISSUE if candidate and _confirmed_missing(Path(candidate)) else UNREADABLE_ISSUE

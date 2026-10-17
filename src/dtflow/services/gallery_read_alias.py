@@ -73,7 +73,14 @@ def resolve_output_locations(state: Path, row: dict, *, paths: ArtifactReadPaths
     if os.name == "nt" and isinstance(row.get("path"), str) and row["path"].startswith("/"):
         image, sidecar = _managed_candidate(Path(state), row, require_files=False)
         return str(image), str(sidecar)
-    return paths.resolve(row["path"]), paths.resolve(row["metadata_path"])
+    image = paths.resolve(row["path"])
+    try:
+        sidecar = paths.resolve(row["metadata_path"])
+    except OSError:
+        # Presentation retains metadata-unavailable handling independently of
+        # image availability. Provenance-requiring reads stay strict below.
+        sidecar = row["metadata_path"]
+    return image, sidecar
 
 
 def resolve_output_read(
