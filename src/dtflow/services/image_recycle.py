@@ -28,7 +28,12 @@ from dtflow.persistence.original_io import (
     windows_originals_bridge,
 )
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
-from dtflow.services.managed_original_provenance import matches_managed_state, verify_managed_sidecar
+from dtflow.services.managed_original_provenance import (
+    declared_raw_artifact,
+    file_sha256,
+    matches_managed_state,
+    verify_managed_sidecar,
+)
 
 
 class RecycleUnavailable(RuntimeError):
@@ -49,7 +54,12 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class RecycleTarget:
-    """The exact original and file fingerprint validated at confirmation time."""
+    """The exact original and file fingerprint validated at confirmation time.
+
+    A final carries its attempt's declared ``raw-1.png`` as ``raw`` (an image-operation attempt only), so one
+    logical gallery image is confirmed, leased and reported together while each physical file keeps its own
+    durable ledger row.
+    """
 
     identity: str
     path: str
@@ -59,6 +69,13 @@ class RecycleTarget:
     device: int
     recorded_path: str = ""
     mounts: tuple[tuple[str, str], ...] = ()
+    kind: str = "final"
+    digest: str = ""
+    raw: RecycleTarget | None = None
+
+    @property
+    def ledger_identity(self) -> str:
+        return self.identity if self.kind == "final" else f"{self.identity}:{self.kind}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +101,10 @@ class RecyclePlan:
     action: str = "trash"
     absent_targets: tuple[AbsentTarget, ...] = ()
 
+    @property
+    def raw_count(self) -> int:
+        return sum(target.raw is not None for target in self.targets)
+
 
 @dataclass(frozen=True, slots=True)
 class RecycleResult:
@@ -99,6 +120,7 @@ class RecycleResult:
     failure_details: tuple[tuple[str, str], ...] = ()
     deleted: tuple[str, ...] = ()
     absent: tuple[str, ...] = ()
+    raw: tuple[str, ...] = ()  # images whose raw-1.png was disposed, whatever became of their final
 
 
 def _managed_key(path: str) -> str:
@@ -110,6 +132,47 @@ def _managed_key(path: str) -> str:
     normalized = posixpath.normpath(path.replace("\\", "/")).casefold()
     match = re.search(r"(?:^|/)(outputs/[0-9a-f]{32}/final-[1-9][0-9]*\.png)$", normalized)
     return match[1] if match else normalized
+
+
+def _raw_companion(
+    expected: Path, metadata: Path, record: dict, *, keep_recorded: bool, mounts: tuple[tuple[str, str], ...]
+) -> RecycleTarget | None:
+    """The attempt's declared raw provider output, None when absent; OSError when present but not provably ours.
+
+    Only the canonical sibling of the final is considered, never a directory scan, and an undeclared file
+    named raw-1.png is ignored. A declared file must be plain, single-link and named by the sidecar.
+    """
+    raw = expected.parent / "raw-1.png"
+    try:
+        attrs = raw.lstat()
+    except FileNotFoundError:
+        return None
+    declared = declared_raw_artifact(metadata, record)
+    if declared is None:
+        return None
+    if (
+        raw.is_symlink()
+        or (hasattr(os.path, "isjunction") and os.path.isjunction(raw))
+        or getattr(attrs, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        or not stat.S_ISREG(attrs.st_mode)
+        or attrs.st_nlink != 1
+        or not attrs.st_size
+        or raw.resolve(strict=True) != raw
+    ):
+        raise OSError("Raw output is not a plain regular file.")
+    recorded_raw, digest = declared
+    return RecycleTarget(
+        str(record["identity"]),
+        str(raw),
+        attrs.st_size,
+        attrs.st_mtime_ns,
+        attrs.st_ino,
+        attrs.st_dev,
+        recorded_raw if keep_recorded else "",
+        mounts,
+        kind="raw",
+        digest=digest,
+    )
 
 
 def _regular_managed_file(
@@ -199,6 +262,15 @@ def _regular_managed_file(
     )
     if references != 1:
         return None
+    keep_recorded, mounts = permanent or windows_wsl_alias, paths.mounts if permanent else ()
+    try:
+        raw = (
+            _raw_companion(expected, metadata, record, keep_recorded=keep_recorded, mounts=mounts)
+            if ordinal == 0
+            else None
+        )
+    except OSError:
+        return None
     return RecycleTarget(
         str(record["identity"]),
         str(expected),
@@ -206,8 +278,9 @@ def _regular_managed_file(
         info.st_mtime_ns,
         info.st_ino,
         info.st_dev,
-        record["path"] if permanent or windows_wsl_alias else "",
-        paths.mounts if permanent else (),
+        record["path"] if keep_recorded else "",
+        mounts,
+        raw=raw,
     )
 
 
@@ -224,20 +297,36 @@ def _redirected(component: Path) -> bool:
     )
 
 
-def _alias_content_verified(target: RecycleTarget) -> bool:
-    """Hash a WSL1-recorded original's image-operation digest before taking the original-file lease.
+def _content_verified(target: RecycleTarget) -> bool:
+    """Hash provenance digests before taking the original-file lease, bound to the frozen fingerprint.
 
-    The result is bound to the frozen fingerprint: it must be identical before and after hashing. The
-    lease-held revalidation then proves the file still has that fingerprint, so hashing never lengthens it.
+    Covers a WSL1-recorded final's image-operation digest and the sidecar-declared digest of its raw output.
+    The result requires the fingerprint to be identical before and after hashing; the lease-held revalidation
+    then proves the file still has it, so hashing never lengthens the lease.
     """
-    if not _is_wsl_alias(target.recorded_path):
-        return True
+    if target.raw is not None and not _content_verified(target.raw):
+        return False
     source = Path(target.path)
-    row = {"attempt_id": target.identity.partition(":")[0], "path": target.recorded_path}
     frozen = (target.size, target.mtime_ns, target.inode, target.device)
+    if target.kind == "raw":
+        if not target.digest:
+            return False
+
+        def check() -> None:
+            if file_sha256(source) != target.digest:
+                raise OSError("Raw output does not match its declared digest.")
+
+    elif _is_wsl_alias(target.recorded_path):
+        row = {"attempt_id": target.identity.partition(":")[0], "path": target.recorded_path}
+
+        def check() -> None:
+            verify_managed_sidecar(source, source.parent / "metadata.json", row)
+
+    else:
+        return True
     try:
         before = source.stat()
-        verify_managed_sidecar(source, source.parent / "metadata.json", row)
+        check()
         after = source.stat()
     except OSError:
         return False
@@ -412,9 +501,17 @@ def prepare_recycle(
                 else:
                     ineligible += 1
                 continue
+            if target.raw is not None:
+                # A present raw file with an unsettled or terminal ledger row is ambiguous: refuse the image.
+                raw_state = states.get(f"{target.identity}:raw")
+                if raw_state is not None and raw_state[0] != "failed":
+                    ineligible += 1
+                    continue
             if not permanent and trash_check is not None:
                 try:
                     trash_check(Path(target.path))
+                    if target.raw is not None:
+                        trash_check(Path(target.raw.path))
                 except (OSError, RecycleUnavailable):
                     ineligible += 1
                     continue
@@ -481,6 +578,55 @@ def _unchanged(source: RecycleTarget) -> bool:
         return False
 
 
+def _dispose(
+    state: Path,
+    operation_id: str,
+    target: RecycleTarget,
+    *,
+    permanent: bool,
+    recycle_adapter,
+    failure_details: list[tuple[str, str]],
+) -> str:
+    """Claim, perform and settle one physical file; return its settled state, or ``review`` if the claim is refused.
+
+    Called under the batch and original-file leases. A refused claim leaves the file untouched.
+    """
+    path = target.recorded_path or target.path
+    if not ledger.claim_recycle_intent(
+        state, operation_id, target.ledger_identity, path, target.size, target.mtime_ns, permanent=permanent
+    ):
+        # A preflight plan may predate another process's intent. Never overwrite
+        # pending/uncertain/removed evidence or submit a second move.
+        return "review"
+    try:
+        if permanent:
+            _permanent_remove(state, target)
+        else:
+            recycle_adapter(Path(target.path))
+    except (OSError, RecycleUnavailable) as exc:
+        # A Trash error after a disappearing original is uncertain.
+        # Never assume that it was successfully recycled.
+        state_value = "failed" if _unchanged(target) else "uncertain"
+        if isinstance(exc, RecycleUnavailable) and exc.stage == "delete_uncertain":
+            state_value = "uncertain"
+        if isinstance(exc, RecycleUnavailable):
+            detail = exc.diagnostic
+        else:
+            windows_code = getattr(exc, "winerror", None)
+            detail = f"os_error_{windows_code}" if isinstance(windows_code, int) else "os_error"
+        # Stable output identities and sanitized adapter stages
+        # are safe; do not log full paths or raw OS exceptions.
+        log.warning(
+            "image recycle outcome=%s identity=%s kind=%s reason=%s", state_value, target.identity, target.kind, detail
+        )
+        if len(failure_details) < 100:
+            failure_details.append((target.identity, detail if target.kind == "final" else f"raw_{detail}"))
+    else:
+        state_value = ("deleted" if permanent else "recycled") if not Path(target.path).exists() else "uncertain"
+    ledger.record_outcome(state, operation_id, target.ledger_identity, path, state_value, target.size, target.mtime_ns)
+    return state_value
+
+
 def recycle_outputs(
     state: Path,
     plan: RecyclePlan,
@@ -509,13 +655,15 @@ def recycle_outputs(
     processed = 0
     operation_id = ("delete-" if permanent else "trash-") + uuid4().hex
     targets = (*plan.targets, *plan.absent_targets)
+    raw_disposed: list[str] = []
     with recycle_batch_lock(state):
-        ledger.start_operation(state, operation_id, len(targets))
+        # Requested counts are physical files, matching the per-file outcomes that complete them.
+        ledger.start_operation(state, operation_id, len(targets) + plan.raw_count)
         for target in targets:
             if stop.is_set():
                 break
             # Provenance hashing happens here, outside the lease, bound to the frozen fingerprint.
-            content_verified = isinstance(target, AbsentTarget) or _alias_content_verified(target)
+            content_verified = isinstance(target, AbsentTarget) or _content_verified(target)
             # This lease MUST precede the per-image ledger claim and external mutation.
             # UI zero-processed refusal wording relies on this ordering: a failed
             # first lease cannot have modified an original.
@@ -544,71 +692,48 @@ def recycle_outputs(
                     confirmed = _regular_managed_file(state, record, permanent=permanent, paths=paths)
                     if confirmed != target:
                         ineligible += 1
-                    elif not ledger.claim_recycle_intent(
-                        state,
-                        operation_id,
-                        target.identity,
-                        target.recorded_path or target.path,
-                        target.size,
-                        target.mtime_ns,
-                        permanent=permanent,
-                    ):
-                        # A preflight plan may predate another process's intent.
-                        # Never overwrite pending/uncertain/removed evidence or
-                        # submit a second move, even if the file looks unchanged.
-                        ineligible += 1
-                        if len(failure_details) < 100:
-                            failure_details.append((target.identity, "ledger_requires_review"))
                     else:
-                        try:
-                            if permanent:
-                                _permanent_remove(state, target)
-                            else:
-                                recycle_adapter(Path(target.path))
-                        except (OSError, RecycleUnavailable) as exc:
-                            # A Trash error after a disappearing original is uncertain.
-                            # Never assume that it was successfully recycled.
-                            state_value = "failed" if _unchanged(target) else "uncertain"
-                            if isinstance(exc, RecycleUnavailable) and exc.stage == "delete_uncertain":
-                                state_value = "uncertain"
-                            if isinstance(exc, RecycleUnavailable):
-                                detail = exc.diagnostic
-                            else:
-                                windows_code = getattr(exc, "winerror", None)
-                                detail = f"os_error_{windows_code}" if isinstance(windows_code, int) else "os_error"
-                            # Stable output identities and sanitized adapter stages
-                            # are safe; do not log full paths or raw OS exceptions.
-                            log.warning(
-                                "image recycle outcome=%s identity=%s reason=%s",
-                                state_value,
-                                target.identity,
-                                detail,
+                        # The raw provider output goes first, so a failed final leaves a retryable image whose
+                        # remaining raw is simply absent next time. Any non-removed raw leaves the final untouched.
+                        raw_state = None
+                        if target.raw is not None:
+                            raw_state = _dispose(
+                                state,
+                                operation_id,
+                                target.raw,
+                                permanent=permanent,
+                                recycle_adapter=recycle_adapter,
+                                failure_details=failure_details,
                             )
+                            if raw_state in ("recycled", "deleted"):
+                                raw_disposed.append(target.identity)
+                        if raw_state == "review":
+                            ineligible += 1
                             if len(failure_details) < 100:
-                                failure_details.append((target.identity, detail))
+                                failure_details.append((target.identity, "ledger_requires_review"))
+                        elif raw_state in ("failed", "uncertain"):
+                            (failed if raw_state == "failed" else uncertain).append(target.identity)
                         else:
-                            state_value = (
-                                ("deleted" if permanent else "recycled")
-                                if not Path(target.path).exists()
-                                else "uncertain"
+                            state_value = _dispose(
+                                state,
+                                operation_id,
+                                target,
+                                permanent=permanent,
+                                recycle_adapter=recycle_adapter,
+                                failure_details=failure_details,
                             )
-                        ledger.record_outcome(
-                            state,
-                            operation_id,
-                            target.identity,
-                            target.recorded_path or target.path,
-                            state_value,
-                            target.size,
-                            target.mtime_ns,
-                        )
-                        if state_value == "recycled":
-                            recycled.append(target.identity)
-                        elif state_value == "deleted":
-                            deleted.append(target.identity)
-                        elif state_value == "uncertain":
-                            uncertain.append(target.identity)
-                        else:
-                            failed.append(target.identity)
+                            if state_value == "review":
+                                ineligible += 1
+                                if len(failure_details) < 100:
+                                    failure_details.append((target.identity, "ledger_requires_review"))
+                            elif state_value == "recycled":
+                                recycled.append(target.identity)
+                            elif state_value == "deleted":
+                                deleted.append(target.identity)
+                            elif state_value == "uncertain":
+                                uncertain.append(target.identity)
+                            else:
+                                failed.append(target.identity)
             processed += 1
             if progress:
                 progress(processed, len(targets))
@@ -625,4 +750,5 @@ def recycle_outputs(
         tuple(failure_details),
         tuple(deleted),
         tuple(absent),
+        tuple(raw_disposed),
     )

@@ -174,6 +174,7 @@ def delete_managed(state: Path, target) -> None:
             dict(
                 state=str(Path(state).absolute()),
                 identity=target.identity,
+                kind=target.kind,
                 size=target.size,
                 mtime_ns=target.mtime_ns,
                 inode=target.inode,
@@ -190,6 +191,7 @@ def delete_managed(state: Path, target) -> None:
             action="delete",
             state=native_state,
             identity=target.identity,
+            kind=target.kind,
             size=target.size,
             mtime_ns=target.mtime_ns,
             inode=target.inode,
@@ -211,7 +213,14 @@ def _delete(request):
         state = Path(request["state"])
         if identity is None or not state.is_absolute() or str(state).startswith("\\\\"):
             raise ValueError("Invalid managed original")
-        path = state / "outputs" / identity[1] / f"final-{int(identity[2]) + 1}.png"
+        kind = request.get("kind", "final")
+        if kind == "final":
+            name = f"final-{int(identity[2]) + 1}.png"
+        elif kind == "raw" and identity[2] == "0":
+            name = "raw-1.png"  # provider evidence exists only for the single output of an image operation
+        else:
+            raise ValueError("Invalid managed original kind")
+        path = state / "outputs" / identity[1] / name
         for component in (path, *path.parents):
             if component.is_symlink() or os.path.isjunction(component):
                 raise ValueError("Redirected original")

@@ -41,6 +41,57 @@ def matches_managed_state(state: Path, recorded: str, tail: tuple[str, ...]) -> 
     )
 
 
+def file_sha256(path: Path) -> str:
+    sha = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            sha.update(block)
+    return sha.hexdigest()
+
+
+def declared_raw_artifact(sidecar: Path, row: dict) -> tuple[str, str] | None:
+    """Return the recorded path and SHA-256 the attempt sidecar declares for its single raw provider output.
+
+    None means the attempt declares no raw output at all. A declaration that is malformed, names another file
+    or belongs to another attempt raises OSError, so a file is never owned by its name alone.
+    """
+    suffix = "final-1.png"
+    try:
+        recorded_final = row["path"]
+        if not isinstance(recorded_final, str) or not recorded_final.endswith(suffix):
+            raise ValueError
+        recorded_raw = recorded_final[: -len(suffix)] + "raw-1.png"
+        with sidecar.open("rb") as stream:
+            data = stream.read(_MAX_METADATA_BYTES + 1)
+        if len(data) > _MAX_METADATA_BYTES:
+            raise ValueError
+        document = json.loads(data)
+        if (
+            not isinstance(document, dict)
+            or type(document.get("schema_version")) is not int
+            or document["schema_version"] not in (1, 2)
+            or document.get("attempt_id") != row["attempt_id"]
+        ):
+            raise ValueError
+        operation = document.get("image_operation")
+        records = operation.get("raw_artifacts") if isinstance(operation, dict) else None
+        if records is None or records == []:
+            return None
+        if not isinstance(records, list) or len(records) != 1 or not isinstance(records[0], dict):
+            raise ValueError
+        declared, digest = records[0].get("path"), records[0].get("sha256")
+        if (
+            declared != recorded_raw
+            or records[0].get("role") != "raw_provider_evidence"
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+        ):
+            raise ValueError
+    except (OSError, ValueError, KeyError, TypeError, UnicodeError) as exc:
+        raise OSError("Raw provider output is not provably this attempt's.") from exc
+    return recorded_raw, digest
+
+
 def verify_managed_sidecar(
     image: Path, sidecar: Path, row: dict, *, check_digest: bool = True, check_size: bool = True
 ) -> None:
@@ -78,11 +129,7 @@ def verify_managed_sidecar(
         if digest is not None and check_digest:
             if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
                 raise ValueError
-            sha = hashlib.sha256()
-            with image.open("rb") as stream:
-                for block in iter(lambda: stream.read(1024 * 1024), b""):
-                    sha.update(block)
-            if sha.hexdigest() != digest:
+            if file_sha256(image) != digest:
                 raise ValueError
     except (OSError, ValueError, KeyError, TypeError, UnicodeError) as exc:
         raise OSError("Managed output metadata or image content does not match its record.") from exc

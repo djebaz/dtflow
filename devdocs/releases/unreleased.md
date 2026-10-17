@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76 raw outputs in removal: Trash and Delete now also dispose of an image edit's sidecar-declared `raw-1.png` provider output, raw first, with its own durable ledger row and fingerprint; a raw that cannot be authenticated makes the image ineligible, a failed raw leaves the final untouched, and partial results are reported. Metadata, inputs and exports are kept. Raw files left by earlier final-only removals stay in place. Source implementation; native Windows and WSL1 owner smoke pending.
+
 - PR #76 point-1 review hardening: Windows Trash and permanent Delete validate WSL1-recorded managed originals using shared provenance primitives, without treating gallery read aliases as deletion authority. Alias-aware reference-count queries use a conservative SQL attempt prefilter, optional full-image hashes run during execution under a lease rather than preflight, and reparse-point rejection applies to both Windows removal modes. Owner initial Windows smoke passed; remaining failure/restart cases are unverified.
 
 - PR #76 export summary: the expected WSL/non-Windows note that file creation time is set only on Windows is now informational, so a successful WSL export is no longer shown as amber partial. Failed items, cache fallback, unsaved preferences and other genuine warnings keep their severity; EXIF still carries the saved date. Source implementation; WSL output/metadata smoke pending.
