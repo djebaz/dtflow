@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76 review P2: validate native managed-state read locations independently of image existence, so missing WSL1-recorded originals on Windows use File missing and retain access to surviving sidecar metadata. Strict content checks for actual reads/export and mutation authorization remain unchanged. No new tests or runtime acceptance claimed.
+
 - PR #76 review P1: refresh recovery reconciles existing gallery widgets without resetting first-render ownership; initial failure messages are cleared with their layout. Added an offline empty-recovery fixture, not rendered; no new tests.
 
 - **PR #76: Trash / Delete image removal and Windows/WSL1 shared state** (owner smoke accepted at `6202404` on 2026-10-17, see the [plan](../plans/2026-10-17-image-removal-modes.md#owner-acceptance)).

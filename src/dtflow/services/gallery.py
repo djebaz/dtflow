@@ -12,7 +12,7 @@ from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as storage
 from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
-from dtflow.services.gallery_read_alias import resolve_output_read
+from dtflow.services.gallery_read_alias import resolve_output_locations, resolve_output_read
 
 MISSING_ISSUE = "Image file is missing."
 UNREADABLE_ISSUE = "Image is unreadable or its location is unavailable."
@@ -77,6 +77,7 @@ def item_from_record(record: dict, paths: ArtifactReadPaths | None = None, *, st
         if state is None:
             access_path = paths.resolve(record["path"])
         else:
+            access_path, access_metadata_path = resolve_output_locations(state, record, paths=paths)
             access_path, access_metadata_path, _ = resolve_output_read(state, record, paths=paths)
         path = Path(access_path)
         if not path.is_file():
