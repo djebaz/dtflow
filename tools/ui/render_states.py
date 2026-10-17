@@ -409,6 +409,14 @@ def main():
             if not unavailable.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            unavailable.gallery._refresh_failing = True
+            unavailable.gallery.refresh()
+            wait_for(lambda: not unavailable.gallery._loading)
+            QTest.qWait(100)
+            target = args.out / "45-images-refresh-recovered-empty.png"
+            if not unavailable.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
         finally:
             unavailable.runner.shutdown()
             unavailable.form.close()

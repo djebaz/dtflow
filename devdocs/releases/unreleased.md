@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #76 review P1: refresh recovery reconciles existing gallery widgets without resetting first-render ownership; initial failure messages are cleared with their layout. Added an offline empty-recovery fixture, not rendered; no new tests.
+
 - **PR #76: Trash / Delete image removal and Windows/WSL1 shared state** (owner smoke accepted at `6202404` on 2026-10-17, see the [plan](../plans/2026-10-17-image-removal-modes.md#owner-acceptance)).
   - **Split action.** Images chooses **Trash** or **Delete**, remembered separately for Windows, WSL and native Linux. Delete always asks for fresh irreversible confirmation; choosing a mode never removes anything and there is no permanent fallback when Trash is unavailable. Owner smoke accepted the control, icons, confirmation and Cancel/Escape/mode-change consent handling on 2026-10-17 (`b10d962`).
   - **Durable removal.** Shared removal ledger (schema 2) with per-file intent and outcomes, phase-correct Windows refusals (`failed` only when confirmed before mutation and unchanged, otherwise `uncertain`) and no replay. A newly uncertain Delete raises one amber warning, including after a successful reconciliation pass.

@@ -1195,10 +1195,10 @@ class GalleryPage(QObject):
             self._show_refresh_failure(error, first=not self._refresh_failing)
             self._refresh_failing = True
             return
-        if self._refresh_failing:
+        recovered = self._refresh_failing
+        if recovered:
             self._refresh_failing = False
-            # Re-render even an unchanged page so the failure message is replaced.
-            self._rendered_page = None
+            # Force a normal reconciliation, not first-render fixture teardown.
             log.info("gallery refresh recovered")
 
         query, page, choices, anchor_found = result
@@ -1214,6 +1214,7 @@ class GalleryPage(QObject):
         visible_page = (query.offset, page.items)
         if (
             visible_page == self._rendered_page
+            and not recovered
             and self._pending_page_selection is None
             and self._page_scroll_target is None
         ):
@@ -1479,6 +1480,9 @@ class GalleryPage(QObject):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+        # A first query can fail before the Designer fixtures are removed.
+        # Its message is owned by this same layout and was just disposed too.
+        self._grid_empty = None
 
     def _reconcile_filmstrip(self) -> None:
         layout = self._widget("galleryFilmstripScrollContents").layout()
