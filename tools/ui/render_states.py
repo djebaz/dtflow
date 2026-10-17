@@ -81,47 +81,47 @@ def render_removal_and_selection_states(shell, item, plan, out):
     with patch.object(recycle, "_execute", side_effect=RuntimeError("Preview cannot remove files")):
         recycle._confirmation_revision = gallery.recycle_scope_revision
         recycle._prepared(RecyclePlan(plan.targets, 0, 0, 0, 1, "trash"), None)
-        snap("60-images-trash-confirmation")
+        snap("63-images-trash-confirmation")
         shell.inline.dismiss()
         recycle._confirmation_revision = gallery.recycle_scope_revision
         recycle._prepared(RecyclePlan((), 1, 2, 0, 3, "trash"), None)
-        snap("61-images-nothing-to-remove")
+        snap("64-images-nothing-to-remove")
         shell.inline.dismiss()
     # Busy source: request and the execution revalidation both refuse before any worker.
     with patch.object(recycle, "busy_source", return_value=True):
         recycle.request((item.identity,), 0, gallery.export_query())
-        snap("62-images-removal-busy")
+        snap("65-images-removal-busy")
         shell.inline.dismiss()
         recycle._execute(plan)
-        snap("63-images-removal-changed-or-busy")
+        snap("66-images-removal-changed-or-busy")
         shell.inline.dismiss()
     recycle._mode_loaded("trash", OSError("Offline fixture: removal preferences are unreadable."))
-    snap("64-images-removal-preferences-unavailable")
+    snap("67-images-removal-preferences-unavailable")
     shell.inline.dismiss()
     gallery.set_recycle_busy(True)
-    snap("65-images-removal-control-busy")
+    snap("68-images-removal-control-busy")
     gallery.set_recycle_busy(False)
 
     # Presentation fixture of the running row; recycle_outputs is never called.
     strip.start("trash", f"Moving originals to {TRASH_NAME}", lambda: None, total=3)
     strip.update("trash", 1, 3)
-    snap("66-images-trash-progress")
+    snap("69-images-trash-progress")
     recycle._action = "trash"
     with patch.object(gallery, "recycle_completed"):
         for name, result in (
-            ("67-images-trash-result-success", RecycleResult((item.identity,), (), (), 0, 0, 0, False)),
+            ("70-images-trash-result-success", RecycleResult((item.identity,), (), (), 0, 0, 0, False)),
             (
-                "68-images-trash-result-partial",
+                "71-images-trash-result-partial",
                 RecycleResult((), ("fixture:1",), (), 0, 1, 0, False, (("fixture:1", "source_changed"),)),
             ),
-            ("69-images-trash-result-stopped", RecycleResult((item.identity,), (), (), 0, 0, 2, True)),
+            ("72-images-trash-result-stopped", RecycleResult((item.identity,), (), (), 0, 0, 2, True)),
         ):
             recycle._completed(result, None)
             snap(name)
     for name, phase, processed, error in (
-        ("70-images-removal-preflight-refused", "preflight", 0, RecycleUnavailable("Offline fixture: Trash refused.")),
-        ("71-images-removal-not-started", "executing", 0, OriginalImagesBusyError("Offline fixture: originals busy.")),
-        ("72-images-removal-needs-review", "executing", 1, RuntimeError("Offline fixture")),
+        ("73-images-removal-preflight-refused", "preflight", 0, RecycleUnavailable("Offline fixture: Trash refused.")),
+        ("74-images-removal-not-started", "executing", 0, OriginalImagesBusyError("Offline fixture: originals busy.")),
+        ("75-images-removal-needs-review", "executing", 1, RuntimeError("Offline fixture")),
     ):
         recycle._phase, recycle._processed_count = phase, processed
         recycle._finish_with_error(error)
@@ -130,10 +130,10 @@ def render_removal_and_selection_states(shell, item, plan, out):
 
     # Selection scan settlements, delivered directly; no identity query runs.
     gallery._cancel_selection_scan()
-    snap("73-images-selection-stopped")
+    snap("76-images-selection-stopped")
     gallery._selection_scan_done(gallery._selection_generation, "add", None, PersistenceError("Offline fixture"))
-    snap("74-images-selection-failed")
-    for name, omitted in (("75-images-selection-limit-partial", 3), ("76-images-selection-all-checked-hidden", 0)):
+    snap("77-images-selection-failed")
+    for name, omitted in (("78-images-selection-limit-partial", 3), ("79-images-selection-all-checked-hidden", 0)):
         gallery._selection_scan_done(gallery._selection_generation, "add", ((), 2, omitted, (item.identity,)), None)
         snap(name)
     strip.finish("selection")
@@ -144,8 +144,8 @@ def render_removal_and_selection_states(shell, item, plan, out):
     shell.form.resize(1180, 1000)
     QTest.qWait(150)
     assert not gallery.more_button.isHidden(), gallery.selection_bar.width()
-    snap("77-images-compact-toolbar")
-    for button, name in ((gallery.more_button, "78-images-more-menu"),):
+    snap("80-images-compact-toolbar")
+    for button, name in ((gallery.more_button, "81-images-more-menu"),):
         menu = button.menu()
         menu.popup(button.mapToGlobal(QPoint(0, button.height())))
         QTest.qWait(100)
@@ -156,11 +156,11 @@ def render_removal_and_selection_states(shell, item, plan, out):
     menu = gallery.clear_selection_button.menu()
     menu.popup(gallery.clear_selection_button.mapToGlobal(QPoint(0, gallery.clear_selection_button.height())))
     QTest.qWait(100)
-    save(menu, out, "79-images-unselect-menu")
+    save(menu, out, "82-images-unselect-menu")
     menu.hide()
     gallery.show_view("Detail")
     gallery.select(item.identity)
-    snap("80-images-detail-checked")
+    snap("83-images-detail-checked")
     gallery.show_view("Grid")
 
 
@@ -221,7 +221,7 @@ def render_initial_refresh_recovery(app, state, out):
             print(target)
             shell.gallery.show_view("Detail")
             QTest.qWait(100)
-            save(shell.form, out, "81-images-detail-no-selection")
+            save(shell.form, out, "84-images-detail-no-selection")
             shell.gallery.show_view("Grid")
             # Offline failure presentation only; no real desktop process is started.
             with patch.object(desktop_open, "_open_on_worker", return_value="the folder no longer exists."):
