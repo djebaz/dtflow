@@ -336,6 +336,8 @@ class GalleryPage(QObject):
         self._grid_empty: QLabel | None = None
         self._grid_layout_keys: tuple[str, ...] = ()
         self._grid_layout_columns = 0
+        self._applied_thumbnail_percent: int | None = None
+        self._density_anchor: tuple[str, str, int] | None = None
         self._film_buttons: list[QPushButton] = []
         self._film_painters: list[CoverPainter] = []
         self._film_entries: dict[str, tuple[QPushButton, CoverPainter]] = {}
@@ -366,6 +368,9 @@ class GalleryPage(QObject):
         self.reflow_timer = QTimer(self)
         self.reflow_timer.setSingleShot(True)
         self.reflow_timer.timeout.connect(self._layout_cards)
+        self.density_anchor_timer = QTimer(self)
+        self.density_anchor_timer.setSingleShot(True)
+        self.density_anchor_timer.timeout.connect(self._restore_density_anchor)
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(250)
@@ -1596,6 +1601,7 @@ class GalleryPage(QObject):
             or self._loading
             or self._adjacent_loading
             or self._suppress_batch_scroll
+            or self._density_anchor is not None
             or self._pending_refresh is not None
             or self.filter_timer.isActive()
         ):
@@ -2455,6 +2461,28 @@ class GalleryPage(QObject):
 
     def _density_changed(self, *_args) -> None:
         scale_percent = self.slider.value()
+        self._widget("galleryThumbnailSizeValue", QLabel).setText(f"{scale_percent}%")
+        if scale_percent == self._applied_thumbnail_percent:
+            # View switches do not imply a size change or a second full repaint.
+            return
+        # Capture one stable identity before the first geometry mutation. A
+        # scrollbar pixel value points at a different image after row/column
+        # counts change; new slider events reuse this anchor until settled.
+        if self._density_anchor is None and self.items and self._rendered_page is not None:
+            if self.mode == "Grid":
+                identity = self._browsing_anchor()
+                if identity in self._grid_buttons:
+                    card = self._grid_buttons[identity].parentWidget()
+                    self._density_anchor = (
+                        "Grid", identity, card.y() - self.grid_scroll.verticalScrollBar().value()
+                    )
+            elif self.mode == "List":
+                row = self.table.rowAt(0)
+                if 0 <= row < len(self.items):
+                    self._density_anchor = (
+                        "List", self.items[row].identity, self.table.rowViewportPosition(row)
+                    )
+        self._applied_thumbnail_percent = scale_percent
         density = self._thumbnail_pixels(scale_percent)
 
         # CoverPainter owns the visible pixels. One shared transparent icon
@@ -2498,7 +2526,51 @@ class GalleryPage(QObject):
             button.setIconSize(film_placeholder.size())
 
         self.reflow_timer.start(0)
+        if self._density_anchor is not None:
+            self.density_anchor_timer.start(0)
         self._schedule_save()
+
+    def _restore_density_anchor(self) -> None:
+        """Keep the same saved-output identity visible across thumbnail zoom."""
+        anchor = self._density_anchor
+        self._density_anchor = None
+        if anchor is None:
+            return
+        mode, identity, within_viewport = anchor
+        if mode != self.mode:
+            self._sync_pager()
+            return
+        self._suppress_batch_scroll = True
+        try:
+            if mode == "Grid":
+                button = self._grid_buttons.get(identity)
+                if button is not None:
+                    self.reflow_timer.stop()
+                    self._layout_cards()
+                    self.cards_layout.activate()
+                    self.grid_cards.adjustSize()
+                    # Retain the first visible card and its partial-row offset.
+                    bar = self.grid_scroll.verticalScrollBar()
+                    bar.setValue(button.parentWidget().y() - within_viewport)
+            elif mode == "List":
+                row = next((i for i, item in enumerate(self.items) if item.identity == identity), -1)
+                if row >= 0:
+                    cell = self.table.item(row, 0)
+                    if cell is not None:
+                        self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                        if self.table.verticalScrollMode() == QAbstractItemView.ScrollMode.ScrollPerPixel:
+                            bar = self.table.verticalScrollBar()
+                            bar.setValue(bar.value() + self.table.rowViewportPosition(row) - within_viewport)
+            self._capture_scroll()
+            self._sync_pager()
+            if dev_enabled():
+                first, last = self._visible_range()
+                log.debug(
+                    "gallery_perf phase=thumbnail_resize mode=%s scale=%d first=%d last=%d mounted=%d",
+                    mode, self.slider.value(), first, last, len(self.items),
+                )
+        finally:
+            self._suppress_batch_scroll = False
 
     def _size_new_entries(self, identities: list[str]) -> None:
         """Size newly mounted cards without repainting unchanged previews."""
@@ -2621,7 +2693,7 @@ class GalleryPage(QObject):
 
     def _scroll_changed(self, name: str, value: int) -> None:
         self._scroll[name] = max(0, value)
-        if name in ("grid", "list") and (name == self.mode.casefold()):
+        if name in ("grid", "list") and (name == self.mode.casefold()) and self._density_anchor is None:
             self._sync_pager()
         self._schedule_save()
 
