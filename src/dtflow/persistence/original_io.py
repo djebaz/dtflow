@@ -149,7 +149,9 @@ class _ReadGroup:
     releases it; readers never queue behind each other. A foreground request
     (save, removal, export, user action) stops new readers from joining, then
     takes the lease itself once the current readers finish, so a page of
-    thumbnails can never starve a generation save into save_failed.
+    thumbnails can never starve a generation save into save_failed. Other
+    processes cannot signal the group, so it also stops admitting readers
+    after a bounded hold and pauses before taking the lease again.
     """
 
     def __init__(self):
@@ -158,8 +160,15 @@ class _ReadGroup:
         self.writers_waiting = 0
         self.acquiring = False
         self.stack: ExitStack | None = None
+        self.held_since = 0.0
+        self.draining = False
+        self.resume_at = 0.0
 
 
+# Longest stretch display reads keep the lease from other processes, and the
+# pause before retaking it (other processes poll the lock every 50 ms).
+_GROUP_HOLD_SECONDS = 2.0
+_GROUP_PAUSE_SECONDS = 0.1
 _groups: dict[str, _ReadGroup] = {}
 _groups_guard = threading.Lock()
 
@@ -174,11 +183,20 @@ def _shared_read(state: Path, timeout: float):
     group = _group(state)
     deadline = time.monotonic() + timeout
     with group.cond:
-        while group.writers_waiting or group.acquiring:
-            remaining = deadline - time.monotonic()
+        while True:
+            now = time.monotonic()
+            if group.readers and now - group.held_since >= _GROUP_HOLD_SECONDS:
+                group.draining = True
+            blocked = group.writers_waiting or group.acquiring or group.draining
+            if not blocked and not group.readers and now < group.resume_at:
+                blocked = True
+            if not blocked:
+                break
+            remaining = deadline - now
             if remaining <= 0:
                 raise OriginalImagesBusyError("Original images are busy with a save or removal.")
-            group.cond.wait(remaining)
+            # Wake for the pause end even without a notification.
+            group.cond.wait(min(remaining, max(group.resume_at - now, 0.02)))
         joined = group.readers > 0
         if joined:
             group.readers += 1
@@ -197,6 +215,7 @@ def _shared_read(state: Path, timeout: float):
             raise
         with group.cond:
             group.stack, group.acquiring, group.readers = stack, False, 1
+            group.held_since = time.monotonic()
             group.cond.notify_all()
     try:
         yield
@@ -206,6 +225,9 @@ def _shared_read(state: Path, timeout: float):
             release = group.stack if group.readers == 0 else None
             if release is not None:
                 group.stack = None
+                if group.draining:
+                    group.draining = False
+                    group.resume_at = time.monotonic() + _GROUP_PAUSE_SECONDS
             group.cond.notify_all()
         if release is not None:
             release.close()
