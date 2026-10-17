@@ -154,6 +154,8 @@ During generation or queue dispatch, the window owns the state directory. Genera
 
 ## Images
 
+While browsing Grid or List, changing **Thumbnail size** or **Row density** retains the same top visible image across Grid column and List row-height reflow; the active numbered page follows that identity, not the old scrollbar pixel value. A size change never requests another batch by itself. This behavior has offline Qt fixture coverage but still needs native owner acceptance.
+
 The approved **Option 2a** pager above the gallery viewport shows the actual visible image range, total and numbered 80-image batch chips. Its position and appearance do not change in fullscreen. The **Image Navigation** artifact folder contains the dedicated offline screenshots. The initially rendered pager UI and loading ring are present in PR #89; live continuous-scroll integration is tracked in [the implementation plan](../plans/2026-10-17-images-hybrid-pagination.md).
 
 When Images first opens, its saved-output database query can be followed by a read-only

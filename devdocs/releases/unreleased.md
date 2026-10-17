@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #89 Grid/List zoom-pagination correction: changing thumbnail size now preserves the first visible saved-output identity across Grid column reflow and List row-height changes, rather than retaining an obsolete numeric scrollbar offset. Deferred anchor restoration avoids unintended neighboring batch reads and transient page-chip changes; redundant same-scale whole-card repaints are skipped. Two new offline Image Navigation screenshots cover these cases (source checks passed on `4d1c14e`; final follow-up CI and owner native smoke remain pending).
+
 - PR #89 navigation direction regression (owner confirmed): after jumping to page 9, scrolling **down** incorrectly fetched earlier batches at offsets 560, 480 and 400. The controller now carries wheel, scrollbar-action and drag direction into prefetch; downward scroll can fetch only forward and upward only backward. A provider-free regression fixture covers both edges, while `-x --dev` logs sanitized scroll direction/source. Native owner verification remains pending.
 
 - PR #89 navigation correctness follow-up (owner smoke pending): gallery boundary prefetch is no longer scheduled from Qt programmatic scrollbar changes during jumps, layout reflow or anchor restoration; it reacts to user wheel/scrollbar input. A provider-free Qt fixture guards against the regression, and `-x --dev` includes sanitized page-jump offsets. An owner log recorded a direct jump to a final partial batch followed by backward loads, without recorded read errors; that trace does not establish the visible symptom's precise cause.
