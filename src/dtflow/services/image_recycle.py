@@ -28,6 +28,7 @@ from dtflow.persistence.original_io import (
     windows_originals_bridge,
 )
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
+from dtflow.services.gallery_read_alias import _matches_state, _verify_sidecar
 
 
 class RecycleUnavailable(RuntimeError):
@@ -114,10 +115,35 @@ def _regular_managed_file(
     root = Path(state).resolve() / "outputs"
     expected = root / attempt / f"final-{ordinal + 1}.png"
     metadata = root / attempt / "metadata.json"
+    # A foreign spelling is never a filesystem path to delete directly.
+    # Derive the sole eligible native target from saved state and DB identity,
+    # rather than authorizing deletion through resolve_output_read().
+    foreign_posix = (
+        os.name == "nt" and isinstance(record.get("path"), str) and record["path"].startswith("/")
+    )
+    windows_wsl_alias = foreign_posix and record["path"].startswith("/mnt/")
+    if foreign_posix:
+        tail = ("outputs", attempt)
+        if (
+            not windows_wsl_alias
+            or record.get("identity") != f"{attempt}:{ordinal}"
+            or Path(state).absolute() != Path(state).resolve()
+            or not _matches_state(state, record["path"], (*tail, f"final-{ordinal + 1}.png"))
+            or not _matches_state(state, record["metadata_path"], (*tail, "metadata.json"))
+        ):
+            return None
     paths = paths or ArtifactReadPaths()
     try:
-        candidate = Path(paths.resolve(record["path"]) if permanent else record["path"])
-        metadata_path = paths.resolve(record["metadata_path"]) if permanent else record["metadata_path"]
+        candidate = (
+            expected
+            if windows_wsl_alias
+            else Path(paths.resolve(record["path"]) if permanent else record["path"])
+        )
+        metadata_path = (
+            metadata
+            if windows_wsl_alias
+            else Path(paths.resolve(record["metadata_path"]) if permanent else record["metadata_path"])
+        )
     except OSError:
         return None
     # A managed original has the exact canonical path written by save_artifacts.
@@ -131,22 +157,38 @@ def _regular_managed_file(
         return None
     try:
         components = (root, expected.parent, expected, metadata)
-        if permanent:
+        if permanent or windows_wsl_alias:
             components += tuple(Path(state).absolute().parents) + (Path(state).absolute(),)
         for component in components:
             if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
                 return None
-        if expected.resolve(strict=True) != expected or not metadata.is_file():
+            if windows_wsl_alias and getattr(component.lstat(), "st_file_attributes", 0) & getattr(
+                stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0
+            ):
+                return None
+        if (
+            expected.resolve(strict=True) != expected
+            or metadata.resolve(strict=True) != metadata
+            or not metadata.is_file()
+        ):
             return None
+        if windows_wsl_alias:
+            # Bound sidecar provenance to the saved attempt/path, and compare
+            # image-operation SHA when recorded. Ledger and fingerprint checks
+            # remain independent, fresh removal-authorization gates.
+            _verify_sidecar(expected, metadata, record)
         info = expected.stat()
     except OSError:
         return None
     if not expected.is_file() or not info.st_size or info.st_nlink != 1:
         return None
+    alias_aware = permanent or os.name == "nt"
     references = (
-        gallery_storage.path_reference_count(state, record["path"], path_key=_managed_key if permanent else None)
+        gallery_storage.path_reference_count(
+            state, record["path"], path_key=_managed_key if alias_aware else None
+        )
         if reference_counts is None
-        else reference_counts.get(_managed_key(record["path"]) if permanent else str(expected), 0)
+        else reference_counts.get(_managed_key(record["path"]) if alias_aware else str(expected), 0)
     )
     if references != 1:
         return None
@@ -157,7 +199,7 @@ def _regular_managed_file(
         info.st_mtime_ns,
         info.st_ino,
         info.st_dev,
-        record["path"] if permanent else "",
+        record["path"] if permanent or windows_wsl_alias else "",
         paths.mounts if permanent else (),
     )
 
@@ -197,7 +239,7 @@ def prepare_recycle(
     for offset in range(0, len(unique), gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH):
         batch = unique[offset : offset + gallery_storage.MAX_RECYCLE_PREFLIGHT_BATCH]
         records, reference_counts = gallery_storage.recycle_preflight_batch(
-            state, batch, path_key=_managed_key if permanent else None
+            state, batch, path_key=_managed_key if permanent or os.name == "nt" else None
         )
         for identity in batch:
             if identity in states and states[identity][0] != "failed":
@@ -211,6 +253,15 @@ def prepare_recycle(
                 state, record, reference_counts=reference_counts, permanent=permanent, paths=paths
             )
             if target is None:
+                if (
+                    os.name == "nt"
+                    and isinstance(record.get("path"), str)
+                    and record["path"].startswith("/")
+                ):
+                    # Unverified WSL aliases are ineligible, not proven absent.
+                    # Durable confirmed-absence handling is tracked separately.
+                    ineligible += 1
+                    continue
                 try:
                     present = Path(paths.resolve(record["path"]) if permanent else record["path"]).is_file()
                 except OSError:
