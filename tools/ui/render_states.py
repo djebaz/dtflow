@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests"))
@@ -36,7 +36,8 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
-from dtflow.persistence.original_io import OriginalImagesBusyError  # noqa: E402
+from dtflow.persistence.image_recycle import ReconcileResult  # noqa: E402
+from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError  # noqa: E402
 from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.persistence.store import PersistenceError, StateBusyError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
@@ -48,6 +49,7 @@ from dtflow.services.person_selection import PersonAnalysis, PersonLayers, color
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
+from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
@@ -599,6 +601,73 @@ def render_queue_states(shell, capture):
     wait_for(lambda: queue._view() is None)
 
 
+def render_shell_states(shell, capture):
+    """Window-level notices, close consent and header run-control phases, driven through the real handlers."""
+    strip = activity_strip(shell.form)
+
+    def clear():
+        shell.inline.dismiss()
+        for key in list(strip.rows):
+            strip.finish(key)
+
+    shell.about()
+    capture("94-shell-about")
+    clear()
+    with patch.object(type(shell.queue), "dispatching_here", new_callable=PropertyMock, return_value=True):
+        shell._confirm_close()
+        capture("95-shell-close-consent-dispatch")
+        shell.inline.dismiss()
+    shell.image_recycle._running = True
+    try:
+        shell._confirm_close()
+        capture("96-shell-close-removal-in-progress")
+    finally:
+        shell.image_recycle._running = False
+        shell.image_recycle._stop.clear()
+    clear()
+    for name, error, outcome in (
+        (
+            "97-shell-originals-unavailable",
+            OriginalImagesUnavailableError("Offline fixture: bridge unsupported."),
+            None,
+        ),
+        ("98-shell-reconciliation-deferred", OriginalImagesBusyError("Offline fixture"), None),
+        ("99-shell-reconciliation-failed", RuntimeError("Offline fixture"), None),
+        ("100-shell-permanent-deletion-review", None, ReconcileResult(0, 2, 0)),
+    ):
+        if name == "97-shell-originals-unavailable":
+            shell._originals_ready_checked(None, error)
+        else:
+            shell._images_reconciled(outcome, error)
+        capture(name)
+        clear()
+    # Several labelled rows at once, then an unrelated notice arriving while a confirmation is armed.
+    InlineNotice.warning(shell.form, "Removal reconciliation deferred", "Offline fixture warning.")
+    strip.complete("export-result", "Export finished", "3 images exported.")
+    strip.start("trash-run", "Moving images to Trash", stop=lambda: None, total=4)
+    strip.update("trash-run", 1, 4)
+    capture("101-overlay-several-rows")
+    clear()
+    shell.form.queueNavigationButton.click()
+    shell.queue_page.clearQueuesButton.click()
+    InlineNotice.warning(shell.form, "Original images unavailable", "Offline fixture notice during a confirmation.")
+    capture("102-overlay-notice-during-confirmation")
+    clear()
+    strip.complete("info-result", "Nothing to export", "All checked images already exist at the destination.", "info")
+    capture("103-overlay-info-result")
+    clear()
+    control = shell.shell.runControl
+    for name, phase, kwargs in (
+        ("104-run-control-ready", "ready", {}),
+        ("105-run-control-paused", "paused", {"completed": 1, "total": 3}),
+        ("106-run-control-finishing", "complete", {"detail": "Finishing."}),
+        ("107-run-control-queue-running", "running", {"action": "queue", "completed": 2, "total": 5}),
+    ):
+        control.set_presentation(phase, **kwargs)
+        capture(name)
+    shell._sync_run_control()
+
+
 def render_inpaint_states(shell, state, capture):
     """Listed editor states only; analysis/dispatch rows are presentation fixtures."""
     page, editor = shell.generation_page, shell.generation.inpaint
@@ -931,6 +1000,7 @@ def main():
             wait_for(lambda: page.resultList.count() > 0 and settled())
             capture("62-images-regenerate-confirmed")
             render_queue_states(shell, capture)
+            render_shell_states(shell, capture)
             render_inpaint_states(shell, state, capture)
         finally:
             shell.runner.shutdown()
