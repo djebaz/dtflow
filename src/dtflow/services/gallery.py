@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -15,6 +15,15 @@ from dtflow.persistence import gallery_snapshot
 from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_locations, resolve_output_read
+
+
+@dataclass(frozen=True, slots=True)
+class GalleryEditSource:
+    """A saved output selected for editing; never store its read-only access alias."""
+
+    state: Path
+    item: GalleryItem
+
 
 MISSING_ISSUE = "Image file is missing."
 UNREADABLE_ISSUE = "Image is unreadable or its location is unavailable."
@@ -254,6 +263,30 @@ async def inspect_output(state: Path, identity: str) -> GalleryDetail:
         return load_detail(item_from_record(record, state=state), state=state)
 
     return await asyncio.to_thread(read)
+
+
+def load_edit_source(source: GalleryEditSource):
+    """Decode a selected original under its verified cross-platform file lease.
+
+    Check the committed live record and recorded image/sidecar provenance while
+    holding the lease; the editor receives only a detached in-memory snapshot.
+    """
+    from dtflow.services.image_preparation import load_source_file
+
+    with original_images_lock(source.state, timeout=12):
+        live = storage.get_record(source.state, source.item.identity)
+        if live is None or any(
+            live.get(key) != expected
+            for key, expected in (
+                ("identity", source.item.identity),
+                ("attempt_id", source.item.attempt_id),
+                ("path", source.item.path),
+                ("metadata_path", source.item.metadata_path),
+            )
+        ):
+            raise OSError("The saved image is no longer available for editing.")
+        path, _metadata = resolve_item_read(source.item, source.state)
+        return load_source_file(Path(path))
 
 
 def resolve_item_read(item: GalleryItem, state: Path, *, display: bool = False) -> tuple[str, str]:

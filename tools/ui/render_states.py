@@ -33,6 +33,7 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
+from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.persistence.store import PersistenceError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
@@ -40,8 +41,8 @@ from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
+from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
-from dtflow.ui import system_trash  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
@@ -111,6 +112,36 @@ def render_initial_refresh_recovery(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            # Offline failure presentation only; no real desktop process is started.
+            with patch.object(desktop_open, "_open_on_worker", return_value="the folder no longer exists."):
+                shell.image_export._exported_folder = state / "missing-export-folder-fixture"
+                shell.image_export.open_folder()
+                wait_for(lambda: "export-open" in activity_strip(shell.form).rows)
+            target = out / "52-export-folder-missing.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            activity_strip(shell.form).finish("export-open")
+            shell.image_export._exported_folder = None
+            with patch.object(
+                desktop_open,
+                "_open_on_worker",
+                return_value="Windows could not open the file with its associated application; check its default viewer.",
+            ):
+                desktop_open.open_local_path(
+                    str(state / "viewer-fixture.png"),
+                    runner=shell.runner,
+                    directory=False,
+                    on_error=lambda reason: activity_strip(shell.form).complete(
+                        "viewer-open", "External Viewer", f"Could not open the image: {reason}", "error"
+                    ),
+                )
+                wait_for(lambda: "viewer-open" in activity_strip(shell.form).rows)
+            target = out / "54-external-viewer-unavailable.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            activity_strip(shell.form).finish("viewer-open")
         finally:
             shell.runner.shutdown()
             shell.form.close()
@@ -190,6 +221,11 @@ def render_mapped_gallery_states(app, state, out):
                 print(target)
             shell.gallery.select(item.identity)
             QTest.qWait(150)
+            # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
+            target = out / "34-mapped-edit-eligible.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
             target = out / "33-mapped-detail-metadata.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
@@ -436,9 +472,52 @@ def render_inpaint_states(shell, state, capture):
     capture("26-inpaint-result-fixture")
     editor.canvas.set_view("Source")
 
-    # Select mode: offline fixtures only (a synthetic silhouette; no ONNX model is loaded).
+    # Model badges use fake file references only; no ONNX file is read or loaded.
     editor.form.selectModeButton.setChecked(True)
     capture("27-inpaint-select-no-models")
+    fake = ModelRef("offline-only.onnx", "0" * 64)
+    for name, models, issues, checking, check_error in (
+        ("55-inpaint-model-readiness-checking", PersonModels(fake), {}, True, None),
+        ("56-inpaint-one-model", PersonModels(fake), {"segmentation": None}, False, None),
+        ("57-inpaint-two-models", PersonModels(fake, fake), {"segmentation": None, "clothes": None}, False, None),
+        (
+            "58-inpaint-three-models",
+            PersonModels(fake, fake, fake),
+            {"segmentation": None, "clothes": None, "faces": None},
+            False,
+            None,
+        ),
+        (
+            "53-inpaint-model-unreadable",
+            PersonModels(fake, fake),
+            {
+                "segmentation": None,
+                "clothes": "The saved clothes model cannot be read (permission denied); choose it again with Models….",
+            },
+            False,
+            None,
+        ),
+        ("59-inpaint-model-unknown", PersonModels(fake), {}, False, "Availability could not be checked."),
+    ):
+        editor._models = models
+        editor._model_readiness = issues
+        editor._model_checking = checking
+        editor._model_check_error = check_error
+        editor._models_issue = (
+            "Checking saved model read access…"
+            if checking
+            else next((issue for issue in issues.values() if issue), check_error)
+        )
+        editor._update_models_badge()
+        editor._people_status()
+        capture(name)
+    editor._models = PersonModels()
+    editor._model_readiness = {}
+    editor._model_checking = False
+    editor._model_check_error = None
+    editor._models_issue = None
+    editor._update_models_badge()
+    editor._people_status()
     people = PersonAnalysis(
         width,
         height,

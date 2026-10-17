@@ -8,7 +8,9 @@ Masks are cropped to each person's source-pixel box to bound memory.
 import ast
 import hashlib
 import io
+import logging
 import os
+import stat
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +20,10 @@ from PIL import Image
 
 from dtflow.core.image_inputs import ImageContent
 from dtflow.core.models import ValidationError
-from dtflow.persistence.person_models import ModelRef
+from dtflow.persistence.person_models import ModelRef, PersonModels
+from dtflow.services.artifact_paths import ArtifactReadPaths
+
+log = logging.getLogger(__name__)
 
 MAX_MODEL_BYTES = 256 * 1024 * 1024
 SIDE = 640
@@ -173,11 +178,85 @@ def classify_models(paths: list[Path]) -> tuple[ModelRef | None, ModelRef | None
     return segmentation, clothes, faces
 
 
-def _verified_session(ref: ModelRef, builder):
+def model_read_path(stored: str) -> Path:
+    """Where to read a saved model in this environment; the stored path and SHA-256 stay unchanged.
+
+    A Windows path saved by the Windows build is read through a verified WSL drvfs alias. A WSL/Linux path
+    cannot be mapped back on Windows. The checksum still rejects any different file.
+    """
+    if os.name == "nt" and stored.startswith("/"):
+        raise ValidationError(
+            "A selected model was chosen under WSL or Linux and cannot be opened from Windows; "
+            "choose it again with Models…."
+        )
     try:
-        data = Path(ref.path).read_bytes()
+        return Path(ArtifactReadPaths.discover().resolve(stored))
     except OSError as exc:
-        raise ValidationError("A selected model file is missing or unreadable; choose it again.") from exc
+        raise ValidationError(
+            "A selected model was chosen on Windows and is not reachable from this system; "
+            "choose it again with Models…."
+        ) from exc
+
+
+def _read_model(stored: str) -> bytes:
+    path = model_read_path(stored)
+    try:
+        return path.read_bytes()
+    except FileNotFoundError as exc:
+        reason = "was not found on this system"
+        error = exc
+    except PermissionError as exc:
+        reason = "cannot be read (permission denied)"
+        error = exc
+    except OSError as exc:
+        reason = "could not be read"
+        error = exc
+    log.warning("person model read failed reason=%s", type(error).__name__)
+    raise ValidationError(f"A selected model file {reason}; choose it again with Models….") from error
+
+
+def model_issue(models: PersonModels) -> str | None:
+    """Worker-only regular-file/read-access check; full SHA validation stays at loading."""
+    for role, ref in (("segmentation", models.segmentation), ("clothes", models.clothes), ("faces", models.faces)):
+        if ref is None:
+            continue
+        try:
+            path = model_read_path(ref.path)
+            if not stat.S_ISREG(path.stat().st_mode):
+                log.warning("person model readiness refused model=%s reason=not_regular", role)
+                return f"The saved {role} model is not a regular file; choose it again with Models…."
+            with path.open("rb") as stream:
+                stream.read(1)  # Check access, not model validity; never load the full model here.
+        except ValidationError as exc:
+            log.warning("person model readiness refused model=%s reason=unreachable", role)
+            return str(exc)
+        except FileNotFoundError:
+            log.warning("person model readiness refused model=%s reason=not_found", role)
+            return f"The saved {role} model was not found on this system; choose it again with Models…."
+        except PermissionError:
+            log.warning("person model readiness refused model=%s reason=permission_denied", role)
+            return f"The saved {role} model cannot be read (permission denied); choose it again with Models…."
+        except OSError as exc:
+            log.warning("person model readiness failed model=%s reason=%s", role, type(exc).__name__)
+            return f"The saved {role} model could not be read; choose it again with Models…."
+    return None
+
+
+def model_issues(models: PersonModels) -> dict[str, str | None]:
+    """Check each configured model independently, without creating ONNX sessions."""
+    return {
+        role: model_issue(PersonModels(**{role: ref}))
+        for role, ref in (
+            ("segmentation", models.segmentation),
+            ("clothes", models.clothes),
+            ("faces", models.faces),
+        )
+        if ref is not None
+    }
+
+
+def _verified_session(ref: ModelRef, builder):
+    data = _read_model(ref.path)
     if len(data) > MAX_MODEL_BYTES or hashlib.sha256(data).hexdigest() != ref.sha256:
         raise ValidationError("A selected model file changed since it was chosen; choose it again.")
     key = (ref.sha256, builder.__name__)
