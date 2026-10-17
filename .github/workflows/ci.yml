@@ -117,7 +117,9 @@ jobs:
         id: pyfiles
         shell: bash
         run: |
-          if git ls-tree -r --name-only HEAD | grep -Eq '\.py$'; then
+          # Drain the listing: grep -q can close the pipe early and make Git fail with SIGPIPE under pipefail.
+          git ls-tree -r --name-only HEAD > "$RUNNER_TEMP/ci-files.txt"
+          if grep -E '\.py$' "$RUNNER_TEMP/ci-files.txt" > /dev/null; then
             echo "has_py=true" >> "$GITHUB_OUTPUT"
             echo "This commit contains Python files."
           else
