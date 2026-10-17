@@ -2,16 +2,48 @@
 
 ## Highlights
 
+- **PR #76: Trash / Delete image removal and Windows/WSL1 shared state** (owner reports all current-PR source smoke passed on 2026-10-17 following `10650b9`; earlier scenario evidence at `6202404` is retained in the [plan](../plans/2026-10-17-image-removal-modes.md#owner-acceptance)).
+  - **Split action.** Images chooses **Trash** or **Delete**, remembered separately for Windows, WSL and native Linux. Delete always asks for fresh irreversible confirmation; choosing a mode never removes anything and there is no permanent fallback when Trash is unavailable. Owner smoke accepted the control, icons, confirmation and Cancel/Escape/mode-change consent handling on 2026-10-17 (`b10d962`).
+  - **Durable removal.** Shared removal ledger (schema 2) with per-file intent and outcomes, phase-correct Windows refusals (`failed` only when confirmed before mutation and unchanged, otherwise `uncertain`) and no replay. A newly uncertain Delete raises one amber warning, including after a successful reconciliation pass.
+  - **Gallery recovery.** Refresh recovery preserves existing widget ownership, including an initial failure label. Missing cross-runtime images show **File missing** while surviving sidecars remain inspectable; an unavailable sidecar does not hide a readable image. If neither live state nor a valid snapshot can be read, the original live error and already-loaded cards are retained.
+  - **Saves before thumbnails.** Gallery thumbnail reads of one process share a single original-file lease instead of queuing behind each other; a waiting generation save, removal, export or user action stops new thumbnails from joining and takes the lease once current reads finish, and a generation save waits up to 30 s (reconciliation 15 s) before `save_failed`. The owner's latest current-PR source smoke report accepts these follow-ups; this is not a throughput benchmark or a guarantee against save-time failures.
+  - **Gallery performance.** On WSL1 with Windows-hosted state one long-lived Windows helper serves every original-file lease instead of starting a process per thumbnail; thumbnails decode outside the lease, so they load in parallel; display skips re-hashing an unchanged cross-runtime image-edit output; ownership counts filter by attempt in SQL before the Python callback. Included in the owner's latest all-smoke-passed report; no measured speedup or general cross-runtime SQLite writer support is claimed.
+  - **Windows/WSL1.** A narrow native Windows helper takes shared locks and deletes fingerprinted managed files for WSL1; native Windows can remove WSL1-recorded managed originals after full state, identity, sidecar and digest checks. A gallery read alias is never removal authority. Owner WSL1 smoke passed for permanent deletion of final images (single, five and mixed origins) and restart persistence.
+  - **Raw provider output.** Trash and Delete also dispose of an image edit's sidecar-declared `raw-1.png`, raw first, with its own ledger row; a raw that cannot be authenticated makes the image ineligible and a failed raw leaves the final in place. Raw files left by earlier final-only removals stay.
+  - **Confirmed-missing originals.** Delete records a durable `absent` outcome for a card whose original is gone, including when the whole attempt folder was deleted (accepted only while the managed `outputs` folder is intact and listable), and hides it from the gallery and export without claiming a physical deletion. Grid, List and Detail show a **File missing** pictogram for that case and **Image unavailable** (reason on hover) for anything unreadable or unreachable. Trash never reports a missing file as moved.
+  - **Cross-OS gallery and export.** Verified read-only aliases let native Windows show, copy, open, edit and export WSL1-recorded managed images (#83), and WSL1 export Windows-recorded originals through verified drive mappings and shared leases. Stored paths are never rewritten.
+  - **Export.** The export folder is remembered separately for Windows and WSL (`export_preferences.json` schema 2; older applications refuse it). The WSL creation-time note is informational rather than amber.
+  - **Diagnostics (#79 initial scope).** One INFO line per removal and per non-empty reconciliation; `-x` adds preflight counts, refusal stages, readiness reasons, helper refusal phases and lease contention. Identities, counts, reason codes and error type names only.
+  - **Polish.** Read actions no longer show exception class names; thumbnail fonts are built once per card.
+  - **Browsing snapshot.** When live cross-runtime database reads fail, Images can browse the last committed metadata/availability projection with its UTC timestamp, filters, paging and sidecar inspection. Publish after generation/queue sessions and clean close only when changed or missing, including an initial empty library. The private Derived-cache snapshot honors cache coordination, cleanup and `--no-cache`; it never authorizes export, editing or removal.
+  - **Snapshot safety and recovery.** Page/count/anchor/facets use one immutable publication and canonical availability rules, without an in-memory ledger copy. Reader setup, both publication copy loops and finalization are bounded. Unreadable same-version baselines can rebuild with unknown deltas; unsupported versions remain protected. CLI commands without a cache-bypass option retain their normal default.
+  - **Slim persistent warning.** One amber line coexists with confirmations/editors and preserves voluntary dismissal through brief source switches, navigation and timestamp changes. With Auto-refresh On, consecutive live successes at least five seconds apart end the episode; with it Off, one successful live refresh clears it. Turning polling off during recovery also clears it. Live authority returns immediately; no extra timer.
+  - **Snapshot diagnostics.** Saved/unchanged/close logs distinguish the trigger, visible-image additions/removals, included totals, actual saved timestamp and cumulative current-process publication activity. Unreadable baselines stay unknown; development fallback diagnostics expose exception type/SQLite code, not prompts or private paths. Source CI passed at `10650b9` in run [39010359988](https://github.com/djebaz/dtflow/actions/runs/39010359988). No new tests or local pytest, renders, generation, deletion, training/inference or billable actions were run by the agent for the snapshot follow-up; packaged and benchmark acceptance remain separate.
+
 - Source-present WSL gallery read-path resolution and selected-toggle font follow-up:
   [implementation plan](../plans/2026-10-17-wsl-gallery-paths-and-fonts.md).
   Windows references remain unchanged; verified WSL 1 mounts supply read aliases.
   Process-local Windows Segoe UI faces avoid heavier fallback toggles when available.
-  Export/edit/reuse/regeneration remain restricted for foreign Windows outputs;
+  Export/edit/reuse/regeneration remained restricted for foreign Windows outputs in PR #75;
+  PR #76 later added verified, leased export and read handoffs (above);
   no schema migration or new destructive support. No agent tests/renders/validation;
   owner reports current-PR smoke tests passed on 2026-10-17. Individual edge cases,
   concurrent cross-platform mutations and packaged acceptance remain unverified.
 
 - Smart mask selection and inpainting work is starting in a separate draft PR. Headless preparation, durable input snapshot/restore and tensor-encoding helpers are source-present; request v2 and backed-up DB v3 migration are source-present; dedicated provider dispatch/raw-output saving are source-present. Owner passed the bounded step-4 bridge/direct-cloud probe gate; the offline manual editor is in progress, not a usable app image-dispatch feature. Existing generation behavior is unchanged.
+
+## PR #76 compatibility and accepted limitations
+
+- **New feature:** Images split action **Move to Trash / Delete permanently**, with separate Windows, WSL and native-Linux mode preferences. Permanent deletion requires fresh irreversible-action consent.
+- **Ledger schema 2:** the first schema-2 write upgrades the removal ledger; older application versions refuse the upgraded ledger. No rollback through the older application is supported.
+- **WSL source requirement:** Windows-hosted DTFlow state requires this checkout's Windows `.venv/Scripts/python.exe` and a verified shared-file lock bridge.
+- **WSL2 behavior change:** unverified/ambiguous Windows-drive mounts, including WSL2 9p `/mnt/c`, refuse operations touching originals: generation, image loading in Gallery, export, Trash and permanent deletion. These paths previously relied on Linux-only locking; its interoperability with Windows locks on real WSL2/9p mounts has not been verified. **Workaround:** keep DTFlow application state on the WSL Linux filesystem (ext4). WSL2 Windows-drive support is deferred to issue #77 pending real WSL2 probes; do not claim that it works now.
+- **Accepted local-save risk (source-present):** `PERSISTENCE`/`local_save_unavailable` after successful remote generation when the originals bridge is unavailable, its save-time lock is contended or disk I/O fails; the generated result can be absent **or partially written**; the attempt remains `save_failed` with remote outcome `SUCCEEDED`. Generating again may incur provider charges. There is no new generation-output staging or automatic recovery in PR #76.
+- **Uncertain deletion messaging (source-present):** amber warning only when permanent deletion newly becomes `uncertain`, including a newly reconciled `delete_pending` row on any successful reconciliation pass; pre-existing uncertain rows never re-alert. Interrupted Trash rows do not generate this new warning. An unavailable shared lock can defer reconciliation without making blocked intents retryable. The startup path checks static readiness before attempting reconciliation to avoid duplicate unavailable-bridge warnings.
+- **Export preferences schema 2:** the first save upgrades `export_preferences.json` to per-runtime folders; schema 1 is still read, older applications refuse the upgraded file.
+- **No concurrent cross-OS use:** SQLite WAL locking does not span native Windows and WSL1, so while one side is writing the shared state (for example generating), the other side's gallery reports the store as busy and retries on auto-refresh; it logs one warning per failure streak with the SQLite error code. Run one side at a time for removal or generation.
+- **Cross-OS read limits:** verified cross-OS reads need a consistent sidecar, so legacy outputs with a missing or mismatching sidecar show as unavailable rather than bypassing verification. Only canonical `/mnt/<drive>/…` references aligned with the shared state are recognized; custom mount roots, UNC state roots and junction or reparse ancestors fail closed.
+- **Lease scope:** the Windows/WSL cross-process lock guarantee applies when DTFlow state is on a verified Windows-hosted drive. With state on WSL ext4 and a Windows-path source, Linux `flock` does not exclude unrelated native Windows writers; read-only export there is lower risk, not synchronized.
 
 ## Added
 
@@ -52,18 +84,6 @@
 
 - Source-only smart-mask review fixes: bounded small-kernel grow/shrink, full-range 16-bit mask thresholding, refusal of over-25% normalized selection loss at fit/restore, and audited invalid pending queue failure/skip while preserving associated-attempt uncertainty. Strict junction/ancestor refusal now explains choosing a non-redirected state location. No tests or runtime acceptance.
 
-## Release audit
-
-- PRs: #63, #64, #73, #75
-- Scope: CPU mask PoC, image preparation/editor/owner-probe and queue work, agent setup, Qt Trash capability guard, WSL read-only gallery aliases and local font loading; production/platform acceptance remains separate.
-
-
-
-
-
-
-
-
 - Added the bounded `dtflow edit` owner-probe acceptance harness (single shot, explicit consent, exact cloud description gate, permit evidence in request/output). Generic generation and queues remain txt2img-only; no live checkpoint acceptance is claimed.
 - The edit harness now exposes explicit local-to-DT+ bridge opt-in (`-c/--bridge`), recording unlisted-model authorization in the request without weakening defaults or direct-cloud description checks. Live bridge acceptance remains pending.
 
@@ -80,3 +100,8 @@
 - Select hover shows each ticked part in its own colour, with the part under the pointer stronger; a click adds or (Alt) removes only that part, while Add to mask / Remove still apply every ticked layer. Layer rows carry a colour swatch and ticked rows are bold on a tint.
 - Select: the SegFormer Face class covers neck and chest, so an optional third ONNX file (the 320 px NudeNet-style `FACE_*` detect model, recognised by its contract) limits Face to the head; Face pixels outside each detected face region (up to 15% of the box height below it) become a new `skin` layer that is part of Body. Without that file, Face behaves as before. Checked only for model recognition and a synthetic-image run; real-image quality is not verified.
 - The last session now also remembers the Inpaint editor: Text-to-image/Inpaint mode, Select/Paint, the last source image path (reloaded quietly when the file still exists), ticked layers, Strength, Keep-outside, Grow and Feather. The mask and its history are never restored.
+
+## Release audit
+
+- PRs: #63, #64, #66, #73, #75, #76
+- Scope: CPU mask PoC, image preparation/manual editor/owner-probe and queued Inpaint work, agent setup, Qt Trash capability guard, WSL gallery aliases/fonts, guarded Trash/permanent removal, per-runtime exports, shared-helper/thumbnail lease corrections, gallery recovery/missing-location fixes and bounded browsing snapshots with diagnostics and stable/manual-recovery warnings. PR #76 current-source smoke is owner-reported accepted following `10650b9`; its CI passed. WSL2, simultaneous cross-runtime SQLite writers, benchmarks and exact final packaged acceptance remain separate. Other feature acceptance limits above are unchanged.

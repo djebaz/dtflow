@@ -27,7 +27,12 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.logging_setup import ATTEMPT
-from dtflow.persistence.original_io import original_images_lock
+from dtflow.persistence.original_io import (
+    OriginalImagesBusyError,
+    OriginalImagesUnavailableError,
+    original_images_lock,
+    require_originals_ready,
+)
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
@@ -188,6 +193,19 @@ class GenerationService:
                     request.request_id,
                 )
             )
+        # One authoritative gate covers desktop, CLI, queues and image operations.
+        # No child process, lock or Windows handshake is performed before dispatch.
+        try:
+            await asyncio.to_thread(require_originals_ready, getattr(self.store, "directory", self.output.parent))
+        except OriginalImagesUnavailableError as exc:
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory.PERSISTENCE,
+                    "originals_unavailable",
+                    f"{exc} Generation was not submitted; no provider generation was billed for this request.",
+                    request.request_id,
+                )
+            ) from exc
         reserved = False
         attempt_id = uuid4().hex
         if image_operation:
@@ -268,7 +286,8 @@ class GenerationService:
                 def commit_originals():
                     # Keep committed originals behind the same OS-released lease
                     # used by export and Recycle Bin; no provider code runs here.
-                    with original_images_lock(getattr(self.store, "directory", self.output.parent)):
+                    # A paid result waits longer than ordinary leases before save_failed.
+                    with original_images_lock(getattr(self.store, "directory", self.output.parent), timeout=30):
                         if image_operation:
                             return save_image_artifacts(
                                 self.output, attempt_id, request, result, identity(), caps.limits, prepared_inputs
@@ -360,11 +379,21 @@ class GenerationService:
             )
             raise BackendError(failure) from exc
         except Exception as exc:
+            local_save_failure = (
+                state == "saving"
+                and outcome == RemoteOutcome.SUCCEEDED
+                and isinstance(exc, (OriginalImagesUnavailableError, OriginalImagesBusyError, OSError))
+            )
             category = ErrorCategory.PERSISTENCE if state in ("saving", "prepared") else ErrorCategory.PROTOCOL
             failure = BackendFailure(
                 category,
-                "output_or_protocol_failure",
-                "Output could not be validated or durably saved.",
+                "local_save_unavailable" if local_save_failure else "output_or_protocol_failure",
+                (
+                    "The image was generated but could not be saved locally; it may not have been saved "
+                    "or may be incomplete, and generating again may be billed."
+                    if local_save_failure
+                    else "Output could not be validated or durably saved."
+                ),
                 request.request_id,
                 stage,
                 outcome,

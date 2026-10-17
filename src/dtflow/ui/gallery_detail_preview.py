@@ -41,6 +41,13 @@ class CoverPainter(QObject):
         self.tokens = load_tokens()
         self.pixmap = QPixmap(str(path))
         self.badges = badges
+        self.placeholder = ""
+        self.placeholder_icon = QIcon()
+        # Built once per painter rather than on every paint; tokens are fixed for the session.
+        small = int(self.tokens["type.small"].removesuffix("pt"))
+        self.placeholder_font = QFont(self.tokens["type.family"], small)
+        self.badge_font = QFont(self.tokens["type.family"], small)
+        self.badge_font.setWeight(QFont.Weight(int(self.tokens["type.weightEmphasis"])))
         self.mode = "Cover"
         self.zoom = 1.0
         self.offset = [0.0, 0.0]
@@ -65,6 +72,20 @@ class CoverPainter(QObject):
                 w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
                 dest = QRectF((rect.width() - w) / 2 + self.offset[0], (rect.height() - h) / 2 + self.offset[1], w, h)
                 painter.drawPixmap(dest, self.pixmap, QRectF(self.pixmap.rect()))
+            elif self.placeholder:
+                # Keep compact error text inside small cards; actionable detail is in the widget tooltip.
+                text_rect = rect.adjusted(8, 8, -8, -8)
+                if not self.placeholder_icon.isNull():
+                    side = int(max(16, min(48, rect.width() / 4, rect.height() / 4)))
+                    icon = QRectF((rect.width() - side) / 2, rect.height() / 2 - side - 4, side, side)
+                    self.placeholder_icon.paint(painter, icon.toRect())
+                    text_rect = QRectF(8, rect.height() / 2 + 4, rect.width() - 16, rect.height() / 2 - 12)
+                    alignment = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+                else:
+                    alignment = Qt.AlignmentFlag.AlignCenter
+                painter.setFont(self.placeholder_font)
+                painter.setPen(QColor(self.tokens["color.secondary"]))
+                painter.drawText(text_rect, alignment | Qt.TextFlag.TextWordWrap, self.placeholder)
             if obj.property("role") == "galleryCardImage" and obj.property("checkedSelection"):
                 painter.setBrush(Qt.NoBrush)
                 painter.setPen(QColor(self.tokens["color.selectionBorder"]))
@@ -74,9 +95,7 @@ class CoverPainter(QObject):
                 painter.setPen(QColor(self.tokens["color.focus"]))
                 painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 9, 9)
             if self.badges:
-                badge_font = QFont(self.tokens["type.family"], int(self.tokens["type.small"].removesuffix("pt")))
-                badge_font.setWeight(QFont.Weight(int(self.tokens["type.weightEmphasis"])))
-                painter.setFont(badge_font)
+                painter.setFont(self.badge_font)
                 for x, text in [(6, self.badges[0]), (rect.width() - 58, self.badges[1])]:
                     width = painter.fontMetrics().horizontalAdvance(text) + 12
                     badge = QRectF(x, rect.height() - 28, width, 22)

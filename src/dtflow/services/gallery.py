@@ -2,14 +2,47 @@
 
 import asyncio
 import json
+import os
 import re
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as storage
+from dtflow.persistence import gallery_snapshot
+from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
+from dtflow.services.gallery_read_alias import resolve_output_locations, resolve_output_read
+
+MISSING_ISSUE = "Image file is missing."
+UNREADABLE_ISSUE = "Image is unreadable or its location is unavailable."
+
+
+def _confirmed_missing(path: Path) -> bool:
+    """Presentation only: the file is gone while its attempt folder or the outputs folder is reachable.
+
+    An unmapped drive, unlistable parent or permission failure stays "unavailable". This is never removal
+    authority; Delete re-proves absence with its own managed-state checks.
+    """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    else:
+        return False
+    for folder in (path.parent, path.parent.parent):
+        try:
+            if folder.is_dir():
+                with os.scandir(folder):
+                    return True
+        except OSError:
+            return False
+    return False
+
 
 MAX_METADATA_BYTES = 1024 * 1024
 SECRET = re.compile(r"api.?key|token|password|secret|authorization|cookie|credential|signed.?url|base64", re.I)
@@ -33,7 +66,7 @@ def safe_metadata(value):
     return value
 
 
-def item_from_record(record: dict, paths: ArtifactReadPaths | None = None) -> GalleryItem:
+def item_from_record(record: dict, paths: ArtifactReadPaths | None = None, *, state: Path | None = None) -> GalleryItem:
     try:
         request = json.loads(record["request_json"])
         loras = tuple((str(x["identifier"]), float(x["weight"])) for x in request.get("loras", []))
@@ -43,17 +76,30 @@ def item_from_record(record: dict, paths: ArtifactReadPaths | None = None) -> Ga
     paths = paths or ArtifactReadPaths.discover()
     access_path, access_metadata_path = "", ""
     try:
-        access_path = paths.resolve(record["path"])
+        if state is None:
+            access_path = paths.resolve(record["path"])
+        else:
+            access_path, access_metadata_path, _ = resolve_output_read(state, record, paths=paths)
         path = Path(access_path)
         if not path.is_file():
             raise OSError
         size = path.stat().st_size
     except OSError:
-        issue = "Image is missing or unreadable."
-    try:
-        access_metadata_path = paths.resolve(record["metadata_path"])
-    except OSError:
-        pass  # load_detail retains durable evidence when the sidecar is unavailable.
+        if state is not None and not access_path:
+            try:
+                access_path, access_metadata_path = resolve_output_locations(state, record, paths=paths)
+            except OSError:
+                pass  # An unvalidated native alias must remain unavailable.
+        try:
+            candidate = access_path or (paths.resolve(record["path"]) if state is None else "")
+        except OSError:
+            candidate = ""
+        issue = MISSING_ISSUE if candidate and _confirmed_missing(Path(candidate)) else UNREADABLE_ISSUE
+    if not access_metadata_path:
+        try:
+            access_metadata_path = paths.resolve(record["metadata_path"])
+        except OSError:
+            pass  # load_detail retains durable evidence when the sidecar is unavailable.
     return GalleryItem(
         record["identity"],
         record["attempt_id"],
@@ -83,7 +129,40 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
     def read():
         records, total = storage.query_records(state, query)
         paths = ArtifactReadPaths.discover()
-        return GalleryPage(tuple(item_from_record(x, paths) for x in records), total, query.offset, query.limit)
+        return GalleryPage(
+            tuple(item_from_record(x, paths, state=state) for x in records), total, query.offset, query.limit
+        )
+
+    return await asyncio.to_thread(read)
+
+
+async def query_snapshot(state: Path, query: GalleryQuery, anchor: str | None):
+    """Browsing-only fallback; one immutable publication, never the live writer/WAL.
+
+    Caller keeps retrying live queries. No mutation/export/selection authority
+    is exposed by this path, even if the live database becomes readable later.
+    """
+
+    def read():
+        with gallery_snapshot.reader(state) as (db, stamp):
+            current, found = query, False
+            if anchor:
+                position = storage.locate_record(state, replace(query, offset=0), anchor, database=db)
+                if position is not None:
+                    current, found = replace(query, offset=(position // query.limit) * query.limit), True
+            rows, total = storage.query_records(state, current, database=db)
+            if total and not rows and current.offset >= total:
+                current = replace(current, offset=((total - 1) // current.limit) * current.limit)
+                rows, total = storage.query_records(state, current, database=db)
+            paths = ArtifactReadPaths.discover()
+            page = GalleryPage(
+                tuple(item_from_record(row, paths, state=state) for row in rows),
+                total,
+                current.offset,
+                current.limit,
+                stamp,
+            )
+            return current, page, storage.facets(state, database=db), found
 
     return await asyncio.to_thread(read)
 
@@ -94,18 +173,42 @@ async def locate_output(state: Path, query: GalleryQuery, identity: str) -> int 
 
 def copy_output_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
     """Worker-only clipboard paths; aliases never replace recorded references."""
-    return storage.selection_paths(state, identities, read_path=ArtifactReadPaths.discover().resolve)
+
+    def read():
+        with original_images_lock(state, timeout=30):
+            return storage.selection_paths(
+                state,
+                identities,
+                read_record=lambda record: resolve_output_read(state, record, verify=True)[0],
+            )
+
+    return read()
 
 
 async def filter_choices(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return await asyncio.to_thread(storage.facets, state)
 
 
-def load_detail(item: GalleryItem) -> GalleryDetail:
+def load_detail(item: GalleryItem, *, state: Path | None = None) -> GalleryDetail:
     """Read a bounded sidecar, checking its recorded identity; fall back to explicit durable evidence."""
     try:
         access = (
-            ArtifactReadPaths.discover().resolve(item.metadata_path)
+            resolve_output_locations(
+                state,
+                dict(
+                    identity=item.identity,
+                    attempt_id=item.attempt_id,
+                    ordinal=int(item.identity.rpartition(":")[2]),
+                    path=item.path,
+                    metadata_path=item.metadata_path,
+                ),
+                paths=ArtifactReadPaths.discover(),
+            )[1]
+            if state is not None
+            and item.access_path
+            and item.access_path != item.path
+            and item.path.startswith("/mnt/")
+            else ArtifactReadPaths.discover().resolve(item.metadata_path)
             if foreign_windows_path(item.metadata_path)
             else item.read_metadata_path
         )
@@ -148,6 +251,32 @@ async def inspect_output(state: Path, identity: str) -> GalleryDetail:
         record = storage.get_record(state, identity)
         if record is None:
             raise ValidationError("Saved output does not exist.")
-        return load_detail(item_from_record(record))
+        return load_detail(item_from_record(record, state=state), state=state)
 
     return await asyncio.to_thread(read)
+
+
+def resolve_item_read(item: GalleryItem, state: Path, *, display: bool = False) -> tuple[str, str]:
+    """Recheck a selected gallery row under the caller's original-file lease.
+
+    Display reads may reuse a digest proven earlier for the same file fingerprint.
+    """
+    attempt, separator, number = item.identity.rpartition(":")
+    if not separator or attempt != item.attempt_id or not number.isascii() or not number.isdecimal():
+        raise OSError("Recorded output identity is inconsistent.")
+    ordinal = int(number)
+    if str(ordinal) != number:
+        raise OSError("Recorded output identity is inconsistent.")
+    image, metadata, _ = resolve_output_read(
+        state,
+        {
+            "identity": item.identity,
+            "attempt_id": item.attempt_id,
+            "ordinal": ordinal,
+            "path": item.path,
+            "metadata_path": item.metadata_path,
+        },
+        verify=True,
+        display=display,
+    )
+    return image, metadata
