@@ -118,9 +118,7 @@ def _regular_managed_file(
     # A foreign spelling is never a filesystem path to delete directly.
     # Derive the sole eligible native target from saved state and DB identity,
     # rather than authorizing deletion through resolve_output_read().
-    foreign_posix = (
-        os.name == "nt" and isinstance(record.get("path"), str) and record["path"].startswith("/")
-    )
+    foreign_posix = os.name == "nt" and isinstance(record.get("path"), str) and record["path"].startswith("/")
     windows_wsl_alias = foreign_posix and record["path"].startswith("/mnt/")
     if foreign_posix:
         tail = ("outputs", attempt)
@@ -135,9 +133,7 @@ def _regular_managed_file(
     paths = paths or ArtifactReadPaths()
     try:
         candidate = (
-            expected
-            if windows_wsl_alias
-            else Path(paths.resolve(record["path"]) if permanent else record["path"])
+            expected if windows_wsl_alias else Path(paths.resolve(record["path"]) if permanent else record["path"])
         )
         metadata_path = (
             metadata
@@ -184,9 +180,7 @@ def _regular_managed_file(
         return None
     alias_aware = permanent or os.name == "nt"
     references = (
-        gallery_storage.path_reference_count(
-            state, record["path"], path_key=_managed_key if alias_aware else None
-        )
+        gallery_storage.path_reference_count(state, record["path"], path_key=_managed_key if alias_aware else None)
         if reference_counts is None
         else reference_counts.get(_managed_key(record["path"]) if alias_aware else str(expected), 0)
     )
@@ -253,11 +247,7 @@ def prepare_recycle(
                 state, record, reference_counts=reference_counts, permanent=permanent, paths=paths
             )
             if target is None:
-                if (
-                    os.name == "nt"
-                    and isinstance(record.get("path"), str)
-                    and record["path"].startswith("/")
-                ):
+                if os.name == "nt" and isinstance(record.get("path"), str) and record["path"].startswith("/"):
                     # Unverified WSL aliases are ineligible, not proven absent.
                     # Durable confirmed-absence handling is tracked separately.
                     ineligible += 1
