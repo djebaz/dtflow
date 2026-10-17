@@ -1227,7 +1227,10 @@ class GalleryPage(QObject):
         if not self.items and self._rendered_page is None:
             # The initial Designer examples are not saved-output records.
             self._clear_grid()
-        self.refresh_button.setEnabled(False)
+        # Do not gray out the Refresh control on every five-second poll:
+        # the previously loaded cards remain readable throughout the query.
+        if not self.items:
+            self.refresh_button.setEnabled(False)
         # Existing cards are still readable: no transient disabled chips/status
         # flash every five seconds during an ordinary background refresh.
         self._sync_pager(loading=not self.items)
