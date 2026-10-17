@@ -33,13 +33,13 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
+from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.persistence.store import PersistenceError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
-from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
@@ -475,7 +475,13 @@ def render_inpaint_states(shell, state, capture):
         ("55-inpaint-model-readiness-checking", PersonModels(fake), {}, True, None),
         ("56-inpaint-one-model", PersonModels(fake), {"segmentation": None}, False, None),
         ("57-inpaint-two-models", PersonModels(fake, fake), {"segmentation": None, "clothes": None}, False, None),
-        ("58-inpaint-three-models", PersonModels(fake, fake, fake), {"segmentation": None, "clothes": None, "faces": None}, False, None),
+        (
+            "58-inpaint-three-models",
+            PersonModels(fake, fake, fake),
+            {"segmentation": None, "clothes": None, "faces": None},
+            False,
+            None,
+        ),
         (
             "53-inpaint-model-unreadable",
             PersonModels(fake, fake),

@@ -242,7 +242,6 @@ def model_issue(models: PersonModels) -> str | None:
     return None
 
 
-
 def model_issues(models: PersonModels) -> dict[str, str | None]:
     """Check each configured model independently, without creating ONNX sessions."""
     return {
