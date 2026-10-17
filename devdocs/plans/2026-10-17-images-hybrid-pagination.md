@@ -1,0 +1,57 @@
+# Images Option 2a — hybrid pagination and lazy scroll
+
+Date: 2026-10-17  
+Status: Implementation in progress  
+Base: latest `main` when branch was created
+
+## Approved UX contract
+
+Implement **Option 2a** from the user-provided `Images Pager Mockup.dc.html`: **Hybrid — infinite scroll + position scrubber + jump chips**. The compact pager displays a visible range (e.g. `81–104 of 342`), a loaded count, and numbered jump chips. A chip indicates the batch currently in view, not just the most recently requested batch. Existing `PAGE_SIZE = 80` remains the query batch size. Additional batches appear during normal vertical scrolling, prefetched before the edge; users can also jump to an arbitrary batch without manually scrolling through preceding batches. Keep the mockup's visual treatment and do not substitute a conventional Prev/Next-only footer.
+
+**Consistency:** One canonical Qt pager widget remains **visible in the same relative position with the same geometry, controls, states and behavior in both normal and fullscreen Images**. No floating, auto-hiding, repositioned or separate fullscreen pager. Grid, List and Detail share this state; Detail's image Previous/Next continues to work across batch boundaries. Preserve the existing full-screen collapse of secondary chrome without hiding the pager.
+
+**Safety:** Keep gallery access read-only; never authorize mutations from browsing snapshots. Selection checks remain based on stable image IDs, persist across loading and page jumps, and retain DTFlow's existing `Select all matching` across-pages semantics (up to 10,000), rather than changing to the prototype's `Select all N loaded`. No provider calls.
+
+## Canonical sources
+
+Follow `AGENTS.md`, `DESIGN.md`, `README.md`, `devdocs/current_dev_status.md`, `devdocs/plans/initial.md`, `devdocs/plans/releases.md` and `devdocs/releases/unreleased.md`. Main UI sources: `src/dtflow/ui/forms/gallery_detail_page.ui`, `src/dtflow/ui/gallery_detail_preview.py`, `src/dtflow/ui/gallery_page.py`, shared QSS/tokens, gallery query services and `tools/ui/render_states.py`. The extended offline rendering script merged into `main` on October 17 is the primary iterative visual evidence; it cannot establish native Windows/DPI acceptance. Designer owns layout; controller owns state; shared QSS owns visual styles. Avoid new dependencies.
+
+## Incremental review workflow — push each phase as its own commit
+
+### 0. Plan and PR — **first commit, immediately**
+- Publish this plan on a dedicated branch from latest `main`, and open a **draft PR before any implementation**.
+- Push each subsequent coherent phase as soon as it is complete, letting CI and reviewers inspect it incrementally. Keep the PR draft until the desired checks and owner review.
+
+### 1. Canonical pager presentation (commit 2)
+- Add the compact shared pager to the tracked Designer Images form and minimal presentation wiring. Use existing design tokens/QSS and accessible names/keyboard focus.
+- Place the component adjacent to the browsing viewport; ensure fullscreen visibility and the exact same widget in every mode.
+- Add states for zero results, one batch, multiple batches, loading/error and narrow width.
+- Push immediately; no live query model redesign in this phase.
+
+### 2. Offline renderer and snapshots (commit 3)
+- Extend `tools/ui/render_states.py` using fake offline Images projections, never a live backend. Render pager in normal and fullscreen Grid/List/Detail, at multiple active batches, during loading and at empty/boundary states.
+- Capture state names and visual output; compare geometry, contrast, truncation and fullscreen placement with Option 2a. Repair visual issues before advancing.
+- Push immediately. Renders/CI must report only checks actually run.
+
+### 3. Live hybrid browsing (commit 4)
+- Make Grid/List vertical scroll load further 80-record batches seamlessly; prefetch before reaching the bottom. Expose direct jump-chip navigation, correct visible-range/active-chip tracking, and a bounded window for widgets and decode work so gallery growth does not exhaust memory.
+- Retain stable ordering, filter/sort state, update-safe anchor retention during auto-refresh, existing checked identity semantics and snapshot read-only restrictions; don't submit redundant parallel queries.
+- Detail Previous/Next traverses batch edges; preserve one shared pager state and scroll continuity when entering/leaving fullscreen.
+- Push immediately.
+
+### 4. Alignment, regression and docs (commit 5)
+- Re-render all added normal/fullscreen views and compare screenshots. Fix discrepancies in the same branch, documenting remaining acceptance gaps.
+- Update `DESIGN.md`, developer/desktop guide and Unreleased changes. Run relevant source checks and offline tests according to the canonical agent environment prerequisites. Do not run billable inference/training.
+- Push immediately and leave PR ready for owner visual review; no automatic merge.
+
+## Acceptance checks
+
+1. Identical pager position, dimensions and operation with fullscreen toggled; no image overlap or hidden pager.
+2. Wheel scroll keeps flowing across batch boundaries; explicit chip navigation works without manual traversal.
+3. Visible position, total and loaded count are accurate, including after filters, sorting, refresh and jumps.
+4. No unbounded gallery widgets, duplicate requests, stale thumbnail assignments, or regression in six-task decode bound.
+5. Checked IDs and detail focus survive navigation; `Select all` remains across matching outputs, not merely loaded items.
+6. Read-only snapshot browsing supports pager, but source-authorized actions remain unavailable.
+7. Offline rendering remains provider-free; normal/fullscreen captures expose design mismatch before live integration.
+
+Record what was actually verified and what still needs owner smoke testing.
