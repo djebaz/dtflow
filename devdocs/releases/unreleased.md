@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Render-state script: the Trash/Delete menu position check now uses the menu's own screen rule, so it no longer fails when the rendered window is larger than the offscreen screen (owner Windows report; reproduced on Linux offscreen). Production positioning unchanged.
+
 - PR #85 model-readiness correction: saved models must pass a worker-side regular-file and one-byte read-access check before being presented as ready. Permission/not-found/read failures identify the model role without logging paths; an unavailable check does not report ready. The editor rechecks the resulting model selection after Models…, including retained optional models. Full-load SHA verification is unchanged. Owner reports WSL model loading, Find people and clothes segmentation worked before this correction; the new failure path remains unaccepted. Offline unreadable-model preview defined, not rendered; no tests/inference run by the agent.
 
 - PR #85 External Viewer correction: WSL folders use Explorer, but image files use the registered Windows application through PowerShell 7 with a fixed encoded script and JSON stdin. No path interpolation, shell string, legacy PowerShell or fallback to Explorer for files. Windows `pwsh.exe` must be on the WSL PATH. Missing association/interop and unconfirmed timeouts report safely; actual owner launch acceptance remains pending.

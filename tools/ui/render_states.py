@@ -23,7 +23,7 @@ install()  # before provider/client imports; the guard rejects unregistered DNS/
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize  # noqa: E402
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap  # noqa: E402
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
@@ -328,11 +328,16 @@ def render_mapped_gallery_states(app, state, out):
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
             control = shell.gallery._widget("galleryRemovalControl", QFrame)
-            expected_left = control.mapToGlobal(QPoint(0, 0)).x()
-            screen = menu.screen().availableGeometry()
-            expected_left = min(
-                max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
-            )
+            anchor = control.mapToGlobal(QPoint(0, control.height() - 1))
+            expected_left = anchor.x()
+            # Mirror the menu: clamp only when the anchor lies on a screen
+            # (the offscreen screen can be smaller than the rendered window).
+            anchor_screen = QGuiApplication.screenAt(anchor)
+            if anchor_screen is not None:
+                screen = anchor_screen.availableGeometry()
+                expected_left = min(
+                    max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
+                )
             assert menu.geometry().left() == expected_left
             target = out / "37-images-removal-menu-trash-selected.png"
             if not menu.grab().save(str(target)):
