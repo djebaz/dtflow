@@ -330,6 +330,8 @@ class GalleryPage(QObject):
         self._grid_painters: dict[str, CoverPainter] = {}
         self._grid_labels: dict[str, tuple[QLabel, QLabel]] = {}
         self._grid_empty: QLabel | None = None
+        self._grid_layout_keys: tuple[str, ...] = ()
+        self._grid_layout_columns = 0
         self._film_buttons: list[QPushButton] = []
         self._film_painters: list[CoverPainter] = []
         self._film_entries: dict[str, tuple[QPushButton, CoverPainter]] = {}
@@ -366,7 +368,7 @@ class GalleryPage(QObject):
         self.save_timer.timeout.connect(self._flush_save)
         self.auto_timer = QTimer(self)
         self.auto_timer.setInterval(AUTO_REFRESH_MS)
-        self.auto_timer.timeout.connect(lambda: self.refresh(preserve=True))
+        self.auto_timer.timeout.connect(self._auto_refresh_tick)
 
         self._setup_filters()
         self._setup_views()
@@ -1116,6 +1118,14 @@ class GalleryPage(QObject):
         else:
             self.auto_timer.stop()
 
+    def _auto_refresh_tick(self) -> None:
+        """Do not interrupt adjacent reads or a debounced filter edit."""
+        if not self._active or not self.auto_button.isChecked():
+            return
+        if self._loading or self._adjacent_loading or self._suppress_batch_scroll or self.filter_timer.isActive():
+            return
+        self.refresh(preserve=True)
+
     def _auto_refresh_changed(self, _checked: bool) -> None:
         self._sync_auto_refresh()
         if not self.auto_button.isChecked() and self._snapshot_live_since is not None:
@@ -1204,7 +1214,9 @@ class GalleryPage(QObject):
             # The initial Designer examples are not saved-output records.
             self._clear_grid()
         self.refresh_button.setEnabled(False)
-        self._sync_pager(loading=True)
+        # Existing cards are still readable: no transient disabled chips/status
+        # flash every five seconds during an ordinary background refresh.
+        self._sync_pager(loading=not self.items)
         self._sync_canvas_loading()
 
         async def work():
@@ -1506,7 +1518,7 @@ class GalleryPage(QObject):
             visible_end=last,
             loaded=len(self.items),
             active_page=((first - 1) // PAGE_SIZE + 1) if first else 0,
-            loading=loading or self._loading or self._adjacent_loading,
+            loading=(loading or self._loading) and not self.items or self._adjacent_loading,
         )
 
     def _page_summary(self) -> str:
@@ -1712,7 +1724,15 @@ class GalleryPage(QObject):
                 self._grid_buttons = {item.identity: self._grid_buttons[item.identity] for item in self.items}
             else:
                 self._set_grid_message("No saved outputs match these filters.")
-            self._density_changed()
+            if self._rendered_page is None:
+                self._density_changed()
+            else:
+                # Repeated density sizing repaints every retained thumbnail and
+                # schedules a full Grid reflow. Size only freshly added cards.
+                added = [item.identity for item in self.items if item.identity not in previous]
+                self._size_new_entries(added)
+                if added or len(previous) != len(self.items):
+                    self.reflow_timer.start(0)
         finally:
             self._syncing_selection = False
             for widget, enabled in zip(containers, updates, strict=True):
@@ -1844,6 +1864,8 @@ class GalleryPage(QObject):
         # A first query can fail before the Designer fixtures are removed.
         # Its message is owned by this same layout and was just disposed too.
         self._grid_empty = None
+        self._grid_layout_keys = ()
+        self._grid_layout_columns = 0
 
     def _reconcile_filmstrip(self) -> None:
         layout = self._widget("galleryFilmstripScrollContents").layout()
@@ -2380,17 +2402,53 @@ class GalleryPage(QObject):
         self.reflow_timer.start(0)
         self._schedule_save()
 
+    def _size_new_entries(self, identities: list[str]) -> None:
+        """Size newly mounted cards without repainting unchanged previews."""
+        if not identities:
+            return
+        density = self._thumbnail_pixels(self.slider.value())
+        placeholder = QPixmap(density, density)
+        placeholder.fill(Qt.GlobalColor.transparent)
+        grid_icon = QIcon(placeholder)
+        film_width, film_height = density + 8, round((density + 8) * 0.63)
+        film_placeholder = QPixmap(max(1, film_width - 8), max(1, film_height - 8))
+        film_placeholder.fill(Qt.GlobalColor.transparent)
+        film_icon = QIcon(film_placeholder)
+        for identity in identities:
+            button = self._grid_buttons[identity]
+            card = button.parentWidget()
+            card.setFixedWidth(density + 16)
+            button.setFixedSize(density + 16, density + 16)
+            button.setIcon(grid_icon)
+            button.setIconSize(placeholder.size())
+            film, _painter = self._film_entries[identity]
+            film.setFixedSize(film_width, film_height)
+            film.setIcon(film_icon)
+            film.setIconSize(film_placeholder.size())
+
     def _layout_cards(self) -> None:
         if not self._grid_buttons:
             return
         width = self._thumbnail_pixels(self.slider.value()) + 16
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
+        keys = tuple(self._grid_buttons)
+        if keys == self._grid_layout_keys and columns == self._grid_layout_columns:
+            return
         cards = [button.parentWidget() for button in self._grid_buttons.values()]
-        for card in cards:
-            self.cards_layout.removeWidget(card)
+        # An append normally adds only the new cards. Retained cards already
+        # occupy their correct cells and must not be torn down/reinserted.
         for index, card in enumerate(cards):
-            self.cards_layout.addWidget(card, index // columns, index % columns, Qt.AlignmentFlag.AlignTop)
+            position = self.cards_layout.indexOf(card)
+            row, col = divmod(index, columns)
+            if position >= 0:
+                old_row, old_col, _row_span, _col_span = self.cards_layout.getItemPosition(position)
+                if (old_row, old_col) == (row, col):
+                    continue
+                self.cards_layout.removeWidget(card)
+            self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self._grid_layout_keys = keys
+        self._grid_layout_columns = columns
 
     def eventFilter(self, watched, event) -> bool:
         kind = event.type()
