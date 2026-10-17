@@ -7,8 +7,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QEvent, QObject, Qt, Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QWidget
 
 from dtflow.core.export import ExportOptions
@@ -18,6 +17,7 @@ from dtflow.persistence.export_preferences import load_export_preferences, save_
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
 from dtflow.services.image_export import export_outputs
 from dtflow.ui.activity_strip import activity_strip
+from dtflow.ui.desktop_open import open_local_path
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
@@ -246,5 +246,12 @@ class ImageExportPanel(QObject):
         )
 
     def open_folder(self) -> None:
-        if self._exported_folder:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._exported_folder)))
+        if not self._exported_folder:
+            return
+
+        def failed(reason):
+            activity_strip(self.form).complete(
+                "export-open", "Open folder", f"Could not open the export folder: {reason}", "error"
+            )
+
+        open_local_path(str(self._exported_folder), runner=self.runner, directory=True, on_error=failed)

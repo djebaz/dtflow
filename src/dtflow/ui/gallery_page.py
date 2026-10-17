@@ -14,9 +14,8 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
 from time import monotonic
 
-from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer
 from PySide6.QtGui import (
-    QDesktopServices,
     QIcon,
     QImage,
     QImageReader,
@@ -55,6 +54,7 @@ from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery import (
     MISSING_ISSUE,
+    GalleryEditSource,
     copy_output_paths,
     filter_choices,
     inspect_output,
@@ -66,6 +66,7 @@ from dtflow.services.gallery import (
 )
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
+from dtflow.ui.desktop_open import open_local_path
 from dtflow.ui.gallery_detail_preview import (
     ASSETS,
     CoverPainter,
@@ -1813,7 +1814,10 @@ class GalleryPage(QObject):
         self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
         edited = request.get("operation", "txt2img") != "txt2img"
         foreign = foreign_windows_path(item.path)
-        reusable = bool(request.get("model_id")) and not edited and not foreign and not self._snapshot_at
+        # Use settings and Regenerate need only the recorded request, never the original file, so where it was
+        # saved does not matter; Regenerate keeps its confirmation and dispatch-time readiness checks.
+        recorded = bool(request.get("model_id"))
+        reusable = recorded and not edited and not self._snapshot_at
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
         for button, tip in (
@@ -1824,21 +1828,21 @@ class GalleryPage(QObject):
                 "Not available for edited images: the source and mask are not restored here. Use Edit image instead."
                 if edited
                 else tip
+                if recorded
+                else "Not available: this output has no recorded model."
             )
         self.edit_button.setEnabled(
-            not self._snapshot_at
-            and not item.issue
-            and bool(item.path)
-            and not foreign
-            and self._edit_callback is not None
+            not self._snapshot_at and not item.issue and bool(item.path) and self._edit_callback is not None
         )
-        self.edit_button.setToolTip(self._edit_tip)
+        self.edit_button.setToolTip(
+            "The editor will verify this Windows-recorded image under the shared original-file lock before "
+            "loading it. Missing or unsafe sources are refused."
+            if foreign
+            else self._edit_tip
+        )
         if self._snapshot_at:
             for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
                 button.setToolTip("Browsing a snapshot; wait for live state before using this action.")
-        if foreign:
-            for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
-                button.setToolTip("Windows-recorded outputs are read-only here; use Windows for this action.")
         self.copy_button.setEnabled(bool(item.path))
         available = not item.issue
         self.folder_button.setEnabled(available)
@@ -1980,15 +1984,17 @@ class GalleryPage(QObject):
         if self._snapshot_at:
             return
         item = self._selected()
-        if item is not None and not foreign_windows_path(item.path) and self._reuse_callback is not None:
+        if item is not None and self._reuse_callback is not None:
             self._reuse_callback(self._request(item), item.identity)
 
     def _edit_image(self) -> None:
         if self._snapshot_at:
             return
         item = self._selected()
-        if item is not None and not foreign_windows_path(item.path) and self._edit_callback is not None:
-            if item.read_path != item.path:
+        if item is not None and not item.issue and self._edit_callback is not None:
+            if foreign_windows_path(item.path):
+                self._edit_callback(GalleryEditSource(self.state_dir, item))
+            elif item.read_path != item.path:
                 self._read_action("edit")
             else:
                 self._edit_callback(item.path)
@@ -1997,7 +2003,7 @@ class GalleryPage(QObject):
         if self._snapshot_at:
             return
         item = self._selected()
-        if item is not None and not foreign_windows_path(item.path) and self._regenerate_callback is not None:
+        if item is not None and self._regenerate_callback is not None:
             self._regenerate_callback(self._request(item), item.identity)
 
     def step(self, delta: int) -> None:
@@ -2260,11 +2266,21 @@ class GalleryPage(QObject):
         if action == "copy":
             QApplication.clipboard().setText(result)
         elif action == "folder":
-            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(result).parent))):
-                self._selection_notice("Could not open the image folder with the system file manager.")
+            open_local_path(
+                str(Path(result).parent),
+                runner=self.runner,
+                directory=True,
+                on_error=lambda reason: self._selection_notice(f"Could not open the image folder: {reason}"),
+            )
         elif action == "external":
-            if not QDesktopServices.openUrl(QUrl.fromLocalFile(result)):
-                self._selection_notice("Could not open the image with the system viewer.")
+            open_local_path(
+                result,
+                runner=self.runner,
+                directory=False,
+                on_error=lambda reason: self._selection_notice(
+                    f"Could not open the image in an external viewer: {reason}"
+                ),
+            )
         elif action == "edit" and self._edit_callback is not None:
             self._edit_callback(result)
 
