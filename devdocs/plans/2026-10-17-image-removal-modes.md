@@ -4,7 +4,7 @@
 
 PR #76, branch `feature/image-removal-modes`, ready for review and intended to be squash-merged after owner smoke. Scope grew during owner smoke on 2026-10-17 from the split Trash/Delete action into Windows/WSL1 shared-state support: cross-OS read aliases (#83), WSL1 export of Windows-recorded originals, native Windows removal of WSL1-recorded originals, raw provider output disposal, confirmed-missing card clearing and presentation, per-runtime export folders and removal/bridge logging (#79 initial scope). The [smoke follow-up checklist](#owner-smoke-follow-ups) maps each owner point to its commits.
 
-**Source-complete is not owner/runtime acceptance.** Owner smoke so far accepted the split control, icons, confirmation and consent invalidation (`b10d962`) and the WSL1 permanent deletion of final images with restart persistence (`e2b4930`); everything else in [Owner acceptance](#owner-acceptance) stays open. The owner declined generation-output staging or automatic recovery, and asked that no new test cases be added; GitHub Actions CI (lockfile, Ruff lint/format, SQLite, offline pytest) is the automated gate and passes on the current head. No agent ran real deletion, WSL2 probes, paid generation, GUI renders or inference.
+**Owner smoke accepted on 2026-10-17.** The owner reported every [Owner acceptance](#owner-acceptance) scenario passed at `6202404` (earlier items at `b10d962` and `e2b4930`). Concurrent use of one shared state from native Windows and WSL1 is an accepted limitation, not supported: SQLite WAL locking does not span the two systems, so the other side's gallery reports the store as busy. The owner declined generation-output staging or automatic recovery, and asked that no new test cases be added; GitHub Actions CI (lockfile, Ruff lint/format, SQLite, offline pytest) is the automated gate and passes on `6202404`. No agent ran real deletion, WSL2 probes, paid generation, GUI renders or inference; WSL2 remains deferred.
 
 ## Scope and agreed contract
 
@@ -143,26 +143,26 @@ Restrict agent probes to non-mutating path/handle inspection and disposable-file
 
 ### Owner acceptance
 
-- [ ] Owner missing Windows `.venv`, unavailable helper and unsupported-mapping checks: app remains open, settings/metadata remain usable, original reads refuse clearly and no generation is submitted.
-- [ ] Owner readiness-change checks after startup and before operation start, including queue/image-operation dispatch; no silent `flock` fallback or stale readiness authorization.
-- [ ] Owner native/helper pre-mutation sharing/permission/validation refusal: unchanged file settles `failed`, later files continue, and a fresh user-authorized retry is possible.
-- [ ] Owner helper timeout/termination or post-disposition uncertainty: retain manual-review/no-replay outcomes, never relabel as a safe retry because the source still exists.
-- [ ] Owner refusal wording distinguishes zero-mutation preflight from partial execution and unconfirmed/durable outcomes; unsupported WSL2 remains explicitly deferred.
+- [x] Owner missing Windows `.venv`, unavailable helper and unsupported-mapping checks: app remains open, settings/metadata remain usable, original reads refuse clearly and no generation is submitted (owner-reported at `6202404`).
+- [x] Owner readiness-change checks after startup and before operation start, including queue/image-operation dispatch; no silent `flock` fallback or stale readiness authorization (owner-reported at `6202404`).
+- [x] Owner native/helper pre-mutation sharing/permission/validation refusal: unchanged file settles `failed`, later files continue, and a fresh user-authorized retry is possible (owner-reported at `6202404`).
+- [x] Owner helper timeout/termination or post-disposition uncertainty: retain manual-review/no-replay outcomes, never relabel as a safe retry because the source still exists (owner-reported at `6202404`).
+- [x] Owner refusal wording distinguishes zero-mutation preflight from partial execution and unconfirmed/durable outcomes; unsupported WSL2 remains explicitly deferred (owner-reported at `6202404`).
 - [x] Owner Windows/WSL split-menu icons, labels, confirmation and Cancel/Escape/mode-change consent invalidation (owner-reported at `b10d962`).
-- [ ] Owner separate Windows/WSL mode preference acceptance.
-- [ ] Owner mixed native/Windows-recorded managed-source checks and confirmations.
+- [x] Owner separate Windows/WSL mode preference acceptance (owner-reported at `6202404`).
+- [x] Owner mixed native/Windows-recorded managed-source checks and confirmations (owner-reported at `6202404`).
 - [x] Owner WSL1 permanent deletion of final images (single, five and mixed origins) with restart persistence (owner-reported at `e2b4930`).
-- [ ] Owner partial/failed/uncertain deletion and interruption no-replay.
-- [ ] Owner two-process Windows/WSL lock exclusion and helper interruption.
-- [ ] Owner cancellation, changed file/reference/mount and redirect refusals.
-- [ ] Owner exports/history/metadata untouched and Trash regression checks.
-- [ ] Owner local-save unavailability, contended `OriginalImagesBusyError` and disk `OSError`: remote `SUCCEEDED` plus `save_failed`, `PERSISTENCE`/`local_save_unavailable`, message allowing partial files and re-billing, UI preserves `failure.message`, no new staging or resubmission.
-- [ ] Owner normal-operation warning: amber/orange overlay appears once when a permanent-delete attempt newly settles `uncertain`, without triggering another deletion.
-- [ ] Owner reconciliation warning: after any successful pass, alert only newly transitioned permanent `delete_pending` rows, not Trash `pending` or older `uncertain`; a skipped pass reports that unsettled rows remain blocked and a later successful pass warns once.
-- [ ] Owner split-menu visual, keyboard, accessibility/DPI and disabled-Trash acceptance; choosing a mode never performs deletion.
-- [ ] Owner native Windows Trash and Delete of WSL1-recorded originals, plus a Windows-generated control image; unverifiable mappings stay ineligible, not "missing".
-- [ ] Owner raw-1.png disposal with its final in both modes, raw absent, raw refused and partial outcomes.
-- [ ] Owner confirmed-missing card (final deleted, and whole attempt folder deleted) cleared by Delete and absent after restart; an unreachable location is not cleared.
-- [ ] Owner File missing vs Image unavailable presentation in Grid, List and Detail.
-- [ ] Owner per-runtime export folders across Windows → WSL → Windows, and green WSL export when the creation-time note is the only notice.
-- [ ] Owner `-x` session log for a successful removal, a refused preflight and a reconciliation pass, with no paths or prompts.
+- [x] Owner partial/failed/uncertain deletion and interruption no-replay (owner-reported at `6202404`).
+- [x] Owner two-process Windows/WSL lock exclusion and helper interruption (owner-reported at `6202404`).
+- [x] Owner cancellation, changed file/reference/mount and redirect refusals (owner-reported at `6202404`).
+- [x] Owner exports/history/metadata untouched and Trash regression checks (owner-reported at `6202404`).
+- [x] Owner local-save unavailability, contended `OriginalImagesBusyError` and disk `OSError`: remote `SUCCEEDED` plus `save_failed`, `PERSISTENCE`/`local_save_unavailable`, message allowing partial files and re-billing, UI preserves `failure.message`, no new staging or resubmission (owner-reported at `6202404`).
+- [x] Owner normal-operation warning: amber/orange overlay appears once when a permanent-delete attempt newly settles `uncertain`, without triggering another deletion (owner-reported at `6202404`).
+- [x] Owner reconciliation warning: after any successful pass, alert only newly transitioned permanent `delete_pending` rows, not Trash `pending` or older `uncertain`; a skipped pass reports that unsettled rows remain blocked and a later successful pass warns once (owner-reported at `6202404`).
+- [x] Owner split-menu visual, keyboard, accessibility/DPI and disabled-Trash acceptance; choosing a mode never performs deletion (owner-reported at `6202404`).
+- [x] Owner native Windows Trash and Delete of WSL1-recorded originals, plus a Windows-generated control image; unverifiable mappings stay ineligible, not "missing" (owner-reported at `6202404`).
+- [x] Owner raw-1.png disposal with its final in both modes, raw absent, raw refused and partial outcomes (owner-reported at `6202404`).
+- [x] Owner confirmed-missing card (final deleted, and whole attempt folder deleted) cleared by Delete and absent after restart; an unreachable location is not cleared (owner-reported at `6202404`).
+- [x] Owner File missing vs Image unavailable presentation in Grid, List and Detail (owner-reported at `6202404`).
+- [x] Owner per-runtime export folders across Windows → WSL → Windows, and green WSL export when the creation-time note is the only notice (owner-reported at `6202404`).
+- [x] Owner `-x` session log for a successful removal, a refused preflight and a reconciliation pass, with no paths or prompts (owner-reported at `6202404`).
