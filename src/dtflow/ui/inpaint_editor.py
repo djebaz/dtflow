@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from PySide6.QtCore import QFile, QIODevice, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QPixmap
@@ -229,7 +229,8 @@ class InpaintEditor(QObject):
                 status = issues[role]
             else:
                 status = "file accessible (not loaded)"
-            details.append(f"{label}: {status}")
+            detail = f"{PureWindowsPath(ref.path).name} — {status}" if ref is not None else status
+            details.append(f"{label}: {detail}")
         tooltip = "\n".join(details)
         badge = self.form.modelsBadge
         badge.setText(glyph)
