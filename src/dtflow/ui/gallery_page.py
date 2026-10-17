@@ -67,6 +67,7 @@ from dtflow.services.gallery import (
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.desktop_open import open_local_path
+from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_detail_preview import (
     ASSETS,
     CoverPainter,
@@ -337,6 +338,7 @@ class GalleryPage(QObject):
         self._widget("galleryFixtureOverlay").hide()
 
         self.stack = self._widget("galleryContentStack")
+        self.canvas_loading = GalleryCanvasLoading(self.stack, on_retry=lambda: self.refresh(preserve=True))
         self.grid_scroll = self._widget("galleryGridScroll")
         self.grid_cards = self._widget("galleryGridCards")
         self.cards_layout = self.grid_cards.layout()
@@ -1096,6 +1098,7 @@ class GalleryPage(QObject):
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
         self._active = active
+        self._sync_canvas_loading()
         self._sync_snapshot_warning()
         self._sync_auto_refresh()
         if first_activation:
@@ -1188,8 +1191,12 @@ class GalleryPage(QObject):
         self._query_generation += 1
         generation = self._query_generation
         self._loading = True
+        if not self.items and self._rendered_page is None:
+            # The initial Designer examples are not saved-output records.
+            self._clear_grid()
         self.refresh_button.setEnabled(False)
         self._sync_pager(loading=True)
+        self._sync_canvas_loading()
 
         async def work():
             current = query
@@ -1242,6 +1249,7 @@ class GalleryPage(QObject):
             (log.debug if self._refresh_failing else log.warning)("gallery refresh failed reason=%s", detail)
             self._show_refresh_failure(error, first=not self._refresh_failing)
             self._refresh_failing = True
+            self._sync_canvas_loading()
             return
         recovered = self._refresh_failing
         if recovered:
@@ -1283,6 +1291,7 @@ class GalleryPage(QObject):
         self.items = list(page.items)
         self.total = page.total
         self._sync_pager()
+        self._sync_canvas_loading()
         # Refresh may add/remove outputs even when filters and visible cards match.
         self._hidden_query = None
         self._all_filtered_checked = False
@@ -1396,6 +1405,18 @@ class GalleryPage(QObject):
             self._set_grid_message(message)
         if first:
             feedback(self.page).notice("Saved outputs unavailable", message, "warning")
+
+    def _sync_canvas_loading(self) -> None:
+        """Indicate pending reads only when no committed cards are displayed."""
+        if not self._active or self.items:
+            self.canvas_loading.clear()
+        elif self._loading:
+            # The same query may return either live SQLite rows or snapshot fallback.
+            self.canvas_loading.loading()
+        elif self._refresh_failing:
+            self.canvas_loading.failed()
+        else:
+            self.canvas_loading.clear()
 
     def _jump_to_page(self, page_number: int) -> None:
         """Use the existing bounded query path for explicit chip navigation."""
@@ -2086,6 +2107,7 @@ class GalleryPage(QObject):
             button = self._grid_buttons.get(self._origin_identity)
             if button is not None:
                 QTimer.singleShot(0, lambda: self._focus_grid_origin(button))
+        self.canvas_loading.ensure_front()
         if persist:
             self._schedule_save()
 

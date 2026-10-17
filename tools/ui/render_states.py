@@ -896,6 +896,37 @@ def render_gallery_composition_states(shell, state, out):
         assert gallery._grid_empty is not None
         snap("images-72-pager-empty")
 
+        # One centered presentation is shared by initial live reads, snapshot
+        # fallback and page jumps. No provider calls; these are GUI states.
+        gallery.canvas_loading.loading(immediate=True)
+        QTest.qWait(110)
+        assert gallery.canvas_loading.ring.timer.isActive()
+        assert gallery.canvas_loading.ring.angle != 0
+        assert gallery.canvas_loading.form.isVisible()
+        snap("images-84-pager-initial-database-loading")
+
+        gallery.canvas_loading.loading(immediate=True)
+        snap("images-85-pager-snapshot-read-loading")
+
+        gallery.total, gallery.offset = 342, 320
+        gallery.pager.present(total=342, visible_start=0, visible_end=0, loaded=0, active_page=5)
+        gallery.canvas_loading.loading(immediate=True, text="Loading page 5…")
+        assert gallery.canvas_loading.status.text() == "Loading page 5…"
+        snap("images-86-pager-direct-jump-loading")
+
+        gallery.canvas_loading.failed()
+        assert not gallery.canvas_loading.ring.timer.isActive()
+        assert gallery.canvas_loading.retry.isVisible()
+        snap("images-87-pager-empty-load-failed")
+        with patch.object(gallery, "refresh") as retry:
+            gallery.canvas_loading.retry.click()
+            retry.assert_called_once_with(preserve=True)
+        gallery.canvas_loading.clear()
+        assert not gallery.canvas_loading.form.isVisible()
+        assert not gallery.canvas_loading.ring.timer.isActive()
+        gallery.total, gallery.offset = 0, 0
+        gallery.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
+
         # Multi-batch UX fixtures deliberately build distinct numbered records:
         # batch 1 (1-80), append batch 2 (81-160), then jump directly to the
         # short final batch (321-342). These are *offline projections*, not a

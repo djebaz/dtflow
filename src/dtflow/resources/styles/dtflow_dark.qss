@@ -1811,3 +1811,32 @@ QWidget#GalleryDetailPage QPushButton[role="galleryPagerChip"]:disabled {
   border-color: ${color.disabledBorder};
   color: ${color.disabled};
 }
+
+/* Centered Images loader is displayed only without committed gallery cards. */
+QWidget#galleryCanvasLoadingOverlay {
+  background: ${color.canvas};
+}
+QWidget#galleryLoadingCenter,
+QWidget#galleryLoadingRingHost {
+  background: transparent;
+}
+QLabel#galleryLoadingLabel {
+  color: ${color.secondary};
+  font-size: 12px;
+}
+QLabel#galleryLoadingLabel[state="error"] {
+  color: ${color.error};
+}
+QPushButton#galleryLoadingRetryButton {
+  background: ${color.button};
+  color: ${color.text};
+  border: 1px solid ${color.buttonBorder};
+  border-radius: ${size.radius};
+}
+QPushButton#galleryLoadingRetryButton:hover {
+  background: ${color.buttonHover};
+  border-color: ${color.buttonBorderHover};
+}
+QPushButton#galleryLoadingRetryButton:focus {
+  border-color: ${color.focus};
+}
