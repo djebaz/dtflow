@@ -1088,6 +1088,60 @@ def render_gallery_composition_states(shell, state, out):
         finally:
             gallery._widget("galleryFocusButton", QPushButton).click()
 
+        # Changing size must keep the same saved-output identity on screen,
+        # even when Grid changes column count or List changes row height. No
+        # programmatic geometry update may initiate a neighboring batch read.
+        gallery.show_view("Grid")
+        gallery.reflow_timer.stop()
+        gallery._layout_cards()
+        gallery.cards_layout.activate()
+        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[second_batch[119].identity], 0, 0)
+        QTest.qWait(60)
+        grid_anchor = gallery._browsing_anchor()
+        assert grid_anchor in {item.identity for item in second_batch[80:]}
+        initial_ids = [item.identity for item in gallery.items]
+        with patch.object(gallery, "_load_adjacent") as fetch:
+            gallery.slider.setValue(190)
+            QTest.qWait(130)
+            assert not gallery.density_anchor_timer.isActive()
+            assert [item.identity for item in gallery.items] == initial_ids
+            card = gallery._grid_buttons[grid_anchor].parentWidget()
+            y = card.mapTo(gallery.grid_viewport, QPoint(0, 0)).y()
+            assert y < gallery.grid_viewport.height() and y + card.height() > 0
+            gallery._sync_pager()
+            assert gallery.pager.buttons[2].isChecked()
+            snap("images-89-pager-resized-grid")
+            gallery.slider.setValue(65)
+            QTest.qWait(130)
+            card = gallery._grid_buttons[grid_anchor].parentWidget()
+            y = card.mapTo(gallery.grid_viewport, QPoint(0, 0)).y()
+            assert y < gallery.grid_viewport.height() and y + card.height() > 0
+            assert gallery.pager.buttons[2].isChecked()
+            fetch.assert_not_called()
+
+        gallery.show_view("List")
+        row_for_anchor = 115
+        gallery.table.scrollToItem(
+            gallery.table.item(row_for_anchor, 0),
+            gallery_ui.QAbstractItemView.ScrollHint.PositionAtTop,
+        )
+        QTest.qWait(60)
+        top_row = gallery.table.rowAt(0)
+        assert top_row >= 80
+        list_anchor = gallery.items[top_row].identity
+        with patch.object(gallery, "_load_adjacent") as fetch:
+            gallery.slider.setValue(200)
+            QTest.qWait(130)
+            actual_row = gallery.table.rowAt(0)
+            assert actual_row >= 0
+            assert gallery.items[actual_row].identity == list_anchor
+            assert gallery.pager.buttons[2].isChecked()
+            snap("images-90-pager-resized-list")
+            gallery.slider.setValue(100)
+            QTest.qWait(130)
+            assert gallery.items[gallery.table.rowAt(0)].identity == list_anchor
+            fetch.assert_not_called()
+
         # A five-second background refresh must leave populated cards and the
         # pager's active chip visually unchanged. Reconciliation of identical
         # records must not trigger another full density repaint.
