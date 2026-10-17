@@ -50,7 +50,14 @@ from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError, original_images_lock
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
-from dtflow.services.gallery import copy_output_paths, filter_choices, inspect_output, locate_output, query_outputs
+from dtflow.services.gallery import (
+    copy_output_paths,
+    filter_choices,
+    inspect_output,
+    locate_output,
+    query_outputs,
+    resolve_item_read,
+)
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_detail_preview import (
@@ -98,14 +105,22 @@ def _filename(path: str) -> str:
     return PureWindowsPath(path).name if foreign_windows_path(path) else Path(path).name
 
 
-def _image(path: str, max_side: int, state: Path | None = None) -> tuple[QImage | None, str]:
+def _image(
+    path: str, max_side: int, state: Path | None = None, *, item: GalleryItem | None = None
+) -> tuple[QImage | None, str]:
     """Decode one original while holding its shared cross-process read lease."""
 
     def decode() -> tuple[QImage | None, str]:
         try:
-            access = ArtifactReadPaths.discover().resolve(path) if foreign_windows_path(path) else path
-        except OSError:
-            return None, "Windows output drive is unavailable or the path is unsupported."
+            access = (
+                resolve_item_read(item, state)[0]
+                if item is not None and state is not None
+                else ArtifactReadPaths.discover().resolve(path)
+                if foreign_windows_path(path)
+                else path
+            )
+        except OSError as exc:
+            return None, str(exc) if item is not None else "Windows output drive is unavailable or the path is unsupported."
         reader = QImageReader(access)
         reader.setAutoTransform(True)
         if max_side:
@@ -1451,8 +1466,8 @@ class GalleryPage(QObject):
                 continue
             self._thumb_active += 1
 
-            async def work(filename=path):
-                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir)
+            async def work(filename=path, selected=next(x for x in self.items if x.identity == identity)):
+                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir, item=selected)
 
             self.runner.submit(
                 work(),
@@ -1644,7 +1659,7 @@ class GalleryPage(QObject):
             image_generation = self._image_generation
 
             async def read_image():
-                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
 
             self.runner.submit(
                 read_image(),
@@ -1680,7 +1695,7 @@ class GalleryPage(QObject):
         if item is not None:
 
             async def read_again():
-                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
 
             self.runner.submit(
                 read_again(),
