@@ -51,7 +51,7 @@ class ImageRecyclePanel(QObject):
         self._mode_actions = {}
         icon_root = Path(__file__).resolve().parents[1] / "resources" / "images" / "gallery"
         for mode, label in (("trash", f"Move to {TRASH_NAME}"), ("permanent", "Delete permanently")):
-            action = menu.addAction(QIcon(str(icon_root / "delete.svg")), label)
+            action = menu.addAction(QIcon(str(icon_root / ("delete.svg" if mode == "trash" else "ban.svg"))), label)
             if mode == "trash" and gallery._recycle_callback is None:
                 action.setToolTip(
                     "System Trash is unavailable. Selecting Trash disables the main removal action; you can still choose permanent deletion."
