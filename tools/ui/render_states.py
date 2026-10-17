@@ -1007,23 +1007,34 @@ def render_gallery_composition_states(shell, state, out):
         assert gallery._grid_buttons[first_batch[0].identity] is saved_first_button
         assert second_batch[79].identity in gallery._grid_buttons
         assert second_batch[80].identity in gallery._grid_buttons
-        # Position the actual viewport at the 80/81 seam, then measure it.
-        # The extra QGridLayout reflow after append can reset an earlier scroll.
-        card_81 = gallery._grid_buttons[second_batch[80].identity].parentWidget()
-        gallery.grid_scroll.verticalScrollBar().setValue(max(0, card_81.y() - gallery.grid_viewport.height() // 2))
-        _first, _last, visible = grid_visible(loaded=160)
-        # At large thumbnail sizes, rows 80 and 81 may not fit together
-        # vertically. Verify the next batch is actually visible while the
-        # previous batch remains mounted, rather than requiring both rows
-        # to share one viewport.
-        assert 81 in visible, "The appended second Grid batch is not on screen"
+        # QGridLayout reflows asynchronously after cards are appended. Force
+        # the pending layout to settle before using QScrollArea's widget-based
+        # navigation (a stale card.y() is not a reliable scroll coordinate).
+        gallery.reflow_timer.stop()
+        gallery._layout_cards()
+        gallery.cards_layout.activate()
+        QTest.qWait(100)
+
+        def show_grid_image(index):
+            button = gallery._grid_buttons[second_batch[index - 1].identity]
+            gallery.grid_scroll.ensureWidgetVisible(button, 0, 0)
+            first, last, visible = grid_visible(loaded=160)
+            assert index in visible, (
+                f"Image {index} is not visible after ensureWidgetVisible: "
+                f"visible={first}-{last}, scroll={gallery.grid_scroll.verticalScrollBar().value()}, "
+                f"maximum={gallery.grid_scroll.verticalScrollBar().maximum()}, "
+                f"button_y={button.parentWidget().y()}, "
+                f"viewport_height={gallery.grid_viewport.height()}"
+            )
+            return first, last, visible
+
+        _first, _last, visible = show_grid_image(81)
         assert second_batch[79].identity in gallery._grid_buttons
+        assert 81 in visible
         snap("images-75-pager-two-batches-grid")
 
-        card_129 = gallery._grid_buttons[second_batch[128].identity].parentWidget()
-        gallery.grid_scroll.verticalScrollBar().setValue(max(0, card_129.y() - gallery.grid_viewport.height() // 3))
-        first, _last, visible = grid_visible(loaded=160)
-        assert 129 in visible and first >= 81
+        first, _last, visible = show_grid_image(129)
+        assert first >= 81
         assert gallery.pager.buttons[2].isChecked()
         snap("images-76-pager-scrolled-second-batch-grid")
         gallery._widget("galleryFocusButton", QPushButton).click()
