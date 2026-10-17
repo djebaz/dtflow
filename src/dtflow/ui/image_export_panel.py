@@ -23,6 +23,11 @@ from dtflow.ui.runner import AsyncRunner
 log = logging.getLogger(__name__)
 
 
+def completion_state(result) -> str:
+    """Overlay severity: failed items or genuine warnings are partial; informational notices never are."""
+    return "partial" if result.failed or result.warnings else "stopped" if result.cancelled else "success"
+
+
 class ImageExportPanel(QObject):
     """One shared export operation; selected scopes are captured on the GUI thread."""
 
@@ -223,8 +228,10 @@ class ImageExportPanel(QObject):
             text += f" Sorted into subfolders: {result.noise} noise, {result.blank} blank (advisory)."
         if result.warnings:
             text += " " + " ".join(result.warnings)
+        if result.notices:
+            text += " " + " ".join(result.notices)
         self.form.imageExportStatusLabel.setText(text)
-        state = "partial" if result.failed or result.warnings else "stopped" if result.cancelled else "success"
+        state = completion_state(result)
         activity_strip(self.form).complete("export", prefix, text, state)
         self.form.imageExportStatusLabel.setToolTip("\n".join(result.failures))
         if result.exported or result.skipped:

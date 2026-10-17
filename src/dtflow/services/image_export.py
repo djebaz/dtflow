@@ -36,6 +36,9 @@ from dtflow.services.gallery import item_from_record, load_detail, resolve_item_
 from dtflow.services.image_quality import ALGORITHM, assess_rgb
 
 MAX_EXPORT_IMAGES = 10_000
+CREATION_TIME_NOTICE = "File creation time is set only on Windows; EXIF retains the recorded saved date."
+# Expected on every non-Windows runtime, so it informs without implying that anything went wrong.
+INFORMATIONAL_NOTES = frozenset({CREATION_TIME_NOTICE})
 MAX_IMAGE_BYTES = 64 * 1024 * 1024
 MAX_PIXELS = 32_000_000
 MAX_EXIF_BYTES = 65_533
@@ -505,7 +508,7 @@ def _export_one(
                                 "Some Windows export creation times could not be set; image copies were retained."
                             )
                     else:
-                        notes.append("File creation time is set only on Windows; EXIF retains the recorded saved date.")
+                        notes.append(CREATION_TIME_NOTICE)
                 except BaseException:
                     image_handle.close()
                     sidecar_handle.close()
@@ -630,11 +633,12 @@ def _run_export(state, destination, options, query, identities, cancel, progress
         exported,
         failed,
         cancel.is_set(),
-        tuple(sorted(notes)),
+        tuple(sorted(notes - INFORMATIONAL_NOTES)),
         tuple(failures),
         noise,
         blank,
         skipped,
+        tuple(sorted(notes & INFORMATIONAL_NOTES)),
     )
 
 

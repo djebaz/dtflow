@@ -82,6 +82,10 @@ sidecars. Camera Make/Model, authorship and copyright are not fabricated.
 
 New JPEG EXIF DateTimeOriginal/DateTimeDigitized include UTC offsets and subseconds from the durable successful saved time. This is an explicit generation-completion proxy, not invented generation-start telemetry. Windows creation time is set via [SetFileTime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime) on the exclusively created export handle after flushing writes, and on written JSON sidecars. Modified time remains export time. Timestamp failures warn and preserve completed copies; unavailable timestamps omit date fields rather than guess. No original/existing/skipped files are timestamped. Non-Windows execution retains EXIF but reports that file creation time was not set.
 
+## Completion notices
+
+`ExportResult.warnings` holds genuine problems (failed creation-time writes, unavailable dates, oversized EXIF fallback, cache fallback, unsaved preferences) and makes a completed export partial. `ExportResult.notices` holds expected platform-capability notes, currently only that file creation time is set on Windows alone; it is shown in the summary but never changes severity. Failed items still make the result partial.
+
 ## Preferences and acceptance
 
 `export_preferences.json` (schema 2) stores one destination per runtime (`windows`, `wsl`, or the platform name)
