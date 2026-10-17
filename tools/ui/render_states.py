@@ -33,6 +33,7 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
+from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
@@ -298,6 +299,13 @@ def render_inpaint_states(shell, state, capture):
     # Select mode: offline fixtures only (a synthetic silhouette; no ONNX model is loaded).
     editor.form.selectModeButton.setChecked(True)
     capture("27-inpaint-select-no-models")
+    # A saved model path that no longer exists here: the status names it before Find people is pressed.
+    saved_models = editor._models
+    editor._models = PersonModels(segmentation=ModelRef(str(state / "missing-model.onnx"), "0" * 64))
+    editor._people_status()
+    capture("44-inpaint-select-model-not-found")
+    editor._models = saved_models
+    editor._people_status()
     people = PersonAnalysis(
         width,
         height,

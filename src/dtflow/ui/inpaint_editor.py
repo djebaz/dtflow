@@ -29,6 +29,7 @@ from dtflow.services.person_selection import (
     apply_selection,
     classify_models,
     colored_preview,
+    model_problem,
     part_at,
     person_at,
 )
@@ -612,7 +613,17 @@ class InpaintEditor(QObject):
 
     def _people_status(self):
         models = self._models
-        if self._analysis is None and models.segmentation is None:
+        problem = next(
+            (
+                issue
+                for ref in (models.segmentation, models.clothes, models.faces)
+                if ref is not None and (issue := model_problem(ref))
+            ),
+            None,
+        )
+        if self._analysis is None and problem:
+            text = problem
+        elif self._analysis is None and models.segmentation is None:
             text = "Choose a YOLO26 segmentation model (Models…) to find people. Painting works without it."
         elif self._analysis is None:
             text = (

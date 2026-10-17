@@ -8,6 +8,7 @@ Masks are cropped to each person's source-pixel box to bound memory.
 import ast
 import hashlib
 import io
+import logging
 import os
 import threading
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from PIL import Image
 from dtflow.core.image_inputs import ImageContent
 from dtflow.core.models import ValidationError
 from dtflow.persistence.person_models import ModelRef
+from dtflow.services.artifact_paths import ArtifactReadPaths
 
 MAX_MODEL_BYTES = 256 * 1024 * 1024
 SIDE = 640
@@ -173,11 +175,54 @@ def classify_models(paths: list[Path]) -> tuple[ModelRef | None, ModelRef | None
     return segmentation, clothes, faces
 
 
-def _verified_session(ref: ModelRef, builder):
+log = logging.getLogger(__name__)
+
+_OTHER_ENVIRONMENT = (
+    "A selected model file was chosen in {} and is not reachable here; choose it again with Models… in this "
+    "environment."
+)
+
+
+def model_access_path(stored: str) -> Path:
+    """Map a model path chosen in Windows to its WSL drive mount for reading; the stored path stays unchanged.
+
+    A WSL path saved on Windows cannot be mapped back. Only reading is involved, and the recorded SHA-256 still
+    rejects any other file.
+    """
+    if os.name == "nt" and stored.startswith("/"):
+        raise ValidationError(_OTHER_ENVIRONMENT.format("WSL or Linux"))
     try:
-        data = Path(ref.path).read_bytes()
+        return Path(ArtifactReadPaths.discover().resolve(stored))
     except OSError as exc:
-        raise ValidationError("A selected model file is missing or unreadable; choose it again.") from exc
+        raise ValidationError(_OTHER_ENVIRONMENT.format("Windows")) from exc
+
+
+def model_problem(ref: ModelRef) -> str | None:
+    """Cheap readiness check for status text; Find people still verifies the full checksum."""
+    try:
+        path = model_access_path(ref.path)
+    except ValidationError as exc:
+        return str(exc)
+    if not path.is_file():
+        return "A selected model file was not found on this system; choose it again with Models…."
+    if not os.access(path, os.R_OK):
+        return "A selected model file cannot be read (permission denied); check its permissions or choose it again."
+    return None
+
+
+def _verified_session(ref: ModelRef, builder):
+    path = model_access_path(ref.path)
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        log.warning("person model unreadable kind=%s reason=%s", builder.__name__, type(exc).__name__)
+        if isinstance(exc, FileNotFoundError):
+            message = "A selected model file was not found on this system; choose it again with Models…."
+        elif isinstance(exc, PermissionError):
+            message = "A selected model file cannot be read (permission denied); check its permissions."
+        else:
+            message = "A selected model file could not be read; choose it again."
+        raise ValidationError(message) from exc
     if len(data) > MAX_MODEL_BYTES or hashlib.sha256(data).hexdigest() != ref.sha256:
         raise ValidationError("A selected model file changed since it was chosen; choose it again.")
     key = (ref.sha256, builder.__name__)
