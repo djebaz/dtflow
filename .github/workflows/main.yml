@@ -92,7 +92,7 @@ jobs:
       # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
         id: render
-        timeout-minutes: 6
+        timeout-minutes: 2
         run: |
           mkdir -p tmp
           set -o pipefail
