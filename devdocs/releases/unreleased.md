@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Snapshot review finding 4: reader setup is inside its deadline and canonical snapshot SQL reads the same publication's indexed availability table directly, removing the in-memory ledger copy. Count/page/anchor/facets retain one immutable connection; live SQL and all removal exclusions are unchanged.
+
 - Snapshot review finding 3: normalize connection-opening SQLite failures as snapshot persistence failures and guard cleanup, preserving the original live-query error when fallback cannot open its file.
 
 - Snapshot review finding 2: publication checks its deadline and logical database size across both attempts/outcomes copy loops and finalization; a post-flush deadline prevents replacing the previous snapshot after over-budget work.

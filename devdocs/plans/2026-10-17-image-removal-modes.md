@@ -11,7 +11,7 @@ Post-review follow-up (2026-10-17, after `f36a339`): P1 widget recovery and P2 m
 - [x] Finding 1: refuse snapshot-selected `export_identity()` before export setup, matching checked-scope refusal; Generate scope remains independent.
 - [x] Finding 2: apply publication deadline/logical page-size checks before/after each batch in both copy loops, SQLite progress cancellation, commit checks and a post-flush deadline before replacement. Failed work leaves the previous publication intact.
 - [x] Finding 3: connection creation is inside the reader's normalization boundary; cleanup closes only initialized connections, so unavailable snapshots preserve the live-query failure through fallback handling.
-- [ ] Finding 4: budget reader setup and remove the in-memory ledger copy without changing canonical availability rules or single-publication consistency.
+- [x] Finding 4: read deadline starts before setup and its SQLite handler precedes schema/metadata reads. Snapshot SQL reuses canonical BASE with only `image_recycle.records` qualified as `main.records`, directly using the publication's primary-key index on one immutable connection for page/count/anchor/facets. No ledger copy or index construction; live SQL/default calls and all four exclusion outcomes are unchanged.
 - [ ] Separate logging commit: publication trigger, image additions/removals, last-update timestamp and session-wide close summary, with unknown baselines explicitly marked.
 
 No new tests or renderer runs. Ruff format/lint runs before pushes; CI and owner acceptance remain separate.

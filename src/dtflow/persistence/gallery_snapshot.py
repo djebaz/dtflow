@@ -60,6 +60,7 @@ def _reader(state: Path):
     """One frozen connection for an entire page/filter/anchor operation."""
     from dtflow.persistence.gallery import lora_order
 
+    deadline = time.monotonic() + 5
     path = path_for(state)
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_SNAPSHOT_BYTES:
         raise PersistenceError("No supported gallery snapshot is available.")
@@ -67,6 +68,8 @@ def _reader(state: Path):
     db = None
     try:
         db = sqlite3.connect(uri, uri=True, timeout=1)
+        db.set_progress_handler(lambda: int(time.monotonic() > deadline), 10000)
+        db.execute("PRAGMA query_only=ON")
         db.row_factory = sqlite3.Row
         if db.execute("PRAGMA user_version").fetchone()[0] != VERSION:
             raise PersistenceError("Unsupported gallery snapshot version.")
@@ -76,16 +79,12 @@ def _reader(state: Path):
         stamp = datetime.fromisoformat(info[1])
         if stamp.tzinfo is None:
             raise PersistenceError("Invalid gallery snapshot timestamp.")
-        # Attach this same connection's immutable main database, not a fresh
-        # pathname that might already refer to a newer atomic publication.
-        db.execute("ATTACH DATABASE ':memory:' AS image_recycle")
-        db.execute("CREATE TABLE image_recycle.records AS SELECT * FROM main.records")
-        db.execute("CREATE INDEX image_recycle.record_identity ON records(identity)")
+        # Canonical snapshot SQL qualifies main.records on this connection.
+        # No ledger copy/index build or second pathname open is needed.
         db.create_function("fold", 1, lambda text: str(text or "").casefold(), deterministic=True)
         db.create_function("lora_order", 1, lora_order, deterministic=True)
-        db.execute("PRAGMA query_only=ON")
-        deadline = time.monotonic() + 5
-        db.set_progress_handler(lambda: int(time.monotonic() > deadline), 10000)
+        if time.monotonic() > deadline:
+            raise PersistenceError("Gallery snapshot setup exceeded its read budget.")
         yield db, info[1]
     except (sqlite3.Error, ValueError, TypeError, IndexError) as exc:
         raise PersistenceError("Gallery snapshot could not be read.") from exc

@@ -56,6 +56,10 @@ WITH outputs AS (
 )
 """
 
+# One canonical query, including identical availability rules. A borrowed
+# snapshot connection reads its own indexed table, never a live attachment.
+SNAPSHOT_BASE = BASE.replace("image_recycle.records", "main.records")
+
 
 def lora_order(value: str) -> str:
     """Canonical sorted identifier/weight sequence; no LoRAs sort first, then casefolded identifiers."""
@@ -163,12 +167,13 @@ def clauses(query: GalleryQuery) -> tuple[str, list, str]:
 def query_records(state: Path, query: GalleryQuery, *, database=None) -> tuple[tuple[dict, ...], int]:
     """Count and return one bounded page from the same read snapshot."""
     where, values, order = clauses(query)
+    base = SNAPSHOT_BASE if database is not None else BASE
     with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return (), 0
-        total = db.execute(BASE + "SELECT count(*) FROM records WHERE " + where, values).fetchone()[0]
+        total = db.execute(base + "SELECT count(*) FROM records WHERE " + where, values).fetchone()[0]
         rows = db.execute(
-            BASE + f"SELECT * FROM records WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            base + f"SELECT * FROM records WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
             [*values, query.limit, query.offset],
         )
         return tuple(dict(row) for row in rows), total
@@ -177,11 +182,12 @@ def query_records(state: Path, query: GalleryQuery, *, database=None) -> tuple[t
 def locate_record(state: Path, query: GalleryQuery, identity: str, *, database=None) -> int | None:
     """Find an anchor's position in filtered results without materializing those results."""
     where, values, order = clauses(query)
+    base = SNAPSHOT_BASE if database is not None else BASE
     with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return None
         row = db.execute(
-            BASE
+            base
             + f", ranked AS (SELECT identity, row_number() OVER (ORDER BY {order})-1 AS position FROM records WHERE {where}) SELECT position FROM ranked WHERE identity=?",
             [*values, identity],
         ).fetchone()
@@ -242,20 +248,21 @@ def available_export_identities(state: Path, identities: tuple[str, ...]) -> fro
 
 def facets(state: Path, *, database=None) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """At most 1000 exact model/LoRA choices; editable controls support identifiers beyond this list."""
+    base = SNAPSHOT_BASE if database is not None else BASE
     with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return (), ()
         models = tuple(
             row[0]
             for row in db.execute(
-                BASE
+                base
                 + "SELECT DISTINCT model FROM records WHERE model IS NOT NULL ORDER BY fold(model), model LIMIT 1000"
             )
         )
         loras = tuple(
             row[0]
             for row in db.execute(
-                BASE
+                base
                 + "SELECT DISTINCT json_extract(l.value, '$.identifier') AS id FROM records, json_each(request_json, '$.loras') l WHERE id IS NOT NULL ORDER BY fold(id), id LIMIT 1000"
             )
         )
