@@ -171,10 +171,12 @@ class InpaintEditor(QObject):
         self.refresh_capability()
 
     def _check_models(self):
-        """Stat saved models off the GUI thread; an unreachable one is reported now, not at Find people."""
+        """Check saved model read access off Qt; full model verification stays at Find people."""
         models = self._models
         if models.segmentation is None or self.runner.closed:
             return
+        self._models_issue = "Checking saved model read access…"
+        self._people_status()
 
         async def work():
             return await asyncio.to_thread(model_issue, models)
@@ -182,7 +184,11 @@ class InpaintEditor(QObject):
         def done(issue, error):
             if self.runner.closed or self._models is not models or self._analysis is not None:
                 return
-            self._models_issue = issue if error is None else None
+            self._models_issue = (
+                issue
+                if error is None
+                else "Saved model availability could not be checked; choose it again with Models…."
+            )
             self._people_status()
 
         self.runner.submit(work(), done)

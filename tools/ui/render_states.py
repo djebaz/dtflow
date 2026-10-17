@@ -469,6 +469,19 @@ def render_inpaint_states(shell, state, capture):
     # Select mode: offline fixtures only (a synthetic silhouette; no ONNX model is loaded).
     editor.form.selectModeButton.setChecked(True)
     capture("27-inpaint-select-no-models")
+    # Presentation only: no model or inference session is loaded by this fixture.
+    for issue, name in (
+        ("Checking saved model read access…", "55-inpaint-model-readiness-checking"),
+        (
+            "The saved clothes model cannot be read (permission denied); choose it again with Models….",
+            "53-inpaint-model-unreadable",
+        ),
+    ):
+        editor._models_issue = issue
+        editor._people_status()
+        capture(name)
+    editor._models_issue = None
+    editor._people_status()
     people = PersonAnalysis(
         width,
         height,

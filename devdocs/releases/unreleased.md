@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #85 model-readiness correction: saved models must pass a worker-side regular-file and one-byte read-access check before being presented as ready. Permission/not-found/read failures identify the model role without logging paths; an unavailable check does not report ready. Full-load SHA verification is unchanged. Owner reports WSL model loading, Find people and clothes segmentation worked before this correction; the new failure path remains unaccepted. Offline unreadable-model preview defined, not rendered; no tests/inference run by the agent.
+
 - PR #85 External Viewer correction: WSL folders use Explorer, but image files use the registered Windows application through PowerShell 7 with a fixed encoded script and JSON stdin. No path interpolation, shell string, legacy PowerShell or fallback to Explorer for files. Windows `pwsh.exe` must be on the WSL PATH. Missing association/interop and unconfirmed timeouts report safely; actual owner launch acceptance remains pending.
 
 - PR #85 review correction: desktop target validation, WSL path translation and process spawning now run through the existing async runner instead of blocking Qt. Folder/file kinds are explicit; a removed/renamed/inaccessible export destination refuses before launch, with GUI-thread feedback. Offline missing-folder preview defined, not rendered; no new tests or local pytest.

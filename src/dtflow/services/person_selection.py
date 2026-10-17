@@ -10,6 +10,7 @@ import hashlib
 import io
 import logging
 import os
+import stat
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -215,17 +216,29 @@ def _read_model(stored: str) -> bytes:
 
 
 def model_issue(models: PersonModels) -> str | None:
-    """Cheap existence check of saved models so the editor does not report them ready when they are unreachable."""
-    for ref in (models.segmentation, models.clothes, models.faces):
+    """Worker-only regular-file/read-access check; full SHA validation stays at loading."""
+    for role, ref in (("segmentation", models.segmentation), ("clothes", models.clothes), ("faces", models.faces)):
         if ref is None:
             continue
         try:
-            if not model_read_path(ref.path).is_file():
-                return "A saved person model was not found on this system; choose it again with Models…."
+            path = model_read_path(ref.path)
+            if not stat.S_ISREG(path.stat().st_mode):
+                log.warning("person model readiness refused model=%s reason=not_regular", role)
+                return f"The saved {role} model is not a regular file; choose it again with Models…."
+            with path.open("rb") as stream:
+                stream.read(1)  # Check access, not model validity; never load the full model here.
         except ValidationError as exc:
+            log.warning("person model readiness refused model=%s reason=unreachable", role)
             return str(exc)
-        except OSError:
-            return "A saved person model could not be checked; choose it again with Models…."
+        except FileNotFoundError:
+            log.warning("person model readiness refused model=%s reason=not_found", role)
+            return f"The saved {role} model was not found on this system; choose it again with Models…."
+        except PermissionError:
+            log.warning("person model readiness refused model=%s reason=permission_denied", role)
+            return f"The saved {role} model cannot be read (permission denied); choose it again with Models…."
+        except OSError as exc:
+            log.warning("person model readiness failed model=%s reason=%s", role, type(exc).__name__)
+            return f"The saved {role} model could not be read; choose it again with Models…."
     return None
 
 
