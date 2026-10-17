@@ -1146,6 +1146,33 @@ def render_gallery_composition_states(shell, state, out):
         first, _last, _visible = grid_visible(loaded=80)
         assert first == 961 and gallery.pager.buttons[13].isChecked()
         assert len(gallery.pager._gaps) == 2
+        # Regression: after jumping to a loaded batch, the viewport is at
+        # its beginning. A downward user scroll must NOT fetch older images
+        # merely because the backward edge happens to be close.
+        assert gallery.mode == "Grid"
+        assert not gallery._loading and not gallery._adjacent_loading
+        with (
+            patch.object(gallery, "_load_adjacent") as fetch,
+            patch.object(gallery, "_visible_range", return_value=(961, 970)),
+        ):
+            gallery._maybe_load_boundary(1)
+            fetch.assert_not_called()
+            gallery._maybe_load_boundary(-1)
+            fetch.assert_called_once_with(-1)
+        with (
+            patch.object(gallery, "_load_adjacent") as fetch,
+            patch.object(gallery, "_visible_range", return_value=(1031, 1040)),
+        ):
+            gallery._maybe_load_boundary(-1)
+            fetch.assert_not_called()
+            gallery._maybe_load_boundary(1)
+            fetch.assert_called_once_with(1)
+        # Input handlers must retain scroll direction when queuing a
+        # deferred fetch, rather than rerunning an undirected proximity test.
+        with patch.object(gallery, "_maybe_load_boundary") as boundary:
+            gallery._request_boundary_prefetch(1, "fixture")
+            QTest.qWait(30)
+            boundary.assert_called_once_with(1)
         snap("images-82-pager-many-pages-ellipsis")
         form.resize(800, 680)
         QTest.qWait(130)
