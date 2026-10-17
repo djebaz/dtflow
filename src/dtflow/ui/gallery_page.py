@@ -120,7 +120,9 @@ def _image(
                 else path
             )
         except OSError as exc:
-            return None, str(exc) if item is not None else "Windows output drive is unavailable or the path is unsupported."
+            return None, str(
+                exc
+            ) if item is not None else "Windows output drive is unavailable or the path is unsupported."
         reader = QImageReader(access)
         reader.setAutoTransform(True)
         if max_side:

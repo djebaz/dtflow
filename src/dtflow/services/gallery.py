@@ -35,9 +35,7 @@ def safe_metadata(value):
     return value
 
 
-def item_from_record(
-    record: dict, paths: ArtifactReadPaths | None = None, *, state: Path | None = None
-) -> GalleryItem:
+def item_from_record(record: dict, paths: ArtifactReadPaths | None = None, *, state: Path | None = None) -> GalleryItem:
     try:
         request = json.loads(record["request_json"])
         loras = tuple((str(x["identifier"]), float(x["weight"])) for x in request.get("loras", []))
@@ -91,7 +89,9 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
     def read():
         records, total = storage.query_records(state, query)
         paths = ArtifactReadPaths.discover()
-        return GalleryPage(tuple(item_from_record(x, paths, state=state) for x in records), total, query.offset, query.limit)
+        return GalleryPage(
+            tuple(item_from_record(x, paths, state=state) for x in records), total, query.offset, query.limit
+        )
 
     return await asyncio.to_thread(read)
 
@@ -102,6 +102,7 @@ async def locate_output(state: Path, query: GalleryQuery, identity: str) -> int 
 
 def copy_output_paths(state: Path, identities: tuple[str, ...]) -> tuple[tuple[str, ...], int]:
     """Worker-only clipboard paths; aliases never replace recorded references."""
+
     def read():
         with original_images_lock(state, timeout=30):
             return storage.selection_paths(
@@ -169,7 +170,6 @@ async def inspect_output(state: Path, identity: str) -> GalleryDetail:
         return load_detail(item_from_record(record, state=state), state=state)
 
     return await asyncio.to_thread(read)
-
 
 
 def resolve_item_read(item: GalleryItem, state: Path) -> tuple[str, str]:

@@ -578,7 +578,11 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                     if record is None:
                         raise ValidationError("Saved original is not available.")
                     item_notes, category = _export_one(
-                        item_from_record(record, state=Path(state)), destination, options, computations, state=Path(state)
+                        item_from_record(record, state=Path(state)),
+                        destination,
+                        options,
+                        computations,
+                        state=Path(state),
                     )
                     notes.update(item_notes)
                     noise += category == "noise"
