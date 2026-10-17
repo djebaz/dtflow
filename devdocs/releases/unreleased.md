@@ -4,7 +4,7 @@
 
 - PR #87 review fixes: render state 102 now creates a paused fixture queue and checks that its Clear confirmation remains armed beside an unrelated warning, then removes the fixture queue. CI Python-file detection saves the Git listing before matching it, avoiding false no-Python results from an early pipe close. Offscreen layout and Windows/DPI acceptance remain separate.
 
-- Gallery snapshot publication waits up to 0.5 s for the cache lock, like other background cache I/O, instead of skipping when a session ends during a brief overlap (seen as `CacheBusyError` after each fake generation in the render script). Fixture PNG encoding compresses in one call, removing per-row GIL stalls that slowed fake generations. Render-state script also adds Images removal/selection/toolbar states 63–84, Queues states 85–93, shell/overlay/run-control states 94–107 and Generate states 108–114, and prints per-state progress with a final count.
+- Gallery snapshot publication waits up to 0.5 s for the cache lock, like other background cache I/O, instead of skipping when a session ends during a brief overlap (seen as `CacheBusyError` after each fake generation in the render script). Fixture PNG encoding compresses in one call, removing per-row GIL stalls that slowed fake generations. Render-state script also adds Images removal/selection/toolbar, Queues, shell/overlay/run-control and further Generate states (115 in total), names every state `<tab>-<NN>-<state>` so renders sort by tab, and prints per-state progress with a final count.
 
 - Render-state previews: 60 Images Detail with Additional details open, 61 Regenerate inline confirmation, 62 Regenerate confirmed (offline fake-provider submission on Generate). Layout evidence only.
 

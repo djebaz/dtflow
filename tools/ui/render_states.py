@@ -107,47 +107,47 @@ def render_removal_and_selection_states(shell, item, plan, out):
     with patch.object(recycle, "_execute", side_effect=RuntimeError("Preview cannot remove files")):
         recycle._confirmation_revision = gallery.recycle_scope_revision
         recycle._prepared(RecyclePlan(plan.targets, 0, 0, 0, 1, "trash"), None)
-        snap("63-images-trash-confirmation")
+        snap("images-31-trash-confirmation")
         shell.inline.dismiss()
         recycle._confirmation_revision = gallery.recycle_scope_revision
         recycle._prepared(RecyclePlan((), 1, 2, 0, 3, "trash"), None)
-        snap("64-images-nothing-to-remove")
+        snap("images-32-nothing-to-remove")
         shell.inline.dismiss()
     # Busy source: request and the execution revalidation both refuse before any worker.
     with patch.object(recycle, "busy_source", return_value=True):
         recycle.request((item.identity,), 0, gallery.export_query())
-        snap("65-images-removal-busy")
+        snap("images-33-removal-busy")
         shell.inline.dismiss()
         recycle._execute(plan)
-        snap("66-images-removal-changed-or-busy")
+        snap("images-34-removal-changed-or-busy")
         shell.inline.dismiss()
     recycle._mode_loaded("trash", OSError("Offline fixture: removal preferences are unreadable."))
-    snap("67-images-removal-preferences-unavailable")
+    snap("images-35-removal-preferences-unavailable")
     shell.inline.dismiss()
     gallery.set_recycle_busy(True)
-    snap("68-images-removal-control-busy")
+    snap("images-36-removal-control-busy")
     gallery.set_recycle_busy(False)
 
     # Presentation fixture of the running row; recycle_outputs is never called.
     strip.start("trash", f"Moving originals to {TRASH_NAME}", lambda: None, total=3)
     strip.update("trash", 1, 3)
-    snap("69-images-trash-progress")
+    snap("images-37-trash-progress")
     recycle._action = "trash"
     with patch.object(gallery, "recycle_completed"):
         for name, result in (
-            ("70-images-trash-result-success", RecycleResult((item.identity,), (), (), 0, 0, 0, False)),
+            ("images-38-trash-result-success", RecycleResult((item.identity,), (), (), 0, 0, 0, False)),
             (
-                "71-images-trash-result-partial",
+                "images-39-trash-result-partial",
                 RecycleResult((), ("fixture:1",), (), 0, 1, 0, False, (("fixture:1", "source_changed"),)),
             ),
-            ("72-images-trash-result-stopped", RecycleResult((item.identity,), (), (), 0, 0, 2, True)),
+            ("images-40-trash-result-stopped", RecycleResult((item.identity,), (), (), 0, 0, 2, True)),
         ):
             recycle._completed(result, None)
             snap(name)
     for name, phase, processed, error in (
-        ("73-images-removal-preflight-refused", "preflight", 0, RecycleUnavailable("Offline fixture: Trash refused.")),
-        ("74-images-removal-not-started", "executing", 0, OriginalImagesBusyError("Offline fixture: originals busy.")),
-        ("75-images-removal-needs-review", "executing", 1, RuntimeError("Offline fixture")),
+        ("images-41-removal-preflight-refused", "preflight", 0, RecycleUnavailable("Offline fixture: Trash refused.")),
+        ("images-42-removal-not-started", "executing", 0, OriginalImagesBusyError("Offline fixture: originals busy.")),
+        ("images-43-removal-needs-review", "executing", 1, RuntimeError("Offline fixture")),
     ):
         recycle._phase, recycle._processed_count = phase, processed
         recycle._finish_with_error(error)
@@ -156,10 +156,10 @@ def render_removal_and_selection_states(shell, item, plan, out):
 
     # Selection scan settlements, delivered directly; no identity query runs.
     gallery._cancel_selection_scan()
-    snap("76-images-selection-stopped")
+    snap("images-44-selection-stopped")
     gallery._selection_scan_done(gallery._selection_generation, "add", None, PersistenceError("Offline fixture"))
-    snap("77-images-selection-failed")
-    for name, omitted in (("78-images-selection-limit-partial", 3), ("79-images-selection-all-checked-hidden", 0)):
+    snap("images-45-selection-failed")
+    for name, omitted in (("images-46-selection-limit-partial", 3), ("images-47-selection-all-checked-hidden", 0)):
         # Same-filter settlement; one off-filter check shows the hidden count.
         gallery._selection_query = gallery.export_query()
         gallery.selection.checked.add("fixture:hidden")
@@ -176,8 +176,8 @@ def render_removal_and_selection_states(shell, item, plan, out):
     shell.form.resize(1180, 1000)
     QTest.qWait(150)
     assert not gallery.more_button.isHidden(), gallery.selection_bar.width()
-    snap("80-images-compact-toolbar")
-    for button, name in ((gallery.more_button, "81-images-more-menu"),):
+    snap("images-48-compact-toolbar")
+    for button, name in ((gallery.more_button, "images-49-more-menu"),):
         menu = button.menu()
         menu.popup(button.mapToGlobal(QPoint(0, button.height())))
         QTest.qWait(100)
@@ -188,12 +188,12 @@ def render_removal_and_selection_states(shell, item, plan, out):
     menu = gallery.clear_selection_button.menu()
     menu.popup(gallery.clear_selection_button.mapToGlobal(QPoint(0, gallery.clear_selection_button.height())))
     QTest.qWait(100)
-    save(menu, out, "82-images-unselect-menu")
+    save(menu, out, "images-50-unselect-menu")
     menu.hide()
     gallery.show_view("Detail")
     gallery.select(item.identity)
     assert item.identity in gallery.selection.checked
-    snap("83-images-detail-checked")
+    snap("images-51-detail-checked")
     gallery.show_view("Grid")
 
 
@@ -235,7 +235,7 @@ def render_initial_refresh_recovery(app, state, out):
             assert failed_label is not None and "Offline first-query failure" in failed_label.text()
             disposed = []
             failed_label.destroyed.connect(lambda: disposed.append(True))
-            target = out / "44-images-refresh-failed.png"
+            target = out / "images-18-refresh-failed.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -248,20 +248,20 @@ def render_initial_refresh_recovery(app, state, out):
             assert disposed and not shell.gallery._refresh_failing
             assert shell.gallery._grid_empty is not failed_label
             assert shell.gallery._grid_empty.text() == "No saved outputs match these filters."
-            target = out / "45-images-refresh-recovered-empty.png"
+            target = out / "images-19-refresh-recovered-empty.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             shell.gallery.show_view("Detail")
             QTest.qWait(100)
-            save(shell.form, out, "84-images-detail-no-selection")
+            save(shell.form, out, "images-52-detail-no-selection")
             shell.gallery.show_view("Grid")
             # Offline failure presentation only; no real desktop process is started.
             with patch.object(desktop_open, "_open_on_worker", return_value="the folder no longer exists."):
                 shell.image_export._exported_folder = state / "missing-export-folder-fixture"
                 shell.image_export.open_folder()
                 wait_for(lambda: "export-open" in activity_strip(shell.form).rows)
-            target = out / "52-export-folder-missing.png"
+            target = out / "images-26-export-folder-missing.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -281,7 +281,7 @@ def render_initial_refresh_recovery(app, state, out):
                     ),
                 )
                 wait_for(lambda: "viewer-open" in activity_strip(shell.form).rows)
-            target = out / "54-external-viewer-unavailable.png"
+            target = out / "images-27-external-viewer-unavailable.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -356,7 +356,10 @@ def render_mapped_gallery_states(app, state, out):
             shell.show()
             shell.form.imagesNavigationButton.click()
             wait_for(lambda: not shell.gallery._loading and bool(shell.gallery.items))
-            for mode, name in (("Grid", "31-mapped-grid-toggle-font"), ("List", "32-mapped-list-toggle-font")):
+            for mode, name in (
+                ("Grid", "images-03-mapped-grid-toggle-font"),
+                ("List", "images-04-mapped-list-toggle-font"),
+            ):
                 shell.gallery.show_view(mode)
                 QTest.qWait(150)
                 target = out / f"{name}.png"
@@ -366,11 +369,11 @@ def render_mapped_gallery_states(app, state, out):
             shell.gallery.select(item.identity)
             QTest.qWait(150)
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
-            target = out / "34-mapped-edit-eligible.png"
+            target = out / "images-07-mapped-edit-eligible.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
-            target = out / "33-mapped-detail-metadata.png"
+            target = out / "images-05-mapped-detail-metadata.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -379,7 +382,7 @@ def render_mapped_gallery_states(app, state, out):
             shell.gallery.refresh()
             wait_for(lambda: not shell.gallery._loading)
             QTest.qWait(100)
-            target = out / "46-images-refresh-recovered-populated.png"
+            target = out / "images-20-refresh-recovered-populated.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -392,7 +395,7 @@ def render_mapped_gallery_states(app, state, out):
             with patch.object(gallery_ui, "query_outputs", frozen_query):
                 shell.gallery.refresh()
                 wait_for(lambda: not shell.gallery._loading and bool(shell.gallery._snapshot_at))
-                for view, name in (("Grid", "47-images-snapshot-grid"), ("Detail", "48-images-snapshot-detail")):
+                for view, name in (("Grid", "images-21-snapshot-grid"), ("Detail", "images-22-snapshot-detail")):
                     shell.gallery.show_view(view)
                     if view == "Detail":
                         shell.gallery.select(item.identity)
@@ -410,7 +413,7 @@ def render_mapped_gallery_states(app, state, out):
                 ):
                     shell.gallery.refresh()
                     wait_for(lambda: not shell.gallery._loading)
-                target = out / "50-images-live-recovery-stabilizing.png"
+                target = out / "images-24-live-recovery-stabilizing.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
@@ -428,7 +431,7 @@ def render_mapped_gallery_states(app, state, out):
                 wait_for(lambda: not shell.gallery._loading)
                 assert "gallery-snapshot" not in activity_strip(shell.form).rows
                 QTest.qWait(100)
-                target = out / "49-images-snapshot-warning-dismissed.png"
+                target = out / "images-23-snapshot-warning-dismissed.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
@@ -448,7 +451,7 @@ def render_mapped_gallery_states(app, state, out):
             shell.gallery.refresh()
             wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
             QTest.qWait(100)
-            target = out / "51-images-manual-live-recovery.png"
+            target = out / "images-25-manual-live-recovery.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -465,7 +468,7 @@ def render_mapped_gallery_states(app, state, out):
             assert shell.gallery.delete_button.iconSize() == QSize(22, 16)
             assert not shell.gallery.delete_button.icon().isNull()
             QTest.qWait(100)
-            target = out / "39-images-trash-mode.png"
+            target = out / "images-13-trash-mode.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -483,7 +486,7 @@ def render_mapped_gallery_states(app, state, out):
                     max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
                 )
             assert menu.geometry().left() == expected_left
-            target = out / "37-images-removal-menu-trash-selected.png"
+            target = out / "images-10-removal-menu-trash-selected.png"
             if not menu.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -494,12 +497,12 @@ def render_mapped_gallery_states(app, state, out):
             assert not shell.gallery.delete_button.icon().isNull()
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
-            target = out / "38-images-removal-menu-permanent-selected.png"
+            target = out / "images-11-removal-menu-permanent-selected.png"
             if not menu.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             menu.hide()
-            target = out / "34-images-permanent-mode.png"
+            target = out / "images-06-permanent-mode.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -507,7 +510,7 @@ def render_mapped_gallery_states(app, state, out):
             shell.gallery._set_checked(item.identity, False)
             assert not shell.gallery.delete_button.isEnabled()
             assert shell.gallery.delete_button.text() == "Delete"
-            target = out / "40-images-delete-disabled.png"
+            target = out / "images-14-delete-disabled.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -524,7 +527,7 @@ def render_mapped_gallery_states(app, state, out):
             with patch.object(shell.image_recycle, "_execute", side_effect=RuntimeError("Preview cannot remove files")):
                 shell.image_recycle._prepared(plan, None)
                 QTest.qWait(100)
-                target = out / "35-images-permanent-confirmation.png"
+                target = out / "images-08-permanent-confirmation.png"
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
@@ -539,13 +542,13 @@ def render_mapped_gallery_states(app, state, out):
                 (None, "The Windows-drive mount has no verified shared-lock support. Use WSL ext4."),
                 None,
             )
-            target = out / "39-images-original-unavailable-thumbnail.png"
+            target = out / "images-12-original-unavailable-thumbnail.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             # Confirmed-missing original: file-missing pictogram in Grid and List, distinct from unavailable.
             shell.gallery._show_unavailable(item.identity, MISSING_ISSUE)
-            for view, name in (("Grid", "42-images-file-missing-grid"), ("List", "43-images-file-missing-list")):
+            for view, name in (("Grid", "images-16-file-missing-grid"), ("List", "images-17-file-missing-list")):
                 shell.gallery.show_view(view)
                 QTest.qWait(50)
                 target = out / f"{name}.png"
@@ -557,7 +560,7 @@ def render_mapped_gallery_states(app, state, out):
             shell.gallery._read_action_done(
                 "folder", item.identity, None, OSError("Recorded output is not under this shared Windows state.")
             )
-            target = out / "41-images-read-alias-unavailable.png"
+            target = out / "images-15-read-alias-unavailable.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -574,14 +577,14 @@ def render_queue_states(shell, capture):
     page.queueCountSpinBox.setValue(3)
     page.createQueueButton.click()
     wait_for(lambda: queue._view() is not None)
-    capture("85-queues-created-paused")
+    capture("queues-02-created-paused")
     page.planBox.setChecked(True)
     page.planDryRunButton.click()
-    capture("86-queues-plan-dry-run")
+    capture("queues-03-plan-dry-run")
     page.planBox.setChecked(False)
     for button, name in (
-        (page.cancelQueueButton, "87-queues-cancel-confirmation"),
-        (page.clearQueuesButton, "88-queues-clear-confirmation"),
+        (page.cancelQueueButton, "queues-04-cancel-confirmation"),
+        (page.clearQueuesButton, "queues-05-clear-confirmation"),
     ):
         button.click()
         capture(name)
@@ -590,11 +593,11 @@ def render_queue_states(shell, capture):
     counts = dict.fromkeys(view["summary"], 0)
     strip = activity_strip(page)
     for name, status, summary, failure in (
-        ("89-queues-result-finished", "finished", {"succeeded": 3}, None),
-        ("90-queues-result-partial", "finished", {"succeeded": 1, "failed": 1, "unknown": 1}, None),
-        ("91-queues-result-cancelled", "cancelled", {"succeeded": 1, "cancelled": 2}, None),
-        ("92-queues-dispatch-owned-elsewhere", None, None, StateBusyError("Offline fixture: state is owned.")),
-        ("93-queues-dispatch-error", None, None, RuntimeError("Offline fixture")),
+        ("queues-06-result-finished", "finished", {"succeeded": 3}, None),
+        ("queues-07-result-partial", "finished", {"succeeded": 1, "failed": 1, "unknown": 1}, None),
+        ("queues-08-result-cancelled", "cancelled", {"succeeded": 1, "cancelled": 2}, None),
+        ("queues-09-dispatch-owned-elsewhere", None, None, StateBusyError("Offline fixture: state is owned.")),
+        ("queues-10-dispatch-error", None, None, RuntimeError("Offline fixture")),
     ):
         final = None if failure else dict(view, status=status, summary={**counts, **summary})
         queue._dispatched(final, failure)
@@ -616,31 +619,31 @@ def render_shell_states(shell, capture):
             strip.finish(key)
 
     shell.about()
-    capture("94-shell-about")
+    capture("shell-01-about")
     clear()
     with patch.object(type(shell.queue), "dispatching_here", new_callable=PropertyMock, return_value=True):
         shell._confirm_close()
-        capture("95-shell-close-consent-dispatch")
+        capture("shell-02-close-consent-dispatch")
         shell.inline.dismiss()
     shell.image_recycle._running = True
     try:
         shell._confirm_close()
-        capture("96-shell-close-removal-in-progress")
+        capture("shell-03-close-removal-in-progress")
     finally:
         shell.image_recycle._running = False
         shell.image_recycle._stop.clear()
     clear()
     for name, error, outcome in (
         (
-            "97-shell-originals-unavailable",
+            "shell-04-originals-unavailable",
             OriginalImagesUnavailableError("Offline fixture: bridge unsupported."),
             None,
         ),
-        ("98-shell-reconciliation-deferred", OriginalImagesBusyError("Offline fixture"), None),
-        ("99-shell-reconciliation-failed", RuntimeError("Offline fixture"), None),
-        ("100-shell-permanent-deletion-review", None, ReconcileResult(0, 2, 0)),
+        ("shell-05-reconciliation-deferred", OriginalImagesBusyError("Offline fixture"), None),
+        ("shell-06-reconciliation-failed", RuntimeError("Offline fixture"), None),
+        ("shell-07-permanent-deletion-review", None, ReconcileResult(0, 2, 0)),
     ):
-        if name == "97-shell-originals-unavailable":
+        if name == "shell-04-originals-unavailable":
             shell._originals_ready_checked(None, error)
         else:
             shell._images_reconciled(outcome, error)
@@ -651,7 +654,7 @@ def render_shell_states(shell, capture):
     strip.complete("export-result", "Export finished", "3 images exported.")
     strip.start("trash-run", "Moving images to Trash", stop=lambda: None, total=4)
     strip.update("trash-run", 1, 4)
-    capture("101-overlay-several-rows")
+    capture("shell-08-overlay-several-rows")
     clear()
     queue, page = shell.queue, shell.queue_page
     shell.form.queueNavigationButton.click()
@@ -661,19 +664,19 @@ def render_shell_states(shell, capture):
     assert page.clearQueuesButton.property("confirmationPending")
     InlineNotice.warning(shell.form, "Original images unavailable", "Offline fixture notice during a confirmation.")
     assert page.clearQueuesButton.property("confirmationPending")
-    capture("102-overlay-notice-during-confirmation")
+    capture("shell-09-overlay-notice-during-confirmation")
     page.clearQueuesButton.click()  # confirms, leaving no queue for later renders
     wait_for(lambda: queue._view() is None)
     clear()
     strip.complete("info-result", "Nothing to export", "All checked images already exist at the destination.", "info")
-    capture("103-overlay-info-result")
+    capture("shell-10-overlay-info-result")
     clear()
     control = shell.shell.runControl
     for name, phase, kwargs in (
-        ("104-run-control-ready", "ready", {}),
-        ("105-run-control-paused", "paused", {"completed": 1, "total": 3}),
-        ("106-run-control-finishing", "complete", {"detail": "Finishing."}),
-        ("107-run-control-queue-running", "running", {"action": "queue", "completed": 2, "total": 5}),
+        ("shell-11-run-control-ready", "ready", {}),
+        ("shell-12-run-control-paused", "paused", {"completed": 1, "total": 3}),
+        ("shell-13-run-control-finishing", "complete", {"detail": "Finishing."}),
+        ("shell-14-run-control-queue-running", "running", {"action": "queue", "completed": 2, "total": 5}),
     ):
         control.set_presentation(phase, **kwargs)
         capture(name)
@@ -687,7 +690,7 @@ def render_inpaint_states(shell, state, capture):
     wait_for(lambda: page.inpaintModeButton.isEnabled())
     shell.inline.dismiss()
     page.inpaintModeButton.click()
-    capture("15-inpaint-empty")
+    capture("inpaint-01-empty")
 
     # Calibration source, not a user photo or model-generated result.
     source = QImage(512, 384, QImage.Format.Format_RGB32)
@@ -701,7 +704,7 @@ def render_inpaint_states(shell, state, capture):
         raise RuntimeError("Could not write offline source fixture")
     editor.replace_source(str(source_path))
     wait_for(lambda: editor._source is not None and not editor._loading)
-    capture("16-inpaint-source-loaded")
+    capture("inpaint-02-source-loaded")
 
     width, height = editor._source.width, editor._source.height
     mask = bytes(
@@ -711,11 +714,11 @@ def render_inpaint_states(shell, state, capture):
     )
     editor.canvas.replace_mask(mask)
     wait_for(lambda: editor._coverage > 0)
-    capture("17-inpaint-mask-painted")
+    capture("inpaint-03-mask-painted")
     for name, view in (
-        ("18-inpaint-source-view", "Source"),
-        ("19-inpaint-mask-view", "Mask"),
-        ("20-inpaint-result-no-result", "Result"),
+        ("inpaint-04-source-view", "Source"),
+        ("inpaint-05-mask-view", "Mask"),
+        ("inpaint-06-result-no-result", "Result"),
     ):
         # No result exists yet, so Result still shows the source: nothing is fabricated or dispatched.
         editor.canvas.set_view(view)
@@ -723,35 +726,35 @@ def render_inpaint_states(shell, state, capture):
 
     editor.canvas.set_view("Source")
     editor.form.clearMaskButton.click()
-    capture("21-inpaint-clear-confirmation")
+    capture("inpaint-07-clear-confirmation")
     shell.inline.dismiss()  # Keep the fixture mask.
 
     # Presentation fixtures: a probe-status line, the consent step, and a calibration image as the "result".
     editor._support = ImageOperationSupport("owner_probe", "Offline presentation fixture.")
     editor._render_support()
-    capture("24-inpaint-capability-probe")
+    capture("inpaint-10-capability-probe")
     editor.canvas.set_result(QPixmap.fromImage(source.flipped(Qt.Orientation.Horizontal)))
     editor.canvas.set_view("Result")
-    capture("26-inpaint-result-fixture")
+    capture("inpaint-11-result-fixture")
     editor.canvas.set_view("Source")
 
     # Model badges use fake file references only; no ONNX file is read or loaded.
     editor.form.selectModeButton.setChecked(True)
-    capture("27-inpaint-select-no-models")
+    capture("inpaint-12-select-no-models")
     fake = ModelRef("offline-only.onnx", "0" * 64)
     for name, models, issues, checking, check_error in (
-        ("55-inpaint-model-readiness-checking", PersonModels(fake), {}, True, None),
-        ("56-inpaint-one-model", PersonModels(fake), {"segmentation": None}, False, None),
-        ("57-inpaint-two-models", PersonModels(fake, fake), {"segmentation": None, "clothes": None}, False, None),
+        ("inpaint-16-model-readiness-checking", PersonModels(fake), {}, True, None),
+        ("inpaint-17-one-model", PersonModels(fake), {"segmentation": None}, False, None),
+        ("inpaint-18-two-models", PersonModels(fake, fake), {"segmentation": None, "clothes": None}, False, None),
         (
-            "58-inpaint-three-models",
+            "inpaint-19-three-models",
             PersonModels(fake, fake, fake),
             {"segmentation": None, "clothes": None, "faces": None},
             False,
             None,
         ),
         (
-            "53-inpaint-model-unreadable",
+            "inpaint-15-model-unreadable",
             PersonModels(fake, fake),
             {
                 "segmentation": None,
@@ -760,7 +763,7 @@ def render_inpaint_states(shell, state, capture):
             False,
             None,
         ),
-        ("59-inpaint-model-unknown", PersonModels(fake), {}, False, "Availability could not be checked."),
+        ("inpaint-20-model-unknown", PersonModels(fake), {}, False, "Availability could not be checked."),
     ):
         editor._models = models
         editor._model_readiness = issues
@@ -798,12 +801,12 @@ def render_inpaint_states(shell, state, capture):
         True,
     )
     editor._set_analysis(people)
-    capture("28-inpaint-select-people-found")
+    capture("inpaint-13-select-people-found")
     person = people.people[0]
     editor.canvas.set_hover_colors(
         person.box, colored_preview(person, frozenset({"person", "upper clothes", "pants"}), "pants")
     )
-    capture("29-inpaint-select-hover-preview")
+    capture("inpaint-14-select-hover-preview")
     editor.canvas.clear_hover()
     editor.form.paintModeButton.setChecked(True)
 
@@ -816,7 +819,7 @@ def render_inpaint_states(shell, state, capture):
             1,
             3,
             "OFFLINE PRESENTATION FIXTURE · analysis step 1 of 3; no ONNX execution",
-            "22-inpaint-find-people-overlay",
+            "inpaint-08-find-people-overlay",
         ),
         (
             "inpaint-edit-fixture",
@@ -825,7 +828,7 @@ def render_inpaint_states(shell, state, capture):
             4,
             12,
             "OFFLINE PRESENTATION FIXTURE · sampling step 4 of 12; no generation submitted",
-            "23-inpaint-edit-image-overlay",
+            "inpaint-09-edit-image-overlay",
         ),
     ):
         strip.start(key, label, stop=lambda key=key: strip.finish(key), stop_text=stop_text, total=total)
@@ -869,11 +872,11 @@ def main():
                 )
             )
             QTest.qWait(100)
-            target = args.out / "30-images-trash-unavailable.png"
+            target = args.out / "images-02-trash-unavailable.png"
             if not unavailable.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
-            target = args.out / "36-images-removal-mode-menu.png"
+            target = args.out / "images-09-removal-mode-menu.png"
             if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
@@ -905,7 +908,7 @@ def main():
 
         try:
             QTest.qWait(100)
-            capture("01-empty")
+            capture("generate-01-empty")
             page.refreshInventoryButton.click()
             wait_for(lambda: page.refreshInventoryButton.isEnabled())
             page.modelCombo.setCurrentText("fake-grid")
@@ -919,68 +922,68 @@ def main():
             page.generateButton.click()
             wait_for(settled, timeout=60)
             assert page.resultList.count() == 2, page.generationStatusLabel.text()
-            capture("02-portrait")
+            capture("generate-02-portrait")
             QTest.mouseMove(page.generateButton, QPoint(20, 15))
-            capture("03-hover")
+            capture("generate-03-hover")
             page.generateButton.setDown(True)
-            capture("04-pressed")
+            capture("generate-04-pressed")
             page.generateButton.setDown(False)
             page.resultPreviewLabel.zoom(2)
-            capture("05-zoom")
+            capture("generate-05-zoom")
             page.widthSpinBox.setValue(1024)
             page.heightSpinBox.setValue(576)
             page.generateButton.click()
             wait_for(settled, timeout=60)
-            capture("06-landscape")
+            capture("generate-06-landscape")
             shell.form.resize(800, 680)
-            capture("07-narrow")
+            capture("generate-07-narrow")
             shell.form.resize(1600, 1000)
             page.promptEdit.clear()
             page.seedEdit.setText("invalid")
             page.generateButton.click()
             page.seedEdit.setFocus()
-            capture("08-invalid-focus")
+            capture("generate-08-invalid-focus")
             page.promptEdit.setPlainText("Offline fixture")
             page.seedEdit.setText("0")
             controller.lora.set_loras((LoRASelection("fake-mismatch", 0.7), LoRASelection("fake-unknown", 0.5)))
             page.checkLorasButton.click()
             wait_for(settled, timeout=60)
-            capture("09-incompatible")
+            capture("generate-09-incompatible")
             controller.lora.set_loras(())
             gate = asyncio.Event()
             page.generateButton.click()
             wait_for(lambda: not page.generateButton.isEnabled())
-            capture("10-busy-disabled")
+            capture("generate-10-busy-disabled")
             shell.runner._loop.call_soon_threadsafe(gate.set)
             wait_for(settled, timeout=60)
             gate, scenario = None, "lost"
             page.generateButton.click()
             wait_for(settled, timeout=60)
-            capture("11-outcome-unknown")
+            capture("generate-11-outcome-unknown")
             strip = shell.progress_strip
             strip.finish("generation-result")
             page.expandPromptButton.setChecked(True)
-            capture("108-generate-prompt-expanded")
+            capture("generate-13-prompt-expanded")
             page.expandPromptButton.setChecked(False)
             scenario = "reject"
             page.generateButton.click()
             wait_for(settled, timeout=60)
-            capture("109-generate-failed")
+            capture("generate-14-failed")
             strip.finish("generation-result")
             gate, scenario = asyncio.Event(), "success"
             page.generateButton.click()
             wait_for(lambda: "run" in strip.rows)
             strip.rows["run"].activityStopButton.click()
-            capture("110-generate-stop-requested")
+            capture("generate-15-stop-requested")
             wait_for(settled, timeout=60)
-            capture("111-generate-interrupted")
+            capture("generate-16-interrupted")
             gate = None
             strip.finish("generation-result")
             shell.activity.set(dispatching=True)
-            capture("112-generate-queue-dispatch-running")
+            capture("generate-17-queue-dispatch-running")
             shell.activity.set(dispatching=False)
             page.savePresetButton.click()
-            capture("113-generate-save-preset-editor")
+            capture("generate-18-save-preset-editor")
             shell.inline.dismiss()
 
             # Real asset-service composition, in-memory transport. Never generates through cloud.
@@ -999,9 +1002,12 @@ def main():
                 "OFFLINE FIXTURE · in-memory cloud receipts. No provider traffic or real upload."
             )
             page.detailsToggle.setChecked(True)
-            capture("12-assets-details")
+            capture("generate-12-assets-details")
             shell.form.backendCombo.setCurrentText("fake")
-            for name, tab in (("13-queues", "queueNavigationButton"), ("14-images", "imagesNavigationButton")):
+            for name, tab in (
+                ("queues-01-empty", "queueNavigationButton"),
+                ("images-01-grid", "imagesNavigationButton"),
+            ):
                 getattr(shell.form, tab).click()
                 if tab == "imagesNavigationButton":
                     # The fake generations above are saved outputs; show them loaded, not a mid-refresh frame.
@@ -1024,21 +1030,21 @@ def main():
             gallery.select(gallery.items[0].identity)
             gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
             QTest.qWait(150)
-            capture("60-images-detail-additional")
+            capture("images-28-detail-additional")
             assert gallery.regenerate_button.isEnabled()
             # Regenerate lives at the end of Additional details; show the armed Confirm in place.
             gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(gallery.regenerate_button)
             gallery.regenerate_button.click()
             QTest.qWait(150)
-            capture("61-images-regenerate-confirmation")
+            capture("images-29-regenerate-confirmation")
             scenario = "success"
             gallery.regenerate_button.click()
             assert page.resultList.count() == 0  # submitted: Generate cleared its previous result
             wait_for(lambda: page.resultList.count() > 0 and settled())
-            capture("62-images-regenerate-confirmed")
+            capture("images-30-regenerate-confirmed")
             shell.form.generationNavigationButton.click()
             controller.show_metadata()
-            capture("114-generate-metadata-inspection")
+            capture("generate-19-metadata-inspection")
             shell.inline.dismiss()
             render_queue_states(shell, capture)
             render_shell_states(shell, capture)
