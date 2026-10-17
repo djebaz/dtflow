@@ -38,7 +38,7 @@ from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
 from dtflow.persistence.original_io import OriginalImagesBusyError  # noqa: E402
 from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
-from dtflow.persistence.store import PersistenceError  # noqa: E402
+from dtflow.persistence.store import PersistenceError, StateBusyError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
@@ -560,6 +560,45 @@ def render_mapped_gallery_states(app, state, out):
             app.processEvents()
 
 
+def render_queue_states(shell, capture):
+    """A real paused queue in the temporary state; dispatch settlements are delivered directly, never run."""
+    queue, page = shell.queue, shell.queue_page
+    shell.form.queueNavigationButton.click()
+    page.queueCountSpinBox.setValue(3)
+    page.createQueueButton.click()
+    wait_for(lambda: queue._view() is not None)
+    capture("85-queues-created-paused")
+    page.planBox.setChecked(True)
+    page.planDryRunButton.click()
+    capture("86-queues-plan-dry-run")
+    page.planBox.setChecked(False)
+    for button, name in (
+        (page.cancelQueueButton, "87-queues-cancel-confirmation"),
+        (page.clearQueuesButton, "88-queues-clear-confirmation"),
+    ):
+        button.click()
+        capture(name)
+        shell.inline.dismiss()
+    view = queue._view()
+    counts = dict.fromkeys(view["summary"], 0)
+    strip = activity_strip(page)
+    for name, status, summary, failure in (
+        ("89-queues-result-finished", "finished", {"succeeded": 3}, None),
+        ("90-queues-result-partial", "finished", {"succeeded": 1, "failed": 1, "unknown": 1}, None),
+        ("91-queues-result-cancelled", "cancelled", {"succeeded": 1, "cancelled": 2}, None),
+        ("92-queues-dispatch-owned-elsewhere", None, None, StateBusyError("Offline fixture: state is owned.")),
+        ("93-queues-dispatch-error", None, None, RuntimeError("Offline fixture")),
+    ):
+        final = None if failure else dict(view, status=status, summary={**counts, **summary})
+        queue._dispatched(final, failure)
+        capture(name)
+        strip.finish("queue-result")
+    # Leave no queue behind for the later Generate/Inpaint renders.
+    page.clearQueuesButton.click()
+    page.clearQueuesButton.click()
+    wait_for(lambda: queue._view() is None)
+
+
 def render_inpaint_states(shell, state, capture):
     """Listed editor states only; analysis/dispatch rows are presentation fixtures."""
     page, editor = shell.generation_page, shell.generation.inpaint
@@ -891,6 +930,7 @@ def main():
             assert page.resultList.count() == 0  # submitted: Generate cleared its previous result
             wait_for(lambda: page.resultList.count() > 0 and settled())
             capture("62-images-regenerate-confirmed")
+            render_queue_states(shell, capture)
             render_inpaint_states(shell, state, capture)
         finally:
             shell.runner.shutdown()
