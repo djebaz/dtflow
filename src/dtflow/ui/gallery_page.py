@@ -297,6 +297,8 @@ class GalleryPage(QObject):
         self._refresh_failing = False
         self._snapshot_at = None
         self._snapshot_warning_dismissed = False
+        self._snapshot_warning_episode = False
+        self._snapshot_live_since = None
         self._restoring = True
         self._query_generation = 0
         self._image_generation = 0
@@ -1198,6 +1200,12 @@ class GalleryPage(QObject):
             try:
                 return await work()
             except PersistenceError as live_error:
+                cause = live_error.__cause__ or live_error
+                log.debug(
+                    "gallery live query unavailable; trying snapshot reason=%s sqlite_code=%s",
+                    type(cause).__name__,
+                    getattr(cause, "sqlite_errorname", "unavailable"),
+                )
                 try:
                     return await query_snapshot(self.state_dir, query, anchor)
                 except (PersistenceError, OSError):
@@ -1210,6 +1218,8 @@ class GalleryPage(QObject):
             return
         self._loading = False
         self.refresh_button.setEnabled(True)
+        if error is not None or (result is not None and result[1].snapshot_at):
+            self._snapshot_live_since = None
         if self._pending_refresh is not None:
             pending = self._pending_refresh
             self._pending_refresh = None
@@ -1237,8 +1247,21 @@ class GalleryPage(QObject):
                 inline.dismiss()
             self._presented_item = None
             log.info("gallery browsing source=%s", "snapshot" if page.snapshot_at else "live")
-        if not self._snapshot_at or not page.snapshot_at:
-            self._snapshot_warning_dismissed = False
+        if page.snapshot_at:
+            self._snapshot_warning_episode = True
+            self._snapshot_live_since = None
+        elif self._snapshot_warning_episode:
+            now = monotonic()
+            if self._snapshot_live_since is None:
+                self._snapshot_live_since = now
+            elif now - self._snapshot_live_since >= AUTO_REFRESH_MS / 1000:
+                # End the presentation episode only after another live success
+                # at least one polling interval later. Authority is live now;
+                # this grace period affects the warning/dismissal only.
+                self._snapshot_warning_episode = False
+                self._snapshot_warning_dismissed = False
+                self._snapshot_live_since = None
+                log.info("gallery live access stable; snapshot warning episode ended")
         self._snapshot_at = page.snapshot_at
         self._sync_snapshot_warning()
         status = self._widget("gallerySnapshotStatus", QLabel)
@@ -1307,15 +1330,16 @@ class GalleryPage(QObject):
         if strip is None:
             return
         key = "gallery-snapshot"
-        if not self._snapshot_at or not self._active or self._snapshot_warning_dismissed:
+        if not self._snapshot_warning_episode or not self._active or self._snapshot_warning_dismissed:
             if key in strip.rows:
                 strip.finish(key)
             return
-        strip.status(
-            key,
-            f"Live gallery unavailable · Read-only snapshot {self._snapshot_at} · Retrying automatically",
-            self._dismiss_snapshot_warning,
+        text = (
+            f"Live gallery unavailable · Read-only snapshot {self._snapshot_at} · Retrying automatically"
+            if self._snapshot_at
+            else "Live gallery access recovering · Checking stability"
         )
+        strip.status(key, text, self._dismiss_snapshot_warning)
 
     def _populate_facets(self, models: tuple[str, ...], loras: tuple[str, ...]) -> None:
         for combo, placeholder, values in (

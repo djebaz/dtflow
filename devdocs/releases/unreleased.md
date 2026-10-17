@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Snapshot warning oscillation: brief live reads no longer reset dismissal or tear down/recreate the slim warning. The same row shows recovering wording until consecutive live successes at least five seconds apart; live authority still returns immediately. Development logs include the underlying SQLite error name on fallback. Offline fixture definitions extended, not rendered; no tests added or run and no underlying cross-runtime locking fix claimed.
+
 - Snapshot recovery review P2: a valid signature no longer skips an unusable same-version snapshot. Bounded query-structure/integrity validation and a baseline-comparison fallback permit live-state replacement with unknown deltas; unsupported versions and publication safety budgets remain protected. No tests added or run locally.
 
 - Snapshot diagnostics now separate added/removed visible images from included totals, record publication triggers and the actual saved timestamp, and summarize this app session's cumulative publication activity on close even when unchanged. Unknown prior baselines stay explicit; identity comparison streams inside the existing publication budget. No paths/prompts logged; owner runtime acceptance remains pending.

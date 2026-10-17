@@ -208,6 +208,7 @@ def render_mapped_gallery_states(app, state, out):
                 return GalleryResults((item,), 1, options.offset, options.limit, "2026-10-17T07:00:00+00:00")
 
             # Synthetic publication presentation only; no owner database or mutation.
+            live_query = gallery_ui.query_outputs
             with patch.object(gallery_ui, "query_outputs", frozen_query):
                 shell.gallery.refresh()
                 wait_for(lambda: not shell.gallery._loading and bool(shell.gallery._snapshot_at))
@@ -221,7 +222,28 @@ def render_mapped_gallery_states(app, state, out):
                         raise RuntimeError(f"Could not save {target.name}")
                     print(target)
                 warning = activity_strip(shell.form).rows["gallery-snapshot"]
+                # One brief live success keeps the same slim row, with accurate
+                # recovering wording rather than stale read-only authority.
+                with (
+                    patch.object(gallery_ui, "query_outputs", live_query),
+                    patch.object(gallery_ui, "monotonic", return_value=100.0),
+                ):
+                    shell.gallery.refresh()
+                    wait_for(lambda: not shell.gallery._loading)
+                target = out / "50-images-live-recovery-stabilizing.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading)
                 warning.activityStatusDismissButton.click()
+                # A brief live result must not reset voluntary dismissal.
+                with (
+                    patch.object(gallery_ui, "query_outputs", live_query),
+                    patch.object(gallery_ui, "monotonic", return_value=200.0),
+                ):
+                    shell.gallery.refresh()
+                    wait_for(lambda: not shell.gallery._loading)
                 shell.gallery.refresh()
                 wait_for(lambda: not shell.gallery._loading)
                 assert "gallery-snapshot" not in activity_strip(shell.form).rows
@@ -230,8 +252,12 @@ def render_mapped_gallery_states(app, state, out):
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
                 print(target)
-            shell.gallery.refresh()
-            wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
+            # Drive real recovery callbacks at two controlled clock readings;
+            # no wall-clock wait, provider work or direct sentinel mutation.
+            for now in (300.0, 300.0 + gallery_ui.AUTO_REFRESH_MS / 1000 + 1):
+                with patch.object(gallery_ui, "monotonic", return_value=now):
+                    shell.gallery.refresh()
+                    wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
             assert "gallery-snapshot" not in activity_strip(shell.form).rows
             # Presentation only: synthetic scope, with execution explicitly blocked.
             wait_for(lambda: shell.gallery.removal_ready)
