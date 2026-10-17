@@ -2,7 +2,7 @@
 
 ## Status and working rules
 
-Open, unmerged PR #76, branch `feature/image-removal-modes`. The initial implementation was source-present at `b935bca`. The A1–A3/B1 review fixes and the later owner decisions on **no new generation recovery**, uncertain-delete alerts and split-menu styling are **planned, not yet implemented**. Runtime removal acceptance remains pending. Reuse the existing workflow rather than adding a parallel deletion framework. No merge, tests, builds or renders by the agent. Owner permits focused, non-destructive WSL CLI probes and has separately requested Ruff lint/format.
+Open, unmerged PR #76, branch `feature/image-removal-modes`, ready for review so CI runs. The initial implementation was source-present at `b935bca`; the subsequent phase-based A2/A3 handling, B1 wording, A1 static readiness, local-save reporting, new uncertain-delete alerts and split-menu polish are now source-present. Review follow-ups address export bridge errors, stable bridge error reasons, zero-mutation messaging and duplicate startup notices. **Source-complete is not owner/runtime acceptance.** The owner explicitly declined generation-output staging or automatic recovery. No actual permanent deletion, WSL2 compatibility probe, paid generation, manual GUI rendering or inference was performed for this remediation. GitHub Actions CI at `46b7517` passed lockfile, Ruff lint/format, SQLite and offline pytest; this is automated code evidence only.
 
 ## Scope and agreed contract
 
@@ -53,7 +53,7 @@ The owner explicitly accepts the risk that a provider-completed generation may b
 
 ### Owner decision — warn only on newly uncertain permanent deletions
 
-When a permanent-delete attempt first settles as `uncertain` during normal operation, show the existing amber/orange warning overlay once for that newly uncertain outcome. `persistence/image_recycle.py:reconcile()` currently transitions both Trash `pending` and permanent `delete_pending` and returns a combined count. Change the result/signature minimally to distinguish newly reconciled Trash from permanent-delete rows. **After any successful reconciliation pass** (startup or later `_request_recycle_reconciliation`), warn only for that pass's newly transitioned `delete_pending` → `uncertain` records; do not start warning for Trash rows that previously reconciled silently. Aggregate counts when appropriate. Preexisting `uncertain` rows never re-alert. Do not add a tracking table, timestamp-based alerts or recovery UI.
+When a permanent-delete attempt first settles as `uncertain` during normal operation, show the existing amber/orange warning overlay once for that newly uncertain outcome. `persistence/image_recycle.py:reconcile()` now returns `ReconcileResult(trash_uncertain, delete_uncertain, withdrawn_restorations)`; the previously combined interrupted counts are separated. **After any successful reconciliation pass** (startup or later `_request_recycle_reconciliation`), warn only for that pass's newly transitioned `delete_pending` → `uncertain` records; do not start warning for Trash rows that previously reconciled silently. Aggregate counts when appropriate. Preexisting `uncertain` rows never re-alert. Do not add a tracking table, timestamp-based alerts or recovery UI.
 
 Reconciliation requires both `recycle_batch_lock` and `original_images_lock`. When unavailable, log the skipped pass and explain in the existing readiness UI that interrupted removal intents cannot be reconciled until shared-lock readiness returns. Do not claim that they were settled. Rows still in `delete_pending` remain ineligible for retry; that is intentional. Only a successful pass can generate newly reconciled warnings. Do not assume reconciliation runs only once per session, and never replay removal. Explain that deletion **may or may not have occurred** and manual inspection is necessary. The durable `uncertain` outcome remains unchanged and blocks automatic replay; dismissal/expiry of the warning does not modify ledger state. A *confirmed* refusal before the disposition boundary, with an unchanged original, remains retryable `failed` as defined by A3. **Known limitation accepted by the owner:** if the app crashes after recording `uncertain` but before showing its warning, that outcome may never generate an overlay; durable evidence and no-replay behavior still protect the original.
 
@@ -73,28 +73,19 @@ Polish the existing joined Images action/menu control, not a redesigned componen
 
 Keep `RecycleTarget.mounts` and fresh per-file mapping discovery: the frozen-target comparison uses the snapshot to reject changed mappings. Recompute committed ownership at execution time under the original-file lease; never substitute preflight counts or narrow ownership to only the selected attempt. Process-spawn and normalized-query costs remain unmeasured follow-ups, not defects to optimize in this remediation. No dedicated recovery/reset UI, new dependency, general cross-platform state-owner/SQLite concurrency support or WSL2 implementation is included.
 
-### Remediation action items (pending)
+## Source implementation checklist
 
-- [ ] Add a reusable, sanitized readiness result distinguishing unsupported bridge prerequisites from transient contention, while preserving the shared lock on every original-touching path.
-- [ ] Wire nonblocking startup availability and operation-start rechecks, preserving settings/metadata browsing and blocking original reads and affected work when unavailable.
-- [ ] Gate every generation submission path using cheap static readiness checks only; do not spawn/test a Windows lock helper before billable provider dispatch; retain actual save/read/mutation leases.
-- [ ] Implement the helper's stable `{"ok":false,"phase":"pre"}` reply for confirmed pre-disposition failure and native `RefusedBeforeMutation` (`OSError` subclass); classify by phase without Win32 error-code whitelists and settle unchanged refusals as retryable `failed` without aborting later files.
-- [ ] Retain `uncertain` for disposition/close/acknowledgment ambiguity, changed originals and unsettled durable writes; preserve no-replay behavior. Extend `reconcile()` return details with separate newly uncertain Trash `pending` and permanent `delete_pending` counts.
-- [ ] Separate readiness/preflight, per-item refusal and execution-uncertainty UI messages; use the amber overlay for **new** uncertain deletion outcomes only, including newly reconciled transitions on startup.
-- [ ] Add `PERSISTENCE` / `local_save_unavailable` for bridge unavailability, `OriginalImagesBusyError` contention and `OSError` during save after remote success; retain `SUCCEEDED` + `save_failed`, accurately describe possible partial files and possible re-billing, and preserve existing evidence without generation recovery or provider resubmission.
-- [ ] Avoid repeated startup overlays for previously recorded `uncertain` deletions; reconcile as usual, announce only newly transitioned cases, and preserve their durable ledger status.
-- [ ] Polish the two-item split dropdown with shared Qt tokens/QSS, checkmark/icon treatment and an offline open-menu preview fixture.
-- [ ] Synchronize architecture, desktop/policy/release docs and PR body when the remediation is implemented, then run owner-authorized Ruff lint/format and report runtime acceptance separately.
+One authoritative implementation checklist follows the original commit order. An [x] means the source and/or documentation is present, **not** that Windows/WSL runtime deletion has been accepted. The separate [Owner acceptance](#owner-acceptance) checks remain open.
 
-## Ordered implementation steps (remaining, coherent commits)
+1. [x] **A2/A3 + reconciliation** — helper `phase:"pre"`, native `RefusedBeforeMutation`, no-replay settlement, and separate `reconcile()` counts ([`4802bdb`](https://github.com/djebaz/dtflow/commit/4802bdb0dcab32f787258890f668f095463b4aa1)).
+2. [x] **B1 presentation** — separate preflight/confirmed-refusal/uncertain-execution messaging ([`2ea6656`](https://github.com/djebaz/dtflow/commit/2ea665650d031d1e8b69a79e76ec5d4a5b5f44a6)).
+3. [x] **A1 readiness** — shared original-file leases, cheap static predispatch check for all generation paths, metadata/settings availability and explicit unsupported bridge state ([`8a01ada`](https://github.com/djebaz/dtflow/commit/8a01ada6367f8909ecc1d398ec72c2c7cca061c5)).
+4. [x] **Local-save failures** — `PERSISTENCE`/`local_save_unavailable` for unavailable bridge, contention and disk I/O; preserve `SUCCEEDED` + `save_failed`, possible partial files and re-billing warning, without staging/retry ([`1b84415`](https://github.com/djebaz/dtflow/commit/1b84415ed335a8ed7e3a990764f19a938599d1a8)).
+5. [x] **Uncertain-delete alerts** — new permanent-only uncertainty notices on execution/reconciliation, silent old/Trash uncertainties and deferred reconciliation without replay ([`76bf290`](https://github.com/djebaz/dtflow/commit/76bf2905b87a7cf674a8aa35b39f43dda586aa43)).
+6. [x] **Split-menu styling** — Qt two-choice menu, icon/checkmark/danger styling and offline fixture definitions (not rendered) ([`a60c25a`](https://github.com/djebaz/dtflow/commit/a60c25afd025b2d5cde0e0e1ab27923af3c2afa1)).
+7. [x] **Validation and documentation** — architecture/desktop/release/PR synchronisation and automated CI lint/format/offline pytest evidence; runtime and platform acceptance stay separate.
 
-1. Implement helper phase-based refusal protocol, native `RefusedBeforeMutation` handling and service settlement (A2/A3); distinguish Trash/permanent newly uncertain counts in `reconcile`.
-2. Fix phase-correct readiness/preflight, refused-before-mutation and unconfirmed-execution UI messages (B1).
-3. Add static-only shared-lock readiness, distinct unavailable-vs-contention errors, nonblocking startup availability, and one authoritative gate covering desktop/CLI/queue/image-operation generation submission (A1).
-4. Add `local_save_unavailable` handling for bridge unavailability, ordinary save-time lock contention and disk I/O failure, with partial-file-aware messaging while preserving `save_failed` and no recovery.
-5. Implement one-shot amber alerts for newly uncertain permanent deletions on execution or any successful reconcile pass; report skipped reconciliation without replay.
-6. Polish split-action dropdown using shared QSS/Designer style and extend offline `tools/ui/render_states.py` fixtures.
-7. Sync architecture, desktop/policy and concrete `unreleased.md` compatibility notes plus PR body; perform owner-authorized Ruff checks and report runtime acceptance separately.
+Review-fix commits [`7e78ff5`](https://github.com/djebaz/dtflow/commit/7e78ff55f88c3f19b622021ec346bcc4bb037ce0), [`c45484a`](https://github.com/djebaz/dtflow/commit/c45484ac1c4c7b9455704d99333cee22958b818a), and [`46b7517`](https://github.com/djebaz/dtflow/commit/46b7517a00051ac41f77322e644021e382d46c1f) close export bridge-loss handling, structured bridge reasons, precise B1 and startup notices, and Ruff formatting. No new special-generation recovery or Windows/WSL compatibility claim was added.
 
 ### Safety gate before permanent-removal code
 
@@ -112,7 +103,7 @@ The implemented helper's lock-only probe showed: WSL-started holder blocks nativ
 
 ## Action items
 
-The completed items below describe the initial implementation only; they do not establish completion of the pending review-remediation checklist above.
+The completed items below describe the initial implementation at `b935bca`. The source-remediation checklist above records subsequent work, while owner acceptance remains pending.
 
 - [x] Read current removal service, ledger, gallery and inline consent paths.
 - [x] Implement mode state and explicit policy change in AGENTS/design/docs.
@@ -123,9 +114,7 @@ The completed items below describe the initial implementation only; they do not 
 
 ## Probes / acceptance
 
-Restrict agent probes through wsl.exe to non-mutating capability/path/handle inspection and disposable-file locks; never delete user images or run generation. No tests, builds or renders under fast-implement. Owner additionally requested Ruff lint/format: environment readiness passed; `uv run --frozen ruff check .` passed; Ruff formatted 9 changed Python files and repository-wide `ruff format --check .` passed (320 files). Record these static checks separately from runtime acceptance.
-
-Those Ruff results and probes cover the initial implementation, not the pending remediation. This plan-only update runs no new runtime checks, probes, tests, builds, renders, training, inference or billable operations.
+Restrict agent probes to non-mutating path/handle inspection and disposable-file locks; never delete user images or run paid generation. The initial implementation at `b935bca` had its own Ruff evidence (9 changed Python files formatted and 320 files checked). For the **source-remediation head `46b7517`**, GitHub Actions run [38984516615](https://github.com/djebaz/dtflow/actions/runs/38984516615) completed successfully: lockfile, Ruff lint/format, SQLite check and offline pytest. The preceding run at `c45484a` failed only Ruff formatting; that was fixed by `46b7517`. No real deletion, WSL2/9p verification, native GUI/DPI check, generation/inference or potentially billable operation was performed for the remediation. Automated CI does not establish Windows/WSL runtime acceptance.
 
 ### Owner acceptance
 
