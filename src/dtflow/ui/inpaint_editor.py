@@ -753,6 +753,8 @@ class InpaintEditor(QObject):
             self._models = models
             self._models_issue = None
             self._set_analysis(None)
+            # Also check optional models retained from the previous selection.
+            self._check_models()
 
         self._task("Choose person models", worker, apply)
 
