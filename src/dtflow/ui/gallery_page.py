@@ -45,9 +45,9 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.gallery import GalleryItem, GalleryQuery
-from dtflow.logging_setup import dev_enabled
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
+from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError, original_images_lock
 from dtflow.persistence.store import PersistenceError
@@ -1218,7 +1218,9 @@ class GalleryPage(QObject):
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=query_start offset=%d limit=%d mounted=%d",
-                query.offset, query.limit, len(self.items),
+                query.offset,
+                query.limit,
+                len(self.items),
             )
         self._loading = True
         self._adjacent_failed_offset = None
@@ -1688,7 +1690,8 @@ class GalleryPage(QObject):
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=adjacent_reconcile elapsed_ms=%.1f mounted=%d",
-                (monotonic() - render_started) * 1000, len(self.items),
+                (monotonic() - render_started) * 1000,
+                len(self.items),
             )
 
         def settle():
@@ -1992,9 +1995,7 @@ class GalleryPage(QObject):
                 ),
             )
 
-    def _thumbnail_done(
-        self, generation: int, identity: str, result, error, started: float | None = None
-    ) -> None:
+    def _thumbnail_done(self, generation: int, identity: str, result, error, started: float | None = None) -> None:
         if dev_enabled() and started is not None:
             log.debug(
                 "gallery_perf phase=thumbnail_end_to_end elapsed_ms=%.1f success=%s active=%d",
@@ -2517,7 +2518,8 @@ class GalleryPage(QObject):
             log.debug(
                 "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d",
                 (monotonic() - started) * 1000,
-                len(keys), columns,
+                len(keys),
+                columns,
             )
 
     def eventFilter(self, watched, event) -> bool:
