@@ -1,9 +1,11 @@
 name: UI renders
 
-# Manual only: render the offline UI preview states for a chosen pull request and upload the screenshots.
+# Renders the offline UI preview states and uploads the screenshots. Runs on manual dispatch for a chosen
+# pull request, and automatically on every push to a pull request labelled "render" (and when the label is added).
 # tools/ui/render_states.py uses offline fixtures and a network guard; no provider traffic, generation or secrets.
 run-name: >-
-  UI renders · ${{ inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
+  UI renders · ${{ github.event_name == 'pull_request' && format('PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title)
+  || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
 
 on:
   workflow_dispatch:
@@ -13,9 +15,12 @@ on:
         required: false
         default: ""
         type: string
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
+# A newer push or dispatch for the same pull request cancels the render in progress.
 concurrency:
-  group: ui-renders-${{ inputs.pr != '' && inputs.pr || github.ref }}
+  group: ui-renders-${{ github.event.pull_request.number || inputs.pr || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -25,18 +30,27 @@ permissions:
 env:
   UV_LOCKED: "1"
   QT_QPA_PLATFORM: offscreen
+  # Show each rendered file as it is written instead of buffering stdout until exit.
+  PYTHONUNBUFFERED: "1"
+  # On a fatal signal (including the hang watchdog below), print every thread's Python stack.
+  PYTHONFAULTHANDLER: "1"
 
 jobs:
   render:
     name: Render UI states
     runs-on: ubuntu-24.04
+    # Pull request events run only when the PR carries the "render" label; adding any other label does nothing.
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.event.action == 'labeled' && github.event.label.name == 'render')
+      || (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'render'))
     timeout-minutes: 15
     steps:
       - name: Resolve target commit
         id: target
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUT_PR: ${{ inputs.pr }}
+          INPUT_PR: ${{ github.event.pull_request.number || inputs.pr }}
         run: |
           sha="$GITHUB_SHA"
           label="branch $GITHUB_REF_NAME"
@@ -73,8 +87,17 @@ jobs:
       - name: Sync environment
         run: uv sync --locked
 
+      # A normal run takes well under a minute. If a state hangs, the watchdog aborts Python
+      # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
-        run: uv run python tools/ui/render_states.py --out tmp/ui-renders
+        timeout-minutes: 6
+        run: |
+          status=0
+          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders || status=$?
+          if [ "$status" -eq 124 ] || [ "$status" -eq 134 ]; then
+            echo "::error::Render timed out after 300s; see the stack trace above."
+          fi
+          exit "$status"
 
       - name: Summarize renders
         if: always()
@@ -87,7 +110,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: ui-renders-${{ inputs.pr != '' && format('pr{0}', inputs.pr) || 'branch' }}-${{ steps.target.outputs.short }}
+          name: ui-renders-${{ (github.event.pull_request.number || inputs.pr) && format('pr{0}', github.event.pull_request.number || inputs.pr) || 'branch' }}-${{ steps.target.outputs.short }}
           path: tmp/ui-renders/
           if-no-files-found: warn
           retention-days: 14
