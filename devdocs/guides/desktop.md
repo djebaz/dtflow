@@ -45,7 +45,6 @@ existing uncertainty semantics. Generation preview and the compact Run control r
 Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results show a teal 2 px draining lifetime line, an optional seconds label and a 450 ms fade after six seconds, paused while any overlay row is hovered or focused. Blue 5 px task progress remains a separate measure of actual completed work; amber warning/partial/stopped overlays use the same six-second countdown, amber 2 px draining line and fade; red errors and informational inspections remain persistent. Dismissing an amber notification does not modify an uncertain attempt, its recorded evidence or its recovery/retry rules. Unrelated notices cannot discard an active editor; Escape dismisses a plain notice. Informational inspections (for example About DTFlow) also close with their × button or a click anywhere outside them; errors and confirmations ignore outside clicks and keep Cancel/Dismiss semantics. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
 This implementation still requires owner runtime/visual and packaged acceptance.
 
-
 ## Launch
 
 From the repository root after `uv sync`:
