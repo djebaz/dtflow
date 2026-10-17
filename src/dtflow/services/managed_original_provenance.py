@@ -84,5 +84,3 @@ def verify_managed_sidecar(image: Path, sidecar: Path, row: dict, *, check_diges
                 raise ValueError
     except (OSError, ValueError, KeyError, TypeError, UnicodeError) as exc:
         raise OSError("Managed output metadata or image content does not match its record.") from exc
-
-
