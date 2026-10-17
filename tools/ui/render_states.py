@@ -875,7 +875,16 @@ def render_gallery_composition_states(shell, state, out):
             gallery._widget("galleryFocusButton", QPushButton).click()
         gallery.pager.present(total=342, visible_start=81, visible_end=104, loaded=160, active_page=2, loading=True)
         snap("images-71-pager-loading")
+        # Empty-state screenshot must contain an actually empty gallery, not
+        # an empty pager displayed over the previously selected Detail image.
+        gallery.items, gallery.total, gallery.offset = [], 0, 0
+        gallery.selected_id = None
+        gallery._render_page()
+        gallery._rendered_page = (0, ())
+        gallery._clear_detail()
+        gallery.show_view("Grid")
         gallery.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
+        assert gallery._grid_empty is not None
         snap("images-72-pager-empty")
         present(item)
         gallery._sync_pager()
