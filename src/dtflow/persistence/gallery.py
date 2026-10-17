@@ -91,7 +91,16 @@ def reader(state: Path):
         connection.execute("BEGIN")
         yield connection
     except sqlite3.Error as exc:
-        raise PersistenceError("Saved outputs could not be queried within the read budget.") from exc
+        code = getattr(exc, "sqlite_errorname", "") or type(exc).__name__
+        if code == "SQLITE_INTERRUPT":
+            raise PersistenceError("Saved outputs could not be queried within the read budget.") from exc
+        if code.startswith(("SQLITE_BUSY", "SQLITE_LOCKED")):
+            # WAL locking is per operating system: a Windows reader cannot share a
+            # store that a WSL1 process is writing (or the reverse). Retry later.
+            raise PersistenceError(
+                f"Saved outputs are busy, possibly in use by DTFlow on another system ({code})."
+            ) from exc
+        raise PersistenceError(f"Saved outputs could not be read ({code}).") from exc
     finally:
         if connection is not None:
             connection.close()

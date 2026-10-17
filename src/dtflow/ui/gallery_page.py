@@ -48,6 +48,7 @@ from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError, original_images_lock
+from dtflow.persistence.store import PersistenceError
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery import (
@@ -254,6 +255,7 @@ class GalleryPage(QObject):
         self._active = False
         self._loading = False
         self._pending_refresh: tuple[bool, bool] | None = None
+        self._refresh_failing = False
         self._restoring = True
         self._query_generation = 0
         self._image_generation = 0
@@ -1150,9 +1152,15 @@ class GalleryPage(QObject):
             self.refresh(reset=pending[0], preserve=pending[1])
             return
         if error is not None:
-            log.warning("gallery refresh failed reason=%s", type(error).__name__)
+            # Auto-refresh retries every few seconds; report a failure streak once.
+            detail = str(error) if isinstance(error, PersistenceError) else type(error).__name__
+            (log.debug if self._refresh_failing else log.warning)("gallery refresh failed reason=%s", detail)
+            self._refresh_failing = True
             self.refresh_button.setToolTip(f"Saved outputs could not be refreshed: {error}")
             return
+        if self._refresh_failing:
+            self._refresh_failing = False
+            log.info("gallery refresh recovered")
 
         query, page, choices, anchor_found = result
         self.offset = query.offset

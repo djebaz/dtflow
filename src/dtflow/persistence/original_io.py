@@ -16,6 +16,9 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 # Only report waits worth noticing; an uncontended lease is per-image routine.
 _SLOW_LEASE_SECONDS = 0.5
+# Every Windows-boundary lease starts a helper process (~1 s on WSL1), so only
+# waits well beyond that startup cost indicate a real competing owner.
+_SLOW_WINDOWS_LEASE_SECONDS = 5.0
 
 
 class OriginalImagesBusyError(RuntimeError):
@@ -129,7 +132,7 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
 
 def _log_wait(filename: str, boundary: str, started: float) -> None:
     waited = time.monotonic() - started
-    if waited >= _SLOW_LEASE_SECONDS:
+    if waited >= (_SLOW_WINDOWS_LEASE_SECONDS if boundary == "windows" else _SLOW_LEASE_SECONDS):
         log.debug(
             "original-file lease contended lease=%s boundary=%s waited_ms=%d",
             filename.removesuffix(".lock"),
