@@ -146,9 +146,11 @@ jobs:
                   head = handle.read(24)
               return struct.unpack(">II", head[16:24]) if head[:8] == b"\x89PNG\r\n\x1a\n" else (0, 0)
 
-          # Area = the word after the number, e.g. 61-images-regenerate -> images.
+          # Accept tab-first names and retain compatibility with older numbered renders.
           def area(name):
-              parts = name.split("-")
+              parts = name.split("-", 2)
+              if len(parts) == 3 and parts[1].isdigit():
+                  return parts[0]
               return parts[1] if len(parts) > 1 and parts[0].isdigit() else "other"
 
           # Seconds since start, from the script's "[  n] +12.3s path" progress lines when present.
@@ -185,7 +187,7 @@ jobs:
           if problems:
               md += ["### Problems", "", "```", *problems[-20:], "```", ""]
           if pngs:
-              # Words used by only one state (01-empty, 02-portrait...) are not areas; list them together.
+              # Group singleton areas together, including older unprefixed state names.
               counts = Counter(area(p.stem) for p in pngs)
               single = [p.stem for p in pngs if counts[area(p.stem)] == 1]
               md += ["### States by area", "", "| Area | States |", "|---|---:|"]
