@@ -220,7 +220,9 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
     try:
         # Prevent removal/reconciliation from changing the availability projection
         # mid-publication. Do not hold the original-file lease or delay paid saves.
-        with recycle_batch_lock(state, timeout=0.25), cache_access(state), _source(state) as source:
+        # Background worker: wait briefly like other cache I/O instead of skipping on a short overlap
+        # (for example an inventory save as a generation session ends).
+        with recycle_batch_lock(state, timeout=0.25), cache_access(state, timeout=0.5), _source(state) as source:
             destination = path_for(state)
             temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
             destination.parent.mkdir(parents=True, exist_ok=True)

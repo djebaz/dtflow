@@ -22,6 +22,14 @@ uv run python tools/ui/preview_gallery_detail.py --capture out/gallery-detail-op
 
 `states.py` families: buttons, connection, gallery, inputs, checks, lists, tabs, labels, popups.
 
+## Workflow-state filenames
+
+The [remaining-state implementation plan](../../devdocs/plans/2026-10-17-remaining-render-states.md) records the original 115-state baseline, missing workflow states, reserved filenames and safe offline fixture seams. Connection 01–39, Generate 20–40, Queues 11–23 and Images 53–64 are source-present (200 listed states in total). The latest thirty cover asset receipt/error/reconciliation presentation, active/problem/settled queue tables and planners, the shared Images export column, and Detail metadata/focus/missing/edited/provenance/LoRA/native-zoom states plus empty filtered results. These fixtures reuse one isolated shell, synthetic credentials/read views/results and mocked picker selections; service coroutines are closed before execution. Queue controls never dispatch or commit consent. Gallery pixels/metadata are in-memory presentation results, not export/removal authority, and preference-save scheduling is suppressed for that synthetic projection. The owner reports Actions passed through `c24f7c5`; the latest thirty additions await execution. Checked entries mean source-present fixtures, not independently verified screenshots or native Windows/DPI acceptance; unchecked entries remain planned.
+
+`render_states.py` saves listed offline workflow states as `<tab>-<NN>-<state>.png`, for example `images-01-grid.png`, `generate-01-empty.png` and `queues-02-created-paused.png`. The groups are `connection`, `generate`, `images`, `inpaint`, `queues` and `shell`; numbering is independent within each group. Keep existing names stable and append new numbers within the relevant group, so filenames sort by group without global numbering collisions. Render order may differ from filename order.
+
+The separate `shots.py` / `design_shots.py` screen captures retain their matched `10-connection` / `11-generate` / `12-queues` / `13-images` names; `states.py` / `design_states.py` retain their component-sheet names. These are separate capture namespaces, not references to the workflow-state IDs. Use separate output directories and do not treat leftover screenshots from an earlier naming scheme as current evidence.
+
 Notes
 - Both scripts import `tests/support` (network guard, fake vault, fake cloud) from the repo, so they must run inside a checkout. They contact no provider.
 - Hover, pressed and focus are forced with real Qt mouse and keyboard events on a fresh widget per cell; the sheet cells are drawn at 2x.

@@ -45,6 +45,7 @@ existing uncertainty semantics. Generation preview and the compact Run control r
 Essential information is visible directly; long messages wrap without a Details button. Export starts directly without confirmation. Successful operation results show a teal 2 px draining lifetime line, an optional seconds label and a 450 ms fade after six seconds, paused while any overlay row is hovered or focused. Blue 5 px task progress remains a separate measure of actual completed work; amber warning/partial/stopped overlays use the same six-second countdown, amber 2 px draining line and fade; red errors and informational inspections remain persistent. Dismissing an amber notification does not modify an uncertain attempt, its recorded evidence or its recovery/retry rules. Unrelated notices cannot discard an active editor; Escape dismisses a plain notice. Informational inspections (for example About DTFlow) also close with their × button or a click anywhere outside them; errors and confirmations ignore outside clicks and keep Cancel/Dismiss semantics. Dismissing a result never cancels work. Showing/hiding the overlay does not resize the main content or reserve idle space.
 This implementation still requires owner runtime/visual and packaged acceptance.
 
+
 ## Launch
 
 From the repository root after `uv sync`:
@@ -266,15 +267,11 @@ Alternatively use `QT_QPA_PLATFORM=windows` (visible windows). The renderer bloc
 provider network traffic and uses temporary state, fixture images/masks and fake
 providers. It renders only explicitly listed states; an unlisted view has no preview.
 
-Besides the existing Generate/Queues/Images states (01–14), the editor list is:
-15 Inpaint empty, 16 source loaded, 17 mask painted, 18 Source view, 19 Mask view,
-20 Result with no result yet (current Source fallback), 21 Clear confirmation,
-22 Find people overlay and 23 Edit image overlay. The last two are explicitly
-labelled presentation fixtures, not functioning analysis or image dispatch.
-The manual editor remains work in progress; its default strength is 0.7.
-Images also renders 60 Detail with Additional details open, 61 the Regenerate
-inline confirmation and 62 Regenerate confirmed (an offline fake-provider
-submission shown on Generate).
+Workflow screenshots use `<tab>-<NN>-<state>.png`, with independent numbering for `generate`, `images`, `inpaint`, `queues` and `shell`. For example, the initial Generate state is `generate-01-empty.png`, the Images grid is `images-01-grid.png`, and a newly created paused queue is `queues-02-created-paused.png`. See [the screenshot-tool guide](../../tools/ui/README.md) for naming and the separate screen/component capture namespaces.
+
+The initial editor states are `inpaint-01-empty`, `inpaint-02-source-loaded`, `inpaint-03-mask-painted`, `inpaint-04-source-view`, `inpaint-05-mask-view`, `inpaint-06-result-no-result` (current Source fallback), and `inpaint-07-clear-confirmation`. `inpaint-08-find-people-overlay` and `inpaint-09-edit-image-overlay` are explicitly labelled presentation fixtures, not functioning analysis or image dispatch. The manual editor remains work in progress; its default strength is 0.7.
+
+Images also renders `images-28-detail-additional`, `images-29-regenerate-confirmation` and `images-30-regenerate-confirmed` (an offline fake-provider submission shown on Generate).
 
 Screenshots are layout evidence only, not Windows/native-DPI, interaction,
 generation, ONNX or packaged acceptance. Extending the script does not mean it
