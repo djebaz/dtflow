@@ -10,8 +10,12 @@ Open, unmerged PR #76, branch `feature/image-removal-modes`, ready for review so
 - Default Trash. Persist the mode separately for Windows, WSL and native Linux; never persist consent, substitute Permanent or replay uncertain work.
 - Disabled Trash leaves the mode menu usable. Every permanent deletion needs a fresh inline irreversible warning/count and explicit Delete consent; its overlay still says permanently delete and no Undo.
 - Remove managed original images only; retain metadata, audit history and exports.
-- Include Windows-recorded originals from WSL through an explicit mutation boundary, not the gallery's read-only path alias.
+- Include Windows-recorded originals from WSL through an explicit mutation boundary, not the gallery's read-only path alias. Native Windows accepts WSL1-recorded managed originals only after complete state/identity/sidecar validation and independent fresh mutation safeguards.
 - Cancel between files; mode/scope/navigation changes invalidate pending consent.
+
+## Point-1 review follow-up (#5555750519)
+
+Owner-reported native Windows smoke passed for the initial WSL1 removal eligibility fix. Subsequent source review tightened its boundaries without changing the gallery read alias's authorization: shared state and sidecar primitives now reside in a neutral module; a SQL attempt prefilter avoids Python ownership-key work for unrelated references while full counts remain fresh at execution; SHA checking for image-operation originals remains at execution time under the lease; Windows reparse checks cover both Trash and Delete. Mixed selections, restart and helper-loss acceptance remain open. Confirmed-missing card removal and raw-artifact disposal are separate pending points.
 
 ## Minimal implementation direction
 

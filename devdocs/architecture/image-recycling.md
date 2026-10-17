@@ -6,9 +6,12 @@ The Images split control performs the selected **Move to Trash** or **Delete per
 
 Every permanent operation requires a fresh inline count and irreversible/no-Undo warning, followed by an explicit **Delete** confirmation in the original button (the inline text states permanently delete and no Undo). Scope, filters, navigation, or mode changes discard consent. There is no timer, automatic permanent fallback, typed phrase, or saved consent. Only managed originals are removed; metadata, generation history and exported copies remain. Stop takes effect between files and does not undo completed removals.
 
-The existing service, batch/per-image leases, preflight, atomic intent and outcome settlement serve both modes. Permanent mode adds fresh mapping snapshots and conservative alias-aware reference counts: references sharing a managed attempt/output suffix count together, even across different roots, rather than risking missed Windows/Linux aliases. Unverifiable, redirected, hardlinked, custom-root, changed-fingerprint or multiply referenced files are ineligible. No authorization comes from the read alias alone.
+The existing service, batch/per-image leases, preflight, atomic intent and outcome settlement serve both modes. Permanent mode and native Windows Trash use conservative alias-aware reference counts: references sharing a managed attempt/output suffix count together, even across different roots, rather than risking missed Windows/Linux aliases. Unverifiable, redirected, hardlinked, custom-root, changed-fingerprint or multiply referenced files are ineligible. No authorization comes from the read alias alone.
 
 ### Windows and WSL boundary
+
+Native Windows may Trash or permanently delete a WSL1-recorded final only when its complete recorded image and sidecar references match the shared native state and committed attempt identity. The deletion target is derived from state and identity, not from the gallery read alias. Metadata provenance is checked during preflight; the optional final SHA-256 is checked at execution under the original-file lease. Fresh alias-aware ownership counts retain their full semantics while SQL first filters out rows without the selected attempt identifier. Both native Windows removal modes now reject reparse-point components. The owner reports point-1 Windows smoke success; mixed selection, interruption and no-replay remain to be accepted.
+
 
 Focused WSL 1 probes on 2026-10-17 found that `flock` and `lockf` do **not** exclude a native Windows `msvcrt` byte lock in either direction. A disposable file exposed equal size, nanosecond mtime and inode through Windows/WSL, but different devices; execution still compares actual fingerprints and refuses mismatches, rather than assuming all mounts behave alike.
 

@@ -28,7 +28,7 @@ from dtflow.persistence.original_io import (
     windows_originals_bridge,
 )
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
-from dtflow.services.gallery_read_alias import _matches_state, _verify_sidecar
+from dtflow.services.managed_original_provenance import matches_managed_state, verify_managed_sidecar
 
 
 class RecycleUnavailable(RuntimeError):
@@ -126,8 +126,8 @@ def _regular_managed_file(
             not windows_wsl_alias
             or record.get("identity") != f"{attempt}:{ordinal}"
             or Path(state).absolute() != Path(state).resolve()
-            or not _matches_state(state, record["path"], (*tail, f"final-{ordinal + 1}.png"))
-            or not _matches_state(state, record["metadata_path"], (*tail, "metadata.json"))
+            or not matches_managed_state(state, record["path"], (*tail, f"final-{ordinal + 1}.png"))
+            or not matches_managed_state(state, record["metadata_path"], (*tail, "metadata.json"))
         ):
             return None
     paths = paths or ArtifactReadPaths()
@@ -153,12 +153,12 @@ def _regular_managed_file(
         return None
     try:
         components = (root, expected.parent, expected, metadata)
-        if permanent or windows_wsl_alias:
+        if permanent or os.name == "nt":
             components += tuple(Path(state).absolute().parents) + (Path(state).absolute(),)
         for component in components:
             if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
                 return None
-            if windows_wsl_alias and getattr(component.lstat(), "st_file_attributes", 0) & getattr(
+            if os.name == "nt" and getattr(component.lstat(), "st_file_attributes", 0) & getattr(
                 stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0
             ):
                 return None
@@ -172,7 +172,7 @@ def _regular_managed_file(
             # Bound sidecar provenance to the saved attempt/path, and compare
             # image-operation SHA when recorded. Ledger and fingerprint checks
             # remain independent, fresh removal-authorization gates.
-            _verify_sidecar(expected, metadata, record)
+            verify_managed_sidecar(expected, metadata, record, check_digest=reference_counts is None)
         info = expected.stat()
     except OSError:
         return None

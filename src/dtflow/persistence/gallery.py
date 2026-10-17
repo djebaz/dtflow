@@ -1,6 +1,7 @@
 """Bounded read-only artifact discovery; never own, migrate or reconcile execution state."""
 
 import json
+import re
 import sqlite3
 import time
 from collections.abc import Callable
@@ -15,6 +16,16 @@ from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_s
 # These references include non-default --out locations. Failed/orphaned files are not discovery sources.
 MAX_EXPORT_AVAILABILITY_BATCH = 128
 MAX_RECYCLE_PREFLIGHT_BATCH = 128
+_MANAGED_OUTPUT_KEY = re.compile(r"outputs/([a-f0-9]{32})/final-[1-9][0-9]*\.png\Z")
+
+
+def _candidate_attempts(keys: tuple[str, ...]) -> tuple[str, ...] | None:
+    """Give SQLite a necessary attempt substring filter, not ownership authority."""
+    matches = tuple(_MANAGED_OUTPUT_KEY.fullmatch(key) for key in keys)
+    if not matches or any(match is None for match in matches):
+        return None
+    return tuple(dict.fromkeys(match[1] for match in matches if match is not None))
+
 
 BASE = """
 WITH outputs AS (
@@ -355,6 +366,13 @@ def recycle_preflight_batch(
             # Normalize only for reference counting, never persist access aliases.
             db.create_function("original_key", 1, path_key)
             keys = tuple(dict.fromkeys(path_key(path) for path in paths))
+            attempts = _candidate_attempts(keys)
+            prefilter = (
+                " AND EXISTS (SELECT 1 FROM json_each(?) allowed WHERE instr(lower(p.value), allowed.value) > 0)"
+                if attempts is not None
+                else ""
+            )
+            parameters = (json.dumps(keys), json.dumps(attempts)) if attempts is not None else (json.dumps(keys),)
             counts = dict(
                 db.execute(
                     """SELECT original_key(p.value),count(*) FROM attempts a,
@@ -362,9 +380,10 @@ def recycle_preflight_batch(
                            THEN a.artifacts_json ELSE '[]' END) p
                    WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
                      AND p.type='text' AND original_key(p.value) IN (SELECT value FROM json_each(?))
-                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
-                   GROUP BY original_key(p.value)""",
-                    (json.dumps(keys),),
+                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
+                    + prefilter
+                    + " GROUP BY original_key(p.value)",
+                    parameters,
                 )
             )
             return records, counts
@@ -391,6 +410,10 @@ def path_reference_count(state: Path, path: str, *, path_key: Callable[[str], st
             return 0
         if path_key is not None:
             db.create_function("original_key", 1, path_key)
+            key = path_key(path)
+            attempts = _candidate_attempts((key,))
+            prefilter = " AND instr(lower(p.value), ?) > 0" if attempts is not None else ""
+            parameters = (key, attempts[0]) if attempts is not None else (key,)
             return int(
                 db.execute(
                     """SELECT count(*) FROM attempts a,
@@ -398,8 +421,9 @@ def path_reference_count(state: Path, path: str, *, path_key: Callable[[str], st
                            THEN a.artifacts_json ELSE '[]' END) p
                    WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
                      AND p.type='text' AND original_key(p.value)=?
-                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1""",
-                    (path_key(path),),
+                     AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
+                    + prefilter,
+                    parameters,
                 ).fetchone()[0]
             )
         row = db.execute(
