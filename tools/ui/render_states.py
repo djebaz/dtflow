@@ -804,7 +804,11 @@ def render_gallery_composition_states(shell, state, out):
             actual = form.grab().size()
             if actual != QSize(1600, 1000):
                 raise AssertionError(f"{name}: expected 1600x1000, got {actual.width()}x{actual.height()}")
-        save(form, out, name)
+        # Store the approved pager review states together in one artifact folder.
+        # Other Images screenshots keep their existing paths.
+        target_dir = out / "image-navigation" if "-pager-" in name else out
+        target_dir.mkdir(parents=True, exist_ok=True)
+        save(form, target_dir, name)
 
     def hold_worker(coroutine, callback):
         coroutine.close()

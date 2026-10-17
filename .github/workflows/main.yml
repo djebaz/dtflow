@@ -148,8 +148,8 @@ jobs:
 
           # Accept tab-first names and retain compatibility with older numbered renders.
           def area(path):
-              if path.relative_to(out).parts[:2] == ("images", "pagination"):
-                  return "Images / Pagination"
+              if path.relative_to(out).parts[:1] == ("image-navigation",):
+                  return "Image Navigation"
               parts = path.stem.split("-", 2)
               if len(parts) == 3 and parts[1].isdigit():
                   return parts[0]
@@ -197,14 +197,14 @@ jobs:
               if single:
                   md.append(f"| other ({', '.join(single)}) | {len(single)} |")
               md.append("")
-              pagination = [p for p in pngs if area(p) == "Images / Pagination"]
-              if pagination:
+              navigation = [p for p in pngs if area(p) == "Image Navigation"]
+              if navigation:
                   md += [
-                      "### Images / Pagination — review these together", "",
-                      f"Folder in artifact: `images/pagination/` · **{len(pagination)} screenshots**", "",
+                      "### Image Navigation — review these together", "",
+                      f"Folder in artifact: `image-navigation/` · **{len(navigation)} screenshots**", "",
                       "| Screenshot | Resolution | KB |", "|---|---|---:|",
                   ]
-                  for path in pagination:
+                  for path in navigation:
                       width, height = size(path)
                       md.append(f"| {path.name} | {width}×{height} | {path.stat().st_size // 1024} |")
                   md.append("")
