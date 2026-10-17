@@ -1173,6 +1173,33 @@ def render_gallery_composition_states(shell, state, out):
             gallery._request_boundary_prefetch(1, "fixture")
             QTest.qWait(30)
             boundary.assert_called_once_with(1)
+
+        class SyntheticWheel:
+            def __init__(self, delta):
+                self.delta = delta
+
+            def type(self):
+                return QEvent.Type.Wheel
+
+            def angleDelta(self):
+                return QPoint(0, self.delta)
+
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery.eventFilter(gallery.grid_viewport, SyntheticWheel(-120))
+            request.assert_called_once_with(1, "wheel")
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery.eventFilter(gallery.grid_viewport, SyntheticWheel(120))
+            request.assert_called_once_with(-1, "wheel")
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery._scrollbar_action(
+                "grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepAdd.value
+            )
+            request.assert_called_once_with(1, "scrollbar")
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery._scrollbar_action(
+                "grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepSub.value
+            )
+            request.assert_called_once_with(-1, "scrollbar")
         snap("images-82-pager-many-pages-ellipsis")
         form.resize(800, 680)
         QTest.qWait(130)
