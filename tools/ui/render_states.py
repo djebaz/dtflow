@@ -36,7 +36,7 @@ from dtflow.core.models import LoRASelection  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
-from dtflow.services.gallery import item_from_record, load_detail  # noqa: E402
+from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
@@ -216,6 +216,16 @@ def render_mapped_gallery_states(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            # Confirmed-missing original: file-missing pictogram in Grid and List, distinct from unavailable.
+            shell.gallery._show_unavailable(item.identity, MISSING_ISSUE)
+            for view, name in (("Grid", "42-images-file-missing-grid"), ("List", "43-images-file-missing-list")):
+                shell.gallery.show_view(view)
+                QTest.qWait(50)
+                target = out / f"{name}.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+            shell.gallery.show_view("Grid")
             # Present a safe unsupported-alias status without attempting a system launch.
             shell.gallery._read_action_done(
                 "folder", item.identity, None, OSError("Recorded output is not under this shared Windows state.")

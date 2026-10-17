@@ -59,6 +59,8 @@
 
 ## Fixed
 
+- Images distinguishes a confirmed-missing original (**File missing** pictogram in Grid, List and Detail) from one that is merely unreadable or unreachable (**Image unavailable**, reason on hover). Gallery read actions no longer show raw exception class names, and thumbnail fonts are built once per card instead of on every paint. Delete's own absence checks are unchanged. Source-only; owner smoke pending.
+
 - Desktop startup tolerates Qt bindings without `QFile.supportsMoveToTrash`:
   Delete remains disabled and Trash source checks refuse safely. No dependency,
   generation or permanent-delete behavior changes; WSL/older-Qt acceptance remains separate.

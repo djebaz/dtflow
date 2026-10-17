@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
@@ -12,6 +13,34 @@ from dtflow.persistence import gallery as storage
 from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_read
+
+MISSING_ISSUE = "Image file is missing."
+UNREADABLE_ISSUE = "Image is unreadable or its location is unavailable."
+
+
+def _confirmed_missing(path: Path) -> bool:
+    """Presentation only: the file is gone while its attempt folder or the outputs folder is reachable.
+
+    An unmapped drive, unlistable parent or permission failure stays "unavailable". This is never removal
+    authority; Delete re-proves absence with its own managed-state checks.
+    """
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    else:
+        return False
+    for folder in (path.parent, path.parent.parent):
+        try:
+            if folder.is_dir():
+                with os.scandir(folder):
+                    return True
+        except OSError:
+            return False
+    return False
+
 
 MAX_METADATA_BYTES = 1024 * 1024
 SECRET = re.compile(r"api.?key|token|password|secret|authorization|cookie|credential|signed.?url|base64", re.I)
@@ -54,7 +83,11 @@ def item_from_record(record: dict, paths: ArtifactReadPaths | None = None, *, st
             raise OSError
         size = path.stat().st_size
     except OSError:
-        issue = "Image is missing or unreadable."
+        try:
+            candidate = access_path or paths.resolve(record["path"])
+        except OSError:
+            candidate = ""
+        issue = MISSING_ISSUE if candidate and _confirmed_missing(Path(candidate)) else UNREADABLE_ISSUE
     if not access_metadata_path:
         try:
             access_metadata_path = paths.resolve(record["metadata_path"])

@@ -51,6 +51,7 @@ from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImag
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery import (
+    MISSING_ISSUE,
     copy_output_paths,
     filter_choices,
     inspect_output,
@@ -144,6 +145,10 @@ def _image(
         return None, str(exc)
     except OriginalImagesBusyError:
         return None, "Original temporarily busy"
+
+
+def _missing_icon() -> QIcon:
+    return QIcon(str(ASSETS / "file-x.svg"))
 
 
 def _display_output_path(path: str) -> str:
@@ -1262,8 +1267,8 @@ class GalleryPage(QObject):
                     self._update_entry(row, item)
                 self._paint_checked_item(row, item.identity)
             for item in image_changes:
-                self._grid_painters[item.identity].pixmap = QPixmap()
-                self._film_entries[item.identity][1].pixmap = QPixmap()
+                for painter in (self._grid_painters[item.identity], self._film_entries[item.identity][1]):
+                    painter.pixmap, painter.placeholder = QPixmap(), ""
                 row = next(i for i, record in enumerate(self.items) if record.identity == item.identity)
                 self.table.item(row, 1).setIcon(QIcon())
 
@@ -1456,6 +1461,8 @@ class GalleryPage(QObject):
             self._thumb_versions[item.identity] = generation
             if not item.issue:
                 self._thumb_waiting.append((generation, item.identity, item.path))
+            else:
+                self._show_unavailable(item.identity, item.issue)
         self._thumb_waiting = deque(
             entry for entry in self._thumb_waiting if self._thumb_versions.get(entry[1]) == entry[0]
         )
@@ -1505,32 +1512,38 @@ class GalleryPage(QObject):
                 if issue == "Original temporarily busy":
                     QTimer.singleShot(2000, lambda: self._retry_thumbnail(generation, identity))
                 else:
-                    # A short placeholder fits a small card; the full safe error stays on hover.
-                    detail = f"Image unavailable: {issue}"
-                    button = self._grid_buttons.get(identity)
-                    if button is not None:
-                        button.setToolTip(detail)
-                    painter = self._grid_painters.get(identity)
-                    if painter is not None:
-                        painter.pixmap = QPixmap()
-                        painter.placeholder = "Image unavailable"
-                        painter.widget.update()
-                    try:
-                        row = next(i for i, item in enumerate(self.items) if item.identity == identity)
-                    except StopIteration:
-                        row = -1
-                    if row >= 0:
-                        table_item = self.table.item(row, 1)
-                        if table_item is not None:
-                            table_item.setToolTip(detail)
-                            table_item.setIcon(QIcon())
-                        if row < len(self._film_painters):
-                            film_painter = self._film_painters[row]
-                            film_painter.pixmap = QPixmap()
-                            film_painter.placeholder = "Image unavailable"
-                            self._film_buttons[row].setToolTip(detail)
-                            self._film_buttons[row].update()
+                    self._show_unavailable(identity, issue)
         self._pump_thumbnails()
+
+    def _show_unavailable(self, identity: str, issue: str) -> None:
+        """Paint a confirmed-missing pictogram or the generic unavailable text in Grid, List and filmstrip.
+
+        A short placeholder fits a small card; the full safe reason stays on hover.
+        """
+        missing = issue == MISSING_ISSUE
+        short, detail = ("File missing", issue) if missing else ("Image unavailable", f"Image unavailable: {issue}")
+        icon = _missing_icon() if missing else QIcon()
+        button = self._grid_buttons.get(identity)
+        if button is not None:
+            button.setToolTip(detail)
+        painter = self._grid_painters.get(identity)
+        if painter is not None:
+            painter.pixmap = QPixmap()
+            painter.placeholder, painter.placeholder_icon = short, icon
+            painter.widget.update()
+        row = next((i for i, item in enumerate(self.items) if item.identity == identity), -1)
+        if row < 0:
+            return
+        table_item = self.table.item(row, 1)
+        if table_item is not None:
+            table_item.setToolTip(detail)
+            table_item.setIcon(icon)
+        if row < len(self._film_painters):
+            film_painter = self._film_painters[row]
+            film_painter.pixmap = QPixmap()
+            film_painter.placeholder, film_painter.placeholder_icon = short, icon
+            self._film_buttons[row].setToolTip(detail)
+            self._film_buttons[row].update()
 
     def _retry_thumbnail(self, generation: int, identity: str) -> None:
         """Retry only the same visible identity after a transient original-file lease."""
@@ -1658,6 +1671,9 @@ class GalleryPage(QObject):
             self.surface_painter.pixmap = QPixmap()
             self.surface_painter.zoom = 1.0
             self.surface_painter.offset = [0.0, 0.0]
+            missing = item.issue == MISSING_ISSUE
+            self.surface_painter.placeholder = "File missing" if missing else "Image unavailable" if item.issue else ""
+            self.surface_painter.placeholder_icon = _missing_icon() if missing else QIcon()
             self.surface.update()
             self._image_generation += 1
             image_generation = self._image_generation
@@ -1680,16 +1696,21 @@ class GalleryPage(QObject):
         if generation != self._image_generation or identity != self.selected_id:
             return
         if error is not None or not result or result[0] is None:
-            issue = type(error).__name__ if error is not None else (result[1] if result else "decode failed")
+            if error is not None:
+                log.warning("gallery detail image read failed reason=%s", type(error).__name__)
+            issue = "decode failed" if error is not None or not result else result[1] or "decode failed"
             self.surface_painter.pixmap = QPixmap()
             if issue == "Original temporarily busy":
                 QTimer.singleShot(2000, lambda: self._retry_detail_image(generation, identity))
                 return
+            if not self.surface_painter.placeholder:
+                self.surface_painter.placeholder = "Image unavailable"
             self.surface.setToolTip(f"Image is corrupt or unreadable: {issue}")
             self.external_button.setEnabled(False)
             self.surface.update()
             return
         self.surface_painter.pixmap = QPixmap.fromImage(result[0])
+        self.surface_painter.placeholder = ""
         self.surface.update()
 
     def _retry_detail_image(self, generation: int, identity: str) -> None:
@@ -2037,7 +2058,14 @@ class GalleryPage(QObject):
         if self.selected_id != identity:
             return
         if error is not None or not result:
-            reason = str(error) if isinstance(error, OSError) else type(error).__name__ if error else "unknown"
+            if isinstance(error, OriginalImagesBusyError):
+                reason = "another operation is using the original images; try again shortly."
+            elif isinstance(error, (OSError, OriginalImagesUnavailableError)):
+                reason = str(error)
+            else:
+                if error is not None:
+                    log.warning("gallery read action failed action=%s reason=%s", action, type(error).__name__)
+                reason = "the image could not be read."
             self._selection_notice(f"Image action unavailable: {reason}")
             return
         if action == "copy":
@@ -2081,6 +2109,7 @@ class GalleryPage(QObject):
         self._image_generation += 1
         self._detail_generation += 1
         self.surface_painter.pixmap = QPixmap()
+        self.surface_painter.placeholder = ""
         self.surface.update()
         self._widget("galleryPositionOverlay", QLabel).setText("0 / 0")
         self._widget("galleryDimensionsOverlay", QLabel).setText("—")
