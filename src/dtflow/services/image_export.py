@@ -401,9 +401,7 @@ def _export_one(
     try:
         source = Path(resolve_item_read(item, state)[0] if state is not None else item.path).resolve()
     except OSError as exc:
-        raise ValidationError(
-            "Saved source is unavailable or its Windows/WSL path cannot be safely verified."
-        ) from exc
+        raise ValidationError("Saved source is unavailable or its Windows/WSL path cannot be safely verified.") from exc
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
     if not source.is_file() or source.stat().st_size > MAX_IMAGE_BYTES:
