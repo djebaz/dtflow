@@ -7,7 +7,7 @@ import logging
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, QSize, Qt, Signal
 from PySide6.QtGui import QActionGroup, QIcon
 from PySide6.QtWidgets import QMenu, QPushButton, QWidget
 
@@ -50,8 +50,12 @@ class ImageRecyclePanel(QObject):
         group.setExclusive(True)
         self._mode_actions = {}
         icon_root = Path(__file__).resolve().parents[1] / "resources" / "images" / "gallery"
+        self._mode_icons = {
+            "trash": QIcon(str(icon_root / "delete.svg")),
+            "permanent": QIcon(str(icon_root / "trash-x.svg")),
+        }
         for mode, label in (("trash", f"Move to {TRASH_NAME}"), ("permanent", "Delete permanently")):
-            action = menu.addAction(QIcon(str(icon_root / ("delete.svg" if mode == "trash" else "ban.svg"))), label)
+            action = menu.addAction(self._mode_icons[mode], label)
             if mode == "trash" and gallery._recycle_callback is None:
                 action.setToolTip(
                     "System Trash is unavailable. Selecting Trash disables the main removal action; you can still choose permanent deletion."
@@ -81,13 +85,15 @@ class ImageRecyclePanel(QObject):
         label = "Delete permanently" if mode == "permanent" else f"Move to {TRASH_NAME}"
         button = self.gallery.delete_button
         button.setText(label)
+        button.setIcon(self._mode_icons[mode])
+        button.setIconSize(QSize(16, 16))
         button.setAccessibleName(label)
         button.setToolTip(
             "Irreversibly delete checked managed originals after explicit confirmation; no Undo."
             if mode == "permanent"
             else f"Move eligible checked originals to {TRASH_NAME} after confirmation."
         )
-        button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete permanently") + 42)
+        button.setMinimumWidth(button.fontMetrics().horizontalAdvance("Delete permanently") + 64)
         for key, action in self._mode_actions.items():
             action.setChecked(key == mode)
         menu = self.menu_button.menu()
