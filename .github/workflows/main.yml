@@ -185,9 +185,13 @@ jobs:
           if problems:
               md += ["### Problems", "", "```", *problems[-20:], "```", ""]
           if pngs:
+              # Words used by only one state (01-empty, 02-portrait...) are not areas; list them together.
               counts = Counter(area(p.stem) for p in pngs)
+              single = [p.stem for p in pngs if counts[area(p.stem)] == 1]
               md += ["### States by area", "", "| Area | States |", "|---|---:|"]
-              md += [f"| {name} | {count} |" for name, count in counts.most_common()]
+              md += [f"| {name} | {count} |" for name, count in counts.most_common() if count > 1]
+              if single:
+                  md.append(f"| other ({', '.join(single)}) | {len(single)} |")
               md.append("")
           if gaps:
               md += ["### Slowest states", "", "| State | Seconds |", "|---|---:|"]
