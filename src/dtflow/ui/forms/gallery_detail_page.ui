@@ -825,23 +825,20 @@
        </widget>
       </item>
       <item>
-       <widget class="QScrollArea" name="galleryPagerScroll">
+       <widget class="QWidget" name="galleryPagerChips">
         <property name="accessibleName"><string>Jump to image batch</string></property>
-        <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
-        <property name="widgetResizable"><bool>true</bool></property>
-        <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
-        <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAsNeeded</enum></property>
-        <property name="minimumSize"><size><width>52</width><height>31</height></size></property>
-        <property name="maximumSize"><size><width>380</width><height>34</height></size></property>
-        <widget class="QWidget" name="galleryPagerChips">
-         <layout class="QHBoxLayout" name="galleryPagerChipsLayout">
-          <property name="leftMargin"><number>0</number></property>
-          <property name="topMargin"><number>0</number></property>
-          <property name="rightMargin"><number>0</number></property>
-          <property name="bottomMargin"><number>0</number></property>
-          <property name="spacing"><number>4</number></property>
-         </layout>
-        </widget>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+          <horstretch>0</horstretch><verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <layout class="QHBoxLayout" name="galleryPagerChipsLayout">
+         <property name="leftMargin"><number>0</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>0</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <property name="spacing"><number>4</number></property>
+        </layout>
        </widget>
       </item>
      </layout>

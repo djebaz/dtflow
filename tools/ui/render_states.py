@@ -24,6 +24,10 @@ from support.network_guard import install  # noqa: E402
 
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+if os.environ["QT_QPA_PLATFORM"] == "offscreen":
+    # Qt 6.12 defaults to an 800x800 virtual screen. Fix the screen geometry
+    # before QApplication starts so fullscreen renders match normal 1600x1000.
+    os.environ["QT_QPA_PLATFORM"] = f"offscreen:configfile={ROOT / 'tools/ui/offscreen-screen.json'}"
 if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
@@ -779,6 +783,22 @@ def render_gallery_composition_states(shell, state, out):
 
     def snap(name):
         QTest.qWait(100)
+        if "-pager-" in name:
+            bar = gallery._widget("galleryPagerBar")
+            for number, button in gallery.pager.buttons.items():
+                origin = button.mapTo(bar, QPoint(0, 0))
+                if not button.isVisibleTo(bar) or not (
+                    8 <= origin.x() and origin.x() + button.width() <= bar.width() - 8
+                    and 0 <= origin.y() and origin.y() + button.height() <= bar.height()
+                ):
+                    raise AssertionError(
+                        f"Pager chip {number} clipped in {name}: "
+                        f"x={origin.x()} width={button.width()} bar_width={bar.width()}"
+                    )
+        if name.startswith("images-") and name.endswith("-fullscreen"):
+            actual = form.grab().size()
+            if actual != QSize(1600, 1000):
+                raise AssertionError(f"{name}: expected 1600x1000, got {actual.width()}x{actual.height()}")
         save(form, out, name)
 
     def hold_worker(coroutine, callback):
