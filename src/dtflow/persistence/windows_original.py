@@ -237,15 +237,27 @@ class _LeaseHelper:
     def lease(self, filename, timeout):
         if filename not in self.local:
             raise ValueError("Unknown DTFlow lease")
-        deadline = time.monotonic() + timeout
+        started = time.monotonic()
+        deadline = started + timeout
         if not self.local[filename].acquire(timeout=max(timeout, 0)):
             raise OSError("Original-file lease is held by this process.")
+        queued = time.monotonic()
         try:
             while True:
                 response = self._call(dict(op="try", filename=filename))
                 if response["ok"]:
                     with self.io:
                         generation = self.generation
+                    acquired = time.monotonic()
+                    if acquired - started >= 0.5:
+                        # Separate waiting behind this process's own threads from
+                        # waiting for another process (or helper startup).
+                        log.debug(
+                            "windows lease wait lease=%s in_process_ms=%d helper_ms=%d",
+                            filename.removesuffix(".lock"),
+                            (queued - started) * 1000,
+                            (acquired - queued) * 1000,
+                        )
                     break
                 if response.get("error") or time.monotonic() >= deadline:
                     raise OSError("Original-file lease is held by another process.")
