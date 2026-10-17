@@ -4,6 +4,8 @@ Owner report: `uv run python tools/ui/render_states.py --out tmp/ui-renders` on
 Windows stopped with an `AssertionError` after `39-images-trash-mode.png`, and
 several renders showed square glyphs.
 
+The filenames in this report are historical. The current tab-first name for `39-images-trash-mode.png` is `images-13-trash-mode.png`; see [workflow-state naming](../../tools/ui/README.md#workflow-state-filenames).
+
 ## 1. Removal-menu position assertion
 
 `render_mapped_gallery_states` checks the Trash/Delete popup position after

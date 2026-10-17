@@ -138,7 +138,7 @@ The canonical files and responsibilities are:
 | Offline state capture | [`tools/ui/render_states.py`](tools/ui/render_states.py) |
 | Web design-system reference (prototype aid, not runtime) | [`devdocs/design-system/`](devdocs/design-system/README.md) |
 
-The existing [Qt token and interaction contract](devdocs/architecture/qt-design-tokens.md) records the renderer command and fixture boundaries. The [Generate refinement plan](devdocs/plans/2026-10-05-preview-workspace.md) records the earlier workspace work; the [Images preview plan](devdocs/plans/2026-10-05-phase-8a-ui-preview.md) records PR #33. Earlier plans are historical decisions; the current implementation and these sources govern new work.
+The existing [Qt token and interaction contract](devdocs/architecture/qt-design-tokens.md) records the renderer command and fixture boundaries. Offline state screenshots use `<tab>-<NN>-<state>.png`, for example `images-01-grid.png` and `generate-01-empty.png`; numbers are local to each tab/group, not a global sequence. Keep existing names stable and append new states within their group. See [the screenshot-tool guide](tools/ui/README.md) for the separate screen and component-sheet capture namespaces. The [Generate refinement plan](devdocs/plans/2026-10-05-preview-workspace.md) records the earlier workspace work; the [Images preview plan](devdocs/plans/2026-10-05-phase-8a-ui-preview.md) records PR #33. Earlier plans are historical decisions; the current implementation and these sources govern new work.
 
 ## Colors
 
