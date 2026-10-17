@@ -2691,7 +2691,14 @@ class GalleryPage(QObject):
 
     def _scroll_changed(self, name: str, value: int) -> None:
         self._scroll[name] = max(0, value)
-        if name in ("grid", "list") and (name == self.mode.casefold()) and self._density_anchor is None:
+        if (
+            name in ("grid", "list")
+            and name == self.mode.casefold()
+            and self._density_anchor is None
+            and not self._suppress_batch_scroll
+        ):
+            # Intermediate Qt geometry changes must not briefly select a
+            # different page while the viewport anchor is being restored.
             self._sync_pager()
         self._schedule_save()
 
