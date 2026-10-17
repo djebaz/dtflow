@@ -47,9 +47,12 @@ def fixture_png(width: int, height: int, seed: int, *, grid: bool = False) -> by
             row[1::3] = offsets.translate(bytes(table))
             return b"\0" + row
 
-        compressed = b"".join(compressor.compress(grid_row(y)) for y in range(height)) + compressor.flush()
+        raw = b"".join(grid_row(y) for y in range(height))
     else:
-        compressed = b"".join(compressor.compress(row) for _ in range(height)) + compressor.flush()
+        raw = row * height
+    # One compress call: per-row calls release and re-acquire the GIL each time, which stalls for the
+    # interpreter switch interval per row while the Qt thread is busy.
+    compressed = compressor.compress(raw) + compressor.flush()
     header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     return SIGNATURE + _chunk(b"IHDR", header) + _chunk(b"IDAT", compressed) + _chunk(b"IEND", b"")
 
