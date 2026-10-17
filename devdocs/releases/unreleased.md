@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Offline renderer diagnostics: dump all Python thread stacks after 30 seconds without a saved screenshot, resetting the watchdog after each image. This captures stalls before the render workflow's two-minute step timeout; it does not change UI behavior or establish that the intermittent Detail-transition stall is fixed. Local validation is lint/format only; no local renders or tests.
+
 - PR #87 review fixes: `shell-09-overlay-notice-during-confirmation` now creates a paused fixture queue and checks that its Clear confirmation remains armed beside an unrelated warning, then removes the fixture queue. CI Python-file detection saves the Git listing before matching it, avoiding false no-Python results from an early pipe close. Offscreen layout and Windows/DPI acceptance remain separate.
 
 - Gallery snapshot publication waits up to 0.5 s for the cache lock, like other background cache I/O, instead of skipping when a session ends during a brief overlap (seen as `CacheBusyError` after each fake generation in the render script). Fixture PNG encoding compresses in one call, removing per-row GIL stalls that slowed fake generations. Render-state script also adds Images removal/selection/toolbar, Queues, shell/overlay/run-control and further Generate states (115 in total), names every state `<tab>-<NN>-<state>` so renders sort by tab, and prints per-state progress with a final count.

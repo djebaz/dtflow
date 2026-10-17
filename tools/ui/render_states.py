@@ -7,6 +7,7 @@ same in-memory API/transport as the asset tests; no real file upload occurs.
 
 import argparse
 import asyncio
+import faulthandler
 import json
 import os
 import sys
@@ -69,6 +70,8 @@ def report(target):
     seconds = round(time.monotonic() - STARTED, 1)
     RENDERED[name] = {"seconds": seconds, "blank": len(colors) <= 1}
     print(f"[{len(RENDERED):3}] +{seconds:5.1f}s {target}")
+    # Dump Python stacks before CI's step timeout if the next state stops making progress.
+    faulthandler.dump_traceback_later(30, repeat=True)
 
 
 def summarize():
@@ -1062,4 +1065,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    faulthandler.dump_traceback_later(30, repeat=True)
+    try:
+        main()
+    finally:
+        faulthandler.cancel_dump_traceback_later()
