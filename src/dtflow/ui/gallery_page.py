@@ -1642,8 +1642,9 @@ class GalleryPage(QObject):
         self._widget("galleryAdditionalDurationValue", QLabel).setText("Not recorded")
         self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
         edited = request.get("operation", "txt2img") != "txt2img"
-        foreign = foreign_windows_path(item.path)
-        reusable = bool(request.get("model_id")) and not edited and not foreign
+        # Settings and regeneration use only the recorded request, never the image file, so where the output was
+        # recorded does not matter. Edit reads the original through the verified, leased read action below.
+        reusable = bool(request.get("model_id")) and not edited
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
         for button, tip in (
@@ -1653,15 +1654,12 @@ class GalleryPage(QObject):
             button.setToolTip(
                 "Not available for edited images: the source and mask are not restored here. Use Edit image instead."
                 if edited
+                else "Not available: this output has no recorded model."
+                if not request.get("model_id")
                 else tip
             )
-        self.edit_button.setEnabled(
-            not item.issue and bool(item.path) and not foreign and self._edit_callback is not None
-        )
-        self.edit_button.setToolTip(self._edit_tip)
-        if foreign:
-            for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
-                button.setToolTip("Windows-recorded outputs are read-only here; use Windows for this action.")
+        self.edit_button.setEnabled(not item.issue and bool(item.path) and self._edit_callback is not None)
+        self.edit_button.setToolTip(f"Not available: {item.issue}" if item.issue else self._edit_tip)
         self.copy_button.setEnabled(bool(item.path))
         available = not item.issue
         self.folder_button.setEnabled(available)
@@ -1799,20 +1797,21 @@ class GalleryPage(QObject):
 
     def _use_settings(self) -> None:
         item = self._selected()
-        if item is not None and not foreign_windows_path(item.path) and self._reuse_callback is not None:
+        if item is not None and self._reuse_callback is not None:
             self._reuse_callback(self._request(item), item.identity)
 
     def _edit_image(self) -> None:
         item = self._selected()
-        if item is not None and not foreign_windows_path(item.path) and self._edit_callback is not None:
-            if item.read_path != item.path:
+        if item is not None and not item.issue and self._edit_callback is not None:
+            # A mapped or aliased original is re-verified under the original-file lease before the handoff.
+            if item.read_path != item.path or foreign_windows_path(item.path):
                 self._read_action("edit")
             else:
                 self._edit_callback(item.path)
 
     def _regenerate(self) -> None:
         item = self._selected()
-        if item is not None and not foreign_windows_path(item.path) and self._regenerate_callback is not None:
+        if item is not None and self._regenerate_callback is not None:
             self._regenerate_callback(self._request(item), item.identity)
 
     def step(self, delta: int) -> None:

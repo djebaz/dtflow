@@ -20,7 +20,8 @@
   [implementation plan](../plans/2026-10-17-wsl-gallery-paths-and-fonts.md).
   Windows references remain unchanged; verified WSL 1 mounts supply read aliases.
   Process-local Windows Segoe UI faces avoid heavier fallback toggles when available.
-  Export/edit/reuse/regeneration remain restricted for foreign Windows outputs;
+  Export and Edit of foreign Windows outputs now go through verified, leased reads;
+  Use settings and Regenerate need only the recorded request (#80);
   no schema migration or new destructive support. No agent tests/renders/validation;
   owner reports current-PR smoke tests passed on 2026-10-17. Individual edge cases,
   concurrent cross-platform mutations and packaged acceptance remain unverified.
@@ -58,6 +59,8 @@
 - Explicit image-operation refusal in CLI queues/plans (Queues-tab staged edits excepted, see below) and generic configuration/CLI resolution/import/export; no silent loss of inputs/strength. Read-only gallery and queue listing retain supported older DB access. Providers still advertise txt2img only; image dispatch/raw-final saving remains pending.
 
 ## Fixed
+
+- Images under WSL1 no longer blanket-disables Use settings, Regenerate and Edit image for Windows-recorded outputs: settings and regeneration need only the recorded request, Edit reuses the verified leased read handoff, and each button's tooltip states its own reason when unavailable (#80). Source-only; owner WSL1 smoke pending.
 
 - Find people reads a person model chosen in Windows through its verified WSL drive mount (the saved path and SHA-256 stay unchanged), names a model that is not found, unreadable or chosen in the other environment before Find people is pressed, and logs only the error type (#78). Source-only; owner WSL1/Windows smoke pending.
 
