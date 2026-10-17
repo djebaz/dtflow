@@ -1810,15 +1810,13 @@ class GalleryPage(QObject):
                 self._grid_buttons = {item.identity: self._grid_buttons[item.identity] for item in self.items}
             else:
                 self._set_grid_message("No saved outputs match these filters.")
-            if self._rendered_page is None:
-                self._density_changed()
-            else:
-                # Repeated density sizing repaints every retained thumbnail and
-                # schedules a full Grid reflow. Size only freshly added cards.
-                added = [item.identity for item in self.items if item.identity not in previous]
-                self._size_new_entries(added)
-                if added or len(previous) != len(self.items):
-                    self.reflow_timer.start(0)
+            # New cards always need sizing, including the initial read: the
+            # slider may already have been applied before any cards existed.
+            # Retained cards must not be resized again during reconciliation.
+            added = [item.identity for item in self.items if item.identity not in previous]
+            self._size_new_entries(added)
+            if added or len(previous) != len(self.items):
+                self.reflow_timer.start(0)
         finally:
             self._syncing_selection = False
             for widget, enabled in zip(containers, updates, strict=True):
@@ -2473,15 +2471,11 @@ class GalleryPage(QObject):
                 identity = self._browsing_anchor()
                 if identity in self._grid_buttons:
                     card = self._grid_buttons[identity].parentWidget()
-                    self._density_anchor = (
-                        "Grid", identity, card.y() - self.grid_scroll.verticalScrollBar().value()
-                    )
+                    self._density_anchor = ("Grid", identity, card.y() - self.grid_scroll.verticalScrollBar().value())
             elif self.mode == "List":
                 row = self.table.rowAt(0)
                 if 0 <= row < len(self.items):
-                    self._density_anchor = (
-                        "List", self.items[row].identity, self.table.rowViewportPosition(row)
-                    )
+                    self._density_anchor = ("List", self.items[row].identity, self.table.rowViewportPosition(row))
         self._applied_thumbnail_percent = scale_percent
         density = self._thumbnail_pixels(scale_percent)
 
@@ -2567,7 +2561,11 @@ class GalleryPage(QObject):
                 first, last = self._visible_range()
                 log.debug(
                     "gallery_perf phase=thumbnail_resize mode=%s scale=%d first=%d last=%d mounted=%d",
-                    mode, self.slider.value(), first, last, len(self.items),
+                    mode,
+                    self.slider.value(),
+                    first,
+                    last,
+                    len(self.items),
                 )
         finally:
             self._suppress_batch_scroll = False
