@@ -12,6 +12,7 @@ import posixpath
 import re
 import stat
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -449,7 +450,9 @@ def prepare_recycle(
     paths = ArtifactReadPaths.discover() if permanent else ArtifactReadPaths()
     if permanent:
         if Path(state).absolute() != Path(state).resolve():
+            log.debug("image-removal preflight refused action=%s stage=state_redirected", action)
             raise RecycleUnavailable("Redirected application state is ineligible.", stage="state_redirected")
+    started = time.monotonic()
     unique = tuple(dict.fromkeys(identities))
     if not 1 <= len(unique) <= 10_000:
         raise ValueError("Recycle selection must contain between 1 and 10,000 images.")
@@ -516,9 +519,23 @@ def prepare_recycle(
                     ineligible += 1
                     continue
             eligible.append(target)
-    return RecyclePlan(
+    plan = RecyclePlan(
         tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique), action, tuple(absent_targets)
     )
+    log.debug(
+        "image-removal preflight action=%s requested=%d eligible=%d raw=%d absent=%d missing=%d ineligible=%d "
+        "hidden=%d elapsed_ms=%d",
+        action,
+        plan.requested,
+        len(plan.targets),
+        plan.raw_count,
+        len(plan.absent_targets),
+        plan.missing,
+        plan.ineligible,
+        plan.hidden,
+        (time.monotonic() - started) * 1000,
+    )
+    return plan
 
 
 def _permanent_remove(state: Path, target: RecycleTarget) -> None:
@@ -560,6 +577,11 @@ def _permanent_remove(state: Path, target: RecycleTarget) -> None:
             os.close(descriptor)
     finally:
         os.close(directory)
+
+
+def _refused(identity: str, stage: str) -> None:
+    """A confirmed image refused by its fresh execution checks; nothing was changed."""
+    log.debug("image-removal item refused identity=%s stage=%s", identity, stage)
 
 
 def _unchanged(source: RecycleTarget) -> bool:
@@ -656,9 +678,17 @@ def recycle_outputs(
     operation_id = ("delete-" if permanent else "trash-") + uuid4().hex
     targets = (*plan.targets, *plan.absent_targets)
     raw_disposed: list[str] = []
+    started = time.monotonic()
     with recycle_batch_lock(state):
         # Requested counts are physical files, matching the per-file outcomes that complete them.
         ledger.start_operation(state, operation_id, len(targets) + plan.raw_count)
+        log.debug(
+            "image-removal started operation=%s images=%d raw=%d absent=%d",
+            operation_id,
+            len(plan.targets),
+            plan.raw_count,
+            len(plan.absent_targets),
+        )
         for target in targets:
             if stop.is_set():
                 break
@@ -674,6 +704,7 @@ def recycle_outputs(
                     fresh = _confirmed_absent_final(state, record, paths=paths) if record is not None else None
                     if fresh != target:
                         ineligible += 1
+                        _refused(target.identity, "absence_changed")
                     elif not ledger.record_confirmed_absent(state, operation_id, target.identity, target.recorded_path):
                         ineligible += 1
                         if len(failure_details) < 100:
@@ -683,15 +714,19 @@ def recycle_outputs(
                 elif record is None or not _unchanged(target):
                     if not Path(target.path).is_file():
                         missing += 1
+                        _refused(target.identity, "missing")
                     else:
                         ineligible += 1
+                        _refused(target.identity, "source_changed")
                 elif not content_verified:
                     ineligible += 1
+                    _refused(target.identity, "content_unverified")
                 else:
                     paths = ArtifactReadPaths.discover() if permanent else ArtifactReadPaths()
                     confirmed = _regular_managed_file(state, record, permanent=permanent, paths=paths)
                     if confirmed != target:
                         ineligible += 1
+                        _refused(target.identity, "ownership_changed")
                     else:
                         # The raw provider output goes first, so a failed final leaves a retryable image whose
                         # remaining raw is simply absent next time. Any non-removed raw leaves the final untouched.
@@ -739,6 +774,22 @@ def recycle_outputs(
                 progress(processed, len(targets))
         canceled = stop.is_set()
         ledger.finish_operation(state, operation_id, "canceled" if canceled else "complete")
+    # One line per operation in normal mode; per-item detail stays in warnings and -x.
+    log.info(
+        "image-removal finished operation=%s outcome=%s removed=%d raw=%d absent=%d failed=%d uncertain=%d "
+        "missing=%d ineligible=%d unprocessed=%d elapsed_ms=%d",
+        operation_id,
+        "canceled" if canceled else "complete",
+        len(recycled) + len(deleted),
+        len(raw_disposed),
+        len(absent),
+        len(failed),
+        len(uncertain),
+        missing,
+        ineligible,
+        len(targets) - processed,
+        (time.monotonic() - started) * 1000,
+    )
     return RecycleResult(
         tuple(recycled),
         tuple(failed),

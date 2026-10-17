@@ -59,6 +59,8 @@
 
 ## Fixed
 
+- Image removal, its ledger reconciliation, original-file readiness and the Windows/WSL helper and leases now leave a readable log trail (issue #79's agreed initial scope): one INFO line per removal and per non-empty reconciliation, and `-x` detail for preflight counts, refusals, helper phases and lease contention. Stable identities, counts, reason codes and error type names only; no paths, prompts or tracebacks. No behavior change.
+
 - Images distinguishes a confirmed-missing original (**File missing** pictogram in Grid, List and Detail) from one that is merely unreadable or unreachable (**Image unavailable**, reason on hover). Gallery read actions no longer show raw exception class names, and thumbnail fonts are built once per card instead of on every paint. Delete's own absence checks are unchanged. Source-only; owner smoke pending.
 
 - Desktop startup tolerates Qt bindings without `QFile.supportsMoveToTrash`:

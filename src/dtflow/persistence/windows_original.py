@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import logging
 import os
 import platform
 import queue
@@ -19,6 +20,8 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
+
+log = logging.getLogger(__name__)
 
 
 class RefusedBeforeMutation(OSError):
@@ -85,6 +88,7 @@ def bridge(state: Path):
                         if state.is_relative_to(mount):
                             candidates.append((len(mount.parts), filesystem[0]))
                 if not candidates or max(candidates)[1] not in ("rootfs", "wslfs", "ext4"):
+                    log.debug("windows bridge filesystem=%s", max(candidates)[1] if candidates else "unknown")
                     raise WindowsBridgeError("mount")
             except WindowsBridgeError:
                 raise
@@ -185,6 +189,7 @@ def delete_managed(state: Path, target) -> None:
     if connection is None:
         raise OSError("No Windows mutation boundary for this state.")
     command, native_state = connection
+    started = time.monotonic()
     process = _start(
         command,
         dict(
@@ -199,6 +204,16 @@ def delete_managed(state: Path, target) -> None:
     )
     try:
         _reply(process, 30, allow_refusal=True)
+    except OSError as exc:
+        # Successful deletes stay quiet; the phase decides whether this is retryable or uncertain.
+        log.debug(
+            "windows delete helper identity=%s kind=%s phase=%s elapsed_ms=%d",
+            target.identity,
+            target.kind,
+            "pre" if isinstance(exc, RefusedBeforeMutation) else "unconfirmed",
+            (time.monotonic() - started) * 1000,
+        )
+        raise
     finally:
         _close(process)
 

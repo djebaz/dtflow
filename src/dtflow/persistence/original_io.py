@@ -7,10 +7,15 @@ It is deliberately exclusive and is held off the Qt thread.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
+
+log = logging.getLogger(__name__)
+# Only report waits worth noticing; an uncontended lease is per-image routine.
+_SLOW_LEASE_SECONDS = 0.5
 
 
 class OriginalImagesBusyError(RuntimeError):
@@ -30,6 +35,10 @@ def windows_originals_bridge(state: Path):
     try:
         return bridge(Path(state))
     except (OSError, UnicodeError, ValueError) as exc:
+        log.debug(
+            "original-image readiness refused reason=%s",
+            exc.reason if isinstance(exc, WindowsBridgeError) else type(exc).__name__,
+        )
         if isinstance(exc, WindowsBridgeError):
             reason = {
                 "interpreter": "This checkout needs a Windows .venv/Scripts/python.exe for shared originals.",
@@ -59,11 +68,19 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
         connection = windows_originals_bridge(state)
         if connection is not None:
             command, native_state = connection
+            started = time.monotonic()
             with ExitStack() as stack:
                 try:
                     stack.enter_context(shared_lock(command, native_state, filename, timeout))
                 except (OSError, UnicodeError, ValueError) as exc:
+                    log.debug(
+                        "original-file lease refused lease=%s boundary=windows reason=%s waited_ms=%d",
+                        filename.removesuffix(".lock"),
+                        type(exc).__name__,
+                        (time.monotonic() - started) * 1000,
+                    )
                     raise OriginalImagesBusyError("Shared Windows original-file lease could not be acquired.") from exc
+                _log_wait(filename, "windows", started)
                 yield
             return
     directory = Path(state).resolve()
@@ -79,7 +96,8 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
         else:
             import fcntl
 
-        deadline = time.monotonic() + timeout
+        started = time.monotonic()
+        deadline = started + timeout
         while True:
             try:
                 if os.name == "nt":
@@ -89,10 +107,16 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                 break
             except OSError as exc:
                 if time.monotonic() >= deadline:
+                    log.debug(
+                        "original-file lease timed out lease=%s boundary=native waited_ms=%d",
+                        filename.removesuffix(".lock"),
+                        (time.monotonic() - started) * 1000,
+                    )
                     raise OriginalImagesBusyError(
                         "Original images are busy; wait for active export to finish."
                     ) from exc
                 time.sleep(0.05)
+        _log_wait(filename, "native", started)
         try:
             yield
         finally:
@@ -101,6 +125,17 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _log_wait(filename: str, boundary: str, started: float) -> None:
+    waited = time.monotonic() - started
+    if waited >= _SLOW_LEASE_SECONDS:
+        log.debug(
+            "original-file lease contended lease=%s boundary=%s waited_ms=%d",
+            filename.removesuffix(".lock"),
+            boundary,
+            waited * 1000,
+        )
 
 
 @contextmanager

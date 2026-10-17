@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -24,6 +25,9 @@ _RECORD_UPSERT = """INSERT INTO records(identity,path,outcome,operation_id,size,
     ON CONFLICT(identity) DO UPDATE SET
       path=excluded.path, outcome=excluded.outcome, operation_id=excluded.operation_id,
       size=excluded.size, mtime_ns=excluded.mtime_ns, updated_utc=excluded.updated_utc"""
+
+
+log = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -199,4 +203,8 @@ def reconcile(state: Path) -> ReconcileResult:
             "UPDATE records SET outcome='recycled',updated_utc=? WHERE outcome='restored'",
             (_now(),),
         ).rowcount
-    return ReconcileResult(trash_uncertain, delete_uncertain, withdrawn)
+    result = ReconcileResult(trash_uncertain, delete_uncertain, withdrawn)
+    (log.info if any(result) else log.debug)(
+        "image-removal reconcile trash_uncertain=%d delete_uncertain=%d withdrawn=%d", *result
+    )
+    return result
