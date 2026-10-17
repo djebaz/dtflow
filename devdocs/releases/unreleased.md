@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #87 review fixes: render state 102 now creates a paused fixture queue and checks that its Clear confirmation remains armed beside an unrelated warning, then removes the fixture queue. CI Python-file detection saves the Git listing before matching it, avoiding false no-Python results from an early pipe close. Offscreen layout and Windows/DPI acceptance remain separate.
+
 - Gallery snapshot publication waits up to 0.5 s for the cache lock, like other background cache I/O, instead of skipping when a session ends during a brief overlap (seen as `CacheBusyError` after each fake generation in the render script). Render-state script also adds Images removal/selection/toolbar states 63–84 and Queues states 85–93, and prints per-state progress with a final count.
 
 - Render-state previews: 60 Images Detail with Additional details open, 61 Regenerate inline confirmation, 62 Regenerate confirmed (offline fake-provider submission on Generate). Layout evidence only.
@@ -119,5 +121,5 @@
 
 ## Release audit
 
-- PRs: #63, #64, #66, #73, #75, #76, #85
+- PRs: #63, #64, #66, #73, #75, #76, #85, #87
 - Scope: CPU mask PoC, image preparation/manual editor/owner-probe and queued Inpaint work, agent setup, Qt Trash capability guard, WSL gallery aliases/fonts, guarded Trash/permanent removal, per-runtime exports, shared-helper/thumbnail lease corrections, gallery recovery/missing-location fixes and bounded browsing snapshots with diagnostics and stable/manual-recovery warnings. PR #76 current-source smoke is owner-reported accepted following `10650b9`; its CI passed. WSL2, simultaneous cross-runtime SQLite writers, benchmarks and exact final packaged acceptance remain separate. PR #85 adds source-present Windows/WSL model-path reads, saved-request reuse and desktop opening; its owner runtime acceptance remains pending. Other feature acceptance limits above are unchanged.
