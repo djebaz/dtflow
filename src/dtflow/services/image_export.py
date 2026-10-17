@@ -396,9 +396,14 @@ def _reserve(destination: Path, stem: str):
 def _export_one(
     item: GalleryItem, destination: Path, options: ExportOptions, computations: dict, *, state: Path | None = None
 ) -> tuple[tuple[str, ...], str]:
-    if foreign_windows_path(item.path):
-        raise ValidationError("Windows-recorded outputs are read-only here; export them from Windows.")
-    source = Path(resolve_item_read(item, state)[0] if state is not None else item.path).resolve()
+    if state is None and foreign_windows_path(item.path):
+        raise ValidationError("Windows-recorded outputs require a verified shared-state read path.")
+    try:
+        source = Path(resolve_item_read(item, state)[0] if state is not None else item.path).resolve()
+    except OSError as exc:
+        raise ValidationError(
+            "Saved source is unavailable or its Windows/WSL path cannot be safely verified."
+        ) from exc
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
     if not source.is_file() or source.stat().st_size > MAX_IMAGE_BYTES:
