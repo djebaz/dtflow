@@ -8,7 +8,7 @@
   <property name="windowTitle">
    <string>DTFlow — Images</string>
   </property>
-  <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,0,0,1">
+  <layout class="QVBoxLayout" name="galleryPageLayout" stretch="0,0,0,0,0,1">
    <item>
     <widget class="QWidget" name="galleryBrandRow">
      <layout class="QHBoxLayout" name="galleryBrandRowLayout" stretch="0,1">
@@ -795,6 +795,55 @@
        </layout>
       </widget>
      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="galleryPagerBar">
+     <property name="accessibleName"><string>Gallery batch navigation</string></property>
+     <property name="role" stdset="0"><string>galleryPagerBar</string></property>
+     <property name="minimumSize"><size><width>0</width><height>46</height></size></property>
+     <property name="maximumSize"><size><width>16777215</width><height>46</height></size></property>
+     <layout class="QHBoxLayout" name="galleryPagerLayout" stretch="0,1,0">
+      <property name="leftMargin"><number>10</number></property>
+      <property name="rightMargin"><number>10</number></property>
+      <property name="topMargin"><number>6</number></property>
+      <property name="bottomMargin"><number>6</number></property>
+      <property name="spacing"><number>12</number></property>
+      <item>
+       <widget class="QLabel" name="galleryPagerRange">
+        <property name="text"><string>0–0 of 0</string></property>
+        <property name="accessibleName"><string>Visible image range</string></property>
+        <property name="minimumSize"><size><width>150</width><height>0</height></size></property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="galleryPagerStatus">
+        <property name="text"><string>0 loaded</string></property>
+        <property name="role" stdset="0"><string>secondary</string></property>
+        <property name="accessibleName"><string>Loaded images status</string></property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QScrollArea" name="galleryPagerScroll">
+        <property name="accessibleName"><string>Jump to image batch</string></property>
+        <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+        <property name="widgetResizable"><bool>true</bool></property>
+        <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+        <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAsNeeded</enum></property>
+        <property name="minimumSize"><size><width>52</width><height>31</height></size></property>
+        <property name="maximumSize"><size><width>380</width><height>34</height></size></property>
+        <widget class="QWidget" name="galleryPagerChips">
+         <layout class="QHBoxLayout" name="galleryPagerChipsLayout">
+          <property name="leftMargin"><number>0</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+          <property name="spacing"><number>4</number></property>
+         </layout>
+        </widget>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

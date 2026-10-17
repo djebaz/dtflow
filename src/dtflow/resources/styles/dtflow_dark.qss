@@ -1766,3 +1766,48 @@ QLabel#modelsBadge[readiness="unknown"] {
   border-color: ${color.borderStrong};
   color: ${color.secondary};
 }
+
+/* Option 2a pager: the same fixed-height surface survives normal/fullscreen changes. */
+QFrame#galleryPagerBar {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.panelRadius};
+}
+QFrame#galleryPagerBar QLabel#galleryPagerRange {
+  color: ${color.text};
+  font-size: 13px;
+}
+QFrame#galleryPagerBar QLabel#galleryPagerStatus {
+  color: ${color.secondary};
+  font-size: 12px;
+}
+QFrame#galleryPagerBar QScrollArea,
+QFrame#galleryPagerBar QWidget#galleryPagerChips {
+  background: transparent;
+  border: none;
+}
+QWidget#GalleryDetailPage QPushButton[role="galleryPagerChip"] {
+  min-width: 28px;
+  min-height: 26px;
+  max-height: 26px;
+  padding: 0 6px;
+  border-radius: ${size.radius};
+  font-size: 12px;
+  background: ${color.button};
+  border: 1px solid ${color.buttonBorder};
+  color: ${color.text};
+}
+QWidget#GalleryDetailPage QPushButton[role="galleryPagerChip"]:checked {
+  background: ${color.accent};
+  border-color: ${color.accentHover};
+  color: ${color.onAccent};
+  font-weight: ${type.weightEmphasis};
+}
+QWidget#GalleryDetailPage QPushButton[role="galleryPagerChip"]:focus {
+  border-color: ${color.focus};
+}
+QWidget#GalleryDetailPage QPushButton[role="galleryPagerChip"]:disabled {
+  background: ${color.buttonPressed};
+  border-color: ${color.disabledBorder};
+  color: ${color.disabled};
+}
