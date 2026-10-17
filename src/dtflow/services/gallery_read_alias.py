@@ -19,7 +19,7 @@ from dtflow.services.managed_original_provenance import (
 _ATTEMPT = re.compile(r"[0-9a-f]{32}\Z")
 
 
-def _managed_candidate(state: Path, row: dict) -> tuple[Path, Path]:
+def _managed_candidate(state: Path, row: dict, *, require_files: bool = True) -> tuple[Path, Path]:
     attempt, ordinal, identity = row["attempt_id"], row["ordinal"], row["identity"]
     if (
         not isinstance(attempt, str)
@@ -38,19 +38,42 @@ def _managed_candidate(state: Path, row: dict) -> tuple[Path, Path]:
     image = root.joinpath(*tail, f"final-{ordinal + 1}.png")
     sidecar = root.joinpath(*tail, "metadata.json")
     try:
-        for component in (root, root / "outputs", image.parent, image, sidecar):
-            ensure_unredirected_path(component)
+        ensure_unredirected_path(root)
+        for component in (root / "outputs", image.parent, image, sidecar):
+            if component.is_symlink() or (hasattr(os.path, "isjunction") and os.path.isjunction(component)):
+                raise OSError
+            try:
+                info = component.lstat()
+            except FileNotFoundError:
+                if require_files:
+                    raise
+                continue
+            if getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+                raise OSError
         if root.resolve(strict=True) != root:
             raise OSError
-        if image.resolve(strict=True) != image or sidecar.resolve(strict=True) != sidecar:
+        if image.resolve(strict=require_files) != image or sidecar.resolve(strict=require_files) != sidecar:
             raise OSError
         if not image.is_relative_to(root / "outputs"):
             raise OSError
-        if any(not stat.S_ISREG(p.stat().st_mode) for p in (image, sidecar)):
+        if require_files and any(not stat.S_ISREG(p.stat().st_mode) for p in (image, sidecar)):
             raise OSError
     except (OSError, ValueError) as exc:
         raise OSError("Managed output or sidecar is missing or redirected.") from exc
     return image, sidecar
+
+
+def resolve_output_locations(state: Path, row: dict, *, paths: ArtifactReadPaths) -> tuple[str, str]:
+    """Display-only locations, validated independently of original/sidecar existence.
+
+    Missing-file classification and surviving metadata must use the native
+    candidate, not interpret a recorded POSIX spelling as a Windows pathname.
+    This does not prove content identity or authorize reading/mutation.
+    """
+    if os.name == "nt" and isinstance(row.get("path"), str) and row["path"].startswith("/"):
+        image, sidecar = _managed_candidate(Path(state), row, require_files=False)
+        return str(image), str(sidecar)
+    return paths.resolve(row["path"]), paths.resolve(row["metadata_path"])
 
 
 def resolve_output_read(
