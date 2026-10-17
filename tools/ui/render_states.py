@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
@@ -36,6 +37,7 @@ from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
+from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import ConnectionStatus, InventoryEntry, InventorySnapshot, LoRASelection, ValidationError  # noqa: E402
@@ -147,6 +149,8 @@ def render_connection_states(app, state, out):
         render_connection_outcomes(shell, out)
         render_connection_management(shell, out)
         render_generate_configuration_states(shell, out)
+        render_active_queue_states(shell, out)
+        render_gallery_composition_states(shell, state, out)
     finally:
         shell.runner.shutdown()
         shell.form.close()
@@ -565,6 +569,327 @@ def render_generate_configuration_states(shell, out):
             snap("generate-35-asset-preparing")
         controller._set_busy(False)
         clear()
+        # Receipt states are synthetic registry observations; no file, account or metadata worker is read.
+        record = {
+            "asset_id": "offline-receipt",
+            "identifier": "offline-style.ckpt",
+            "state": "unknown",
+            "evidence": "offline synthetic receipt",
+            "sha256": "0" * 64,
+            "size": 1024,
+            "origin": "offline-fixture",
+        }
+        page.detailsToggle.setChecked(True)
+        lora._prepared(record, None)
+        lora._listed([record], None)
+        assert "Receipt unknown" in page.assetStatusLabel.text()
+        shell.shell.rightScroll.ensureWidgetVisible(page.assetStatusLabel)
+        snap("generate-36-asset-partial")
+        clear()
+        lora._prepared(None, OSError("Offline fixture"))
+        assert strip.rows["asset"].property("feedbackState") == "error"
+        snap("generate-37-asset-failed")
+        clear()
+        lora._listed(None, OSError("Offline fixture"))
+        assert "Registry unavailable" in page.assetStatusLabel.text()
+        snap("generate-38-asset-registry-unavailable")
+        lora._start_reconcile(record["asset_id"])
+        assert "Reconciling" in page.assetStatusLabel.text() and not page.prepareAssetButton.isEnabled()
+        snap("generate-39-asset-reconciling")
+        controller._set_busy(False)
+        confirmed = dict(record, state="confirmed")
+        lora._listed([confirmed], None)
+        lora.set_loras((LoRASelection(record["identifier"], 0.8),))
+        assert lora._bind_confirmed(record["identifier"])
+        assert lora.receipt_ids() == (record["asset_id"],)
+        snap("generate-40-asset-receipt-bound")
+        clear()
+
+
+def render_active_queue_states(shell, out):
+    """Synthetic read views through the real controller; no queue is persisted, posted or dispatched."""
+    form, queue, page = shell.form, shell.queue, shell.queue_page
+    queue_id = "offline-queue-0001"
+    stamp = "2026-10-17T12:00:00+00:00"
+
+    def snap(name):
+        QTest.qWait(100)
+        save(form, out, name)
+
+    def hold_worker(coroutine, callback):
+        coroutine.close()
+
+    def present(status, states, *, owned=False, started=True, edit=False):
+        items = []
+        for position, state in enumerate(states, 1):
+            attempt = f"attempt-{position:04d}" if state not in ("pending", "cancelled") else None
+            items.append(
+                dict(
+                    item_id=f"item-{position:04d}",
+                    position=position,
+                    state=state,
+                    overridden=False,
+                    attempt_id=attempt,
+                    request_id=f"request-{position:04d}",
+                    seed=100 + position,
+                    artifacts=[
+                        str(shell.state_dir / f"output-{position}.png"),
+                        str(shell.state_dir / f"attempt-{position}" / "metadata.json"),
+                    ]
+                    if state == "succeeded"
+                    else [],
+                    failure={"code": f"offline_{state}"} if state in ("failed", "unknown", "save_failed") else None,
+                    operation="inpaint" if edit else "txt2img",
+                    strength=0.7 if edit else None,
+                )
+            )
+        counts = {
+            state: states.count(state)
+            for state in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
+        }
+        events = [dict(kind="created", at_utc=stamp, detail={"items": len(items), "cap": 2})]
+        if started:
+            events.append(dict(kind="started", at_utc=stamp, detail={}))
+        view = dict(
+            queue_id=queue_id,
+            status=status,
+            backend={"name": "local", "endpoint": None},
+            cap=2,
+            summary=counts,
+            items=items,
+            blocked_by_uncertainty=counts["unknown"],
+            pending_controls=[],
+            events=events,
+        )
+        queue._dispatching = queue_id if owned else None
+        queue._dispatch_started = owned and started
+        queue._selected = queue_id
+        queue._activity.set(dispatching=owned)
+        queue._read_done(([view], view, 2), None)
+        queue._timer.stop()  # No polling between presentation-only captures.
+        assert queue.model.rowCount() == len(items)
+        return view
+
+    with patch.object(shell.runner, "submit", side_effect=hold_worker):
+        form.backendCombo.setCurrentText("local")
+        form.queueNavigationButton.click()
+        request = shell.generation.request_for_queue(preview=True)[0]
+        present("running", ["succeeded", "running", "pending"], owned=True)
+        assert page.pauseQueueButton.isEnabled() and queue._activity.run_state.action == "pause"
+        snap("queues-11-running")
+        present("paused", ["succeeded", "pending", "pending"], owned=True)
+        assert page.resumeQueueButton.isEnabled() and queue._activity.run_state.action == "resume"
+        snap("queues-12-paused-after-start")
+        present("running", ["succeeded", "running", "pending"])
+        assert queue._activity.run_state.action is None
+        snap("queues-13-foreign-running")
+        present("blocked", ["unknown", "pending", "pending"])
+        assert page.overrideReservationButton.isEnabled() and not page.resumeQueueButton.isEnabled()
+        snap("queues-14-blocked-unknown")
+        page.overrideReservationButton.click()
+        assert shell.inline._armed and shell.inline._armed[0] is page.overrideReservationButton
+        snap("queues-15-override-confirmation")
+        shell.inline.dismiss()  # Never acknowledge or mutate a reservation.
+        present("blocked", ["succeeded", "failed", "unknown", "save_failed", "cancelled", "running"], owned=True)
+        snap("queues-16-item-states")
+        page.queueItemsView.setCurrentIndex(queue.model.index(2, 0))
+        assert "may have reached" in page.uncertaintyLabel.text()
+        assert page.attemptIdLabel.toolTip() == "attempt-0003"
+        snap("queues-17-item-inspection")
+        present("paused", ["pending", "pending"], started=False)
+        page.planBox.setChecked(True)
+        page.planSeedsEdit.setText("not-a-seed")
+        with patch.object(queue, "_request_source", return_value=(request, "local", None, ())):
+            page.planDryRunButton.click()
+        assert page.planSeedsEdit.property("invalid")
+        shell.shell.leftScroll.ensureWidgetVisible(page.planSeedsEdit)
+        snap("queues-18-plan-invalid")
+        page.planSeedsEdit.clear()
+        queue._mark_plan(None)
+        with (
+            patch.object(queue, "_editing", return_value=True),
+            patch.object(queue, "_edit_source", return_value=object()),
+        ):
+            present("paused", ["pending", "pending"], started=False, edit=True)
+            page.planStrengthsEdit.setText("0.5; 0.7")
+            assert queue._plan_for(request, "Plan not valid") is not None
+            assert not page.planStrengthsEdit.isHidden() and queue.model.row_at(0).edit_text == "Inpaint · 0.7"
+            shell.shell.leftScroll.ensureWidgetVisible(page.planStrengthsEdit)
+            snap("queues-19-inpaint-plan")
+        page.planStrengthsEdit.clear()
+        page.planBox.setChecked(False)
+        queue._sync()
+        shell.shell.leftScroll.verticalScrollBar().setValue(0)
+        queue._syncing = True
+        page.concurrencySpinBox.setValue(4)
+        queue._syncing = False
+        queue._set_level(4)
+        # Defensive validator refusal: the bounded spin box normally prevents values outside 1..4.
+        queue._cap_changed(5)
+        assert "Concurrency not changed" in page.queueMessageLabel.text()
+        assert page.concurrencySpinBox.property("level") == "elevated"
+        snap("queues-20-concurrency-refused")
+        queue._message(window_ui.Presentation("unknown", "Offline fixture", "No dispatch was performed."))
+        present("finished", ["succeeded", "succeeded", "succeeded"])
+        assert not page.startQueueButton.isEnabled() and page.queueProgressBar.value() == 3
+        snap("queues-21-finished-table")
+        present("cancelled", ["succeeded", "cancelled", "cancelled"])
+        assert not page.resumeQueueButton.isEnabled() and page.queueProgressBar.value() == 3
+        snap("queues-22-cancelled-table")
+        form.resize(1000, 900)
+        shell._responsive_workspace()
+        assert shell.shell.rightRail.isHidden()
+        snap("queues-23-narrow")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        queue._dispatching = None
+        queue._dispatch_started = False
+        queue._selected = None
+        queue._activity.set(dispatching=False)
+        queue._read_done(([], None, 2), None)
+        queue._timer.stop()
+
+
+def render_gallery_composition_states(shell, state, out):
+    """Synthetic gallery projection and GUI settlements only; no DB authority, export or output mutation."""
+    form, gallery = shell.form, shell.gallery
+    export = shell.image_export
+    image = QImage(1024, 768, QImage.Format.Format_RGB32)
+    image.fill(QColor("#8094a8"))
+    root = state / "gallery-composition"
+    item = GalleryItem(
+        identity="offline-gallery:0",
+        attempt_id="offline-gallery",
+        request_id="offline-request",
+        path=str(root / "output.png"),
+        metadata_path=str(root / "metadata.json"),
+        saved_at_utc="2026-10-17T12:00:00+00:00",
+        backend_id="fake",
+        model="offline-checkpoint.ckpt",
+        prompt="Synthetic offline gallery projection; no image generation.",
+        negative="",
+        width=1024,
+        height=768,
+        loras=(),
+        request_json=json.dumps(
+            {"model_id": "offline-checkpoint.ckpt", "seed": 123, "operation": "txt2img", "steps": 20}
+        ),
+        file_size=None,
+    )
+
+    def snap(name):
+        QTest.qWait(100)
+        save(form, out, name)
+
+    def hold_worker(coroutine, callback):
+        coroutine.close()
+
+    def present(record):
+        gallery.items = [record]
+        gallery.total, gallery.offset = 1, 0
+        gallery._render_page()
+        gallery._rendered_page = (0, (record,))
+        if not record.issue:
+            gallery._thumbnail_done(gallery._thumb_versions[record.identity], record.identity, (image, ""), None)
+        gallery.select(record.identity)
+        if not record.issue:
+            gallery._image_done(gallery._image_generation, record.identity, (image, ""), None)
+        else:
+            gallery._image_done(gallery._image_generation, record.identity, (None, record.issue), None)
+        metadata = json.dumps({"fixture": True, "request": json.loads(record.request_json)}, indent=2)
+        gallery._detail_done(gallery._detail_generation, record.identity, GalleryDetail(record, metadata), None)
+
+    with (
+        patch.object(shell.runner, "submit", side_effect=hold_worker),
+        patch.object(gallery, "_schedule_save"),
+    ):
+        gallery.save_timer.stop()
+        form.imagesNavigationButton.click()
+        gallery.auto_button.setChecked(False)
+        gallery.auto_timer.stop()
+        gallery.filter_timer.stop()
+        gallery._pending_refresh = None
+        gallery._loading = False
+        gallery._snapshot_at = None
+        shell.inline.dismiss()
+        for key in tuple(shell.progress_strip.rows):
+            shell.progress_strip.finish(key)
+        present(item)
+        gallery.show_view("Grid")
+        gallery._unselect_all()
+        with patch.object(export, "start") as start:
+            gallery.export_button.click()
+            assert not start.called and not export.running and gallery.export_button.isEnabled()
+            assert not shell.gallery_detail.galleryExportScroll.isHidden()
+            assert form.imageExportScopeCombo.isHidden()
+            snap("images-53-export-panel-empty-scope")
+        gallery._set_checked(item.identity, True)
+        assert shell._export_selection("checked") == (item.identity,)
+        snap("images-54-export-panel-checked")
+        destination = str(root / "offline-export")
+        form.imageExportFolderEdit.setText(destination)
+        form.imageExportStartButton.click()
+        assert export.running and not form.imageExportStartButton.isEnabled()
+        export._progress(0, 1)
+        snap("images-55-export-panel-running")
+        export._done(ExportResult(destination, 0, 0, 0, False), None)
+        shell.progress_strip.finish("export")
+        gallery.export_button.click()
+        assert form.imageExportBox.parentWidget() is form.imageExportConnectionHost
+        present(item)
+        raw = gallery._widget("galleryRawMetadata")
+        gallery._widget("galleryRawButton", QPushButton).setChecked(True)
+        assert not raw.isHidden() and '"fixture": true' in raw.toPlainText()
+        snap("images-56-detail-raw-metadata")
+        gallery._widget("galleryRawButton", QPushButton).setChecked(False)
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            assert gallery.page.property("imageFocus") and form.isFullScreen()
+            snap("images-57-detail-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+            form.resize(1600, 1000)
+        present(replace(item, issue=MISSING_ISSUE))
+        assert gallery.surface_painter.placeholder == "File missing"
+        snap("images-58-detail-file-missing")
+        present(replace(item, issue="Offline fixture: original cannot be verified."))
+        assert gallery.surface_painter.placeholder == "Image unavailable"
+        snap("images-59-detail-unavailable")
+        edited = replace(
+            item, request_json=json.dumps({"model_id": item.model, "operation": "inpaint", "strength": 0.7})
+        )
+        present(edited)
+        gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
+        assert not gallery.use_settings_button.isEnabled() and not gallery.regenerate_button.isEnabled()
+        assert "edited images" in gallery.regenerate_button.toolTip()
+        gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(gallery.regenerate_button)
+        snap("images-60-detail-edited-image")
+        present(replace(item, model="", request_json="{}"))
+        assert gallery._widget("galleryModelValue", QLabel).text() == "Not recorded"
+        assert not gallery.use_settings_button.isEnabled() and not gallery.regenerate_button.isEnabled()
+        snap("images-61-detail-no-model")
+        present(replace(item, loras=(("offline-style.ckpt", 0.8), ("offline-detail.ckpt", 0.4))))
+        gallery._widget("galleryAdditionalButton", QPushButton).setChecked(False)
+        assert gallery._widget("galleryLoRAStatus1", QLabel).text() == "Unknown"
+        assert not gallery._widget("galleryLoRAChip2").isHidden()
+        snap("images-62-detail-loras")
+        present(item)
+        gallery._widget("galleryActualSizeButton", QPushButton).click()
+        assert gallery.surface_painter.mode == "100%" and gallery.surface_painter.zoom == 1
+        snap("images-63-detail-zoom-native")
+        gallery._unselect_all()
+        gallery.show_view("Grid")
+        gallery.prompt.setText("no-offline-match")
+        gallery.filter_timer.stop()
+        query = gallery._query(offset=0)
+        gallery._query_done(
+            gallery._query_generation, None, (query, GalleryResults((), 0, 0, query.limit), ((), ()), False), None
+        )
+        assert not gallery.items and gallery._grid_empty is not None
+        snap("images-64-filter-no-matches")
+        gallery.prompt.clear()
+        gallery.filter_timer.stop()
+        gallery.save_timer.stop()
 
 
 def render_removal_and_selection_states(shell, item, plan, out):

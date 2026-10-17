@@ -1,6 +1,6 @@
 # Plan: remaining offline desktop render states
 
-Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: Connection 01–39 and Generate 20–35 are source-present (A1–A4/B1), bringing the listed total to 170. The owner reports CI and UI render Actions passed through `6d039db` (A3). The current A4/B1 additions have no execution or visual acceptance yet; other catalog additions remain planned.
+Date: 2026-10-17. PR: #87. Baseline: `1443effe561604d4503d069ea04d15dc01c6aaf9`. Status: Connection 01–39, Generate 20–40, Queues 11–23 and Images 53–64 are source-present (A/B/C/D1), bringing the listed total to 200. The owner reports Actions passed through `c24f7c5` (A4/B1). The current B2/C/D1 additions have no execution or visual acceptance yet; other catalog additions remain planned.
 
 ## Scope
 
@@ -44,6 +44,7 @@ The baseline has 115 listed workflow renders. Existing screenshots can contain i
 
 ## Action items
 
+- Current owner-requested batch: B2 (Generate 36–40), C (Queues 11–23) and D1 (Images 53–64), 30 source-present fixtures. The owner reports Actions passed for `c24f7c5`; current additions await execution. Keep local checks to Ruff lint/format and preserve the existing two-minute render-step budget.
 - [x] Reconcile the historical audit with the 115-state source baseline and remove already-covered entries from the remaining catalog.
 - [x] Define named batches, safe fixture seams and excluded/deferred cases below.
 - [x] Implement A1 only: Connection 01–05, using one isolated temporary shell, a private synthetic environment mapping and an in-memory vault. Unused Generate inventory restoration is suppressed within this helper so a Cloud selection cannot consult process-environment credentials. No Check or credential action button is clicked; storage unavailability is injected at the saved-store boundary.
@@ -52,8 +53,10 @@ The baseline has 115 listed workflow renders. Existing screenshots can contain i
 - [x] Implement A4: Connection 36–39, using real export validation, synthetic empty-scope/preference-failure settlements and the existing narrow-layout handler.
 - [x] Implement A: Connection and the shared export flow.
 - [x] Implement B1: Generate 20–35, reusing the isolated shell for real selection editors and synthetic inventory/configuration/outcome presentation. Close submitted coroutines before execution, including inventory refresh and asset preparation.
-- [ ] Implement B: Generate editors, inventory/configuration and asset outcomes.
-- [ ] Implement C: active/problem Queues and planner composition.
+- [x] Implement B2: Generate 36–40, synthetic unknown/confirmed asset receipts, preparation/list failures and intercepted metadata reconciliation.
+- [x] Implement B: Generate editors, inventory/configuration and asset outcomes.
+- [x] Implement C: active/problem Queues and planner composition, through internally consistent synthetic read views, real control/Inspector/planner presenters and uncommitted consent. No queue is persisted, posted or dispatched.
+- [x] Implement D1: Images 53–64, shared export-card composition and synthetic Detail projections; submit no file/export workers and deliver synthetic image/metadata results directly.
 - [ ] Implement D: Images column, Detail and remaining operation/selection composition.
 - [ ] Implement E: remaining Inpaint capability, consent and outcome states.
 - [ ] Implement F: protected editor and overlay lifetime presentation.
@@ -185,11 +188,11 @@ Sources: `generation_page.py` (catalogue/inventory, configuration and generation
 | [x] | `generate-33-metadata-unavailable` | Missing metadata inspection/result, complementing existing successful inspection. |
 | [x] | `generate-34-partial-result` | Amber partial-generation result from a synthetic settlement, without additional generation. |
 | [x] | `generate-35-asset-preparing` | Preparing status and operation overlay; never call a real upload. |
-| [ ] | `generate-36-asset-partial` | Non-confirmed receipt outcome through `_prepared`. Reuse existing successful receipt coverage rather than adding a duplicate. |
-| [ ] | `generate-37-asset-failed` | Preparation failure through the real failure presenter. |
-| [ ] | `generate-38-asset-registry-unavailable` | Local receipt-list failure. |
-| [ ] | `generate-39-asset-reconciling` | Metadata-check status with the worker suppressed. |
-| [ ] | `generate-40-asset-receipt-bound` | Existing bound-receipt status for a selected synthetic LoRA. |
+| [x] | `generate-36-asset-partial` | Non-confirmed receipt outcome through `_prepared`. Reuse existing successful receipt coverage rather than adding a duplicate. |
+| [x] | `generate-37-asset-failed` | Preparation failure through the real failure presenter. |
+| [x] | `generate-38-asset-registry-unavailable` | Local receipt-list failure. |
+| [x] | `generate-39-asset-reconciling` | Metadata-check status with the worker suppressed. |
+| [x] | `generate-40-asset-receipt-bound` | Existing bound-receipt status for a selected synthetic LoRA. |
 
 ## C. Active/problem Queues
 
@@ -197,19 +200,19 @@ Sources: `queue_page.py`, `queue_model.py`, `queue_presenter.py`, `planning_pres
 
 | Done | Proposed state | Required visible state |
 | --- | --- | --- |
-| [ ] | `queues-11-running` | Local-owned running queue, settled count, active items and Pause availability. |
-| [ ] | `queues-12-paused-after-start` | Paused local dispatch with Resume available, distinct from never-started paused. |
-| [ ] | `queues-13-foreign-running` | Queue/table owned elsewhere and status-only global run control. |
-| [ ] | `queues-14-blocked-unknown` | Unknown item/reservation evidence and enabled Acknowledge/Override action. |
-| [ ] | `queues-15-override-confirmation` | Existing fresh reservation acknowledgement consent; no service mutation. |
-| [ ] | `queues-16-item-states` | Representative succeeded, failed, unknown, save_failed, cancelled and running row styling in one coherent fixture. |
-| [ ] | `queues-17-item-inspection` | Selected failed/unknown item and its recorded attempt/request evidence. |
-| [ ] | `queues-18-plan-invalid` | Real planner field marking/error rather than only a successful dry run. |
-| [ ] | `queues-19-inpaint-plan` | Inpaint Strengths fields, Edit column and upload/credit disclosure with staged synthetic input references. |
-| [ ] | `queues-20-concurrency-refused` | Concurrency control styling and existing not-changed presentation. |
-| [ ] | `queues-21-finished-table` | Finished queue summary/table/control availability, not just the result overlay. |
-| [ ] | `queues-22-cancelled-table` | Cancelled queue summary/table/control availability. |
-| [ ] | `queues-23-narrow` | Queues below the inspector-collapse breakpoint. |
+| [x] | `queues-11-running` | Local-owned running queue, settled count, active items and Pause availability. |
+| [x] | `queues-12-paused-after-start` | Paused local dispatch with Resume available, distinct from never-started paused. |
+| [x] | `queues-13-foreign-running` | Queue/table owned elsewhere and status-only global run control. |
+| [x] | `queues-14-blocked-unknown` | Unknown item/reservation evidence and enabled Acknowledge/Override action. |
+| [x] | `queues-15-override-confirmation` | Existing fresh reservation acknowledgement consent; no service mutation. |
+| [x] | `queues-16-item-states` | Representative succeeded, failed, unknown, save_failed, cancelled and running row styling in one coherent fixture. |
+| [x] | `queues-17-item-inspection` | Selected unknown item's attempt identity, seed and uncertainty evidence available in the current Inspector. |
+| [x] | `queues-18-plan-invalid` | Real planner field marking/error rather than only a successful dry run. |
+| [x] | `queues-19-inpaint-plan` | Inpaint Strengths fields, real strength dry-run table and synthetic Edit-column values. The current Queues presenter does not expose staged source/mask references or an upload/credit note; do not invent either in the fixture. |
+| [x] | `queues-20-concurrency-refused` | Concurrency control styling and existing not-changed presentation. |
+| [x] | `queues-21-finished-table` | Finished queue summary/table/control availability, not just the result overlay. |
+| [x] | `queues-22-cancelled-table` | Cancelled queue summary/table/control availability. |
+| [x] | `queues-23-narrow` | Queues below the inspector-collapse breakpoint. |
 
 ## D. Images composition and remaining Detail/removal states
 
@@ -217,18 +220,18 @@ Sources: `gallery_page.py`, `gallery_detail_preview.py`, `image_recycle_panel.py
 
 | Done | Proposed state | Required visible state |
 | --- | --- | --- |
-| [ ] | `images-53-export-panel-empty-scope` | Open export column with no checks; toggle stays available and opening submits nothing. |
-| [ ] | `images-54-export-panel-checked` | Same card beside the listing, checked scope, no Connection scope combo. |
-| [ ] | `images-55-export-panel-running` | In-progress shared card in the Images column with frozen checked scope. |
-| [ ] | `images-56-detail-raw-metadata` | Raw JSON panel open with safe synthetic metadata. |
-| [ ] | `images-57-detail-fullscreen` | Real viewer focus/fullscreen presentation, without fabricating another desktop window. |
-| [ ] | `images-58-detail-file-missing` | Detail missing-original placeholder, distinct from existing Grid/List missing cards. |
-| [ ] | `images-59-detail-unavailable` | Detail inaccessible/unverifiable-original placeholder. |
-| [ ] | `images-60-detail-edited-image` | Recorded image-operation output with Use settings/Regenerate disabled and truthful tooltips. |
-| [ ] | `images-61-detail-no-model` | Missing recorded model/provenance and resulting action availability. |
-| [ ] | `images-62-detail-loras` | Multiple recorded LoRAs and truthful unknown status chips. |
-| [ ] | `images-63-detail-zoom-native` | Actual Detail zoom/100% presentation, not Generate's existing zoom. |
-| [ ] | `images-64-filter-no-matches` | Active search/filter controls and empty-results state. |
+| [x] | `images-53-export-panel-empty-scope` | Open export column with no checks; toggle stays available and opening submits nothing. |
+| [x] | `images-54-export-panel-checked` | Same card beside the listing, checked scope, no Connection scope combo. |
+| [x] | `images-55-export-panel-running` | In-progress shared card in the Images column with frozen checked scope. |
+| [x] | `images-56-detail-raw-metadata` | Raw JSON panel open with safe synthetic metadata. |
+| [x] | `images-57-detail-fullscreen` | Real viewer focus/fullscreen presentation, without fabricating another desktop window. |
+| [x] | `images-58-detail-file-missing` | Detail missing-original placeholder, distinct from existing Grid/List missing cards. |
+| [x] | `images-59-detail-unavailable` | Detail inaccessible/unverifiable-original placeholder. |
+| [x] | `images-60-detail-edited-image` | Recorded image-operation output with Use settings/Regenerate disabled and truthful tooltips. |
+| [x] | `images-61-detail-no-model` | Missing recorded model/provenance and resulting action availability. |
+| [x] | `images-62-detail-loras` | Multiple recorded LoRAs and truthful unknown status chips. |
+| [x] | `images-63-detail-zoom-native` | Actual Detail zoom/100% presentation, not Generate's existing zoom. |
+| [x] | `images-64-filter-no-matches` | Active search/filter controls and empty-results state. |
 | [ ] | `images-65-selection-scanning` | Selection scan in progress with Cancel selection; no identity-query worker needed. |
 | [ ] | `images-66-multiple-checked` | Multiple checked cards/rows and partial header indicator, not just one checked Detail. |
 | [ ] | `images-67-permanent-delete-progress` | Permanent Delete progress wording/icon rather than relabelling the existing Trash result. |
@@ -294,13 +297,14 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 
 ## Validation and ownership
 
-- Current A4/B1 slice: source editing/review and explicitly owner-requested Ruff lint/format only. The changed script was formatted; repository-wide Ruff lint and format checks passed (331 files already formatted). No tests, separate syntax checks, rendering, builds, training/inference or provider operations ran locally.
-- [x] Owner: requested A1–A4/B1 and reported CI and UI render Actions passed through A3 at `6d039db`. This is owner-reported CI evidence, not native Windows/DPI acceptance. Remaining batches still require a separate implementation request; the next pending state is Generate 36.
+- Current B2/C/D1 slice: source editing/review and explicitly owner-requested Ruff lint/format only. The changed script was formatted; repository-wide Ruff lint and format checks passed (331 files already formatted). No tests, separate syntax checks, rendering, builds, training/inference or provider operations ran locally.
+- [x] Owner: requested A/B/C/D1 and reported Actions passed through A4/B1 at `c24f7c5`. This is owner-reported CI evidence, not native Windows/DPI acceptance. Remaining batches still require a separate implementation request; the next pending state is Images 65.
 - [ ] Owner/CI: execute the explicitly requested offline render batches and inspect the saved states/timings, including the known intermittent Detail-transition stall.
 - [ ] Owner: manual native Windows/DPI interaction acceptance where needed; no executable build is required by this fixture-only scope.
 
 ## Progress log
 
+- 2026-10-17: owner reports Actions passed for `c24f7c5`. Implemented the next 30 states (Generate 36–40, Queues 11–23, Images 53–64), reaching 200 source-listed states. Reused the isolated shell; closed upload, reconcile, export, query and decode coroutines before execution. Synthetic queue views have consistent row/count/uncertainty data and no durable queue or dispatcher. Unknown rows can coexist with already-running work in a blocked queue. Override consent is dismissed without posting. Planner invalid/strength states use the real parser; concurrency refusal directly exercises a defensive validator branch normally prevented by the bounded spin box. Queues has no source/mask reference field or upload/credit note, so its plan row now describes the existing presentation rather than inventing one. Gallery pixels and raw metadata are synthetic in-memory settlements, not records authorizing export or mutation; the running export card freezes one checked identity and performs no copying. Fullscreen uses the existing same-window focus action and restores it afterward. No extra shell, file-reading worker or real output is introduced. Current render/native acceptance and the intermittent Detail-stall diagnosis remain separate.
 - 2026-10-17: plan written against `1443eff`, with current baseline reconciliation, append-only state reservations, safe handler/fixture boundaries, duplicate/deferred decisions and owner-only execution gates. Implementation has not started.
 - 2026-10-17: added stall-prevention methods, narrow transition markers, readiness/lifecycle guidance and an evidence-to-action triage table. This is documentation only; no stall fix or runtime result is claimed.
 - 2026-10-17: implemented A1 (Connection 01–05) in the renderer source. The five additions bring the source-listed total from 115 to 120; no new screenshots were produced locally. One temporary shell is reused only within this credential/layout batch and is shut down before the existing fixtures continue. The source uses real backend-selection/credential presentation and an injected in-memory vault; no connection check, generation, upload or real credential access was performed. No tests, lint, format checks, syntax checks or renders were run.
