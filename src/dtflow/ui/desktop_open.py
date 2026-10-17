@@ -1,6 +1,6 @@
 """Prepare desktop requests off-thread and report safe hand-off failures on Qt.
 
-On WSL, translate with ``wslpath -w``; folders go to Explorer and files use Windows associations via PowerShell 7.
+On WSL, translate with ``wslpath -w``; folders go to Explorer and files use Windows associations via Windows PowerShell or PowerShell 7.
 The fixed script receives only JSON data on stdin, never an interpolated command. Native Qt hand-off stays on Qt.
 """
 
@@ -67,13 +67,16 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
     if not _wsl():
         return None  # Native Qt hand-off belongs on the GUI thread after validation.
     wslpath = shutil.which("wslpath")
-    launcher = shutil.which("explorer.exe" if directory else "pwsh.exe")
+    if directory:
+        launcher = shutil.which("explorer.exe")
+    else:
+        launcher = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
     if wslpath is None:
         log.warning("desktop open unavailable reason=no-wslpath")
         return "wslpath is unavailable in this WSL session."
     if launcher is None:
-        log.warning("desktop open unavailable reason=%s", "no-explorer" if directory else "no-pwsh")
-        name = "Windows Explorer" if directory else "PowerShell 7 (pwsh.exe)"
+        log.warning("desktop open unavailable reason=%s", "no-explorer" if directory else "no-powershell")
+        name = "Windows Explorer" if directory else "PowerShell (powershell.exe or pwsh.exe)"
         return f"{name} is unavailable through Windows interop; check this WSL session's PATH."
     try:
         converted = subprocess.run(
