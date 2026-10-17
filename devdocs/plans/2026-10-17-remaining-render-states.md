@@ -54,6 +54,62 @@ The baseline has 115 listed workflow renders. Existing screenshots can contain i
 - [ ] Implement F: protected editor and overlay lifetime presentation.
 - [ ] Update this plan, tool guide and unreleased notes at each batch checkpoint; record only actually implemented names and separately supplied execution evidence.
 
+## Stall-prevention hints and implementation methods
+
+These are requirements for future fixture implementation and a diagnostic playbook. They have not been executed or shown to eliminate the existing intermittent stall. Keep product behavior unchanged; a renderer workaround must not conceal a real GUI-thread or lifecycle defect.
+
+### 1. Build states without unnecessary work
+
+- Prefer a small immutable inventory/gallery/queue fixture and synthetic operation settlements over generating more fake outputs, requerying persistence or dispatching work for every screenshot. Reuse committed temporary fixture records within a batch, but explicitly reset presentation state between captures.
+- Open a local/cloud presentation only after the fixture transport, fake credentials and non-executing submission seams are installed. A backend selector change can schedule inventory or receipt work; intercept that work before changing the selector, not after it starts.
+- For collecting/running/stopping/result renders, use the existing controller's presentation/settlement path with bounded fixture values. Do not start a gated operation just to leave it waiting indefinitely. If a gated worker is genuinely needed, retain its future and release/cancel it in guaranteed cleanup.
+- Avoid duplicate transitions. For example, current `GalleryPage.show_view("Detail")` already selects/presents an available image; a following `gallery.select(...)` may repeat work. Choose one deliberate selection path, or use `open_detail=False` when appropriate, after reading the current implementation. Removing a redundant call is an optimization candidate, not evidence of the stall's root cause.
+- Keep images, metadata strings, model lists and queue tables representative but small. Use existing prepared fixture pixels; do not introduce large repeated image conversions, model hashing or per-row compression merely to obtain a presentation frame.
+
+### 2. Make asynchronous prerequisites explicit
+
+- Wait on the particular operation needed by the state: gallery query completion, selected identity, image/metadata delivery, thumbnail work, or an armed editor. Do not rely on a fixed sleep, a button being enabled, or a global queue being momentarily empty as proof that every required callback has settled.
+- Distinguish selection from image readiness. Record the selected identity and the matching image/detail request generation before capturing; an older callback for a previous identity must not satisfy the next state's readiness condition.
+- Keep every polling wait bounded and identify its failed prerequisite in the error text. Include state name and sanitized readiness values such as loading flag, pending thumbnail count and selected identity; do not dump owner paths, secrets or raw payloads.
+- A deadline inside `wait_for` only runs when control returns to its loop. It cannot rescue a synchronous Qt call or callback that never returns. Do not describe a polling timeout as a process-level watchdog or assume that adding another timeout around the predicate fixes an event-loop hang.
+- Do not increase global wait limits as the first response to a failure. Determine whether work is slow, callbacks are stale, an operation is waiting on a lease, or the GUI thread is stuck before changing a wait budget.
+
+### 3. Prevent refresh and callback interference
+
+- For a static layout batch, deliberately disable Images auto-refresh through its existing control before freezing synthetic data, and restore the prior setting in cleanup. Use separate fixtures for auto-refresh/recovery behavior; do not globally suppress polling in states intended to demonstrate it.
+- Keep a fixture's query result, selected identity, thumbnail/image source and metadata mutually consistent. Do not patch a query to return one identity while allowing a pending callback from a previous state to replace it.
+- Retire or settle only the fixture's own pending operations before reusing a shell. Use existing controller cancellation/revision mechanisms rather than arbitrary flag changes that leave a worker alive or permit stale GUI delivery.
+- Dismiss temporary editors/confirmations and hide popup menus before navigation or shell disposal. Preserve real ownership rules: hiding an operation overlay must not masquerade as cancelling its task.
+- Keep native objects and deferred callbacks parented to the fixture's live window. Avoid accumulating detached receivers, timers, menus or windows across batches. Destroy a shell only after its runner shutdown protocol has begun; do not manually pump callbacks against already-destroyed widgets.
+
+### 4. Show exactly which step stopped returning
+
+- If a stall recurs, add short flushed `BEGIN`/`END` markers with state name and monotonic elapsed time around the narrow suspect steps, not every event in the application. Capture transitions and image saving separately so a last completed screenshot is not mistaken for the blocking call itself.
+- For the known gap, bracket: the settled-gallery wait, `show_view("Detail")`, explicit selection if retained, Additional details expansion, event settling, widget grab, PNG save and progress reporting. The next frame is `images-28-detail-additional`; the last saved frame `images-01-grid` is only the boundary, not proof that Detail selection caused the hang.
+- Preserve the repeating 30-second all-thread stack dump, reset only on a saved-state progress event, and keep output unbuffered in CI. Python exceptions should still print before teardown. No exception does not mean no stall: a call that never returns cannot reach the exception handler.
+- Add equally bounded phase markers around runner shutdown and window close if stacks point to teardown. A failure during setup must not disappear behind an unrelated cleanup wait.
+- Keep the two-minute CI limit. Its current external 300-second abort watchdog cannot provide a pre-timeout trace because the step ends first; rely on the earlier in-process diagnostic rather than increasing either limit to conceal the problem.
+
+### 5. Read the stack before choosing a fix
+
+| Evidence from the next failing CI run | Implementation response to investigate |
+| --- | --- |
+| GUI thread inside Detail selection/layout or a resize callback | Trace re-entrant signal/layout transitions; remove redundant fixture transitions or correct the specific callback cycle. Do not patch out Detail rendering. |
+| GUI thread processing events repeatedly while readiness never settles | Identify the unfinished operation/identity/revision and competing refresh; make the fixture deterministic and use the correct readiness condition. |
+| Worker waiting for persistence/cache/original-file ownership | Identify the fixture operation still holding the lease, release/settle it correctly, and avoid starting another unrelated operation before capture. Never delete lock files or weaken production leases. |
+| Worker stuck in fake-backend gate or cancellation | Release/cancel that fixture-owned gate/future and let the real settlement callback run; retain the stopped/unknown semantics being demonstrated. |
+| GUI thread waiting for worker shutdown | Find the uncooperative task and fix its fixture teardown; do not wait for it on the GUI thread indefinitely or silently abandon a live worker as a successful render. |
+| GUI thread in image decode/grab/save | Bound fixture dimensions and inspect the exact image/widget and pending layout state. Do not infer a compression or disk problem from elapsed time alone. |
+| No Python stack explains a native Qt wait | Keep the phase markers and report the native-boundary limitation. Native stack inspection is a separate owner-authorized follow-up, not permission to guess a runtime fix. |
+
+### 6. Preserve useful evidence and the time budget
+
+- Add a batch at a time, not the entire catalog in one unreviewable renderer change. Keep the plan's implemented rows synchronized with source and any owner/CI evidence.
+- When the owner requests CI execution, compare per-state gaps with the preceding baseline and distinguish setup, rendering and teardown. No timing or speedup claim is made from source inspection alone.
+- Do not solve a long batch by dropping states, swallowing failures, clearing busy flags, force-enabling disabled controls or reporting an existing/stale PNG as newly rendered. Keep outputs for the current run separate from historical filenames.
+- If CI intermittently passes, retain the diagnostics and record the pass as a non-reproduction, not as a verified fix. If the same state stalls, the next implementation checkpoint must explain the stack and the specific changed variable.
+- No local reproduction, test, render, benchmark, lint or other validation command is authorized by this plan. Any such execution remains with the owner or explicitly requested CI activity.
+
 ## A. Connection and shared export
 
 Sources: `src/dtflow/ui/main_window.py` (`_selection_changed`, `_present`, `refresh_credentials`, `_checked`, `remove_key`, preset/custom-LoRA/cache handlers), `image_export_panel.py` (`_loaded`, `_set_running`, `_progress`, `cancel`, `_done`) and canonical `main_window.ui`.
@@ -241,3 +297,4 @@ Sources: `inline_feedback.py`, `search_select.py` and `activity_strip.py`. Use t
 ## Progress log
 
 - 2026-10-17: plan written against `1443eff`, with current baseline reconciliation, append-only state reservations, safe handler/fixture boundaries, duplicate/deferred decisions and owner-only execution gates. Implementation has not started.
+- 2026-10-17: added stall-prevention methods, narrow transition markers, readiness/lifecycle guidance and an evidence-to-action triage table. This is documentation only; no stall fix or runtime result is claimed.

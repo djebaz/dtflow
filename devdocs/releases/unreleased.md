@@ -2,7 +2,7 @@
 
 ## Highlights
 
-- PR #87 planning only: [remaining offline render-state catalog](../plans/2026-10-17-remaining-render-states.md) reconciles the older audit with the 115-state baseline and defines named Connection/export, Generate-editor, active/problem-Queue, Images, Inpaint and overlay batches. No additional fixtures are implemented or run by this plan.
+- PR #87 planning only: [remaining offline render-state catalog](../plans/2026-10-17-remaining-render-states.md) reconciles the older audit with the 115-state baseline and defines named Connection/export, Generate-editor, active/problem-Queue, Images, Inpaint and overlay batches. It also documents deterministic fixture setup, bounded readiness, callback/worker cleanup and stack-led stall triage without extending CI timeouts. No additional fixtures are implemented or run by this plan.
 
 - Offline renderer diagnostics: dump all Python thread stacks after 30 seconds without a saved screenshot, resetting the watchdog after each image. This captures stalls before the render workflow's two-minute step timeout; it does not change UI behavior or establish that the intermittent Detail-transition stall is fixed. Local validation is lint/format only; no local renders or tests.
 
