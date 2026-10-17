@@ -945,6 +945,31 @@ def main():
             page.generateButton.click()
             wait_for(settled, timeout=60)
             capture("11-outcome-unknown")
+            strip = shell.progress_strip
+            strip.finish("generation-result")
+            page.expandPromptButton.setChecked(True)
+            capture("108-generate-prompt-expanded")
+            page.expandPromptButton.setChecked(False)
+            scenario = "reject"
+            page.generateButton.click()
+            wait_for(settled, timeout=60)
+            capture("109-generate-failed")
+            strip.finish("generation-result")
+            gate, scenario = asyncio.Event(), "success"
+            page.generateButton.click()
+            wait_for(lambda: "run" in strip.rows)
+            strip.rows["run"].activityStopButton.click()
+            capture("110-generate-stop-requested")
+            wait_for(settled, timeout=60)
+            capture("111-generate-interrupted")
+            gate = None
+            strip.finish("generation-result")
+            shell.activity.set(dispatching=True)
+            capture("112-generate-queue-dispatch-running")
+            shell.activity.set(dispatching=False)
+            page.savePresetButton.click()
+            capture("113-generate-save-preset-editor")
+            shell.inline.dismiss()
 
             # Real asset-service composition, in-memory transport. Never generates through cloud.
             shell.form.backendCombo.setCurrentText("cloud")
@@ -999,6 +1024,10 @@ def main():
             assert page.resultList.count() == 0  # submitted: Generate cleared its previous result
             wait_for(lambda: page.resultList.count() > 0 and settled())
             capture("62-images-regenerate-confirmed")
+            shell.form.generationNavigationButton.click()
+            controller.show_metadata()
+            capture("114-generate-metadata-inspection")
+            shell.inline.dismiss()
             render_queue_states(shell, capture)
             render_shell_states(shell, capture)
             render_inpaint_states(shell, state, capture)
