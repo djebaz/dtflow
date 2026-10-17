@@ -25,6 +25,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSlider,
     QAbstractSpinBox,
     QApplication,
     QButtonGroup,
@@ -301,6 +302,7 @@ class GalleryPage(QObject):
         self._adjacent_loading = False
         self._adjacent_failed_offset: int | None = None
         self._suppress_batch_scroll = False
+        self._drag_scroll_positions: dict[str, int] = {}
         self._pending_refresh: tuple[bool, bool] | None = None
         self._refresh_failing = False
         self._snapshot_at = None
@@ -499,9 +501,16 @@ class GalleryPage(QObject):
         # Qt emits valueChanged for programmatic anchor restore and reflow.
         # Prefetch only on user scrollbar actions; viewport Wheel is handled
         # separately in eventFilter.
-        for bar in (self.grid_scroll.verticalScrollBar(), self.table.verticalScrollBar()):
-            bar.actionTriggered.connect(lambda *_: QTimer.singleShot(0, self._maybe_load_boundary))
-            bar.sliderMoved.connect(lambda *_: QTimer.singleShot(0, self._maybe_load_boundary))
+        for name, bar in (
+            ("grid", self.grid_scroll.verticalScrollBar()),
+            ("list", self.table.verticalScrollBar()),
+        ):
+            bar.actionTriggered.connect(lambda action, mode=name: self._scrollbar_action(mode, action))
+            bar.sliderPressed.connect(
+                lambda mode=name, scrollbar=bar: self._drag_scroll_positions.__setitem__(mode, scrollbar.value())
+            )
+            bar.sliderMoved.connect(lambda position, mode=name: self._scrollbar_drag(mode, position))
+            bar.sliderReleased.connect(lambda mode=name: self._drag_scroll_positions.pop(mode, None))
 
         for key, callback in (
             ("Left", lambda: self.step(-1)),
@@ -1571,8 +1580,15 @@ class GalleryPage(QObject):
             "Scroll to load adjacent batches, or use the numbered batch chips to jump."
         )
 
-    def _maybe_load_boundary(self) -> None:
-        """Prefetch the next/previous batch near a viewport edge without a page swap."""
+    def _maybe_load_boundary(self, direction: int) -> None:
+        """Prefetch only in the direction the user actually scrolled.
+
+        A page jump starts at the top of its mounted batch, where the old
+        proximity-only condition incorrectly fetched earlier pages even when
+        the user scrolled down.
+        """
+        if direction not in (-1, 1):
+            return
         if (
             not self._active
             or self.mode not in ("Grid", "List")
@@ -1587,9 +1603,9 @@ class GalleryPage(QObject):
         first, last = self._visible_range()
         threshold = max(6, min(20, len(self.items) // 8))
         end = self.offset + len(self.items)
-        if end < self.total and last >= end - threshold:
+        if direction > 0 and end < self.total and last >= end - threshold:
             self._load_adjacent(1)
-        elif self.offset > 0 and first <= self.offset + threshold:
+        elif direction < 0 and self.offset > 0 and first <= self.offset + threshold:
             self._load_adjacent(-1)
 
     def _load_adjacent(self, direction: int) -> None:
@@ -2556,8 +2572,49 @@ class GalleryPage(QObject):
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
             self.reflow_timer.start(0)
         if kind == QEvent.Type.Wheel and watched in (self.grid_viewport, self.table_viewport):
-            QTimer.singleShot(0, self._maybe_load_boundary)
+            vertical_delta = event.angleDelta().y() or event.pixelDelta().y()
+            if vertical_delta:
+                self._request_boundary_prefetch(1 if vertical_delta < 0 else -1, "wheel")
         return False
+
+    def _request_boundary_prefetch(self, direction: int, source: str) -> None:
+        if direction not in (-1, 1):
+            return
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=scroll_intent direction=%s source=%s offset=%d mounted=%d",
+                "forward" if direction > 0 else "backward",
+                source,
+                self.offset,
+                len(self.items),
+            )
+        QTimer.singleShot(0, lambda requested=direction: self._maybe_load_boundary(requested))
+
+    def _scrollbar_action(self, mode: str, action: int) -> None:
+        if mode != self.mode.casefold():
+            return
+        # SliderMove is handled by sliderMoved, which also yields drag direction.
+        if action in (
+            QAbstractSlider.SliderAction.SliderSingleStepAdd,
+            QAbstractSlider.SliderAction.SliderPageStepAdd,
+            QAbstractSlider.SliderAction.SliderToMaximum,
+        ):
+            self._request_boundary_prefetch(1, "scrollbar")
+        elif action in (
+            QAbstractSlider.SliderAction.SliderSingleStepSub,
+            QAbstractSlider.SliderAction.SliderPageStepSub,
+            QAbstractSlider.SliderAction.SliderToMinimum,
+        ):
+            self._request_boundary_prefetch(-1, "scrollbar")
+
+    def _scrollbar_drag(self, mode: str, position: int) -> None:
+        if mode != self.mode.casefold():
+            return
+        bar = self.grid_scroll.verticalScrollBar() if mode == "grid" else self.table.verticalScrollBar()
+        previous = self._drag_scroll_positions.get(mode, bar.value())
+        self._drag_scroll_positions[mode] = position
+        if position != previous:
+            self._request_boundary_prefetch(1 if position > previous else -1, "drag")
 
     def _scroll_changed(self, name: str, value: int) -> None:
         self._scroll[name] = max(0, value)
