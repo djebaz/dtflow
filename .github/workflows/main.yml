@@ -66,6 +66,7 @@ jobs:
           echo "Rendering $label at $sha" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "short=${sha:0:7}" >> "$GITHUB_OUTPUT"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         with:
@@ -90,23 +91,22 @@ jobs:
       # A normal run takes well under a minute. If a state hangs, the watchdog aborts Python
       # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
+        id: render
         timeout-minutes: 6
         run: |
+          mkdir -p tmp
+          set -o pipefail
           status=0
-          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders || status=$?
+          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders \
+            2>&1 | tee tmp/render.log || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 124 ] || [ "$status" -eq 134 ]; then
             echo "::error::Render timed out after 300s; see the stack trace above."
           fi
           exit "$status"
 
-      - name: Summarize renders
-        if: always()
-        run: |
-          count=$(find tmp/ui-renders -type f -name '*.png' 2>/dev/null | wc -l)
-          echo "Rendered $count PNG file(s). Offscreen layout evidence only, not Windows or DPI acceptance." \
-            | tee -a "$GITHUB_STEP_SUMMARY"
-
       - name: Upload renders
+        id: upload
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -114,3 +114,95 @@ jobs:
           path: tmp/ui-renders/
           if-no-files-found: warn
           retention-days: 14
+
+      # Built only from what this run produced (the render log and PNG files), so it needs no upkeep
+      # when states are added or removed.
+      - name: Summarize renders
+        if: always()
+        env:
+          RENDER_STATUS: ${{ steps.render.outputs.status }}
+          TARGET: ${{ steps.target.outputs.label }}
+          SHA: ${{ steps.target.outputs.sha }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        shell: python3 {0}
+        run: |
+          import os, re, struct
+          from collections import Counter
+          from pathlib import Path
+
+          out, log_path = Path("tmp/ui-renders"), Path("tmp/render.log")
+          log = log_path.read_text(errors="replace").splitlines() if log_path.exists() else []
+          pngs = sorted(out.glob("*.png")) if out.exists() else []
+          status = os.environ.get("RENDER_STATUS", "")
+          verdict = {
+              "0": "✅ Passed",
+              "124": "⏱️ Timed out (watchdog)",
+              "134": "⏱️ Timed out (watchdog)",
+              "": "⚠️ Did not run",
+          }.get(status, f"❌ Failed (exit {status})")
+
+          def size(path):
+              with path.open("rb") as handle:
+                  head = handle.read(24)
+              return struct.unpack(">II", head[16:24]) if head[:8] == b"\x89PNG\r\n\x1a\n" else (0, 0)
+
+          # Area = the word after the number, e.g. 61-images-regenerate -> images.
+          def area(name):
+              parts = name.split("-")
+              return parts[1] if len(parts) > 1 and parts[0].isdigit() else "other"
+
+          # Seconds since start, from the script's "[  n] +12.3s path" progress lines when present.
+          times = {}
+          for line in log:
+              match = re.match(r"\[\s*\d+\]\s+\+\s*([\d.]+)s\s+(\S+\.png)$", line.strip())
+              if match:
+                  times[Path(match[2]).stem] = float(match[1])
+          gaps, previous = [], 0.0
+          for name, seconds in times.items():
+              gaps.append((seconds - previous, name))
+              previous = seconds
+
+          notes = [
+              line.strip() for line in log
+              if line.strip() and not line.strip().endswith(".png")
+              and "does not support" not in line and not line.startswith(("Rendered ", "["))
+          ]
+          final = next((line for line in reversed(log) if line.startswith("Rendered ")), None)
+          problems = [line for line in log if line.startswith(("Blank renders", "Traceback", "RuntimeError", "Fatal Python"))]
+
+          md = [f"## UI renders · {verdict}", ""]
+          md += [
+              "| | |", "|---|---|",
+              f"| Target | {os.environ.get('TARGET') or '?'} |",
+              f"| Commit | `{os.environ.get('SHA', '')[:7]}` |",
+              f"| States rendered | **{len(pngs)}** |",
+          ]
+          if final:
+              md.append(f"| Script result | {final} |")
+          if os.environ.get("ARTIFACT_URL"):
+              md.append(f"| Screenshots | [Download the zip]({os.environ['ARTIFACT_URL']}) |")
+          md.append("")
+          if problems:
+              md += ["### Problems", "", "```", *problems[-20:], "```", ""]
+          if pngs:
+              counts = Counter(area(p.stem) for p in pngs)
+              md += ["### States by area", "", "| Area | States |", "|---|---:|"]
+              md += [f"| {name} | {count} |" for name, count in counts.most_common()]
+              md.append("")
+          if gaps:
+              md += ["### Slowest states", "", "| State | Seconds |", "|---|---:|"]
+              md += [f"| {name} | {gap:.1f} |" for gap, name in sorted(gaps, reverse=True)[:5]]
+              md.append("")
+          if pngs:
+              md += ["<details><summary>All rendered states</summary>", "", "| State | Size | KB |", "|---|---|---:|"]
+              for path in pngs:
+                  width, height = size(path)
+                  md.append(f"| {path.stem} | {width}×{height} | {path.stat().st_size // 1024} |")
+              md += ["", "</details>", ""]
+          if notes:
+              md += ["<details><summary>Script messages (fixtures log expected failures on purpose)</summary>", "", "```"]
+              md += [*notes[:60], "```", "</details>", ""]
+          md.append("_Offscreen layout evidence only, not Windows or DPI acceptance._")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("\n".join(md) + "\n")
+          print(f"{verdict}: {len(pngs)} states rendered.")
