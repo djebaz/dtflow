@@ -22,3 +22,5 @@ class ExportResult:
     noise: int = 0
     blank: int = 0
     skipped: int = 0
+    # Expected platform-capability notes; unlike warnings they never make a completed export partial.
+    notices: tuple[str, ...] = ()

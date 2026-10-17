@@ -24,13 +24,21 @@ from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
 from dtflow.persistence.cache_coordination import cache_access
 from dtflow.persistence.image_analysis_cache import load_image_analysis, save_image_analysis
-from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
+from dtflow.persistence.original_io import (
+    OriginalImagesBusyError,
+    OriginalImagesUnavailableError,
+    original_images_lock,
+    require_originals_ready,
+)
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.artifact_paths import foreign_windows_path
-from dtflow.services.gallery import item_from_record, load_detail, safe_metadata
+from dtflow.services.gallery import item_from_record, load_detail, resolve_item_read, safe_metadata
 from dtflow.services.image_quality import ALGORITHM, assess_rgb
 
 MAX_EXPORT_IMAGES = 10_000
+CREATION_TIME_NOTICE = "File creation time is set only on Windows; EXIF retains the recorded saved date."
+# Expected on every non-Windows runtime, so it informs without implying that anything went wrong.
+INFORMATIONAL_NOTES = frozenset({CREATION_TIME_NOTICE})
 MAX_IMAGE_BYTES = 64 * 1024 * 1024
 MAX_PIXELS = 32_000_000
 MAX_EXIF_BYTES = 65_533
@@ -203,8 +211,8 @@ def _identifier(value) -> str:
     return text
 
 
-def _portable(item: GalleryItem, options: ExportOptions) -> tuple[dict, list[str]]:
-    detail = load_detail(item)
+def _portable(item: GalleryItem, options: ExportOptions, *, state: Path | None = None) -> tuple[dict, list[str]]:
+    detail = load_detail(item, state=state)
     recorded = json.loads(detail.metadata_json)
     request = json.loads(item.request_json)
     requested = {key: request[key] for key in REQUEST_FIELDS if key in request}
@@ -389,11 +397,14 @@ def _reserve(destination: Path, stem: str):
 
 
 def _export_one(
-    item: GalleryItem, destination: Path, options: ExportOptions, computations: dict
+    item: GalleryItem, destination: Path, options: ExportOptions, computations: dict, *, state: Path | None = None
 ) -> tuple[tuple[str, ...], str]:
-    if foreign_windows_path(item.path):
-        raise ValidationError("Windows-recorded outputs are read-only here; export them from Windows.")
-    source = Path(item.path).resolve()
+    if state is None and foreign_windows_path(item.path):
+        raise ValidationError("Windows-recorded outputs require a verified shared-state read path.")
+    try:
+        source = Path(resolve_item_read(item, state)[0] if state is not None else item.path).resolve()
+    except OSError as exc:
+        raise ValidationError("Saved source is unavailable or its Windows/WSL path cannot be safely verified.") from exc
     if destination == source.parent or destination.is_relative_to(source.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
     if not source.is_file() or source.stat().st_size > MAX_IMAGE_BYTES:
@@ -417,7 +428,7 @@ def _export_one(
     checksum = cached["source_png_sha256"] if cached else hashlib.sha256(original).hexdigest()
     assessment = cached.get("assessment") if cached else None
     category = "root"
-    document, notes = _portable(item, options)
+    document, notes = _portable(item, options, state=state)
     document.update(
         source_png_sha256=checksum,
         exported_at_utc=datetime.now(UTC).isoformat(),
@@ -497,7 +508,7 @@ def _export_one(
                                 "Some Windows export creation times could not be set; image copies were retained."
                             )
                     else:
-                        notes.append("File creation time is set only on Windows; EXIF retains the recorded saved date.")
+                        notes.append(CREATION_TIME_NOTICE)
                 except BaseException:
                     image_handle.close()
                     sidecar_handle.close()
@@ -572,7 +583,13 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                     record = storage.get_record(state, identity)
                     if record is None:
                         raise ValidationError("Saved original is not available.")
-                    item_notes, category = _export_one(item_from_record(record), destination, options, computations)
+                    item_notes, category = _export_one(
+                        item_from_record(record, state=Path(state)),
+                        destination,
+                        options,
+                        computations,
+                        state=Path(state),
+                    )
                     notes.update(item_notes)
                     noise += category == "noise"
                     blank += category == "blank"
@@ -589,6 +606,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
             RecursionError,
             PersistenceError,
             OriginalImagesBusyError,
+            OriginalImagesUnavailableError,
             Image.DecompressionBombError,
             Image.DecompressionBombWarning,
         ) as exc:
@@ -597,7 +615,10 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                 # Never expose decoder/OS exception strings, which can contain paths or source data.
                 reason = (
                     str(exc)
-                    if isinstance(exc, (ValidationError, PersistenceError, OriginalImagesBusyError))
+                    if isinstance(
+                        exc,
+                        (ValidationError, PersistenceError, OriginalImagesBusyError, OriginalImagesUnavailableError),
+                    )
                     else f"could not export ({type(exc).__name__})"
                 )
                 failures.extend(f"{candidate}: {reason}" for candidate in batch[: 100 - len(failures)])
@@ -612,11 +633,12 @@ def _run_export(state, destination, options, query, identities, cancel, progress
         exported,
         failed,
         cancel.is_set(),
-        tuple(sorted(notes)),
+        tuple(sorted(notes - INFORMATIONAL_NOTES)),
         tuple(failures),
         noise,
         blank,
         skipped,
+        tuple(sorted(notes & INFORMATIONAL_NOTES)),
     )
 
 
@@ -655,6 +677,7 @@ async def export_outputs(
     JPGs/optional JSONs are at root, except optional advisory noise/blank routing.
     Cancel cooperatively between images; settle an in-flight file write before shutdown.
     """
+    require_originals_ready(state)
     stop = cancel if cancel is not None else threading.Event()
     worker = asyncio.create_task(
         asyncio.to_thread(

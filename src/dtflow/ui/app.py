@@ -9,12 +9,14 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from dtflow import startup
+from dtflow.persistence.gallery_snapshot import configure, finish_at_close
 from dtflow.ui.brand import app_icon
 from dtflow.ui.main_window import MainWindow
 from dtflow.ui.theme import apply_theme
 
 
 def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
+    configure(no_cache=no_cache)
     application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
     apply_theme(application)
     application.setWindowIcon(app_icon())
@@ -30,7 +32,11 @@ def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
     startup.mark("window shown")
     # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.
     QTimer.singleShot(0, lambda: _after_first_paint(window))
-    return application.exec()
+    result = application.exec()
+    # The event loop has exited cleanly; never perform this disk work in a Qt slot.
+    window.runner.shutdown(timeout=30)
+    finish_at_close(window.state_dir)
+    return result
 
 
 def _after_first_paint(window) -> None:

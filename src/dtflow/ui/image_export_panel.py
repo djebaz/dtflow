@@ -15,11 +15,17 @@ from dtflow.core.export import ExportOptions
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.persistence.export_preferences import load_export_preferences, save_export_preferences
+from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
 from dtflow.services.image_export import export_outputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
+
+
+def completion_state(result) -> str:
+    """Overlay severity: failed items or genuine warnings are partial; informational notices never are."""
+    return "partial" if result.failed or result.warnings else "stopped" if result.cancelled else "success"
 
 
 class ImageExportPanel(QObject):
@@ -87,7 +93,9 @@ class ImageExportPanel(QObject):
             self.form.imageExportStatusLabel.setText("Saved export preferences could not be read; defaults are shown.")
             return
         if document:
-            self.form.imageExportFolderEdit.setText(document["destination"])
+            # Only this runtime's remembered folder; a counterpart runtime's path is never shown or converted.
+            if document["destination"]:
+                self.form.imageExportFolderEdit.setText(document["destination"])
             self.form.imageExportPromptsCheck.setChecked(document["include_prompts"])
             self.form.imageExportSidecarsCheck.setChecked(document["json_sidecars"])
             self.form.imageExportSeparateCheck.setChecked(document.get("separate_noise_blank", True))
@@ -205,7 +213,7 @@ class ImageExportPanel(QObject):
             log.warning("image export stopped reason=%s", type(failure).__name__)
             message = (
                 str(failure)
-                if isinstance(failure, ValidationError)
+                if isinstance(failure, (ValidationError, OriginalImagesBusyError, OriginalImagesUnavailableError))
                 else "Export stopped; check destination permissions and saved outputs."
             )
             self.form.imageExportStatusLabel.setText(message)
@@ -220,8 +228,10 @@ class ImageExportPanel(QObject):
             text += f" Sorted into subfolders: {result.noise} noise, {result.blank} blank (advisory)."
         if result.warnings:
             text += " " + " ".join(result.warnings)
+        if result.notices:
+            text += " " + " ".join(result.notices)
         self.form.imageExportStatusLabel.setText(text)
-        state = "partial" if result.failed or result.warnings else "stopped" if result.cancelled else "success"
+        state = completion_state(result)
         activity_strip(self.form).complete("export", prefix, text, state)
         self.form.imageExportStatusLabel.setToolTip("\n".join(result.failures))
         if result.exported or result.skipped:

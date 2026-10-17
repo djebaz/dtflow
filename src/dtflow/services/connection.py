@@ -127,6 +127,10 @@ def present_generation_failure(exc: Exception) -> Presentation:
                 "Request rejected",
                 f"{failure.code}{' (' + codes + ')' if codes else ''}. Nothing was dispatched.",
             )
+        if failure.code == "originals_unavailable":
+            return Presentation("error", "Generation not submitted", failure.message)
+        if failure.code == "local_save_unavailable":
+            return Presentation("error", "Generated image not fully saved", failure.message)
         if failure.category in (ErrorCategory.CREDENTIALS, ErrorCategory.AUTHENTICATION):
             return Presentation("error", "Credentials problem", failure.code)
         return Presentation("error", "Generation failed", failure.code)

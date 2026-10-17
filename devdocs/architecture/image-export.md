@@ -8,6 +8,12 @@ Images **Export** toggles a scrollable right-hand column beside the Grid/List/De
 
 The gallery's checked identity set is session-only and distinct from the focused image; hidden filtered checks are included in the frozen export snapshot. The owner reported that the earlier export action worked; this new inline layout/navigation/cancellation behavior still requires owner smoke acceptance. No second exporter or dialog, new dependency, encoding or metadata change is introduced.
 
+## Shared Windows/WSL1 read-only source aliases (PR #76 / issue #83)
+
+On native Windows, if the original WSL1-recorded absolute path is unreadable, a committed managed output can be read through its current shared-state location only when the *entire* recorded drive/state suffix agrees with the current Windows state, the attempt/ordinal match the DB identity, both output and sidecar are non-redirected regular files, and the bounded sidecar confirms the original artifact path and attempt. Image-operation final SHA-256 is compared when present. The source is revalidated under the existing original-file lease for JPEG export, preserving all destination/metadata/privacy protections. The fallback does not authorize Trash/Delete, does not rewrite stored evidence, and does not infer locations for custom output roots or Linux-native files. Owner Windows smoke, not code presence, determines runtime acceptance.
+
+In the reverse direction, WSL1 can export Windows-recorded originals only through the verified `ArtifactReadPaths` drive mapping and original-file lease. Each actual export re-resolves the source under that lease and requires a bounded sidecar identifying the same output; it checks recorded size and image-operation final SHA-256 where present. An unavailable mapping or unverifiable sidecar fails the item with a safe path-verification reason. The recorded references, image and sidecar remain unchanged. Custom `--out` folders receive no invented fallback path, though independently verified recorded paths remain eligible for copy-only export. This does not extend Trash/Delete eligibility or establish safe concurrent cross-platform state writers. Decision record: an earlier owner comment asked to keep this direction refused until a safe read/lock boundary was proven; PR #76 (`451b41d`) enabled it with the verified mapping and sidecar checks above, as a copy-only read. The lease is a cross-process Windows/WSL guarantee only when the DTFlow state itself is on a verified Windows-hosted drive (the native helper takes the Windows lock); with state on WSL ext4 and a Windows-path source, Linux `flock` does not exclude unrelated native Windows writers. Owner WSL1 export smoke is still required.
+
 ## Destination routing and file safety
 
 Normal JPGs and optional same-basename JSON are directly in the user-selected folder. Default-on `ExportOptions.separate_noise_blank` routes flagged copies only into `noise/` or `blank/`; disabling it restores flat export without analysis. Sidecars always follow their image. Category folders are created on demand and must not redirect elsewhere.
@@ -76,10 +82,20 @@ sidecars. Camera Make/Model, authorship and copyright are not fabricated.
 
 New JPEG EXIF DateTimeOriginal/DateTimeDigitized include UTC offsets and subseconds from the durable successful saved time. This is an explicit generation-completion proxy, not invented generation-start telemetry. Windows creation time is set via [SetFileTime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime) on the exclusively created export handle after flushing writes, and on written JSON sidecars. Modified time remains export time. Timestamp failures warn and preserve completed copies; unavailable timestamps omit date fields rather than guess. No original/existing/skipped files are timestamped. Non-Windows execution retains EXIF but reports that file creation time was not set.
 
+## Completion notices
+
+`ExportResult.warnings` holds genuine problems (failed creation-time writes, unavailable dates, oversized EXIF fallback, cache fallback, unsaved preferences) and makes a completed export partial. `ExportResult.notices` holds expected platform-capability notes, currently only that file creation time is set on Windows alone; it is shown in the summary but never changes severity. Failed items still make the result partial.
+
 ## Preferences and acceptance
 
-`export_preferences.json` (schema 1) stores destination and privacy/sidecar/routing
-choices under the state root. The additive `separate_noise_blank` boolean defaults to true for older schema-1 files; a present non-boolean is rejected. It is durable convenience data, not cache;
+`export_preferences.json` (schema 2) stores one destination per runtime (`windows`, `wsl`, or the platform name)
+plus common privacy/sidecar/routing choices under the state root, so Windows and WSL installations that share a
+state directory no longer overwrite each other's folder. A runtime loads and shows only its own destination and
+preserves the others when saving; a path is never translated between spellings. Schema-1 files (one destination)
+are still read: a drive/UNC destination belongs to `windows`, a POSIX destination to `wsl` (or the current
+POSIX platform), and any other form is ignored. The first save rewrites the file as schema 2; older applications
+refuse it and leave it unchanged. Two applications saving at the same instant can lose one update (atomic file
+replacement, no cross-process lock). The additive `separate_noise_blank` boolean defaults to true when absent; a present non-boolean is rejected. It is durable convenience data, not cache;
 `--no-cache` and cache cleanup do not remove it. Unsupported/unreadable preferences
 are not overwritten; exports can still proceed with a warning.
 
@@ -90,7 +106,7 @@ not acceptance of production implementation. No agent tests or smoke tests were 
 this feature under fast-implement. Final source/Windows/packaged acceptance is the
 owner's responsibility; no inference or provider calls are needed to validate export.
 
-The owner later reported a source smoke export; see [evidence](../research/jpeg-export-smoke-2026-10-09.md). Remaining scenario/packaged acceptance is separate.
+The owner later reported a source smoke export; see [evidence](../research/jpeg-export-smoke-2026-10-09.md). For PR #76, the earlier Windows/WSL1 export scenarios were accepted at `6202404`, and the owner reports all current-PR source smoke passed on 2026-10-17 following `10650b9`. This includes the current shared-state/per-runtime export follow-up without inferring exact final executable, other-platform or benchmark acceptance. Snapshot-backed selection still cannot authorize export; Generate selection remains independent.
 
 ## Cache-cleanup coordination
 

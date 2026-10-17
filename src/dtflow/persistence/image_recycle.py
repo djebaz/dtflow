@@ -2,18 +2,32 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NamedTuple
 
-SCHEMA_VERSION = 1
+
+class ReconcileResult(NamedTuple):
+    """Newly unsettled Trash and permanent intents from this pass only."""
+
+    trash_uncertain: int
+    delete_uncertain: int
+    withdrawn_restorations: int
+
+
+SCHEMA_VERSION = 2
 FILENAME = "image_recycle.sqlite3"
 _RECORD_UPSERT = """INSERT INTO records(identity,path,outcome,operation_id,size,mtime_ns,updated_utc)
     VALUES(?,?,?,?,?,?,?)
     ON CONFLICT(identity) DO UPDATE SET
       path=excluded.path, outcome=excluded.outcome, operation_id=excluded.operation_id,
       size=excluded.size, mtime_ns=excluded.mtime_ns, updated_utc=excluded.updated_utc"""
+
+
+log = logging.getLogger(__name__)
 
 
 def _now() -> str:
@@ -28,7 +42,7 @@ def writer(state: Path):
     connection = sqlite3.connect(directory / FILENAME, timeout=10)
     try:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, SCHEMA_VERSION):
+        if version not in (0, 1, SCHEMA_VERSION):
             raise ValueError("Unsupported image-recycle ledger schema.")
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=FULL")
@@ -65,7 +79,7 @@ def attach_read_only(connection: sqlite3.Connection, state: Path) -> None:
     if file.is_file():
         uri = file.as_uri() + "?mode=ro"
         connection.execute("ATTACH DATABASE ? AS image_recycle", (uri,))
-        if connection.execute("PRAGMA image_recycle.user_version").fetchone()[0] != SCHEMA_VERSION:
+        if connection.execute("PRAGMA image_recycle.user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
             raise ValueError("Unsupported image-recycle ledger schema.")
     else:
         connection.execute("ATTACH DATABASE ':memory:' AS image_recycle")
@@ -103,7 +117,9 @@ def record_outcome(
             )
 
 
-def claim_recycle_intent(state: Path, operation_id: str, identity: str, path: str, size: int, mtime_ns: int) -> bool:
+def claim_recycle_intent(
+    state: Path, operation_id: str, identity: str, path: str, size: int, mtime_ns: int, *, permanent: bool = False
+) -> bool:
     """Atomically claim new/known-failed originals; leave unsafe ledger evidence intact.
 
     Called under the batch and original-file leases after filesystem revalidation.
@@ -114,8 +130,27 @@ def claim_recycle_intent(state: Path, operation_id: str, identity: str, path: st
     with writer(state) as db:
         changed = db.execute(
             _RECORD_UPSERT + " WHERE records.outcome='failed'",
-            (identity, path, "pending", operation_id, size, mtime_ns, _now()),
+            (identity, path, "delete_pending" if permanent else "pending", operation_id, size, mtime_ns, _now()),
         ).rowcount
+    return changed == 1
+
+
+def record_confirmed_absent(state: Path, operation_id: str, identity: str, path: str) -> bool:
+    """Hide an explicitly confirmed absent original without claiming file deletion.
+
+    There is no external mutation to replay. Only a new or known-failed identity
+    may settle as absent; the ledger keeps the original path and attempt history.
+    """
+    with writer(state) as db:
+        changed = db.execute(
+            _RECORD_UPSERT + " WHERE records.outcome='failed'",
+            (identity, path, "absent", operation_id, 0, 0, _now()),
+        ).rowcount
+        if changed:
+            db.execute(
+                "UPDATE operations SET completed_count=completed_count+1 WHERE operation_id=?",
+                (operation_id,),
+            )
     return changed == 1
 
 
@@ -131,7 +166,7 @@ def outcomes(state: Path) -> dict[str, tuple[str, str, int, int]]:
         return {}
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=3)
     try:
-        if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+        if connection.execute("PRAGMA user_version").fetchone()[0] not in (1, SCHEMA_VERSION):
             raise ValueError("Unsupported image-recycle ledger schema.")
         return {
             identity: (outcome, file, size, mtime)
@@ -143,26 +178,33 @@ def outcomes(state: Path) -> dict[str, tuple[str, str, int, int]]:
         connection.close()
 
 
-def reconcile(state: Path) -> tuple[int, int]:
+def reconcile(state: Path) -> ReconcileResult:
     """Settle interrupted intent and withdraw unverified historical restorations.
 
-    Return interrupted and withdrawn-restoration counts. No file at an old path
+    Return newly uncertain Trash/deletion counts and withdrawn restorations. No old path
     proves original content identity, even when size and timestamps match. Keep
     these records recycled until an explicit content-verified recovery exists.
     Never retry a Trash operation or remove any reappearing file.
     """
     file = Path(state).resolve() / FILENAME
     if not file.is_file():
-        return 0, 0
+        return ReconcileResult(0, 0, 0)
     with writer(state) as db:
-        pending = db.execute(
+        trash_uncertain = db.execute(
             "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome='pending'",
             (_now(),),
-        )
-        uncertain = pending.rowcount
+        ).rowcount
+        delete_uncertain = db.execute(
+            "UPDATE records SET outcome='uncertain',updated_utc=? WHERE outcome='delete_pending'",
+            (_now(),),
+        ).rowcount
         db.execute("UPDATE operations SET outcome='interrupted' WHERE outcome='running'")
         withdrawn = db.execute(
             "UPDATE records SET outcome='recycled',updated_utc=? WHERE outcome='restored'",
             (_now(),),
         ).rowcount
-    return uncertain, withdrawn
+    result = ReconcileResult(trash_uncertain, delete_uncertain, withdrawn)
+    (log.info if any(result) else log.debug)(
+        "image-removal reconcile trash_uncertain=%d delete_uncertain=%d withdrawn=%d", *result
+    )
+    return result

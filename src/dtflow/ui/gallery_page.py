@@ -6,13 +6,15 @@ import asyncio
 import json
 import logging
 import math
+import os
 import re
 from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
+from time import monotonic
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import (
     QDesktopServices,
     QIcon,
@@ -47,10 +49,21 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
 from dtflow.persistence import gallery as gallery_storage
-from dtflow.persistence.original_io import OriginalImagesBusyError, original_images_lock
+from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError, original_images_lock
+from dtflow.persistence.store import PersistenceError
 from dtflow.persistence.viewer import load_viewer, save_viewer
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
-from dtflow.services.gallery import copy_output_paths, filter_choices, inspect_output, locate_output, query_outputs
+from dtflow.services.gallery import (
+    MISSING_ISSUE,
+    copy_output_paths,
+    filter_choices,
+    inspect_output,
+    load_detail,
+    locate_output,
+    query_outputs,
+    query_snapshot,
+    resolve_item_read,
+)
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_detail_preview import (
@@ -98,32 +111,84 @@ def _filename(path: str) -> str:
     return PureWindowsPath(path).name if foreign_windows_path(path) else Path(path).name
 
 
-def _image(path: str, max_side: int, state: Path | None = None) -> tuple[QImage | None, str]:
-    """Decode one original while holding its shared cross-process read lease."""
+# Originals larger than this are decoded from the file under the lease instead of from memory.
+_MAX_BUFFERED_ORIGINAL = 256 * 1024 * 1024
 
-    def decode() -> tuple[QImage | None, str]:
-        try:
-            access = ArtifactReadPaths.discover().resolve(path) if foreign_windows_path(path) else path
-        except OSError:
-            return None, "Windows output drive is unavailable or the path is unsupported."
-        reader = QImageReader(access)
+
+def _image(
+    path: str, max_side: int, state: Path | None = None, *, item: GalleryItem | None = None
+) -> tuple[QImage | None, str]:
+    """Read one original under the shared lease, then decode it outside the lease.
+
+    The lease keeps the bytes consistent with removal; decoding from memory lets
+    other thumbnails, saves and removals take the lease meanwhile.
+    """
+
+    def access() -> str:
+        return (
+            resolve_item_read(item, state, display=True)[0]
+            if item is not None and state is not None
+            else ArtifactReadPaths.discover().resolve(path)
+            if foreign_windows_path(path)
+            else path
+        )
+
+    def decode(source: str | QBuffer) -> tuple[QImage | None, str]:
+        reader = QImageReader(source)
         reader.setAutoTransform(True)
         if max_side:
-            source = reader.size()
-            if source.isValid() and (source.width() > max_side or source.height() > max_side):
-                reader.setScaledSize(source.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
+            size = reader.size()
+            if size.isValid() and (size.width() > max_side or size.height() > max_side):
+                reader.setScaledSize(size.scaled(max_side, max_side, Qt.AspectRatioMode.KeepAspectRatio))
         value = reader.read()
         if value.isNull():
             return None, reader.errorString() or "Image could not be decoded."
         return value, ""
 
+    def unreadable(exc: OSError) -> tuple[None, str]:
+        return None, str(exc) if item is not None else "Windows output drive is unavailable or the path is unsupported."
+
     if state is None:
-        return decode()
+        try:
+            return decode(access())
+        except OSError as exc:
+            return unreadable(exc)
     try:
-        with original_images_lock(state, timeout=12):
-            return decode()
+        requested = monotonic()
+        with original_images_lock(state, timeout=12, background=True):
+            leased = monotonic()
+            try:
+                source = access()
+                resolved = monotonic()
+                with open(source, "rb") as stream:
+                    # Size first: read(huge) would allocate the whole cap per thumbnail.
+                    if os.fstat(stream.fileno()).st_size > _MAX_BUFFERED_ORIGINAL:
+                        return decode(source)
+                    data = stream.read()
+            except OSError as exc:
+                return unreadable(exc)
+            held = monotonic() - leased
+            if held >= 0.5:
+                log.debug(
+                    "thumbnail read slow lease_wait_ms=%d resolve_ms=%d read_ms=%d bytes=%d",
+                    (leased - requested) * 1000,
+                    (resolved - leased) * 1000,
+                    (monotonic() - resolved) * 1000,
+                    len(data),
+                )
+    except OriginalImagesUnavailableError as exc:
+        # Preserve the full sanitized prerequisite for the tooltip, not the thumbnail canvas.
+        return None, str(exc)
     except OriginalImagesBusyError:
         return None, "Original temporarily busy"
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+    return decode(buffer)
+
+
+def _missing_icon() -> QIcon:
+    return QIcon(str(ASSETS / "file-x.svg"))
 
 
 def _display_output_path(path: str) -> str:
@@ -211,6 +276,9 @@ class GalleryPage(QObject):
         self.recycle_scope_revision = 0
         self._export_callback = export_callback
         self._recycle_callback = recycle_callback
+        self._permanent_callback = None
+        self.removal_mode = "trash"
+        self.removal_ready = True
         self._recycle_busy = False
         self.selection = GallerySelection()
         self._tokens = load_tokens()
@@ -226,6 +294,11 @@ class GalleryPage(QObject):
         self._active = False
         self._loading = False
         self._pending_refresh: tuple[bool, bool] | None = None
+        self._refresh_failing = False
+        self._snapshot_at = None
+        self._snapshot_warning_dismissed = False
+        self._snapshot_warning_episode = False
+        self._snapshot_live_since = None
         self._restoring = True
         self._query_generation = 0
         self._image_generation = 0
@@ -596,11 +669,19 @@ class GalleryPage(QObject):
             if self._all_filtered_checked
             else "Select matching images across all pages, up to 10,000 checked in total."
         )
-        self.select_filtered_button.setEnabled(self.total > 0 or self._selection_busy)
+        self.select_filtered_button.setEnabled(not self._snapshot_at and (self.total > 0 or self._selection_busy))
         self.clear_selection_button.setEnabled(count > 0)
-        self.copy_paths_button.setEnabled(count > 0)
+        self.copy_paths_button.setEnabled(count > 0 and not self._snapshot_at)
         self.export_button.setEnabled(self._export_callback is not None)
-        self.delete_button.setEnabled(count > 0 and not self._recycle_busy and self._recycle_callback is not None)
+        callback = self._permanent_callback if self.removal_mode == "permanent" else self._recycle_callback
+        self.delete_button.setEnabled(
+            count > 0
+            and not self._snapshot_at
+            and not self._recycle_busy
+            and self.removal_ready
+            and callback is not None
+        )
+        self._widget("galleryRemovalMenuButton", QPushButton).setEnabled(self.removal_ready and not self._recycle_busy)
         self._sync_detail_checkbox()
         for row, item in enumerate(self.items):
             self._paint_checked_item(row, item.identity)
@@ -761,6 +842,8 @@ class GalleryPage(QObject):
             self._after_selection_edit()
 
     def _begin_selection_scan(self, *, mode: str) -> None:
+        if self._snapshot_at:
+            return
         if self._selection_busy:
             return
         try:
@@ -871,6 +954,9 @@ class GalleryPage(QObject):
             self._begin_selection_scan(mode="clear-hidden")
 
     def _refresh_hidden_count(self) -> None:
+        if self._snapshot_at:
+            self._sync_selection_ui()
+            return
         if self._selection_busy:
             return
         checked = self.selection.snapshot()
@@ -908,6 +994,8 @@ class GalleryPage(QObject):
         self._sync_selection_ui()
 
     def _copy_checked_paths(self) -> None:
+        if self._snapshot_at:
+            return
         ids = self.selection.snapshot()
         if not ids:
             return
@@ -932,13 +1020,16 @@ class GalleryPage(QObject):
 
     def _request_recycle(self) -> None:
         """Only the confirmation controller can authorize a Recycle Bin operation."""
-        if self.selection.checked and not self._recycle_busy and self._recycle_callback is not None:
+        if self._snapshot_at:
+            return
+        callback = self._permanent_callback if self.removal_mode == "permanent" else self._recycle_callback
+        if self.selection.checked and self.removal_ready and not self._recycle_busy and callback is not None:
             try:
                 query = self.export_query()
             except ValidationError as exc:
                 self._selection_notice(str(exc))
                 return
-            self._recycle_callback(self.selection.snapshot(), self._hidden_checks, query)
+            callback(self.selection.snapshot(), self._hidden_checks, query)
 
     def set_recycle_busy(self, busy: bool) -> None:
         """Prevent overlapping deletion requests without blocking ordinary browsing."""
@@ -946,7 +1037,7 @@ class GalleryPage(QObject):
         self._sync_selection_ui()
 
     def recycle_completed(self, recycled: tuple[str, ...]) -> None:
-        """Reconcile only proven recycled identities; retain failed/uncertain checks."""
+        """Clear settled removal identities; retain failed/uncertain checks."""
         if recycled:
             self.selection.checked.difference_update(recycled)
             if self.selection.anchor in recycled:
@@ -1001,6 +1092,7 @@ class GalleryPage(QObject):
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
         self._active = active
+        self._sync_snapshot_warning()
         self._sync_auto_refresh()
         if first_activation:
             self.refresh(preserve=True)
@@ -1015,6 +1107,11 @@ class GalleryPage(QObject):
 
     def _auto_refresh_changed(self, _checked: bool) -> None:
         self._sync_auto_refresh()
+        if not self.auto_button.isChecked() and self._snapshot_live_since is not None:
+            # A successful live read already recovered; stopping polling must
+            # not leave its presentation waiting for a check that will not run.
+            self._end_snapshot_warning_episode()
+            self._sync_snapshot_warning()
         self._schedule_save()
 
     def _filter_edited(self, *_args) -> None:
@@ -1104,24 +1201,78 @@ class GalleryPage(QObject):
             choices = await filter_choices(self.state_dir)
             return current, page, choices, anchor_found
 
-        self.runner.submit(work(), lambda result, error: self._query_done(generation, anchor, result, error))
+        async def with_fallback():
+            try:
+                return await work()
+            except PersistenceError as live_error:
+                cause = live_error.__cause__ or live_error
+                log.debug(
+                    "gallery live query unavailable; trying snapshot reason=%s sqlite_code=%s",
+                    type(cause).__name__,
+                    getattr(cause, "sqlite_errorname", "unavailable"),
+                )
+                try:
+                    return await query_snapshot(self.state_dir, query, anchor)
+                except (PersistenceError, OSError):
+                    raise live_error from None
+
+        self.runner.submit(with_fallback(), lambda result, error: self._query_done(generation, anchor, result, error))
 
     def _query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
             return
         self._loading = False
         self.refresh_button.setEnabled(True)
+        if error is not None or (result is not None and result[1].snapshot_at):
+            self._snapshot_live_since = None
         if self._pending_refresh is not None:
             pending = self._pending_refresh
             self._pending_refresh = None
             self.refresh(reset=pending[0], preserve=pending[1])
             return
         if error is not None:
-            log.warning("gallery refresh failed reason=%s", type(error).__name__)
-            self.refresh_button.setToolTip(f"Saved outputs could not be refreshed: {error}")
+            # Auto-refresh retries every few seconds; report a failure streak once.
+            detail = str(error) if isinstance(error, PersistenceError) else type(error).__name__
+            (log.debug if self._refresh_failing else log.warning)("gallery refresh failed reason=%s", detail)
+            self._show_refresh_failure(error, first=not self._refresh_failing)
+            self._refresh_failing = True
             return
+        recovered = self._refresh_failing
+        if recovered:
+            self._refresh_failing = False
+            # Force a normal reconciliation, not first-render fixture teardown.
+            log.info("gallery refresh recovered")
 
         query, page, choices, anchor_found = result
+        mode_changed = self._snapshot_at != page.snapshot_at
+        if mode_changed:
+            self.recycle_scope_revision += 1
+            inline = feedback(self.page)
+            if inline._armed and inline._armed[0] is self.delete_button:
+                inline.dismiss()
+            self._presented_item = None
+            log.info("gallery browsing source=%s", "snapshot" if page.snapshot_at else "live")
+        if page.snapshot_at:
+            self._snapshot_warning_episode = True
+            self._snapshot_live_since = None
+        elif self._snapshot_warning_episode:
+            now = monotonic()
+            if not self.auto_button.isChecked() or (
+                self._snapshot_live_since is not None and now - self._snapshot_live_since >= AUTO_REFRESH_MS / 1000
+            ):
+                # Manual refresh needs no second check when polling is off.
+                # With polling on, keep the presentation-only stability grace.
+                self._end_snapshot_warning_episode()
+            elif self._snapshot_live_since is None:
+                self._snapshot_live_since = now
+        self._snapshot_at = page.snapshot_at
+        self._sync_snapshot_warning()
+        status = self._widget("gallerySnapshotStatus", QLabel)
+        status.setVisible(bool(self._snapshot_at))
+        if self._snapshot_at:
+            status.setText(
+                f"Read-only snapshot · {self._snapshot_at} · Live updates unavailable; retrying automatically."
+            )
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
@@ -1134,6 +1285,8 @@ class GalleryPage(QObject):
         visible_page = (query.offset, page.items)
         if (
             visible_page == self._rendered_page
+            and not recovered
+            and not mode_changed
             and self._pending_page_selection is None
             and self._page_scroll_target is None
         ):
@@ -1172,6 +1325,34 @@ class GalleryPage(QObject):
         self._restore_scroll_later(anchor if anchor_found else None)
         self._schedule_save()
 
+    def _end_snapshot_warning_episode(self):
+        self._snapshot_warning_episode = False
+        self._snapshot_warning_dismissed = False
+        self._snapshot_live_since = None
+        log.info(
+            "gallery live access recovered; snapshot warning episode ended auto_refresh=%s",
+            self.auto_button.isChecked(),
+        )
+
+    def _dismiss_snapshot_warning(self):
+        self._snapshot_warning_dismissed = True
+
+    def _sync_snapshot_warning(self):
+        strip = activity_strip(self.page)
+        if strip is None:
+            return
+        key = "gallery-snapshot"
+        if not self._snapshot_warning_episode or not self._active or self._snapshot_warning_dismissed:
+            if key in strip.rows:
+                strip.finish(key)
+            return
+        text = (
+            f"Live gallery unavailable · Read-only snapshot {self._snapshot_at} · Retrying automatically"
+            if self._snapshot_at
+            else "Live gallery access recovering · Checking stability"
+        )
+        strip.status(key, text, self._dismiss_snapshot_warning)
+
     def _populate_facets(self, models: tuple[str, ...], loras: tuple[str, ...]) -> None:
         for combo, placeholder, values in (
             (self.model, "All models", models),
@@ -1187,6 +1368,27 @@ class GalleryPage(QObject):
             combo.addItems(values)
             combo.setCurrentText(current or placeholder)
             combo.blockSignals(False)
+
+    def _set_grid_message(self, text: str) -> None:
+        """Show one wrapped status line in place of Grid cards."""
+        if self._grid_empty is None:
+            self._grid_empty = QLabel(self.grid_cards)
+            self._grid_empty.setProperty("role", "secondary")
+            self._grid_empty.setWordWrap(True)
+            self.cards_layout.addWidget(self._grid_empty, 0, 0)
+        self._grid_empty.setText(text)
+
+    def _show_refresh_failure(self, error: BaseException, *, first: bool) -> None:
+        """Make a failed refresh visible; cards already shown stay as they were."""
+        message = (
+            str(error) if isinstance(error, PersistenceError) else "Saved outputs could not be refreshed."
+        ) + " Retrying automatically."
+        self.refresh_button.setToolTip(f"Saved outputs could not be refreshed: {error}")
+        if not self.items:
+            # Nothing loaded yet: an empty Grid would otherwise look like an empty library.
+            self._set_grid_message(message)
+        if first:
+            feedback(self.page).notice("Saved outputs unavailable", message, "warning")
 
     def _page_summary(self) -> str:
         if not self.total:
@@ -1234,8 +1436,8 @@ class GalleryPage(QObject):
                     self._update_entry(row, item)
                 self._paint_checked_item(row, item.identity)
             for item in image_changes:
-                self._grid_painters[item.identity].pixmap = QPixmap()
-                self._film_entries[item.identity][1].pixmap = QPixmap()
+                for painter in (self._grid_painters[item.identity], self._film_entries[item.identity][1]):
+                    painter.pixmap, painter.placeholder = QPixmap(), ""
                 row = next(i for i, record in enumerate(self.items) if record.identity == item.identity)
                 self.table.item(row, 1).setIcon(QIcon())
 
@@ -1247,10 +1449,8 @@ class GalleryPage(QObject):
                     self._grid_empty = None
                 # Dict order is the query order consumed by the shared grid reflow.
                 self._grid_buttons = {item.identity: self._grid_buttons[item.identity] for item in self.items}
-            elif self._grid_empty is None:
-                self._grid_empty = QLabel("No saved outputs match these filters.", self.grid_cards)
-                self._grid_empty.setProperty("role", "secondary")
-                self.cards_layout.addWidget(self._grid_empty, 0, 0)
+            else:
+                self._set_grid_message("No saved outputs match these filters.")
             self._density_changed()
         finally:
             self._syncing_selection = False
@@ -1380,6 +1580,9 @@ class GalleryPage(QObject):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+        # A first query can fail before the Designer fixtures are removed.
+        # Its message is owned by this same layout and was just disposed too.
+        self._grid_empty = None
 
     def _reconcile_filmstrip(self) -> None:
         layout = self._widget("galleryFilmstripScrollContents").layout()
@@ -1428,6 +1631,8 @@ class GalleryPage(QObject):
             self._thumb_versions[item.identity] = generation
             if not item.issue:
                 self._thumb_waiting.append((generation, item.identity, item.path))
+            else:
+                self._show_unavailable(item.identity, item.issue)
         self._thumb_waiting = deque(
             entry for entry in self._thumb_waiting if self._thumb_versions.get(entry[1]) == entry[0]
         )
@@ -1440,8 +1645,10 @@ class GalleryPage(QObject):
                 continue
             self._thumb_active += 1
 
-            async def work(filename=path):
-                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir)
+            selected = next(x for x in self.items if x.identity == identity)
+
+            async def work(filename=path, item=selected):
+                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item)
 
             self.runner.submit(
                 work(),
@@ -1456,6 +1663,7 @@ class GalleryPage(QObject):
                 pixmap = QPixmap.fromImage(image)
                 painter = self._grid_painters.get(identity)
                 if painter is not None:
+                    painter.placeholder = ""
                     painter.pixmap = pixmap
                     painter.widget.update()
                 try:
@@ -1467,16 +1675,45 @@ class GalleryPage(QObject):
                     if table_item is not None:
                         table_item.setIcon(QIcon(pixmap))
                     if row < len(self._film_painters):
+                        self._film_painters[row].placeholder = ""
                         self._film_painters[row].pixmap = pixmap
                         self._film_buttons[row].update()
             elif issue:
                 if issue == "Original temporarily busy":
                     QTimer.singleShot(2000, lambda: self._retry_thumbnail(generation, identity))
                 else:
-                    button = self._grid_buttons.get(identity)
-                    if button is not None:
-                        button.setToolTip(f"Image is corrupt or unreadable: {issue}")
+                    self._show_unavailable(identity, issue)
         self._pump_thumbnails()
+
+    def _show_unavailable(self, identity: str, issue: str) -> None:
+        """Paint a confirmed-missing pictogram or the generic unavailable text in Grid, List and filmstrip.
+
+        A short placeholder fits a small card; the full safe reason stays on hover.
+        """
+        missing = issue == MISSING_ISSUE
+        short, detail = ("File missing", issue) if missing else ("Image unavailable", f"Image unavailable: {issue}")
+        icon = _missing_icon() if missing else QIcon()
+        button = self._grid_buttons.get(identity)
+        if button is not None:
+            button.setToolTip(detail)
+        painter = self._grid_painters.get(identity)
+        if painter is not None:
+            painter.pixmap = QPixmap()
+            painter.placeholder, painter.placeholder_icon = short, icon
+            painter.widget.update()
+        row = next((i for i, item in enumerate(self.items) if item.identity == identity), -1)
+        if row < 0:
+            return
+        table_item = self.table.item(row, 1)
+        if table_item is not None:
+            table_item.setToolTip(detail)
+            table_item.setIcon(icon)
+        if row < len(self._film_painters):
+            film_painter = self._film_painters[row]
+            film_painter.pixmap = QPixmap()
+            film_painter.placeholder, film_painter.placeholder_icon = short, icon
+            self._film_buttons[row].setToolTip(detail)
+            self._film_buttons[row].update()
 
     def _retry_thumbnail(self, generation: int, identity: str) -> None:
         """Retry only the same visible identity after a transient original-file lease."""
@@ -1576,7 +1813,7 @@ class GalleryPage(QObject):
         self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
         edited = request.get("operation", "txt2img") != "txt2img"
         foreign = foreign_windows_path(item.path)
-        reusable = bool(request.get("model_id")) and not edited and not foreign
+        reusable = bool(request.get("model_id")) and not edited and not foreign and not self._snapshot_at
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
         for button, tip in (
@@ -1589,9 +1826,16 @@ class GalleryPage(QObject):
                 else tip
             )
         self.edit_button.setEnabled(
-            not item.issue and bool(item.path) and not foreign and self._edit_callback is not None
+            not self._snapshot_at
+            and not item.issue
+            and bool(item.path)
+            and not foreign
+            and self._edit_callback is not None
         )
         self.edit_button.setToolTip(self._edit_tip)
+        if self._snapshot_at:
+            for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
+                button.setToolTip("Browsing a snapshot; wait for live state before using this action.")
         if foreign:
             for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
                 button.setToolTip("Windows-recorded outputs are read-only here; use Windows for this action.")
@@ -1604,12 +1848,15 @@ class GalleryPage(QObject):
             self.surface_painter.pixmap = QPixmap()
             self.surface_painter.zoom = 1.0
             self.surface_painter.offset = [0.0, 0.0]
+            missing = item.issue == MISSING_ISSUE
+            self.surface_painter.placeholder = "File missing" if missing else "Image unavailable" if item.issue else ""
+            self.surface_painter.placeholder_icon = _missing_icon() if missing else QIcon()
             self.surface.update()
             self._image_generation += 1
             image_generation = self._image_generation
 
             async def read_image():
-                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
 
             self.runner.submit(
                 read_image(),
@@ -1618,7 +1865,9 @@ class GalleryPage(QObject):
         self._detail_generation += 1
         detail_generation = self._detail_generation
         self.runner.submit(
-            inspect_output(self.state_dir, item.identity),
+            asyncio.to_thread(load_detail, item, state=self.state_dir)
+            if self._snapshot_at
+            else inspect_output(self.state_dir, item.identity),
             lambda result, error: self._detail_done(detail_generation, item.identity, result, error),
         )
 
@@ -1626,16 +1875,21 @@ class GalleryPage(QObject):
         if generation != self._image_generation or identity != self.selected_id:
             return
         if error is not None or not result or result[0] is None:
-            issue = type(error).__name__ if error is not None else (result[1] if result else "decode failed")
+            if error is not None:
+                log.warning("gallery detail image read failed reason=%s", type(error).__name__)
+            issue = "decode failed" if error is not None or not result else result[1] or "decode failed"
             self.surface_painter.pixmap = QPixmap()
             if issue == "Original temporarily busy":
                 QTimer.singleShot(2000, lambda: self._retry_detail_image(generation, identity))
                 return
+            if not self.surface_painter.placeholder:
+                self.surface_painter.placeholder = "Image unavailable"
             self.surface.setToolTip(f"Image is corrupt or unreadable: {issue}")
             self.external_button.setEnabled(False)
             self.surface.update()
             return
         self.surface_painter.pixmap = QPixmap.fromImage(result[0])
+        self.surface_painter.placeholder = ""
         self.surface.update()
 
     def _retry_detail_image(self, generation: int, identity: str) -> None:
@@ -1645,7 +1899,7 @@ class GalleryPage(QObject):
         if item is not None:
 
             async def read_again():
-                return await asyncio.to_thread(_image, item.path, 0, self.state_dir)
+                return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
 
             self.runner.submit(
                 read_again(),
@@ -1723,16 +1977,25 @@ class GalleryPage(QObject):
         return f"{item.width} × {item.height}" if item.width and item.height else "Unknown"
 
     def _use_settings(self) -> None:
+        if self._snapshot_at:
+            return
         item = self._selected()
         if item is not None and not foreign_windows_path(item.path) and self._reuse_callback is not None:
             self._reuse_callback(self._request(item), item.identity)
 
     def _edit_image(self) -> None:
+        if self._snapshot_at:
+            return
         item = self._selected()
         if item is not None and not foreign_windows_path(item.path) and self._edit_callback is not None:
-            self._edit_callback(item.path)
+            if item.read_path != item.path:
+                self._read_action("edit")
+            else:
+                self._edit_callback(item.path)
 
     def _regenerate(self) -> None:
+        if self._snapshot_at:
+            return
         item = self._selected()
         if item is not None and not foreign_windows_path(item.path) and self._regenerate_callback is not None:
             self._regenerate_callback(self._request(item), item.identity)
@@ -1961,20 +2224,58 @@ class GalleryPage(QObject):
 
         QTimer.singleShot(0, restore)
 
-    def _copy_path(self) -> None:
+    def _read_action(self, action: str) -> None:
+        if self._snapshot_at and action == "edit":
+            return
+        """Revalidate source provenance under a lease without blocking the Qt thread."""
         item = self._selected()
-        if item is not None:
-            QApplication.clipboard().setText(item.read_path or item.path)
+        if item is None:
+            return
+
+        def read():
+            with original_images_lock(self.state_dir, timeout=12):
+                return resolve_item_read(item, self.state_dir)[0]
+
+        self.runner.submit(
+            asyncio.to_thread(read),
+            lambda result, error: self._read_action_done(action, item.identity, result, error),
+        )
+
+    def _read_action_done(self, action: str, identity: str, result, error) -> None:
+        if self._snapshot_at and action == "edit":
+            return
+        if self.selected_id != identity:
+            return
+        if error is not None or not result:
+            if isinstance(error, OriginalImagesBusyError):
+                reason = "another operation is using the original images; try again shortly."
+            elif isinstance(error, (OSError, OriginalImagesUnavailableError)):
+                reason = str(error)
+            else:
+                if error is not None:
+                    log.warning("gallery read action failed action=%s reason=%s", action, type(error).__name__)
+                reason = "the image could not be read."
+            self._selection_notice(f"Image action unavailable: {reason}")
+            return
+        if action == "copy":
+            QApplication.clipboard().setText(result)
+        elif action == "folder":
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(result).parent))):
+                self._selection_notice("Could not open the image folder with the system file manager.")
+        elif action == "external":
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(result)):
+                self._selection_notice("Could not open the image with the system viewer.")
+        elif action == "edit" and self._edit_callback is not None:
+            self._edit_callback(result)
+
+    def _copy_path(self) -> None:
+        self._read_action("copy")
 
     def _open_folder(self) -> None:
-        item = self._selected()
-        if item is not None and not item.issue and item.read_path:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(item.read_path).parent)))
+        self._read_action("folder")
 
     def _open_external(self) -> None:
-        item = self._selected()
-        if item is not None and not item.issue and item.read_path:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(item.read_path))
+        self._read_action("external")
 
     def export_query(self) -> GalleryQuery:
         """Capture current filters without changing selection, paging or viewer state."""
@@ -1982,11 +2283,15 @@ class GalleryPage(QObject):
 
     def export_identity(self) -> str | None:
         """Expose only the committed identity of the current single selection."""
+        if self._snapshot_at:
+            raise ValidationError("Snapshot browsing cannot authorize export; wait for live state access.")
         item = self._selected()
         return item.identity if item is not None else None
 
     def export_checked(self) -> tuple[str, ...]:
         """Freeze explicitly checked image identities for the shared exporter."""
+        if self._snapshot_at:
+            raise ValidationError("Snapshot browsing cannot authorize export; wait for live state access.")
         return self.selection.snapshot()
 
     def _selected(self) -> GalleryItem | None:
@@ -1997,6 +2302,7 @@ class GalleryPage(QObject):
         self._image_generation += 1
         self._detail_generation += 1
         self.surface_painter.pixmap = QPixmap()
+        self.surface_painter.placeholder = ""
         self.surface.update()
         self._widget("galleryPositionOverlay", QLabel).setText("0 / 0")
         self._widget("galleryDimensionsOverlay", QLabel).setText("—")

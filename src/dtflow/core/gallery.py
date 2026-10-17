@@ -108,6 +108,7 @@ class GalleryPage:
     total: int
     offset: int
     limit: int
+    snapshot_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

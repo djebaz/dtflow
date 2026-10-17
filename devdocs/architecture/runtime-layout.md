@@ -1,5 +1,7 @@
 # Runtime and test evidence layout
 
+The disposable browsing publication is `<state>/cache/derived/gallery_snapshot.sqlite3` (independent snapshot schema 1). It projects committed gallery metadata and removal availability for read-only Windows/WSL fallback, not execution or mutation authority. Session completion and clean close request publication only when changed or missing; Derived cleanup may remove it and `--no-cache` bypasses it. It contains private saved prompts/settings/paths, so never attach it as a public diagnostic log. See [publication, concurrency and pending acceptance](gallery-snapshot.md).
+
 ## Ownership and current implementation
 
 Development application state uses `.dtflow/attempts.sqlite3` and final outputs use `.dtflow/outputs/<attempt-id>/`. Output placement is backend-neutral; metadata and durable records identify the backend. Each attempt groups its image(s) and metadata. Outputs are durable artifacts, not disposable cache. The independent durable asset registry is `<state>/assets.sqlite3` (schema version 1, WAL, `synchronous=FULL`) with an exclusive `assets.lock` held only by `assets prepare` and `assets reconcile`; `assets list|show` read without a lock. It holds local receipts and unresolved/unknown preparation operations (checksum, size, backend, API origin, server reference, state, sanitized evidence code, timestamps) and never credentials, credential fingerprints, signed URLs or file contents. It is durable state, not cache: cache cleanup and `-nc` never touch it, newer schemas are refused without reset, and an interrupted `intent`/`transferring` operation becomes explicit `unknown` the next time a writer opens it. A receipt is only a local candidate; every new scope must pass a fresh metadata check before reuse. The state directory's `owner.lock` is held per operation by the shared session service (`services/session.py`): a generation takes it for its duration, a queue dispatch (CLI `queue start` or the desktop Start) takes it for the whole run while queue reads and posted controls take none, inventory refresh and connection checks take none, and the desktop never holds it between operations. A second owner fails with an explicit "state is busy" outcome before anything is dispatched. SQLite manages its WAL/SHM sidecars in the database directory. Since queue schema version 2 the same database also holds queues, items, posted controls and queue events. The schema-3 writer now upgrades v1/v2 request JSON to explicit request v2 under one transaction with existing no-replay reconciliation, first writing a fresh consistent `attempts.pre-v3-from-v<old>-<uuid>.sqlite3` backup beside it. Old output files and metadata remain unchanged; read-only gallery supports DB v1/v2/v3 and queue listing v2/v3. See [image-operation schemas](image-operations.md#request-and-execution-schema-source-implementation) for upgrade/refusal and owner acceptance boundaries.
@@ -33,7 +35,7 @@ The derived LoRA cache writer is implemented. A successful `dtflow models` or de
 | `logs/dtflow-<session>.log` | Rotating application diagnostics, one file set per process; the newest 20 sessions are kept |
 | `.dtflow/settings.json` | Versioned, credential-free shared settings (currently the cloud concurrency maximum); durable, not cache |
 | `.dtflow/last_session.json` | Versioned, credential-free last desktop session (provider, local endpoint, Generate form incl. prompts, plus each provider's own fields under `forms`: model, seed, size, steps, guidance, sampler, LoRAs, catalogue domain/base-family/Niche preference and bound cloud receipts for fake, local and cloud separately); durable, written on submit, successful connection check and quit; ignored if unreadable or a newer schema; `-nc` and cache cleanup never touch it |
-| `.dtflow/export_preferences.json` | Schema-1 durable export folder and prompt/JSON-sidecar preferences; no credentials; independent of cache and no-cache |
+| `.dtflow/export_preferences.json` | Schema-2 durable export folder per runtime (Windows, WSL, platform) and shared prompt/JSON-sidecar/routing preferences; reads schema 1; no credentials; independent of cache and no-cache |
 | `.dtflow/presets/custom_configs.json` | Durable Draw Things-compatible named preset library; native configuration fields are preserved for re-export, while DTFlow applies only supported verified mappings; never cache-cleaned |
 | `.dtflow/catalogue/custom_loras.json` | Optional user-owned normalized custom-LoRA metadata (exact file, base-model family, modes and optional display/prefix fields); durable, credential-free and independent of bundled catalogue updates; availability still comes from the active provider inventory; `-nc` and cache cleanup never touch it |
 | `logs/tests/<run-id>.log` | Optional live-run diagnostics when implemented |
@@ -61,25 +63,11 @@ translation is used. Multiple mount roots for one drive, redirected components,
 traversal, device/UNC/drive-relative paths and missing mappings are refused.
 Arbitrary `9p`, bind and network mounts are not inferred as drive mappings.
 
-Gallery models carry optional local access aliases separately from authoritative
-`path` and `metadata_path`. Queries discover once per worker page; image decodes
-and metadata reads refresh the foreign-path mapping at the read boundary. No
-process-global mount cache persists across refreshes. Metadata artifact matching
-still compares the exact stored path, never the alias. Thumbnail identity keys
-include the access alias so changing mounts invalidates retained presentation.
-Copy path(s), Open folder and external viewing use local read paths; provenance
-inspection continues to show the stored reference. UI callbacks receive no new
-destructive permissions: foreign Windows items disable edit/use/regenerate and
-export refuses foreign Windows sources before reading/encoding. Trash retains its
-native-path/root/ownership checks and never translates destructive targets.
+Gallery models carry optional local access aliases separately from authoritative `path` and `metadata_path`. Queries discover once per worker page; image decodes and metadata reads refresh the foreign-path mapping at the read boundary. No process-global mount cache persists across refreshes. Metadata artifact matching still compares the exact stored path, never the alias. Thumbnail identity keys include the access alias so changing mounts invalidates retained presentation. Copy path(s), Open folder and external viewing use local read paths; provenance inspection continues to show the stored reference. Foreign Windows items disable edit/use/regenerate and export refuses foreign Windows sources before reading/encoding. Trash retains its native-path/root/ownership checks. Explicit permanent mode has a separate reviewed mutation boundary; read aliases alone never authorize destruction.
 
-Browsing still uses the existing original-file lease within its platform. This
-does not establish interoperability of Windows `msvcrt` and Linux `flock` locks:
-do not run simultaneous Windows/WSL original mutations against shared state.
-Cross-platform concurrent writes, portable-reference schema migration and new
-external-root mappings remain separate work. Future managed artifacts should use
-state-root-relative references via an explicit supported migration, not a bulk
-rewrite of historical absolute paths.
+WSL shared-drive original-file and removal-batch leases now use the narrow source-only native Windows helper because focused probes showed `msvcrt` and Linux `flock`/`lockf` do not exclude each other. Missing checkout Windows `.venv` or unsupported mount/helper support refuses shared access, not a Linux-only lock fallback. Native root filesystems keep POSIX leases. This is not general cross-platform SQLite/generation/state-owner concurrency support; avoid concurrent Windows/WSL generation/state writes. Portable-reference migration and external-root mappings remain separate work.
+
+`image_recycle.sqlite3` schema 2 preserves schema-1 records and adds permanent intent/outcomes without altering attempt metadata/history. Old applications reject the upgraded ledger. Environment-specific `image_removal.<environment>.json` files (schema `dtflow.image-removal`, version 1) contain only mode preferences, not consent/identities; cache cleanup and `--no-cache` do not own them. See [removal architecture](image-recycling.md) for exact eligibility, helper, uncertainty and no-replay boundaries. Source presence and lock-only probes do not establish removal runtime acceptance.
 
 ## User-selected image exports
 

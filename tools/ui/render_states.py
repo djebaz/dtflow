@@ -22,10 +22,10 @@ from support.network_guard import install  # noqa: E402
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QPoint  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize  # noqa: E402
 from PySide6.QtGui import QColor, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -33,10 +33,12 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
+from dtflow.persistence.store import PersistenceError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
-from dtflow.services.gallery import item_from_record, load_detail  # noqa: E402
+from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
+from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui import system_trash  # noqa: E402
@@ -52,6 +54,67 @@ def wait_for(predicate, timeout=8):
             raise RuntimeError("Offline UI fixture timed out.")
         QTest.qWait(10)
     QTest.qWait(30)
+
+
+def render_initial_refresh_recovery(app, state, out):
+    """Drive the real first-query failure/recovery before any successful render."""
+    allow_success = False
+    failures = 0
+
+    async def query(_state, options):
+        nonlocal failures
+        if not allow_success:
+            failures += 1
+            raise PersistenceError("Offline first-query failure (SQLITE_IOERR_TRUNCATE).")
+        return GalleryResults((), 0, options.offset, options.limit)
+
+    async def choices(_state):
+        return (), ()
+
+    async def no_snapshot(*_args):
+        raise PersistenceError("Offline fixture has no browsing publication.")
+
+    with (
+        patch.object(gallery_ui, "query_outputs", query),
+        patch.object(gallery_ui, "filter_choices", choices),
+        patch.object(gallery_ui, "query_snapshot", no_snapshot),
+    ):
+        shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "initial-query-failure")
+        try:
+            shell.form.resize(1600, 1000)
+            shell.show()
+            shell.form.imagesNavigationButton.click()
+            wait_for(lambda: shell.gallery._refresh_failing and not shell.gallery._loading)
+            shell.gallery.auto_timer.stop()
+            shell.gallery.filter_timer.stop()
+            assert failures >= 1
+            assert shell.gallery._rendered_page is None
+            assert not shell.gallery._grid_buttons
+            failed_label = shell.gallery._grid_empty
+            assert failed_label is not None and "Offline first-query failure" in failed_label.text()
+            disposed = []
+            failed_label.destroyed.connect(lambda: disposed.append(True))
+            target = out / "44-images-refresh-failed.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+
+            allow_success = True
+            shell.gallery.refresh()
+            wait_for(lambda: shell.gallery._rendered_page is not None and not shell.gallery._loading)
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            app.processEvents()
+            assert disposed and not shell.gallery._refresh_failing
+            assert shell.gallery._grid_empty is not failed_label
+            assert shell.gallery._grid_empty.text() == "No saved outputs match these filters."
+            target = out / "45-images-refresh-recovered-empty.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+        finally:
+            shell.runner.shutdown()
+            shell.form.close()
+            app.processEvents()
 
 
 def render_mapped_gallery_states(app, state, out):
@@ -128,6 +191,187 @@ def render_mapped_gallery_states(app, state, out):
             shell.gallery.select(item.identity)
             QTest.qWait(150)
             target = out / "33-mapped-detail-metadata.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            shell.gallery._show_refresh_failure(PersistenceError("Offline refresh refusal fixture."), first=False)
+            shell.gallery._refresh_failing = True
+            shell.gallery.refresh()
+            wait_for(lambda: not shell.gallery._loading)
+            QTest.qWait(100)
+            target = out / "46-images-refresh-recovered-populated.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+
+            async def frozen_query(_state, options):
+                return GalleryResults((item,), 1, options.offset, options.limit, "2026-10-17T07:00:00+00:00")
+
+            # Synthetic publication presentation only; no owner database or mutation.
+            live_query = gallery_ui.query_outputs
+            with patch.object(gallery_ui, "query_outputs", frozen_query):
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading and bool(shell.gallery._snapshot_at))
+                for view, name in (("Grid", "47-images-snapshot-grid"), ("Detail", "48-images-snapshot-detail")):
+                    shell.gallery.show_view(view)
+                    if view == "Detail":
+                        shell.gallery.select(item.identity)
+                    QTest.qWait(150)
+                    target = out / f"{name}.png"
+                    if not shell.form.grab().save(str(target)):
+                        raise RuntimeError(f"Could not save {target.name}")
+                    print(target)
+                warning = activity_strip(shell.form).rows["gallery-snapshot"]
+                # One brief live success keeps the same slim row, with accurate
+                # recovering wording rather than stale read-only authority.
+                with (
+                    patch.object(gallery_ui, "query_outputs", live_query),
+                    patch.object(gallery_ui, "monotonic", return_value=100.0),
+                ):
+                    shell.gallery.refresh()
+                    wait_for(lambda: not shell.gallery._loading)
+                target = out / "50-images-live-recovery-stabilizing.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading)
+                warning.activityStatusDismissButton.click()
+                # A brief live result must not reset voluntary dismissal.
+                with (
+                    patch.object(gallery_ui, "query_outputs", live_query),
+                    patch.object(gallery_ui, "monotonic", return_value=200.0),
+                ):
+                    shell.gallery.refresh()
+                    wait_for(lambda: not shell.gallery._loading)
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading)
+                assert "gallery-snapshot" not in activity_strip(shell.form).rows
+                QTest.qWait(100)
+                target = out / "49-images-snapshot-warning-dismissed.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+            # Drive real recovery callbacks at two controlled clock readings;
+            # no wall-clock wait, provider work or direct sentinel mutation.
+            for now in (300.0, 300.0 + gallery_ui.AUTO_REFRESH_MS / 1000 + 1):
+                with patch.object(gallery_ui, "monotonic", return_value=now):
+                    shell.gallery.refresh()
+                    wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
+            assert "gallery-snapshot" not in activity_strip(shell.form).rows
+            # Auto-refresh Off: one manual successful live refresh clears the
+            # warning, without another scheduled check or recovery timer.
+            shell.gallery.auto_button.setChecked(False)
+            with patch.object(gallery_ui, "query_outputs", frozen_query):
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading and bool(shell.gallery._snapshot_at))
+            shell.gallery.refresh()
+            wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
+            QTest.qWait(100)
+            target = out / "51-images-manual-live-recovery.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            shell.gallery.auto_button.setChecked(True)
+            # Presentation only: synthetic scope, with execution explicitly blocked.
+            wait_for(lambda: shell.gallery.removal_ready)
+            shell.gallery._set_checked(item.identity, True)
+            # Offline two-choice popups: selecting a mode never executes removal.
+            menu = shell.image_recycle.menu_button.menu()
+            shell.image_recycle._apply_mode("trash")
+            assert shell.gallery.delete_button.text() == "Trash"
+            assert menu.actions()[0].text() == "Trash"
+            assert menu.actions()[1].text() == "Delete"
+            assert shell.gallery.delete_button.iconSize() == QSize(22, 16)
+            assert not shell.gallery.delete_button.icon().isNull()
+            QTest.qWait(100)
+            target = out / "39-images-trash-mode.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
+            QTest.qWait(100)
+            control = shell.gallery._widget("galleryRemovalControl", QFrame)
+            expected_left = control.mapToGlobal(QPoint(0, 0)).x()
+            screen = menu.screen().availableGeometry()
+            expected_left = min(
+                max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
+            )
+            assert menu.geometry().left() == expected_left
+            target = out / "37-images-removal-menu-trash-selected.png"
+            if not menu.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            menu.hide()
+            shell.image_recycle._apply_mode("permanent")
+            assert shell.gallery.delete_button.text() == "Delete"
+            assert shell.gallery.delete_button.iconSize() == QSize(22, 16)
+            assert not shell.gallery.delete_button.icon().isNull()
+            menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
+            QTest.qWait(100)
+            target = out / "38-images-removal-menu-permanent-selected.png"
+            if not menu.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            menu.hide()
+            target = out / "34-images-permanent-mode.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            # Show the disabled icon beside the same disabled text shade.
+            shell.gallery._set_checked(item.identity, False)
+            assert not shell.gallery.delete_button.isEnabled()
+            assert shell.gallery.delete_button.text() == "Delete"
+            target = out / "40-images-delete-disabled.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            shell.gallery._set_checked(item.identity, True)
+            plan = RecyclePlan(
+                (RecycleTarget(item.identity, str(root / "saved.png"), 1, 1, 1, 1),),
+                0,
+                0,
+                0,
+                1,
+                "permanent",
+            )
+            shell.image_recycle._confirmation_revision = shell.gallery.recycle_scope_revision
+            with patch.object(shell.image_recycle, "_execute", side_effect=RuntimeError("Preview cannot remove files")):
+                shell.image_recycle._prepared(plan, None)
+                QTest.qWait(100)
+                target = out / "35-images-permanent-confirmation.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+                shell.inline.dismiss()
+            # Synthetic inaccessible-original state: short card text, full hover details.
+            shell.gallery.show_view("Grid")
+            generation = shell.gallery._thumb_versions[item.identity]
+            shell.gallery._thumbnail_done(
+                generation,
+                item.identity,
+                (None, "The Windows-drive mount has no verified shared-lock support. Use WSL ext4."),
+                None,
+            )
+            target = out / "39-images-original-unavailable-thumbnail.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            # Confirmed-missing original: file-missing pictogram in Grid and List, distinct from unavailable.
+            shell.gallery._show_unavailable(item.identity, MISSING_ISSUE)
+            for view, name in (("Grid", "42-images-file-missing-grid"), ("List", "43-images-file-missing-list")):
+                shell.gallery.show_view(view)
+                QTest.qWait(50)
+                target = out / f"{name}.png"
+                if not shell.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                print(target)
+            shell.gallery.show_view("Grid")
+            # Present a safe unsupported-alias status without attempting a system launch.
+            shell.gallery._read_action_done(
+                "folder", item.identity, None, OSError("Recorded output is not under this shared Windows state.")
+            )
+            target = out / "41-images-read-alias-unavailable.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
@@ -276,15 +520,27 @@ def main():
             unavailable.form.resize(1600, 1000)
             unavailable.show()
             unavailable.form.imagesNavigationButton.click()
+            wait_for(lambda: unavailable.gallery.removal_ready)
+            unavailable.image_recycle.menu_button.menu().popup(
+                unavailable.image_recycle.menu_button.mapToGlobal(
+                    QPoint(0, unavailable.image_recycle.menu_button.height())
+                )
+            )
             QTest.qWait(100)
             target = args.out / "30-images-trash-unavailable.png"
             if not unavailable.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            target = args.out / "36-images-removal-mode-menu.png"
+            if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            unavailable.image_recycle.menu_button.menu().hide()
         finally:
             unavailable.runner.shutdown()
             unavailable.form.close()
             app.processEvents()
+        render_initial_refresh_recovery(app, state, args.out)
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
         shell.show()

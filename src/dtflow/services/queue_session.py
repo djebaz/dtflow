@@ -22,6 +22,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.tasks import settle
+from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.queues import delete_idle_queues, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts
@@ -179,6 +180,7 @@ async def dispatch_queue(
                     await backend.aclose()
         finally:
             await store.aclose()
+            schedule_publish(state, reason="queue_session_end")
 
 
 async def read_queue_views(state: Path, queue_id: str | None = None) -> tuple[dict[str, Any], ...]:

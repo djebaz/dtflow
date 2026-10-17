@@ -1,10 +1,11 @@
 """Bounded read-only artifact discovery; never own, migrate or reconcile execution state."""
 
 import json
+import re
 import sqlite3
 import time
 from collections.abc import Callable
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from dtflow.core.gallery import SIZE_CLASSES, GalleryQuery
@@ -15,6 +16,16 @@ from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_s
 # These references include non-default --out locations. Failed/orphaned files are not discovery sources.
 MAX_EXPORT_AVAILABILITY_BATCH = 128
 MAX_RECYCLE_PREFLIGHT_BATCH = 128
+_MANAGED_OUTPUT_KEY = re.compile(r"outputs/([a-f0-9]{32})/final-[1-9][0-9]*\.png\Z")
+
+
+def _candidate_attempts(keys: tuple[str, ...]) -> tuple[str, ...] | None:
+    """Give SQLite a necessary attempt substring filter, not ownership authority."""
+    matches = tuple(_MANAGED_OUTPUT_KEY.fullmatch(key) for key in keys)
+    if not matches or any(match is None for match in matches):
+        return None
+    return tuple(dict.fromkeys(match[1] for match in matches if match is not None))
+
 
 BASE = """
 WITH outputs AS (
@@ -27,7 +38,7 @@ WITH outputs AS (
    AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1
    AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
                    WHERE r.identity = a.attempt_id || ':' || CAST(p.key AS INTEGER)
-                     AND r.outcome IN ('recycled', 'restored'))
+                     AND r.outcome IN ('recycled', 'restored', 'deleted', 'absent'))
 ), records AS (
  SELECT *, attempt_id || ':' || ordinal AS identity,
    json_extract(request_json, '$.model_id') AS model,
@@ -44,6 +55,10 @@ WITH outputs AS (
  FROM outputs
 )
 """
+
+# One canonical query, including identical availability rules. A borrowed
+# snapshot connection reads its own indexed table, never a live attachment.
+SNAPSHOT_BASE = BASE.replace("image_recycle.records", "main.records")
 
 
 def lora_order(value: str) -> str:
@@ -80,7 +95,22 @@ def reader(state: Path):
         connection.execute("BEGIN")
         yield connection
     except sqlite3.Error as exc:
-        raise PersistenceError("Saved outputs could not be queried within the read budget.") from exc
+        code = getattr(exc, "sqlite_errorname", "") or type(exc).__name__
+        if code == "SQLITE_INTERRUPT":
+            raise PersistenceError("Saved outputs could not be queried within the read budget.") from exc
+        if code.startswith(("SQLITE_BUSY", "SQLITE_LOCKED")):
+            # WAL locking is per operating system: a Windows reader cannot share
+            # a store that a WSL1 process has open (or the reverse).
+            raise PersistenceError(
+                f"Saved outputs are busy, possibly in use by DTFlow on another system ({code})."
+            ) from exc
+        if code.startswith(("SQLITE_IOERR_SHM", "SQLITE_IOERR_TRUNCATE")):
+            # The same cross-OS conflict shows up as shared-memory I/O errors, but
+            # so can a real disk problem; name both rather than guess.
+            raise PersistenceError(
+                f"Saved outputs could not be read; DTFlow may be open on another system, or the disk failed ({code})."
+            ) from exc
+        raise PersistenceError(f"Saved outputs could not be read ({code}).") from exc
     finally:
         if connection is not None:
             connection.close()
@@ -134,28 +164,30 @@ def clauses(query: GalleryQuery) -> tuple[str, list, str]:
     return where, values, order
 
 
-def query_records(state: Path, query: GalleryQuery) -> tuple[tuple[dict, ...], int]:
+def query_records(state: Path, query: GalleryQuery, *, database=None) -> tuple[tuple[dict, ...], int]:
     """Count and return one bounded page from the same read snapshot."""
     where, values, order = clauses(query)
-    with reader(state) as db:
+    base = SNAPSHOT_BASE if database is not None else BASE
+    with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return (), 0
-        total = db.execute(BASE + "SELECT count(*) FROM records WHERE " + where, values).fetchone()[0]
+        total = db.execute(base + "SELECT count(*) FROM records WHERE " + where, values).fetchone()[0]
         rows = db.execute(
-            BASE + f"SELECT * FROM records WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            base + f"SELECT * FROM records WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
             [*values, query.limit, query.offset],
         )
         return tuple(dict(row) for row in rows), total
 
 
-def locate_record(state: Path, query: GalleryQuery, identity: str) -> int | None:
+def locate_record(state: Path, query: GalleryQuery, identity: str, *, database=None) -> int | None:
     """Find an anchor's position in filtered results without materializing those results."""
     where, values, order = clauses(query)
-    with reader(state) as db:
+    base = SNAPSHOT_BASE if database is not None else BASE
+    with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return None
         row = db.execute(
-            BASE
+            base
             + f", ranked AS (SELECT identity, row_number() OVER (ORDER BY {order})-1 AS position FROM records WHERE {where}) SELECT position FROM ranked WHERE identity=?",
             [*values, identity],
         ).fetchone()
@@ -208,28 +240,29 @@ def available_export_identities(state: Path, identities: tuple[str, ...]) -> fro
                  AND json_type(CASE WHEN json_valid(a.artifacts_json) THEN a.artifacts_json ELSE '[]' END,
                                '$[' || s.ordinal || ']')='text'
                  AND NOT EXISTS (SELECT 1 FROM image_recycle.records r
-                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored'))""",
+                                 WHERE r.identity=s.identity AND r.outcome IN ('recycled', 'restored', 'deleted', 'absent'))""",
             (json.dumps(selected),),
         )
         return frozenset(row[0] for row in rows)
 
 
-def facets(state: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def facets(state: Path, *, database=None) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """At most 1000 exact model/LoRA choices; editable controls support identifiers beyond this list."""
-    with reader(state) as db:
+    base = SNAPSHOT_BASE if database is not None else BASE
+    with nullcontext(database) if database is not None else reader(state) as db:
         if db is None:
             return (), ()
         models = tuple(
             row[0]
             for row in db.execute(
-                BASE
+                base
                 + "SELECT DISTINCT model FROM records WHERE model IS NOT NULL ORDER BY fold(model), model LIMIT 1000"
             )
         )
         loras = tuple(
             row[0]
             for row in db.execute(
-                BASE
+                base
                 + "SELECT DISTINCT json_extract(l.value, '$.identifier') AS id FROM records, json_each(request_json, '$.loras') l WHERE id IS NOT NULL ORDER BY fold(id), id LIMIT 1000"
             )
         )
@@ -290,7 +323,11 @@ def selection_candidates(
 
 
 def selection_paths(
-    state: Path, identities: tuple[str, ...], *, read_path: Callable[[str], str] | None = None
+    state: Path,
+    identities: tuple[str, ...],
+    *,
+    read_path: Callable[[str], str] | None = None,
+    read_record: Callable[[dict], str] | None = None,
 ) -> tuple[tuple[str, ...], int]:
     """Read source paths for checked recorded originals without Qt or image decodes."""
     targets = set(identities)
@@ -300,10 +337,16 @@ def selection_paths(
     with reader(state) as db:
         if db is None:
             return (), len(targets)
-        for row in db.execute(BASE + "SELECT identity, path FROM records"):
+        for row in db.execute(BASE + "SELECT identity, attempt_id, ordinal, path, metadata_path FROM records"):
             if row["identity"] in targets:
                 try:
-                    source = Path(read_path(row["path"]) if read_path else row["path"])
+                    source = Path(
+                        read_record(dict(row))
+                        if read_record is not None
+                        else read_path(row["path"])
+                        if read_path is not None
+                        else row["path"]
+                    )
                     if source.is_file() and not source.is_symlink():
                         found[row["identity"]] = str(source)
                 except OSError:
@@ -311,7 +354,9 @@ def selection_paths(
     return tuple(found[identity] for identity in identities if identity in found), len(targets) - len(found)
 
 
-def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[dict[str, dict], dict[str, int]]:
+def recycle_preflight_batch(
+    state: Path, identities: tuple[str, ...], *, path_key: Callable[[str], str] | None = None
+) -> tuple[dict[str, dict], dict[str, int]]:
     """Read selected records and committed path ownership in one bounded snapshot.
 
     Path counts include recycled references, just like execution revalidation.
@@ -339,6 +384,34 @@ def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[d
         paths = tuple(dict.fromkeys(record["path"] for record in records.values()))
         if not paths:
             return records, {}
+        if path_key is not None:
+            # Normalize only for reference counting, never persist access aliases.
+            db.create_function("original_key", 1, path_key)
+            keys = tuple(dict.fromkeys(path_key(path) for path in paths))
+            attempts = _candidate_attempts(keys)
+            # SQLite moves correlated EXISTS terms after plain ones, so the cheap
+            # attempt filter gates the Python original_key callback through CASE.
+            match = "original_key(p.value) IN (SELECT value FROM json_each(?))"
+            condition = (
+                " AND CASE WHEN EXISTS (SELECT 1 FROM json_each(?) allowed"
+                f" WHERE instr(lower(p.value), allowed.value) > 0) THEN {match} ELSE 0 END"
+                if attempts is not None
+                else f" AND {match}"
+            )
+            parameters = (json.dumps(attempts), json.dumps(keys)) if attempts is not None else (json.dumps(keys),)
+            counts = dict(
+                db.execute(
+                    """SELECT original_key(p.value),count(*) FROM attempts a,
+                         json_each(CASE WHEN json_valid(a.artifacts_json)
+                           THEN a.artifacts_json ELSE '[]' END) p
+                   WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                     AND p.type='text' AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
+                    + condition
+                    + " GROUP BY original_key(p.value)",
+                    parameters,
+                )
+            )
+            return records, counts
         counts = {
             row[0]: int(row[1])
             for row in db.execute(
@@ -355,11 +428,30 @@ def recycle_preflight_batch(state: Path, identities: tuple[str, ...]) -> tuple[d
         return records, counts
 
 
-def path_reference_count(state: Path, path: str) -> int:
+def path_reference_count(state: Path, path: str, *, path_key: Callable[[str], str] | None = None) -> int:
     """Count committed final-output references regardless of recycle state."""
     with reader(state) as db:
         if db is None:
             return 0
+        if path_key is not None:
+            db.create_function("original_key", 1, path_key)
+            key = path_key(path)
+            attempts = _candidate_attempts((key,))
+            # The plain instr term precedes the callback, so SQLite checks it first.
+            prefilter = " AND instr(lower(p.value), ?) > 0" if attempts is not None else ""
+            parameters = (attempts[0], key) if attempts is not None else (key,)
+            return int(
+                db.execute(
+                    """SELECT count(*) FROM attempts a,
+                         json_each(CASE WHEN json_valid(a.artifacts_json)
+                           THEN a.artifacts_json ELSE '[]' END) p
+                   WHERE a.state='succeeded' AND a.remote_outcome='succeeded'
+                     AND p.type='text' AND CAST(p.key AS INTEGER) < json_array_length(a.artifacts_json)-1"""
+                    + prefilter
+                    + " AND original_key(p.value)=?",
+                    parameters,
+                ).fetchone()[0]
+            )
         row = db.execute(
             """SELECT count(*) FROM attempts a,
                      json_each(CASE WHEN json_valid(a.artifacts_json)
