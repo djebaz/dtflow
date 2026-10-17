@@ -12,6 +12,7 @@ import os
 import sys
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
@@ -1042,6 +1043,11 @@ def main():
             render_queue_states(shell, capture)
             render_shell_states(shell, capture)
             render_inpaint_states(shell, state, capture)
+        except BaseException:
+            # Print before shutdown: a stuck shutdown would otherwise hide the original failure.
+            traceback.print_exc()
+            sys.stderr.flush()
+            raise
         finally:
             shell.runner.shutdown()
             shell.form.close()
