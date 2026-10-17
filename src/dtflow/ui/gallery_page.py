@@ -1107,6 +1107,11 @@ class GalleryPage(QObject):
 
     def _auto_refresh_changed(self, _checked: bool) -> None:
         self._sync_auto_refresh()
+        if not self.auto_button.isChecked() and self._snapshot_live_since is not None:
+            # A successful live read already recovered; stopping polling must
+            # not leave its presentation waiting for a check that will not run.
+            self._end_snapshot_warning_episode()
+            self._sync_snapshot_warning()
         self._schedule_save()
 
     def _filter_edited(self, *_args) -> None:
@@ -1252,16 +1257,14 @@ class GalleryPage(QObject):
             self._snapshot_live_since = None
         elif self._snapshot_warning_episode:
             now = monotonic()
-            if self._snapshot_live_since is None:
+            if not self.auto_button.isChecked() or (
+                self._snapshot_live_since is not None and now - self._snapshot_live_since >= AUTO_REFRESH_MS / 1000
+            ):
+                # Manual refresh needs no second check when polling is off.
+                # With polling on, keep the presentation-only stability grace.
+                self._end_snapshot_warning_episode()
+            elif self._snapshot_live_since is None:
                 self._snapshot_live_since = now
-            elif now - self._snapshot_live_since >= AUTO_REFRESH_MS / 1000:
-                # End the presentation episode only after another live success
-                # at least one polling interval later. Authority is live now;
-                # this grace period affects the warning/dismissal only.
-                self._snapshot_warning_episode = False
-                self._snapshot_warning_dismissed = False
-                self._snapshot_live_since = None
-                log.info("gallery live access stable; snapshot warning episode ended")
         self._snapshot_at = page.snapshot_at
         self._sync_snapshot_warning()
         status = self._widget("gallerySnapshotStatus", QLabel)
@@ -1321,6 +1324,15 @@ class GalleryPage(QObject):
         self.refresh_button.setToolTip(self._page_summary())
         self._restore_scroll_later(anchor if anchor_found else None)
         self._schedule_save()
+
+    def _end_snapshot_warning_episode(self):
+        self._snapshot_warning_episode = False
+        self._snapshot_warning_dismissed = False
+        self._snapshot_live_since = None
+        log.info(
+            "gallery live access recovered; snapshot warning episode ended auto_refresh=%s",
+            self.auto_button.isChecked(),
+        )
 
     def _dismiss_snapshot_warning(self):
         self._snapshot_warning_dismissed = True

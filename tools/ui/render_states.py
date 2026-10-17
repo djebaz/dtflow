@@ -259,6 +259,20 @@ def render_mapped_gallery_states(app, state, out):
                     shell.gallery.refresh()
                     wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
             assert "gallery-snapshot" not in activity_strip(shell.form).rows
+            # Auto-refresh Off: one manual successful live refresh clears the
+            # warning, without another scheduled check or recovery timer.
+            shell.gallery.auto_button.setChecked(False)
+            with patch.object(gallery_ui, "query_outputs", frozen_query):
+                shell.gallery.refresh()
+                wait_for(lambda: not shell.gallery._loading and bool(shell.gallery._snapshot_at))
+            shell.gallery.refresh()
+            wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
+            QTest.qWait(100)
+            target = out / "51-images-manual-live-recovery.png"
+            if not shell.form.grab().save(str(target)):
+                raise RuntimeError(f"Could not save {target.name}")
+            print(target)
+            shell.gallery.auto_button.setChecked(True)
             # Presentation only: synthetic scope, with execution explicitly blocked.
             wait_for(lambda: shell.gallery.removal_ready)
             shell.gallery._set_checked(item.identity, True)

@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Snapshot warning review P2: with Images Auto-refresh Off, one successful live refresh clears the warning immediately. Turning polling off during successful live recovery also clears it; Auto-refresh-On stability is unchanged. No additional timer or authority changes. Offline manual-recovery fixture defined, not rendered; no tests added or run locally.
+
 - Snapshot warning oscillation: brief live reads no longer reset dismissal or tear down/recreate the slim warning. The same row shows recovering wording until consecutive live successes at least five seconds apart; live authority still returns immediately. Development logs include the underlying SQLite error name on fallback. Offline fixture definitions extended, not rendered; no tests added or run and no underlying cross-runtime locking fix claimed.
 
 - Snapshot recovery review P2: a valid signature no longer skips an unusable same-version snapshot. Bounded query-structure/integrity validation and a baseline-comparison fallback permit live-state replacement with unknown deltas; unsupported versions and publication safety budgets remain protected. No tests added or run locally.
