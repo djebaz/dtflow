@@ -36,18 +36,20 @@ from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
 from dtflow.core.models import LoRASelection  # noqa: E402
+from dtflow.persistence.original_io import OriginalImagesBusyError  # noqa: E402
 from dtflow.persistence.person_models import ModelRef, PersonModels  # noqa: E402
 from dtflow.persistence.store import PersistenceError  # noqa: E402
 from dtflow.services import artifact_paths, session  # noqa: E402
 from dtflow.services.artifact_paths import ArtifactReadPaths  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
-from dtflow.services.image_recycle import RecyclePlan, RecycleTarget  # noqa: E402
+from dtflow.services.image_recycle import RecyclePlan, RecycleResult, RecycleTarget, RecycleUnavailable  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
+from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
 
 
@@ -58,6 +60,108 @@ def wait_for(predicate, timeout=8):
             raise RuntimeError("Offline UI fixture timed out.")
         QTest.qWait(10)
     QTest.qWait(30)
+
+
+def save(widget, out, name):
+    target = out / f"{name}.png"
+    if not widget.grab().save(str(target)):
+        raise RuntimeError(f"Could not save {target.name}")
+    print(target)
+
+
+def render_removal_and_selection_states(shell, item, plan, out):
+    """Images consent, notices and result rows; every removal/query worker is bypassed."""
+    recycle, gallery, strip = shell.image_recycle, shell.gallery, activity_strip(shell.form)
+
+    def snap(name):
+        QTest.qWait(100)
+        save(shell.form, out, name)
+
+    recycle._apply_mode("trash")
+    with patch.object(recycle, "_execute", side_effect=RuntimeError("Preview cannot remove files")):
+        recycle._confirmation_revision = gallery.recycle_scope_revision
+        recycle._prepared(RecyclePlan(plan.targets, 0, 0, 0, 1, "trash"), None)
+        snap("60-images-trash-confirmation")
+        shell.inline.dismiss()
+        recycle._confirmation_revision = gallery.recycle_scope_revision
+        recycle._prepared(RecyclePlan((), 1, 2, 0, 3, "trash"), None)
+        snap("61-images-nothing-to-remove")
+        shell.inline.dismiss()
+    # Busy source: request and the execution revalidation both refuse before any worker.
+    with patch.object(recycle, "busy_source", return_value=True):
+        recycle.request((item.identity,), 0, gallery.export_query())
+        snap("62-images-removal-busy")
+        shell.inline.dismiss()
+        recycle._execute(plan)
+        snap("63-images-removal-changed-or-busy")
+        shell.inline.dismiss()
+    recycle._mode_loaded("trash", OSError("Offline fixture: removal preferences are unreadable."))
+    snap("64-images-removal-preferences-unavailable")
+    shell.inline.dismiss()
+    gallery.set_recycle_busy(True)
+    snap("65-images-removal-control-busy")
+    gallery.set_recycle_busy(False)
+
+    # Presentation fixture of the running row; recycle_outputs is never called.
+    strip.start("trash", f"Moving originals to {TRASH_NAME}", lambda: None, total=3)
+    strip.update("trash", 1, 3)
+    snap("66-images-trash-progress")
+    recycle._action = "trash"
+    with patch.object(gallery, "recycle_completed"):
+        for name, result in (
+            ("67-images-trash-result-success", RecycleResult((item.identity,), (), (), 0, 0, 0, False)),
+            (
+                "68-images-trash-result-partial",
+                RecycleResult((), ("fixture:1",), (), 0, 1, 0, False, (("fixture:1", "source_changed"),)),
+            ),
+            ("69-images-trash-result-stopped", RecycleResult((item.identity,), (), (), 0, 0, 2, True)),
+        ):
+            recycle._completed(result, None)
+            snap(name)
+    for name, phase, processed, error in (
+        ("70-images-removal-preflight-refused", "preflight", 0, RecycleUnavailable("Offline fixture: Trash refused.")),
+        ("71-images-removal-not-started", "executing", 0, OriginalImagesBusyError("Offline fixture: originals busy.")),
+        ("72-images-removal-needs-review", "executing", 1, RuntimeError("Offline fixture")),
+    ):
+        recycle._phase, recycle._processed_count = phase, processed
+        recycle._finish_with_error(error)
+        snap(name)
+    strip.finish("trash")
+
+    # Selection scan settlements, delivered directly; no identity query runs.
+    gallery._cancel_selection_scan()
+    snap("73-images-selection-stopped")
+    gallery._selection_scan_done(gallery._selection_generation, "add", None, PersistenceError("Offline fixture"))
+    snap("74-images-selection-failed")
+    for name, omitted in (("75-images-selection-limit-partial", 3), ("76-images-selection-all-checked-hidden", 0)):
+        gallery._selection_scan_done(gallery._selection_generation, "add", ((), 2, omitted, (item.identity,)), None)
+        snap(name)
+    strip.finish("selection")
+    assert gallery.select_filtered_button.text() == "Unselect all"
+    assert not gallery.hidden_count_label.isHidden()
+
+    # Compact toolbar and its secondary-action menus.
+    shell.form.resize(1180, 1000)
+    QTest.qWait(150)
+    assert not gallery.more_button.isHidden(), gallery.selection_bar.width()
+    snap("77-images-compact-toolbar")
+    for button, name in ((gallery.more_button, "78-images-more-menu"),):
+        menu = button.menu()
+        menu.popup(button.mapToGlobal(QPoint(0, button.height())))
+        QTest.qWait(100)
+        save(menu, out, name)
+        menu.hide()
+    shell.form.resize(1600, 1000)
+    QTest.qWait(150)
+    menu = gallery.clear_selection_button.menu()
+    menu.popup(gallery.clear_selection_button.mapToGlobal(QPoint(0, gallery.clear_selection_button.height())))
+    QTest.qWait(100)
+    save(menu, out, "79-images-unselect-menu")
+    menu.hide()
+    gallery.show_view("Detail")
+    gallery.select(item.identity)
+    snap("80-images-detail-checked")
+    gallery.show_view("Grid")
 
 
 def render_initial_refresh_recovery(app, state, out):
@@ -115,6 +219,10 @@ def render_initial_refresh_recovery(app, state, out):
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             print(target)
+            shell.gallery.show_view("Detail")
+            QTest.qWait(100)
+            save(shell.form, out, "81-images-detail-no-selection")
+            shell.gallery.show_view("Grid")
             # Offline failure presentation only; no real desktop process is started.
             with patch.object(desktop_open, "_open_on_worker", return_value="the folder no longer exists."):
                 shell.image_export._exported_folder = state / "missing-export-folder-fixture"
@@ -388,6 +496,7 @@ def render_mapped_gallery_states(app, state, out):
                     raise RuntimeError(f"Could not save {target.name}")
                 print(target)
                 shell.inline.dismiss()
+            render_removal_and_selection_states(shell, item, plan, out)
             # Synthetic inaccessible-original state: short card text, full hover details.
             shell.gallery.show_view("Grid")
             generation = shell.gallery._thumb_versions[item.identity]
