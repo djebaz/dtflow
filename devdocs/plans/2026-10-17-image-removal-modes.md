@@ -2,7 +2,9 @@
 
 ## Status and working rules
 
-Open, unmerged PR #76, branch `feature/image-removal-modes`, ready for review so CI runs. The initial implementation was source-present at `b935bca`; the subsequent phase-based A2/A3 handling, B1 wording, A1 static readiness, local-save reporting, new uncertain-delete alerts and split-menu polish are now source-present. Review follow-ups address export bridge errors, stable bridge error reasons, zero-mutation messaging and duplicate startup notices. **Source-complete is not owner/runtime acceptance.** The owner explicitly declined generation-output staging or automatic recovery. No actual permanent deletion, WSL2 compatibility probe, paid generation, manual GUI rendering or inference was performed for this remediation. GitHub Actions CI at `46b7517` passed lockfile, Ruff lint/format, SQLite and offline pytest; this is automated code evidence only.
+PR #76, branch `feature/image-removal-modes`, ready for review and intended to be squash-merged after owner smoke. Scope grew during owner smoke on 2026-10-17 from the split Trash/Delete action into Windows/WSL1 shared-state support: cross-OS read aliases (#83), WSL1 export of Windows-recorded originals, native Windows removal of WSL1-recorded originals, raw provider output disposal, confirmed-missing card clearing and presentation, per-runtime export folders and removal/bridge logging (#79 initial scope). The [smoke follow-up checklist](#owner-smoke-follow-ups) maps each owner point to its commits.
+
+**Source-complete is not owner/runtime acceptance.** Owner smoke so far accepted the split control, icons, confirmation and consent invalidation (`b10d962`) and the WSL1 permanent deletion of final images with restart persistence (`e2b4930`); everything else in [Owner acceptance](#owner-acceptance) stays open. The owner declined generation-output staging or automatic recovery, and asked that no new test cases be added; GitHub Actions CI (lockfile, Ruff lint/format, SQLite, offline pytest) is the automated gate and passes on the current head. No agent ran real deletion, WSL2 probes, paid generation, GUI renders or inference.
 
 ## Scope and agreed contract
 
@@ -15,7 +17,7 @@ Open, unmerged PR #76, branch `feature/image-removal-modes`, ready for review so
 
 ## Point-1 review follow-up (#5555750519)
 
-Owner-reported native Windows smoke passed for the initial WSL1 removal eligibility fix. Subsequent source review tightened its boundaries without changing the gallery read alias's authorization: shared state and sidecar primitives now reside in a neutral module; a SQL attempt prefilter avoids Python ownership-key work for unrelated references while full counts remain fresh at execution; SHA checking for image-operation originals remains at execution time under the lease; Windows reparse checks cover both Trash and Delete. Mixed selections, restart and helper-loss acceptance remain open. Confirmed-missing card removal and raw-artifact disposal are separate pending points.
+Owner-reported native Windows smoke passed for the initial WSL1 removal eligibility fix. Subsequent source review tightened its boundaries without changing the gallery read alias's authorization: shared state and sidecar primitives now reside in a neutral module; a SQL attempt prefilter avoids Python ownership-key work for unrelated references while full counts remain fresh at execution; SHA checking for image-operation originals remains at execution time under the lease; Windows reparse checks cover both Trash and Delete. Mixed selections, restart and helper-loss acceptance remain open. Confirmed-missing card removal and raw-artifact disposal were added later (points 2 and 7 below).
 
 ## Minimal implementation direction
 
@@ -91,6 +93,25 @@ One authoritative implementation checklist follows the original commit order. An
 
 Review-fix commits [`7e78ff5`](https://github.com/djebaz/dtflow/commit/7e78ff55f88c3f19b622021ec346bcc4bb037ce0), [`c45484a`](https://github.com/djebaz/dtflow/commit/c45484ac1c4c7b9455704d99333cee22958b818a), and [`46b7517`](https://github.com/djebaz/dtflow/commit/46b7517a00051ac41f77322e644021e382d46c1f) close export bridge-loss handling, structured bridge reasons, precise B1 and startup notices, and Ruff formatting. No new special-generation recovery or Windows/WSL compatibility claim was added.
 
+### Owner smoke follow-ups
+
+Points 1–12 come from the owner's 2026-10-17 smoke comments on PR #76. [x] means source and documentation are present, not runtime acceptance.
+
+1. [x] **Native Windows Trash/Delete of WSL1-recorded originals** — deletion-specific resolution with full state/identity/sidecar/digest checks, never the read alias ([`3b73a7a`](https://github.com/djebaz/dtflow/commit/3b73a7a), [`a4ed276`](https://github.com/djebaz/dtflow/commit/a4ed276)). Owner reported the initial native Windows smoke passed.
+2. [x] **Delete clears confirmed-missing cards** — durable `absent` outcome, hidden from gallery and export, history and exports kept ([`4123efa`](https://github.com/djebaz/dtflow/commit/4123efa)); whole-attempt-folder deletion accepted only while the managed `outputs` folder is intact and listable ([`cec30e8`](https://github.com/djebaz/dtflow/commit/cec30e8)).
+3. [x] **Missing vs unavailable presentation** — **File missing** pictogram in Grid/List/Detail, **Image unavailable** with the reason on hover otherwise ([`f8343d2`](https://github.com/djebaz/dtflow/commit/f8343d2)). Presentation only; Delete re-proves absence.
+4. [x] **Per-runtime export folders** — `export_preferences.json` schema 2 ([`fed0840`](https://github.com/djebaz/dtflow/commit/fed0840)).
+5. [x] **WSL creation-time note is informational** ([`7d17138`](https://github.com/djebaz/dtflow/commit/7d17138)).
+6. [x] **Windows inpaint outputs missing from the WSL grid** — retracted by the owner after retest; no change.
+7. [x] **Raw provider output disposed with its final** in both modes ([`c70ac91`](https://github.com/djebaz/dtflow/commit/c70ac91)).
+8. [x] **Read-action wording** — no exception class names, actionable busy text ([`f8343d2`](https://github.com/djebaz/dtflow/commit/f8343d2)). Per-item leases for Copy Paths are deferred: unmeasured, and they touch the verification boundary.
+9. [ ] **Thumbnail verification and mount-discovery cost** — deferred; no measurement was taken and a cheaper path would weaken the verified read boundary.
+10. [x] **Legacy sidecar and alias limits** — documented as accepted limits in the release notes; no bypass added.
+11. [x] **Export decision record and lease scope** — recorded in [image export architecture](../architecture/image-export.md); PR title and body updated.
+12. [x] **Polish** — fonts built once per card ([`f8343d2`](https://github.com/djebaz/dtflow/commit/f8343d2)); icon DPI left as owner-accepted.
+
+Issue #79's agreed initial logging scope landed in [`7cfa95b`](https://github.com/djebaz/dtflow/commit/7cfa95b). Issues #78, #80 and #81 are handled outside this PR (PR #85); #77 (WSL2) stays deferred.
+
 ### Safety gate before permanent-removal code
 
 The focused probe found that WSL `flock`/`lockf` and Windows `msvcrt` do not exclude one another, in either direction. Windows/WSL size, mtime_ns and inode matched for the disposable drive file; device did not. Chosen boundary: one source-only Windows helper for native named leases and fingerprinted managed-file handle deletion, leaving all orchestration/ledger work in the existing service. Missing Windows checkout `.venv`, unsupported mappings or helper failure refuses shared access rather than using Linux-only locks. Permanent Windows targets are derived from state/identity, never an arbitrary delete pathname. POSIX-native originals retain guarded descriptor-relative removal.
@@ -127,9 +148,11 @@ Restrict agent probes to non-mutating path/handle inspection and disposable-file
 - [ ] Owner native/helper pre-mutation sharing/permission/validation refusal: unchanged file settles `failed`, later files continue, and a fresh user-authorized retry is possible.
 - [ ] Owner helper timeout/termination or post-disposition uncertainty: retain manual-review/no-replay outcomes, never relabel as a safe retry because the source still exists.
 - [ ] Owner refusal wording distinguishes zero-mutation preflight from partial execution and unconfirmed/durable outcomes; unsupported WSL2 remains explicitly deferred.
-- [ ] Owner Windows/WSL split-menu and separate preference acceptance.
+- [x] Owner Windows/WSL split-menu icons, labels, confirmation and Cancel/Escape/mode-change consent invalidation (owner-reported at `b10d962`).
+- [ ] Owner separate Windows/WSL mode preference acceptance.
 - [ ] Owner mixed native/Windows-recorded managed-source checks and confirmations.
-- [ ] Owner permanent deletion, partial/failed/uncertain and restart/no-replay.
+- [x] Owner WSL1 permanent deletion of final images (single, five and mixed origins) with restart persistence (owner-reported at `e2b4930`).
+- [ ] Owner partial/failed/uncertain deletion and interruption no-replay.
 - [ ] Owner two-process Windows/WSL lock exclusion and helper interruption.
 - [ ] Owner cancellation, changed file/reference/mount and redirect refusals.
 - [ ] Owner exports/history/metadata untouched and Trash regression checks.
@@ -137,3 +160,9 @@ Restrict agent probes to non-mutating path/handle inspection and disposable-file
 - [ ] Owner normal-operation warning: amber/orange overlay appears once when a permanent-delete attempt newly settles `uncertain`, without triggering another deletion.
 - [ ] Owner reconciliation warning: after any successful pass, alert only newly transitioned permanent `delete_pending` rows, not Trash `pending` or older `uncertain`; a skipped pass reports that unsettled rows remain blocked and a later successful pass warns once.
 - [ ] Owner split-menu visual, keyboard, accessibility/DPI and disabled-Trash acceptance; choosing a mode never performs deletion.
+- [ ] Owner native Windows Trash and Delete of WSL1-recorded originals, plus a Windows-generated control image; unverifiable mappings stay ineligible, not "missing".
+- [ ] Owner raw-1.png disposal with its final in both modes, raw absent, raw refused and partial outcomes.
+- [ ] Owner confirmed-missing card (final deleted, and whole attempt folder deleted) cleared by Delete and absent after restart; an unreachable location is not cleared.
+- [ ] Owner File missing vs Image unavailable presentation in Grid, List and Detail.
+- [ ] Owner per-runtime export folders across Windows → WSL → Windows, and green WSL export when the creation-time note is the only notice.
+- [ ] Owner `-x` session log for a successful removal, a refused preflight and a reconciliation pass, with no paths or prompts.
