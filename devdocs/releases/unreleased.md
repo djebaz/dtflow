@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- Gallery snapshot publication waits up to 0.5 s for the cache lock, like other background cache I/O, instead of skipping when a session ends during a brief overlap (seen as `CacheBusyError` after each fake generation in the render script). Render-state script also adds Images removal/selection/toolbar states 63–84 and Queues states 85–93, and prints per-state progress with a final count.
+
 - Render-state previews: 60 Images Detail with Additional details open, 61 Regenerate inline confirmation, 62 Regenerate confirmed (offline fake-provider submission on Generate). Layout evidence only.
 
 - Render-state script on Windows: offscreen runs default `QT_QPA_FONTDIR` to `%WINDIR%\Fonts` when unset, so previews no longer show square glyphs. Not a Windows/DPI acceptance.
