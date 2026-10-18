@@ -267,7 +267,7 @@ def test_inventory_refresh_populates_models_with_observation_time(window, qtbot)
     assert "observed" in page.inventoryEvidenceLabel.text()
 
 
-def test_configuration_save_and_load_round_trip_and_loras_are_not_bound(window, qtbot, tmp_path):
+def test_configuration_round_trip_unbound_loras_and_unsupported_documents(window, qtbot, tmp_path):
     page, controller = window.generation_page, window.generation
     target = tmp_path / "saved.json"
     controller._choose_save = lambda parent, directory: str(target)
@@ -287,16 +287,14 @@ def test_configuration_save_and_load_round_trip_and_loras_are_not_bound(window, 
     assert "no cloud receipt is bound" in page.generationStatusLabel.text()
     assert page.loraList.count() == 1
     assert "config_file: saved.json" in page.effectiveRequestBrowser.toPlainText()
-
-
-def test_unsupported_configuration_is_reported_not_applied(window, qtbot, tmp_path):
+    # An unsupported document is reported and leaves the form as it was.
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"schema": "dtflow.generation-config", "version": 99, "generation": {}}))
-    window.generation._choose_open = lambda parent, directory: str(bad)
-    window.generation_page.seedEdit.setText("5")
-    window.generation_page.loadConfigurationButton.click()
-    qtbot.waitUntil(lambda: window.generation_page.generationStatusLabel.text().startswith("Configuration not loaded"))
-    assert window.generation_page.seedEdit.text() == "5"
+    controller._choose_open = lambda parent, directory: str(bad)
+    page.seedEdit.setText("5")
+    page.loadConfigurationButton.click()
+    qtbot.waitUntil(lambda: page.generationStatusLabel.text().startswith("Configuration not loaded"))
+    assert page.seedEdit.text() == "5"
 
 
 def test_relay_coalesces_transient_events_and_keeps_critical_ones(qtbot):
@@ -339,25 +337,32 @@ def test_cache_prefills_the_model_list_and_a_bypass_ignores_it(window, qtbot, tm
     bypass.runner.shutdown()
 
 
-def test_last_session_is_restored_by_the_next_window(window, qtbot):
+def test_last_session_and_per_provider_fields_are_restored_by_the_next_window(window, qtbot):
     page = window.generation_page
+    page.stepsSpinBox.setValue(9)  # remembered for the fake provider while the session moves on to local
     window.form.backendCombo.setCurrentText("local")
     window.form.endpointEdit.setText("10.0.0.2:7859")
     page.promptEdit.setPlainText("a red fox")
     page.modelCombo.setCurrentText("m1.ckpt")
     page.seedEdit.setText("77")
     page.widthSpinBox.setValue(640)
+    page.stepsSpinBox.setValue(30)
     window.generation.lora.set_loras((LoRASelection("style", 0.7),))
     window.remember(background=False)
     again = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=window.state_dir)
     qtbot.addWidget(again.form)
-    assert again.form.backendCombo.currentText() == "local"
-    assert again.form.endpointEdit.text() == "10.0.0.2:7859"
-    restored = again.generation_page
-    assert restored.promptEdit.toPlainText() == "a red fox" and restored.modelCombo.currentText() == "m1.ckpt"
-    assert restored.seedEdit.text() == "77" and restored.widthSpinBox.value() == 640
-    assert again.generation.lora.loras == (LoRASelection("style", 0.7),)
-    again.runner.shutdown()
+    try:
+        assert again.form.backendCombo.currentText() == "local"
+        assert again.form.endpointEdit.text() == "10.0.0.2:7859"
+        restored = again.generation_page
+        assert restored.promptEdit.toPlainText() == "a red fox" and restored.modelCombo.currentText() == "m1.ckpt"
+        assert restored.seedEdit.text() == "77" and restored.widthSpinBox.value() == 640
+        assert restored.stepsSpinBox.value() == 30
+        assert again.generation.lora.loras == (LoRASelection("style", 0.7),)
+        again.form.backendCombo.setCurrentText("fake")  # the other provider's fields survived the restart too
+        assert restored.stepsSpinBox.value() == 9
+    finally:
+        again.runner.shutdown()
 
 
 @pytest.mark.parametrize("dev", [False, True])
@@ -518,19 +523,3 @@ def test_form_fields_are_remembered_per_provider_but_prompts_are_shared(window, 
     assert [item.identifier for item in window.generation.lora.loras] == ["cloud-lora"]
     document = window.generation.forms_document()
     assert set(document) == {"fake", "cloud"} and document["fake"]["model"] == "fake-grid"
-
-
-def test_per_provider_fields_survive_a_restart(window, qtbot, tmp_path):
-    page = window.generation_page
-    page.stepsSpinBox.setValue(9)
-    window.form.backendCombo.setCurrentText("cloud")
-    page.stepsSpinBox.setValue(30)
-    window.remember(background=False)
-    again = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=tmp_path / "state")
-    qtbot.addWidget(again.form)
-    try:
-        assert again.form.backendCombo.currentText() == "cloud" and again.generation_page.stepsSpinBox.value() == 30
-        again.form.backendCombo.setCurrentText("fake")
-        assert again.generation_page.stepsSpinBox.value() == 9
-    finally:
-        again.runner.shutdown()

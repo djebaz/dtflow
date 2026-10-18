@@ -5,6 +5,7 @@ and which shared operation each action calls. Dispatch uses the same dispatcher 
 """
 
 import asyncio
+import functools
 import json
 import os
 import sqlite3
@@ -20,16 +21,23 @@ from support.fake_vault import Vault  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.models import ResolvedGenerationRequest  # noqa: E402
 from dtflow.persistence.settings import load_cloud_concurrency  # noqa: E402
+from dtflow.services import queue_session as queue_service  # noqa: E402
 from dtflow.services import session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.services.queue import QueueDispatcher  # noqa: E402
 from dtflow.services.queue_session import create_queue, expand_items  # noqa: E402
+from dtflow.ui import queue_page as queue_ui  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.queue_model import QueueItemModel  # noqa: E402
 from dtflow.ui.queue_presenter import ItemRow  # noqa: E402
 
 
 @pytest.fixture
-def window(qtbot, tmp_path):
+def window(qtbot, tmp_path, monkeypatch):
+    # Production polls (1 s page reads, 0.5 s dispatcher control checks) only set how soon a change becomes visible;
+    # shorter intervals keep these tests from waiting on wall-clock polls without changing what is asserted.
+    monkeypatch.setattr(queue_ui, "POLL_MS", 100)
+    monkeypatch.setattr(queue_service, "QueueDispatcher", functools.partial(QueueDispatcher, poll=0.05))
     shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=tmp_path / "state")
     qtbot.addWidget(shell.form)
     shell.form.backendCombo.setCurrentText("fake")
@@ -124,7 +132,7 @@ def test_pause_resume_and_cancel_post_shared_controls_with_honest_wording(window
     qtbot.waitUntil(lambda: state_text(window).startswith("Paused"), timeout=8000)
     gated(window)
     qtbot.waitUntil(lambda: states(window)[0] == "succeeded", timeout=8000)
-    qtbot.wait(1200)
+    qtbot.wait(400)  # several page and dispatcher polls: a refill, if any, would be visible by now
     assert states(window)[1:] == ["pending", "pending"]  # pause stopped refill; the active item completed
     page.resumeQueueButton.click()
     qtbot.waitUntil(lambda: states(window) == ["succeeded"] * 3, timeout=10000)

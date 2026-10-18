@@ -101,7 +101,12 @@ class ScriptedBackend:
         await self.inner.aclose()
 
 
-async def until(predicate, timeout: float = 5.0) -> None:
+# Waits are ceilings, not delays: a passing run returns as soon as the condition holds, and the generous limit only
+# keeps slow or heavily shared CI runners from turning scheduling latency into a TimeoutError.
+SETTLE = 30.0
+
+
+async def until(predicate, timeout: float = SETTLE) -> None:
     async with asyncio.timeout(timeout):
         while not predicate():
             await asyncio.sleep(0.005)
@@ -156,7 +161,7 @@ async def test_ten_items_four_slots_roll_without_a_group_barrier(state):
                     peak_reserved = max(peak_reserved, (await h.store.inspect_queue(queue_id))["summary"]["running"])
                     await asyncio.sleep(0.005)
 
-            async with asyncio.timeout(5):
+            async with asyncio.timeout(SETTLE):
                 await poll()
 
         await watch(lambda: backend.started == [0, 1, 2, 3])
@@ -166,7 +171,7 @@ async def test_ten_items_four_slots_roll_without_a_group_barrier(state):
         await watch(lambda: 4 in backend.started)
         assert backend.started == [0, 1, 2, 3, 4] and backend.active == 4  # refilled before the group completed
         backend.release(*range(10))
-        final = await asyncio.wait_for(run, 5)
+        final = await asyncio.wait_for(run, SETTLE)
     assert backend.peak <= 4 and peak_reserved <= 4
     assert backend.started == list(range(10)) and backend.completed[0] == 2  # dispatch in queue order
     assert [x["position"] for x in final["items"]] == list(range(1, 11))
@@ -184,7 +189,7 @@ async def test_pause_resume_cancel_controls_preserve_honest_evidence(state):
         run = h.run(queue_id)
         await until(lambda: backend.started == [0, 1])
         post_control(state, queue_id, "pause")  # posted from a separate connection while this process owns dispatch
-        await until(lambda: len(read_queues(state, queue_id)[0]["events"]) > 2)
+        await until(lambda: any(e["kind"] == "pause" for e in read_queues(state, queue_id)[0]["events"]))
         backend.release(0)
         await until(lambda: backend.completed == [0])
         await asyncio.sleep(0.05)
@@ -196,7 +201,7 @@ async def test_pause_resume_cancel_controls_preserve_honest_evidence(state):
         post_control(state, queue_id, "resume")
         await until(lambda: backend.started == [0, 1, 2, 3])
         post_control(state, queue_id, "cancel")
-        final = await asyncio.wait_for(run, 5)
+        final = await asyncio.wait_for(run, SETTLE)
         assert backend.started == [0, 1, 2, 3]  # pending items 5 and 6 were never dispatched
     states = [x["state"] for x in final["items"]]
     assert states == ["succeeded", "succeeded", "unknown", "unknown", "cancelled", "cancelled"]
@@ -221,20 +226,20 @@ async def test_uncertain_reservation_blocks_survives_restart_and_override_never_
     backend = ScriptedBackend(1, open_all=True, lose=(1,))
     async with Harness(state, backend) as h:
         queue_id = await h.store.create_queue(BACKEND, 1, [item(n) for n in range(4)])
-        blocked = await asyncio.wait_for(h.run(queue_id), 5)
+        blocked = await asyncio.wait_for(h.run(queue_id), SETTLE)
         assert [x["state"] for x in blocked["items"]] == ["succeeded", "unknown", "pending", "pending"]
         assert blocked["blocked_by_uncertainty"] and blocked["status"] == "blocked"
         post_control(state, queue_id, "resume")
-        again = await asyncio.wait_for(h.run(queue_id), 5)  # ordinary Resume / start: still blocked
+        again = await asyncio.wait_for(h.run(queue_id), SETTLE)  # ordinary Resume / start: still blocked
         assert [x["state"] for x in again["items"]][2:] == ["pending", "pending"]
         assert backend.started == [0, 1]
     backend = ScriptedBackend(1, open_all=True)
     async with Harness(state, backend) as h:  # new owner: restored paused, uncertainty and results retained
         restored = await h.store.inspect_queue(queue_id)
         assert restored["state"] == "paused" and restored["items"][1]["state"] == "unknown"
-        assert (await asyncio.wait_for(h.run(queue_id), 5))["blocked_by_uncertainty"] and backend.started == []
+        assert (await asyncio.wait_for(h.run(queue_id), SETTLE))["blocked_by_uncertainty"] and backend.started == []
         post_control(state, queue_id, "override")
-        final = await asyncio.wait_for(h.run(queue_id), 5)
+        final = await asyncio.wait_for(h.run(queue_id), SETTLE)
     assert [x["state"] for x in final["items"]] == ["succeeded", "unknown", "succeeded", "succeeded"]
     assert backend.started == [2, 3]  # the uncertain item was never replayed
     assert final["items"][1]["overridden"] and final["items"][1]["attempt_id"]
@@ -310,12 +315,12 @@ async def test_cap_reduction_and_local_lane_policy(state):
         await asyncio.sleep(0.05)
         assert backend.started == [0, 1, 2, 3, 4] and backend.active == 2  # refill only below the new cap
         backend.release(*range(7))
-        final = await asyncio.wait_for(run, 5)
+        final = await asyncio.wait_for(run, SETTLE)
         assert [x["state"] for x in final["items"]] == ["succeeded"] * 7 and backend.peak == 4
     lane = ScriptedBackend(1, open_all=True)  # local gRPC policy: one lane whatever the queue maximum says
     async with Harness(state.parent / "lane", lane) as h:
         queue_id = await h.store.create_queue(BACKEND, 4, [item(n) for n in range(4)])
-        await asyncio.wait_for(h.run(queue_id), 5)
+        await asyncio.wait_for(h.run(queue_id), SETTLE)
     assert lane.peak == 1 and lane.started == [0, 1, 2, 3]
 
 

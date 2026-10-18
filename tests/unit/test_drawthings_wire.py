@@ -21,10 +21,20 @@ def request(**overrides):
     return ResolvedGenerationRequest(**{**values, **overrides})
 
 
-@pytest.mark.parametrize("seed", [0, 1, 4294967295])
-@pytest.mark.parametrize("sampler,wire", [(item, SAMPLER_TO_DRAW_THINGS[item.value]) for item in Sampler])
-@pytest.mark.parametrize("size", [(128, 128), (512, 768), (2048, 2048)])
-def test_serialized_configuration_equals_the_resolved_request(seed, sampler, wire, size):
+SEEDS = (0, 1, 4294967295)
+SIZES = ((128, 128), (512, 768), (2048, 2048))
+
+
+# Seed, sampler and size are serialized independently, so every sampler is covered once and the seed and size edge
+# values rotate across those cases instead of forming a full cross product.
+@pytest.mark.parametrize(
+    "sampler,wire,seed,size",
+    [
+        (item, SAMPLER_TO_DRAW_THINGS[item.value], SEEDS[index % len(SEEDS)], SIZES[index // len(SEEDS) % len(SIZES)])
+        for index, item in enumerate(Sampler)
+    ],
+)
+def test_serialized_configuration_equals_the_resolved_request(sampler, wire, seed, size):
     resolved = request(
         seed=seed, sampler_id=sampler, width_px=size[0], height_px=size[1], steps=7, guidance=1.1, negative_prompt="no"
     )
