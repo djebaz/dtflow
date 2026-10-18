@@ -234,10 +234,14 @@ def _image(
         thumbnail_cache.discard(state, entry)
         return _image(path, max_side, state, item=item, cache=False, stats=stats)
     if entry is not None and not cached and image is not None:
-        written = monotonic()
-        stored = thumbnail_cache.store(state, entry, lambda scratch: image.save(str(scratch), "WEBP", 80))
-        if stats is not None and dev_enabled():
-            stats.observe("thumbnail_cache_write", (monotonic() - written) * 1000, success=stored)
+        # Show the thumbnail now; a background writer encodes a private copy.
+        copy = image.copy()
+
+        def written(stored: bool, elapsed: float) -> None:
+            if stats is not None and dev_enabled():
+                stats.observe("thumbnail_cache_write", elapsed * 1000, success=stored)
+
+        thumbnail_cache.store_later(state, entry, lambda scratch: copy.save(str(scratch), "WEBP", 80), written)
     return image, issue
 
 

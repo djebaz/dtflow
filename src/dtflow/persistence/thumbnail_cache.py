@@ -8,9 +8,11 @@ layer. Every failure is a miss: callers fall back to decoding the original.
 
 import hashlib
 import os
+import queue
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from dtflow.persistence.cache_coordination import (
@@ -22,8 +24,12 @@ from dtflow.persistence.cache_coordination import (
 )
 
 VERSION = 1
+PENDING_WRITES = 256  # bounded backlog; a full queue drops the write, the next view retries
 SUFFIX = ".webp"  # small, as fast to decode as JPEG here, and keeps transparency
 _enabled = True
+_writes: queue.Queue = queue.Queue(PENDING_WRITES)
+_writer: threading.Thread | None = None
+_writer_guard = threading.Lock()
 
 
 def configure(*, no_cache: bool) -> None:
@@ -45,6 +51,8 @@ def entry_path(state: Path, identity: str, size: int, mtime_ns: int, side: int) 
 def read(state: Path, path: Path) -> bytes | None:
     """Return the cached bytes, or None on a miss, a busy cache or any error."""
     try:
+        if not path.is_file():
+            return None  # a plain miss needs no lease
         with cache_access(state, timeout=0.05):
             check_path(path)
             return path.read_bytes()
@@ -79,6 +87,38 @@ def store(state: Path, path: Path, write) -> bool:
         return False
     finally:
         scratch.unlink(missing_ok=True)
+
+
+def store_later(state: Path, path: Path, write, done=None) -> bool:
+    """Queue ``store`` on one background daemon writer so the caller returns immediately.
+
+    One writer keeps encodes from competing with thumbnail decodes for the
+    shared cache lease. ``done(stored: bool, elapsed_s: float)`` runs on the
+    writer. Unfinished writes are abandoned at exit; entries are published
+    atomically, so an abandoned write leaves no partial entry.
+    """
+    global _writer
+    try:
+        _writes.put_nowait((state, path, write, done))
+    except queue.Full:
+        return False
+    with _writer_guard:
+        if _writer is None or not _writer.is_alive():
+            _writer = threading.Thread(target=_drain, name="dtflow-thumbnail-cache", daemon=True)
+            _writer.start()
+    return True
+
+
+def _drain() -> None:
+    while True:
+        state, path, write, done = _writes.get()
+        started = time.monotonic()
+        stored = store(state, path, write)
+        if done is not None:
+            try:
+                done(stored, time.monotonic() - started)
+            except Exception:  # noqa: BLE001 - diagnostics must never stop the writer
+                pass
 
 
 def discard(state: Path, path: Path) -> None:
