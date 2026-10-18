@@ -541,6 +541,9 @@ class GalleryPage(QObject):
         self.grid_scroll = self._widget("galleryGridScroll")
         self.grid_cards = self._widget("galleryGridCards")
         self.cards_layout = self.grid_cards.layout()
+        # Sliced first mounting is visible before its final callback. Reserve
+        # the same top/left origin from the first row, not only at completion.
+        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.table = self._widget("galleryListTable", QTableWidget)
         self.grid_viewport = self.grid_scroll.viewport()
         self.table_viewport = self.table.viewport()
@@ -2449,16 +2452,12 @@ class GalleryPage(QObject):
                 film_placeholder.size(),
             )
         _percent, density, grid_icon, grid_size, film_width, film_height, film_icon, film_size = self._preparation_icons
-        card = button.parentWidget()
-        card.setFixedWidth(density + 16)
-        button.setFixedSize(density + 16, density + 16)
         button.setIcon(grid_icon)
         button.setIconSize(grid_size)
+        self._size_grid_card(button, density)
         film[0].setFixedSize(film_width, film_height)
         film[0].setIcon(film_icon)
         film[0].setIconSize(film_size)
-        card.layout().activate()
-        card.resize(card.width(), card.sizeHint().height())
         return dict(
             item=item,
             button=button,
@@ -2599,14 +2598,34 @@ class GalleryPage(QObject):
         painter = CoverPainter(button, "", ("", ""))
         painter.mode = "Fit"
         layout.addWidget(button)
-        caption = QLabel(card)
+        caption = QLabel(f"{_filename(item.path)}  ·  {_human_size(item.file_size)}", card)
         caption.setProperty("role", "galleryCardCaption")
+        caption.setToolTip(item.path)
         layout.addWidget(caption)
-        model = QLabel(card)
+        model = QLabel(item.model or "Model not recorded", card)
         model.setProperty("role", "secondary")
         model.setProperty("textRole", "supporting")
         layout.addWidget(model)
+        # Preparation measures this layout before the card/children are shown.
+        # Hidden items must contribute their final image and text-row sizes.
+        for widget in (button, caption, model):
+            policy = widget.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            widget.setSizePolicy(policy)
         return button, painter, (caption, model), check
+
+    @staticmethod
+    def _size_grid_card(button: QPushButton, density: int) -> None:
+        """Reserve the complete polished card before its first visible layout."""
+        card = button.parentWidget()
+        card.ensurePolished()
+        for index in range(card.layout().count()):
+            card.layout().itemAt(index).widget().ensurePolished()
+        card.setFixedWidth(density + 16)
+        button.setFixedSize(density + 16, density + 16)
+        card.layout().invalidate()
+        card.setFixedHeight(card.sizeHint().height())
+        card.layout().activate()
 
     def _reconcile_rows(self) -> None:
         """Keep the actual table items (and icons) when inserting or moving rows."""
@@ -3285,11 +3304,9 @@ class GalleryPage(QObject):
         grid_placeholder.fill(Qt.GlobalColor.transparent)
         grid_icon = QIcon(grid_placeholder)
         for identity, button in self._grid_buttons.items():
-            card = button.parentWidget()
-            card.setFixedWidth(density + 16)
-            button.setFixedSize(density + 16, density + 16)
             button.setIcon(grid_icon)
             button.setIconSize(grid_placeholder.size())
+            self._size_grid_card(button, density)
             painter = self._grid_painters.get(identity)
             if painter is not None:
                 painter.widget.update()
@@ -3393,11 +3410,9 @@ class GalleryPage(QObject):
         film_icon = QIcon(film_placeholder)
         for identity in identities:
             button = self._grid_buttons[identity]
-            card = button.parentWidget()
-            card.setFixedWidth(density + 16)
-            button.setFixedSize(density + 16, density + 16)
             button.setIcon(grid_icon)
             button.setIconSize(placeholder.size())
+            self._size_grid_card(button, density)
             film, _painter = self._film_entries[identity]
             film.setFixedSize(film_width, film_height)
             film.setIcon(film_icon)
@@ -3491,7 +3506,6 @@ class GalleryPage(QObject):
         if self._grid_mount_cursor < len(keys):
             self._grid_mount_timer.start()
             return
-        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._grid_layout_keys = keys
         self._grid_layout_columns = columns
         self._grid_mount_keys = None
@@ -3512,16 +3526,21 @@ class GalleryPage(QObject):
         self._finish_grid_mount_callbacks()
 
     def _hold_anchor(self) -> None:
-        """Pin the held adjacent-load anchor at its viewport offset now."""
+        """Finalize visible row geometry, then pin an adjacent-load anchor if held."""
+        if self.mode != "Grid":
+            return
+        # Initial loading has no held anchor, but its newly shown rows still
+        # need final positions before this slice returns to the paint loop.
+        # Otherwise later rows can paint against the previous layout geometry.
+        self.cards_layout.activate()
+        self.grid_cards.adjustSize()
         held = self._held_anchor
-        if held is None or self.mode != "Grid":
+        if held is None:
             return
         button = self._grid_buttons.get(held[0])
         bar = self.grid_scroll.verticalScrollBar()
         if button is None or bar.isSliderDown():
             return  # a scrollbar drag owns the position; rewriting it would jump the handle
-        self.cards_layout.activate()
-        self.grid_cards.adjustSize()
         bar.setValue(button.parentWidget().y() - held[1] + self._held_scroll_delta)
 
     @Slot()
@@ -3565,7 +3584,6 @@ class GalleryPage(QObject):
             self._grid_slots[key] = slot
             # Include prepared cards in geometry before restoring the anchor.
             card.show()
-        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._grid_layout_keys = keys
         self._grid_layout_columns = columns
         self._finish_grid_mount_callbacks()

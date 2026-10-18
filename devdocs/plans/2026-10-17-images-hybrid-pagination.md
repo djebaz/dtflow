@@ -1,5 +1,13 @@
 # Images Option 2a — hybrid pagination and lazy scroll
 
+PR #102 initial-card geometry follow-up (2026-10-18): keep hidden image/text children in layout measurement, populate metadata immediately, and reserve the complete polished card height before mounting. New entries, prepared entries and zoom use the same sizing path; thumbnail completion changes pixels only. Provider-free pending/decoded Grid previews and presentation assertions cover the geometry contract. No local tests/renders were run; CI and owner Windows first-load/zoom acceptance remain pending.
+
+The owner reports improved card sizing but a remaining slide between card rows. Grid top/left alignment is now initialized before any mounting slice, rather than set only after the last slice; partial-mount presentation assertions compare row gaps and positions with the completed batch. This is a source correction, not yet Windows visual acceptance.
+
+The owner clarified that later rows initially overlap the preceding row's bottom, then move to the proper gap. Each Grid mount slice now finalizes outer layout geometry even when no scroll anchor is held (the initial-load path); only scrollbar correction remains conditional on an anchor. Partial-mount assertions inspect positions immediately after the production slice, without manually activating the layout in the fixture, and compare them again after later event-loop turns. Per-slice timing includes the geometry work. No local tests or renders were run.
+
+Owner smoke update (2026-10-18): after the complete card-sizing/alignment/per-slice geometry corrections, the owner reports the initial-load card and inter-row sliding now appears resolved. This accepts the observed interaction only, not CI, all navigation/zoom scenarios, native DPI variants or packaged execution.
+
 PR #102 thumbnail-format follow-up (2026-10-18): the disposable 600 px disk cache defaults to JPEG quality 85, with source `dtflow gui -format/--format webp` selecting WebP quality 80 for developer comparisons. Alpha-channel thumbnails retain WebP; format-specific fingerprints rebuild on demand, and cleanup handles both extensions. This changes neither paging nor layout. The owner's Windows microbenchmark supports faster JPEG encoding/publication for its sampled images, not a native GUI smoothness or packaged-acceptance claim.
 
 Date: 2026-10-17  

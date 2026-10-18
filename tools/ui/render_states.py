@@ -1246,6 +1246,45 @@ def render_gallery_composition_states(shell, state, out):
         assert gallery._grid_buttons[multi_item(1).identity] is retained
         snap("images-96-pager-prepared-200")
 
+        # First-show geometry must already include metadata while pixels wait.
+        # Use the production hidden-preparation path, with workers still held.
+        pending_cards = [replace(multi_item(i), identity=f"offline-pending-thumb:{i}") for i in range(1, 7)]
+        gallery._prepared_entries = {record.identity: gallery._build_prepared_entry(record) for record in pending_cards}
+        reserved_heights = {
+            identity: entry["button"].parentWidget().height() for identity, entry in gallery._prepared_entries.items()
+        }
+        gallery.items, gallery.total, gallery.offset = pending_cards, len(pending_cards), 0
+        gallery._render_page()
+        gallery._rendered_page = (0, tuple(pending_cards))
+        wait_for(lambda: gallery._grid_mount_keys is None and not gallery.reflow_timer.isActive())
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+
+        def pending_geometry():
+            return {
+                record.identity: (
+                    gallery._grid_buttons[record.identity].parentWidget().size(),
+                    gallery._grid_buttons[record.identity].geometry(),
+                    *(label.geometry() for label in gallery._grid_labels[record.identity]),
+                )
+                for record in pending_cards
+            }
+
+        pending_layout = pending_geometry()
+        for record in pending_cards:
+            button = gallery._grid_buttons[record.identity]
+            caption, model = gallery._grid_labels[record.identity]
+            assert button.parentWidget().height() == reserved_heights[record.identity]
+            assert caption.y() > button.geometry().bottom()
+            assert model.y() > caption.geometry().bottom()
+            assert model.geometry().bottom() < button.parentWidget().height()
+            assert gallery._grid_painters[record.identity].pixmap.isNull()
+        snap("images-103-grid-metadata-before-thumbnails")
+        assert pending_geometry() == pending_layout
+        for index, record in enumerate(pending_cards, 1):
+            paint_multi_thumbnail(record, index)
+        snap("images-104-grid-metadata-after-thumbnails")
+        assert pending_geometry() == pending_layout
+
         three_batches = multi_window(1, 300, total=1540)
         gallery.grid_scroll.verticalScrollBar().setValue(0)
         assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == 300
