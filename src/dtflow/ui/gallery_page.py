@@ -8,13 +8,14 @@ import logging
 import math
 import os
 import re
+import sys
 from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
 from time import monotonic
 
-from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot
+from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot, qVersion
 from PySide6.QtGui import (
     QIcon,
     QImage,
@@ -393,6 +394,24 @@ class GalleryPage(QObject):
         self.auto_timer = QTimer(self)
         self.auto_timer.setInterval(AUTO_REFRESH_MS)
         self.auto_timer.timeout.connect(self._auto_refresh_tick)
+        # Development-only event-loop heartbeat. Large gaps are diagnostic
+        # observations, not proof that a particular gallery operation stalled.
+        self._gui_heartbeat = None
+        self._gui_heartbeat_at = monotonic()
+        if dev_enabled():
+            screen = QApplication.primaryScreen()
+            log.debug(
+                "gallery_perf phase=runtime platform=%s qt=%s dpr=%.2f dpi=%.1f",
+                sys.platform,
+                qVersion(),
+                screen.devicePixelRatio() if screen is not None else 1.0,
+                screen.logicalDotsPerInch() if screen is not None else 0.0,
+            )
+            self._gui_heartbeat = QTimer(self)
+            self._gui_heartbeat.setTimerType(Qt.TimerType.PreciseTimer)
+            self._gui_heartbeat.setInterval(20)
+            self._gui_heartbeat.timeout.connect(self._trace_gui_heartbeat)
+            self._gui_heartbeat.start()
 
         self._setup_filters()
         self._setup_views()
@@ -1153,13 +1172,43 @@ class GalleryPage(QObject):
         else:
             self.auto_timer.stop()
 
+    @Slot()
+    def _trace_gui_heartbeat(self) -> None:
+        """Report delayed Qt event-loop turns only in explicit development mode."""
+        now = monotonic()
+        gap_ms = (now - self._gui_heartbeat_at) * 1000
+        self._gui_heartbeat_at = now
+        if gap_ms >= 50:
+            log.debug(
+                "gallery_perf phase=gui_gap elapsed_ms=%.1f mode=%s mounted=%d "
+                "query_busy=%s preparation_busy=%s",
+                gap_ms,
+                self.mode,
+                len(self.items),
+                self._loading or self._adjacent_loading,
+                self.preparation.active,
+            )
+
     def _auto_refresh_tick(self) -> None:
         """Do not interrupt adjacent reads or a debounced filter edit."""
         if not self._active or not self.auto_button.isChecked():
             return
-        if self._loading or self._adjacent_loading or self._suppress_batch_scroll or self.filter_timer.isActive():
+        reasons = []
+        if self._loading:
+            reasons.append("query")
+        if self._adjacent_loading:
+            reasons.append("adjacent")
+        if self._suppress_batch_scroll:
+            reasons.append("anchor_restore")
+        if self.filter_timer.isActive():
+            reasons.append("filter_debounce")
+        if reasons:
             if dev_enabled():
-                log.debug("gallery_perf phase=auto_refresh action=skipped mounted=%d", len(self.items))
+                log.debug(
+                    "gallery_perf phase=auto_refresh action=skipped reasons=%s mounted=%d",
+                    ",".join(reasons),
+                    len(self.items),
+                )
             return
         if dev_enabled():
             log.debug("gallery_perf phase=auto_refresh action=started mounted=%d", len(self.items))
@@ -2887,10 +2936,19 @@ class GalleryPage(QObject):
         keys = tuple(self._grid_buttons)
         if keys == self._grid_layout_keys and columns == self._grid_layout_columns:
             return
-        cards = [button.parentWidget() for button in self._grid_buttons.values()]
-        # An append normally adds only the new cards. Retained cards already
-        # occupy their correct cells and must not be torn down/reinserted.
-        for index, card in enumerate(cards):
+        # A pure append at the same column count cannot move existing cells.
+        # Skip them altogether: QLayout.indexOf() may scan layout items, so
+        # checking 100-200 unchanged cards introduces an avoidable GUI pause.
+        retained_prefix = (
+            len(self._grid_layout_keys)
+            if columns == self._grid_layout_columns
+            and keys[: len(self._grid_layout_keys)] == self._grid_layout_keys
+            else 0
+        )
+        moved = 0
+        added = 0
+        for index in range(retained_prefix, len(keys)):
+            card = self._grid_buttons[keys[index]].parentWidget()
             position = self.cards_layout.indexOf(card)
             row, col = divmod(index, columns)
             if position >= 0:
@@ -2898,20 +2956,25 @@ class GalleryPage(QObject):
                 if (old_row, old_col) == (row, col):
                     continue
                 self.cards_layout.removeWidget(card)
+                moved += 1
+            else:
+                added += 1
             self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
-            # New, privately prepared cards are initially hidden. Make their
-            # size hints participate before activating/resizing the grid;
-            # Qt's later implicit show would otherwise move the restored anchor.
+            # Include prepared cards in geometry before restoring the anchor.
             card.show()
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._grid_layout_keys = keys
         self._grid_layout_columns = columns
         if dev_enabled():
             log.debug(
-                "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d",
+                "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d "
+                "retained=%d added=%d moved=%d",
                 (monotonic() - started) * 1000,
                 len(keys),
                 columns,
+                retained_prefix,
+                added,
+                moved,
             )
 
     def eventFilter(self, watched, event) -> bool:
