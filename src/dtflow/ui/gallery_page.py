@@ -330,6 +330,7 @@ class GalleryPage(QObject):
         self._save_future = None
         self._pending_page_selection: str | None = None
         self._page_scroll_target: str | None = None
+        self._prefetch_zone_hint: int | None = None
         self.items: list[GalleryItem] = []
         self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
@@ -1298,6 +1299,7 @@ class GalleryPage(QObject):
             self._pending_refresh = (reset, preserve)
             return
         self._capture_scroll()
+        self._prefetch_zone_hint = None
         if reset:
             self.offset = 0
         try:
@@ -1706,6 +1708,7 @@ class GalleryPage(QObject):
         if self._loading or self._adjacent_loading or not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
             return
         target = (page_number - 1) * PAGE_SIZE
+        self._prefetch_zone_hint = target
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=page_jump page=%d target_offset=%d mounted_start=%d mounted=%d resident=%s",
@@ -1784,18 +1787,31 @@ class GalleryPage(QObject):
             or not self.items
             or self._loading
             or self._adjacent_loading
-            or self._suppress_batch_scroll
-            or self._density_anchor is not None
             or self._pending_refresh is not None
             or self.filter_timer.isActive()
+        ):
+            return
+        if (
+            self._suppress_batch_scroll
+            or self._density_anchor is not None
             or self.reflow_timer.isActive()
             or self._grid_mount_keys is not None
         ):
+            # The mount/anchor may settle after an earlier queued check.
+            # Retry later rather than silently losing a neighbor preload.
+            self._neighbor_prefetch_timer.start(40)
             return
-        first, _last = self._visible_range()
+        first, last = self._visible_range()
         if first < 1:
             return
-        zone_start = ((first - 1) // PAGE_SIZE) * PAGE_SIZE
+        midpoint = (first + last) // 2
+        visible_zone = ((midpoint - 1) // PAGE_SIZE) * PAGE_SIZE
+        # A direct chip jump expresses a stronger zone intent than a Qt grid
+        # row straddling the previous 100-image boundary.
+        zone_start = self._prefetch_zone_hint
+        if zone_start is None or not (self.offset <= zone_start < self.offset + len(self.items)):
+            zone_start = visible_zone
+            self._prefetch_zone_hint = None
         resident_end = self.offset + len(self.items)
         # Forward first: scrolling toward the next zone is the common path.
         # Then fill the previous zone if one exists and is not resident.
@@ -2883,6 +2899,8 @@ class GalleryPage(QObject):
     def show_view(self, mode: str, *, persist: bool = True) -> None:
         if mode not in self.modes:
             return
+        if mode != self.mode:
+            self._prefetch_zone_hint = None
         self.mode = mode
         self.stack.setCurrentWidget(self.modes[mode])
         self._widget(f"gallery{mode}Button", QPushButton).setChecked(True)
@@ -3248,6 +3266,7 @@ class GalleryPage(QObject):
     def _request_boundary_prefetch(self, direction: int, source: str) -> None:
         if direction not in (-1, 1):
             return
+        self._prefetch_zone_hint = None
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=scroll_intent direction=%s source=%s offset=%d mounted=%d",
