@@ -34,7 +34,7 @@ DEFAULT_PROFILES = {
     "refresh-10s": {"refresh_ms": 10000, "full_refresh_s": 60},
     "debounce-faster": {"filter_debounce_ms": 150, "save_debounce_ms": 125, "page_jump_debounce_ms": 20},
 }
-SCROLL_INTENT = re.compile(r"gallery_perf phase=scroll_intent\\b[^\\n]*\\bdirection=(forward|backward)\\b[^\\n]*\\bsource=wheel\\b")
+SCROLL_INTENT = re.compile(r"gallery_perf phase=scroll_intent\b[^\n]*\bdirection=(forward|backward)\b[^\n]*\bsource=wheel\b")
 QUERY_DONE = re.compile(r"gallery_perf phase=query_done\b[^\n]*\breturned=(\d+)\b[^\n]*\berror=none\b")
 
 
