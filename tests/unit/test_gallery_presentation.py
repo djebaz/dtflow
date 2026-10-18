@@ -121,7 +121,6 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
         assert gallery.cards_layout.getItemPosition(layout_index)[:2] == divmod(index, columns)
 
 
-
 def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot):
     """A normal 100-card append must not monopolize one Qt callback."""
     _form, gallery, _runner, records, _state = presentation
