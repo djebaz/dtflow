@@ -74,6 +74,13 @@ def parser() -> argparse.ArgumentParser:
         "-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes for this run."
     )
     add_gallery_limit_arguments(gui)
+    gui.add_argument(
+        "-format",
+        "--format",
+        choices=("jpg", "webp"),
+        default="jpg",
+        help="Developer thumbnail-cache format: jpg (quality 85, default) or webp (quality 80).",
+    )
     testing = commands.add_parser("test", help="Run repository tests through pytest.")
     testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
     testing.add_argument("-live", "--live", action="store_true", help="Run non-generative live connectivity checks.")
@@ -685,7 +692,7 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError as exc:
                 print(f"Invalid request: {exc}", file=sys.stderr)
                 return EXIT_INVALID
-            return run_gui_command(no_cache=args.no_cache, gallery_limits=gallery_limits)
+            return run_gui_command(no_cache=args.no_cache, gallery_limits=gallery_limits, thumbnail_format=args.format)
         if args.command == "test":
             return run_tests(args)
         return asyncio.run(run(args))
@@ -729,7 +736,9 @@ def main(argv: list[str] | None = None) -> int:
             logging_session.close()
 
 
-def run_gui_command(*, no_cache: bool = False, gallery_limits: tuple[int, int] | None = None) -> int:
+def run_gui_command(
+    *, no_cache: bool = False, gallery_limits: tuple[int, int] | None = None, thumbnail_format: str = "jpg"
+) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
         from dtflow.ui.app import run_gui
@@ -738,7 +747,7 @@ def run_gui_command(*, no_cache: bool = False, gallery_limits: tuple[int, int] |
     except ImportError:
         print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
         return EXIT_INVALID
-    return run_gui(no_cache=no_cache, gallery_limits=gallery_limits)
+    return run_gui(no_cache=no_cache, gallery_limits=gallery_limits, thumbnail_format=thumbnail_format)
 
 
 def run_tests(args: argparse.Namespace) -> int:

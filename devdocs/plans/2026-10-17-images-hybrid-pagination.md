@@ -1,5 +1,7 @@
 # Images Option 2a — hybrid pagination and lazy scroll
 
+PR #102 thumbnail-format follow-up (2026-10-18): the disposable 600 px disk cache defaults to JPEG quality 85, with source `dtflow gui -format/--format webp` selecting WebP quality 80 for developer comparisons. Alpha-channel thumbnails retain WebP; format-specific fingerprints rebuild on demand, and cleanup handles both extensions. This changes neither paging nor layout. The owner's Windows microbenchmark supports faster JPEG encoding/publication for its sampled images, not a native GUI smoothness or packaged-acceptance claim.
+
 Date: 2026-10-17  
 Status: PR #89 implementation validated by offline CI/render; native performance follow-up remains open  
 Base: latest `main` when branch was created

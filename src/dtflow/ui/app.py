@@ -17,10 +17,14 @@ from dtflow.ui.theme import apply_theme
 
 
 def run_gui(
-    argv: list[str] | None = None, *, no_cache: bool = False, gallery_limits: tuple[int, int] | None = None
+    argv: list[str] | None = None,
+    *,
+    no_cache: bool = False,
+    gallery_limits: tuple[int, int] | None = None,
+    thumbnail_format: str = "jpg",
 ) -> int:
     configure(no_cache=no_cache)
-    thumbnail_cache.configure(no_cache=no_cache)
+    thumbnail_cache.configure(no_cache=no_cache, thumbnail_format=thumbnail_format)
     if gallery_limits is not None:
         from dtflow.ui.gallery_page import configure_limits
 

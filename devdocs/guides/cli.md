@@ -36,6 +36,8 @@ Generation: `-p/--prompt`, `-n/--negative`, `-m/--model`, `-s/--seed`, `-w/--wid
 
 Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local), `-d/--state`, `-nc/--no-cache` (bypasses persistent disposable-cache reads and writes; also on `dtflow gui`). `dtflow gui` also accepts the gallery test limits `-ml/--load N` and `-mc/--cards N` described in the [desktop guide](desktop.md), before or after `gui` (for example `dtflow -x -ml 200 -mc 2000 gui`); other commands ignore them.
 
+For developer thumbnail-cache comparisons, use `dtflow gui -format jpg` (default, JPEG quality 85) or `dtflow gui -format webp` (WebP quality 80); `--format` is equivalent. This GUI-only argument goes after `gui`, is not persisted, and does not change original images or JPEG export. Alpha-channel thumbnails retain WebP even in JPG mode. The selected format has a separate cache fingerprint; switching rebuilds entries as they are viewed, with old entries removed on successful replacement. Clear thumbnails removes both formats.
+
 Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`.
 
 Fake-only: `-f/--scenario`.

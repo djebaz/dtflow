@@ -1,6 +1,6 @@
 """Disposable on-disk gallery thumbnails under ``<state>/cache/thumbnails``.
 
-Entries live at ``<shard>/<identity-hash>.<fingerprint-hash>.webp``: the shard and
+Entries live at ``<shard>/<identity-hash>.<fingerprint-hash>.jpg|webp``: the shard and
 identity hash come from the saved output identity, the fingerprint hash from the
 original's size, modification time and file ID, so a replaced original never
 reuses a stale thumbnail and every entry for one output can be found without
@@ -32,21 +32,25 @@ from dtflow.persistence.cache_coordination import (
 )
 
 VERSION = 2
-SUFFIX = ".webp"  # small, as fast to decode as JPEG here, and keeps transparency
-MAX_ENTRIES = 20_000  # about 200 MB at ~10 KB per 600 px WebP; far below cleanup's 100,000-entry preflight cap
+SUFFIXES = (".jpg", ".webp")
+MAX_ENTRIES = 20_000  # entry-count bound, not a byte budget; below cleanup's 100,000-entry cap
 PRUNE_TO = 16_000  # oldest-written entries are evicted down to this count
 PRUNE_EVERY = 500  # writes between eviction checks, plus one check per writer start
 PENDING_WRITES = 256  # bounded backlog; a full queue drops the write, the next view retries
 _enabled = True
+_format = "jpg"
 _writes: queue.Queue = queue.Queue(PENDING_WRITES)
 _writer: threading.Thread | None = None
 _writer_guard = threading.Lock()
 
 
-def configure(*, no_cache: bool) -> None:
+def configure(*, no_cache: bool, thumbnail_format: str = "jpg") -> None:
     """``-nc/--no-cache`` bypasses thumbnail cache reads and writes for the run."""
-    global _enabled
+    global _enabled, _format
+    if thumbnail_format not in ("jpg", "webp"):
+        raise ValueError("Thumbnail format must be jpg or webp.")
     _enabled = not no_cache
+    _format = thumbnail_format
 
 
 def _identity_hash(identity: str) -> str:
@@ -61,11 +65,16 @@ def entry_path(state: Path, identity: str, info: os.stat_result, side: int) -> P
     """Return the entry for this output and original fingerprint, or None with ``--no-cache``."""
     if not _enabled:
         return None
-    fingerprint = f"{info.st_size}\0{info.st_mtime_ns}\0{info.st_ino}\0{side}"
+    fingerprint = f"{info.st_size}\0{info.st_mtime_ns}\0{info.st_ino}\0{side}\0{_format}"
     digest = hashlib.sha256(fingerprint.encode()).hexdigest()[:24]
     owner = _identity_hash(identity)
     try:
-        return _folder(state, owner) / f"{owner}.{digest}{SUFFIX}"
+        path = _folder(state, owner) / f"{owner}.{digest}.{_format}"
+        # JPEG cannot preserve alpha. Its key may hold an explicitly WebP-encoded
+        # transparency fallback; do not reuse the separate WebP-comparison key.
+        if _format == "jpg" and not path.exists() and path.with_suffix(".webp").exists():
+            return path.with_suffix(".webp")
+        return path
     except (CacheSafetyError, OSError, ValueError):
         return None
 
@@ -86,7 +95,7 @@ def store(state: Path, path: Path, write) -> bool:
     Older entries for the same output (a replaced original) are removed in the
     same step, so outdated thumbnails do not accumulate.
     """
-    descriptor, name = tempfile.mkstemp(prefix="dtflow-thumb-", suffix=SUFFIX)
+    descriptor, name = tempfile.mkstemp(prefix="dtflow-thumb-", suffix=path.suffix)
     os.close(descriptor)
     scratch = Path(name)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
@@ -103,8 +112,9 @@ def store(state: Path, path: Path, write) -> bool:
             finally:
                 temporary.unlink(missing_ok=True)
             owner = path.name.split(".", 1)[0]
-            for stale in path.parent.glob(f"{owner}.*{SUFFIX}"):
-                if stale != path:
+            for stale in path.parent.glob(f"{owner}.*"):
+                if stale != path and stale.suffix in SUFFIXES:
+                    check_path(stale)
                     stale.unlink(missing_ok=True)
         return True
     except (CacheBusyError, CacheSafetyError, OSError):
@@ -163,7 +173,7 @@ def prune(state: Path, *, limit: int = MAX_ENTRIES, keep: int = PRUNE_TO) -> int
                     continue
                 with os.scandir(shard.path) as files:
                     for entry in files:
-                        if entry.name.endswith(SUFFIX) and entry.is_file(follow_symlinks=False):
+                        if entry.name.endswith(SUFFIXES) and entry.is_file(follow_symlinks=False):
                             entries.append((entry.stat(follow_symlinks=False).st_mtime_ns, entry.path))
     except (CacheSafetyError, OSError, ValueError):
         return 0
@@ -208,7 +218,9 @@ def forget(state: Path, identities: Iterable[str]) -> int:
                 folder = _folder(state, owner)
                 if not folder.is_dir():
                     continue
-                for entry in folder.glob(f"{owner}.*{SUFFIX}"):
+                for entry in folder.glob(f"{owner}.*"):
+                    if entry.suffix not in SUFFIXES:
+                        continue
                     check_path(entry)
                     entry.unlink(missing_ok=True)
                     removed += 1

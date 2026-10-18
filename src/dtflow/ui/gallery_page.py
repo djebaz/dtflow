@@ -239,7 +239,10 @@ def _image(
             if stats is not None and dev_enabled():
                 stats.observe("thumbnail_cache_write", elapsed * 1000, success=stored)
 
-        thumbnail_cache.store_later(state, entry, lambda scratch: copy.save(str(scratch), "WEBP", 80), written)
+        if entry.suffix == ".jpg" and copy.hasAlphaChannel():
+            entry = entry.with_suffix(".webp")  # Preserve transparency instead of flattening it for JPEG.
+        encoding, quality = ("JPEG", 85) if entry.suffix == ".jpg" else ("WEBP", 80)
+        thumbnail_cache.store_later(state, entry, lambda scratch: copy.save(str(scratch), encoding, quality), written)
     return image, issue
 
 

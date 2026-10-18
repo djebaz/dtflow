@@ -127,6 +127,19 @@ def test_help_version_and_documented_options(capsys):
         assert pair in generate
     assert "-j, --jobs" in choices["settings"].format_help()
     assert "-nc, --no-cache" in choices["gui"].format_help() and cli.parser().parse_args(["gui", "-nc"]).no_cache
+    assert cli.parser().parse_args(["gui"]).format == "jpg"
+    for flag in ("-format", "--format"):
+        assert cli.parser().parse_args(["gui", flag, "webp"]).format == "webp"
+        with pytest.raises(SystemExit) as invalid:
+            cli.parser().parse_args(["gui", flag, "png"])
+        assert invalid.value.code == 2
+
+
+def test_gui_thumbnail_format_is_forwarded(invoke, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "run_gui_command", lambda **options: calls.append(options) or 0)
+    assert invoke("gui", "-format", "webp", state=False)[0] == 0
+    assert calls[0]["thumbnail_format"] == "webp"
 
 
 @pytest.mark.parametrize(
