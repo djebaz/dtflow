@@ -439,7 +439,14 @@ def test_backward_edge_scroll_reveals_one_row_not_whole_page(presentation, qtbot
     gallery.offset, gallery.total, gallery.items = 200, 400, list(records[200:400])
     gallery._render_page()
     gallery._rendered_page = (200, records[200:400])
-    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None, timeout=5000)
+    qtbot.waitUntil(
+        lambda: (
+            len(gallery._grid_layout_keys) == 200
+            and gallery._grid_mount_keys is None
+            and not gallery.reflow_timer.isActive()
+        ),
+        timeout=5000,
+    )
     bar = gallery.grid_scroll.verticalScrollBar()
     assert bar.maximum() > 0
     bar.setValue(1)
@@ -469,7 +476,14 @@ def test_forward_edge_scroll_reveals_next_row_not_whole_page(presentation, qtbot
     gallery.offset, gallery.total, gallery.items = 0, 400, list(records[:200])
     gallery._render_page()
     gallery._rendered_page = (0, records[:200])
-    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None, timeout=5000)
+    qtbot.waitUntil(
+        lambda: (
+            len(gallery._grid_layout_keys) == 200
+            and gallery._grid_mount_keys is None
+            and not gallery.reflow_timer.isActive()
+        ),
+        timeout=5000,
+    )
     bar = gallery.grid_scroll.verticalScrollBar()
     assert bar.maximum() > 0
     bar.setValue(bar.maximum())
