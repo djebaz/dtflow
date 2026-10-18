@@ -1287,9 +1287,7 @@ def render_gallery_composition_states(shell, state, out):
             QTest.qWait(150)
             assert gallery.offset == 0
             assert len(gallery.items) == 160
-            assert [record.identity for record in gallery.items[:80]] == [
-                multi_item(i).identity for i in range(1, 81)
-            ]
+            assert [record.identity for record in gallery.items[:80]] == [multi_item(i).identity for i in range(1, 81)]
             assert [record.identity for record in gallery.items[80:]] == [
                 multi_item(i).identity for i in range(81, 161)
             ]
