@@ -170,7 +170,10 @@ def test_forward_eviction_keeps_grid_anchor_after_layout_settles(presentation, q
     gallery.items, gallery.total, gallery.offset = list(records[:300]), 400, 0
     gallery._render_page()
     gallery._rendered_page = (0, records[:300])
-    qtbot.wait(100)
+    qtbot.waitUntil(
+        lambda: gallery._grid_mount_keys is None and len(gallery._grid_layout_keys) == 300,
+        timeout=5000,
+    )
     gallery.cards_layout.activate()
     gallery.grid_cards.adjustSize()
     qtbot.wait(80)
