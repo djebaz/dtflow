@@ -101,11 +101,18 @@ Use the normal DTFlow launch command with `-x` (equivalent to `--dev`) to enable
 
 Look for `gallery_perf` entries. Durations are wall-clock milliseconds observed by the application, not benchmarks and not GPU/inference timings:
 
+- `runtime`: OS platform, Qt version and main-screen device-pixel ratio/logical DPI (no hostname or paths).
+- `gui_gap`: a 20 ms development-only Qt heartbeat that reports observed callback gaps of at least 50 ms, with current view, mounted count and busy flags. These are **observations**, not proof that a particular gallery operation caused a pause; desktop scheduling/sleep can also delay a timer.
 - `query_start` / `query_done`: query window offset/limit, total async elapsed time, returned count and live/snapshot source.
-- `auto_refresh`: five-second poll started/skipped while a batch or filter edit is still active.
-- `adjacent_start` / `adjacent_read`: adjacent 80-row fetch, direction, returned count, async elapsed time.
-- `adjacent_reconcile` / `render_page` / `grid_layout`: Qt update time, mounted/added/removed card counts and active Grid columns.
+- `query_locate` / `query_read` / `query_extension` / `query_facets`: separate timed anchor lookup, bounded primary read, optional extra read and filter-choice work.
+- `query_delivery`: delay between completion of the async read and delivery to the GUI thread. This distinguishes worker/read time from a busy Qt event loop.
+- `prepare_slice` / `prepare_complete`: sliced widget preparation cost, total preparation time, created/reused counts and success.
+- `auto_refresh`: five-second poll started/skipped, with explicit skip reasons (`query`, `adjacent`, `anchor_restore`, `filter_debounce`).
+- `adjacent_start` / `adjacent_read`: adjacent 100-record batch fetch, direction, returned count and async elapsed time.
+- `adjacent_reconcile` / `render_page` / `grid_layout`: Qt update time and mounted/added/removed card counts. The Grid layout record also shows retained prefix, newly inserted and moved cells: normal 100→200 appends need not recheck all retained cells.
 - `thumbnail_end_to_end`: worker enqueue-to-result delay (includes worker queueing and decoding), success and concurrency count. Up to six thumbnail tasks remain active; each result emits a record in dev mode.
+
+For a Windows smoke test, preserve the rotating log and the exact PR/build revision. Perform a 100→200 Grid append and several 100-image page changes with Auto-refresh On, then compare nearby `gui_gap` events against `query_delivery`, `prepare_complete`, `render_page` and `grid_layout` timing. Distinguish long database reads, GUI delivery delay and Qt layout stalls instead of attributing every pause to scrolling.
 
 **Privacy:** these metrics never include prompts, image/output/metadata paths, selected IDs, request JSON, SQLite parameters, or credentials. They don't change query cadence, rendering behavior, retry semantics or provider billing. A burst of `render_page` and `grid_layout` entries on unchanged five-second polls is a useful signal of unnecessary repaints. Inspect timing patterns alongside visual smoke evidence rather than assuming every repaint is expensive.
 
