@@ -545,3 +545,104 @@ def test_scroll_intent_parser_requires_a_real_qt_wheel_event(tmp_path):
     events = _wheel_intents(tmp_path)
     assert len(events) == 2
     assert {event[3] for event in events} == {"forward", "backward"}
+
+
+class _HeaderNode:
+    """Minimal UIA tree supporting named Qt groups and checkable controls."""
+
+    def __init__(self, name, role="Group", *, automation_id="", children=(), visible=True, enabled=True):
+        self.element_info = SimpleNamespace(name=name, control_type=role, automation_id=automation_id)
+        self.children = list(children)
+        self.visible = visible
+        self.enabled = enabled
+        self.clicks = 0
+
+    def descendants(self):
+        return list(self.children)
+
+    def is_visible(self):
+        return self.visible
+
+    def is_enabled(self):
+        return self.enabled
+
+    def click_input(self):
+        self.clicks += 1
+
+
+def test_recorder_header_scopes_detail_checkbox_without_ambiguous_names():
+    from tools.ui.windows_gallery_benchmark import _click_gallery_mode
+
+    detail = _HeaderNode("Detail", "CheckBox")
+    unrelated = _HeaderNode("Detail", "CheckBox")
+    header = _HeaderNode("HeaderScrollContents", children=(detail,))
+    window = SimpleNamespace(descendants=lambda: [unrelated, header, detail])
+    actions = []
+    _click_gallery_mode(window, "Detail", actions)
+    assert detail.clicks == 1
+    assert unrelated.clicks == 0
+    assert actions[0]["uia_target"] == "HeaderScrollContents/Detail/CheckBox"
+
+
+def test_gallery_mode_uses_unique_qt_automation_id_when_header_not_exposed():
+    from tools.ui.windows_gallery_benchmark import _gallery_mode_button
+
+    target = _HeaderNode("Detail", "CheckBox", automation_id="galleryDetailButton")
+    unrelated = _HeaderNode("Detail", "CheckBox")
+    window = SimpleNamespace(descendants=lambda: [unrelated, target])
+    assert _gallery_mode_button(window, "Detail", timeout=1) is target
+
+
+def test_ambiguous_checkbox_within_header_fails_closed():
+    from tools.ui.windows_gallery_benchmark import _gallery_mode_button
+
+    header = _HeaderNode(
+        "HeaderScrollContents",
+        children=(_HeaderNode("Detail", "CheckBox"), _HeaderNode("Detail", "CheckBox")),
+    )
+    window = SimpleNamespace(descendants=lambda: [header])
+    with pytest.raises(RuntimeError, match="Ambiguous Detail CheckBox"):
+        _gallery_mode_button(window, "Detail", timeout=1)
+
+
+def test_scroll_bursts_target_gallery_instead_of_window_center(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    events = []
+    rect = SimpleNamespace(left=500, top=150, width=lambda: 400, height=lambda: 500)
+
+    class Gallery(_HeaderNode):
+        def rectangle(self):
+            return rect
+
+    grid = Gallery("gallery", automation_id="galleryGridScroll")
+    window = SimpleNamespace(
+        descendants=lambda: [grid],
+        rectangle=lambda: SimpleNamespace(left=0, top=0, width=lambda: 1000, height=lambda: 800),
+    )
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            events.append((coords, wheel_dist))
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    monkeypatch.setattr(benchmark, "_wheel_intents", lambda directory: set())
+    monkeypatch.setattr(benchmark.time, "sleep", lambda seconds: None)
+    actions = []
+    benchmark._scroll(window, -1, actions, tmp_path, mode="grid", notches=96)
+    assert len(events) == 8
+    assert all(coords == (700, 400) and wheel_dist == -12 for coords, wheel_dist in events)
+    assert actions[0]["notches"] == 96
+    assert actions[0]["wheel_target"] == "galleryGridScroll"
+    assert actions[0]["scroll_distance_verified"] is False
+    assert actions[0]["wheel_intent_observed"] is False
+
+
+def test_scroll_rejects_invalid_direction_or_huge_wheel_count(tmp_path):
+    from tools.ui.windows_gallery_benchmark import _scroll
+
+    with pytest.raises(ValueError, match="direction"):
+        _scroll(object(), 0, [], tmp_path, mode="grid")
+    with pytest.raises(ValueError, match="notches"):
+        _scroll(object(), -1, [], tmp_path, mode="grid", notches=500)
