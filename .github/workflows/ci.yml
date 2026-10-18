@@ -51,15 +51,16 @@ env:
 jobs:
   checks:
     name: Lock, lint, test (single-runner)
-    # Draft pull requests are skipped; marking one ready for review starts a run.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Resolve manual target
         id: target
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_SHA: ${{ inputs.sha }}
           INPUT_PR: ${{ inputs.pr }}
           INPUT_BRANCH: ${{ inputs.branch }}
@@ -139,6 +140,7 @@ jobs:
       - name: Mark commit pending (format)
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -154,22 +156,21 @@ jobs:
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           echo "=== ruff format output ==="
           sed -n '1,200p' ruff-format.txt || true
-        # do not fail the job if formatting issues are found
         continue-on-error: true
 
       - name: Report format result (non-blocking)
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           rc=${{ steps.format_run.outputs.rc }}
           if [ -z "$rc" ]; then rc=0; fi
-          # We want format to be warnings/non-blocking: always set success so branch protections are not blocked.
+          # Keep format non-blocking.
+          state=success
           if [ "$rc" -eq 0 ]; then
-            state=success
             desc="Format check passed"
           else
-            state=success
             desc="Format check found issues (non-blocking — see action log)"
           fi
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -180,6 +181,7 @@ jobs:
       - name: Mark commit pending (lint)
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -200,16 +202,15 @@ jobs:
       - name: Report lint result (non-blocking)
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           rc=${{ steps.lint_run.outputs.rc }}
           if [ -z "$rc" ]; then rc=0; fi
-          # Keep lint non-blocking: always set success so branch protections are not blocked.
+          state=success
           if [ "$rc" -eq 0 ]; then
-            state=success
             desc="Lint passed"
           else
-            state=success
             desc="Lint found issues (non-blocking — see action log)"
           fi
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -220,6 +221,7 @@ jobs:
       - name: Mark commit pending (tests)
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -237,6 +239,7 @@ jobs:
       - name: Report tests result
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           JOB_STATUS: ${{ job.status }}
         run: |
