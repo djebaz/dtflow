@@ -346,13 +346,29 @@ def _gallery_wheel_point(window, mode: str) -> tuple[tuple[int, int], str]:
     if len(candidates) == 1:
         rect = candidates[0]
         source = object_name
+        x_factor, y_factor = 0.5, 0.5
     else:
-        rect = window.rectangle()
-        source = "window-fallback" if not candidates else "ambiguous-gallery-surface"
-    # Stay away from scrollbars and floating controls at the rectangle edges.
+        # The gallery's QScrollArea sometimes lacks a UIA AutomationId.
+        # Use the visible GalleryDetailPage group instead of the complete
+        # DTFlow window; its lower center is within the browsing surface.
+        panels = [
+            item.rectangle() for item in window.descendants()
+            if item.element_info.name == "GalleryDetailPage"
+            and item.element_info.control_type in {"Group", "Pane"}
+            and item.is_visible()
+            and item.rectangle().width() >= 120
+            and item.rectangle().height() >= 160
+        ]
+        if len(panels) == 1:
+            rect, source = panels[0], "GalleryDetailPage-fallback"
+            x_factor, y_factor = 0.52, 0.72
+        else:
+            rect, source = window.rectangle(), "window-fallback"
+            x_factor, y_factor = 0.56, 0.72
+    # Avoid the horizontal toolbar, bottom overlays and right scrollbar.
     coords = (
-        int(rect.left + rect.width() * 0.5),
-        int(rect.top + rect.height() * 0.5),
+        int(rect.left + rect.width() * x_factor),
+        int(rect.top + rect.height() * y_factor),
     )
     return coords, source
 
