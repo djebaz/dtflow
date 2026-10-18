@@ -3017,7 +3017,7 @@ class GalleryPage(QObject):
         width = self._thumbnail_pixels(self.slider.value()) + 16
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
         keys = tuple(self._grid_buttons)
-        if keys == self._grid_layout_keys and columns == self._grid_layout_columns:
+        if self._grid_mount_keys is None and keys == self._grid_layout_keys and columns == self._grid_layout_columns:
             return
         if self._grid_mount_keys == keys and self._grid_mount_columns == columns:
             return
