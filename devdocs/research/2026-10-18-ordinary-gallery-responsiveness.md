@@ -50,7 +50,13 @@ availability, not physical input latency. The 4 ms heartbeat is sampled using
 QTest, and includes preparation, commit and 80 ms of following layout/paint/
 deletion work. Host load and the test event pump affect these measurements.
 
-Tradeoff: preparation extends total readiness to roughly 214–260 ms median,
+A subsequent sequential Grid/List repeat, without other local tests running,
+still showed variable timings: prepared commits were 10.7–27.2 ms median,
+ready times 255–312 ms median, and the worst List replacement GUI gap reached
+118 ms. This reinforces that the experiment has not removed every stall;
+the earlier table must not be treated as a latency ceiling.
+
+Tradeoff: preparation extends total readiness to roughly 214–312 ms median,
 while leaving the old page usable. The local objectives of every final commit
 below 16 ms and ordinary GUI gaps below 33 ms are **not yet met**. Do not call
 this a complete elimination of stalls or promote the PR on these numbers alone.
@@ -107,4 +113,5 @@ a backwards-fetch regression.
 
 PR #92 stays draft pending latency-outlier work, the intermittent Detail stall,
 and native owner acceptance. No provider calls or real output mutations were
-needed for this work.
+needed for this work. GitHub's draft-PR CI and UI-render runs were skipped;
+the passing 616/3 and 232-state results above were executed locally, not in CI.
