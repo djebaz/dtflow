@@ -1812,8 +1812,7 @@ class GalleryPage(QObject):
                     continue  # Do not evict the zone the user is viewing.
             if dev_enabled():
                 log.debug(
-                    "gallery_perf phase=neighbor_prefetch active_page=%d direction=%s "
-                    "offset=%d resident=%d",
+                    "gallery_perf phase=neighbor_prefetch active_page=%d direction=%s offset=%d resident=%d",
                     zone_start // PAGE_SIZE + 1,
                     "forward" if direction > 0 else "backward",
                     target,
