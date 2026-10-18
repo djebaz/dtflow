@@ -154,6 +154,8 @@ During generation or queue dispatch, the window owns the state directory. Genera
 
 ## Images
 
+**Infinite-scroll boundary:** When you scroll upward from the first visible images of a loaded 80-image batch, the previous batch is mounted *above* the existing cards. On reaching the top edge, the preceding batch's **last card/row** appears immediately above the current one (80 before 81); the viewport does not jump to the beginning of that previous batch. If the earlier batch prefetches before the edge, the current image stays anchored. Loading is still bounded to two adjacent batches (160 cards). The [Image Navigation](../plans/2026-10-17-images-hybrid-pagination.md#upward-infinite-scroll-continuity-at-batch-boundaries-2026-10-18) offline fixtures cover Grid and List; real Windows scrolling/trackpad acceptance remains separate.
+
 While browsing Grid or List, changing **Thumbnail size** or **Row density** retains the same top visible image across Grid column and List row-height reflow; the active numbered page follows that identity, not the old scrollbar pixel value. A size change never requests another batch by itself. This behavior has offline Qt fixture coverage but still needs native owner acceptance.
 
 The approved **Option 2a** pager above the gallery viewport shows the actual visible image range, total and numbered 80-image batch chips. Its position and appearance do not change in fullscreen. The **Image Navigation** artifact folder contains the dedicated offline screenshots. The initially rendered pager UI and loading ring are present in PR #89; live continuous-scroll integration is tracked in [the implementation plan](../plans/2026-10-17-images-hybrid-pagination.md).

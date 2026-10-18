@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #89 upward infinite-scroll boundary correction: a real backward 80-image prepend now reveals the **last** image/row of the preceding batch (e.g. image 80 immediately before 81), not the preceding batch's first card. Early prefetch preserves the existing anchor; Grid scroll restoration waits for Qt layout geometry. Added provider-free Grid/List real-prepend fixtures `images-91` and `images-92`, with [612 passed / 3 skipped CI](https://github.com/djebaz/dtflow/actions/runs/39092328625) and [228 offline render states](https://github.com/djebaz/dtflow/actions/runs/39092328607). Native Windows/trackpad acceptance pending.
+
 - PR #89 Grid/List zoom-pagination correction: changing thumbnail size now preserves the first visible saved-output identity across Grid column reflow and List row-height changes, rather than retaining an obsolete numeric scrollbar offset. Deferred anchor restoration avoids unintended neighboring batch reads and transient page-chip changes; redundant same-scale whole-card repaints are skipped. Two new offline Image Navigation screenshots cover these cases (source checks passed on `4d1c14e`; final follow-up CI and owner native smoke remain pending).
 
 - PR #89 navigation direction regression (owner confirmed): after jumping to page 9, scrolling **down** incorrectly fetched earlier batches at offsets 560, 480 and 400. The controller now carries wheel, scrollbar-action and drag direction into prefetch; downward scroll can fetch only forward and upward only backward. A provider-free regression fixture covers both edges, while `-x --dev` logs sanitized scroll direction/source. Native owner verification remains pending.
