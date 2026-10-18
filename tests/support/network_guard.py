@@ -89,8 +89,9 @@ def install() -> None:
     if _ORIGINALS:
         return
     # On Windows platform.uname() may fall back to a one-time `ver` subprocess when its WMI query fails, and imports
-    # such as grpclib call it lazily; resolve and cache it before subprocesses are guarded.
-    platform.uname()
+    # such as grpclib call it lazily; resolve and cache it before subprocesses are guarded. Its lazy `processor` field
+    # runs `uname -p` on POSIX; platform.platform() (read by pytest-xdist workers) resolves both.
+    platform.platform()
     for name in ("connect", "connect_ex", "sendto"):
         _ORIGINALS[name] = getattr(socket.socket, name)
     for name in ("gethostbyname", "gethostbyname_ex", "gethostbyaddr"):
