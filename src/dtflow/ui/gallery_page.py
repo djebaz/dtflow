@@ -189,12 +189,10 @@ def _image(
                 with open(source, "rb") as stream:
                     info = os.fstat(stream.fileno())
                     if cache and item is not None:
-                        entry = thumbnail_cache.entry_path(
-                            state, item.identity, info.st_size, info.st_mtime_ns, max_side
-                        )
+                        entry = thumbnail_cache.entry_path(state, item.identity, info, max_side)
                     if entry is not None:
                         lookup = monotonic()
-                        data = thumbnail_cache.read(state, entry)
+                        data = thumbnail_cache.read(entry)
                         cached = data is not None
                         if stats is not None and dev_enabled():
                             stats.observe(
@@ -1556,6 +1554,7 @@ class GalleryPage(QObject):
             query = self._query(offset=self.offset)
         except ValidationError as exc:
             self.refresh_button.setToolTip(str(exc))
+            self._clear_on_refresh = False
             return
         if self._clear_on_refresh:
             # Busy reads deferred this through _pending_refresh; clear now.
@@ -3481,11 +3480,11 @@ class GalleryPage(QObject):
             self._grid_mount_cursor += 1
             if (monotonic() - started) * 1000 >= self._grid_mount_budget_ms:
                 break
+        self._hold_anchor()  # its layout pass is GUI work of this slice, so it is timed with it
         slice_ms = (monotonic() - started) * 1000
         self._grid_mount_work_ms += slice_ms
         self._grid_mount_max_slice_ms = max(self._grid_mount_max_slice_ms, slice_ms)
         self._grid_mount_slices += 1
-        self._hold_anchor()
         if self._grid_mount_cursor < len(keys):
             self._grid_mount_timer.start()
             return
@@ -3515,11 +3514,11 @@ class GalleryPage(QObject):
         if held is None or self.mode != "Grid":
             return
         button = self._grid_buttons.get(held[0])
-        if button is None:
-            return
+        bar = self.grid_scroll.verticalScrollBar()
+        if button is None or bar.isSliderDown():
+            return  # a scrollbar drag owns the position; rewriting it would jump the handle
         self.cards_layout.activate()
         self.grid_cards.adjustSize()
-        bar = self.grid_scroll.verticalScrollBar()
         bar.setValue(button.parentWidget().y() - held[1] + self._held_scroll_delta)
 
     @Slot()

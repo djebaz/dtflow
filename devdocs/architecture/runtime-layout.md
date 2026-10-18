@@ -29,7 +29,7 @@ The derived LoRA cache writer is implemented. A successful `dtflow models` or de
 | `.dtflow/cache/inventory/local_inventory.json` | Disposable local inventory cache |
 | `.dtflow/cache/inventory/cloud_inventory.json` | Disposable cloud inventory cache |
 | `.dtflow/cache/inventory/lora_inventory.json` | Derived local-gRPC + DT+ LoRA availability cache; rebuildable from live evidence |
-| `.dtflow/cache/thumbnails/<key>.webp` | Regenerable 600 px gallery thumbnail; key hashes output identity, original size/mtime and side |
+| `.dtflow/cache/thumbnails/<shard>/<identity-hash>.<fingerprint-hash>.webp` | Regenerable 600 px gallery thumbnail, bounded to 20,000 entries; fingerprint hashes original size/mtime/file ID and side |
 | `.dtflow/cache/derived/image_analysis.json` | Implemented disposable source-only checksum/advisory pixel-analysis cache, reused across export destinations; bounded/versioned, no prompts, source paths or destination records; included in Derived cleanup and no-cache |
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
 | `logs/dtflow-<session>.log` | Rotating application diagnostics, one file set per process; the newest 20 sessions are kept |

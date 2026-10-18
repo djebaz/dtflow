@@ -20,7 +20,7 @@ from uuid import uuid4
 from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
-from dtflow.persistence import windows_original
+from dtflow.persistence import thumbnail_cache, windows_original
 from dtflow.persistence.original_io import (
     OriginalImagesUnavailableError,
     original_images_lock,
@@ -774,6 +774,8 @@ def recycle_outputs(
                 progress(processed, len(targets))
         canceled = stop.is_set()
         ledger.finish_operation(state, operation_id, "canceled" if canceled else "complete")
+    # Cached previews of removed (or possibly removed) outputs go with them; best effort.
+    thumbnail_cache.forget(state, (*recycled, *deleted, *uncertain, *absent))
     # One line per operation in normal mode; per-item detail stays in warnings and -x.
     log.info(
         "image-removal finished operation=%s outcome=%s removed=%d raw=%d absent=%d failed=%d uncertain=%d "
