@@ -189,6 +189,69 @@ def _click(window, name: str, actions: list[dict], *,
     actions.append({"action": name, "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
 
 
+def _gallery_mode_button(window, mode: str, *, timeout: float = 6):
+    """Resolve the actual Grid/List/Detail CheckBox inside the gallery header.
+
+    The Windows recorder locates these controls under the unique
+    HeaderScrollContents group. A bare `Detail` search across the entire
+    window also matches unrelated UIA elements, so it must not be used.
+    """
+
+    if mode not in {"Grid", "List", "Detail"}:
+        raise ValueError(f"Unknown gallery mode: {mode}")
+    automation_id = f"gallery{mode}Button"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        all_controls = window.descendants()
+        headers = [
+            item for item in all_controls
+            if item.element_info.name == "HeaderScrollContents"
+            and item.element_info.control_type == "Group"
+            and item.is_visible()
+        ]
+        matching = [
+            control
+            for header in headers
+            for control in header.descendants()
+            if control.element_info.name == mode
+            and control.element_info.control_type == "CheckBox"
+            and control.is_visible()
+            and control.is_enabled()
+        ]
+        if len(matching) == 1:
+            return matching[0]
+        if len(matching) > 1:
+            raise RuntimeError(f"Ambiguous {mode} CheckBox inside the gallery header.")
+
+        # Some Qt/PySide6 builds omit the accessible parent group. In that
+        # case use only the unique Qt object ID, never the ambiguous name.
+        by_id = [
+            item for item in all_controls
+            if item.element_info.automation_id == automation_id
+            and item.element_info.control_type in {"CheckBox", "Button", "RadioButton"}
+            and item.is_visible() and item.is_enabled()
+        ]
+        if len(by_id) == 1:
+            return by_id[0]
+        if len(by_id) > 1:
+            raise RuntimeError(f"Ambiguous gallery UIA automation ID: {automation_id}")
+        time.sleep(0.2)
+    raise LookupError(f"Cannot locate gallery {mode} CheckBox in HeaderScrollContents.")
+
+
+def _click_gallery_mode(window, mode: str, actions: list[dict]) -> None:
+    """Switch one gallery view through its own header control."""
+
+    control = _gallery_mode_button(window, mode)
+    started = time.perf_counter()
+    control.click_input()
+    actions.append({
+        "action": mode,
+        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        "uia_target": "HeaderScrollContents/" + mode + "/CheckBox",
+    })
+
+
 def _attempt(record: dict, step: str, action) -> bool:
     """Keep running after a missed UI click, wheel or drag; retain evidence."""
 
@@ -562,8 +625,7 @@ def _drive(
     record["initial_query_records"] = initial_count
     _attempt(
         record, "setup-grid",
-        lambda: _click(window, "Grid", record.setdefault("setup_actions", []),
-                       automation_id="galleryGridButton"),
+        lambda: _click_gallery_mode(window, "Grid", record.setdefault("setup_actions", [])),
     )
     _attempt(
         record, "setup-sort",
@@ -575,9 +637,7 @@ def _drive(
     )
     for cycle in range(cycles):
         prefix = f"cycle-{cycle + 1}"
-        _attempt(record, f"{prefix}-grid", lambda: _click(
-            window, "Grid", actions, automation_id="galleryGridButton",
-        ))
+        _attempt(record, f"{prefix}-grid", lambda: _click_gallery_mode(window, "Grid", actions))
         _attempt(record, f"{prefix}-grid-scroll-down", lambda: _scroll(
             window, -1, actions, directory, mode="grid", notches=scroll_notches,
         ))
@@ -592,9 +652,7 @@ def _drive(
         time.sleep(0.8)
         _attempt(record, f"{prefix}-slider", lambda: _move_thumbnail_slider(window, actions))
         time.sleep(0.5)
-        _attempt(record, f"{prefix}-list", lambda: _click(
-            window, "List", actions, automation_id="galleryListButton",
-        ))
+        _attempt(record, f"{prefix}-list", lambda: _click_gallery_mode(window, "List", actions))
         _attempt(record, f"{prefix}-list-scroll-down", lambda: _scroll(
             window, -1, actions, directory, mode="list", notches=scroll_notches,
         ))
@@ -603,14 +661,10 @@ def _drive(
             window, 1, actions, directory, mode="list", notches=scroll_notches,
         ))
         time.sleep(0.8)
-        _attempt(record, f"{prefix}-detail", lambda: _click(
-            window, "Detail", actions, automation_id="galleryDetailButton",
-        ))
+        _attempt(record, f"{prefix}-detail", lambda: _click_gallery_mode(window, "Detail", actions))
         time.sleep(0.5)
         _attempt(record, f"{prefix}-fullscreen", lambda: _toggle_fullscreen(window, actions))
-        _attempt(record, f"{prefix}-return-grid", lambda: _click(
-            window, "Grid", actions, automation_id="galleryGridButton",
-        ))
+        _attempt(record, f"{prefix}-return-grid", lambda: _click_gallery_mode(window, "Grid", actions))
         time.sleep(0.8)
     record["step"] = "close-dtflow-window"
     window.close()
