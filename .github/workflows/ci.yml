@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # job-level token for gh
     steps:
       - name: Resolve manual target
         id: target
@@ -136,11 +136,23 @@ jobs:
         if: steps.pyfiles.outputs.has_py == 'true'
         run: uv lock --check
 
+      # A small helper condition used for gh API steps: only post statuses for same-repo PRs or non-PR runs.
+      # This avoids attempting to use secrets for external fork PRs where secrets are not available.
+      - name: Set status-allowed flag
+        id: allow_status
+        run: |
+          allowed="true"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+              allowed="false"
+            fi
+          fi
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
       # ---------- Format check (non-blocking) ----------
       - name: Mark commit pending (format)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -159,14 +171,13 @@ jobs:
         continue-on-error: true
 
       - name: Report format result (non-blocking)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           rc=${{ steps.format_run.outputs.rc }}
           if [ -z "$rc" ]; then rc=0; fi
-          # Keep format non-blocking.
+          # Keep format non-blocking: always post success so branch protection is not blocked.
           state=success
           if [ "$rc" -eq 0 ]; then
             desc="Format check passed"
@@ -179,9 +190,8 @@ jobs:
 
       # ---------- Lint check (non-blocking) ----------
       - name: Mark commit pending (lint)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -200,9 +210,8 @@ jobs:
         continue-on-error: true
 
       - name: Report lint result (non-blocking)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           rc=${{ steps.lint_run.outputs.rc }}
@@ -219,9 +228,8 @@ jobs:
 
       # ---------- Tests (blocking) ----------
       - name: Mark commit pending (tests)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
@@ -237,9 +245,8 @@ jobs:
         run: uv run pytest
 
       - name: Report tests result
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != ''
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           JOB_STATUS: ${{ job.status }}
         run: |
