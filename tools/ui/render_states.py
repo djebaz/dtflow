@@ -1170,6 +1170,49 @@ def render_gallery_composition_states(shell, state, out):
             QTest.qWait(30)
             prefetch.assert_not_called()
 
+        # Exercise the real third contiguous 100-image batch and the bounded
+        # forward eviction: 1–300 buffered -> fetch 301–400 -> keep 101–400.
+        # No provider or SQLite access is involved in this UI-only fixture.
+        gallery.show_view("Grid")
+        three_batches = multi_window(1, 300, total=1540)
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == 300
+        gallery.reflow_timer.stop()
+        gallery._layout_cards()
+        gallery.cards_layout.activate()
+        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[three_batches[249].identity], 0, 0)
+        first, last, visible = grid_visible(loaded=300)
+        assert 250 in visible
+        assert gallery.pager.status.text() == "300 buffered"
+        snap("images-93-pager-three-batches-buffered-grid")
+
+        gallery._adjacent_loading = True
+        gallery._pending_refresh = None
+        gallery._adjacent_failed_offset = None
+        gallery._adjacent_done(
+            gallery._query_generation,
+            1,
+            gallery._query(offset=300),
+            gallery._snapshot_at,
+            GalleryResults(
+                items=tuple(multi_item(i) for i in range(301, 401)),
+                total=1540,
+                offset=300,
+                limit=gallery_ui.PAGE_SIZE,
+            ),
+            None,
+        )
+        QTest.qWait(160)
+        assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES
+        assert gallery.offset == 100
+        assert gallery.items[0].identity == multi_item(101).identity
+        assert gallery.items[-1].identity == multi_item(400).identity
+        assert multi_item(100).identity not in gallery._grid_buttons
+        assert gallery.pager.status.text() == "300 buffered"
+        first, last, visible = grid_visible(loaded=300)
+        assert 250 in visible, f"Eviction lost viewport around image 250: {first}–{last}"
+        snap("images-94-pager-eviction-keeps-300-grid")
+
         # Exercise the actual numbered Qt button: an offline-only callback
         # supplies the target batch without reading a DB or paging through 3/4.
         def fixture_jump(page_number):
@@ -1190,12 +1233,12 @@ def render_gallery_composition_states(shell, state, out):
         snap("images-80-pager-direct-jump-last-batch-list")
         gallery.show_view("Grid")
         first, _last, _visible = grid_visible(loaded=42)
-        assert first == 321 and gallery.pager.buttons[4].isChecked()
+        assert first == 301 and gallery.pager.buttons[4].isChecked()
         snap("images-81-pager-direct-jump-last-batch-grid")
 
         # A larger library forces ellipses and tests that 7+ chip controls
         # still remain inside the pager at a reduced window width.
-        multi_window(1201, 1300, total=1540, first_visible=1201, last_visible=1224)
+        multi_window(1201, 1300, total=2000, first_visible=1201, last_visible=1224)
         gallery.grid_scroll.verticalScrollBar().setValue(0)
         first, _last, _visible = grid_visible(loaded=100)
         assert first == 1201 and gallery.pager.buttons[13].isChecked()
@@ -1328,7 +1371,7 @@ def render_gallery_composition_states(shell, state, out):
         prepend_from_page_two()
         first, last = list_visible(loaded=200)
         assert first == 100, f"Upward List prepend jumped to image {first}, expected 100"
-        assert last >= 81
+        assert last >= 101
         assert gallery.table.item(99, 2).text() == "image-0100.png"
         assert gallery.table.item(100, 2).text() == "image-0101.png"
         assert gallery.pager.buttons[1].isChecked()
