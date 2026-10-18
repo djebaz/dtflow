@@ -115,3 +115,16 @@ PR #92 stays draft pending latency-outlier work, the intermittent Detail stall,
 and native owner acceptance. No provider calls or real output mutations were
 needed for this work. GitHub's draft-PR CI and UI-render runs were skipped;
 the passing 616/3 and 232-state results above were executed locally, not in CI.
+
+### Detail-chevron visual follow-up
+
+The circular Previous/Next buttons now use centered SVG paths rather than
+font glyphs. Two named fixtures cover both enabled buttons and Previous disabled
+at the first image; they check painted glyph bounds against the button center
+and exercise both navigation actions. Focused renders and Ruff pass.
+
+A full-render repeat during this follow-up stopped at the existing 300-card
+eviction assertion: image 250 was lost from the viewport (321–336 visible).
+An isolated copy of the unchanged pre-chevron head `25c0e60` reproduced the
+same failure. Keep this paging/anchor regression open; do not count the new
+captures as a passing full 234-state run.

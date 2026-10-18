@@ -843,6 +843,44 @@ def render_gallery_composition_states(shell, state, out):
         shell.inline.dismiss()
         for key in tuple(shell.progress_strip.rows):
             shell.progress_strip.finish(key)
+        # The actual circular buttons use SVGs so font baselines cannot shift
+        # their chevrons. Check painted ink, not just the icon rectangle.
+        chevron_records = [replace(item, identity=f"offline-chevron:{i}") for i in range(3)]
+        gallery.items, gallery.total, gallery.offset = chevron_records, 3, 0
+        gallery._render_page()
+        gallery._rendered_page = (0, tuple(chevron_records))
+        for record in chevron_records:
+            gallery._thumbnail_done(gallery._thumb_versions[record.identity], record.identity, (image, ""), None)
+        gallery.canvas_loading.clear()
+        gallery.select(chevron_records[1].identity)
+        gallery._image_done(gallery._image_generation, gallery.selected_id, (image, ""), None)
+        QTest.qWait(60)
+        for button in (gallery.previous_button, gallery.next_button):
+            assert button.isVisible() and button.isEnabled() and not button.text() and not button.icon().isNull()
+            assert button.iconSize() == QSize(24, 24)
+            pixels = button.grab().toImage()
+            center_x, center_y = (pixels.width() - 1) / 2, (pixels.height() - 1) / 2
+            ink = []
+            for y in range(pixels.height() // 4, pixels.height() * 3 // 4):
+                for x in range(pixels.width() // 4, pixels.width() * 3 // 4):
+                    color = pixels.pixelColor(x, y)
+                    channels = (color.red(), color.green(), color.blue())
+                    if min(channels) > 180 and max(channels) - min(channels) < 8:
+                        ink.append((x, y))
+            assert ink, f"Missing Detail chevron: {button.objectName()}"
+            assert abs((min(x for x, _ in ink) + max(x for x, _ in ink)) / 2 - center_x) <= 1
+            assert abs((min(y for _, y in ink) + max(y for _, y in ink)) / 2 - center_y) <= 1
+        snap("images-97-detail-navigation-centered")
+        gallery.previous_button.click()
+        assert gallery.selected_id == chevron_records[0].identity
+        assert not gallery.previous_button.isEnabled() and gallery.next_button.isEnabled()
+        gallery.next_button.click()
+        assert gallery.selected_id == chevron_records[1].identity
+        gallery.previous_button.click()
+        assert gallery.selected_id == chevron_records[0].identity
+        gallery._image_done(gallery._image_generation, gallery.selected_id, (image, ""), None)
+        snap("images-98-detail-navigation-first-image")
+
         present(item)
         gallery.show_view("Grid")
         gallery._unselect_all()

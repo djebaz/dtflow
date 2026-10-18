@@ -943,8 +943,6 @@ QWidget#GalleryDetailPage QPushButton#galleryNextButton {
   border: 1px solid ${color.border};
   padding: 0;
   color: ${color.text};
-  font-size: 34px;
-  font-weight: 300;
 }
 QFrame#galleryImageToolbar {
   background: ${color.surface};

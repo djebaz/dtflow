@@ -239,6 +239,11 @@ def apply_gallery_button_icons(page, assets=ASSETS):
     get("galleryRefreshButton").setText("")
     get("galleryFullscreenButton").setText("")
     get("galleryFocusButton").setText("")
+    # Icon-only chevrons share a centered viewBox instead of a font baseline.
+    for name, icon in [("galleryPreviousButton", "chevron-left"), ("galleryNextButton", "chevron-right")]:
+        get(name).setText("")
+        get(name).setIcon(QIcon(str(assets / f"{icon}.svg")))
+        get(name).setIconSize(QSize(24, 24))
 
 
 def apply_gallery(page, assets=ASSETS, sample=False):
