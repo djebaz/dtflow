@@ -87,7 +87,14 @@ from dtflow.ui.theme import load_tokens
 log = logging.getLogger(__name__)
 
 PAGE_SIZE = 100
-MAX_MOUNTED_IMAGES = PAGE_SIZE * 3  # three contiguous batches, bounded Qt widget residency
+# Development-only A/B trial. Unset/invalid values retain the proven 300-card default.
+# Keep the experiment outside persisted preferences and public CLI.
+_EXPERIMENTAL_RESIDENT_LIMIT = os.environ.get("DTFLOW_GALLERY_RESIDENT_LIMIT", "")
+MAX_MOUNTED_IMAGES = (
+    int(_EXPERIMENTAL_RESIDENT_LIMIT)
+    if dev_enabled() and _EXPERIMENTAL_RESIDENT_LIMIT in ("300", "500", "1000", "2000")
+    else PAGE_SIZE * 3
+)
 MAX_QUERY_ITEMS = 200  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
