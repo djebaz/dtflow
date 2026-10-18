@@ -2299,14 +2299,29 @@ class GalleryPage(QObject):
                 self._check_boxes.pop(identity, None)
                 self._thumb_versions.pop(identity, None)
 
-            list_started = monotonic()
-            self._reconcile_rows()
-            if dev_enabled():
-                log.debug("gallery_perf phase=list_reconcile wall_ms=%.1f rows=%d mode=%s", (monotonic() - list_started) * 1000, self.table.rowCount(), self.mode)
-            film_started = monotonic()
-            self._reconcile_filmstrip()
-            if dev_enabled():
-                log.debug("gallery_perf phase=filmstrip_reconcile wall_ms=%.1f count=%d mode=%s", (monotonic() - film_started) * 1000, len(self._film_entries), self.mode)
+            # Metadata-only updates do not change row or filmstrip order.
+            # Avoid redundant hidden-view reconciliation while retaining the
+            # canonical widgets and their state when a view is opened later.
+            unchanged_order = tuple(previous) == tuple(item.identity for item in self.items)
+            if not unchanged_order:
+                list_started = monotonic()
+                self._reconcile_rows()
+                if dev_enabled():
+                    log.debug(
+                        "gallery_perf phase=list_reconcile wall_ms=%.1f rows=%d mode=%s",
+                        (monotonic() - list_started) * 1000,
+                        self.table.rowCount(),
+                        self.mode,
+                    )
+                film_started = monotonic()
+                self._reconcile_filmstrip()
+                if dev_enabled():
+                    log.debug(
+                        "gallery_perf phase=filmstrip_reconcile wall_ms=%.1f count=%d mode=%s",
+                        (monotonic() - film_started) * 1000,
+                        len(self._film_entries),
+                        self.mode,
+                    )
             for row, item in enumerate(self.items):
                 if item.identity not in self._grid_buttons:
                     self._create_card(item)
