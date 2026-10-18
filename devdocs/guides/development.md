@@ -109,7 +109,7 @@ Look for `gallery_perf` entries. Durations are wall-clock milliseconds observed 
 - `prepare_slice` / `prepare_complete`: sliced widget preparation cost, total preparation time, created/reused counts and success.
 - `auto_refresh`: five-second poll started/skipped, with explicit skip reasons (`query`, `adjacent`, `anchor_restore`, `filter_debounce`).
 - `adjacent_start` / `adjacent_read`: adjacent 100-record batch fetch, direction, returned count and async elapsed time.
-- `adjacent_reconcile` / `render_page` / `grid_layout`: Qt update time and mounted/added/removed card counts. The Grid layout record also shows retained prefix, newly inserted and moved cells: normal 100→200 appends need not recheck all retained cells.
+- `adjacent_reconcile` / `render_page` / `grid_layout`: Qt update time and mounted/added/removed card counts. `grid_layout` is the explicit synchronous fallback (e.g., deterministic fixtures); `grid_mount_complete` reports the elapsed wall-clock period for GUI-sliced live mounting and retained/inserted/moved card counts. The elapsed period spans event-loop yields and is **not** one continuous GUI freeze.
 - `thumbnail_end_to_end`: worker enqueue-to-result delay (includes worker queueing and decoding), success and concurrency count. Up to six thumbnail tasks remain active; each result emits a record in dev mode.
 
 For a Windows smoke test, preserve the rotating log and the exact PR/build revision. Perform a 100→200 Grid append and several 100-image page changes with Auto-refresh On, then compare nearby `gui_gap` events against `query_delivery`, `prepare_complete`, `render_page` and `grid_layout` timing. Distinguish long database reads, GUI delivery delay and Qt layout stalls instead of attributing every pause to scrolling.
