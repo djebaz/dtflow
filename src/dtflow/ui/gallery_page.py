@@ -438,6 +438,11 @@ class GalleryPage(QObject):
         self._prefetch_zone_hint: int | None = None
         self._pending_page_jump: int | None = None
         self._clear_on_refresh = False
+        # Grid cells use absolute rows; an adjacent load holds this anchor
+        # (identity, viewport offset) while cards are removed or inserted.
+        self._grid_slots: dict[str, tuple[int, int]] = {}
+        self._held_anchor: tuple[str, int] | None = None
+        self._held_scroll_delta = 0
         self.items: list[GalleryItem] = []
         self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
@@ -1527,6 +1532,7 @@ class GalleryPage(QObject):
         target_count = min(MAX_MOUNTED_IMAGES, target_count if target_count is not None else query.limit)
         self._query_generation += 1
         generation = self._query_generation
+        self._held_anchor = None
         # A new query supersedes any older adjacent anchor restoration.
         # Obsolete callbacks must not retain (or clear) its scroll guard.
         self._suppress_batch_scroll = False
@@ -2173,6 +2179,10 @@ class GalleryPage(QObject):
         elif mode == "List":
             row = self.table.rowAt(0)
             pixel_offset = self.table.rowViewportPosition(row) if row >= 0 else 0
+        # Keep the viewed card still while cards are evicted or inserted, and
+        # keep any wheel/drag the user makes until the mount settles.
+        self._held_scroll_delta = 0
+        self._held_anchor = (anchor, pixel_offset) if mode == "Grid" and anchor in self._grid_buttons else None
 
         # Reflow and table reconciliation can emit scrollbar events. Do not
         # launch another adjacent query before the anchor has been restored.
@@ -2191,6 +2201,7 @@ class GalleryPage(QObject):
         self.items = combined
         self._render_page()
         self._rendered_page = (self.offset, tuple(self.items))
+        self._hold_anchor()
         self._adjacent_failed_offset = None
         if dev_enabled():
             log.debug(
@@ -2224,9 +2235,9 @@ class GalleryPage(QObject):
                 if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
                     if mode == "Grid":
                         button = self._grid_buttons.get(anchor)
+                        bar = self.grid_scroll.verticalScrollBar()
                         if button is not None:
-                            bar = self.grid_scroll.verticalScrollBar()
-                            bar.setValue(button.parentWidget().y() - pixel_offset)
+                            bar.setValue(button.parentWidget().y() - pixel_offset + self._held_scroll_delta)
                         if reveal_previous:
                             # The last card of the preceding batch is directly
                             # above the old first row (or alongside it if the
@@ -2267,6 +2278,7 @@ class GalleryPage(QObject):
                     )
             finally:
                 if not self.runner.closed and generation == self._query_generation:
+                    self._held_anchor = None
                     self._suppress_batch_scroll = False
                     self._queue_neighbor_prefetch()
 
@@ -2439,6 +2451,7 @@ class GalleryPage(QObject):
             for identity in set(self._grid_buttons) - identities:
                 card = self._grid_buttons.pop(identity).parentWidget()
                 self.cards_layout.removeWidget(card)
+                self._grid_slots.pop(identity, None)
                 self.retirement.retire(card)
                 del self._grid_painters[identity]
                 del self._grid_labels[identity]
@@ -2664,6 +2677,7 @@ class GalleryPage(QObject):
         self._grid_empty = None
         self._grid_layout_keys = ()
         self._grid_layout_columns = 0
+        self._grid_slots.clear()
 
     def _reconcile_filmstrip(self) -> None:
         layout = self._widget("galleryFilmstripScrollContents").layout()
@@ -3412,19 +3426,20 @@ class GalleryPage(QObject):
         started = monotonic()
         while self._grid_mount_cursor < len(keys):
             index = self._grid_mount_cursor
-            card = self._grid_buttons[keys[index]].parentWidget()
-            position = self.cards_layout.indexOf(card)
-            row, col = divmod(index, columns)
-            if position >= 0:
-                old_row, old_col, _row_span, _col_span = self.cards_layout.getItemPosition(position)
-                if (old_row, old_col) != (row, col):
+            key = keys[index]
+            # Absolute rows: evicting or appending a batch never moves the
+            # retained cards. Empty QGridLayout rows take no height.
+            slot = divmod(self.offset + index, columns)
+            if self._grid_slots.get(key) != slot:
+                card = self._grid_buttons[key].parentWidget()
+                if self.cards_layout.indexOf(card) >= 0:
                     self.cards_layout.removeWidget(card)
-                    self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
                     self._grid_mount_moved += 1
-            else:
-                self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
-                self._grid_mount_added += 1
-            card.show()
+                else:
+                    self._grid_mount_added += 1
+                self.cards_layout.addWidget(card, *slot, Qt.AlignmentFlag.AlignTop)
+                self._grid_slots[key] = slot
+                card.show()
             self._grid_mount_cursor += 1
             if (monotonic() - started) * 1000 >= self._grid_mount_budget_ms:
                 break
@@ -3432,6 +3447,7 @@ class GalleryPage(QObject):
         self._grid_mount_work_ms += slice_ms
         self._grid_mount_max_slice_ms = max(self._grid_mount_max_slice_ms, slice_ms)
         self._grid_mount_slices += 1
+        self._hold_anchor()
         if self._grid_mount_cursor < len(keys):
             self._grid_mount_timer.start()
             return
@@ -3454,6 +3470,19 @@ class GalleryPage(QObject):
                 self._grid_mount_moved,
             )
         self._finish_grid_mount_callbacks()
+
+    def _hold_anchor(self) -> None:
+        """Pin the held adjacent-load anchor at its viewport offset now."""
+        held = self._held_anchor
+        if held is None or self.mode != "Grid":
+            return
+        button = self._grid_buttons.get(held[0])
+        if button is None:
+            return
+        self.cards_layout.activate()
+        self.grid_cards.adjustSize()
+        bar = self.grid_scroll.verticalScrollBar()
+        bar.setValue(button.parentWidget().y() - held[1] + self._held_scroll_delta)
 
     @Slot()
     def _layout_cards(self) -> None:
@@ -3482,18 +3511,18 @@ class GalleryPage(QObject):
         moved = 0
         added = 0
         for index in range(retained_prefix, len(keys)):
-            card = self._grid_buttons[keys[index]].parentWidget()
-            position = self.cards_layout.indexOf(card)
-            row, col = divmod(index, columns)
-            if position >= 0:
-                old_row, old_col, _row_span, _col_span = self.cards_layout.getItemPosition(position)
-                if (old_row, old_col) == (row, col):
-                    continue
+            key = keys[index]
+            slot = divmod(self.offset + index, columns)
+            if self._grid_slots.get(key) == slot:
+                continue
+            card = self._grid_buttons[key].parentWidget()
+            if self.cards_layout.indexOf(card) >= 0:
                 self.cards_layout.removeWidget(card)
                 moved += 1
             else:
                 added += 1
-            self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
+            self.cards_layout.addWidget(card, *slot, Qt.AlignmentFlag.AlignTop)
+            self._grid_slots[key] = slot
             # Include prepared cards in geometry before restoring the anchor.
             card.show()
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -3553,6 +3582,10 @@ class GalleryPage(QObject):
     def _scrollbar_action(self, mode: str, action: int) -> None:
         if mode != self.mode.casefold():
             return
+        if self._held_anchor is not None and mode == "grid":
+            # Qt has moved sliderPosition but not yet value: keep this input.
+            bar = self.grid_scroll.verticalScrollBar()
+            self._held_scroll_delta += bar.sliderPosition() - bar.value()
         # actionTriggered(int) emits a plain integer under Qt; compare the
         # explicit enum values rather than relying on Enum/int equality.
         action_value = action.value if isinstance(action, QAbstractSlider.SliderAction) else action
