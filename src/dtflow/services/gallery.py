@@ -2,14 +2,17 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
+from time import monotonic, thread_time
 from urllib.parse import urlsplit, urlunsplit
 
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
+from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as storage
 from dtflow.persistence import gallery_snapshot
 from dtflow.persistence.original_io import original_images_lock
@@ -24,6 +27,8 @@ class GalleryEditSource:
     state: Path
     item: GalleryItem
 
+
+log = logging.getLogger(__name__)
 
 MISSING_ISSUE = "Image file is missing."
 UNREADABLE_ISSUE = "Image is unreadable or its location is unavailable."
@@ -136,11 +141,28 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
     query = query or GalleryQuery()
 
     def read():
+        started = monotonic()
+        cpu_started = thread_time()
         records, total = storage.query_records(state, query)
+        sql_wall = (monotonic() - started) * 1000
+        sql_cpu = (thread_time() - cpu_started) * 1000
+        build_started = monotonic()
+        build_cpu = thread_time()
         paths = ArtifactReadPaths.discover()
-        return GalleryPage(
+        page = GalleryPage(
             tuple(item_from_record(x, paths, state=state) for x in records), total, query.offset, query.limit
         )
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=query_worker sql_wall_ms=%.1f sql_cpu_ms=%.1f "
+                "build_wall_ms=%.1f build_cpu_ms=%.1f rows=%d",
+                sql_wall,
+                sql_cpu,
+                (monotonic() - build_started) * 1000,
+                (thread_time() - build_cpu) * 1000,
+                len(records),
+            )
+        return page
 
     return await asyncio.to_thread(read)
 
