@@ -151,6 +151,76 @@ def test_checkable_gallery_controls_ignore_text_hidden_and_disabled_matches(name
     assert _button(window, name, timeout=1) is target
 
 
+@pytest.mark.parametrize(
+    ("restored", "expected"),
+    [("Newest first", ["Oldest first", "Newest first"]),
+     ("Oldest first", ["Newest first"]), ("Model", ["Oldest first", "Newest first"])],
+)
+def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, monkeypatch, restored, expected):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    selected = []
+    completions = []
+    page_checks = []
+
+    class Combo:
+        value = restored
+
+        def wait(self, state, *, timeout):
+            assert state == "exists visible enabled"
+
+        def selected_text(self):
+            return self.value
+
+        def select(self, value):
+            assert value != self.value
+            selected.append(value)
+            self.value = value
+
+    combo = Combo()
+
+    class Window:
+        def child_window(self, **criteria):
+            assert criteria == {"title": "Sort saved outputs", "control_type": "ComboBox"}
+            return combo
+
+    def await_query(directory, proc, seconds, *, after):
+        assert after == {"prior-completion"}
+        completions.append(combo.value)
+        return 20
+
+    def button(window, name, **kwargs):
+        page_checks.append(name)
+        assert selected == expected and completions == expected
+        assert kwargs["automation_id"] == "galleryPagerPage1"
+        return SimpleNamespace(get_toggle_state=lambda: 1)
+
+    monkeypatch.setattr(benchmark, "_completed_queries", lambda directory: {"prior-completion": 80})
+    monkeypatch.setattr(benchmark, "_await_query", await_query)
+    monkeypatch.setattr(benchmark, "_button", button)
+    record = {}
+    benchmark._reset_gallery_sort(Window(), tmp_path, object(), record, timeout=1)
+    assert selected == expected
+    assert combo.value == "Newest first"
+    assert page_checks == ["Jump to image batch 1"]
+    assert [action["value"] for action in record["setup_actions"]] == expected
+    assert record["step"] == "verify-page-one-after-sort"
+
+
+def test_query_readiness_ignores_old_completions_across_rotation(tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    log = tmp_path / "dtflow-session.log"
+    log.write_text("session starting\n", encoding="utf-8")
+    assert benchmark._read_query_count(tmp_path) == 0
+    log.write_text("gallery_perf phase=query_done returned=80 error=none\n", encoding="utf-8")
+    previous = set(benchmark._completed_queries(tmp_path))
+    log.rename(tmp_path / "dtflow-session.log.1")
+    assert set(benchmark._completed_queries(tmp_path)) == previous
+    log.write_text("gallery_perf phase=query_done returned=20 error=none\n", encoding="utf-8")
+    assert benchmark._await_query(tmp_path, SimpleNamespace(poll=lambda: None), 1, after=previous) == 20
+
+
 @pytest.mark.parametrize("app_pid", [9001, 9002])
 def test_driver_attaches_to_reported_interpreter_not_venv_launcher(tmp_path, monkeypatch, app_pid):
     from tools.ui.windows_gallery_benchmark import _drive

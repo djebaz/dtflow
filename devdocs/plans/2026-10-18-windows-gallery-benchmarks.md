@@ -88,6 +88,12 @@ Both owner trials in `tmp/gallery-bench-smoke-04` now found/focused the child wi
 
 The shared selector now accepts Button, CheckBox and RadioButton roles inside the already selected trial window, still requiring an exact expected name or automation ID, visible/enabled state and a unique match across roles. It ignores similarly named text and inactive controls; no coordinates, fuzzy names, production UI changes or arbitrary-window fallback are introduced. Existing selector contracts cover all three roles plus the gallery toggles and cross-role ambiguity. No local tests or native rerun were executed, per owner instruction; lint/help/diff checks are separate from acceptance. Retry with a new `tmp/gallery-bench-smoke-05` output directory; CI and owner native smoke remain required.
 
+## Persisted sort/page setup (smoke-05 follow-up, 2026-10-19)
+
+Owner smoke-05 reached Images and read 20 records, then failed at `verify-page-two`. Its initial query started at offset 140 (batch 8 at the fixed 20-record size). The pager deliberately includes only the first/last chips and current neighbors, so page 2 is not guaranteed to exist when a later page is restored. At the owner's request, setup now selects Grid and changes the real Sort dropdown, ending on Newest first: select Oldest first unless it is already selected, then select Newest first. At least one real change is required; reselecting a persisted value alone does not reset paging. Each selection waits for a fresh successful query completion, then setup verifies page 1 is checked before requiring page 2. Setup dispatches are recorded separately under `setup_actions`; they are not click-to-paint measurements. Existing filters remain unchanged, so a catalogue/filter with fewer than two batches still cannot run the paging scenario.
+
+The query-readiness reader distinguishes newly appended completions from prior records across rotation using the opened file identity and match position/content. A startup log without any completion now returns zero rather than raising from an empty `max` argument expansion. Regression contracts cover restored sort choices and fresh-query readiness across rotation; no local tests or benchmark reruns were run. Retry with a fresh `tmp/gallery-bench-smoke-06`; CI and owner Windows acceptance remain pending. This changes only the development harness, not production persistence or gallery paging behavior.
+
 ## Validation gates
 
 - Python syntax, import, CLI `--help`, profile and log-report unit tests on Linux.

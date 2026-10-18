@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 smoke-05 follow-up: normalize restored gallery state through the real Sort dropdown (ending on Newest first) and verify page 1 before requiring page 2. Record setup actions separately and require fresh query evidence during sort setup; production persistence remains unchanged. Regression coverage added without local test execution; native smoke remains pending.
+
 - PR #104 smoke-04 follow-up: recognize Qt checkable navigation/view controls exposed to Windows UIA as RadioButton or CheckBox, not only Button. Preserve exact identities, visible/enabled checks and ambiguity rejection; no production UI changes. Regression contracts extended without local test execution; owner native smoke remains pending.
 
 - PR #104 Windows harness follow-up: select the GUI using the child-reported interpreter PID, not the virtual-environment launcher PID; retain both PIDs in trial evidence, clean up the trial process tree after failure, and stop the matrix if cleanup fails. Regression coverage added but not run locally at owner request; native Windows smoke remains pending.

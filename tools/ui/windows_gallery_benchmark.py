@@ -108,27 +108,40 @@ def summarize_csv(path: Path) -> dict:
     }
 
 
-def _read_query_count(directory: Path) -> int:
-    """Read live query completion records from the rotating text log."""
+def _completed_queries(directory: Path) -> dict[tuple, int]:
+    """Read successful completion records with identities stable across rotation."""
 
-    maximum = 0
+    records = {}
     for path in directory.glob("dtflow-*.log*"):
         if "-gallery" in path.name:
             continue
         try:
-            data = path.read_text(encoding="utf-8", errors="replace")
+            with path.open(encoding="utf-8", errors="replace") as stream:
+                identity = os.fstat(stream.fileno())
+                data = stream.read()
         except OSError:
             continue
-        maximum = max(maximum, *(int(m.group(1)) for m in QUERY_DONE.finditer(data)))
-    return maximum
+        for match in QUERY_DONE.finditer(data):
+            key = (identity.st_dev, identity.st_ino, match.start(), match.group(0))
+            records[key] = int(match.group(1))
+    return records
 
 
-def _await_query(directory: Path, proc: subprocess.Popen, seconds: float) -> int:
+def _read_query_count(directory: Path) -> int:
+    """Read live query completion records from the rotating text log."""
+
+    return max(_completed_queries(directory).values(), default=0)
+
+
+def _await_query(directory: Path, proc: subprocess.Popen, seconds: float, *, after: set | None = None) -> int:
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         if proc.poll() is not None:
             raise RuntimeError("DTFlow exited before the Images query completed.")
-        returned = _read_query_count(directory)
+        returned = _read_query_count(directory) if after is None else max(
+            (count for key, count in _completed_queries(directory).items() if after is None or key not in after),
+            default=0,
+        )
         if returned:
             return returned
         time.sleep(0.2)
@@ -203,6 +216,39 @@ def _exercise_prompt_filter(window, actions: list[dict]) -> None:
             "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
         })
         time.sleep(1.5)
+
+
+def _reset_gallery_sort(window, directory: Path, proc: subprocess.Popen, record: dict, *, timeout: float) -> None:
+    """Exercise the real Sort dropdown to discard the persisted page/scroll position."""
+
+    record["step"] = "find-sort-dropdown"
+    combo = window.child_window(title="Sort saved outputs", control_type="ComboBox")
+    combo.wait("exists visible enabled", timeout=timeout)
+    setup = record.setdefault("setup_actions", [])
+    # Always end on Newest first, with at least one actual selection change.
+    # Selecting an already-current value alone would not reset the saved offset.
+    for label in ("Oldest first", "Newest first"):
+        if combo.selected_text() == label:
+            continue
+        record["step"] = f"setup-sort-{label}"
+        previous = set(_completed_queries(directory))
+        started = time.perf_counter()
+        combo.select(label)
+        setup.append({"action": "sort", "value": label,
+                      "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
+        record["step"] = f"await-sort-query-{label}"
+        _await_query(directory, proc, timeout, after=previous)
+        if combo.selected_text() != label:
+            raise RuntimeError(f"Sort dropdown did not retain {label!r}.")
+    record["step"] = "verify-page-one-after-sort"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        remaining = max(0.1, deadline - time.monotonic())
+        first = _button(window, "Jump to image batch 1", automation_id="galleryPagerPage1", timeout=remaining)
+        if first.get_toggle_state() == 1:
+            return
+        time.sleep(0.1)
+    raise TimeoutError("Sort change did not reset the gallery to page 1.")
 
 
 def _await_app_pid(path: Path, proc: subprocess.Popen, seconds: float) -> int:
@@ -285,8 +331,11 @@ def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int
     record["step"] = "await-first-images-query"
     initial_count = _await_query(directory, proc, timeout)
     record["initial_query_records"] = initial_count
+    record["step"] = "setup-grid"
+    _click(window, "Grid", record.setdefault("setup_actions", []), automation_id="galleryGridButton")
+    _reset_gallery_sort(window, directory, proc, record, timeout=timeout)
     record["step"] = "verify-page-two"
-    _button(window, "Jump to image batch 2", automation_id="galleryPagerPage2")
+    _button(window, "Jump to image batch 2", automation_id="galleryPagerPage2", timeout=timeout)
     for cycle in range(cycles):
         record["step"] = f"cycle-{cycle + 1}-grid"
         _click(window, "Grid", actions, automation_id="galleryGridButton")
