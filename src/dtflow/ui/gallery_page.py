@@ -1793,8 +1793,6 @@ class GalleryPage(QObject):
             if self.mode == "Grid":
                 button = self._grid_buttons.get(self.items[index].identity)
                 if button is not None:
-                    self.reflow_timer.stop()
-                    self._layout_cards()
                     self.cards_layout.activate()
                     self.grid_scroll.verticalScrollBar().setValue(button.parentWidget().y())
             elif self.mode == "List":
@@ -3092,10 +3090,18 @@ class GalleryPage(QObject):
     def _restore_density_anchor(self) -> None:
         """Keep the same saved-output identity visible across thumbnail zoom."""
         anchor = self._density_anchor
-        self._density_anchor = None
         if anchor is None:
             return
         mode, identity, within_viewport = anchor
+        if mode == "Grid":
+            # Zoom/column changes must not synchronously reposition hundreds
+            # of cards while waiting to restore the browsing anchor.
+            self.reflow_timer.stop()
+            self._start_grid_mount()
+            if self._grid_mount_keys is not None:
+                self._grid_mount_callbacks.append(self._restore_density_anchor)
+                return
+        self._density_anchor = None
         if mode != self.mode:
             self._sync_pager()
             return
