@@ -1302,7 +1302,15 @@ def render_gallery_composition_states(shell, state, out):
         assert gallery._browsing_anchor() == multi_item(81).identity
         prepend_from_page_two()
         first, last, visible = grid_visible(loaded=160)
-        assert 80 in visible, f"Upward Grid prepend jumped to {first}–{last}, not image 80"
+        bar = gallery.grid_scroll.verticalScrollBar()
+        prev_card = gallery._grid_buttons[multi_item(80).identity].parentWidget()
+        anchor_card = gallery._grid_buttons[multi_item(81).identity].parentWidget()
+        assert 80 in visible, (
+            f"Upward Grid prepend jumped to {first}–{last}, not image 80; "
+            f"scroll={bar.value()}/{bar.maximum()} prev_y={prev_card.y()} "
+            f"anchor_y={anchor_card.y()} canvas={gallery.grid_cards.height()} "
+            f"viewport={gallery.grid_viewport.height()} columns={gallery._grid_layout_columns}"
+        )
         assert first >= 70, f"Upward Grid prepend jumped to first of previous page: {first}"
         assert gallery.pager.buttons[1].isChecked()
         snap("images-91-pager-prepend-previous-last-grid")
