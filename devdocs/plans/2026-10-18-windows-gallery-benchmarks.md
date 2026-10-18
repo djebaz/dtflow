@@ -74,6 +74,14 @@ Corrected quick smoke command, run from a Windows checkout with the latest PR #1
 uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-02 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
 ```
 
+## Windows virtual-environment PID follow-up (2026-10-19)
+
+Owner smoke `tmp/gallery-bench-smoke-03` failed at `find-dtflow-window` with no actions recorded, although the owner saw DTFlow open and its session log recorded successful gallery queries. A process-only probe in the local uv environment reproduced a Windows virtual-environment `python.exe` redirector spawning a separate interpreter: `Popen.pid` need not be the PID owning the Qt window. This is evidence for the PID-selection defect, not a successful native benchmark.
+
+The benchmark child now atomically publishes its own interpreter PID to the fresh trial's `app-process.json` before GUI setup. The driver waits for that report, fails clearly on early launcher exit or missing/invalid PID, and restricts UIA window lookup to the reported PID with the exact `DTFlow` title. `trial.json` records `launcher_pid` and `app_pid`; window-readiness timeouts include both. It never falls back to another running DTFlow instance. Failure cleanup on Windows uses `taskkill /PID <live-launcher-pid> /T /F` for that trial's process tree rather than terminating only the redirector. A cleanup failure is recorded and stops the matrix before another trial starts.
+
+Regression coverage was added for direct/redirected PID selection, PID publication and failure boundaries, and targeted process-tree cleanup. Per owner instruction, no local tests or benchmark reruns were executed for this fix; CI and an owner interactive Windows rerun remain required. Use a new directory such as `tmp/gallery-bench-smoke-04` with the same smoke command above. No production UI, logging format, tuning default or dependency changes are included.
+
 ## Validation gates
 
 - Python syntax, import, CLI `--help`, profile and log-report unit tests on Linux.

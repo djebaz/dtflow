@@ -2,6 +2,8 @@
 
 import csv
 import json
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -132,3 +134,114 @@ def test_button_selector_fails_closed_on_ambiguous_matches():
     window = _FakeWindow(_FakeButton("Images"), _FakeButton("Show saved Images"))
     with pytest.raises(RuntimeError, match="Ambiguous"):
         _button(window, "Show saved Images", alternatives=("Images",), timeout=1)
+
+
+@pytest.mark.parametrize("app_pid", [9001, 9002])
+def test_driver_attaches_to_reported_interpreter_not_venv_launcher(tmp_path, monkeypatch, app_pid):
+    from tools.ui.windows_gallery_benchmark import _drive
+
+    (tmp_path / "app-process.json").write_text(json.dumps({"pid": app_pid}), encoding="utf-8")
+    process = SimpleNamespace(pid=9001, poll=lambda: None)
+    selected = []
+
+    class UIATimeoutError(RuntimeError):
+        pass
+
+    class Window:
+        def wait(self, state, *, timeout):
+            assert state == "exists visible enabled"
+            raise UIATimeoutError("timed out")
+
+    class Desktop:
+        def __init__(self, *, backend):
+            assert backend == "uia"
+
+        def window(self, **criteria):
+            selected.append(criteria)
+            return Window()
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=Desktop))
+    monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=UIATimeoutError))
+    record = {"actions": []}
+    with pytest.raises(TimeoutError, match=f"launcher_pid=9001, app_pid={app_pid}"):
+        _drive(process, tmp_path / "logs", record, cycles=1, timeout=1)
+    assert selected == [{"title": "DTFlow", "process": app_pid}]
+    assert record["launcher_pid"] == 9001
+    assert record["app_pid"] == app_pid
+    assert record["step"] == "find-dtflow-window"
+    assert record["actions"] == []
+
+
+@pytest.mark.parametrize("report", [{"pid": True}, {"pid": 0}, {"pid": -1}, {"pid": "9002"}, [], {}])
+def test_invalid_child_pid_never_falls_back_to_other_windows(tmp_path, report):
+    from tools.ui.windows_gallery_benchmark import _await_app_pid
+
+    path = tmp_path / "app-process.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid DTFlow child PID"):
+        _await_app_pid(path, SimpleNamespace(poll=lambda: None), 1)
+
+
+def test_child_pid_wait_detects_early_exit_and_missing_report(tmp_path, monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    path = tmp_path / "app-process.json"
+    with pytest.raises(RuntimeError, match="exit=7"):
+        benchmark._await_app_pid(path, SimpleNamespace(poll=lambda: 7, returncode=7), 1)
+    ticks = iter([0, 0, 2])
+    monkeypatch.setattr(benchmark.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(benchmark.time, "sleep", lambda seconds: None)
+    with pytest.raises(TimeoutError, match="did not publish its PID"):
+        benchmark._await_app_pid(path, SimpleNamespace(poll=lambda: None), 1)
+
+
+def test_launcher_publishes_own_pid_before_gui_setup(tmp_path, monkeypatch):
+    import dtflow.cli
+    from tools.ui import gallery_perf_launch as launcher
+
+    profile = tmp_path / "profile.json"
+    profile.write_text("{}", encoding="utf-8")
+    pid_file = tmp_path / "app-process.json"
+    monkeypatch.setattr(launcher.os, "getpid", lambda: 9002)
+
+    def apply_profile(profile):
+        assert json.loads(pid_file.read_text(encoding="utf-8")) == {"pid": 9002}
+        assert not pid_file.with_suffix(".tmp").exists()
+
+    monkeypatch.setattr(launcher, "apply_profile", apply_profile)
+    monkeypatch.setattr(dtflow.cli, "main", lambda argv: 0)
+    assert launcher.main([
+        "--profile", str(profile), "--logs", str(tmp_path / "logs"), "--pid-file", str(pid_file),
+    ]) == 0
+
+
+def test_windows_cleanup_targets_only_live_trial_tree(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    monkeypatch.setattr(benchmark.sys, "platform", "win32")
+    monkeypatch.setattr(benchmark.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    commands = []
+    waits = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        assert kwargs["timeout"] == 10
+        assert kwargs["creationflags"] == 0x08000000
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(benchmark.subprocess, "run", run)
+    benchmark._stop_trial_process(SimpleNamespace(pid=9001, poll=lambda: None, wait=lambda **kw: waits.append(kw)))
+    assert commands == [["taskkill.exe", "/PID", "9001", "/T", "/F"]]
+    assert waits == [{"timeout": 5}]
+    benchmark._stop_trial_process(SimpleNamespace(pid=9001, poll=lambda: 0))
+    assert len(commands) == 1
+
+
+def test_windows_cleanup_failure_is_not_hidden(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    monkeypatch.setattr(benchmark.sys, "platform", "win32")
+    monkeypatch.setattr(benchmark.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(benchmark.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=5))
+    with pytest.raises(RuntimeError, match="process-tree cleanup failed"):
+        benchmark._stop_trial_process(SimpleNamespace(pid=9001, poll=lambda: None))

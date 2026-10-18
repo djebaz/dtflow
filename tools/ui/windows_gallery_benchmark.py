@@ -198,15 +198,70 @@ def _exercise_prompt_filter(window, actions: list[dict]) -> None:
         time.sleep(1.5)
 
 
+def _await_app_pid(path: Path, proc: subprocess.Popen, seconds: float) -> int:
+    """Read the child-published PID, never guess a window from another trial."""
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"DTFlow launcher exited before PID readiness (exit={proc.returncode}).")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            time.sleep(0.1)
+            continue
+        pid = data.get("pid") if isinstance(data, dict) else None
+        if type(pid) is not int or not 0 < pid <= 0xFFFFFFFF:
+            raise ValueError("Invalid DTFlow child PID report.")
+        return pid
+    raise TimeoutError("DTFlow interpreter did not publish its PID before the readiness timeout.")
+
+
+def _stop_trial_process(proc: subprocess.Popen) -> None:
+    """Stop this live launcher's tree, including Windows venv redirector children."""
+
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["taskkill.exe", "/PID", str(proc.pid), "/T", "/F"],
+            capture_output=True, timeout=10, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        if result.returncode != 0:
+            # A concurrent normal exit is harmless; never hide an actual failure
+            # to stop the tree by killing only its redirector and claiming success.
+            if proc.poll() is None:
+                raise RuntimeError(f"Trial process-tree cleanup failed (exit={result.returncode}).")
+        proc.wait(timeout=5)
+    else:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+
+
 def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int, timeout: float) -> int:
     """Attach only to the launched child and track the failing UI step."""
 
     from pywinauto import Desktop
+    from pywinauto.timings import TimeoutError as UIATimeoutError
 
     actions = record["actions"]
+    record["launcher_pid"] = proc.pid
+    record["step"] = "await-child-pid"
+    app_pid = _await_app_pid(directory.parent / "app-process.json", proc, timeout)
+    record["app_pid"] = app_pid
     record["step"] = "find-dtflow-window"
-    window = Desktop(backend="uia").window(title="DTFlow", process=proc.pid)
-    window.wait("exists visible enabled", timeout=timeout)
+    window = Desktop(backend="uia").window(title="DTFlow", process=app_pid)
+    try:
+        window.wait("exists visible enabled", timeout=timeout)
+    except (TimeoutError, UIATimeoutError) as exc:
+        raise TimeoutError(
+            f"DTFlow UIA window not ready (launcher_pid={proc.pid}, app_pid={app_pid})."
+        ) from exc
     record["step"] = "focus-dtflow-window"
     window.set_focus()
     record["step"] = "find-images-navigation"
@@ -270,6 +325,7 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
     args = [
         sys.executable, "-m", "tools.ui.gallery_perf_launch",
         "--profile", str(profile_path), "--logs", str(logs),
+        "--pid-file", str(directory / "app-process.json"),
     ]
     if no_cache:
         args.append("--no-cache")
@@ -307,13 +363,14 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
                 f"{record['error_type']}: {record['error_message']}", file=sys.stderr, flush=True,
             )
         finally:
-            if process is not None and process.poll() is None:
-                process.terminate()
+            if process is not None:
                 try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+                    _stop_trial_process(process)
+                except Exception as exc:
+                    record["status"] = "failed"
+                    record["cleanup_error_type"] = type(exc).__name__
+                    print(f"{name} trial={trial} process cleanup failed: {type(exc).__name__}",
+                          file=sys.stderr, flush=True)
             (directory / "trial.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     return record
 
@@ -431,6 +488,9 @@ def main(argv: list[str] | None = None) -> int:
                 records.append(record)
                 write_report(records, args.out)
                 print(f"{name} trial={trial} status={record['status']}", flush=True)
+                if record.get("cleanup_error_type"):
+                    # Do not overlap trials when a prior GUI may still be alive.
+                    return 1
     except KeyboardInterrupt:
         write_report(records, args.out)
         return 130

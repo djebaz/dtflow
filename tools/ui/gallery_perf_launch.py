@@ -7,11 +7,11 @@ defaults or persist these overrides in the user's viewer settings.
 from __future__ import annotations
 
 import argparse
-from functools import partial
 import json
-from pathlib import Path
+import os
 import queue
-
+from functools import partial
+from pathlib import Path
 
 DEFAULTS = {
     "thumbnail_workers": 6,
@@ -121,9 +121,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True, help="Profile JSON created by the benchmark driver.")
     parser.add_argument("--logs", type=Path, required=True, help="Fresh trial diagnostic folder.")
+    parser.add_argument("--pid-file", type=Path, help="Internal trial file for the actual GUI interpreter PID.")
     parser.add_argument("--no-cache", action="store_true", help="Do not read or write disposable thumbnail cache.")
     args = parser.parse_args(argv)
     profile = validate_profile(json.loads(args.profile.read_text(encoding="utf-8")))
+    if args.pid_file is not None:
+        # Windows virtual-environment python.exe can be a redirector. Popen.pid
+        # then identifies that launcher, not this interpreter hosting the GUI.
+        temporary = args.pid_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"pid": os.getpid()}) + "\n", encoding="utf-8", newline="\n")
+        temporary.replace(args.pid_file)
     apply_profile(profile)
     from dtflow.cli import main as dtflow_main
 
