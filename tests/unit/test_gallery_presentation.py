@@ -95,6 +95,18 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
     assert gallery.selection.checked == {"0"}
     assert tuple(gallery.items) == records[:200]
     assert gallery.table.rowCount() == len(gallery._film_entries) == 200
+    qtbot.waitUntil(
+        lambda: len(gallery._grid_layout_keys) == 200 and not gallery.reflow_timer.isActive(),
+        timeout=3000,
+    )
+    # The append fast path must leave retained cards in their existing cells
+    # while placing both new and old cards in the expected row/column.
+    columns = gallery._grid_layout_columns
+    for index in (0, 50, 99, 100, 150, 199):
+        card = gallery._grid_buttons[str(index)].parentWidget()
+        layout_index = gallery.cards_layout.indexOf(card)
+        assert layout_index >= 0
+        assert gallery.cards_layout.getItemPosition(layout_index)[:2] == divmod(index, columns)
 
 
 def test_refresh_during_preparation_commits_only_latest_result(presentation, qtbot):
