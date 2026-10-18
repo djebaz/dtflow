@@ -2290,11 +2290,21 @@ class GalleryPage(QObject):
             list_started = monotonic()
             self._reconcile_rows()
             if dev_enabled():
-                log.debug("gallery_perf phase=list_reconcile wall_ms=%.1f rows=%d mode=%s", (monotonic() - list_started) * 1000, self.table.rowCount(), self.mode)
+                log.debug(
+                    "gallery_perf phase=list_reconcile wall_ms=%.1f rows=%d mode=%s",
+                    (monotonic() - list_started) * 1000,
+                    self.table.rowCount(),
+                    self.mode,
+                )
             film_started = monotonic()
             self._reconcile_filmstrip()
             if dev_enabled():
-                log.debug("gallery_perf phase=filmstrip_reconcile wall_ms=%.1f count=%d mode=%s", (monotonic() - film_started) * 1000, len(self._film_entries), self.mode)
+                log.debug(
+                    "gallery_perf phase=filmstrip_reconcile wall_ms=%.1f count=%d mode=%s",
+                    (monotonic() - film_started) * 1000,
+                    len(self._film_entries),
+                    self.mode,
+                )
             for row, item in enumerate(self.items):
                 if item.identity not in self._grid_buttons:
                     self._create_card(item)
@@ -2564,7 +2574,9 @@ class GalleryPage(QObject):
             selected = next(x for x in self.items if x.identity == identity)
 
             async def work(filename=path, item=selected):
-                return await asyncio.to_thread(_timed_thumbnail_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item)
+                return await asyncio.to_thread(
+                    _timed_thumbnail_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item
+                )
 
             self.runner.submit(
                 work(),
@@ -3069,7 +3081,13 @@ class GalleryPage(QObject):
             button.setIconSize(film_placeholder.size())
 
         if dev_enabled():
-            log.debug("gallery_perf phase=zoom_reflow wall_ms=%.1f mode=%s mounted=%d scale=%d", (monotonic() - resize_started) * 1000, self.mode, len(self.items), scale_percent)
+            log.debug(
+                "gallery_perf phase=zoom_reflow wall_ms=%.1f mode=%s mounted=%d scale=%d",
+                (monotonic() - resize_started) * 1000,
+                self.mode,
+                len(self.items),
+                scale_percent,
+            )
         self.reflow_timer.start(0)
         if self._density_anchor is not None:
             self.density_anchor_timer.start(0)
@@ -3324,7 +3342,9 @@ class GalleryPage(QObject):
             QTimer.singleShot(0, self._responsive_selection)
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
             if dev_enabled():
-                log.debug("gallery_perf phase=grid_resize mounted=%d width=%d", len(self.items), self.grid_viewport.width())
+                log.debug(
+                    "gallery_perf phase=grid_resize mounted=%d width=%d", len(self.items), self.grid_viewport.width()
+                )
             self.reflow_timer.start(0)
         if kind == QEvent.Type.Wheel and watched in (self.grid_viewport, self.table_viewport):
             vertical_delta = event.angleDelta().y() or event.pixelDelta().y()
