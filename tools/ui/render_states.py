@@ -835,6 +835,7 @@ def render_gallery_composition_states(shell, state, out):
         # do not submit real neighbor workers during screenshot assembly.
         patch.object(gallery, "_queue_neighbor_prefetch"),
     ):
+        gallery._neighbor_prefetch_timer.stop()
         gallery.save_timer.stop()
         form.imagesNavigationButton.click()
         gallery.auto_button.setChecked(False)
