@@ -1,5 +1,20 @@
 # DTFlow UI screenshot scripts
 
+## Native Windows gallery performance benchmark (PR #104)
+
+The optional, Windows-only `pywinauto` driver launches a **real source DTFlow GUI** and exercises Images navigation, Grid/List/Detail, scrolling, pager chips and prompt-search filtering. The experimental profiles vary the eight groups of performance constants recorded in the [benchmark protocol](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md); pagination stays **20 records / 100 mounted cards** for every run. The runner reuses `-x` event logs and the per-session gallery CSV rather than replacing Qt telemetry.
+
+From an interactive Windows desktop with a prepared `uv` environment:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-02 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
+An existing `--out` directory is refused so trials cannot mix. Report files include `results.csv`, `summary.csv` and, inside each profile/trial directory, `trial.json` plus the real application logs. A failed trial prints its `step` and sanitized exception message. Check those before treating automation failure as gallery slowness.
+
+**Native acceptance is still pending:** the first owner Windows 10 smoke printed `baseline trial=1 status=failed` and did not switch to Images; its exact exception was not provided. PR #104 now handles both Qt button labels and reports the last attempted action, but the correction has not yet been demonstrated on the owner's machine. Avoid running the matrix until this basic navigation smoke succeeds. The tool reads the live saved-output catalogue, and the app can update viewer preferences and disposable thumbnail cache; the `--ack-user-state` flag is required. It performs no inference or generation.
+
+
 Offscreen Qt renders of the real DTFlow forms under the real `dtflow_dark.qss`. Run from the repository root (or set `DTFLOW_ROOT`) with the locked environment:
 
 ```powershell
