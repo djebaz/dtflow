@@ -53,6 +53,7 @@ from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
 from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as gallery_storage
+from dtflow.persistence import thumbnail_cache
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError, original_images_lock
 from dtflow.persistence.store import PersistenceError
 from dtflow.persistence.viewer import load_viewer, save_viewer
@@ -130,12 +131,21 @@ _MAX_BUFFERED_ORIGINAL = 256 * 1024 * 1024
 
 
 def _image(
-    path: str, max_side: int, state: Path | None = None, *, item: GalleryItem | None = None
+    path: str,
+    max_side: int,
+    state: Path | None = None,
+    *,
+    item: GalleryItem | None = None,
+    cache: bool = False,
+    stats: _PerfBatchStats | None = None,
 ) -> tuple[QImage | None, str]:
     """Read one original under the shared lease, then decode it outside the lease.
 
     The lease keeps the bytes consistent with removal; decoding from memory lets
-    other thumbnails, saves and removals take the lease meanwhile.
+    other thumbnails, saves and removals take the lease meanwhile. With ``cache``,
+    a small on-disk thumbnail keyed by the original's identity, size and mtime
+    replaces the original read and full decode; the stat happens under the same
+    lease, so a removed or replaced original never serves a stale entry.
     """
 
     def access() -> str:
@@ -167,6 +177,8 @@ def _image(
             return decode(access())
         except OSError as exc:
             return unreadable(exc)
+    entry: Path | None = None
+    cached = False
     try:
         requested = monotonic()
         with original_images_lock(state, timeout=12, background=True):
@@ -175,10 +187,25 @@ def _image(
                 source = access()
                 resolved = monotonic()
                 with open(source, "rb") as stream:
-                    # Size first: read(huge) would allocate the whole cap per thumbnail.
-                    if os.fstat(stream.fileno()).st_size > _MAX_BUFFERED_ORIGINAL:
-                        return decode(source)
-                    data = stream.read()
+                    info = os.fstat(stream.fileno())
+                    if cache and item is not None:
+                        entry = thumbnail_cache.entry_path(
+                            state, item.identity, info.st_size, info.st_mtime_ns, max_side
+                        )
+                    if entry is not None:
+                        lookup = monotonic()
+                        data = thumbnail_cache.read(state, entry)
+                        cached = data is not None
+                        if stats is not None and dev_enabled():
+                            stats.observe(
+                                "thumbnail_cache_hit" if cached else "thumbnail_cache_miss",
+                                (monotonic() - lookup) * 1000,
+                            )
+                    if not cached:
+                        # Size first: read(huge) would allocate the whole cap per thumbnail.
+                        if info.st_size > _MAX_BUFFERED_ORIGINAL:
+                            return decode(source)
+                        data = stream.read()
             except OSError as exc:
                 return unreadable(exc)
             held = monotonic() - leased
@@ -201,7 +228,17 @@ def _image(
     # paint/save can then invert that mutex with the GIL. Keep this owner alive
     # until decoding finishes, preserving the immutable bytes and scaled reads.
     encoded = QDataStream(QByteArray(data))
-    return decode(encoded.device())
+    image, issue = decode(encoded.device())
+    if cached and image is None:
+        # A corrupt entry: drop it and rebuild from the original once.
+        thumbnail_cache.discard(state, entry)
+        return _image(path, max_side, state, item=item, cache=False, stats=stats)
+    if entry is not None and not cached and image is not None:
+        written = monotonic()
+        stored = thumbnail_cache.store(state, entry, lambda scratch: image.save(str(scratch), "WEBP", 80))
+        if stats is not None and dev_enabled():
+            stats.observe("thumbnail_cache_write", (monotonic() - written) * 1000, success=stored)
+    return image, issue
 
 
 def _missing_icon() -> QIcon:
@@ -355,7 +392,7 @@ def _timed_thumbnail_image(path: str, max_side: int, state: Path, *, item: Galle
     wall_started = monotonic()
     cpu_started = thread_time()
     try:
-        return _image(path, max_side, state, item=item)
+        return _image(path, max_side, state, item=item, cache=max_side == THUMBNAIL_SIDE, stats=stats)
     finally:
         if dev_enabled():
             stats.observe(

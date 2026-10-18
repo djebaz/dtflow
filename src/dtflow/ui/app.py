@@ -9,6 +9,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from dtflow import startup
+from dtflow.persistence import thumbnail_cache
 from dtflow.persistence.gallery_snapshot import configure, finish_at_close
 from dtflow.ui.brand import app_icon
 from dtflow.ui.main_window import MainWindow
@@ -19,6 +20,7 @@ def run_gui(
     argv: list[str] | None = None, *, no_cache: bool = False, gallery_limits: tuple[int, int] | None = None
 ) -> int:
     configure(no_cache=no_cache)
+    thumbnail_cache.configure(no_cache=no_cache)
     if gallery_limits is not None:
         from dtflow.ui.gallery_page import configure_limits
 
