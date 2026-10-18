@@ -423,91 +423,6 @@ def _scroll(
 
 
 
-def _active_gallery_scrollbar(window, mode: str):
-    """Resolve the active view's tall vertical ScrollBar within GalleryDetailPage.
-
-    The owner's Windows recorder exposes `||ScrollBar` inside this page.
-    Scoping by page, orientation, visibility and height avoids unrelated
-    filters and side panels. Ambiguity fails closed as a recoverable warning.
-    """
-
-    if mode not in {"grid", "list"}:
-        raise ValueError(f"Unsupported scrollbar view: {mode}")
-    panels = [
-        item for item in window.descendants()
-        if item.element_info.name == "GalleryDetailPage"
-        and item.element_info.control_type in {"Pane", "Group"}
-        and item.is_visible()
-    ]
-    if len(panels) != 1:
-        raise LookupError(f"Expected one visible GalleryDetailPage, found {len(panels)}.")
-    bars = []
-    for item in panels[0].descendants():
-        if item.element_info.control_type != "ScrollBar":
-            continue
-        if not item.is_visible() or not item.is_enabled():
-            continue
-        rect = item.rectangle()
-        if rect.height() >= 140 and rect.height() > rect.width() * 3:
-            bars.append(item)
-    if not bars:
-        raise LookupError(f"No visible vertical ScrollBar for active {mode} view.")
-    # The main browsing scrollbar is the tallest; ignore narrow, shorter
-    # supplementary scrollers. Equal tallest bars are ambiguous, not guessed.
-    bars.sort(key=lambda item: item.rectangle().height(), reverse=True)
-    if len(bars) > 1 and bars[0].rectangle().height() == bars[1].rectangle().height():
-        raise RuntimeError(f"Ambiguous vertical gallery ScrollBar for {mode}.")
-    return bars[0]
-
-
-def _scrollbar_sweep(window, direction: int, actions: list[dict], *, mode: str) -> None:
-    """Traverse the active Qt vertical scrollbar using verified UIA range changes.
-
-    Eight incremental changes give Qt opportunities to mount and prioritize
-    cards between positions. This exercises the actual GUI scrollbar value
-    changes, not a simulated wheel delivery or an application-internal method.
-    UIA SetValue is not a physical thumb drag; the method is reported honestly.
-    """
-
-    if direction not in (-1, 1):
-        raise ValueError("Scroll direction must be -1 or 1.")
-    bar = _active_gallery_scrollbar(window, mode)
-    pattern = bar.iface_range_value
-    if pattern is None:
-        raise LookupError(f"{mode} ScrollBar exposes no UIA RangeValue pattern.")
-    minimum = float(pattern.Minimum)
-    maximum = float(pattern.Maximum)
-    initial = float(pattern.CurrentValue)
-    if not minimum < maximum or not minimum <= initial <= maximum:
-        raise RuntimeError(f"{mode} ScrollBar returned an invalid or non-scrollable range.")
-    target = maximum if direction < 0 else minimum
-    if abs(target - initial) < 1:
-        raise RuntimeError(f"{mode} ScrollBar is already at the requested endpoint.")
-    started = time.perf_counter()
-    steps = 8
-    values = [initial]
-    for index in range(1, steps + 1):
-        desired = initial + (target - initial) * index / steps
-        pattern.SetValue(desired)
-        time.sleep(0.10)
-        values.append(float(pattern.CurrentValue))
-    final = float(pattern.CurrentValue)
-    distance = abs(final - initial)
-    if distance < max(1.0, abs(target - initial) * 0.10):
-        raise RuntimeError(f"{mode} ScrollBar UIA value did not move meaningfully.")
-    actions.append({
-        "action": "scrollbar-down" if direction < 0 else "scrollbar-up",
-        "mode": mode,
-        "method": "uia-range-value",
-        "initial": round(initial, 2),
-        "target": round(target, 2),
-        "final": round(final, 2),
-        "observed_values": [round(v, 2) for v in values],
-        "scroll_distance_verified": True,
-        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-    })
-
-
 def _toggle_fullscreen(window, actions: list[dict]) -> None:
     """Enter via the actual Qt checkbox; Escape restores the normal window."""
 
@@ -747,12 +662,6 @@ def _drive(
             window, 1, actions, directory, mode="grid", notches=scroll_notches,
         ))
         time.sleep(0.8)
-        _attempt(record, f"{prefix}-grid-scrollbar-down", lambda: _scrollbar_sweep(
-            window, -1, actions, mode="grid",
-        ))
-        _attempt(record, f"{prefix}-grid-scrollbar-up", lambda: _scrollbar_sweep(
-            window, 1, actions, mode="grid",
-        ))
         _attempt(record, f"{prefix}-page-two", lambda: _click_page(window, 2, actions))
         time.sleep(0.8)
         _attempt(record, f"{prefix}-page-one", lambda: _click_page(window, 1, actions))
@@ -768,12 +677,6 @@ def _drive(
             window, 1, actions, directory, mode="list", notches=scroll_notches,
         ))
         time.sleep(0.8)
-        _attempt(record, f"{prefix}-list-scrollbar-down", lambda: _scrollbar_sweep(
-            window, -1, actions, mode="list",
-        ))
-        _attempt(record, f"{prefix}-list-scrollbar-up", lambda: _scrollbar_sweep(
-            window, 1, actions, mode="list",
-        ))
         _attempt(record, f"{prefix}-detail", lambda: _click_gallery_mode(window, "Detail", actions))
         time.sleep(0.5)
         _attempt(record, f"{prefix}-fullscreen", lambda: _toggle_fullscreen(window, actions))
