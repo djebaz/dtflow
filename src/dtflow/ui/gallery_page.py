@@ -13,7 +13,7 @@ from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
-from time import monotonic
+from time import monotonic, thread_time
 
 from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot, qVersion
 from PySide6.QtGui import (
@@ -261,6 +261,21 @@ def _date_bounds(text: str) -> tuple[str | None, str | None]:
         raise ValidationError(
             "Date filter must be All time, Today, Last 7 days, Last 30 days, YYYY-MM-DD, or START..END."
         ) from exc
+
+
+def _timed_thumbnail_image(path: str, max_side: int, state: Path, *, item: GalleryItem):
+    """Record worker CPU and elapsed time without changing thumbnail results."""
+    wall_started = monotonic()
+    cpu_started = thread_time()
+    try:
+        return _image(path, max_side, state, item=item)
+    finally:
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=thumbnail_worker wall_ms=%.1f cpu_ms=%.1f",
+                (monotonic() - wall_started) * 1000,
+                (thread_time() - cpu_started) * 1000,
+            )
 
 
 class GalleryPage(QObject):
@@ -2543,7 +2558,7 @@ class GalleryPage(QObject):
             selected = next(x for x in self.items if x.identity == identity)
 
             async def work(filename=path, item=selected):
-                return await asyncio.to_thread(_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item)
+                return await asyncio.to_thread(_timed_thumbnail_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item)
 
             self.runner.submit(
                 work(),
