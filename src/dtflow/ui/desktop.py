@@ -9,6 +9,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from dtflow.build import display_identity, identity
+from dtflow.gallery_limits import add_arguments as add_gallery_limit_arguments
+from dtflow.gallery_limits import resolve as resolve_gallery_limits
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 
 log = logging.getLogger("dtflow.desktop")
@@ -31,6 +33,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Override the diagnostic log directory.")
     command.add_argument("-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes.")
+    add_gallery_limit_arguments(command)
     return command
 
 
@@ -55,6 +58,11 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
     if args.version:
         report(display_identity())
         return 0
+    try:
+        gallery_limits = resolve_gallery_limits(args.load, args.cards)
+    except ValueError as exc:
+        report(f"{exc}\n\n" + command.format_help(), error=True)
+        return 2
 
     session = None
     try:
@@ -69,7 +77,7 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
             report("Diagnostic logs are unavailable. Continuing without a log file.", error=True)
         from dtflow.ui.app import run_gui
 
-        return run_gui(no_cache=args.no_cache)
+        return run_gui(no_cache=args.no_cache, gallery_limits=gallery_limits)
     except KeyboardInterrupt:
         log.warning("desktop interrupted locally")
         return 130

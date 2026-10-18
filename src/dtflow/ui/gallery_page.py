@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow import gallery_limits
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
@@ -88,9 +89,9 @@ from dtflow.ui.theme import load_tokens
 
 log = logging.getLogger(__name__)
 
-PAGE_SIZE = 100
-MAX_MOUNTED_IMAGES = PAGE_SIZE * 3  # three contiguous batches, bounded Qt widget residency
-MAX_QUERY_ITEMS = 200  # GalleryQuery retains its existing per-read safety cap
+PAGE_SIZE = gallery_limits.DEFAULT_BATCH
+MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # three contiguous batches, bounded Qt widget residency
+MAX_QUERY_ITEMS = gallery_limits.MAX_BATCH  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
 THUMBNAIL_SIDE = 600
@@ -236,6 +237,12 @@ def _local_timestamp(value: str) -> str:
 def _local_midnight(day: date) -> str:
     # A naive local wall time lets the OS apply the date-specific DST rule before normalization to UTC.
     return datetime.combine(day, time.min).astimezone().astimezone(UTC).isoformat()
+
+
+def configure_limits(*, batch: int | None = None, cards: int | None = None) -> None:
+    """Apply the -ml/-mc launch limits before any GalleryPage is built."""
+    global PAGE_SIZE, MAX_MOUNTED_IMAGES
+    PAGE_SIZE, MAX_MOUNTED_IMAGES = gallery_limits.resolve(batch, cards)
 
 
 def _date_bounds(text: str) -> tuple[str | None, str | None]:
@@ -1211,7 +1218,8 @@ class GalleryPage(QObject):
             stored_query = GalleryQuery(**query_doc)
         except (TypeError, ValidationError):
             stored_query = GalleryQuery(limit=PAGE_SIZE)
-        self.offset = stored_query.offset
+        # A different -ml batch size must still start on a batch boundary.
+        self.offset = stored_query.offset - stored_query.offset % PAGE_SIZE
         filters = document.get("filters", {}) if isinstance(document.get("filters"), dict) else {}
         self.prompt.setText(str(filters.get("prompt", stored_query.prompt)))
         self.model.setCurrentText(str(filters.get("model", stored_query.model or "All models")))
@@ -1511,33 +1519,37 @@ class GalleryPage(QObject):
         self._sync_canvas_loading()
 
         async def extend_page(current: GalleryQuery, page: GalleryPage, read) -> GalleryPage:
-            """Retain up to three buffered batches using bounded 200-row queries."""
+            """Retain the mounted window (up to -mc cards) using bounded 200-row queries."""
             if len(page.items) != current.limit or target_count <= current.limit:
                 return page
-            remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
-            if remaining <= 0:
-                return page
-            next_query = replace(
-                current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
-            )
-            extension_started = monotonic()
-            extension = await read(next_query)
-            if dev_enabled():
-                log.debug(
-                    "gallery_perf phase=query_extension elapsed_ms=%.1f offset=%d returned=%d",
-                    (monotonic() - extension_started) * 1000,
-                    next_query.offset,
-                    len(extension.items),
+            while True:
+                remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
+                if remaining <= 0:
+                    return page
+                next_query = replace(
+                    current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
                 )
-            if (
-                extension.total != page.total
-                or extension.snapshot_at != page.snapshot_at
-                or {item.identity for item in page.items} & {item.identity for item in extension.items}
-            ):
-                # Concurrent gallery changes must never produce an inconsistent
-                # mounted sequence. A subsequent poll can refill the window.
-                return page
-            return replace(page, items=(*page.items, *extension.items), limit=len(page.items) + len(extension.items))
+                extension_started = monotonic()
+                extension = await read(next_query)
+                if dev_enabled():
+                    log.debug(
+                        "gallery_perf phase=query_extension elapsed_ms=%.1f offset=%d returned=%d",
+                        (monotonic() - extension_started) * 1000,
+                        next_query.offset,
+                        len(extension.items),
+                    )
+                if (
+                    not extension.items
+                    or extension.total != page.total
+                    or extension.snapshot_at != page.snapshot_at
+                    or {item.identity for item in page.items} & {item.identity for item in extension.items}
+                ):
+                    # Concurrent gallery changes must never produce an inconsistent
+                    # mounted sequence. A subsequent poll can refill the window.
+                    return page
+                page = replace(
+                    page, items=(*page.items, *extension.items), limit=len(page.items) + len(extension.items)
+                )
 
         async def work():
             current = query

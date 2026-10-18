@@ -15,8 +15,14 @@ from dtflow.ui.main_window import MainWindow
 from dtflow.ui.theme import apply_theme
 
 
-def run_gui(argv: list[str] | None = None, *, no_cache: bool = False) -> int:
+def run_gui(
+    argv: list[str] | None = None, *, no_cache: bool = False, gallery_limits: tuple[int, int] | None = None
+) -> int:
     configure(no_cache=no_cache)
+    if gallery_limits is not None:
+        from dtflow.ui.gallery_page import configure_limits
+
+        configure_limits(batch=gallery_limits[0], cards=gallery_limits[1])
     application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
     apply_theme(application)
     application.setWindowIcon(app_icon())

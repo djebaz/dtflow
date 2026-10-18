@@ -50,7 +50,7 @@ $exe = Get-ChildItem .\dist\dtflow-*-windows-*.exe |
 Start-Process -FilePath $exe.FullName -WindowStyle Hidden
 ```
 
-Launch options are `-nc/--no-cache`, `-x/--dev`, `-q/--logs DIR`, `-h/--help` and `-v/--version`. Help and version appear in a native dialog when no console is attached; the same build identity is visible in the desktop status area. This is not a packaged generation CLI: do not pass `generate`, `queue`, `test` or `gui` subcommands.
+Launch options are `-nc/--no-cache`, `-x/--dev`, `-ml/--load N` and `-mc/--cards N` (gallery test limits, see the [desktop guide](desktop.md)), `-q/--logs DIR`, `-h/--help` and `-v/--version`. Help and version appear in a native dialog when no console is attached; the same build identity is visible in the desktop status area. This is not a packaged generation CLI: do not pass `generate`, `queue`, `test` or `gui` subcommands.
 
 ## Packaging inputs and diagnostics
 

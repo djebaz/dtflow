@@ -24,6 +24,8 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.gallery_limits import add_arguments as add_gallery_limit_arguments
+from dtflow.gallery_limits import resolve as resolve_gallery_limits
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.queues import post_control, read_queues
@@ -70,6 +72,7 @@ def parser() -> argparse.ArgumentParser:
     gui.add_argument(
         "-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes for this run."
     )
+    add_gallery_limit_arguments(gui)
     testing = commands.add_parser("test", help="Run repository tests through pytest.")
     testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
     testing.add_argument("-live", "--live", action="store_true", help="Run non-generative live connectivity checks.")
@@ -674,7 +677,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "gui":
             startup.mark("logging configured")
-            return run_gui_command(no_cache=args.no_cache)
+            try:
+                gallery_limits = resolve_gallery_limits(args.load, args.cards)
+            except ValueError as exc:
+                print(f"Invalid request: {exc}", file=sys.stderr)
+                return EXIT_INVALID
+            return run_gui_command(no_cache=args.no_cache, gallery_limits=gallery_limits)
         if args.command == "test":
             return run_tests(args)
         return asyncio.run(run(args))
@@ -718,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
             logging_session.close()
 
 
-def run_gui_command(*, no_cache: bool = False) -> int:
+def run_gui_command(*, no_cache: bool = False, gallery_limits: tuple[int, int] | None = None) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
         from dtflow.ui.app import run_gui
@@ -727,7 +735,7 @@ def run_gui_command(*, no_cache: bool = False) -> int:
     except ImportError:
         print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
         return EXIT_INVALID
-    return run_gui(no_cache=no_cache)
+    return run_gui(no_cache=no_cache, gallery_limits=gallery_limits)
 
 
 def run_tests(args: argparse.Namespace) -> int:
