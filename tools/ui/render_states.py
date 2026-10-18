@@ -39,6 +39,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidg
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
+from dtflow import gallery_limits  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
@@ -1629,18 +1630,25 @@ def render_gallery_composition_states(shell, state, out):
         gallery.filter_timer.stop()
         gallery.save_timer.stop()
 
-        # Current owner-selected launch defaults, separate from stress fixtures.
+        # Resolve the real launch defaults rather than duplicating their values
+        # in the fixture. Keep filenames stable; changing defaults needs review.
+        default_batch, default_cards = gallery_limits.resolve(None, None)
+        assert (default_batch, default_cards) == (20, 100), "Update the default preview names and guide together."
         with (
-            patch.object(gallery_ui, "PAGE_SIZE", 20),
-            patch.object(gallery_ui, "MAX_MOUNTED_IMAGES", 100),
+            patch.object(gallery_ui, "PAGE_SIZE", default_batch),
+            patch.object(gallery_ui, "MAX_MOUNTED_IMAGES", default_cards),
         ):
             gallery.show_view("Grid")
-            multi_window(1, 20)
+            multi_window(1, default_batch)
             gallery.grid_scroll.verticalScrollBar().setValue(0)
+            assert gallery._query(offset=0).limit == default_batch
+            assert gallery.pager.status.text() == "20 buffered"
+            assert gallery.pager.buttons[2].toolTip() == "Jump to images 21–40"
             snap("images-105-pager-default-20-first-batch")
-            multi_window(1, 100)
+            multi_window(1, default_cards)
             gallery.grid_scroll.verticalScrollBar().setValue(0)
-            assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == 100
+            assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == default_cards
+            assert gallery.pager.status.text() == "100 buffered"
             snap("images-106-pager-default-100-buffered")
 
 

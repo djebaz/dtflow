@@ -24,6 +24,27 @@ uv run python tools/ui/preview_gallery_detail.py --capture out/gallery-detail-op
 
 ## Workflow-state filenames
 
+### PR #102 gallery squash preparation
+
+Current gallery defaults are 20 records per batch/page chip and at most 100 buffered cards. The existing 100/300 navigation fixtures are explicitly pinned stress/continuity scenarios, not application defaults. `render_states.py` resolves the new default fixtures from `dtflow.gallery_limits`, passes the configured batch size to the pager and checks its query limit, buffered counts and page-2 tooltip.
+
+| State | Evidence provided when actually rendered |
+| --- | --- |
+| `images-103-grid-metadata-before-thumbnails` | Complete card image/text space while thumbnail workers are held |
+| `images-104-grid-metadata-after-thumbnails` | The same card geometry after synthetic thumbnail delivery |
+| `images-105-pager-default-20-first-batch` | Default 20-record first batch and 20-record pager chips |
+| `images-106-pager-default-100-buffered` | Default maximum of 100 resident/buffered cards |
+
+The metadata pair checks identical card/child geometry; the default states live under `image-navigation/`. All four use offline projections and held workers; they do not prove cache encoding, file removal, native scrolling/DPI or packaged acceptance. Lock/lint/test CI passed at `2d66450`, but its UI-render job was skipped, so do not treat these source-listed states as executed evidence. A fresh successful render workflow/artifact is still needed. The script reports its actual executed total; older state counts below are historical checkpoints, not a current inventory.
+
+Render only when requested, using a fresh output directory so old PNGs cannot masquerade as current captures. In Windows offscreen mode set `QT_QPA_FONTDIR=C:\Windows\Fonts` explicitly; this remains layout evidence rather than native desktop acceptance.
+
+```powershell
+$env:QT_QPA_PLATFORM = 'offscreen'
+$env:QT_QPA_FONTDIR = 'C:\Windows\Fonts'
+uv run --frozen python tools/ui/render_states.py --out tmp/ui-renders/pr102-final
+```
+
 The [remaining-state implementation plan](../../devdocs/plans/2026-10-17-remaining-render-states.md) records the original 115-state baseline, missing workflow states, reserved filenames and safe offline fixture seams. Connection 01–39, Generate 20–40, Queues 11–23 and Images 53–64 are source-present (200 listed states in total). The latest thirty cover asset receipt/error/reconciliation presentation, active/problem/settled queue tables and planners, the shared Images export column, and Detail metadata/focus/missing/edited/provenance/LoRA/native-zoom states plus empty filtered results. These fixtures reuse one isolated shell, synthetic credentials/read views/results and mocked picker selections; service coroutines are closed before execution. Queue controls never dispatch or commit consent. Gallery pixels/metadata are in-memory presentation results, not export/removal authority, and preference-save scheduling is suppressed for that synthetic projection. The owner reports Actions passed through `c24f7c5`; the latest thirty additions await execution. Checked entries mean source-present fixtures, not independently verified screenshots or native Windows/DPI acceptance; unchecked entries remain planned.
 
 `render_states.py` saves listed offline workflow states as `<tab>-<NN>-<state>.png`, for example `images-01-grid.png`, `generate-01-empty.png` and `queues-02-created-paused.png`. The groups are `connection`, `generate`, `images`, `inpaint`, `queues` and `shell`; numbering is independent within each group. Keep existing names stable and append new numbers within the relevant group, so filenames sort by group without global numbering collisions. Render order may differ from filename order.

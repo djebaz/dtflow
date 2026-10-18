@@ -99,20 +99,23 @@ model downloads or provider calls.
 
 Use the normal DTFlow launch command with `-x` (equivalent to `--dev`) to enable sanitized debug timing in the existing rotating DTFlow log. **Without `-x`, these `gallery_perf` diagnostic records are not emitted.**
 
-Look for `gallery_perf` entries. Durations are wall-clock milliseconds observed by the application, not benchmarks and not GPU/inference timings:
+Development logging also writes sanitized `dtflow-<session>-gallery.csv` beside the text log, through the existing asynchronous listener rather than Qt/worker file I/O. Repetitive gallery metrics are aggregated there; The current heartbeat collects gaps from 50 ms into summaries and emits individual `gui_gap` records from 250 ms; the listener's 100 ms pass-through threshold does not create individual 100–249 ms producer events. Normal mode does not create the performance CSV. A CSV failure reports a diagnostic and leaves text logging available.
+
+Look for `gallery_perf` entries. Most durations are wall-clock milliseconds observed by the application, not benchmarks or GPU/inference timings; explicitly named CPU fields use worker-thread CPU time:
 
 - `runtime`: OS platform, Qt version and main-screen device-pixel ratio/logical DPI (no hostname or paths).
-- `gui_gap`: a 20 ms development-only Qt heartbeat that reports observed callback gaps of at least 50 ms, with current view, mounted count and busy flags. These are **observations**, not proof that a particular gallery operation caused a pause; desktop scheduling/sleep can also delay a timer.
+- `gui_gaps` summaries / `gui_gap` events: a 20 ms development-only Qt heartbeat collects observed callback gaps from 50 ms into summaries and emits individual events from 250 ms with current view, mounted count and busy flags. These are **observations**, not proof that a particular gallery operation caused a pause; desktop scheduling/sleep can also delay a timer.
 - `query_start` / `query_done`: query window offset/limit, total async elapsed time, returned count and live/snapshot source.
 - `query_locate` / `query_read` / `query_extension` / `query_facets`: separate timed anchor lookup, bounded primary read, optional extra read and filter-choice work.
+- `query_worker`: separate `sql_wall_ms` / `sql_cpu_ms` for SQLite and `build_wall_ms` / `build_cpu_ms` for Python gallery-record construction.
 - `query_delivery`: delay between completion of the async read and delivery to the GUI thread. This distinguishes worker/read time from a busy Qt event loop.
 - `prepare_slice` / `prepare_complete`: sliced widget preparation cost, total preparation time, created/reused counts and success.
 - `auto_refresh`: five-second poll started/skipped, with explicit skip reasons (`query`, `adjacent`, `anchor_restore`, `filter_debounce`).
-- `adjacent_start` / `adjacent_read`: adjacent 100-record batch fetch, direction, returned count and async elapsed time.
+- `adjacent_start` / `adjacent_read`: adjacent configured-size batch fetch (20 records by default), direction, returned count and async elapsed time.
 - `adjacent_reconcile` / `render_page` / `grid_layout`: Qt update time and mounted/added/removed card counts. `grid_layout` is the explicit synchronous fallback (e.g., deterministic fixtures); `grid_mount_complete` reports the elapsed wall-clock period for GUI-sliced live mounting and retained/inserted/moved card counts. The elapsed period spans event-loop yields and is **not** one continuous GUI freeze.
-- `thumbnail_end_to_end`: worker enqueue-to-result delay (includes worker queueing and decoding), success and concurrency count. Up to six thumbnail tasks remain active; each result emits a record in dev mode.
+- `thumbnail_end_to_end`: worker enqueue-to-result delay (includes worker queueing and decoding), success and concurrency count. Up to six thumbnail tasks remain active; repetitive development samples may be summarized by the listener. `thumbnail_cache_hit`, `thumbnail_cache_miss` and `thumbnail_cache_write` distinguish cache lookup from background publication.
 
-For a Windows smoke test, preserve the rotating log and the exact PR/build revision. Perform a 100→200 Grid append and several 100-image page changes with Auto-refresh On, then compare nearby `gui_gap` events against `query_delivery`, `prepare_complete`, `render_page` and `grid_layout` timing. Distinguish long database reads, GUI delivery delay and Qt layout stalls instead of attributing every pause to scrolling.
+For a Windows smoke test, preserve the rotating log and the exact PR/build revision. Exercise default 20-record page changes and scrolling up to the 100-card cap with Auto-refresh On. For the historical stress comparison, explicitly launch with `-ml 100 -mc 300` and perform a 100→200 append. In both cases, compare nearby `gui_gap` events against `query_delivery`, `prepare_complete`, `render_page` and `grid_layout` timing. Distinguish long database reads, GUI delivery delay and Qt layout stalls instead of attributing every pause to scrolling.
 
 **Privacy:** these metrics never include prompts, image/output/metadata paths, selected IDs, request JSON, SQLite parameters, or credentials. They don't change query cadence, rendering behavior, retry semantics or provider billing. A burst of `render_page` and `grid_layout` entries on unchanged five-second polls is a useful signal of unnecessary repaints. Inspect timing patterns alongside visual smoke evidence rather than assuming every repaint is expensive.
 
