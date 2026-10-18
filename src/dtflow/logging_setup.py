@@ -7,6 +7,7 @@ logged by DTFlow code, and the sanitizer is a second line of defence. Logging ne
 billing behavior, and a failure to write is reported once without raising into the application.
 """
 
+import csv
 import logging
 import logging.handlers
 import os
@@ -16,6 +17,7 @@ import sys
 from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -78,6 +80,116 @@ class _SafeFileHandler(logging.handlers.RotatingFileHandler):
             else:
                 print(message, file=sys.stderr)
 
+
+
+
+class _GalleryPerfCsvHandler(logging.Handler):
+    """Write sanitized gallery measurements in a separate, per-session CSV.
+
+    Called only by the queue listener's fan-out; no CSV I/O runs in Qt or
+    thumbnail worker callbacks. Each metric has its own filterable CSV row.
+    """
+
+    _HEADER = ("utc", "phase", "metric", "samples", "mean", "p95", "max", "total", "details")
+
+    def __init__(self, path: Path, report_error: Callable[[str], None] | None):
+        super().__init__()
+        self.report_error = report_error
+        self._reported = False
+        self._stream = path.open("w", newline="", encoding="utf-8")
+        self._writer = csv.writer(self._stream)
+        self._writer.writerow(self._HEADER)
+
+    def _write(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if not message.startswith("gallery_perf phase="):
+            return
+        # Sanitize before CSV quoting; no prompt or path payload is introduced.
+        fields = {
+            key: sanitize(value)
+            for key, value in (
+                part.split("=", 1) for part in message.split() if "=" in part
+            )
+        }
+        phase = fields.pop("phase", "unknown")
+        samples = fields.pop("samples", "1")
+        metrics: dict[str, dict[str, float]] = {}
+        if phase.endswith("_summary"):
+            for key in tuple(fields):
+                for suffix in ("_mean", "_p95", "_max", "_total"):
+                    if key.endswith(suffix):
+                        name = key[: -len(suffix)]
+                        try:
+                            metrics.setdefault(name, {})[suffix[1:]] = float(fields.pop(key))
+                        except ValueError:
+                            pass
+                        break
+        else:
+            for key in tuple(fields):
+                if key.endswith("_ms"):
+                    try:
+                        value = float(fields.pop(key))
+                    except ValueError:
+                        continue
+                    metrics[key] = {"mean": value, "p95": value, "max": value, "total": value}
+        details = " ".join(f"{key}={value}" for key, value in fields.items())
+        utc = datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds")
+        for name, values in (metrics or {"": {}}).items():
+            self._writer.writerow(
+                (
+                    utc,
+                    phase,
+                    name,
+                    samples,
+                    values.get("mean", ""),
+                    values.get("p95", ""),
+                    values.get("max", ""),
+                    values.get("total", ""),
+                    details,
+                )
+            )
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self._stream is None:
+            return
+        try:
+            self._write(record)
+        except (OSError, csv.Error, ValueError):
+            if not self._reported:
+                self._reported = True
+                message = "Gallery CSV logging unavailable; continuing with text logs."
+                if self.report_error is not None:
+                    self.report_error(message)
+                else:
+                    print(message, file=sys.stderr)
+            self._stream.close()
+            self._stream = None
+
+    def close(self) -> None:
+        if self._stream is not None:
+            self._stream.close()
+            self._stream = None
+        super().close()
+
+
+class _GalleryPerfFanoutHandler(logging.Handler):
+    """Deliver pre-aggregated diagnostic records to the text and CSV sinks."""
+
+    def __init__(self, text_handler: logging.Handler, csv_handler: logging.Handler | None):
+        super().__init__()
+        self.text_handler = text_handler
+        self.csv_handler = csv_handler
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.text_handler.handle(record)
+        if self.csv_handler is not None:
+            self.csv_handler.handle(record)
+
+    def close(self) -> None:
+        if self.csv_handler is not None:
+            self.csv_handler.close()
+        self.text_handler.close()
+        super().close()
 
 
 class _GalleryPerfAggregationHandler(logging.Handler):
@@ -211,7 +323,12 @@ def _prune(directory: Path, keep: str) -> None:
         reverse=True,
     )
     for stale in sessions[RETAINED_SESSIONS - 1 :]:
-        for leftover in (stale, *directory.glob(stale.name + ".*")):
+        stem = stale.name.removesuffix(".log")
+        for leftover in (
+            stale,
+            *directory.glob(stale.name + ".*"),
+            *directory.glob(stem + "-gallery.csv*"),
+        ):
             leftover.unlink(missing_ok=True)
 
 
@@ -250,7 +367,19 @@ def configure_logging(
     queue_handler.addFilter(_attach_attempt)
     # QueueHandler bakes tracebacks into the message with its own formatter, so that one must sanitize too.
     queue_handler.setFormatter(_Formatter("%(message)s"))
-    aggregate_handler = _GalleryPerfAggregationHandler(handler)
+    csv_handler = None
+    if dev:
+        try:
+            csv_handler = _GalleryPerfCsvHandler(
+                directory / f"dtflow-{session}-gallery.csv", report_error
+            )
+        except OSError:
+            message = "Gallery CSV logging unavailable; continuing with text logs."
+            if report_error is not None:
+                report_error(message)
+            else:
+                print(message, file=sys.stderr)
+    aggregate_handler = _GalleryPerfAggregationHandler(_GalleryPerfFanoutHandler(handler, csv_handler))
     listener = logging.handlers.QueueListener(logging_queue, aggregate_handler)
     logger = logging.getLogger(LOGGER)
     logger.setLevel(logging.DEBUG if dev else logging.INFO)
