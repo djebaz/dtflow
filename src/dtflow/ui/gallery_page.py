@@ -1741,14 +1741,21 @@ class GalleryPage(QObject):
                 len(self.items),
             )
 
+        def prepare():
+            # Adding rows to QGridLayout posts geometry updates; setting the
+            # scrollbar before those updates apply can silently clamp to zero.
+            # Finalize the layout in this turn, then restore in the next one.
+            if anchor and self.mode == mode and mode == "Grid":
+                self.reflow_timer.stop()
+                self._layout_cards()
+                self.cards_layout.activate()
+                self.grid_cards.adjustSize()
+            QTimer.singleShot(0, settle)
+
         def settle():
             try:
                 if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
                     if mode == "Grid":
-                        self.reflow_timer.stop()
-                        self._layout_cards()
-                        self.cards_layout.activate()
-                        self.grid_cards.adjustSize()
                         button = self._grid_buttons.get(anchor)
                         if button is not None:
                             bar = self.grid_scroll.verticalScrollBar()
@@ -1794,7 +1801,7 @@ class GalleryPage(QObject):
             finally:
                 self._suppress_batch_scroll = False
 
-        QTimer.singleShot(0, settle)
+        QTimer.singleShot(0, prepare)
         self._schedule_save()
 
     def _render_page(self) -> None:
