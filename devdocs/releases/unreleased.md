@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 smoke-04 follow-up: recognize Qt checkable navigation/view controls exposed to Windows UIA as RadioButton or CheckBox, not only Button. Preserve exact identities, visible/enabled checks and ambiguity rejection; no production UI changes. Regression contracts extended without local test execution; owner native smoke remains pending.
+
 - PR #104 Windows harness follow-up: select the GUI using the child-reported interpreter PID, not the virtual-environment launcher PID; retain both PIDs in trial evidence, clean up the trial process tree after failure, and stop the matrix if cleanup fails. Regression coverage added but not run locally at owner request; native Windows smoke remains pending.
 
 - Draft PR #104 (development tooling, not an accepted Windows performance result): add a Windows-only pywinauto driver and process-local tuning profiles for the eight Images performance groups—thumbnail decode concurrency, lookahead, preparation/mount slices, thumbnail resolution, pending cache writes, cache eviction, refresh cadence, and filter/save/page-jump debounce. Reuse sanitized `-x` gallery logs and CSV for per-trial and summary reports. Keep page size `-ml 20` and mounted cap `-mc 100` fixed rather than benchmarking them. No production default or runtime dependency changes; native Windows automation and optimal values remain unverified. See the [benchmark plan](../plans/2026-10-18-windows-gallery-benchmarks.md).

@@ -85,14 +85,15 @@ def test_missing_gallery_query_cannot_be_ranked(tmp_path):
 
 
 class _FakeInfo:
-    def __init__(self, name, automation_id=""):
+    def __init__(self, name, automation_id="", control_type="Button"):
         self.name = name
         self.automation_id = automation_id
+        self.control_type = control_type
 
 
 class _FakeButton:
-    def __init__(self, name, *, automation_id="", enabled=True, visible=True):
-        self.element_info = _FakeInfo(name, automation_id)
+    def __init__(self, name, *, automation_id="", control_type="Button", enabled=True, visible=True):
+        self.element_info = _FakeInfo(name, automation_id, control_type)
         self._enabled = enabled
         self._visible = visible
 
@@ -107,21 +108,21 @@ class _FakeWindow:
     def __init__(self, *buttons):
         self.buttons = list(buttons)
 
-    def descendants(self, *, control_type):
-        assert control_type == "Button"
+    def descendants(self):
         return self.buttons
 
 
-def test_images_navigation_accepts_visible_text_or_qt_accessibility_name():
+@pytest.mark.parametrize("control_type", ["Button", "CheckBox", "RadioButton"])
+def test_images_navigation_accepts_visible_text_or_qt_accessibility_name(control_type):
     from tools.ui.windows_gallery_benchmark import _button
 
-    images = _FakeButton("Images")
+    images = _FakeButton("Images", control_type=control_type)
     assert _button(_FakeWindow(images), "Show saved Images", alternatives=("Images",), timeout=1) is images
 
-    accessible = _FakeButton("Show saved Images")
+    accessible = _FakeButton("Show saved Images", control_type=control_type)
     assert _button(_FakeWindow(accessible), "Show saved Images", alternatives=("Images",), timeout=1) is accessible
 
-    object_id = _FakeButton("", automation_id="imagesNavigationButton")
+    object_id = _FakeButton("", automation_id="imagesNavigationButton", control_type=control_type)
     assert _button(
         _FakeWindow(object_id), "Show saved Images", alternatives=("Images",),
         automation_id="imagesNavigationButton", timeout=1,
@@ -131,9 +132,23 @@ def test_images_navigation_accepts_visible_text_or_qt_accessibility_name():
 def test_button_selector_fails_closed_on_ambiguous_matches():
     from tools.ui.windows_gallery_benchmark import _button
 
-    window = _FakeWindow(_FakeButton("Images"), _FakeButton("Show saved Images"))
+    window = _FakeWindow(_FakeButton("Images"), _FakeButton("Show saved Images", control_type="RadioButton"))
     with pytest.raises(RuntimeError, match="Ambiguous"):
         _button(window, "Show saved Images", alternatives=("Images",), timeout=1)
+
+
+@pytest.mark.parametrize("name", ["Grid", "List", "Detail"])
+def test_checkable_gallery_controls_ignore_text_hidden_and_disabled_matches(name):
+    from tools.ui.windows_gallery_benchmark import _button
+
+    target = _FakeButton(name, control_type="CheckBox")
+    window = _FakeWindow(
+        _FakeButton(name, control_type="Text"),
+        _FakeButton(name, control_type="CheckBox", visible=False),
+        _FakeButton(name, control_type="RadioButton", enabled=False),
+        target,
+    )
+    assert _button(window, name, timeout=1) is target
 
 
 @pytest.mark.parametrize("app_pid", [9001, 9002])

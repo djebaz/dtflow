@@ -82,6 +82,12 @@ The benchmark child now atomically publishes its own interpreter PID to the fres
 
 Regression coverage was added for direct/redirected PID selection, PID publication and failure boundaries, and targeted process-tree cleanup. Per owner instruction, no local tests or benchmark reruns were executed for this fix; CI and an owner interactive Windows rerun remain required. Use a new directory such as `tmp/gallery-bench-smoke-04` with the same smoke command above. No production UI, logging format, tuning default or dependency changes are included.
 
+## Checkable Qt control roles (smoke-04 follow-up, 2026-10-19)
+
+Both owner trials in `tmp/gallery-bench-smoke-04` now found/focused the child window but failed at `find-images-navigation`, recording distinct launcher/interpreter PIDs and no actions. The owner saw DTFlow remain on Connection. Canonical `workspace_shell.ui` defines Images as a checkable, auto-exclusive QPushButton; `gallery_detail_page.ui` defines Grid/List/Detail as checkable QPushButtons. Qt's [button accessibility implementation](https://github.com/qt/qtbase/blob/6.12/src/widgets/accessible/simplewidgets.cpp) returns RadioButton for the former and CheckBox for the latter, and its [Windows UIA mapping](https://github.com/qt/qtbase/blob/6.12/src/plugins/platforms/windows/uiautomation/qwindowsuiautils.cpp) preserves those control types. The driver's Button-only search excluded these controls even with correct names and PID.
+
+The shared selector now accepts Button, CheckBox and RadioButton roles inside the already selected trial window, still requiring an exact expected name or automation ID, visible/enabled state and a unique match across roles. It ignores similarly named text and inactive controls; no coordinates, fuzzy names, production UI changes or arbitrary-window fallback are introduced. Existing selector contracts cover all three roles plus the gallery toggles and cross-role ambiguity. No local tests or native rerun were executed, per owner instruction; lint/help/diff checks are separate from acceptance. Retry with a new `tmp/gallery-bench-smoke-05` output directory; CI and owner native smoke remain required.
+
 ## Validation gates
 
 - Python syntax, import, CLI `--help`, profile and log-report unit tests on Linux.

@@ -140,6 +140,8 @@ def _button(window, name: str, *, alternatives: tuple[str, ...] = (),
     """Resolve a unique visible Qt button by UIA name or automation ID.
 
     Qt may expose the QPushButton visual label instead of accessibleName.
+    Checkable QPushButtons expose CheckBox, or RadioButton when auto-exclusive,
+    rather than Button. Inspect all three roles in the same child window.
     Never click a guessed position when the UIA element cannot be resolved.
     """
 
@@ -147,8 +149,10 @@ def _button(window, name: str, *, alternatives: tuple[str, ...] = (),
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         matches = []
-        for button in window.descendants(control_type="Button"):
+        for button in window.descendants():
             info = button.element_info
+            if info.control_type not in {"Button", "CheckBox", "RadioButton"}:
+                continue
             if info.name in names or (automation_id is not None and info.automation_id == automation_id):
                 if button.is_visible() and button.is_enabled():
                     matches.append(button)
@@ -157,7 +161,10 @@ def _button(window, name: str, *, alternatives: tuple[str, ...] = (),
         if len(matches) > 1:
             raise RuntimeError(f"Ambiguous Qt UIA button: {name}")
         time.sleep(0.25)
-    raise LookupError(f"Qt UIA button {name!r} missing, disabled or hidden after {timeout:g}s")
+    raise LookupError(
+        f"Qt UIA button {name!r} missing, disabled or hidden after {timeout:g}s "
+        "(searched Button/CheckBox/RadioButton roles)"
+    )
 
 
 def _click(window, name: str, actions: list[dict], *,
