@@ -19,7 +19,6 @@ from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_locations, resolve_output_read
 
-
 log = logging.getLogger(__name__)
 
 
