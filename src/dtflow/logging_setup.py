@@ -81,8 +81,6 @@ class _SafeFileHandler(logging.handlers.RotatingFileHandler):
                 print(message, file=sys.stderr)
 
 
-
-
 class _GalleryPerfCsvHandler(logging.Handler):
     """Write sanitized gallery measurements in a separate, per-session CSV.
 
@@ -107,9 +105,7 @@ class _GalleryPerfCsvHandler(logging.Handler):
         # Sanitize before CSV quoting; no prompt or path payload is introduced.
         fields = {
             key: sanitize(value)
-            for key, value in (
-                part.split("=", 1) for part in message.split() if "=" in part
-            )
+            for key, value in (part.split("=", 1) for part in message.split() if "=" in part)
         }
         phase = fields.pop("phase", "unknown")
         samples = fields.pop("samples", "1")
@@ -200,9 +196,7 @@ class _GalleryPerfAggregationHandler(logging.Handler):
     high-frequency measurements are written in bounded statistical batches.
     """
 
-    _AGGREGATED = frozenset(
-        {"thumbnail_worker", "thumbnail_end_to_end", "scroll_intent", "prepare_slice", "gui_gap"}
-    )
+    _AGGREGATED = frozenset({"thumbnail_worker", "thumbnail_end_to_end", "scroll_intent", "prepare_slice", "gui_gap"})
     _BATCH_SIZE = 64
     _BATCH_SECONDS = 10.0
 
@@ -234,15 +228,7 @@ class _GalleryPerfAggregationHandler(logging.Handler):
                     f"{name}_total={sum(samples):.1f}",
                 )
             )
-        summary = logging.LogRecord(
-            "dtflow.ui.gallery_perf",
-            logging.DEBUG,
-            "",
-            0,
-            " ".join(parts),
-            (),
-            None,
-        )
+        summary = logging.LogRecord("dtflow.ui.gallery_perf", logging.DEBUG, "", 0, " ".join(parts), (), None)
         summary.attempt = "-"
         self.target.handle(summary)
 
@@ -265,9 +251,7 @@ class _GalleryPerfAggregationHandler(logging.Handler):
             if name in fields
         )
         key = (phase, dimensions)
-        bucket = self._batches.setdefault(
-            key, {"samples": 0, "first": record.created, "metrics": {}}
-        )
+        bucket = self._batches.setdefault(key, {"samples": 0, "first": record.created, "metrics": {}})
         bucket["samples"] += 1
         for name, value in fields.items():
             if name in {"phase", "direction", "source", "mode", "success"}:
@@ -277,10 +261,7 @@ class _GalleryPerfAggregationHandler(logging.Handler):
             except ValueError:
                 continue
             bucket["metrics"].setdefault(name, []).append(number)
-        if (
-            bucket["samples"] >= self._BATCH_SIZE
-            or record.created - bucket["first"] >= self._BATCH_SECONDS
-        ):
+        if bucket["samples"] >= self._BATCH_SIZE or record.created - bucket["first"] >= self._BATCH_SECONDS:
             self._flush_batch(key)
 
     def close(self) -> None:
@@ -370,9 +351,7 @@ def configure_logging(
     csv_handler = None
     if dev:
         try:
-            csv_handler = _GalleryPerfCsvHandler(
-                directory / f"dtflow-{session}-gallery.csv", report_error
-            )
+            csv_handler = _GalleryPerfCsvHandler(directory / f"dtflow-{session}-gallery.csv", report_error)
         except OSError:
             message = "Gallery CSV logging unavailable; continuing with text logs."
             if report_error is not None:
