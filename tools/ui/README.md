@@ -2,13 +2,15 @@
 
 ## Native Windows gallery performance benchmark (PR #104)
 
-The optional, Windows-only `pywinauto` driver launches a **real source DTFlow GUI** and exercises Images navigation, Grid/List/Detail, verified page-chip changes, up/down scrolling, fullscreen enter/Escape exit and thumbnail-size slider movement. Text search is intentionally out of scope. The experimental profiles vary the eight groups of performance constants recorded in the [benchmark protocol](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md); pagination stays **20 records / 100 mounted cards** for every run. The runner reuses `-x` event logs and the per-session gallery CSV rather than replacing Qt telemetry.
+The optional, Windows-only `pywinauto` driver launches a **real source DTFlow GUI** and exercises Images navigation, Grid/List/Detail, verified page-chip changes, 192-notch up/down wheel sweeps (configurable through `--scroll-notches`), **fullscreen while Grid is active**, and thumbnail-size sweeps toward **55% and 210%** with restoration of the initial value. Text search is intentionally out of scope. The experimental profiles vary the eight groups of performance constants recorded in the [benchmark protocol](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md); pagination stays **20 records / 100 mounted cards** for every run. The runner reuses `-x` event logs and the per-session gallery CSV rather than replacing Qt telemetry.
 
 From an interactive Windows desktop with a prepared `uv` environment:
 
 ```powershell
 uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
 ```
+
+The interactive smoke defaults to **192 wheel notches per direction** (16 small bursts rather than eight); use `--scroll-notches 240` for an even longer, controlled sweep (12–240 allowed). The slider sweeps small → large → original, preserving the user's starting size if UIA restoration succeeds. The fullscreen toggle now occurs in Grid rather than Detail. Both changes increase the workload; compare only runs with the same sequence and viewport dimensions.
 
 `--out` is an output root (default `tmp`), not the final run directory. The script prints and creates `<root>/gallery_bench_smoke/MMddHHmm/` using local time, for example `tmp/gallery_bench_smoke/10120040/` on October 12 at 00:40. Existing roots are allowed; an existing timestamped run is refused without overwriting evidence. Wait until the next minute or choose another root after a same-minute collision. Report files include `results.csv`, `summary.csv` and, inside each profile/trial directory, `trial.json` plus the real application logs. Missing UI clicks, wheels and slider drags now produce per-step `warnings` in `trial.json` and stderr, and the driver continues through the remaining actions. A run with warnings is marked `warning`, not `ok`, and excluded from clean performance comparisons. Core GUI startup or missing initial gallery data still fails the trial. A failed trial prints its `step` and sanitized exception message. Check those before treating automation failure as gallery slowness.
 
