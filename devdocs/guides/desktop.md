@@ -271,7 +271,7 @@ The status bar displays `DTFlow <version> | revision <value> | source: <status>`
 
 For fake, `fake-fixture` produces the bundled illustrative lighthouse at the requested aspect and size, while `fake-grid` produces a calibration grid. No model inference or network request occurs. The fake-only Simulation group selects outcome, duration and previews so progress and Stop waiting can be exercised; queues created from the form record those settings.
 
-PR #102 developer review limitations: the thumbnail-shard redirect safety finding, late queued writes after removal and oversized flat legacy-cache cleanup remain open. This source branch is not fully merge-ready; see the [combined landing review](../plans/2026-10-17-images-hybrid-pagination.md#evidence-and-remaining-gates).
+Combined PR #95/#102 developer review status: thumbnail removal now checks cache/category/shard/leaf boundaries for issue #103, with exact-head CI still required. Late queued writes after removal and oversized flat legacy-cache cleanup remain separate follow-ups; see the [combined landing review](../plans/2026-10-17-images-hybrid-pagination.md#evidence-and-remaining-gates).
 
 ## Previewing UI states
 

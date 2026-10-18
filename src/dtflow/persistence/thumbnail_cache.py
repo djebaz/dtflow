@@ -61,6 +61,19 @@ def _folder(state: Path, identity_hash: str) -> Path:
     return category_path(state, "thumbnails") / identity_hash[:2]
 
 
+def _check_entry(state: Path, path: Path) -> None:
+    """Validate the category, immediate shard and leaf without resolving redirects."""
+    root = category_path(state, "thumbnails")
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError as exc:
+        raise CacheSafetyError("Thumbnail entry is outside its cache category.") from exc
+    if len(parts) != 2 or ".." in parts:
+        raise CacheSafetyError("Thumbnail entry must be directly inside a cache shard.")
+    check_path(path.parent)
+    check_path(path)
+
+
 def entry_path(state: Path, identity: str, info: os.stat_result, side: int) -> Path | None:
     """Return the entry for this output and original fingerprint, or None with ``--no-cache``."""
     if not _enabled:
@@ -169,6 +182,7 @@ def prune(state: Path, *, limit: int = MAX_ENTRIES, keep: int = PRUNE_TO) -> int
         entries = []
         with os.scandir(root) as shards:
             for shard in shards:
+                check_path(Path(shard.path))
                 if not shard.is_dir(follow_symlinks=False):
                     continue
                 with os.scandir(shard.path) as files:
@@ -186,7 +200,7 @@ def prune(state: Path, *, limit: int = MAX_ENTRIES, keep: int = PRUNE_TO) -> int
         try:
             with cache_access(state, timeout=0.05):
                 for victim in victims[start : start + 200]:
-                    check_path(victim)
+                    _check_entry(state, victim)
                     victim.unlink(missing_ok=True)
                     removed += 1
         except (CacheBusyError, CacheSafetyError, OSError):
@@ -198,7 +212,7 @@ def discard(state: Path, path: Path) -> None:
     """Drop an unreadable entry so the next view re-creates it."""
     try:
         with cache_access(state, timeout=0.05):
-            check_path(path)
+            _check_entry(state, path)
             path.unlink()
     except (CacheBusyError, CacheSafetyError, OSError):
         pass
@@ -216,12 +230,13 @@ def forget(state: Path, identities: Iterable[str]) -> int:
             for identity in identities:
                 owner = _identity_hash(identity)
                 folder = _folder(state, owner)
+                check_path(folder)
                 if not folder.is_dir():
                     continue
                 for entry in folder.glob(f"{owner}.*"):
                     if entry.suffix not in SUFFIXES:
                         continue
-                    check_path(entry)
+                    _check_entry(state, entry)
                     entry.unlink(missing_ok=True)
                     removed += 1
     except (CacheBusyError, CacheSafetyError, OSError, ValueError):
