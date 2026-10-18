@@ -212,6 +212,44 @@ def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_pa
         assert issue == "" and buffered is not None
         assert (buffered.width(), buffered.height()) == expected
 
+    # Exercise cache encoding/hits without starting a background writer.
+    from types import SimpleNamespace
+
+    from dtflow.persistence import thumbnail_cache
+    from dtflow.ui import gallery_page
+
+    monkeypatch.setattr(thumbnail_cache, "_enabled", True)
+    monkeypatch.setattr(thumbnail_cache, "_format", "jpg")
+    monkeypatch.setattr(gallery_page, "resolve_item_read", lambda *_args, **_kwargs: (str(path), None))
+    writes = []
+
+    def immediate_store(state, entry, write, done=None):
+        writes.append(entry)
+        assert thumbnail_cache.store(state, entry, write)
+        return True
+
+    monkeypatch.setattr(thumbnail_cache, "store_later", immediate_store)
+    item = SimpleNamespace(identity="thumbnail-format-fixture")
+    for selected, alpha in (("jpg", False), ("webp", False), ("jpg", True)):
+        if alpha:
+            source = source.convertToFormat(QImage.Format.Format_ARGB32)
+            source.fill(0x80497AA3)
+            assert source.save(str(path))
+        thumbnail_cache.configure(no_cache=False, thumbnail_format=selected)
+        thumb, issue = _image(str(path), 600, state, item=item, cache=True)
+        assert not issue and thumb is not None
+        expected_suffix = ".webp" if alpha or selected == "webp" else ".jpg"
+        assert writes[-1].suffix == expected_suffix
+        payload = writes[-1].read_bytes()
+        assert payload.startswith(b"RIFF" if expected_suffix == ".webp" else b"\xff\xd8")
+        count = len(writes)
+        hit, issue = _image(str(path), 600, state, item=item, cache=True)
+        assert not issue and hit is not None and len(writes) == count
+        assert hit.hasAlphaChannel() == alpha
+        assert thumbnail_cache.forget(state, [item.identity]) >= 1
+    thumbnail_cache.configure(no_cache=True)
+    assert thumbnail_cache.entry_path(state, item.identity, path.stat(), 600) is None
+
 
 def test_images_grid_and_list_thumbnails_use_320px_standard_and_scale_column(window):
     """100% matches the former 200% Grid size; List scales image width, not only height."""

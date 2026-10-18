@@ -11,7 +11,7 @@ from pathlib import Path
 from dtflow import startup
 from dtflow.build import display_identity, identity
 from dtflow.composition import BACKENDS, image_endpoint_label
-from dtflow.core.gallery import SORTS, GalleryQuery
+from dtflow.core.gallery import MAX_GALLERY_LIMIT, SORTS, GalleryQuery
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest
 from dtflow.core.models import (
@@ -24,6 +24,8 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.gallery_limits import add_arguments as add_gallery_limit_arguments
+from dtflow.gallery_limits import resolve as resolve_gallery_limits
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.queues import post_control, read_queues
@@ -65,10 +67,19 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-v", "--version", action="version", version=display_identity())
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Log directory (default: repository logs/ or per-user data).")
+    add_gallery_limit_arguments(command)
     commands = command.add_subparsers(dest="command", required=True)
     gui = commands.add_parser("gui", help=COMMAND_HELP["gui"])
     gui.add_argument(
         "-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes for this run."
+    )
+    add_gallery_limit_arguments(gui)
+    gui.add_argument(
+        "-format",
+        "--format",
+        choices=("jpg", "webp"),
+        default="jpg",
+        help="Developer thumbnail-cache format: jpg (quality 85, default) or webp (quality 80).",
     )
     testing = commands.add_parser("test", help="Run repository tests through pytest.")
     testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
@@ -162,7 +173,7 @@ def add_gallery_commands(commands) -> None:
         child.add_argument("-w", "--width", type=int, help="Exact width in pixels.")
         child.add_argument("-y", "--height", type=int, help="Exact height in pixels.")
         child.add_argument("-o", "--sort", choices=SORTS, default="newest")
-        child.add_argument("-k", "--limit", type=int, default=100, help="Page size in 1..200.")
+        child.add_argument("-k", "--limit", type=int, default=100, help=f"Page size in 1..{MAX_GALLERY_LIMIT}.")
         child.add_argument("-f", "--offset", type=int, default=0)
 
 
@@ -667,14 +678,21 @@ def start_logging(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     startup.mark("python imports")
     args = parser().parse_args(argv)
+    from dtflow.persistence import thumbnail_cache
     from dtflow.persistence.gallery_snapshot import configure
 
     configure(no_cache=getattr(args, "no_cache", False))
+    thumbnail_cache.configure(no_cache=getattr(args, "no_cache", False))
     logging_session = None if args.command == "test" else start_logging(args)
     try:
         if args.command == "gui":
             startup.mark("logging configured")
-            return run_gui_command(no_cache=args.no_cache)
+            try:
+                gallery_limits = resolve_gallery_limits(getattr(args, "load", None), getattr(args, "cards", None))
+            except ValueError as exc:
+                print(f"Invalid request: {exc}", file=sys.stderr)
+                return EXIT_INVALID
+            return run_gui_command(no_cache=args.no_cache, gallery_limits=gallery_limits, thumbnail_format=args.format)
         if args.command == "test":
             return run_tests(args)
         return asyncio.run(run(args))
@@ -718,7 +736,9 @@ def main(argv: list[str] | None = None) -> int:
             logging_session.close()
 
 
-def run_gui_command(*, no_cache: bool = False) -> int:
+def run_gui_command(
+    *, no_cache: bool = False, gallery_limits: tuple[int, int] | None = None, thumbnail_format: str = "jpg"
+) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
         from dtflow.ui.app import run_gui
@@ -727,7 +747,7 @@ def run_gui_command(*, no_cache: bool = False) -> int:
     except ImportError:
         print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
         return EXIT_INVALID
-    return run_gui(no_cache=no_cache)
+    return run_gui(no_cache=no_cache, gallery_limits=gallery_limits, thumbnail_format=thumbnail_format)
 
 
 def run_tests(args: argparse.Namespace) -> int:

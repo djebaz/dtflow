@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
-from PySide6.QtGui import QWheelEvent
+from PySide6.QtGui import QImage, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from dtflow.core.gallery import GalleryItem
@@ -17,6 +17,9 @@ from dtflow.ui.runner import AsyncRunner
 
 @pytest.fixture
 def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
+    # These stress fixtures intentionally exercise 100/300, not launch defaults.
+    monkeypatch.setattr(gallery_ui, "PAGE_SIZE", 100)
+    monkeypatch.setattr(gallery_ui, "MAX_MOUNTED_IMAGES", 300)
     form = load_ui(FORMS_DIR / "gallery_detail_page.ui")
     runner = AsyncRunner(form)
     qtbot.addWidget(form, before_close_func=lambda _widget: runner.shutdown())
@@ -52,6 +55,9 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     monkeypatch.setattr(gallery_ui, "query_outputs", read)
     monkeypatch.setattr(gallery_ui, "filter_choices", choices)
     gallery = GalleryPage(form, runner=runner, state_dir=tmp_path / "state")
+    # Alignment must exist before any mount; applying it only after the last
+    # slice lets partially mounted rows shift while the first batch fills.
+    assert gallery.cards_layout.alignment() == (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     # Existing presentation fixtures control their own append requests. Pause
     # automatic neighbor buffering here; specific tests explicitly enable it.
     gallery._neighbor_prefetch_timer.stop()
@@ -74,6 +80,44 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     gallery.preparation.budget_ms = 0
     yield form, gallery, runner, records, state
     runner.shutdown()
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+def test_grid_card_reserves_text_rows_before_thumbnail_delivery(presentation, qtbot, monkeypatch, prepared):
+    _form, gallery, _runner, records, _state = presentation
+    monkeypatch.setattr(gallery, "_pump_thumbnails", lambda: None)
+    record = replace(records[0], identity="pending-thumbnail", model="long-checkpoint-name-" * 8)
+    if prepared:
+        entry = gallery._build_prepared_entry(record)
+        gallery._prepared_entries[record.identity] = entry
+        reserved = entry["button"].parentWidget().height()
+    gallery.items, gallery.total, gallery.offset = [record], 1, 0
+    gallery._render_page()
+    gallery._rendered_page = (0, (record,))
+    gallery.reflow_timer.stop()
+    gallery._layout_cards()
+    button = gallery._grid_buttons[record.identity]
+    card = button.parentWidget()
+    caption, model = gallery._grid_labels[record.identity]
+    if prepared:
+        assert card.height() == reserved
+    assert caption.text() and model.text() == record.model
+    assert caption.y() > button.geometry().bottom()
+    assert model.y() > caption.geometry().bottom()
+    assert model.geometry().bottom() < card.height()
+    before = card.size(), button.geometry(), caption.geometry(), model.geometry()
+    qtbot.wait(20)  # First show/layout events must not expand the reserved card.
+    assert (card.size(), button.geometry(), caption.geometry(), model.geometry()) == before
+    image = QImage(record.path)
+    assert not image.isNull()
+    gallery._thumbnail_done(gallery._thumb_versions[record.identity], record.identity, (image, ""), None)
+    qtbot.wait(20)
+    assert (card.size(), button.geometry(), caption.geometry(), model.geometry()) == before
+    gallery.slider.setValue(50)
+    qtbot.waitUntil(lambda: not gallery.reflow_timer.isActive())
+    assert caption.y() > button.geometry().bottom()
+    assert model.geometry().bottom() < card.height()
+    assert card.height() < before[0].height()
 
 
 def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtbot):
@@ -148,6 +192,34 @@ def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot
     assert observed and observed[0] < 200
     assert len(gallery._grid_layout_keys) == 200
     assert gallery.cards_layout.indexOf(first.parentWidget()) >= 0
+
+
+def test_partial_grid_mount_keeps_final_row_spacing(presentation, qtbot, monkeypatch):
+    _form, gallery, _runner, records, _state = presentation
+    monkeypatch.setattr(gallery, "_pump_thumbnails", lambda: None)
+    gallery.slider.setValue(50)
+    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None and not gallery.reflow_timer.isActive())
+    gallery.items = [replace(record, identity=f"partial-mount:{record.identity}") for record in records[:100]]
+    gallery.total, gallery.offset = 100, 0
+    gallery._render_page()
+    gallery.reflow_timer.stop()
+    gallery._grid_mount_budget_ms = 0.0
+    gallery._start_grid_mount()
+    gallery._grid_mount_timer.stop()
+    columns = gallery._grid_mount_columns
+    # Mount just enough to begin row two, before the grid fills the viewport.
+    for _ in range(columns + 1):
+        gallery._mount_grid_slice()
+        gallery._grid_mount_timer.stop()
+    first = gallery._grid_buttons[gallery.items[0].identity].parentWidget()
+    second = gallery._grid_buttons[gallery.items[columns].identity].parentWidget()
+    before = first.y(), second.y()
+    assert second.y() - first.geometry().bottom() - 1 == gallery.cards_layout.verticalSpacing()
+    while gallery._grid_mount_keys is not None:
+        gallery._mount_grid_slice()
+        gallery._grid_mount_timer.stop()
+    qtbot.wait(20)
+    assert (first.y(), second.y()) == before
 
 
 def test_refresh_during_preparation_commits_only_latest_result(presentation, qtbot):

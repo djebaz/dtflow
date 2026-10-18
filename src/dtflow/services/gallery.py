@@ -2,19 +2,24 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
+from time import monotonic, thread_time
 from urllib.parse import urlsplit, urlunsplit
 
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
+from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as storage
 from dtflow.persistence import gallery_snapshot
 from dtflow.persistence.original_io import original_images_lock
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.gallery_read_alias import resolve_output_locations, resolve_output_read
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,11 +141,54 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
     query = query or GalleryQuery()
 
     def read():
+        sql_started = monotonic()
+        sql_cpu_started = thread_time()
         records, total = storage.query_records(state, query)
+        sql_wall_ms = (monotonic() - sql_started) * 1000
+        sql_cpu_ms = (thread_time() - sql_cpu_started) * 1000
+        build_started = monotonic()
+        build_cpu_started = thread_time()
         paths = ArtifactReadPaths.discover()
-        return GalleryPage(
+        page = GalleryPage(
             tuple(item_from_record(x, paths, state=state) for x in records), total, query.offset, query.limit
         )
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=query_worker sql_wall_ms=%.1f sql_cpu_ms=%.1f "
+                "build_wall_ms=%.1f build_cpu_ms=%.1f rows=%d",
+                sql_wall_ms,
+                sql_cpu_ms,
+                (monotonic() - build_started) * 1000,
+                (thread_time() - build_cpu_started) * 1000,
+                len(records),
+            )
+        return page
+
+    return await asyncio.to_thread(read)
+
+
+async def gallery_file_signature(state: Path) -> tuple[tuple[int, int, int, int] | None, ...] | None:
+    """Check gallery database file revisions without querying or building image records.
+
+    The signature is a polling hint, not database authority or a content hash.
+    The UI must perform periodic full reads even if these metadata values match.
+    """
+
+    def read():
+        root = Path(state).resolve()
+        if not (root / "attempts.sqlite3").is_file():
+            return None
+        result = []
+        for name in ("attempts.sqlite3", "image_recycle.sqlite3"):
+            for suffix in ("", "-wal"):
+                path = root / (name + suffix)
+                try:
+                    stat = path.stat()
+                except FileNotFoundError:
+                    result.append(None)
+                    continue
+                result.append((stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns))
+        return tuple(result)
 
     return await asyncio.to_thread(read)
 
