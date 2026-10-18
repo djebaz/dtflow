@@ -119,6 +119,30 @@ For a Windows smoke test, preserve the rotating log and the exact PR/build revis
 
 **Privacy:** these metrics never include prompts, image/output/metadata paths, selected IDs, request JSON, SQLite parameters, or credentials. They don't change query cadence, rendering behavior, retry semantics or provider billing. A burst of `render_page` and `grid_layout` entries on unchanged five-second polls is a useful signal of unnecessary repaints. Inspect timing patterns alongside visual smoke evidence rather than assuming every repaint is expensive.
 
+## Native Windows Images performance matrix (experimental PR #104)
+
+The [Windows gallery benchmarking plan](../plans/2026-10-18-windows-gallery-benchmarks.md) describes the **separate** development-only pywinauto driver. This drives the actual PySide6 Images interface on an **interactive Windows desktop**, unlike offscreen UI renders or the synthetic transition microbenchmark. It reuses the application’s existing `-x` log and per-session gallery CSV; it does not add a second Qt timing subsystem.
+
+**This matrix varies the gallery tuning constants, not the paging defaults.** All runs use source `-ml 20 -mc 100 -format jpg`. Built-in profiles exercise worker count, lookahead, GUI preparation/mount budgets, thumbnail side length, pending disk-cache writes, disk-cache pruning, refresh cadence and filter/save/page-jump debounces. `--profiles-file` accepts named JSON overrides; missing fields use the unchanged defaults. Only one tuning family should change at a time for interpretable comparisons.
+
+Run from the checked-out PR #104 source branch after `uv sync --frozen`, in PowerShell with the desktop unlocked and no competing DTFlow process:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-01 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
+To exercise the built-in matrix (longer, not a quick smoke):
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-01 --runs 2 --cycles 2 --ack-user-state
+```
+
+Use **new output directory names** on every run. Reports are `results.csv`, `results.json` and `summary.csv`, with each trial’s `profile.json`, `trial.json`, standard log and gallery CSV retained beneath that output directory. A failed trial does not count as a performance win. The automation’s `dispatch_ms` measures action dispatch, not click-to-paint time, and heartbeat gaps under 50 ms are not recorded as freeze samples.
+
+**Safety and reproducibility:** `--ack-user-state` is mandatory because the GUI uses the normal source-checkout state and may modify saved viewer preferences or disposable thumbnail cache. This harness does **not** sandbox that existing catalogue; use disposable state where possible and back up important state before running. Do not run a cache-eviction trial against a valuable populated cache. The driver only automates browsing, navigation, scrolling and a temporary prompt filter. It does not click generation, export, removal or cache-clear actions; no inference or provider submission is intended. Pin the source revision, Windows/DPI, image set, cache condition and input sequence, and do not compare different cache conditions as though they were controlled. The test is **not Windows-accepted or benchmark-validated** until the owner runs it; review the complete report and actual GUI behavior.
+
+A gallery with only 100–200 images cannot meaningfully test a 20,000-entry disk-cache eviction threshold or saturate a 256-entry write queue; those variables need a distinct safe stress scenario. Likewise, refresh profiling needs runs long enough for multiple polls/full refreshes. Keep these results marked *unmeasured* rather than pretending short smoke runs optimize every parameter.
+
 ## Diagnostic probes
 
 The diagnostic probes' help is available without submitting generation:
