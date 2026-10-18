@@ -394,3 +394,29 @@ def test_direct_jump_preloads_both_neighbor_zones(presentation, qtbot):
     assert gallery._grid_buttons["200"].parentWidget().isVisible()
     assert gallery.cards_layout.indexOf(gallery._grid_buttons["100"].parentWidget()) >= 0
     assert gallery.cards_layout.indexOf(gallery._grid_buttons["399"].parentWidget()) >= 0
+
+
+def test_page_jump_while_neighbor_is_loading_replays_latest_request(presentation, qtbot):
+    """Eager preloading must not disable/ignore a user page-chip request."""
+    _form, gallery, _runner, records, state = presentation
+    state["records"] = records
+    gallery.refresh(reset=True, preserve=False)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=5000)
+    gallery._load_adjacent(1)
+    assert gallery._adjacent_loading
+    gallery._sync_pager()
+    assert gallery.pager.buttons[3].isEnabled()
+    gallery._jump_to_page(2)
+    gallery._jump_to_page(3)  # latest intent supersedes the earlier click
+    assert gallery._pending_page_jump == 3
+    qtbot.waitUntil(
+        lambda: (
+            gallery._pending_page_jump is None
+            and not gallery._loading
+            and not gallery._adjacent_loading
+            and gallery.offset == 200
+            and len(gallery.items) == 100
+        ),
+        timeout=9000,
+    )
+    assert tuple(gallery.items) == records[200:300]
