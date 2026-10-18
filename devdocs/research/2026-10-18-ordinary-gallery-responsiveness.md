@@ -274,4 +274,4 @@ pager zone. This minimizes wait at zone transitions but may do unnecessary
 preparation if the user never navigates; it does **not** eliminate thumbnail
 decoding or Qt widget costs and has no verified new native Windows timings.
 Test active middle zones, direct jumps, page edges, quick filter changes and
-the zero-result → same-key regression in the next Windows smoke.
+the zero-result → same-key regression in the next Windows smoke. Neighbor buffering is treated as background work in the pager: chip navigation stays enabled, and the latest direct-jump request is replayed after ongoing adjacent preparation/anchor restoration. This needs native Windows interaction acceptance.
