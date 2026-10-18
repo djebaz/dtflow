@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -65,11 +66,16 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-v", "--version", action="version", version=display_identity())
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Log directory (default: repository logs/ or per-user data).")
+    command.add_argument("-ml", "--max-load", type=int, metavar="N", help="Development: initial gallery load target (1–2000).")
+    command.add_argument("-mc", "--max-cards", type=int, metavar="N", help="Development: mounted gallery card limit (300, 500, 1000, 2000).")
     commands = command.add_subparsers(dest="command", required=True)
     gui = commands.add_parser("gui", help=COMMAND_HELP["gui"])
     gui.add_argument(
         "-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes for this run."
     )
+    # Accept either placement: before or after the "gui" subcommand.
+    gui.add_argument("-ml", "--max-load", type=int, metavar="N", default=argparse.SUPPRESS, help="Development: initial gallery load target (1–2000).")
+    gui.add_argument("-mc", "--max-cards", type=int, metavar="N", default=argparse.SUPPRESS, help="Development: mounted gallery card limit (300, 500, 1000, 2000).")
     testing = commands.add_parser("test", help="Run repository tests through pytest.")
     testing.add_argument("-all", "--all", action="store_true", help="Run offline tests, optionally with live groups.")
     testing.add_argument("-live", "--live", action="store_true", help="Run non-generative live connectivity checks.")
@@ -667,6 +673,21 @@ def start_logging(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     startup.mark("python imports")
     args = parser().parse_args(argv)
+    if args.max_load is not None or args.max_cards is not None:
+        if args.command != "gui" or not args.dev:
+            print("Gallery tuning arguments require -x and the gui command.", file=sys.stderr)
+            return EXIT_INVALID
+        if args.max_load is not None and not 1 <= args.max_load <= 2000:
+            print("--max-load must be between 1 and 2000.", file=sys.stderr)
+            return EXIT_INVALID
+        if args.max_cards is not None and args.max_cards not in (300, 500, 1000, 2000):
+            print("--max-cards must be 300, 500, 1000, or 2000.", file=sys.stderr)
+            return EXIT_INVALID
+        # Set before importing the GUI: gallery constants read these on import.
+        if args.max_load is not None:
+            os.environ["DTFLOW_GALLERY_LOAD_SIZE"] = str(args.max_load)
+        if args.max_cards is not None:
+            os.environ["DTFLOW_GALLERY_RESIDENT_LIMIT"] = str(args.max_cards)
     from dtflow.persistence.gallery_snapshot import configure
 
     configure(no_cache=getattr(args, "no_cache", False))
