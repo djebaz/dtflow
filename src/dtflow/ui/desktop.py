@@ -31,6 +31,8 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Override the diagnostic log directory.")
     command.add_argument("-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes.")
+    command.add_argument("-ml", "--max-load", type=int, metavar="N", help="Development: target cards loaded per window (1–2000).")
+    command.add_argument("-mc", "--max-cards", type=int, metavar="N", help="Development: maximum mounted cards (300, 500, 1000, 2000).")
     return command
 
 
@@ -55,6 +57,15 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
     if args.version:
         report(display_identity())
         return 0
+    if (args.max_load is not None or args.max_cards is not None) and not args.dev:
+        report("Gallery tuning arguments require -x / --dev.", error=True)
+        return 2
+    if args.max_load is not None and not 1 <= args.max_load <= 2000:
+        report("--max-load must be between 1 and 2000.", error=True)
+        return 2
+    if args.max_cards is not None and args.max_cards not in (300, 500, 1000, 2000):
+        report("--max-cards must be 300, 500, 1000, or 2000.", error=True)
+        return 2
 
     session = None
     try:
@@ -67,6 +78,12 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
             )
         except LoggingSetupError:
             report("Diagnostic logs are unavailable. Continuing without a log file.", error=True)
+        # Gallery module reads these settings on first import; CLI overrides the
+        # existing experimental environment setting for this launch only.
+        if args.max_load is not None:
+            os.environ["DTFLOW_GALLERY_LOAD_SIZE"] = str(args.max_load)
+        if args.max_cards is not None:
+            os.environ["DTFLOW_GALLERY_RESIDENT_LIMIT"] = str(args.max_cards)
         from dtflow.ui.app import run_gui
 
         return run_gui(no_cache=args.no_cache)

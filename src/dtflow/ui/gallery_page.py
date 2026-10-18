@@ -95,6 +95,15 @@ MAX_MOUNTED_IMAGES = (
     if dev_enabled() and _EXPERIMENTAL_RESIDENT_LIMIT in ("300", "500", "1000", "2000")
     else PAGE_SIZE * 3
 )
+# Query batches remain capped at 200 records. This independently controls the
+# total initial window target; mounting still yields across Qt event-loop turns.
+_EXPERIMENTAL_LOAD_SIZE = os.environ.get("DTFLOW_GALLERY_LOAD_SIZE", "")
+MAX_LOAD_IMAGES = (
+    min(int(_EXPERIMENTAL_LOAD_SIZE), MAX_MOUNTED_IMAGES)
+    if dev_enabled() and _EXPERIMENTAL_LOAD_SIZE.isascii() and _EXPERIMENTAL_LOAD_SIZE.isdecimal()
+    and 1 <= int(_EXPERIMENTAL_LOAD_SIZE) <= 2000
+    else PAGE_SIZE
+)
 MAX_QUERY_ITEMS = 200  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
@@ -1345,7 +1354,11 @@ class GalleryPage(QObject):
         # The mounted window may contain three batches (300 records), while
         # individual GalleryQuery reads are independently capped at 200.
         # Preserve it through refresh with at most two bounded reads.
-        target_count = min(MAX_MOUNTED_IMAGES, len(self.items)) if preserve and not reset and self.items else PAGE_SIZE
+        target_count = (
+            min(MAX_MOUNTED_IMAGES, max(len(self.items), MAX_LOAD_IMAGES))
+            if preserve and not reset and self.items
+            else MAX_LOAD_IMAGES
+        )
         if target_count > query.limit:
             query = replace(query, limit=min(MAX_QUERY_ITEMS, target_count))
         self._submit_query(query, anchor=anchor, target_count=target_count)
