@@ -273,5 +273,22 @@ the existing 300-card bound remains, and evictions cannot remove the active
 pager zone. This minimizes wait at zone transitions but may do unnecessary
 preparation if the user never navigates; it does **not** eliminate thumbnail
 decoding or Qt widget costs and has no verified new native Windows timings.
-Test active middle zones, direct jumps, page edges, quick filter changes and
-the zero-result → same-key regression in the next Windows smoke. Neighbor buffering is treated as background work in the pager: chip navigation stays enabled, and the latest direct-jump request is replayed after ongoing adjacent preparation/anchor restoration. This needs native Windows interaction acceptance.
+Neighbor buffering is background work: pager chips stay enabled, and the
+latest direct-jump request is replayed after ongoing adjacent preparation and
+anchor restoration. The active zone is chosen from the visible midpoint or
+explicit pager jump; a check delayed by unfinished Qt geometry is rescheduled
+rather than dropped. Test active middle zones, direct jumps (including repeated
+clicks while preparing), page edges, quick filter changes, and zero-result →
+same-key recovery in the next native Windows smoke. Collect `grid_mount_complete`
+max-slice/work/elapsed metrics and `gui_gap` with a recorded source commit; do
+not interpret the 4 ms target as a strict maximum for a single Qt operation.
+
+**Functional evidence before documentation closeout:** implementation head
+`f554cbe` passed [CI 39134001319](https://github.com/djebaz/dtflow/actions/runs/39134001319)
+(627 passed, 3 skipped; Ruff and lock checks) and
+[UI renders 39134001312](https://github.com/djebaz/dtflow/actions/runs/39134001312)
+(239 offline states). The checks include the empty-result recovery,
+interrupted mounting, stale callbacks, eager adjacent buffering and latest
+busy-time chip jump. They do not measure native Windows frame times, physical
+scroll/trackpad input, packaged startup, or billable inference. No training,
+inference or paid provider operation was run.
