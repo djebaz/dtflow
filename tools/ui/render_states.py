@@ -831,6 +831,9 @@ def render_gallery_composition_states(shell, state, out):
     with (
         patch.object(shell.runner, "submit", side_effect=hold_worker),
         patch.object(gallery, "_schedule_save"),
+        # Synthetic projections intentionally drive exact row/cell contents;
+        # do not submit real neighbor workers during screenshot assembly.
+        patch.object(gallery, "_queue_neighbor_prefetch"),
     ):
         gallery.save_timer.stop()
         form.imagesNavigationButton.click()
@@ -1250,6 +1253,14 @@ def render_gallery_composition_states(shell, state, out):
         gallery.cards_layout.activate()
         gallery.grid_cards.adjustSize()
         QTest.qWait(80)
+        # A middle 100-image zone has both neighboring zones already
+        # resident, with no further worker read needed for either direction.
+        centered = gallery._grid_buttons[three_batches[149].identity].parentWidget()
+        gallery.grid_scroll.verticalScrollBar().setValue(centered.y())
+        middle_first, _middle_last, middle_visible = grid_visible(loaded=300)
+        assert 150 in middle_visible and 101 <= middle_first <= 200
+        assert gallery.pager.buttons[2].isChecked()
+        snap("images-101-pager-neighbor-buffer-centered")
         target_card = gallery._grid_buttons[three_batches[249].identity].parentWidget()
         gallery.grid_scroll.verticalScrollBar().setValue(target_card.y())
         first, last, visible = grid_visible(loaded=300)
@@ -1332,27 +1343,27 @@ def render_gallery_composition_states(shell, state, out):
         first, _last, _visible = grid_visible(loaded=100)
         assert first == 1201 and gallery.pager.buttons[13].isChecked()
         assert len(gallery.pager._gaps) == 2
-        # Regression: after jumping to a loaded batch, the viewport is at
-        # its beginning. A downward user scroll must NOT fetch older images
-        # merely because the backward edge happens to be close.
+        # Neighbor buffering is no longer driven by distance to the edge:
+        # a resident 100-card zone requests the immediate next batch even
+        # when its first image is visible. Actual reads remain synthetic here.
         assert gallery.mode == "Grid"
         assert not gallery._loading and not gallery._adjacent_loading
         with (
             patch.object(gallery, "_load_adjacent") as fetch,
             patch.object(gallery, "_visible_range", return_value=(1201, 1210)),
         ):
-            gallery._maybe_load_boundary(1)
-            fetch.assert_not_called()
-            gallery._maybe_load_boundary(-1)
-            fetch.assert_called_once_with(-1)
+            gallery._prefetch_neighbors()
+            fetch.assert_called_once_with(1)
         with (
             patch.object(gallery, "_load_adjacent") as fetch,
             patch.object(gallery, "_visible_range", return_value=(1291, 1300)),
         ):
-            gallery._maybe_load_boundary(-1)
-            fetch.assert_not_called()
-            gallery._maybe_load_boundary(1)
+            gallery._prefetch_neighbors()
             fetch.assert_called_once_with(1)
+        with patch.object(gallery, "_queue_neighbor_prefetch") as schedule:
+            gallery._maybe_load_boundary(-1)
+            gallery._maybe_load_boundary(1)
+            assert schedule.call_count == 2
         # Input handlers must retain scroll direction when queuing a
         # deferred fetch, rather than rerunning an undirected proximity test.
         with patch.object(gallery, "_maybe_load_boundary") as boundary:
