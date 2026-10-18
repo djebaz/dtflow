@@ -57,7 +57,6 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     gallery._neighbor_prefetch_timer.stop()
     monkeypatch.setattr(gallery, "_queue_neighbor_prefetch", lambda: None)
     gallery.auto_button.setChecked(False)
-    gallery.preparation.budget_ms = 0  # deterministically one record per event-loop turn
     form.resize(1200, 800)
     form.show()
     gallery.set_active(True)
@@ -70,6 +69,9 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
         ),
         timeout=5000,
     )
+    # The initial page prepares with the production budget; the tests below observe preparation mid-flight, so
+    # from here it is deterministically one record per event-loop turn.
+    gallery.preparation.budget_ms = 0
     yield form, gallery, runner, records, state
     runner.shutdown()
 
