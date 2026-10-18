@@ -4,6 +4,7 @@ import asyncio
 import json
 import subprocess
 import sys
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from textwrap import indent
@@ -160,6 +161,21 @@ def _live_warnings(properties) -> list[dict]:
         elif key == "fix" and notes:
             notes[-1]["fix"] = value
     return notes
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_sessionstart(session):
+    """Let the xdist controller spawn only its exact execnet worker bootstraps; workers re-install the guard."""
+    config = session.config
+    if hasattr(config, "workerinput") or not config.pluginmanager.has_plugin("dsession"):
+        yield
+        return
+    from execnet.gateway_io import popen_bootstrapline
+
+    with ExitStack() as stack:
+        for flags in (["-u"], ["-u", "-B"]):
+            stack.enter_context(child_command([sys.executable, *flags, "-c", popen_bootstrapline]))
+        yield
 
 
 @pytest.hookimpl(hookwrapper=True)

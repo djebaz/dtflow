@@ -278,8 +278,8 @@ jobs:
       - name: SQLite version
         run: uv run python -c "import sqlite3; print(sqlite3.sqlite_version)"
 
-      - name: Pytest (offline)
-        run: uv run pytest
+      - name: Pytest (offline, parallel)
+        run: uv run pytest -n auto
 
       - name: Report tests result
         # always(): otherwise a failed or cancelled run leaves the status pending forever.
