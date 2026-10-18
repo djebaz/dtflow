@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
 from time import monotonic
 
-from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot
+from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import (
     QIcon,
     QImage,
@@ -141,7 +141,7 @@ def _image(
             else path
         )
 
-    def decode(source: str | QBuffer) -> tuple[QImage | None, str]:
+    def decode(source: str | QIODevice) -> tuple[QImage | None, str]:
         reader = QImageReader(source)
         reader.setAutoTransform(True)
         if max_side:
@@ -189,10 +189,13 @@ def _image(
         return None, str(exc)
     except OriginalImagesBusyError:
         return None, "Original temporarily busy"
-    buffer = QBuffer()
-    buffer.setData(QByteArray(data))
-    buffer.open(QIODevice.OpenModeFlag.ReadOnly)
-    return decode(buffer)
+    # QDataStream owns a native C++ QBuffer here; no stream deserialization is
+    # performed. A Python-created QBuffer has virtual I/O callbacks which can
+    # re-enter Python while Qt holds its image-plugin mutex. A concurrent GUI
+    # paint/save can then invert that mutex with the GIL. Keep this owner alive
+    # until decoding finishes, preserving the immutable bytes and scaled reads.
+    encoded = QDataStream(QByteArray(data))
+    return decode(encoded.device())
 
 
 def _missing_icon() -> QIcon:
@@ -1812,6 +1815,9 @@ class GalleryPage(QObject):
             )
 
         def prepare():
+            if self.runner.closed or generation != self._query_generation:
+                self._suppress_batch_scroll = False
+                return
             # Adding rows to QGridLayout posts geometry updates; setting the
             # scrollbar before those updates apply can silently clamp to zero.
             # Finalize the layout in this turn, then restore in the next one.
@@ -1822,10 +1828,12 @@ class GalleryPage(QObject):
                 self.grid_cards.adjustSize()
             # Moving 300 cards can queue a second Qt geometry pass after
             # activate(). Restoring immediately reads stale Y coordinates.
-            QTimer.singleShot(20, settle)
+            QTimer.singleShot(20, self, settle)
 
         def settle():
             try:
+                if self.runner.closed or generation != self._query_generation:
+                    return
                 if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
                     if mode == "Grid":
                         button = self._grid_buttons.get(anchor)
@@ -1873,7 +1881,7 @@ class GalleryPage(QObject):
             finally:
                 self._suppress_batch_scroll = False
 
-        QTimer.singleShot(0, prepare)
+        QTimer.singleShot(0, self, prepare)
         self._schedule_save()
 
     def _dispose_prepared_entry(self, entry):
@@ -2891,6 +2899,10 @@ class GalleryPage(QObject):
                     continue
                 self.cards_layout.removeWidget(card)
             self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
+            # New, privately prepared cards are initially hidden. Make their
+            # size hints participate before activating/resizing the grid;
+            # Qt's later implicit show would otherwise move the restored anchor.
+            card.show()
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._grid_layout_keys = keys
         self._grid_layout_columns = columns
@@ -3004,8 +3016,11 @@ class GalleryPage(QObject):
     def _restore_scroll_later(self, anchor: str | None = None) -> None:
         target = self._page_scroll_target
         self._page_scroll_target = None
+        generation = self._query_generation
 
         def restore():
+            if self.runner.closed or generation != self._query_generation:
+                return
             for name, bar in (
                 ("grid", self.grid_scroll.verticalScrollBar()),
                 ("list", self.table.verticalScrollBar()),
@@ -3040,7 +3055,7 @@ class GalleryPage(QObject):
                 if row < len(self._film_buttons):
                     self.film_scroll.ensureWidgetVisible(self._film_buttons[row])
 
-        QTimer.singleShot(0, restore)
+        QTimer.singleShot(0, self, restore)
 
     def _read_action(self, action: str) -> None:
         if self._snapshot_at and action == "edit":

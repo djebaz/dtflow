@@ -39,7 +39,7 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
         "{}",
         fake_fixture_image.stat().st_size,
     )
-    records = tuple(replace(base, identity=str(index)) for index in range(300))
+    records = tuple(replace(base, identity=str(index)) for index in range(400))
     state = {"records": records[:200]}
 
     async def read(_state, query):
@@ -118,6 +118,62 @@ def test_shutdown_does_not_restart_viewer_save(presentation, qtbot, monkeypatch)
     gallery._flush_save()
     qtbot.wait(30)
     assert not gallery.save_timer.isActive()
+
+
+def test_forward_eviction_keeps_grid_anchor_after_layout_settles(presentation, qtbot):
+    _form, gallery, _runner, records, state = presentation
+    state["records"] = records
+    gallery.items, gallery.total, gallery.offset = list(records[:300]), 400, 0
+    gallery._render_page()
+    gallery._rendered_page = (0, records[:300])
+    qtbot.wait(100)
+    gallery.cards_layout.activate()
+    gallery.grid_cards.adjustSize()
+    qtbot.wait(80)
+    bar = gallery.grid_scroll.verticalScrollBar()
+    anchor = records[249].identity
+    card = gallery._grid_buttons[anchor].parentWidget()
+    bar.setValue(card.y())
+    qtbot.wait(60)
+    before = card.y() - bar.value()
+    retained = gallery._grid_buttons[anchor]
+    # The same asynchronous read-completion seam used by wheel prefetch.
+    gallery._load_adjacent(1)
+    qtbot.waitUntil(
+        lambda: gallery.offset == 100 and not gallery._adjacent_loading and not gallery._suppress_batch_scroll,
+        timeout=5000,
+    )
+    qtbot.wait(150)  # include deferred child visibility/layout/deletion events
+    assert gallery._grid_buttons[anchor] is retained
+    assert card.y() - bar.value() == before
+    assert card.isVisible()
+    assert len(gallery.items) == gallery.table.rowCount() == 300
+
+
+def test_shutdown_drops_pending_anchor_restoration(presentation, qtbot, monkeypatch):
+    _form, gallery, runner, _records, _state = presentation
+    original_prepare = gallery._prepare_page
+
+    def prepare(records, generation, done):
+        def committed():
+            done()
+            assert len(gallery.items) == 200
+            runner.shutdown()  # close at the commit seam, before queued geometry restoration
+
+        original_prepare(records, generation, committed)
+
+    original_capture = gallery._capture_scroll
+
+    def capture():
+        assert not runner.closed, "Read Qt scroll controls after shutdown"
+        original_capture()
+
+    monkeypatch.setattr(gallery, "_prepare_page", prepare)
+    monkeypatch.setattr(gallery, "_capture_scroll", capture)
+    gallery._load_adjacent(1)
+    qtbot.waitUntil(lambda: runner.closed, timeout=5000)
+    qtbot.wait(80)
+    assert not gallery._suppress_batch_scroll
 
 
 def test_shutdown_cancels_uncommitted_widgets(presentation, qtbot):

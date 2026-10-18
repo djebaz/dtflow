@@ -26,6 +26,9 @@ controls. A regression exercises this boundary.
 
 ## Local measurements
 
+These measurements describe the original preparation experiment, before the
+geometry/codec follow-ups below; they are not a final-head frame-time guarantee.
+
 Linux virtual X11, Qt/PySide 6.12, Python 3.13.16, 1600×1000, scale 1.0.
 Ten repetitions per transition, synthetic records and predecoded 256×192
 pixmaps; no DB, file IO, providers or inference. Values are milliseconds.
@@ -111,10 +114,10 @@ a backwards-fetch regression.
    and trackpad. Keep any unrun row pending. An offline capture or green CI does
    not substitute for these native acceptance steps.
 
-PR #92 stays draft pending latency-outlier work, the intermittent Detail stall,
-and native owner acceptance. No provider calls or real output mutations were
-needed for this work. GitHub's draft-PR CI and UI-render runs were skipped;
-the passing 616/3 and 232-state results above were executed locally, not in CI.
+At the initial checkpoint PR #92 was draft pending latency-outlier work, the
+intermittent Detail stall and native owner acceptance. No provider calls or real
+output mutations were needed. Its initial draft-PR workflows were skipped;
+the initial 616/3 and 232-state results above were local, not CI.
 
 ### Detail-chevron visual follow-up
 
@@ -126,5 +129,51 @@ and exercise both navigation actions. Focused renders and Ruff pass.
 A full-render repeat during this follow-up stopped at the existing 300-card
 eviction assertion: image 250 was lost from the viewport (321–336 visible).
 An isolated copy of the unchanged pre-chevron head `25c0e60` reproduced the
-same failure. Keep this paging/anchor regression open; do not count the new
-captures as a passing full 234-state run.
+same failure. Those focused captures were not a passing full 234-state run.
+
+### Actions render and interaction follow-up
+
+Inspected [Actions run 39123329604](https://github.com/djebaz/dtflow/actions/runs/39123329604)
+and downloaded its `ui-renders-pr92-8c9dd67` artifact. It failed after 107
+captures on the early List-prepend anchor assertion. The Grid eviction,
+List 100/101 and Detail chevron captures were also visually inspected; file-size
+badges were visibly clipped against the right edge.
+
+- **Grid geometry:** a small asynchronous-read regression reproduced the
+  anchor shift. Prepared cards were still explicitly hidden when layout/anchor
+  geometry was calculated; Qt's later show changed row sizes. Explicitly show
+  cards as they enter the layout. The retained anchor/widget survives eviction
+  with the same viewport offset. Deferred restores now have a QObject context
+  and reject shutdown or superseded query generations.
+- **List fixture timing:** waiting for data/preparation completion did not
+  necessarily wait for the queued anchor restore. Fixtures now include that
+  final phase before capturing or moving to the next scenario. A named early
+  List-prefetch capture retains image 113 at the top.
+- **Buffered image I/O:** a native stack probe observed GUI PNG writing waiting
+  on Qt's image mutex while a worker was in buffered image reading. A regression
+  then proved that the Python-created QBuffer could call a Python virtual read
+  from inside the codec. QDataStream now only owns a native C++ raw-byte buffer;
+  no data-stream deserialization occurs. This removes that Python callback/GIL
+  re-entry mechanism, retains owner lifetime through decode and preserves the
+  original-file lease, 600 px thumbnail scaling and original-size Detail path.
+  Do not treat it as universal native/Windows stall acceptance for issue #88.
+- **Badges:** right alignment uses the measured text width. Narrow previews
+  show one elided dimensions badge instead of overlapping/clipping two labels;
+  full metadata remains in the presentation model. Paint regressions cover both
+  ordinary and narrow widths.
+- **Deterministic fixtures/checks:** synthetic removal results disable real
+  five-second polling while their callbacks are driven explicitly. Auto-refresh
+  and snapshot behavior keep their earlier dedicated cases. The countdown test
+  checks its synchronous initial value before yielding to Qt; the cloud GUI
+  test receives a controlled missing-credentials service result, leaving real
+  credential/TLS behavior to lower-layer tests.
+
+The final full local suite passed **620 tests, 3 skipped**. The full local
+renderer passed **238 states in 146.8 seconds**, including new
+`images-99` through `images-102`. The new anchor, badge, buffered-decode and
+shutdown regressions cover the corrected paths. Ruff passes. Final CI results
+must be checked against the pushed head; local captures remain layout evidence,
+not physical input or Windows/DPI acceptance. A short post-geometry microprobe
+still showed ordinary GUI-gap outliers, so the original <16/<33 ms goals remain
+open. No provider calls, inference, original mutations or billable operations
+were required.

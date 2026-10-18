@@ -96,8 +96,15 @@ class CoverPainter(QObject):
                 painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 9, 9)
             if self.badges:
                 painter.setFont(self.badge_font)
-                for x, text in [(6, self.badges[0]), (rect.width() - 58, self.badges[1])]:
-                    width = painter.fontMetrics().horizontalAdvance(text) + 12
+                metrics = painter.fontMetrics()
+                labels = self.badges
+                if sum(metrics.horizontalAdvance(text) + 12 for text in labels) > rect.width() - 18:
+                    # At small zoom, keep one readable dimensions badge rather
+                    # than overlap both labels or clip them against the image.
+                    labels = (metrics.elidedText(labels[0], Qt.ElideRight, max(0, int(rect.width()) - 24)),)
+                for index, text in enumerate(labels):
+                    width = metrics.horizontalAdvance(text) + 12
+                    x = 6 if index == 0 else rect.width() - width - 6
                     badge = QRectF(x, rect.height() - 28, width, 22)
                     painter.setBrush(QColor(self.tokens["color.canvas"]))
                     painter.setPen(Qt.NoPen)

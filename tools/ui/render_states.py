@@ -1231,7 +1231,11 @@ def render_gallery_composition_states(shell, state, out):
         assert gallery.preparation.active and len(gallery.items) == 100
         assert gallery._grid_buttons[multi_item(1).identity] is retained
         save(form, out / "image-navigation", "images-95-pager-preparing-next-100")
-        wait_for(lambda: not gallery.preparation.active and not gallery._adjacent_loading)
+        wait_for(
+            lambda: (
+                not gallery.preparation.active and not gallery._adjacent_loading and not gallery._suppress_batch_scroll
+            )
+        )
         assert len(gallery.items) == gallery.table.rowCount() == len(gallery._film_entries) == 200
         assert gallery._grid_buttons[multi_item(1).identity] is retained
         snap("images-96-pager-prepared-200")
@@ -1273,12 +1277,17 @@ def render_gallery_composition_states(shell, state, out):
             ),
             None,
         )
-        wait_for(lambda: not gallery.preparation.active and not gallery._adjacent_loading)
+        wait_for(
+            lambda: (
+                not gallery.preparation.active and not gallery._adjacent_loading and not gallery._suppress_batch_scroll
+            )
+        )
         assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES
         assert gallery.offset == 100
         assert gallery.items[0].identity == multi_item(101).identity
         assert gallery.items[-1].identity == multi_item(400).identity
         assert multi_item(100).identity not in gallery._grid_buttons
+        assert all(button.parentWidget().isVisible() for button in gallery._grid_buttons.values())
         assert gallery.pager.status.text() == "300 buffered"
         first, last, visible = grid_visible(loaded=300)
         assert 250 in visible, (
@@ -1404,7 +1413,13 @@ def render_gallery_composition_states(shell, state, out):
                 prepended_page(),
                 None,
             )
-            wait_for(lambda: not gallery.preparation.active and not gallery._adjacent_loading)
+            wait_for(
+                lambda: (
+                    not gallery.preparation.active
+                    and not gallery._adjacent_loading
+                    and not gallery._suppress_batch_scroll
+                )
+            )
             assert gallery.offset == 0
             assert len(gallery.items) == 200
             assert [record.identity for record in gallery.items[:100]] == [
@@ -1470,6 +1485,7 @@ def render_gallery_composition_states(shell, state, out):
         prepend_from_page_two()
         assert gallery._browsing_anchor() == before
         assert gallery.pager.buttons[2].isChecked()
+        snap("images-99-pager-list-prefetch-keeps-anchor")
 
         present(item)
         gallery._sync_pager()
@@ -1494,6 +1510,13 @@ def render_gallery_composition_states(shell, state, out):
         shell.progress_strip.finish("export")
         gallery.export_button.click()
         assert form.imageExportBox.parentWidget() is form.imageExportConnectionHost
+        present(replace(item, file_size=123_456_789))
+        snap("images-100-detail-thumbnail-badges")
+        gallery.slider.setValue(25)
+        QTest.qWait(130)
+        assert gallery._film_entries[item.identity][0].width() == 88
+        snap("images-101-detail-thumbnail-badges-small")
+        gallery.slider.setValue(100)
         present(item)
         raw = gallery._widget("galleryRawMetadata")
         gallery._widget("galleryRawButton", QPushButton).setChecked(True)
@@ -1553,6 +1576,11 @@ def render_gallery_composition_states(shell, state, out):
 def render_removal_and_selection_states(shell, item, plan, out):
     """Images consent, notices and result rows; every removal/query worker is bypassed."""
     recycle, gallery, strip = shell.image_recycle, shell.gallery, activity_strip(shell.form)
+    # These states drive synthetic callbacks explicitly. A real five-second
+    # poll must not overwrite that projection halfway through a slow capture.
+    # Live/snapshot auto-refresh behavior is exercised before this catalogue.
+    gallery.auto_button.setChecked(False)
+    assert not gallery.auto_timer.isActive()
 
     def snap(name):
         QTest.qWait(100)
@@ -1822,7 +1850,9 @@ def render_mapped_gallery_states(app, state, out):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
             shell.gallery.select(item.identity)
+            wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull())
             QTest.qWait(150)
+            save(shell.form, out, "images-102-buffered-detail-decoded")
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
             target = out / "images-07-mapped-edit-eligible.png"
             if not shell.form.grab().save(str(target)):
