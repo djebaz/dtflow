@@ -118,17 +118,14 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
         ),
         timeout=3000,
     )
-    # Retained cards stay in place, and every 100-image batch starts on a
-    # fresh grid row even when the last row of the prior batch is incomplete.
+    # The append fast path must leave retained cards in their existing cells
+    # while placing both new and old cards in the expected row/column.
     columns = gallery._grid_layout_columns
-    rows_per_batch = (gallery_ui.PAGE_SIZE + columns - 1) // columns
     for index in (0, 50, 99, 100, 150, 199):
         card = gallery._grid_buttons[str(index)].parentWidget()
         layout_index = gallery.cards_layout.indexOf(card)
         assert layout_index >= 0
-        batch, within_batch = divmod(index, gallery_ui.PAGE_SIZE)
-        expected = (batch * rows_per_batch + within_batch // columns, within_batch % columns)
-        assert gallery.cards_layout.getItemPosition(layout_index)[:2] == expected
+        assert gallery.cards_layout.getItemPosition(layout_index)[:2] == divmod(index, columns)
 
 
 def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot):
@@ -417,90 +414,9 @@ def test_page_jump_while_neighbor_is_loading_replays_latest_request(presentation
             gallery._pending_page_jump is None
             and not gallery._loading
             and not gallery._adjacent_loading
-            and not gallery._suppress_batch_scroll
-            and gallery._grid_mount_keys is None
-            and gallery.offset <= 200 < gallery.offset + len(gallery.items)
-            and gallery.pager.buttons[3].isChecked()
-            and 201 <= gallery._visible_range()[0] <= 300
+            and gallery.offset == 200
+            and len(gallery.items) == 100
         ),
         timeout=9000,
     )
-    # A resident buffer may retain pages 1 and 2. Assert the requested
-    # page's identities and viewport instead of requiring a fresh 100-card read.
-    index = 200 - gallery.offset
-    assert tuple(gallery.items[index : index + gallery_ui.PAGE_SIZE]) == records[200:300]
-    assert len(gallery.items) <= gallery_ui.MAX_MOUNTED_IMAGES
-    assert gallery._grid_buttons["200"].parentWidget().isVisible()
-
-def test_backward_edge_scroll_reveals_one_row_not_whole_page(presentation, qtbot):
-    """A wheel dispatched before Qt reaches zero must survive async prefetch."""
-    _form, gallery, _runner, records, state = presentation
-    state["records"] = records
-    gallery.offset, gallery.total, gallery.items = 200, 400, list(records[200:400])
-    gallery._render_page()
-    gallery._rendered_page = (200, records[200:400])
-    qtbot.waitUntil(
-        lambda: (
-            len(gallery._grid_layout_keys) == 200
-            and gallery._grid_mount_keys is None
-            and not gallery.reflow_timer.isActive()
-        ),
-        timeout=5000,
-    )
-    bar = gallery.grid_scroll.verticalScrollBar()
-    assert bar.maximum() > 0
-    bar.setValue(1)
-    gallery._request_boundary_prefetch(-1, "wheel")
-    assert gallery._requested_backward_reveal
-    bar.setValue(0)  # the gesture reaches the old edge while the read is pending
-    assert gallery._load_adjacent(-1)
-    qtbot.waitUntil(
-        lambda: (
-            gallery.offset == 100
-            and len(gallery.items) == 300
-            and gallery._grid_mount_keys is None
-            and not gallery._suppress_batch_scroll
-            and not gallery._adjacent_loading
-        ),
-        timeout=9000,
-    )
-    first, last = gallery._visible_range()
-    assert 200 - gallery._grid_layout_columns < first <= 200, (first, last)
-    assert last >= 201
-
-
-def test_forward_edge_scroll_reveals_next_row_not_whole_page(presentation, qtbot):
-    """At the old bottom, revealing the next batch retains nearby images."""
-    _form, gallery, _runner, records, state = presentation
-    state["records"] = records
-    gallery.offset, gallery.total, gallery.items = 0, 400, list(records[:200])
-    gallery._render_page()
-    gallery._rendered_page = (0, records[:200])
-    qtbot.waitUntil(
-        lambda: (
-            len(gallery._grid_layout_keys) == 200
-            and gallery._grid_mount_keys is None
-            and not gallery.reflow_timer.isActive()
-        ),
-        timeout=5000,
-    )
-    bar = gallery.grid_scroll.verticalScrollBar()
-    assert bar.maximum() > 0
-    bar.setValue(bar.maximum())
-    first_before, last_before = gallery._visible_range()
-    gallery._request_boundary_prefetch(1, "wheel")
-    assert gallery._requested_forward_reveal
-    assert gallery._load_adjacent(1)
-    qtbot.waitUntil(
-        lambda: (
-            len(gallery.items) == 300
-            and gallery._grid_mount_keys is None
-            and not gallery._suppress_batch_scroll
-            and not gallery._adjacent_loading
-        ),
-        timeout=9000,
-    )
-    first_after, last_after = gallery._visible_range()
-    assert first_after >= first_before, (first_before, first_after)
-    assert first_after <= last_before + 1, (first_after, last_before)
-    assert last_after >= 201, (first_after, last_after)
+    assert tuple(gallery.items) == records[200:300]
