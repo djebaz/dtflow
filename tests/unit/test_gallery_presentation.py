@@ -356,3 +356,38 @@ def test_neighbor_prefetch_keeps_previous_and_next_zones_buffered(presentation, 
     assert tuple(gallery.items) == records[:300]
     assert len(gallery._grid_buttons) == 300
     assert gallery.cards_layout.indexOf(gallery._grid_buttons["299"].parentWidget()) >= 0
+
+
+def test_direct_jump_preloads_both_neighbor_zones(presentation, qtbot):
+    """Jumping into a middle zone preloads both neighbors, not only forward."""
+    _form, gallery, _runner, records, state = presentation
+    state["records"] = records
+    gallery.refresh(reset=True, preserve=False)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=5000)
+    gallery._jump_to_page(3)  # query page 3, which is not resident
+    qtbot.waitUntil(
+        lambda: (
+            not gallery._loading
+            and gallery.offset == 200
+            and len(gallery.items) == 100
+            and gallery._grid_mount_keys is None
+            and not gallery.reflow_timer.isActive()
+        ),
+        timeout=5000,
+    )
+    gallery._queue_neighbor_prefetch = GalleryPage._queue_neighbor_prefetch.__get__(gallery)
+    gallery._queue_neighbor_prefetch()
+    qtbot.waitUntil(
+        lambda: (
+            gallery.offset == 100
+            and len(gallery.items) == 300
+            and gallery._grid_mount_keys is None
+            and not gallery._adjacent_loading
+            and not gallery._suppress_batch_scroll
+        ),
+        timeout=9000,
+    )
+    assert tuple(gallery.items) == records[100:400]
+    assert gallery._grid_buttons["200"].parentWidget().isVisible()
+    assert gallery.cards_layout.indexOf(gallery._grid_buttons["100"].parentWidget()) >= 0
+    assert gallery.cards_layout.indexOf(gallery._grid_buttons["399"].parentWidget()) >= 0
