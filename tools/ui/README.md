@@ -22,6 +22,22 @@ uv run python tools/ui/preview_gallery_detail.py --capture out/gallery-detail-op
 
 `states.py` families: buttons, connection, gallery, inputs, checks, lists, tabs, labels, popups.
 
+## Interactive Windows gallery performance automation (PR #104, draft)
+
+This test is **not** an offscreen capture. `windows_gallery_benchmark.py` uses optional [pywinauto](https://github.com/pywinauto/pywinauto) to drive a separate, real DTFlow GUI process on an unlocked Windows desktop. It exercises Images Grid/List/Detail, pager chips, scrolling and positive-prompt filter editing and reads the existing `-x` gallery diagnostic logs. It does not generate images.
+
+The benchmark experiments vary the screenshot-listed **6 thumbnail workers, 3 screens of lookahead, 4 ms preparation/mount budgets, 600 px thumbnails, 256 pending cache writes, 20,000/16,000/500 cache-eviction values, 5 s/30 s refresh and 300/250/40 ms debounce settings**. Source-only `-ml 20 -mc 100` is fixed for every profile; it is **not** a tuned variable.
+
+From PowerShell in the PR #104 checkout (after `uv sync --frozen`):
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-01 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
+Use a new output folder every time. `--ack-user-state` acknowledges that source DTFlow browses your **existing** saved-output state and may change preferences or disposable thumbnails; this tooling does not provide an isolated test catalogue. Avoid running it against valuable cache data without a backup and do not run another DTFlow instance concurrently. Pywinauto accessibility support, Windows latency, DPI and packaged execution have **not** been validated by Linux tests or static renders. Review per-run `trial.json`, the app's `-gallery.csv`, `results.csv` and `summary.csv`; an absent event-loop gap is not proof of a zero-millisecond freeze.
+
+See the [implementation plan and full matrix command](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md) and the [development performance guide](../../devdocs/guides/development.md#native-windows-images-performance-matrix-experimental-pr-104). The 100–200-image everyday benchmark cannot meaningfully tune cache eviction at 20,000 entries without a separate, safe stress dataset.
+
 ## Workflow-state filenames
 
 ### PR #102 gallery squash preparation
