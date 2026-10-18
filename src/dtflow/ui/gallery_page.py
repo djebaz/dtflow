@@ -97,6 +97,7 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 5000
+LOOKAHEAD_SCREENS = 3  # loaded beyond the viewport: at least one batch or this many screens
 AUTO_REFRESH_FULL_INTERVAL_S = 30  # a full read periodically guards against missed file metadata changes
 STANDARD_THUMBNAIL_PX = 320
 MIN_THUMBNAIL_PERCENT = 25
@@ -443,6 +444,7 @@ class GalleryPage(QObject):
         self._grid_slots: dict[str, tuple[int, int]] = {}
         self._held_anchor: tuple[str, int] | None = None
         self._held_scroll_delta = 0
+        self._scroll_direction = 1  # last user scroll direction; forward first
         self.items: list[GalleryItem] = []
         self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
@@ -1983,7 +1985,7 @@ class GalleryPage(QObject):
         first, last = self._visible_range()
         return (
             f"Showing {first}–{last} of {self.total}; {len(self.items)} buffered. "
-            "The previous and next 100-image batches load automatically; use the numbered chips to jump."
+            "Images above and below load automatically as you scroll; use the numbered chips to jump."
         )
 
     def _queue_neighbor_prefetch(self) -> None:
@@ -1992,12 +1994,10 @@ class GalleryPage(QObject):
             self._neighbor_prefetch_timer.start(0)
 
     def _prefetch_neighbors(self) -> None:
-        """Buffer the zones immediately before and after the visible 100-image zone.
+        """Keep LOOKAHEAD_SCREENS of images loaded beyond the viewport.
 
-        The active zone follows the viewport midpoint or an explicit page
-        jump, never the buffer's starting offset. Only one read/preparation runs at
-        once, and the existing three-batch eviction keeps resident widgets
-        bounded. A new zone may trigger another check after anchor restoration.
+        Only one read/preparation runs at once; each settled load re-checks,
+        so batches chain until the lookahead is met or -mc stops eviction.
         """
         if (
             self.runner.closed
@@ -2023,34 +2023,31 @@ class GalleryPage(QObject):
         first, last = self._visible_range()
         if first < 1:
             return
-        midpoint = (first + last) // 2
-        visible_zone = ((midpoint - 1) // PAGE_SIZE) * PAGE_SIZE
-        # A direct chip jump expresses a stronger zone intent than a Qt grid
-        # row straddling the previous 100-image boundary.
-        zone_start = self._prefetch_zone_hint
-        if zone_start is None or not (self.offset <= zone_start < self.offset + len(self.items)):
-            zone_start = visible_zone
-            self._prefetch_zone_hint = None
+        # Infinite-scroll lookahead: keep several screens loaded beyond the
+        # viewport in both directions, measured in images, not batch zones.
+        self._prefetch_zone_hint = None
         resident_end = self.offset + len(self.items)
-        # Forward first: scrolling toward the next zone is the common path.
-        # Then fill the previous zone if one exists and is not resident.
-        for target in (zone_start + PAGE_SIZE, zone_start - PAGE_SIZE):
-            if target < 0 or target >= self.total or self.offset <= target < resident_end:
+        need = max(PAGE_SIZE, LOOKAHEAD_SCREENS * (last - first + 1))
+        room = {1: resident_end - last, -1: (first - 1) - self.offset}
+        preferred = self._scroll_direction
+        for direction in (preferred, -preferred):
+            if room[direction] >= need:
                 continue
-            direction = 1 if target >= resident_end else -1
-            expected = resident_end if direction > 0 else self.offset - PAGE_SIZE
-            if target != expected:
-                continue  # Never bridge a discontinuous page window.
-            if len(self.items) >= MAX_MOUNTED_IMAGES:
-                evicted_start = self.offset if direction > 0 else resident_end - PAGE_SIZE
-                if evicted_start == zone_start:
-                    continue  # Do not evict the zone the user is viewing.
+            if (direction > 0 and resident_end >= self.total) or (direction < 0 and self.offset <= 0):
+                continue
+            if len(self.items) + PAGE_SIZE > MAX_MOUNTED_IMAGES:
+                # Only the direction of travel may evict, and only a batch the
+                # viewport has fully left; the opposite side never evicts, so
+                # the two directions cannot ping-pong.
+                if direction != preferred or room[-direction] < PAGE_SIZE:
+                    continue
             if dev_enabled():
                 log.debug(
-                    "gallery_perf phase=neighbor_prefetch active_page=%d direction=%s offset=%d resident=%d",
-                    zone_start // PAGE_SIZE + 1,
+                    "gallery_perf phase=neighbor_prefetch direction=%s ahead=%d behind=%d need=%d resident=%d",
                     "forward" if direction > 0 else "backward",
-                    target,
+                    room[1],
+                    room[-1],
+                    need,
                     len(self.items),
                 )
             self._load_adjacent(direction)
@@ -3569,6 +3566,7 @@ class GalleryPage(QObject):
         if direction not in (-1, 1):
             return
         self._prefetch_zone_hint = None
+        self._scroll_direction = direction
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=scroll_intent direction=%s source=%s offset=%d mounted=%d",
