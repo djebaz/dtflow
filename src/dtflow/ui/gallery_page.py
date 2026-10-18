@@ -1382,33 +1382,38 @@ class GalleryPage(QObject):
         self._sync_canvas_loading()
 
         async def extend_page(current: GalleryQuery, page: GalleryPage, read) -> GalleryPage:
-            """Retain up to three buffered batches using bounded 200-row queries."""
-            if len(page.items) != current.limit or target_count <= current.limit:
-                return page
-            remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
-            if remaining <= 0:
-                return page
-            next_query = replace(
-                current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
-            )
-            extension_started = monotonic()
-            extension = await read(next_query)
-            if dev_enabled():
-                log.debug(
-                    "gallery_perf phase=query_extension elapsed_ms=%.1f offset=%d returned=%d",
-                    (monotonic() - extension_started) * 1000,
-                    next_query.offset,
-                    len(extension.items),
+            """Extend the resident window with independently bounded reads."""
+            while len(page.items) == current.limit and len(page.items) < target_count:
+                remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
+                if remaining <= 0:
+                    break
+                next_query = replace(
+                    current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
                 )
-            if (
-                extension.total != page.total
-                or extension.snapshot_at != page.snapshot_at
-                or {item.identity for item in page.items} & {item.identity for item in extension.items}
-            ):
-                # Concurrent gallery changes must never produce an inconsistent
-                # mounted sequence. A subsequent poll can refill the window.
-                return page
-            return replace(page, items=(*page.items, *extension.items), limit=len(page.items) + len(extension.items))
+                extension_started = monotonic()
+                extension = await read(next_query)
+                if dev_enabled():
+                    log.debug(
+                        "gallery_perf phase=query_extension elapsed_ms=%.1f offset=%d returned=%d",
+                        (monotonic() - extension_started) * 1000,
+                        next_query.offset,
+                        len(extension.items),
+                    )
+                if (
+                    extension.total != page.total
+                    or extension.snapshot_at != page.snapshot_at
+                    or {item.identity for item in page.items} & {item.identity for item in extension.items}
+                ):
+                    # Do not combine inconsistent snapshots or changed sorts.
+                    break
+                page = replace(
+                    page,
+                    items=(*page.items, *extension.items),
+                    limit=len(page.items) + len(extension.items),
+                )
+                if len(extension.items) < next_query.limit:
+                    break
+            return page
 
         async def work():
             current = query
