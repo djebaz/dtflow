@@ -29,7 +29,7 @@ The derived LoRA cache writer is implemented. A successful `dtflow models` or de
 | `.dtflow/cache/inventory/local_inventory.json` | Disposable local inventory cache |
 | `.dtflow/cache/inventory/cloud_inventory.json` | Disposable cloud inventory cache |
 | `.dtflow/cache/inventory/lora_inventory.json` | Derived local-gRPC + DT+ LoRA availability cache; rebuildable from live evidence |
-| `.dtflow/cache/thumbnails/<artifact-id>.webp` | Regenerable thumbnail |
+| `.dtflow/cache/thumbnails/<shard>/<identity-hash>.<fingerprint-hash>.{jpg,webp}` | Regenerable 600 px gallery thumbnail, with a best-effort pruning target of 20,000 entries; fingerprint hashes original size/mtime/file ID, side and selected format; JPEG 85 default, developer WebP 80 override, alpha-channel fallback to WebP |
 | `.dtflow/cache/derived/image_analysis.json` | Implemented disposable source-only checksum/advisory pixel-analysis cache, reused across export destinations; bounded/versioned, no prompts, source paths or destination records; included in Derived cleanup and no-cache |
 | `.dtflow/cache/derived/<artifact-id>_<transformation-id>.png` | Regenerable derived asset |
 | `logs/dtflow-<session>.log` | Rotating application diagnostics, one file set per process; the newest 20 sessions are kept |
@@ -84,6 +84,12 @@ Noise/blank export routing is a default-on advisory option: flagged copies and m
 
 `<state>/cache.lock` is the shared OS-lock coordination file for cache readers/writers and cleanup. It is outside `cache/` categories, not durable generation ownership, and must not be deleted to clear active ownership. Inventory/image-analysis persistence, export computation/checkpoints and bounded category measurement/purge use the common nonblocking lease. No-cache export bypasses persistent cache; busy cache export falls back to uncached work. See [cache-management architecture](cache-management.md) for redirected-path refusal, partial-failure semantics and acceptance boundaries.
 
+
+### Thumbnail cache review boundary (PR #102)
+
+Thumbnail entries are regenerable private pixel copies, not originals or mutation authority. JPEG 85 is the default; the developer WebP 80 selection changes cache fingerprints, while alpha-channel images retain WebP. Successful replacement removes older same-output entries of either extension; shard pruning is best effort and count-based, not a strict byte quota. Old flat legacy files are outside that pruning traversal.
+
+Thumbnail deletion now validates the cache/category, lexical direct-shard membership, shard and leaf under the shared deletion lease; traversal checks the shard before inspecting its entries. This addresses issue #103's preexisting redirected-parent finding. The cooperating-process lease does not make hostile filesystem replacement impossible; source checks and platform-specific fixtures do not themselves establish native runtime acceptance. Removal still cannot prevent an already queued thumbnail write from republishing after cleanup, and oversized flat legacy-cache cleanup remains separate. See the [pre-merge review and remaining gates](../plans/2026-10-17-images-hybrid-pagination.md#evidence-and-remaining-gates). Issue #103's source fix changes thumbnail refusal checks only, not export/original-removal authority, dispatch or provider behavior.
 
 ## Image-operation input snapshots (source-only helpers)
 

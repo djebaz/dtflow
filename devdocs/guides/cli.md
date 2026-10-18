@@ -34,7 +34,11 @@ See [queues and batch plans](queues.md) for queue commands and JSON plans. These
 
 Generation: `-p/--prompt`, `-n/--negative`, `-m/--model`, `-s/--seed`, `-w/--width`, `-y/--height`, `-i/--steps`, `-g/--guidance`, `-a/--sampler`, `-l/--lora ID:WEIGHT` (repeatable, explicit weight required), `-r/--prefix`, `-o/--out`, `-t/--timeout`.
 
-Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local), `-d/--state`, `-nc/--no-cache` (bypasses persistent disposable-cache reads and writes; also on `dtflow gui`).
+Connection: `-b/--backend`, `-e/--endpoint HOST:PORT` (local), `-d/--state`, `-nc/--no-cache` (bypasses persistent disposable-cache reads and writes; also on `dtflow gui`). `dtflow gui` also accepts the gallery test limits `-ml/--load N` and `-mc/--cards N` described in the [desktop guide](desktop.md), before or after `gui` (for example `dtflow -x -ml 200 -mc 2000 gui`); other commands ignore them.
+
+Gallery launch defaults are `-ml 20 -mc 100`: 20 records per batch/page chip and a maximum of 100 buffered cards. Both arguments accept positive integers; the card cap rounds down to whole batches, with at least one batch. Without `-mc`, the cap remains 100 before that rounding; there is no separate maximum-buffered setting. These source CLI options are not parsed by the packaged desktop launcher, which uses the application defaults.
+
+For developer thumbnail-cache comparisons, use `dtflow gui -format jpg` (default, JPEG quality 85) or `dtflow gui -format webp` (WebP quality 80); `--format` is equivalent. This GUI-only argument goes after `gui`, is not persisted, and does not change original images or JPEG export. Alpha-channel thumbnails retain WebP even in JPG mode. The selected format has a separate cache fingerprint; switching rebuilds entries as they are viewed, with old entries removed on successful replacement. Clear thumbnails removes both formats.
 
 Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`.
 
@@ -49,7 +53,7 @@ the dispatch ownership lock.
 `gallery list` supports `-p/--prompt`, `-n/--negative`,
 `-m/--model`, `-l/--lora`, `-s/--since`, `-u/--until`,
 `-r/--ratio`, `-w/--width`, `-y/--height`, `-o/--sort`,
-`-k/--limit` (1–200) and `-f/--offset`. Prompt matching is a
+`-k/--limit` (1–1000) and `-f/--offset`. Prompt matching is a
 case-insensitive literal substring; model and LoRA matching use exact recorded
 identifiers. Filters compose with AND. `since` is inclusive and `until` is
 exclusive; CLI timestamps are UTC dates or offset-aware ISO values.

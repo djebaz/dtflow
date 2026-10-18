@@ -1,10 +1,53 @@
 # Images Option 2a — hybrid pagination and lazy scroll
 
+## Combined PR #95 / #102 landing review (2026-10-18)
+
+PR #102 was squash-merged into PR #95's branch as `bc71857` on 2026-10-18; main remained unchanged. PR #95 is now the combined landing PR to main, carrying the retained performance work and #102's follow-ups. Review the complete `main...PR95-head` delta and exact-head CI before its final squash. No revert or cherry-pick of #102 is required. PR #95's page-jump reuse, continuous-row/edge-reveal changes and accompanying assertions were reverted/superseded in #102; do not describe those experiments as shipped behavior.
+
+Retained from #95: separate SQLite and Python row-building wall/CPU measurements, listener-side aggregation of repetitive gallery metrics, sanitized per-session `dtflow-<session>-gallery.csv` alongside text logs in development mode, signature-gated auto-refresh and visible-first thumbnail scheduling. Current #102 behavior adds distance-based bounded preloading, filter/sort page-1 reset, configurable 20/100 defaults, up-to-1000-row bounded reads, JPEG/WebP disk thumbnails and stable first-card/row mounting. See the [development diagnostics guide](../guides/development.md) and [CLI options](../guides/cli.md#options).
+
+### Evidence and remaining gates
+
+- Verified remote evidence at `2d66450`: [lock/lint/test CI succeeded](https://github.com/djebaz/dtflow/actions/runs/39167791529); the [UI-render job was skipped](https://github.com/djebaz/dtflow/actions/runs/39167791519), not passed. Documentation/render-script follow-up changes require fresh head checks. No local tests or renders ran.
+- Owner reports initial-load card/row sliding appears resolved after the geometry corrections, and prefers `-ml 20 -mc 100`. This is scoped source-run interaction feedback, not universal performance, all navigation/zoom/DPI cases or packaged acceptance.
+- Offline states 103–106 are source-present for pending/decoded card geometry and default first-batch/full-buffer presentation. Their current execution/artifact acceptance remains pending; historical 100/300 stress states remain intentionally separate.
+- **Issue #103 source fix on the combined #95 branch:** `forget` validates shards before traversal; `prune` checks shards before scanning; all three deletion helpers revalidate cache/category, direct-shard membership, shard and leaf before unlinking under the shared lease. A headless fixture matrix covers redirected cache/category/shards for all helpers plus ordinary JPEG/WebP cleanup and out-of-category discard refusal. POSIX runs use real symlinks; native Windows runs use isolated PowerShell 7 junction fixtures (explicit skip if unavailable). No local tests or destructive reproduction ran. Exact-head CI remains the merge gate, and neither source presence nor Linux CI claims Windows runtime acceptance. Hostile concurrent filesystem swaps are not made impossible by a cooperating-process lease.
+- Removal cleanup is best effort; queued/in-progress thumbnail writes can publish after the one-shot `forget`. Existing oversized flat legacy caches are not pruned by the new shard-only eviction path and can still exceed cleanup's 100,000-entry inspection budget. These review items remain unresolved, not silently accepted.
+- Shared-lock contention is reduced, not eliminated; absolute grid-row growth remains an unmeasured concern. Scratch-file publication overhead and packaged image-plugin support still need appropriate evidence. Top-level acceptance of unused `-ml/-mc` on non-GUI commands remains a low-priority CLI cleanup.
+- Worker count, lookahead, slice budgets, cache backlog/eviction and refresh/debounce settings were inventoried, not retuned. No new developer knobs beyond the agreed launch options are introduced.
+
+### Owner-run codec microbenchmark
+
+The owner ran the local scratch benchmark on Windows AMD64, Python 3.13.13 / Qt 6.12.0: 30 sampled images out of 949 candidates, maximum side 600, one warmup plus three shuffled rounds, no alpha-channel samples. Preparation/startup were excluded; publication included system-temp creation, encode, copy, atomic replacement and cleanup without `fsync`; cache hits used warm OS-cache file reads and scaled decoding. This is single-threaded codec/I/O evidence, not full gallery latency or equal visual quality. The scratch script is not a distributed build input.
+
+| Metric | JPEG 85 median / p95 | WebP 80 median / p95 |
+| --- | --- | --- |
+| Encode | 8.74 / 12.97 ms | 43.91 / 69.11 ms |
+| Encode and publish | 13.02 / 17.33 ms | 48.16 / 73.55 ms |
+| Warm read and decode | 4.36 / 6.40 ms | 4.83 / 7.63 ms |
+| Mean file size | 38.2 KiB | 21.7 KiB |
+
+The chosen JPEG default trades larger sample files for faster encoding/publication on this machine; it does not establish global smoothness or RAM savings. Alpha-channel thumbnails retain WebP.
+
+## Implementation history and historical trials
+
+Current defaults (PR #102, 2026-10-18): 20 images per navigation chip/database batch and at most 100 mounted/buffered Grid/List cards (five default batches), selected after the owner's preferred `-ml 20 -mc 100` run. The CLI's `-mc` cap is that same maximum-buffered variable. Explicit overrides remain supported; the default 100-card cap rounds down to whole batches, with at least one batch. The 100/300 trial and its acceptance evidence below are historical; stress fixtures retain those values explicitly, while `images-105-pager-default-20-first-batch` and `images-106-pager-default-100-buffered` show the new defaults. No local tests or renders ran for this change; CI and packaged acceptance remain pending.
+
+PR #102 initial-card geometry follow-up (2026-10-18): keep hidden image/text children in layout measurement, populate metadata immediately, and reserve the complete polished card height before mounting. New entries, prepared entries and zoom use the same sizing path; thumbnail completion changes pixels only. Provider-free pending/decoded Grid previews and presentation assertions cover the geometry contract. No local tests/renders were run; CI and owner Windows first-load/zoom acceptance remain pending.
+
+The owner reports improved card sizing but a remaining slide between card rows. Grid top/left alignment is now initialized before any mounting slice, rather than set only after the last slice; partial-mount presentation assertions compare row gaps and positions with the completed batch. This is a source correction, not yet Windows visual acceptance.
+
+The owner clarified that later rows initially overlap the preceding row's bottom, then move to the proper gap. Each Grid mount slice now finalizes outer layout geometry even when no scroll anchor is held (the initial-load path); only scrollbar correction remains conditional on an anchor. Partial-mount assertions inspect positions immediately after the production slice, without manually activating the layout in the fixture, and compare them again after later event-loop turns. Per-slice timing includes the geometry work. No local tests or renders were run.
+
+Owner smoke update (2026-10-18): after the complete card-sizing/alignment/per-slice geometry corrections, the owner reports the initial-load card and inter-row sliding now appears resolved. This accepts the observed interaction only, not CI, all navigation/zoom scenarios, native DPI variants or packaged execution.
+
+PR #102 thumbnail-format follow-up (2026-10-18): the disposable 600 px disk cache defaults to JPEG quality 85, with source `dtflow gui -format/--format webp` selecting WebP quality 80 for developer comparisons. Alpha-channel thumbnails retain WebP; format-specific fingerprints rebuild on demand, and cleanup handles both extensions. This changes neither paging nor layout. The owner's Windows microbenchmark supports faster JPEG encoding/publication for its sampled images, not a native GUI smoothness or packaged-acceptance claim.
+
 Date: 2026-10-17  
 Status: PR #89 implementation validated by offline CI/render; native performance follow-up remains open  
 Base: latest `main` when branch was created
 
-## 100-image pages / 300-image buffer trial (2026-10-18)
+## Historical 100-image pages / 300-image buffer trial (2026-10-18)
 
 **Owner-requested experimental parameters:** 100 images per navigation chip and database batch; at most 300 image cards resident in Grid/List, with sliding three-batch retention. A direct jump fetches 100; adjacent scroll fetches the next/previous 100; when a fourth batch arrives, evict the farthest 100 while preserving the visible saved-output identity and scroll anchor. The pager says **“N buffered”**, not “N loaded,” to make clear these are only the currently mounted nearby images, not the historical number fetched. At image 506 of a large gallery, the current buffer can contain up to 300 nearby records, not 506.
 
@@ -14,7 +57,7 @@ Base: latest `main` when branch was created
 
 ## Approved UX contract
 
-Implement **Option 2a** from the user-provided `Images Pager Mockup.dc.html`: **Hybrid — infinite scroll + position scrubber + jump chips**. The compact pager displays a visible range (e.g. `81–104 of 342`), a loaded count, and numbered jump chips. A chip indicates the batch currently in view, not just the most recently requested batch. The original mockup used 80-image pages; the current owner-requested trial uses `PAGE_SIZE = 100` and `MAX_MOUNTED_IMAGES = 300` (three contiguous batches), with a separate per-query database limit of 200. Additional batches appear during normal vertical scrolling, prefetched before the edge; users can also jump to an arbitrary batch without manually scrolling through preceding batches. Keep the mockup's visual treatment and do not substitute a conventional Prev/Next-only footer.
+Implement **Option 2a** from the user-provided `Images Pager Mockup.dc.html`: **Hybrid — infinite scroll + position scrubber + jump chips**. The compact pager displays a visible range (e.g. `81–104 of 342`), a loaded count, and numbered jump chips. A chip indicates the batch currently in view, not just the most recently requested batch. The original mockup used 80-image pages; the current defaults use `PAGE_SIZE = 20` and `MAX_MOUNTED_IMAGES = 100` (five default batches), with a separate per-query database limit of 1000. The 100/300 configuration above is a historical trial and an explicitly retained stress fixture. Additional batches appear during normal vertical scrolling, prefetched before the edge; users can also jump to an arbitrary batch without manually scrolling through preceding batches. Keep the mockup's visual treatment and do not substitute a conventional Prev/Next-only footer.
 
 **Consistency:** One canonical Qt pager widget remains **visible in the same relative position with the same geometry, controls, states and behavior in both normal and fullscreen Images**. No floating, auto-hiding, repositioned or separate fullscreen pager. Grid, List and Detail share this state; Detail's image Previous/Next continues to work across batch boundaries. Preserve the existing full-screen collapse of secondary chrome without hiding the pager.
 

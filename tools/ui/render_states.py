@@ -39,6 +39,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidg
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
+from dtflow import gallery_limits  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
@@ -831,6 +832,9 @@ def render_gallery_composition_states(shell, state, out):
     with (
         patch.object(shell.runner, "submit", side_effect=hold_worker),
         patch.object(gallery, "_schedule_save"),
+        # Existing stress/continuity screenshots intentionally retain 100/300.
+        patch.object(gallery_ui, "PAGE_SIZE", 100),
+        patch.object(gallery_ui, "MAX_MOUNTED_IMAGES", 300),
         # Synthetic projections intentionally drive exact row/cell contents;
         # do not submit real neighbor workers during screenshot assembly.
         patch.object(gallery, "_queue_neighbor_prefetch"),
@@ -1013,6 +1017,7 @@ def render_gallery_composition_states(shell, state, out):
                 visible_end=shown_end,
                 loaded=len(records) if loaded is None else loaded,
                 active_page=(shown_start - 1) // gallery_ui.PAGE_SIZE + 1,
+                batch_size=gallery_ui.PAGE_SIZE,
             )
             assert len(gallery.items) == last - first + 1
             assert gallery.table.rowCount() == len(gallery.items)
@@ -1245,6 +1250,45 @@ def render_gallery_composition_states(shell, state, out):
         assert len(gallery.items) == gallery.table.rowCount() == len(gallery._film_entries) == 200
         assert gallery._grid_buttons[multi_item(1).identity] is retained
         snap("images-96-pager-prepared-200")
+
+        # First-show geometry must already include metadata while pixels wait.
+        # Use the production hidden-preparation path, with workers still held.
+        pending_cards = [replace(multi_item(i), identity=f"offline-pending-thumb:{i}") for i in range(1, 7)]
+        gallery._prepared_entries = {record.identity: gallery._build_prepared_entry(record) for record in pending_cards}
+        reserved_heights = {
+            identity: entry["button"].parentWidget().height() for identity, entry in gallery._prepared_entries.items()
+        }
+        gallery.items, gallery.total, gallery.offset = pending_cards, len(pending_cards), 0
+        gallery._render_page()
+        gallery._rendered_page = (0, tuple(pending_cards))
+        wait_for(lambda: gallery._grid_mount_keys is None and not gallery.reflow_timer.isActive())
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+
+        def pending_geometry():
+            return {
+                record.identity: (
+                    gallery._grid_buttons[record.identity].parentWidget().size(),
+                    gallery._grid_buttons[record.identity].geometry(),
+                    *(label.geometry() for label in gallery._grid_labels[record.identity]),
+                )
+                for record in pending_cards
+            }
+
+        pending_layout = pending_geometry()
+        for record in pending_cards:
+            button = gallery._grid_buttons[record.identity]
+            caption, model = gallery._grid_labels[record.identity]
+            assert button.parentWidget().height() == reserved_heights[record.identity]
+            assert caption.y() > button.geometry().bottom()
+            assert model.y() > caption.geometry().bottom()
+            assert model.geometry().bottom() < button.parentWidget().height()
+            assert gallery._grid_painters[record.identity].pixmap.isNull()
+        snap("images-103-grid-metadata-before-thumbnails")
+        assert pending_geometry() == pending_layout
+        for index, record in enumerate(pending_cards, 1):
+            paint_multi_thumbnail(record, index)
+        snap("images-104-grid-metadata-after-thumbnails")
+        assert pending_geometry() == pending_layout
 
         three_batches = multi_window(1, 300, total=1540)
         gallery.grid_scroll.verticalScrollBar().setValue(0)
@@ -1585,6 +1629,27 @@ def render_gallery_composition_states(shell, state, out):
         gallery.prompt.clear()
         gallery.filter_timer.stop()
         gallery.save_timer.stop()
+
+        # Resolve the real launch defaults rather than duplicating their values
+        # in the fixture. Keep filenames stable; changing defaults needs review.
+        default_batch, default_cards = gallery_limits.resolve(None, None)
+        assert (default_batch, default_cards) == (20, 100), "Update the default preview names and guide together."
+        with (
+            patch.object(gallery_ui, "PAGE_SIZE", default_batch),
+            patch.object(gallery_ui, "MAX_MOUNTED_IMAGES", default_cards),
+        ):
+            gallery.show_view("Grid")
+            multi_window(1, default_batch)
+            gallery.grid_scroll.verticalScrollBar().setValue(0)
+            assert gallery._query(offset=0).limit == default_batch
+            assert gallery.pager.status.text() == "20 buffered"
+            assert gallery.pager.buttons[2].toolTip() == "Jump to images 21–40"
+            snap("images-105-pager-default-20-first-batch")
+            multi_window(1, default_cards)
+            gallery.grid_scroll.verticalScrollBar().setValue(0)
+            assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == default_cards
+            assert gallery.pager.status.text() == "100 buffered"
+            snap("images-106-pager-default-100-buffered")
 
 
 def render_removal_and_selection_states(shell, item, plan, out):
