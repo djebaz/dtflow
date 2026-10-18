@@ -394,6 +394,9 @@ class GalleryPage(QObject):
         self._page_scroll_target: str | None = None
         self._prefetch_zone_hint: int | None = None
         self._pending_page_jump: int | None = None
+        self._page_chip_target: int | None = None
+        self._adjacent_jump_target: int | None = None
+        self._requested_backward_reveal = False
         self.items: list[GalleryItem] = []
         self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
@@ -1389,6 +1392,8 @@ class GalleryPage(QObject):
             feedback(self.page).dismiss()
         if self._restoring:
             return
+        self._page_chip_target = None
+        self._requested_backward_reveal = False
         self.filter_timer.start()
         self._schedule_save()
 
@@ -1442,6 +1447,9 @@ class GalleryPage(QObject):
         if reset:
             self._pending_page_jump = None
             self._pending_jump_timer.stop()
+            self._page_chip_target = None
+            self._adjacent_jump_target = None
+            self._requested_backward_reveal = False
             self.offset = 0
         try:
             query = self._query(offset=self.offset)
@@ -1460,6 +1468,7 @@ class GalleryPage(QObject):
 
     def _submit_query(self, query: GalleryQuery, *, anchor: str | None, target_count: int | None = None) -> None:
         target_count = min(MAX_MOUNTED_IMAGES, target_count if target_count is not None else query.limit)
+        self._adjacent_jump_target = None
         self._query_generation += 1
         generation = self._query_generation
         # A new query supersedes any older adjacent anchor restoration.
@@ -1868,6 +1877,10 @@ class GalleryPage(QObject):
         """Navigate immediately when ready, or queue the latest busy-time jump."""
         if not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
             return
+        # An explicit chip selection survives nearby Grid row/mount changes.
+        self._page_chip_target = page_number
+        self._requested_backward_reveal = False
+        self._sync_pager()
         if (
             self._loading
             or self._adjacent_loading
@@ -1894,9 +1907,9 @@ class GalleryPage(QObject):
             if self.mode == "Grid":
                 button = self._grid_buttons.get(self.items[index].identity)
                 if button is not None:
-                    self.reflow_timer.stop()
-                    self._layout_cards()
-                    self.cards_layout.activate()
+                    # A settled resident window already has valid positions.
+                    if self._grid_layout_keys != tuple(self._grid_buttons):
+                        self._layout_cards()
                     self.grid_scroll.verticalScrollBar().setValue(button.parentWidget().y())
             elif self.mode == "List":
                 cell = self.table.item(index, 0)
@@ -1908,6 +1921,21 @@ class GalleryPage(QObject):
             self._prioritize_thumbnails()
             self._queue_neighbor_prefetch()
             return
+        # Fetch only the missing adjacent batch; retain the overlapping cards.
+        if self.mode in ("Grid", "List") and self.items and target != self._adjacent_failed_offset:
+            direction = (
+                -1 if target == self.offset - PAGE_SIZE
+                else 1 if target == self.offset + len(self.items)
+                else 0
+            )
+            if direction:
+                self._adjacent_jump_target = target
+                if self._load_adjacent(direction):
+                    if dev_enabled():
+                        log.debug("gallery_perf phase=page_jump_reuse page=%d direction=%s mounted=%d",
+                                  page_number, "forward" if direction > 0 else "backward", len(self.items))
+                    return
+                self._adjacent_jump_target = None
         try:
             query = self._query(offset=target)
         except ValidationError as exc:
@@ -1925,7 +1953,7 @@ class GalleryPage(QObject):
             visible_start=first,
             visible_end=last,
             loaded=len(self.items),
-            active_page=((first - 1) // PAGE_SIZE + 1) if first else 0,
+            active_page=self._page_chip_target or (((first - 1) // PAGE_SIZE + 1) if first else 0),
             batch_size=PAGE_SIZE,
             # Eager adjacent preparation is background work: keep jump chips
             # available instead of disabling navigation for each preload.
@@ -1962,6 +1990,7 @@ class GalleryPage(QObject):
             or self._loading
             or self._adjacent_loading
             or self._pending_refresh is not None
+            or self._pending_page_jump is not None
             or self.filter_timer.isActive()
         ):
             return
@@ -1987,9 +2016,12 @@ class GalleryPage(QObject):
             zone_start = visible_zone
             self._prefetch_zone_hint = None
         resident_end = self.offset + len(self.items)
-        # Forward first: scrolling toward the next zone is the common path.
-        # Then fill the previous zone if one exists and is not resident.
-        for target in (zone_start + PAGE_SIZE, zone_start - PAGE_SIZE):
+        neighbors = (
+            (zone_start - PAGE_SIZE, zone_start + PAGE_SIZE)
+            if self._requested_backward_reveal
+            else (zone_start + PAGE_SIZE, zone_start - PAGE_SIZE)
+        )
+        for target in neighbors:
             if target < 0 or target >= self.total or self.offset <= target < resident_end:
                 continue
             direction = 1 if target >= resident_end else -1
@@ -2008,7 +2040,9 @@ class GalleryPage(QObject):
                     target,
                     len(self.items),
                 )
-            self._load_adjacent(direction)
+            reveal_previous = direction < 0 and self._requested_backward_reveal
+            self._requested_backward_reveal = False
+            self._load_adjacent(direction, reveal_previous_requested=reveal_previous)
             return
 
     def _maybe_load_boundary(self, direction: int) -> None:
@@ -2016,15 +2050,15 @@ class GalleryPage(QObject):
         if direction in (-1, 1):
             self._queue_neighbor_prefetch()
 
-    def _load_adjacent(self, direction: int) -> None:
-        """Read one contiguous batch from the same browsing authority as the window."""
+    def _load_adjacent(self, direction: int, *, reveal_previous_requested: bool = False) -> bool:
+        """Read one contiguous batch and report whether the read was scheduled."""
         offset = self.offset + len(self.items) if direction > 0 else self.offset - PAGE_SIZE
         if offset < 0 or offset >= self.total or offset == self._adjacent_failed_offset:
-            return
+            return False
         try:
             query = self._query(offset=offset)
         except ValidationError:
-            return
+            return False
         generation = self._query_generation
         source = self._snapshot_at
         started = monotonic()
@@ -2047,11 +2081,15 @@ class GalleryPage(QObject):
 
         self.runner.submit(
             read(),
-            lambda page, error: self._adjacent_done(generation, direction, query, source, page, error, started),
+            lambda page, error: self._adjacent_done(
+                generation, direction, query, source, page, error, started, reveal_previous_requested
+            ),
         )
+        return True
 
     def _adjacent_done(
-        self, generation: int, direction: int, query: GalleryQuery, source, page, error, started: float | None = None
+        self, generation: int, direction: int, query: GalleryQuery, source, page, error,
+        started: float | None = None, reveal_previous_requested: bool = False,
     ) -> None:
         if generation != self._query_generation:
             return
@@ -2066,17 +2104,25 @@ class GalleryPage(QObject):
             self._prepare_page(
                 page.items,
                 generation,
-                lambda: self._apply_adjacent_done(generation, direction, query, source, page, error, started),
+                lambda: self._apply_adjacent_done(
+                    generation, direction, query, source, page, error, started, reveal_previous_requested
+                ),
             )
         else:
-            self._apply_adjacent_done(generation, direction, query, source, page, error, started)
+            self._apply_adjacent_done(
+                generation, direction, query, source, page, error, started, reveal_previous_requested
+            )
 
     def _apply_adjacent_done(
-        self, generation: int, direction: int, query: GalleryQuery, source, page, error, started: float | None = None
+        self, generation: int, direction: int, query: GalleryQuery, source, page, error,
+        started: float | None = None, reveal_previous_requested: bool = False,
     ) -> None:
         if generation != self._query_generation:
             return
         self._adjacent_loading = False
+        jump_offset = self._adjacent_jump_target if self._adjacent_jump_target == query.offset else None
+        if jump_offset is not None:
+            self._adjacent_jump_target = None
         if self._pending_refresh is not None:
             pending = self._pending_refresh
             self._pending_refresh = None
@@ -2097,6 +2143,10 @@ class GalleryPage(QObject):
             self._sync_pager()
             return
         if error is not None:
+            if jump_offset is not None:
+                # A failed explicit jump must not leave the wrong chip selected.
+                self._page_chip_target = None
+                self._prefetch_zone_hint = None
             self._adjacent_failed_offset = query.offset
             log.warning("gallery adjacent batch read failed reason=%s", type(error).__name__)
             self.refresh_button.setToolTip("The next image batch could not be loaded. Refresh to retry.")
@@ -2118,12 +2168,10 @@ class GalleryPage(QObject):
             return
         anchor = self._browsing_anchor()
         mode = self.mode
-        # Only expose the preceding row automatically after the user has
-        # actually reached the top of the mounted window. An early prefetch
-        # must preserve the current viewport without pulling it backwards.
-        reveal_previous = direction < 0 and (
-            (mode == "Grid" and self.grid_scroll.verticalScrollBar().value() == 0)
-            or (mode == "List" and self.table.verticalScrollBar().value() == 0)
+        # Scrollbar zero after a page chip is not a request to scroll backward.
+        reveal_previous = (
+            direction < 0 and reveal_previous_requested
+            and jump_offset is None and self._pending_page_jump is None
         )
         pixel_offset = 0
         if mode == "Grid" and anchor in self._grid_buttons:
@@ -2179,41 +2227,65 @@ class GalleryPage(QObject):
             try:
                 if self.runner.closed or generation != self._query_generation:
                     return
-                if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
+                if (
+                    jump_offset is not None
+                    and self._pending_page_jump is None
+                    and self.mode == mode
+                    and self.offset <= jump_offset < self.offset + len(self.items)
+                ):
+                    # Mount/layout must finish before jumping to the new batch.
+                    index = jump_offset - self.offset
                     if mode == "Grid":
-                        button = self._grid_buttons.get(anchor)
+                        button = self._grid_buttons.get(self.items[index].identity)
                         if button is not None:
-                            bar = self.grid_scroll.verticalScrollBar()
-                            bar.setValue(button.parentWidget().y() - pixel_offset)
-                        if reveal_previous:
-                            # The last card of the preceding batch is directly
-                            # above the old first row (or alongside it if the
-                            # column count crosses the 100-card boundary).
-                            preceding = self._grid_buttons.get(page.items[-1].identity)
-                            if preceding is not None:
-                                preceding_card = preceding.parentWidget()
-                                if preceding_card.y() < bar.value():
-                                    bar.setValue(preceding_card.y())
+                            self.grid_scroll.verticalScrollBar().setValue(button.parentWidget().y())
                     elif mode == "List":
-                        row = next(i for i, item in enumerate(self.items) if item.identity == anchor)
-                        cell = self.table.item(row, 0)
+                        cell = self.table.item(index, 0)
                         if cell is not None:
                             self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
-                        if reveal_previous:
-                            # One row above, not the first item of the earlier
-                            # 100-record page. Keep the previous anchor mounted.
-                            preceding_row = next(
-                                (i for i, item in enumerate(self.items) if item.identity == page.items[-1].identity),
-                                None,
-                            )
-                            if preceding_row is not None:
-                                preceding_cell = self.table.item(preceding_row, 0)
-                                if preceding_cell is not None:
-                                    self.table.scrollToItem(preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                    self._prefetch_zone_hint = jump_offset
+                    self._prioritize_thumbnails()
+                else:
+                    if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
+                        if mode == "Grid":
+                            button = self._grid_buttons.get(anchor)
+                            if button is not None:
+                                bar = self.grid_scroll.verticalScrollBar()
+                                bar.setValue(button.parentWidget().y() - pixel_offset)
+                            if reveal_previous:
+                                # The last card of the preceding batch is directly
+                                # above the old first row (or alongside it if the
+                                # column count crosses the 100-card boundary).
+                                preceding = self._grid_buttons.get(page.items[-1].identity)
+                                if preceding is not None:
+                                    preceding_card = preceding.parentWidget()
+                                    if preceding_card.y() < bar.value():
+                                        bar.setValue(preceding_card.y())
+                        elif mode == "List":
+                            row = next(i for i, item in enumerate(self.items) if item.identity == anchor)
+                            cell = self.table.item(row, 0)
+                            if cell is not None:
+                                self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                            if reveal_previous:
+                                # One row above, not the first item of the earlier
+                                # 100-record page. Keep the previous anchor mounted.
+                                preceding_row = next(
+                                    (i for i, item in enumerate(self.items) if item.identity == page.items[-1].identity),
+                                    None,
+                                )
+                                if preceding_row is not None:
+                                    preceding_cell = self.table.item(preceding_row, 0)
+                                    if preceding_cell is not None:
+                                        self.table.scrollToItem(preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop)
                 self._capture_scroll()
                 self._sync_pager()
                 if dev_enabled():
                     first, last = self._visible_range()
+                    if jump_offset is not None:
+                        log.debug(
+                            "gallery_perf phase=page_jump_settled target_offset=%d first=%d last=%d active_page=%d",
+                            jump_offset, first, last, self._page_chip_target or 0,
+                        )
                     log.debug(
                         "gallery_perf phase=adjacent_scroll direction=%s reveal_previous=%s "
                         "first=%d last=%d mounted=%d",
@@ -3120,6 +3192,8 @@ class GalleryPage(QObject):
             return
         if mode != self.mode:
             self._prefetch_zone_hint = None
+            self._page_chip_target = None
+            self._requested_backward_reveal = False
         self.mode = mode
         self.stack.setCurrentWidget(self.modes[mode])
         self._widget(f"gallery{mode}Button", QPushButton).setChecked(True)
@@ -3373,7 +3447,9 @@ class GalleryPage(QObject):
             index = self._grid_mount_cursor
             card = self._grid_buttons[keys[index]].parentWidget()
             position = self.cards_layout.indexOf(card)
-            row, col = divmod(index, columns)
+            zone, within_zone = divmod(index, PAGE_SIZE)
+            row = zone * math.ceil(PAGE_SIZE / columns) + within_zone // columns
+            col = within_zone % columns
             if position >= 0:
                 old_row, old_col, _row_span, _col_span = self.cards_layout.getItemPosition(position)
                 if (old_row, old_col) != (row, col):
@@ -3443,7 +3519,9 @@ class GalleryPage(QObject):
         for index in range(retained_prefix, len(keys)):
             card = self._grid_buttons[keys[index]].parentWidget()
             position = self.cards_layout.indexOf(card)
-            row, col = divmod(index, columns)
+            zone, within_zone = divmod(index, PAGE_SIZE)
+            row = zone * math.ceil(PAGE_SIZE / columns) + within_zone // columns
+            col = within_zone % columns
             if position >= 0:
                 old_row, old_col, _row_span, _col_span = self.cards_layout.getItemPosition(position)
                 if (old_row, old_col) == (row, col):
@@ -3499,6 +3577,10 @@ class GalleryPage(QObject):
         if direction not in (-1, 1):
             return
         self._prefetch_zone_hint = None
+        self._page_chip_target = None
+        scrollbar = self.grid_scroll.verticalScrollBar() if self.mode == "Grid" else self.table.verticalScrollBar()
+        self._requested_backward_reveal = direction < 0 and scrollbar.value() == scrollbar.minimum()
+        self._sync_pager()
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=scroll_intent direction=%s source=%s offset=%d mounted=%d",
