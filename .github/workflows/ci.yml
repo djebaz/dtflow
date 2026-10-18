@@ -46,7 +46,7 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write  # sticky Ruff warning comment
   statuses: write
 
 env:
@@ -72,6 +72,7 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           sha=""
+          pr_number=""
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             repo="repos/$GITHUB_REPOSITORY"
             if [ -n "$INPUT_SHA" ]; then
@@ -87,6 +88,7 @@ jobs:
               [[ "$pr" =~ ^[0-9]+$ ]] || { echo "pr must be a number or 'latest'." >&2; exit 1; }
               what="pull request #$pr"
               sha=$(gh api "$repo/pulls/$pr" --jq .head.sha)
+              pr_number="$pr"
             else
               branch="${INPUT_BRANCH:-$DEFAULT_BRANCH}"
               [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "Invalid branch name." >&2; exit 1; }
@@ -96,6 +98,7 @@ jobs:
             echo "Checking $what at $sha" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "pr=$pr_number" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -153,7 +156,7 @@ jobs:
             else
               echo "⚠️ ${count} file(s) would be reformatted (non-blocking). Run \`uv run ruff format\`."
               echo '```'
-              uv run ruff format --check --output-format=concise . 2>&1 | sed -n '1,200p' || true
+              uv run ruff format --check --output-format=concise . 2>&1 | tee ruff-format-concise.txt | sed -n '1,200p' || true
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -180,7 +183,7 @@ jobs:
             else
               echo "⚠️ ${count} finding(s) (non-blocking)."
               echo '```'
-              uv run ruff check --output-format=concise . 2>&1 | sed -n '1,200p' || true
+              uv run ruff check --output-format=concise . 2>&1 | tee ruff-lint-concise.txt | sed -n '1,200p' || true
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
@@ -211,6 +214,55 @@ jobs:
             post "CI · lint (manual)" "Lint passed"
           else
             post "CI · lint (manual)" "Warning: ${LINT_COUNT:-?} lint finding(s) (non-blocking)"
+          fi
+
+      # One PR comment, edited in place on every run, so warnings show on the Conversation tab.
+      - name: Update Ruff warning comment on the PR (non-blocking)
+        if: steps.allow_status.outputs.allowed == 'true' && (github.event_name == 'pull_request' || steps.target.outputs.pr != '')
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || steps.target.outputs.pr }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || steps.target.outputs.sha }}
+          FORMAT_RC: ${{ steps.format_run.outputs.rc }}
+          FORMAT_COUNT: ${{ steps.format_run.outputs.count }}
+          LINT_RC: ${{ steps.lint_run.outputs.rc }}
+          LINT_COUNT: ${{ steps.lint_run.outputs.count }}
+        shell: bash
+        run: |
+          marker="<!-- dtflow-ci-ruff -->"
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n 1)
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [ "${FORMAT_RC:-0}" -eq 0 ] && [ "${LINT_RC:-0}" -eq 0 ]; then
+            # Clean: only touch the PR if an earlier run left a warning comment.
+            [ -n "$existing" ] || { echo "Ruff clean and no earlier comment; nothing to post."; exit 0; }
+            printf '%s\n### ✅ Ruff: all clean\n\nFormat and lint pass on %s ([run](%s)).\n' \
+              "$marker" "${HEAD_SHA:0:7}" "$run_url" > ruff-comment.md
+          else
+            {
+              echo "$marker"
+              echo "### ⚠️ Ruff warnings (non-blocking)"
+              echo
+              echo "On ${HEAD_SHA:0:7} ([run]($run_url)): **${FORMAT_COUNT:-?}** file(s) need formatting, **${LINT_COUNT:-?}** lint finding(s)."
+              for kind in format lint; do
+                f="ruff-$kind-concise.txt"
+                [ -s "$f" ] || continue
+                echo
+                echo "<details><summary>ruff $kind</summary>"
+                echo
+                echo '```'
+                grep -E '^[^ ].*:[0-9]+:[0-9]+: ' "$f" | sed -n '1,50p'
+                echo '```'
+                echo "</details>"
+              done
+              echo
+              echo 'Fix locally with `uv run ruff format` and `uv run ruff check --fix`.'
+            } > ruff-comment.md
+          fi
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@ruff-comment.md > /dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -F body=@ruff-comment.md > /dev/null
           fi
 
       # ---------- Tests (blocking) ----------

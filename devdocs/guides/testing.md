@@ -71,7 +71,7 @@ Each invocation prints and retains `test-runs/<run-id>/`: flat `inventory/local_
 
 ## Continuous integration
 
-[GitHub Actions](../../.github/workflows/ci.yml) runs lock consistency, Ruff lint/format and offline pytest on Ubuntu for pushes to main, non-draft pull requests (including ready-for-review), and manual dispatch, when Python, project metadata, `uv.lock`, `src/dtflow/` or `tests/` files change. Ruff format and lint are non-blocking: findings appear as warning annotations and in the run summary, and only lock or test failures fail the job. Draft PRs are skipped. A newer push to the same PR cancels its previous run; manual runs are not cancelled.
+[GitHub Actions](../../.github/workflows/ci.yml) runs lock consistency, Ruff lint/format and offline pytest on Ubuntu for pushes to main, non-draft pull requests (including ready-for-review), and manual dispatch, when Python, project metadata, `uv.lock`, `src/dtflow/` or `tests/` files change. Ruff format and lint are non-blocking: findings appear as warning annotations, in the run summary and in one PR comment that each run edits in place (it switches to "all clean" once fixed), and only lock or test failures fail the job. Draft PRs are skipped. A newer push to the same PR cancels its previous run; manual runs are not cancelled.
 
 Manual dispatch accepts `sha`, `pr` (number or `latest`) and `branch` (empty means the default branch). Precedence is sha > pr > branch; latest selects the highest-numbered open PR. No application credentials or live generation are used. CI does not establish Windows or packaged acceptance.
 
