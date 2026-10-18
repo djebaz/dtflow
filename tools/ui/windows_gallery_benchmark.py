@@ -222,7 +222,14 @@ def _click_page(window, number: int, actions: list[dict]) -> None:
         button.click_input()
     deadline = time.monotonic() + 4
     while time.monotonic() < deadline:
-        if button.get_toggle_state() == 1:
+        # Pager refresh may replace the original Qt chip after a page jump.
+        # Re-discover it instead of trusting a stale UIA wrapper.
+        try:
+            active = _button(window, name, automation_id=f"galleryPagerPage{number}", timeout=1)
+            selected = active.get_toggle_state() == 1
+        except (LookupError, RuntimeError):
+            selected = False
+        if selected:
             actions.append({
                 "action": name, "verified": True,
                 "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
