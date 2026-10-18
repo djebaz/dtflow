@@ -24,6 +24,7 @@ def utc_boundary(value: str | None) -> str | None:
 
 
 # Longer-side pixel bounds [low, high) per size class.
+MAX_GALLERY_LIMIT = 1000  # rows per single gallery read
 SIZE_CLASSES = {"": None, "small": (0, 400), "medium": (400, 600), "large": (600, 1200), "big": (1200, None)}
 
 
@@ -51,8 +52,8 @@ class GalleryQuery:
             raise ValidationError("Unknown gallery size class.")
         if self.sort not in SORTS:
             raise ValidationError("Unknown gallery sort.")
-        if type(self.limit) is not int or not 1 <= self.limit <= 200:
-            raise ValidationError("Gallery page size must be in 1..200.")
+        if type(self.limit) is not int or not 1 <= self.limit <= MAX_GALLERY_LIMIT:
+            raise ValidationError(f"Gallery page size must be in 1..{MAX_GALLERY_LIMIT}.")
         if type(self.offset) is not int or not 0 <= self.offset <= 2**31 - 1:
             raise ValidationError("Gallery offset must be a nonnegative integer.")
         for value in (self.width, self.height):

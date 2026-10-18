@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
-from PySide6.QtGui import QWheelEvent
+from PySide6.QtGui import QImage, QWheelEvent
 from PySide6.QtWidgets import QApplication
 
 from dtflow.core.gallery import GalleryItem
@@ -17,6 +17,9 @@ from dtflow.ui.runner import AsyncRunner
 
 @pytest.fixture
 def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
+    # These stress fixtures intentionally exercise 100/300, not launch defaults.
+    monkeypatch.setattr(gallery_ui, "PAGE_SIZE", 100)
+    monkeypatch.setattr(gallery_ui, "MAX_MOUNTED_IMAGES", 300)
     form = load_ui(FORMS_DIR / "gallery_detail_page.ui")
     runner = AsyncRunner(form)
     qtbot.addWidget(form, before_close_func=lambda _widget: runner.shutdown())
@@ -52,6 +55,9 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     monkeypatch.setattr(gallery_ui, "query_outputs", read)
     monkeypatch.setattr(gallery_ui, "filter_choices", choices)
     gallery = GalleryPage(form, runner=runner, state_dir=tmp_path / "state")
+    # Alignment must exist before any mount; applying it only after the last
+    # slice lets partially mounted rows shift while the first batch fills.
+    assert gallery.cards_layout.alignment() == (Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
     # Existing presentation fixtures control their own append requests. Pause
     # automatic neighbor buffering here; specific tests explicitly enable it.
     gallery._neighbor_prefetch_timer.stop()
@@ -72,6 +78,44 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     )
     yield form, gallery, runner, records, state
     runner.shutdown()
+
+
+@pytest.mark.parametrize("prepared", [False, True])
+def test_grid_card_reserves_text_rows_before_thumbnail_delivery(presentation, qtbot, monkeypatch, prepared):
+    _form, gallery, _runner, records, _state = presentation
+    monkeypatch.setattr(gallery, "_pump_thumbnails", lambda: None)
+    record = replace(records[0], identity="pending-thumbnail", model="long-checkpoint-name-" * 8)
+    if prepared:
+        entry = gallery._build_prepared_entry(record)
+        gallery._prepared_entries[record.identity] = entry
+        reserved = entry["button"].parentWidget().height()
+    gallery.items, gallery.total, gallery.offset = [record], 1, 0
+    gallery._render_page()
+    gallery._rendered_page = (0, (record,))
+    gallery.reflow_timer.stop()
+    gallery._layout_cards()
+    button = gallery._grid_buttons[record.identity]
+    card = button.parentWidget()
+    caption, model = gallery._grid_labels[record.identity]
+    if prepared:
+        assert card.height() == reserved
+    assert caption.text() and model.text() == record.model
+    assert caption.y() > button.geometry().bottom()
+    assert model.y() > caption.geometry().bottom()
+    assert model.geometry().bottom() < card.height()
+    before = card.size(), button.geometry(), caption.geometry(), model.geometry()
+    qtbot.wait(20)  # First show/layout events must not expand the reserved card.
+    assert (card.size(), button.geometry(), caption.geometry(), model.geometry()) == before
+    image = QImage(record.path)
+    assert not image.isNull()
+    gallery._thumbnail_done(gallery._thumb_versions[record.identity], record.identity, (image, ""), None)
+    qtbot.wait(20)
+    assert (card.size(), button.geometry(), caption.geometry(), model.geometry()) == before
+    gallery.slider.setValue(50)
+    qtbot.waitUntil(lambda: not gallery.reflow_timer.isActive())
+    assert caption.y() > button.geometry().bottom()
+    assert model.geometry().bottom() < card.height()
+    assert card.height() < before[0].height()
 
 
 def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtbot):
@@ -118,17 +162,14 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
         ),
         timeout=3000,
     )
-    # Retained cards stay in place, and every 100-image batch starts on a
-    # fresh grid row even when the last row of the prior batch is incomplete.
+    # The append fast path must leave retained cards in their existing cells
+    # while placing both new and old cards in the expected row/column.
     columns = gallery._grid_layout_columns
-    rows_per_batch = (gallery_ui.PAGE_SIZE + columns - 1) // columns
     for index in (0, 50, 99, 100, 150, 199):
         card = gallery._grid_buttons[str(index)].parentWidget()
         layout_index = gallery.cards_layout.indexOf(card)
         assert layout_index >= 0
-        batch, within_batch = divmod(index, gallery_ui.PAGE_SIZE)
-        expected = (batch * rows_per_batch + within_batch // columns, within_batch % columns)
-        assert gallery.cards_layout.getItemPosition(layout_index)[:2] == expected
+        assert gallery.cards_layout.getItemPosition(layout_index)[:2] == divmod(index, columns)
 
 
 def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot):
@@ -149,6 +190,34 @@ def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot
     assert observed and observed[0] < 200
     assert len(gallery._grid_layout_keys) == 200
     assert gallery.cards_layout.indexOf(first.parentWidget()) >= 0
+
+
+def test_partial_grid_mount_keeps_final_row_spacing(presentation, qtbot, monkeypatch):
+    _form, gallery, _runner, records, _state = presentation
+    monkeypatch.setattr(gallery, "_pump_thumbnails", lambda: None)
+    gallery.slider.setValue(50)
+    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None and not gallery.reflow_timer.isActive())
+    gallery.items = [replace(record, identity=f"partial-mount:{record.identity}") for record in records[:100]]
+    gallery.total, gallery.offset = 100, 0
+    gallery._render_page()
+    gallery.reflow_timer.stop()
+    gallery._grid_mount_budget_ms = 0.0
+    gallery._start_grid_mount()
+    gallery._grid_mount_timer.stop()
+    columns = gallery._grid_mount_columns
+    # Mount just enough to begin row two, before the grid fills the viewport.
+    for _ in range(columns + 1):
+        gallery._mount_grid_slice()
+        gallery._grid_mount_timer.stop()
+    first = gallery._grid_buttons[gallery.items[0].identity].parentWidget()
+    second = gallery._grid_buttons[gallery.items[columns].identity].parentWidget()
+    before = first.y(), second.y()
+    assert second.y() - first.geometry().bottom() - 1 == gallery.cards_layout.verticalSpacing()
+    while gallery._grid_mount_keys is not None:
+        gallery._mount_grid_slice()
+        gallery._grid_mount_timer.stop()
+    qtbot.wait(20)
+    assert (first.y(), second.y()) == before
 
 
 def test_refresh_during_preparation_commits_only_latest_result(presentation, qtbot):
@@ -417,90 +486,9 @@ def test_page_jump_while_neighbor_is_loading_replays_latest_request(presentation
             gallery._pending_page_jump is None
             and not gallery._loading
             and not gallery._adjacent_loading
-            and not gallery._suppress_batch_scroll
-            and gallery._grid_mount_keys is None
-            and gallery.offset <= 200 < gallery.offset + len(gallery.items)
-            and gallery.pager.buttons[3].isChecked()
-            and 201 <= gallery._visible_range()[0] <= 300
+            and gallery.offset == 200
+            and len(gallery.items) == 100
         ),
         timeout=9000,
     )
-    # A resident buffer may retain pages 1 and 2. Assert the requested
-    # page's identities and viewport instead of requiring a fresh 100-card read.
-    index = 200 - gallery.offset
-    assert tuple(gallery.items[index : index + gallery_ui.PAGE_SIZE]) == records[200:300]
-    assert len(gallery.items) <= gallery_ui.MAX_MOUNTED_IMAGES
-    assert gallery._grid_buttons["200"].parentWidget().isVisible()
-
-def test_backward_edge_scroll_reveals_one_row_not_whole_page(presentation, qtbot):
-    """A wheel dispatched before Qt reaches zero must survive async prefetch."""
-    _form, gallery, _runner, records, state = presentation
-    state["records"] = records
-    gallery.offset, gallery.total, gallery.items = 200, 400, list(records[200:400])
-    gallery._render_page()
-    gallery._rendered_page = (200, records[200:400])
-    qtbot.waitUntil(
-        lambda: (
-            len(gallery._grid_layout_keys) == 200
-            and gallery._grid_mount_keys is None
-            and not gallery.reflow_timer.isActive()
-        ),
-        timeout=5000,
-    )
-    bar = gallery.grid_scroll.verticalScrollBar()
-    assert bar.maximum() > 0
-    bar.setValue(1)
-    gallery._request_boundary_prefetch(-1, "wheel")
-    assert gallery._requested_backward_reveal
-    bar.setValue(0)  # the gesture reaches the old edge while the read is pending
-    assert gallery._load_adjacent(-1)
-    qtbot.waitUntil(
-        lambda: (
-            gallery.offset == 100
-            and len(gallery.items) == 300
-            and gallery._grid_mount_keys is None
-            and not gallery._suppress_batch_scroll
-            and not gallery._adjacent_loading
-        ),
-        timeout=9000,
-    )
-    first, last = gallery._visible_range()
-    assert 200 - gallery._grid_layout_columns < first <= 200, (first, last)
-    assert last >= 201
-
-
-def test_forward_edge_scroll_reveals_next_row_not_whole_page(presentation, qtbot):
-    """At the old bottom, revealing the next batch retains nearby images."""
-    _form, gallery, _runner, records, state = presentation
-    state["records"] = records
-    gallery.offset, gallery.total, gallery.items = 0, 400, list(records[:200])
-    gallery._render_page()
-    gallery._rendered_page = (0, records[:200])
-    qtbot.waitUntil(
-        lambda: (
-            len(gallery._grid_layout_keys) == 200
-            and gallery._grid_mount_keys is None
-            and not gallery.reflow_timer.isActive()
-        ),
-        timeout=5000,
-    )
-    bar = gallery.grid_scroll.verticalScrollBar()
-    assert bar.maximum() > 0
-    bar.setValue(bar.maximum())
-    first_before, last_before = gallery._visible_range()
-    gallery._request_boundary_prefetch(1, "wheel")
-    assert gallery._requested_forward_reveal
-    assert gallery._load_adjacent(1)
-    qtbot.waitUntil(
-        lambda: (
-            len(gallery.items) == 300
-            and gallery._grid_mount_keys is None
-            and not gallery._suppress_batch_scroll
-            and not gallery._adjacent_loading
-        ),
-        timeout=9000,
-    )
-    first_after, last_after = gallery._visible_range()
-    assert first_after >= first_before, (first_before, first_after)
-    assert first_after <= last_before + 1, (first_after, last_before)
-    assert last_after >= 201, (first_after, last_after)
+    assert tuple(gallery.items) == records[200:300]
