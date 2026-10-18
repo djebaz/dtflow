@@ -80,3 +80,55 @@ def test_missing_gallery_query_cannot_be_ranked(tmp_path):
     path.write_text("phase,metric,samples,mean,max\ngui_gaps,wall_max_ms,1,80,80\n")
     with pytest.raises(ValueError, match="query"):
         summarize_csv(path)
+
+
+class _FakeInfo:
+    def __init__(self, name, automation_id=""):
+        self.name = name
+        self.automation_id = automation_id
+
+
+class _FakeButton:
+    def __init__(self, name, *, automation_id="", enabled=True, visible=True):
+        self.element_info = _FakeInfo(name, automation_id)
+        self._enabled = enabled
+        self._visible = visible
+
+    def is_enabled(self):
+        return self._enabled
+
+    def is_visible(self):
+        return self._visible
+
+
+class _FakeWindow:
+    def __init__(self, *buttons):
+        self.buttons = list(buttons)
+
+    def descendants(self, *, control_type):
+        assert control_type == "Button"
+        return self.buttons
+
+
+def test_images_navigation_accepts_visible_text_or_qt_accessibility_name():
+    from tools.ui.windows_gallery_benchmark import _button
+
+    images = _FakeButton("Images")
+    assert _button(_FakeWindow(images), "Show saved Images", alternatives=("Images",), timeout=1) is images
+
+    accessible = _FakeButton("Show saved Images")
+    assert _button(_FakeWindow(accessible), "Show saved Images", alternatives=("Images",), timeout=1) is accessible
+
+    object_id = _FakeButton("", automation_id="imagesNavigationButton")
+    assert _button(
+        _FakeWindow(object_id), "Show saved Images", alternatives=("Images",),
+        automation_id="imagesNavigationButton", timeout=1,
+    ) is object_id
+
+
+def test_button_selector_fails_closed_on_ambiguous_matches():
+    from tools.ui.windows_gallery_benchmark import _button
+
+    window = _FakeWindow(_FakeButton("Images"), _FakeButton("Show saved Images"))
+    with pytest.raises(RuntimeError, match="Ambiguous"):
+        _button(window, "Show saved Images", alternatives=("Images",), timeout=1)
