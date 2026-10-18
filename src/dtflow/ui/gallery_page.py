@@ -1777,9 +1777,7 @@ class GalleryPage(QObject):
                             if preceding_row is not None:
                                 preceding_cell = self.table.item(preceding_row, 0)
                                 if preceding_cell is not None:
-                                    self.table.scrollToItem(
-                                        preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop
-                                    )
+                                    self.table.scrollToItem(preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop)
                 self._capture_scroll()
                 self._sync_pager()
                 if dev_enabled():
