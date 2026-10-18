@@ -489,9 +489,15 @@ def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int
     record["step"] = "await-first-images-query"
     initial_count = _await_query(directory, proc, timeout)
     record["initial_query_records"] = initial_count
-    record["step"] = "setup-grid"
-    _click(window, "Grid", record.setdefault("setup_actions", []), automation_id="galleryGridButton")
-    _reset_gallery_sort(window, directory, proc, record, timeout=timeout)
+    _attempt(
+        record, "setup-grid",
+        lambda: _click(window, "Grid", record.setdefault("setup_actions", []),
+                       automation_id="galleryGridButton"),
+    )
+    _attempt(
+        record, "setup-sort",
+        lambda: _reset_gallery_sort(window, directory, proc, record, timeout=timeout),
+    )
     _attempt(
         record, "verify-page-two",
         lambda: _button(window, "Jump to image batch 2", automation_id="galleryPagerPage2", timeout=4),
