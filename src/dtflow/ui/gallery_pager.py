@@ -48,7 +48,7 @@ class GalleryPager:
         visible_end: int,
         loaded: int,
         active_page: int,
-        batch_size: int = 80,
+        batch_size: int = 100,
         loading: bool = False,
         enabled: bool = True,
     ) -> None:
@@ -60,7 +60,7 @@ class GalleryPager:
             self.range.setText("0–0 of 0")
         else:
             self.range.setText(f"{visible_start:,}–{visible_end:,} of {total:,}")
-        self.status.setText(f"Loading {batch_size} more…" if loading else f"{loaded:,} loaded")
+        self.status.setText(f"Loading {batch_size} more…" if loading else f"{loaded:,} buffered")
         pages = self._chip_pages(active_page, page_count)
         if pages != self._rendered_pages:
             for button in self.buttons.values():

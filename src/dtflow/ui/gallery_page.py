@@ -84,8 +84,9 @@ from dtflow.ui.theme import load_tokens
 
 log = logging.getLogger(__name__)
 
-PAGE_SIZE = 80
-MAX_MOUNTED_IMAGES = PAGE_SIZE * 2  # two contiguous batches, never an unbounded widget list
+PAGE_SIZE = 100
+MAX_MOUNTED_IMAGES = PAGE_SIZE * 3  # three contiguous batches, bounded Qt widget residency
+MAX_QUERY_ITEMS = 200  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
 THUMBNAIL_SIDE = 600
@@ -1225,21 +1226,25 @@ class GalleryPage(QObject):
             return
 
         anchor = self._browsing_anchor() if preserve else None
-        if preserve and not reset and self.items:
-            # A refresh of a two-batch window must not discard the adjacent batch.
-            # GalleryQuery allows up to 200 rows; our mounted window is <= 160.
-            query = replace(query, limit=min(MAX_MOUNTED_IMAGES, len(self.items)))
-        self._submit_query(query, anchor=anchor)
+        # The mounted window may contain three batches (300 records), while
+        # individual GalleryQuery reads are independently capped at 200.
+        # Preserve it through refresh with at most two bounded reads.
+        target_count = min(MAX_MOUNTED_IMAGES, len(self.items)) if preserve and not reset and self.items else PAGE_SIZE
+        if target_count > query.limit:
+            query = replace(query, limit=min(MAX_QUERY_ITEMS, target_count))
+        self._submit_query(query, anchor=anchor, target_count=target_count)
 
-    def _submit_query(self, query: GalleryQuery, *, anchor: str | None) -> None:
+    def _submit_query(self, query: GalleryQuery, *, anchor: str | None, target_count: int | None = None) -> None:
+        target_count = min(MAX_MOUNTED_IMAGES, target_count if target_count is not None else query.limit)
         self._query_generation += 1
         generation = self._query_generation
         self._query_started = monotonic()
         if dev_enabled():
             log.debug(
-                "gallery_perf phase=query_start offset=%d limit=%d mounted=%d",
+                "gallery_perf phase=query_start offset=%d limit=%d target_count=%d mounted=%d",
                 query.offset,
                 query.limit,
+                target_count,
                 len(self.items),
             )
         self._loading = True
@@ -1256,6 +1261,27 @@ class GalleryPage(QObject):
         self._sync_pager(loading=not self.items)
         self._sync_canvas_loading()
 
+        async def extend_page(current: GalleryQuery, page: GalleryPage, read) -> GalleryPage:
+            """Retain up to three buffered batches using bounded 200-row queries."""
+            if len(page.items) != current.limit or target_count <= current.limit:
+                return page
+            remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
+            if remaining <= 0:
+                return page
+            next_query = replace(
+                current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
+            )
+            extension = await read(next_query)
+            if (
+                extension.total != page.total
+                or extension.snapshot_at != page.snapshot_at
+                or {item.identity for item in page.items} & {item.identity for item in extension.items}
+            ):
+                # Concurrent gallery changes must never produce an inconsistent
+                # mounted sequence. A subsequent poll can refill the window.
+                return page
+            return replace(page, items=(*page.items, *extension.items), limit=len(page.items) + len(extension.items))
+
         async def work():
             current = query
             anchor_found = False
@@ -1271,6 +1297,7 @@ class GalleryPage(QObject):
             if page.total and not page.items and current.offset >= page.total:
                 current = replace(current, offset=((page.total - 1) // PAGE_SIZE) * PAGE_SIZE)
                 page = await query_outputs(self.state_dir, current)
+            page = await extend_page(current, page, lambda q: query_outputs(self.state_dir, q))
             choices = await filter_choices(self.state_dir)
             return current, page, choices, anchor_found
 
@@ -1285,7 +1312,14 @@ class GalleryPage(QObject):
                     getattr(cause, "sqlite_errorname", "unavailable"),
                 )
                 try:
-                    return await query_snapshot(self.state_dir, query, anchor)
+                    current, page, choices, anchor_found = await query_snapshot(self.state_dir, query, anchor)
+
+                    async def snapshot_read(q: GalleryQuery) -> GalleryPage:
+                        _query, found, _choices, _anchor_found = await query_snapshot(self.state_dir, q, None)
+                        return found
+
+                    page = await extend_page(current, page, snapshot_read)
+                    return current, page, choices, anchor_found
                 except (PersistenceError, OSError):
                     raise live_error from None
 
@@ -1525,7 +1559,7 @@ class GalleryPage(QObject):
         return visible[0], visible[-1]
 
     def _jump_to_page(self, page_number: int) -> None:
-        """Jump within mounted cards or query the requested 80-row batch directly."""
+        """Jump within mounted cards or query the requested 100-row batch directly."""
         if self._loading or self._adjacent_loading or not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
             return
         target = (page_number - 1) * PAGE_SIZE
@@ -1573,6 +1607,7 @@ class GalleryPage(QObject):
             visible_end=last,
             loaded=len(self.items),
             active_page=((first - 1) // PAGE_SIZE + 1) if first else 0,
+            batch_size=PAGE_SIZE,
             loading=(loading or self._loading) and not self.items or self._adjacent_loading,
         )
 
@@ -1763,7 +1798,7 @@ class GalleryPage(QObject):
                         if reveal_previous:
                             # The last card of the preceding batch is directly
                             # above the old first row (or alongside it if the
-                            # column count crosses the 80-card boundary).
+                            # column count crosses the 100-card boundary).
                             preceding = self._grid_buttons.get(page.items[-1].identity)
                             if preceding is not None:
                                 preceding_card = preceding.parentWidget()
@@ -1776,7 +1811,7 @@ class GalleryPage(QObject):
                             self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
                         if reveal_previous:
                             # One row above, not the first item of the earlier
-                            # 80-record page. Keep the previous anchor mounted.
+                            # 100-record page. Keep the previous anchor mounted.
                             preceding_row = next(
                                 (i for i, item in enumerate(self.items) if item.identity == page.items[-1].identity),
                                 None,
