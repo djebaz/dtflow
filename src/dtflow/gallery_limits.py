@@ -1,24 +1,25 @@
-"""Qt-free validation for the gallery's test-only batch and card limits."""
+"""Qt-free parsing for the gallery's test-only batch and card limits."""
 
 import argparse
 
 DEFAULT_BATCH = 100
 DEFAULT_CARDS = DEFAULT_BATCH * 3
-MIN_BATCH = 10
-MAX_BATCH = 200  # GalleryQuery's per-read cap
-MAX_CARDS = 3000
+MAX_READ = 200  # GalleryQuery's per-read cap; larger batches read in chunks
 
 
 def resolve(batch: int | None, cards: int | None) -> tuple[int, int]:
-    """Return (records per read, max mounted cards) or raise ValueError."""
+    """Return (records per batch, max mounted cards) or raise ValueError.
+
+    Paging and eviction move whole batches, so cards round down to a
+    multiple of the batch (at least one batch).
+    """
     batch = DEFAULT_BATCH if batch is None else batch
-    if not MIN_BATCH <= batch <= MAX_BATCH:
-        raise ValueError(f"-ml must be between {MIN_BATCH} and {MAX_BATCH}.")
+    if batch < 1:
+        raise ValueError("-ml must be at least 1.")
     cards = batch * 3 if cards is None else cards
-    # Paging and eviction move whole batches, and eviction needs a second batch.
-    if cards % batch or not 2 * batch <= cards <= MAX_CARDS:
-        raise ValueError(f"-mc must be a multiple of -ml, at least twice -ml and at most {MAX_CARDS}.")
-    return batch, cards
+    if cards < 1:
+        raise ValueError("-mc must be at least 1.")
+    return batch, max(batch, cards - cards % batch)
 
 
 def add_arguments(command: argparse.ArgumentParser) -> None:
@@ -27,12 +28,12 @@ def add_arguments(command: argparse.ArgumentParser) -> None:
         "--load",
         type=int,
         default=argparse.SUPPRESS,  # accepted before or after the gui subcommand
-        help=f"Gallery records per read, {MIN_BATCH}-{MAX_BATCH} (default {DEFAULT_BATCH}); also the page size.",
+        help=f"Gallery records per batch and page size (default {DEFAULT_BATCH}); read in chunks of {MAX_READ}.",
     )
     command.add_argument(
         "-mc",
         "--cards",
         type=int,
         default=argparse.SUPPRESS,
-        help="Most Grid/List cards kept mounted; a multiple of -ml, at least twice it (default 3 x -ml).",
+        help="Most Grid/List cards kept mounted, rounded down to whole batches (default 3 x -ml).",
     )

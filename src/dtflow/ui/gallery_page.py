@@ -91,7 +91,7 @@ log = logging.getLogger(__name__)
 
 PAGE_SIZE = gallery_limits.DEFAULT_BATCH
 MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # three contiguous batches, bounded Qt widget residency
-MAX_QUERY_ITEMS = gallery_limits.MAX_BATCH  # GalleryQuery retains its existing per-read safety cap
+MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
 THUMBNAIL_SIDE = 600
@@ -243,6 +243,42 @@ def configure_limits(*, batch: int | None = None, cards: int | None = None) -> N
     """Apply the -ml/-mc launch limits before any GalleryPage is built."""
     global PAGE_SIZE, MAX_MOUNTED_IMAGES
     PAGE_SIZE, MAX_MOUNTED_IMAGES = gallery_limits.resolve(batch, cards)
+    log.info("gallery limits batch=%d cards=%d", PAGE_SIZE, MAX_MOUNTED_IMAGES)
+
+
+def _read_limit() -> int:
+    # One GalleryQuery read is capped; larger -ml batches extend in chunks.
+    return min(PAGE_SIZE, MAX_QUERY_ITEMS)
+
+
+async def _extend_page(current: GalleryQuery, page: GalleryPage, read, target_count: int) -> GalleryPage:
+    """Fill up to target_count contiguous records using bounded 200-row reads."""
+    if len(page.items) != current.limit or target_count <= current.limit:
+        return page
+    while True:
+        remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
+        if remaining <= 0:
+            return page
+        next_query = replace(current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining))
+        extension_started = monotonic()
+        extension = await read(next_query)
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=query_extension elapsed_ms=%.1f offset=%d returned=%d",
+                (monotonic() - extension_started) * 1000,
+                next_query.offset,
+                len(extension.items),
+            )
+        if (
+            not extension.items
+            or extension.total != page.total
+            or extension.snapshot_at != page.snapshot_at
+            or {item.identity for item in page.items} & {item.identity for item in extension.items}
+        ):
+            # Concurrent gallery changes must never produce an inconsistent
+            # mounted sequence. A subsequent poll can refill the window.
+            return page
+        page = replace(page, items=(*page.items, *extension.items), limit=len(page.items) + len(extension.items))
 
 
 def _date_bounds(text: str) -> tuple[str | None, str | None]:
@@ -1217,7 +1253,7 @@ class GalleryPage(QObject):
         try:
             stored_query = GalleryQuery(**query_doc)
         except (TypeError, ValidationError):
-            stored_query = GalleryQuery(limit=PAGE_SIZE)
+            stored_query = GalleryQuery(limit=_read_limit())
         # A different -ml batch size must still start on a batch boundary.
         self.offset = stored_query.offset - stored_query.offset % PAGE_SIZE
         filters = document.get("filters", {}) if isinstance(document.get("filters"), dict) else {}
@@ -1452,7 +1488,7 @@ class GalleryPage(QObject):
             size_class=size_class,
             sort=sort,
             offset=self.offset if offset is None else offset,
-            limit=PAGE_SIZE,
+            limit=_read_limit(),
         )
 
     def refresh(self, *, reset: bool = False, preserve: bool = True) -> None:
@@ -1519,37 +1555,7 @@ class GalleryPage(QObject):
         self._sync_canvas_loading()
 
         async def extend_page(current: GalleryQuery, page: GalleryPage, read) -> GalleryPage:
-            """Retain the mounted window (up to -mc cards) using bounded 200-row queries."""
-            if len(page.items) != current.limit or target_count <= current.limit:
-                return page
-            while True:
-                remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
-                if remaining <= 0:
-                    return page
-                next_query = replace(
-                    current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
-                )
-                extension_started = monotonic()
-                extension = await read(next_query)
-                if dev_enabled():
-                    log.debug(
-                        "gallery_perf phase=query_extension elapsed_ms=%.1f offset=%d returned=%d",
-                        (monotonic() - extension_started) * 1000,
-                        next_query.offset,
-                        len(extension.items),
-                    )
-                if (
-                    not extension.items
-                    or extension.total != page.total
-                    or extension.snapshot_at != page.snapshot_at
-                    or {item.identity for item in page.items} & {item.identity for item in extension.items}
-                ):
-                    # Concurrent gallery changes must never produce an inconsistent
-                    # mounted sequence. A subsequent poll can refill the window.
-                    return page
-                page = replace(
-                    page, items=(*page.items, *extension.items), limit=len(page.items) + len(extension.items)
-                )
+            return await _extend_page(current, page, read, target_count)
 
         async def work():
             current = query
@@ -2072,11 +2078,14 @@ class GalleryPage(QObject):
         self._adjacent_loading = True
         self._sync_pager()
 
-        async def read():
+        async def read_one(current: GalleryQuery) -> GalleryPage:
             if source:
-                _query, page, _choices, _found = await query_snapshot(self.state_dir, query, None)
+                _query, page, _choices, _found = await query_snapshot(self.state_dir, current, None)
                 return page
-            return await query_outputs(self.state_dir, query)
+            return await query_outputs(self.state_dir, current)
+
+        async def read():
+            return await _extend_page(query, await read_one(query), read_one, PAGE_SIZE)
 
         self.runner.submit(
             read(),
@@ -3791,7 +3800,7 @@ class GalleryPage(QObject):
         try:
             query = self._query(offset=self.offset)
         except ValidationError:
-            query = GalleryQuery(offset=self.offset, limit=PAGE_SIZE)
+            query = GalleryQuery(offset=self.offset, limit=_read_limit())
         return {
             "query": asdict(query),
             "filters": {
