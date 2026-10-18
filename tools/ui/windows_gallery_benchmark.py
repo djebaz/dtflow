@@ -162,6 +162,24 @@ def _scroll(window, direction: int, actions: list[dict]) -> None:
                     "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
 
 
+def _exercise_prompt_filter(window, actions: list[dict]) -> None:
+    """Change the real search field and restore an empty query after debounce."""
+
+    field = window.child_window(title="Search positive prompts", control_type="Edit")
+    field.wait("exists visible enabled", timeout=12)
+    for query in ("dtflow_benchmark_no_matches_expected", ""):
+        started = time.perf_counter()
+        field.click_input()
+        field.type_keys("^a{BACKSPACE}", set_foreground=True)
+        if query:
+            field.type_keys(query, set_foreground=True)
+        actions.append({
+            "action": "filter-no-match" if query else "filter-reset",
+            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        })
+        time.sleep(1.5)
+
+
 def _drive(proc: subprocess.Popen, directory: Path, actions: list[dict], *, cycles: int, timeout: float) -> int:
     """Attach only to this newly launched process; never use an existing window."""
 
@@ -192,6 +210,7 @@ def _drive(proc: subprocess.Popen, directory: Path, actions: list[dict], *, cycl
         time.sleep(0.8)
         _click(window, "Grid", actions)
         time.sleep(0.8)
+        _exercise_prompt_filter(window, actions)
     window.close()
     return initial_count
 
