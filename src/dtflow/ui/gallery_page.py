@@ -349,6 +349,7 @@ class GalleryPage(QObject):
         self._grid_mount_added = 0
         self._grid_mount_moved = 0
         self._grid_mount_started = 0.0
+        self._grid_mount_budget_ms = 4.0
         self._grid_mount_callbacks: list = []
         self._applied_thumbnail_percent: int | None = None
         self._density_anchor: tuple[str, str, int] | None = None
@@ -3066,7 +3067,7 @@ class GalleryPage(QObject):
                 self._grid_mount_added += 1
             card.show()
             self._grid_mount_cursor += 1
-            if (monotonic() - started) * 1000 >= 4.0:
+            if (monotonic() - started) * 1000 >= self._grid_mount_budget_ms:
                 break
         if self._grid_mount_cursor < len(keys):
             self._grid_mount_timer.start()
