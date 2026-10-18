@@ -244,3 +244,34 @@ freeze and Detail/native regression acceptance remain open.
 The previous Linux 10-run microbenchmark and this owner Windows trace use
 different environments and workloads; do not combine them into a comparative
 speedup or infer improvement from CI-only runs.
+
+
+### PR #92 follow-up: proactive adjacent-zone buffering and empty-result recovery
+
+The owner's subsequent native Windows `dtflow-cfc0fbec71e8.log` shows that incremental
+Qt mounting yields between callbacks, but not uniformly smooth playback: a
+100→200 append reported 35 layout slices, 594.5 ms cumulative GUI work, and
+a maximum 111.3 ms individual slice. These are observed timings, **not**
+a claim that the mount budget caps the duration of a single Qt call. The log
+also records substantial GUI gaps while thumbnail completions are active,
+which cannot yet be assigned entirely to layout work. The build identity in
+that native trace remained `commit=unknown`.
+
+A reviewer reproduced a pre-existing Grid bug (made worse by pending sliced
+mount state): returning from an empty filter result to the *same* image keys
+left real cards out of the layout. Both asynchronous and synchronous empty
+paths now reset the key cache and active mount and release deferred callbacks.
+The empty commit invalidates the cache immediately, independent of reflow
+timer ordering. Old-generation adjacent anchor callbacks now return without
+changing a newer generation's scroll suppression.
+
+The owner's preferred paging policy is now explicit: the active 100-image
+zone should have **both its immediate neighbors buffered ahead of scrolling**
+(subject to library bounds). Viewport scroll and completed query/anchor
+restores schedule one coalesced neighbor check. Adjacent work is serialized,
+the existing 300-card bound remains, and evictions cannot remove the active
+pager zone. This minimizes wait at zone transitions but may do unnecessary
+preparation if the user never navigates; it does **not** eliminate thumbnail
+decoding or Qt widget costs and has no verified new native Windows timings.
+Test active middle zones, direct jumps, page edges, quick filter changes and
+the zero-result → same-key regression in the next Windows smoke.
