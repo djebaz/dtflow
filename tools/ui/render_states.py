@@ -998,7 +998,9 @@ def render_gallery_composition_states(shell, state, out):
             gallery._rendered_page = (gallery.offset, tuple(records))
             for index, record in zip(range(first, last + 1), records, strict=True):
                 paint_multi_thumbnail(record, index)
-            QTest.qWait(60)  # settle deferred Grid reflow before taking the screenshot
+            wait_for(
+                lambda: gallery._grid_mount_keys is None and not gallery.reflow_timer.isActive()
+            )  # wait for all incremental Grid insertions before capturing geometry
             shown_start = first if first_visible is None else first_visible
             shown_end = min(last, shown_start + 23) if last_visible is None else last_visible
             gallery.pager.present(
