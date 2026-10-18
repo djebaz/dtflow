@@ -394,6 +394,7 @@ class GalleryPage(QObject):
         self._page_scroll_target: str | None = None
         self._prefetch_zone_hint: int | None = None
         self._pending_page_jump: int | None = None
+        self._clear_on_refresh = False
         self.items: list[GalleryItem] = []
         self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
@@ -458,7 +459,7 @@ class GalleryPage(QObject):
         self.filter_timer = QTimer(self)
         self.filter_timer.setSingleShot(True)
         self.filter_timer.setInterval(300)
-        self.filter_timer.timeout.connect(lambda: self.refresh(reset=True))
+        self.filter_timer.timeout.connect(self._apply_filter_change)
         self.reflow_timer = QTimer(self)
         self.reflow_timer.setSingleShot(True)
         self.reflow_timer.timeout.connect(self._start_grid_mount)
@@ -1392,6 +1393,22 @@ class GalleryPage(QObject):
         self.filter_timer.start()
         self._schedule_save()
 
+    def _apply_filter_change(self) -> None:
+        """A filter/sort change starts over: spinner, then the top of page 1."""
+        self._clear_on_refresh = True
+        self.refresh(reset=True, preserve=False)
+
+    def _clear_results_for_reload(self) -> None:
+        # Detail keeps its viewer; the reset read reselects within page 1.
+        if self.mode == "Detail":
+            return
+        self.items = []
+        self._render_page()
+        self._rendered_page = (0, ())
+        self._page_scroll_target = "start"
+        for bar in (self.grid_scroll.verticalScrollBar(), self.table.verticalScrollBar()):
+            bar.setValue(0)
+
     def _date_query(self) -> tuple[str | None, str | None]:
         return _date_bounds(self.date_filter.currentText())
 
@@ -1448,6 +1465,10 @@ class GalleryPage(QObject):
         except ValidationError as exc:
             self.refresh_button.setToolTip(str(exc))
             return
+        if self._clear_on_refresh:
+            # Busy reads deferred this through _pending_refresh; clear now.
+            self._clear_on_refresh = False
+            self._clear_results_for_reload()
 
         anchor = self._browsing_anchor() if preserve else None
         # The mounted window may contain three batches (300 records), while
