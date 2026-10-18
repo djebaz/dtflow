@@ -2053,6 +2053,7 @@ class GalleryPage(QObject):
             self._grid_mount_timer.stop()
             self._grid_mount_keys = None
             self._grid_mount_callbacks.clear()
+            self._suppress_batch_scroll = False
         if self.runner.closed:
             for timer in self.findChildren(QTimer):
                 timer.stop()
