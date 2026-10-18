@@ -1180,8 +1180,7 @@ class GalleryPage(QObject):
         self._gui_heartbeat_at = now
         if gap_ms >= 50:
             log.debug(
-                "gallery_perf phase=gui_gap elapsed_ms=%.1f mode=%s mounted=%d "
-                "query_busy=%s preparation_busy=%s",
+                "gallery_perf phase=gui_gap elapsed_ms=%.1f mode=%s mounted=%d query_busy=%s preparation_busy=%s",
                 gap_ms,
                 self.mode,
                 len(self.items),
@@ -3001,8 +3000,7 @@ class GalleryPage(QObject):
         # checking 100-200 unchanged cards introduces an avoidable GUI pause.
         retained_prefix = (
             len(self._grid_layout_keys)
-            if columns == self._grid_layout_columns
-            and keys[: len(self._grid_layout_keys)] == self._grid_layout_keys
+            if columns == self._grid_layout_columns and keys[: len(self._grid_layout_keys)] == self._grid_layout_keys
             else 0
         )
         moved = 0
@@ -3027,8 +3025,7 @@ class GalleryPage(QObject):
         self._grid_layout_columns = columns
         if dev_enabled():
             log.debug(
-                "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d "
-                "retained=%d added=%d moved=%d",
+                "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d retained=%d added=%d moved=%d",
                 (monotonic() - started) * 1000,
                 len(keys),
                 columns,
