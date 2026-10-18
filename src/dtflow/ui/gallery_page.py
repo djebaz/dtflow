@@ -350,6 +350,9 @@ class GalleryPage(QObject):
         self._grid_mount_moved = 0
         self._grid_mount_started = 0.0
         self._grid_mount_budget_ms = 4.0
+        self._grid_mount_work_ms = 0.0
+        self._grid_mount_max_slice_ms = 0.0
+        self._grid_mount_slices = 0
         self._grid_mount_callbacks: list = []
         self._applied_thumbnail_percent: int | None = None
         self._density_anchor: tuple[str, str, int] | None = None
@@ -3033,6 +3036,9 @@ class GalleryPage(QObject):
         self._grid_mount_cursor = self._grid_mount_retained
         self._grid_mount_added = 0
         self._grid_mount_moved = 0
+        self._grid_mount_work_ms = 0.0
+        self._grid_mount_max_slice_ms = 0.0
+        self._grid_mount_slices = 0
         self._grid_mount_started = monotonic()
         self._grid_mount_timer.start()
 
@@ -3069,6 +3075,10 @@ class GalleryPage(QObject):
             self._grid_mount_cursor += 1
             if (monotonic() - started) * 1000 >= self._grid_mount_budget_ms:
                 break
+        slice_ms = (monotonic() - started) * 1000
+        self._grid_mount_work_ms += slice_ms
+        self._grid_mount_max_slice_ms = max(self._grid_mount_max_slice_ms, slice_ms)
+        self._grid_mount_slices += 1
         if self._grid_mount_cursor < len(keys):
             self._grid_mount_timer.start()
             return
@@ -3078,8 +3088,12 @@ class GalleryPage(QObject):
         self._grid_mount_keys = None
         if dev_enabled():
             log.debug(
-                "gallery_perf phase=grid_mount_complete elapsed_ms=%.1f mounted=%d columns=%d retained=%d added=%d moved=%d",
+                "gallery_perf phase=grid_mount_complete elapsed_ms=%.1f work_ms=%.1f max_slice_ms=%.1f "
+                "slices=%d mounted=%d columns=%d retained=%d added=%d moved=%d",
                 (monotonic() - self._grid_mount_started) * 1000,
+                self._grid_mount_work_ms,
+                self._grid_mount_max_slice_ms,
+                self._grid_mount_slices,
                 len(keys),
                 columns,
                 self._grid_mount_retained,
