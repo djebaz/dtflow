@@ -252,7 +252,7 @@ def _read_limit() -> int:
 
 
 async def _extend_page(current: GalleryQuery, page: GalleryPage, read, target_count: int) -> GalleryPage:
-    """Fill up to target_count contiguous records using bounded 200-row reads."""
+    """Fill up to target_count contiguous records using bounded reads (MAX_QUERY_ITEMS rows each)."""
     if len(page.items) != current.limit or target_count <= current.limit:
         return page
     while True:
@@ -1516,7 +1516,7 @@ class GalleryPage(QObject):
 
         anchor = self._browsing_anchor() if preserve else None
         # The mounted window may contain three batches (300 records), while
-        # individual GalleryQuery reads are independently capped at 200.
+        # individual GalleryQuery reads are independently capped at MAX_QUERY_ITEMS.
         # Preserve it through refresh with at most two bounded reads.
         target_count = min(MAX_MOUNTED_IMAGES, len(self.items)) if preserve and not reset and self.items else PAGE_SIZE
         if target_count > query.limit:

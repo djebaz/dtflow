@@ -2,9 +2,11 @@
 
 import argparse
 
+from dtflow.core.gallery import MAX_GALLERY_LIMIT
+
 DEFAULT_BATCH = 100
 DEFAULT_CARDS = DEFAULT_BATCH * 3
-MAX_READ = 200  # GalleryQuery's per-read cap; larger batches read in chunks
+MAX_READ = MAX_GALLERY_LIMIT  # one read per batch up to this; larger batches read in chunks
 
 
 def resolve(batch: int | None, cards: int | None) -> tuple[int, int]:

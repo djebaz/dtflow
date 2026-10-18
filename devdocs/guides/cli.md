@@ -49,7 +49,7 @@ the dispatch ownership lock.
 `gallery list` supports `-p/--prompt`, `-n/--negative`,
 `-m/--model`, `-l/--lora`, `-s/--since`, `-u/--until`,
 `-r/--ratio`, `-w/--width`, `-y/--height`, `-o/--sort`,
-`-k/--limit` (1–200) and `-f/--offset`. Prompt matching is a
+`-k/--limit` (1–1000) and `-f/--offset`. Prompt matching is a
 case-insensitive literal substring; model and LoRA matching use exact recorded
 identifiers. Filters compose with AND. `since` is inclusive and `until` is
 exclusive; CLI timestamps are UTC dates or offset-aware ISO values.

@@ -11,7 +11,7 @@ from pathlib import Path
 from dtflow import startup
 from dtflow.build import display_identity, identity
 from dtflow.composition import BACKENDS, image_endpoint_label
-from dtflow.core.gallery import SORTS, GalleryQuery
+from dtflow.core.gallery import MAX_GALLERY_LIMIT, SORTS, GalleryQuery
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest
 from dtflow.core.models import (
@@ -166,7 +166,7 @@ def add_gallery_commands(commands) -> None:
         child.add_argument("-w", "--width", type=int, help="Exact width in pixels.")
         child.add_argument("-y", "--height", type=int, help="Exact height in pixels.")
         child.add_argument("-o", "--sort", choices=SORTS, default="newest")
-        child.add_argument("-k", "--limit", type=int, default=100, help="Page size in 1..200.")
+        child.add_argument("-k", "--limit", type=int, default=100, help=f"Page size in 1..{MAX_GALLERY_LIMIT}.")
         child.add_argument("-f", "--offset", type=int, default=0)
 
 
