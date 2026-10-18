@@ -1702,6 +1702,13 @@ class GalleryPage(QObject):
             return
         anchor = self._browsing_anchor()
         mode = self.mode
+        # Only expose the preceding row automatically after the user has
+        # actually reached the top of the mounted window. An early prefetch
+        # must preserve the current viewport without pulling it backwards.
+        reveal_previous = direction < 0 and (
+            (mode == "Grid" and self.grid_scroll.verticalScrollBar().value() == 0)
+            or (mode == "List" and self.table.verticalScrollBar().value() == 0)
+        )
         pixel_offset = 0
         if mode == "Grid" and anchor in self._grid_buttons:
             pixel_offset = self._grid_buttons[anchor].parentWidget().y() - self.grid_scroll.verticalScrollBar().value()
@@ -1741,17 +1748,51 @@ class GalleryPage(QObject):
                         self.reflow_timer.stop()
                         self._layout_cards()
                         self.cards_layout.activate()
+                        self.grid_cards.adjustSize()
                         button = self._grid_buttons.get(anchor)
                         if button is not None:
                             bar = self.grid_scroll.verticalScrollBar()
                             bar.setValue(button.parentWidget().y() - pixel_offset)
+                        if reveal_previous:
+                            # The last card of the preceding batch is directly
+                            # above the old first row (or alongside it if the
+                            # column count crosses the 80-card boundary).
+                            preceding = self._grid_buttons.get(page.items[-1].identity)
+                            if preceding is not None:
+                                preceding_card = preceding.parentWidget()
+                                if preceding_card.y() < bar.value():
+                                    bar.setValue(preceding_card.y())
                     elif mode == "List":
                         row = next(i for i, item in enumerate(self.items) if item.identity == anchor)
                         cell = self.table.item(row, 0)
                         if cell is not None:
                             self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                        if reveal_previous:
+                            # One row above, not the first item of the earlier
+                            # 80-record page. Keep the previous anchor mounted.
+                            preceding_row = next(
+                                (i for i, item in enumerate(self.items) if item.identity == page.items[-1].identity),
+                                None,
+                            )
+                            if preceding_row is not None:
+                                preceding_cell = self.table.item(preceding_row, 0)
+                                if preceding_cell is not None:
+                                    self.table.scrollToItem(
+                                        preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop
+                                    )
                 self._capture_scroll()
                 self._sync_pager()
+                if dev_enabled():
+                    first, last = self._visible_range()
+                    log.debug(
+                        "gallery_perf phase=adjacent_scroll direction=%s reveal_previous=%s "
+                        "first=%d last=%d mounted=%d",
+                        "forward" if direction > 0 else "backward",
+                        reveal_previous,
+                        first,
+                        last,
+                        len(self.items),
+                    )
             finally:
                 self._suppress_batch_scroll = False
 
