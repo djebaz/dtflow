@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 recorder-backed follow-up: physically open Sort, wait for its exact nested ListItem and click it, using the owner's recorded hierarchy instead of unsupported selection/focus assumptions. `--out` now selects an output root (default `tmp`); reports go under `gallery_bench_smoke/MMddHHmm/`, with timestamp collisions refused. No recorder dependency or recording committed. Regression coverage updated without local test/replay execution; native acceptance remains pending.
+
 - PR #104 smoke-07 follow-up: operate the identified Qt Sort dropdown through keyboard popup navigation instead of unsupported UIA item selection; verify the selected label before waiting for query/page readiness. No local tests or native rerun executed; owner acceptance remains pending.
 
 - PR #104 smoke-05 follow-up: normalize restored gallery state through the real Sort dropdown (ending on Newest first) and verify page 1 before requiring page 2. Record setup actions separately and require fresh query evidence during sort setup; production persistence remains unchanged. Regression coverage added without local test execution; native smoke remains pending.

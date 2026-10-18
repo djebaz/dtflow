@@ -29,13 +29,13 @@ Safety/lease deadlines, SQLite query bounds, original-file memory caps and provi
 Run the following one-line command from a Windows source checkout with a prepared uv environment:
 
 ```powershell
-uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-01 --profiles baseline workers-3 lookahead-1 preparation-2ms mount-2ms thumbnails-480px pending-writes-64 cache-prune-earlier refresh-10s debounce-faster --runs 2 --cycles 2 --ack-user-state
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 lookahead-1 preparation-2ms mount-2ms thumbnails-480px pending-writes-64 cache-prune-earlier refresh-10s debounce-faster --runs 2 --cycles 2 --ack-user-state
 ```
 
 For a quick **smoke of the harness**, not a tuned-performance conclusion:
 
 ```powershell
-uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-01 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
 ```
 
 For a custom experiment, supply `--profiles-file path/to/profiles.json`, where JSON is a mapping of profile names to per-parameter overrides. Defaults remain fixed for all omitted keys. This permits controlled sweeps instead of editing source constants between runs. `--no-cache` is available to isolate decoding but makes cache-write/eviction profiles irrelevant.
@@ -101,6 +101,18 @@ Owner smoke-07 located the Sort combo but pywinauto `ComboBox.select("Oldest fir
 The existing restored-sort contract now checks the keyboard sequences rather than mocking the unsupported item-selection path. No local tests or benchmark reruns were executed, per owner instruction. Static/help checks are not Windows acceptance. Retry with a fresh `tmp/gallery-bench-smoke-08` directory. Qt's [QComboBox keyboard implementation](https://github.com/qt/qtbase/blob/6.12/src/widgets/widgets/qcombobox.cpp) confirms F4 popup opening and popup Enter commit; the owner's native rerun must establish actual UIA/keyboard behavior.
 
 Keyboard input requires confirmed focus on the identified Sort combo; if focus cannot be verified, setup fails without sending keys. It does not refocus the main window while opening/selecting within the popup.
+
+## Recorder-backed Sort interaction and timestamped runs (2026-10-19)
+
+Owner smoke-08 failed the combo keyboard-focus check in both profiles. The owner's first pywinauto-recorder script then captured a real Images navigation click, a Sort combo click, and `ComboBox -> List -> Newest first ListItem` selection, followed by a page-2 chip click. This is evidence for the actual interaction hierarchy, not acceptance of the automated benchmark. The harness now opens the identified Sort combo with `click_input`, waits for the exact requested ListItem inside that combo, and clicks it. Selected-text, fresh-query and checked-page-1 verification remain in place. This supersedes the prior keyboard-focus approach; no keyboard input, screen-coordinate guesses or desktop-wide item searches are used for Sort. The recording stays local; unrelated Brave/tray/recorder-stop actions, anonymous group clicks and the recorded wheel magnitudes are not copied into the benchmark. No recorder runtime dependency is added.
+
+At the owner's request, `--out` now names an output root and defaults to `tmp`. Each invocation reserves and prints `<root>/gallery_bench_smoke/MMddHHmm/` in local time, for example `tmp/gallery_bench_smoke/10120040/` on October 12 at 00:40. All reports and profile/trial directories live under that run. An existing root is accepted; a timestamp collision fails without merging or overwriting evidence. Wait until the next minute or use another root. The earlier numbered smoke directories/commands in the evidence sections are historical and are not the current output convention.
+
+Selector regression coverage now models physically opening the popup and waiting for its item, including a missing-item failure. Directory coverage checks exact timestamp formatting, existing-root support and collision preservation. No local tests, recording replay or benchmark runs were executed. Static/help checks are not native acceptance; CI and the owner's Windows rerun remain required. Current smoke command:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
 
 ## Validation gates
 

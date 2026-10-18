@@ -7,12 +7,12 @@ The optional, Windows-only `pywinauto` driver launches a **real source DTFlow GU
 From an interactive Windows desktop with a prepared `uv` environment:
 
 ```powershell
-uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-02 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
 ```
 
-An existing `--out` directory is refused so trials cannot mix. Report files include `results.csv`, `summary.csv` and, inside each profile/trial directory, `trial.json` plus the real application logs. A failed trial prints its `step` and sanitized exception message. Check those before treating automation failure as gallery slowness.
+`--out` is an output root (default `tmp`), not the final run directory. The script prints and creates `<root>/gallery_bench_smoke/MMddHHmm/` using local time, for example `tmp/gallery_bench_smoke/10120040/` on October 12 at 00:40. Existing roots are allowed; an existing timestamped run is refused without overwriting evidence. Wait until the next minute or choose another root after a same-minute collision. Report files include `results.csv`, `summary.csv` and, inside each profile/trial directory, `trial.json` plus the real application logs. A failed trial prints its `step` and sanitized exception message. Check those before treating automation failure as gallery slowness.
 
-**Native acceptance is still pending:** the first owner Windows 10 smoke printed `baseline trial=1 status=failed` and did not switch to Images; its exact exception was not provided. PR #104 now handles both Qt button labels and reports the last attempted action, but the correction has not yet been demonstrated on the owner's machine. Avoid running the matrix until this basic navigation smoke succeeds. The tool reads the live saved-output catalogue, and the app can update viewer preferences and disposable thumbnail cache; the `--ack-user-state` flag is required. It performs no inference or generation.
+**Native acceptance is still pending:** owner smokes progressed through window discovery, Images navigation and the first query, but failed in Sort setup. The owner's recorder now shows a physical combo click followed by a nested ListItem click; the harness follows that interaction with explicit waits and label/page verification. The adapted flow has not been replayed locally. Avoid running the matrix until a complete owner smoke succeeds. The tool reads the live saved-output catalogue, and the app can update viewer preferences or disposable thumbnail cache; the `--ack-user-state` flag is required. It performs no inference or generation.
 
 
 Offscreen Qt renders of the real DTFlow forms under the real `dtflow_dark.qss`. Run from the repository root (or set `DTFLOW_ROOT`) with the locked environment:
@@ -46,10 +46,10 @@ The benchmark experiments vary the screenshot-listed **6 thumbnail workers, 3 sc
 From PowerShell in the PR #104 checkout (after `uv sync --frozen`):
 
 ```powershell
-uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-01 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
 ```
 
-Use a new output folder every time. `--ack-user-state` acknowledges that source DTFlow browses your **existing** saved-output state and may change preferences or disposable thumbnails; this tooling does not provide an isolated test catalogue. Avoid running it against valuable cache data without a backup and do not run another DTFlow instance concurrently. Pywinauto accessibility support, Windows latency, DPI and packaged execution have **not** been validated by Linux tests or static renders. Review per-run `trial.json`, the app's `-gallery.csv`, `results.csv` and `summary.csv`; an absent event-loop gap is not proof of a zero-millisecond freeze.
+Each invocation reserves a fresh timestamped folder under the output root as described above. `--ack-user-state` acknowledges that source DTFlow browses your **existing** saved-output state and may change preferences or disposable thumbnails; this tooling does not provide an isolated test catalogue. Avoid running it against valuable cache data without a backup and do not run another DTFlow instance concurrently. Pywinauto accessibility support, Windows latency, DPI and packaged execution have **not** been validated by Linux tests or static renders. Review per-run `trial.json`, the app's `-gallery.csv`, `results.csv` and `summary.csv`; an absent event-loop gap is not proof of a zero-millisecond freeze.
 
 See the [implementation plan and full matrix command](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md) and the [development performance guide](../../devdocs/guides/development.md#native-windows-images-performance-matrix-experimental-pr-104). The 100–200-image everyday benchmark cannot meaningfully tune cache eviction at 20,000 entries without a separate, safe stress dataset.
 

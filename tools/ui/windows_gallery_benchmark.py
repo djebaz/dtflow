@@ -16,6 +16,7 @@ import statistics
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from tools.ui.gallery_perf_launch import validate_profile
@@ -233,19 +234,17 @@ def _reset_gallery_sort(window, directory: Path, proc: subprocess.Popen, record:
         record["step"] = f"setup-sort-{label}"
         previous = set(_completed_queries(directory))
         started = time.perf_counter()
-        # Qt's popup items need not be children of the UIA ComboBox, making
-        # ComboBox.select() fail despite a usable dropdown. Drive the real Qt
-        # popup with keyboard input instead. The first two canonical options
-        # are Newest first / Oldest first; verify the text before proceeding.
-        keys = "{F4}{HOME}{DOWN}{ENTER}" if label == "Oldest first" else "{F4}{HOME}{ENTER}"
-        combo.set_focus()
-        if not combo.has_keyboard_focus():
-            raise RuntimeError("Sort dropdown did not receive keyboard focus; no keys sent.")
-        combo.type_keys(keys, pause=0.05, set_foreground=False)
+        # Owner recording confirms ComboBox -> List -> ListItem after a real
+        # click opens the Qt popup. Wait for that exact item inside this combo;
+        # do not rely on UIA SetFocus, immediate select(), or desktop-wide search.
+        combo.click_input()
+        option = combo.child_window(title=label, control_type="ListItem")
+        option.wait("exists visible enabled", timeout=timeout)
+        option.click_input()
         deadline = time.monotonic() + timeout
         while combo.selected_text() != label:
             if time.monotonic() >= deadline:
-                raise TimeoutError(f"Sort keyboard selection did not reach {label!r}.")
+                raise TimeoutError(f"Sort popup selection did not reach {label!r}.")
             time.sleep(0.1)
         setup.append({"action": "sort", "value": label,
                       "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
@@ -370,7 +369,7 @@ def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int
         _scroll(window, 1, actions)
         time.sleep(0.8)
         record["step"] = f"cycle-{cycle + 1}-detail"
-        _click(window, "Detail", actions, automation_id="galleryDetailButton")
+        _click(window, "Detail", actions, alternatives=("Full screen image view",), automation_id="galleryDetailButton")
         time.sleep(0.8)
         _click(window, "Grid", actions, automation_id="galleryGridButton")
         time.sleep(0.8)
@@ -510,11 +509,21 @@ def write_report(records: list[dict], out: Path) -> None:
             })
 
 
+def _create_run_directory(root: Path, *, now: datetime | None = None) -> Path:
+    """Reserve a fresh local-time MMddHHmm run; never merge same-minute runs."""
+
+    stamp = (now or datetime.now()).strftime("%m%d%H%M")
+    directory = root.expanduser().resolve() / "gallery_bench_smoke" / stamp
+    directory.mkdir(parents=True, exist_ok=False)
+    return directory
+
+
 def main(argv: list[str] | None = None) -> int:
     """Drive named performance profiles on an interactive Windows desktop."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, required=True, help="Fresh output directory under ignored tmp/.")
+    parser.add_argument("--out", type=Path, default=Path("tmp"),
+                        help="Output root (default: tmp); creates gallery_bench_smoke/MMddHHmm below it.")
     parser.add_argument("--profiles-file", type=Path,
                         help="JSON mapping profile names to overrides; otherwise use built-in one-factor profiles.")
     parser.add_argument("--profiles", nargs="+", metavar="NAME",
@@ -540,28 +549,32 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
     if len(profiles) * args.runs > 40:
         parser.error("Limit the matrix to 40 runs per invocation.")
-    if args.out.exists():
-        parser.error("--out must be new; never mix benchmarking sessions.")
     try:
         import pywinauto  # noqa: F401
     except ImportError:
         parser.error("pywinauto missing; use uv run --frozen --with pywinauto==0.6.9 python -m ...")
+    try:
+        output = _create_run_directory(args.out)
+    except FileExistsError:
+        parser.error("Timestamped run directory already exists; wait until the next minute or choose another --out root.")
+    except OSError as exc:
+        parser.error(f"Could not create benchmark run directory ({type(exc).__name__}).")
+    print(f"Benchmark output: {output}", flush=True)
     records = []
-    args.out.mkdir(parents=True)
     try:
         for name, profile in profiles.items():
             for trial in range(1, args.runs + 1):
-                directory = args.out / f"{name}-r{trial:02}"
+                directory = output / f"{name}-r{trial:02}"
                 record = run_trial(name, profile, trial=trial, directory=directory,
                                    cycles=args.cycles, timeout=args.timeout, no_cache=args.no_cache)
                 records.append(record)
-                write_report(records, args.out)
+                write_report(records, output)
                 print(f"{name} trial={trial} status={record['status']}", flush=True)
                 if record.get("cleanup_error_type"):
                     # Do not overlap trials when a prior GUI may still be alive.
                     return 1
     except KeyboardInterrupt:
-        write_report(records, args.out)
+        write_report(records, output)
         return 130
     return 0 if records and all(record["status"] == "ok" for record in records) else 1
 

@@ -128,16 +128,16 @@ The [Windows gallery benchmarking plan](../plans/2026-10-18-windows-gallery-benc
 Run from the checked-out PR #104 source branch after `uv sync --frozen`, in PowerShell with the desktop unlocked and no competing DTFlow process:
 
 ```powershell
-uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-01 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
 ```
 
 To exercise the built-in matrix (longer, not a quick smoke):
 
 ```powershell
-uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-01 --runs 2 --cycles 2 --ack-user-state
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --runs 2 --cycles 2 --ack-user-state
 ```
 
-Use **new output directory names** on every run. Reports are `results.csv`, `results.json` and `summary.csv`, with each trial’s `profile.json`, `trial.json`, standard log and gallery CSV retained beneath that output directory. A failed trial does not count as a performance win. The automation’s `dispatch_ms` measures action dispatch, not click-to-paint time, and heartbeat gaps under 50 ms are not recorded as freeze samples.
+`--out tmp` selects the output root (also the default). Each invocation prints and creates `tmp/gallery_bench_smoke/MMddHHmm/` using local month/day/hour/minute; a same-minute collision is refused without overwriting evidence, so wait a minute or choose another root. Reports are `results.csv`, `results.json` and `summary.csv`, with each trial’s `profile.json`, `trial.json`, standard log and gallery CSV retained beneath that timestamped directory. A failed trial does not count as a performance win. The automation’s `dispatch_ms` measures action dispatch, not click-to-paint time, and heartbeat gaps under 50 ms are not recorded as freeze samples.
 
 Windows virtual environments can use a launcher PID different from the interpreter hosting Qt. The harness reads the child-published `app-process.json` and records both `launcher_pid` and `app_pid` in `trial.json`; it never attaches to an arbitrary existing DTFlow window. Failed-trial cleanup targets only that launcher's process tree, and a cleanup failure stops the matrix. See the [PID follow-up and pending native smoke](../plans/2026-10-18-windows-gallery-benchmarks.md#windows-virtual-environment-pid-follow-up-2026-10-19).
 

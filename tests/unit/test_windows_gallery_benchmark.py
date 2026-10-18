@@ -3,6 +3,7 @@
 import csv
 import json
 import sys
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -137,18 +138,18 @@ def test_button_selector_fails_closed_on_ambiguous_matches():
         _button(window, "Show saved Images", alternatives=("Images",), timeout=1)
 
 
-@pytest.mark.parametrize("name", ["Grid", "List", "Detail"])
-def test_checkable_gallery_controls_ignore_text_hidden_and_disabled_matches(name):
+@pytest.mark.parametrize(("name", "accessible"), [("Grid", "Grid"), ("List", "List"), ("Detail", "Full screen image view")])
+def test_checkable_gallery_controls_ignore_text_hidden_and_disabled_matches(name, accessible):
     from tools.ui.windows_gallery_benchmark import _button
 
-    target = _FakeButton(name, control_type="CheckBox")
+    target = _FakeButton(accessible, control_type="CheckBox")
     window = _FakeWindow(
         _FakeButton(name, control_type="Text"),
         _FakeButton(name, control_type="CheckBox", visible=False),
         _FakeButton(name, control_type="RadioButton", enabled=False),
         target,
     )
-    assert _button(window, name, timeout=1) is target
+    assert _button(window, name, alternatives=(accessible,), timeout=1) is target
 
 
 @pytest.mark.parametrize(
@@ -156,8 +157,8 @@ def test_checkable_gallery_controls_ignore_text_hidden_and_disabled_matches(name
     [("Newest first", ["Oldest first", "Newest first"]),
      ("Oldest first", ["Newest first"]), ("Model", ["Oldest first", "Newest first"])],
 )
-@pytest.mark.parametrize("focused", [True, False])
-def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, monkeypatch, restored, expected, focused):
+@pytest.mark.parametrize("popup_ready", [True, False])
+def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, monkeypatch, restored, expected, popup_ready):
     from tools.ui import windows_gallery_benchmark as benchmark
 
     selected = []
@@ -166,6 +167,7 @@ def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, m
 
     class Combo:
         value = restored
+        opened = False
 
         def wait(self, state, *, timeout):
             assert state == "exists visible enabled"
@@ -173,22 +175,28 @@ def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, m
         def selected_text(self):
             return self.value
 
-        def set_focus(self):
-            self.focused = True
+        def click_input(self):
+            assert not self.opened
+            self.opened = True
 
-        def has_keyboard_focus(self):
-            return self.focused and focused
+        def child_window(self, *, title, control_type):
+            assert self.opened and control_type == "ListItem"
+            assert title in ("Oldest first", "Newest first")
+            owner = self
 
-        def type_keys(self, keys, *, pause, set_foreground):
-            assert pause == 0.05
-            assert self.focused and set_foreground is False
-            value = {
-                "{F4}{HOME}{DOWN}{ENTER}": "Oldest first",
-                "{F4}{HOME}{ENTER}": "Newest first",
-            }[keys]
-            assert value != self.value
-            selected.append(value)
-            self.value = value
+            class Option:
+                def wait(self, state, *, timeout):
+                    assert state == "exists visible enabled"
+                    if not popup_ready:
+                        raise TimeoutError("Sort popup item unavailable")
+
+                def click_input(self):
+                    assert popup_ready and title != owner.value
+                    selected.append(title)
+                    owner.value = title
+                    owner.opened = False
+
+            return Option()
 
     combo = Combo()
 
@@ -212,8 +220,8 @@ def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, m
     monkeypatch.setattr(benchmark, "_await_query", await_query)
     monkeypatch.setattr(benchmark, "_button", button)
     record = {}
-    if not focused:
-        with pytest.raises(RuntimeError, match="no keys sent"):
+    if not popup_ready:
+        with pytest.raises(TimeoutError, match="Sort popup item unavailable"):
             benchmark._reset_gallery_sort(Window(), tmp_path, object(), record, timeout=1)
         assert selected == completions == page_checks == []
         assert record["setup_actions"] == []
@@ -224,6 +232,21 @@ def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, m
     assert page_checks == ["Jump to image batch 1"]
     assert [action["value"] for action in record["setup_actions"]] == expected
     assert record["step"] == "verify-page-one-after-sort"
+
+
+def test_run_directory_uses_requested_timestamp_without_merging_runs(tmp_path):
+    from tools.ui.windows_gallery_benchmark import _create_run_directory
+
+    root = tmp_path / "tmp"
+    root.mkdir()
+    now = datetime(2026, 10, 12, 0, 40)
+    output = _create_run_directory(root, now=now)
+    assert output == root / "gallery_bench_smoke" / "10120040"
+    sentinel = output / "trial.json"
+    sentinel.write_text("retained evidence", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        _create_run_directory(root, now=now)
+    assert sentinel.read_text(encoding="utf-8") == "retained evidence"
 
 
 def test_query_readiness_ignores_old_completions_across_rotation(tmp_path):
