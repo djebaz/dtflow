@@ -1185,6 +1185,8 @@ class GalleryPage(QObject):
         self._sync_auto_refresh()
         if first_activation:
             self.refresh(preserve=True)
+        elif active:
+            self._queue_neighbor_prefetch()
 
     def _sync_auto_refresh(self) -> None:
         enabled = self.auto_button.isChecked()
@@ -1775,8 +1777,8 @@ class GalleryPage(QObject):
     def _prefetch_neighbors(self) -> None:
         """Buffer the zones immediately before and after the visible 100-image zone.
 
-        The active pager zone is determined by the first visible image, not the
-        buffer's starting offset. Only one adjacent read/preparation runs at
+        The active zone follows the viewport midpoint or an explicit page
+        jump, never the buffer's starting offset. Only one read/preparation runs at
         once, and the existing three-batch eviction keeps resident widgets
         bounded. A new zone may trigger another check after anchor restoration.
         """
