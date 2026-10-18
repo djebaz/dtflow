@@ -1185,6 +1185,9 @@ def render_gallery_composition_states(shell, state, out):
         target_card = gallery._grid_buttons[three_batches[249].identity].parentWidget()
         gallery.grid_scroll.verticalScrollBar().setValue(target_card.y())
         first, last, visible = grid_visible(loaded=300)
+        preserved_identity = gallery._browsing_anchor()
+        intended_first = first
+        intended_scroll = gallery.grid_scroll.verticalScrollBar().value()
         assert 250 in visible, (
             f"300-buffer Grid target not visible: {first}–{last}, "
             f"scroll={gallery.grid_scroll.verticalScrollBar().value()}, card_y={target_card.y()}"
@@ -1216,7 +1219,14 @@ def render_gallery_composition_states(shell, state, out):
         assert multi_item(100).identity not in gallery._grid_buttons
         assert gallery.pager.status.text() == "300 buffered"
         first, last, visible = grid_visible(loaded=300)
-        assert 250 in visible, f"Eviction lost viewport around image 250: {first}–{last}"
+        assert 250 in visible, (
+            f"Eviction lost viewport around image 250: {first}–{last}; "
+            f"before={intended_first}, target_scroll={intended_scroll}, "
+            f"preserved_anchor={preserved_identity}, actual_anchor={gallery._browsing_anchor()}, "
+            f"after_scroll={gallery.grid_scroll.verticalScrollBar().value()}, "
+            f"anchor_y={gallery._grid_buttons[preserved_identity].parentWidget().y() if preserved_identity in gallery._grid_buttons else -1}, "
+            f"viewport_h={gallery.grid_viewport.height()}"
+        )
         snap("images-94-pager-eviction-keeps-300-grid")
 
         # Exercise the actual numbered Qt button: an offline-only callback
