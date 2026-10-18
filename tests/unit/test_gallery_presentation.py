@@ -118,14 +118,17 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
         ),
         timeout=3000,
     )
-    # The append fast path must leave retained cards in their existing cells
-    # while placing both new and old cards in the expected row/column.
+    # Retained cards stay in place, and every 100-image batch starts on a
+    # fresh grid row even when the last row of the prior batch is incomplete.
     columns = gallery._grid_layout_columns
+    rows_per_batch = (gallery_ui.PAGE_SIZE + columns - 1) // columns
     for index in (0, 50, 99, 100, 150, 199):
         card = gallery._grid_buttons[str(index)].parentWidget()
         layout_index = gallery.cards_layout.indexOf(card)
         assert layout_index >= 0
-        assert gallery.cards_layout.getItemPosition(layout_index)[:2] == divmod(index, columns)
+        batch, within_batch = divmod(index, gallery_ui.PAGE_SIZE)
+        expected = (batch * rows_per_batch + within_batch // columns, within_batch % columns)
+        assert gallery.cards_layout.getItemPosition(layout_index)[:2] == expected
 
 
 def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot):
@@ -414,9 +417,17 @@ def test_page_jump_while_neighbor_is_loading_replays_latest_request(presentation
             gallery._pending_page_jump is None
             and not gallery._loading
             and not gallery._adjacent_loading
-            and gallery.offset == 200
-            and len(gallery.items) == 100
+            and not gallery._suppress_batch_scroll
+            and gallery._grid_mount_keys is None
+            and gallery.offset <= 200 < gallery.offset + len(gallery.items)
+            and gallery.pager.buttons[3].isChecked()
+            and 201 <= gallery._visible_range()[0] <= 300
         ),
         timeout=9000,
     )
-    assert tuple(gallery.items) == records[200:300]
+    # A resident buffer may retain pages 1 and 2. Assert the requested
+    # page's identities and viewport instead of requiring a fresh 100-card read.
+    index = 200 - gallery.offset
+    assert tuple(gallery.items[index : index + gallery_ui.PAGE_SIZE]) == records[200:300]
+    assert len(gallery.items) <= gallery_ui.MAX_MOUNTED_IMAGES
+    assert gallery._grid_buttons["200"].parentWidget().isVisible()
