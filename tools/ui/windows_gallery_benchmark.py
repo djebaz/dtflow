@@ -492,7 +492,7 @@ def _move_thumbnail_slider(window, actions: list[dict]) -> None:
 
     # Two substantially different sizes rather than the former one small
     # movement (e.g. 131 -> 80). Reflow settles between the two sweeps.
-    targets = (55.0, 210.0)
+    targets = (210.0, 55.0) if abs(original - 55.0) < 10 else (55.0, 210.0)
     try:
         for target in targets:
             before = float(interface.CurrentValue)
