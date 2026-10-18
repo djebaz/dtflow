@@ -511,10 +511,12 @@ def test_thumbnail_slider_uses_uia_slider_and_restores_original_value(monkeypatc
 
     actions = []
     benchmark._move_thumbnail_slider(Window(), actions)
-    assert len(dragged) == 6
+    assert len(dragged) == 9  # Small -> large -> original thumbnail density.
     assert abs(state.CurrentValue - 100) <= 5
-    assert actions[0]["action"] == "thumbnail-slider-drag"
-    assert actions[0]["verified"] is True
+    assert [action["target"] for action in actions] == [55.0, 210.0]
+    assert all(action["action"] == "thumbnail-slider-drag" for action in actions)
+    assert all(action["verified"] is True for action in actions)
+    assert abs(actions[1]["after"] - actions[0]["after"]) > 100
 
 
 def test_failed_slider_does_not_abort_next_step(monkeypatch):
@@ -668,3 +670,91 @@ def test_scroll_target_falls_back_to_gallery_panel_not_toolbar():
     coords, source = _gallery_wheel_point(window, "grid")
     assert source == "GalleryDetailPage-fallback"
     assert coords == (716, 532)
+
+
+
+def test_default_wheel_sweep_doubles_previous_96_notches(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    events = []
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            events.append(wheel_dist)
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda window, mode: ((600, 400), mode))
+    monkeypatch.setattr(benchmark, "_wheel_intents", lambda directory: set())
+    monkeypatch.setattr(benchmark.time, "sleep", lambda seconds: None)
+
+    actions = []
+    benchmark._scroll(object(), -1, actions, tmp_path, mode="grid")
+    assert events == [-12] * 16
+    assert actions[0]["notches"] == 192
+    assert actions[0]["bursts"] == 16
+
+
+def test_fullscreen_is_exercised_on_grid_before_list_or_detail(tmp_path, monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    active_mode = {"name": ""}
+    sequence = []
+
+    class Window:
+        def wait(self, state, *, timeout):
+            assert state == "exists visible enabled"
+
+        def set_focus(self):
+            pass
+
+        def close(self):
+            sequence.append("closed")
+
+    window = Window()
+
+    class Desktop:
+        def __init__(self, *, backend):
+            assert backend == "uia"
+
+        def window(self, **criteria):
+            assert criteria["process"] == 9002
+            return window
+
+    class Button:
+        def click_input(self):
+            sequence.append("images")
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=Desktop))
+    monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9002)
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Button())
+    monkeypatch.setattr(benchmark, "_await_query", lambda *a, **kw: 20)
+    monkeypatch.setattr(benchmark, "_reset_gallery_sort", lambda *a, **kw: None)
+    monkeypatch.setattr(benchmark, "_click_page", lambda window, page, actions: sequence.append(f"page-{page}"))
+    monkeypatch.setattr(benchmark, "_move_thumbnail_slider",
+                        lambda window, actions: sequence.append("slider"))
+    monkeypatch.setattr(benchmark, "_scroll",
+                        lambda window, direction, actions, directory, **kwargs:
+                            sequence.append(f"{kwargs['mode']}-scroll-{'down' if direction < 0 else 'up'}"))
+
+    def switch_mode(window, mode, actions):
+        active_mode["name"] = mode
+        sequence.append(mode)
+
+    def fullscreen(window, actions):
+        assert active_mode["name"] == "Grid"
+        sequence.append("fullscreen-on-grid")
+
+    monkeypatch.setattr(benchmark, "_click_gallery_mode", switch_mode)
+    monkeypatch.setattr(benchmark, "_toggle_fullscreen", fullscreen)
+    monkeypatch.setattr(benchmark.time, "sleep", lambda seconds: None)
+
+    record = {"actions": [], "warnings": []}
+    proc = SimpleNamespace(pid=9001)
+    assert benchmark._drive(proc, tmp_path, record, cycles=1, timeout=2) == 20
+    assert record["warnings"] == []
+    assert sequence.count("fullscreen-on-grid") == 1
+    assert sequence.index("slider") < sequence.index("fullscreen-on-grid") < sequence.index("List")
+    assert sequence.index("fullscreen-on-grid") < sequence.index("Detail")
+    assert sequence[-1] == "closed"
