@@ -34,6 +34,7 @@ DEFAULT_PROFILES = {
     "refresh-10s": {"refresh_ms": 10000, "full_refresh_s": 60},
     "debounce-faster": {"filter_debounce_ms": 150, "save_debounce_ms": 125, "page_jump_debounce_ms": 20},
 }
+SCROLL_INTENT = re.compile(r"gallery_perf phase=scroll_intent\\b[^\\n]*\\bdirection=(forward|backward)\\b[^\\n]*\\bsource=wheel\\b")
 QUERY_DONE = re.compile(r"gallery_perf phase=query_done\b[^\n]*\breturned=(\d+)\b[^\n]*\berror=none\b")
 
 
@@ -188,35 +189,180 @@ def _click(window, name: str, actions: list[dict], *,
     actions.append({"action": name, "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
 
 
-def _scroll(window, direction: int, actions: list[dict]) -> None:
-    """Wheel-scroll inside the gallery content, never on its action toolbar."""
+def _attempt(record: dict, step: str, action) -> bool:
+    """Keep running after a missed UI click, wheel or drag; retain evidence."""
+
+    record["step"] = step
+    try:
+        action()
+        return True
+    except Exception as exc:
+        from dtflow.logging_setup import sanitize
+
+        failure = {
+            "step": step,
+            "error_type": type(exc).__name__,
+            "message": sanitize(str(exc))[:240],
+        }
+        record.setdefault("warnings", []).append(failure)
+        print(
+            f"WARNING {step}: {failure['error_type']}: {failure['message']}",
+            file=sys.stderr, flush=True,
+        )
+        return False
+
+
+def _click_page(window, number: int, actions: list[dict]) -> None:
+    """Click a numbered page and verify Qt's checked-state transition."""
+
+    name = f"Jump to image batch {number}"
+    button = _button(window, name, automation_id=f"galleryPagerPage{number}", timeout=5)
+    started = time.perf_counter()
+    if button.get_toggle_state() != 1:
+        button.click_input()
+    deadline = time.monotonic() + 4
+    while time.monotonic() < deadline:
+        if button.get_toggle_state() == 1:
+            actions.append({
+                "action": name, "verified": True,
+                "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
+            return
+        time.sleep(0.1)
+    raise TimeoutError(f"Page {number} did not become selected after the click.")
+
+
+def _wheel_intents(directory: Path) -> set[tuple]:
+    """Use existing -x events to verify that the gallery received a wheel."""
+
+    found = set()
+    for path in directory.glob("dtflow-*.log*"):
+        if "-gallery" in path.name:
+            continue
+        try:
+            with path.open(encoding="utf-8", errors="replace") as stream:
+                identity = os.fstat(stream.fileno())
+                data = stream.read()
+        except OSError:
+            continue
+        for match in SCROLL_INTENT.finditer(data):
+            found.add((identity.st_dev, identity.st_ino, match.start(), match.group(1)))
+    return found
+
+
+def _scroll(window, direction: int, actions: list[dict], directory: Path) -> None:
+    """Dispatch the gallery wheel and require an observable scroll-intent event."""
 
     from pywinauto import mouse
 
+    before = _wheel_intents(directory)
     rect = window.rectangle()
     coords = (int(rect.left + rect.width() * 0.52), int(rect.top + rect.height() * 0.66))
     started = time.perf_counter()
     mouse.scroll(coords=coords, wheel_dist=direction * 5)
-    actions.append({"action": "scroll-up" if direction > 0 else "scroll-down",
-                    "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
+    event = {
+        "action": "scroll-up" if direction > 0 else "scroll-down",
+        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        "wheel_intent_observed": False,
+    }
+    actions.append(event)
+    wanted = "backward" if direction > 0 else "forward"
+    deadline = time.monotonic() + 2.5
+    while time.monotonic() < deadline:
+        if any(item[3] == wanted for item in _wheel_intents(directory) - before):
+            event["wheel_intent_observed"] = True
+            return
+        time.sleep(0.15)
+    raise TimeoutError(f"Scroll {wanted} wheel was sent but no matching gallery scroll_intent was logged.")
 
 
-def _exercise_prompt_filter(window, actions: list[dict]) -> None:
-    """Change the real search field and restore an empty query after debounce."""
+def _toggle_fullscreen(window, actions: list[dict]) -> None:
+    """Enter via the actual Qt checkbox; Escape restores the normal window."""
 
-    field = window.child_window(title="Search positive prompts", control_type="Edit")
-    field.wait("exists visible enabled", timeout=12)
-    for query in ("dtflow_benchmark_no_matches_expected", ""):
-        started = time.perf_counter()
-        field.click_input()
-        field.type_keys("^a{BACKSPACE}", set_foreground=True)
-        if query:
-            field.type_keys(query, set_foreground=True)
+    button = _button(
+        window, "Full screen image view",
+        automation_id="galleryFocusButton", timeout=5,
+    )
+    started = time.perf_counter()
+    button.click_input()
+    actions.append({
+        "action": "fullscreen-enter",
+        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+    })
+    time.sleep(0.5)
+    # The fullscreen layout hides the header containing its original toggle,
+    # so do not try to click that now-hidden control a second time.
+    started = time.perf_counter()
+    window.type_keys("{ESC}")
+    actions.append({
+        "action": "fullscreen-exit-esc",
+        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+    })
+    time.sleep(0.5)
+
+
+def _move_thumbnail_slider(window, actions: list[dict]) -> None:
+    """Move the real UIA Slider and restore its previous value after the drag."""
+
+    from pywinauto import mouse
+
+    candidates = [
+        control for control in window.descendants()
+        if control.element_info.control_type == "Slider"
+        and (control.element_info.name == "ThumbnailSizeSlider"
+             or control.element_info.automation_id == "galleryThumbnailSizeSlider")
+        and control.is_visible() and control.is_enabled()
+    ]
+    if len(candidates) != 1:
+        raise LookupError(f"Expected one visible ThumbnailSizeSlider, found {len(candidates)}.")
+    slider = candidates[0]
+    # The control is QSlider with a known, stable 25..250 range. Require
+    # UIA RangeValue to read and restore the owner's previous preference.
+    interface = slider.iface_range_value
+    original = float(interface.CurrentValue)
+    if not 25 <= original <= 250:
+        raise ValueError("Thumbnail slider returned a value outside its Qt 25..250 range.")
+    target = 150.0 if original < 130 else 75.0
+    rect = slider.rectangle()
+    if rect.width() < 60 or rect.height() < 8:
+        raise RuntimeError("Thumbnail slider rectangle is too small to drag safely.")
+
+    def point(value: float) -> tuple[int, int]:
+        # Leave room for Qt's thumb handle near both ends of the groove.
+        x = rect.left + 12 + (rect.width() - 24) * (value - 25) / 225
+        return int(round(x)), int((rect.top + rect.bottom) / 2)
+
+    def drag(start: float, end: float) -> None:
+        mouse.press(coords=point(start))
+        try:
+            mouse.move(coords=point(end))
+            time.sleep(0.2)
+        finally:
+            mouse.release(coords=point(end))
+
+    started = time.perf_counter()
+    try:
+        drag(original, target)
+        actual = float(interface.CurrentValue)
+        if abs(actual - original) < 2:
+            raise RuntimeError("Thumbnail slider did not move after the drag.")
         actions.append({
-            "action": "filter-no-match" if query else "filter-reset",
+            "action": "thumbnail-slider-drag",
+            "before": original, "after": actual,
             "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+            "verified": True,
         })
-        time.sleep(1.5)
+    finally:
+        # Even if the motion is ineffective, always attempt to restore the
+        # original value so subsequent profiles have comparable UI state.
+        current = float(interface.CurrentValue)
+        if abs(current - original) >= 1:
+            drag(current, original)
+        restored = float(interface.CurrentValue)
+        if abs(restored - original) > 5:
+            raise RuntimeError(
+                f"Thumbnail slider could not restore its initial value (started={original:g}, restored={restored:g})."
+            )
 
 
 def _reset_gallery_sort(window, directory: Path, proc: subprocess.Popen, record: dict, *, timeout: float) -> None:
@@ -346,35 +492,42 @@ def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int
     record["step"] = "setup-grid"
     _click(window, "Grid", record.setdefault("setup_actions", []), automation_id="galleryGridButton")
     _reset_gallery_sort(window, directory, proc, record, timeout=timeout)
-    record["step"] = "verify-page-two"
-    _button(window, "Jump to image batch 2", automation_id="galleryPagerPage2", timeout=timeout)
+    _attempt(
+        record, "verify-page-two",
+        lambda: _button(window, "Jump to image batch 2", automation_id="galleryPagerPage2", timeout=4),
+    )
     for cycle in range(cycles):
-        record["step"] = f"cycle-{cycle + 1}-grid"
-        _click(window, "Grid", actions, automation_id="galleryGridButton")
-        record["step"] = f"cycle-{cycle + 1}-grid-scroll"
-        _scroll(window, -1, actions)
+        prefix = f"cycle-{cycle + 1}"
+        _attempt(record, f"{prefix}-grid", lambda: _click(
+            window, "Grid", actions, automation_id="galleryGridButton",
+        ))
+        _attempt(record, f"{prefix}-grid-scroll-down", lambda: _scroll(window, -1, actions, directory))
         time.sleep(0.8)
-        _scroll(window, 1, actions)
+        _attempt(record, f"{prefix}-grid-scroll-up", lambda: _scroll(window, 1, actions, directory))
         time.sleep(0.8)
-        record["step"] = f"cycle-{cycle + 1}-page-two"
-        _click(window, "Jump to image batch 2", actions, automation_id="galleryPagerPage2")
+        _attempt(record, f"{prefix}-page-two", lambda: _click_page(window, 2, actions))
         time.sleep(0.8)
-        record["step"] = f"cycle-{cycle + 1}-page-one"
-        _click(window, "Jump to image batch 1", actions, automation_id="galleryPagerPage1")
+        _attempt(record, f"{prefix}-page-one", lambda: _click_page(window, 1, actions))
         time.sleep(0.8)
-        record["step"] = f"cycle-{cycle + 1}-list"
-        _click(window, "List", actions, automation_id="galleryListButton")
-        _scroll(window, -1, actions)
+        _attempt(record, f"{prefix}-slider", lambda: _move_thumbnail_slider(window, actions))
+        time.sleep(0.5)
+        _attempt(record, f"{prefix}-list", lambda: _click(
+            window, "List", actions, automation_id="galleryListButton",
+        ))
+        _attempt(record, f"{prefix}-list-scroll-down", lambda: _scroll(window, -1, actions, directory))
         time.sleep(0.8)
-        _scroll(window, 1, actions)
+        _attempt(record, f"{prefix}-list-scroll-up", lambda: _scroll(window, 1, actions, directory))
         time.sleep(0.8)
-        record["step"] = f"cycle-{cycle + 1}-detail"
-        _click(window, "Detail", actions, alternatives=("Full screen image view",), automation_id="galleryDetailButton")
+        _attempt(record, f"{prefix}-detail", lambda: _click(
+            window, "Detail", actions, alternatives=("Full screen image view",),
+            automation_id="galleryDetailButton",
+        ))
+        time.sleep(0.5)
+        _attempt(record, f"{prefix}-fullscreen", lambda: _toggle_fullscreen(window, actions))
+        _attempt(record, f"{prefix}-return-grid", lambda: _click(
+            window, "Grid", actions, automation_id="galleryGridButton",
+        ))
         time.sleep(0.8)
-        _click(window, "Grid", actions, automation_id="galleryGridButton")
-        time.sleep(0.8)
-        record["step"] = f"cycle-{cycle + 1}-filter"
-        _exercise_prompt_filter(window, actions)
     record["step"] = "close-dtflow-window"
     window.close()
     record["step"] = "wait-for-shutdown"
@@ -401,7 +554,7 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
     env["QT_QPA_PLATFORM"] = "windows"
     record: dict = {
         "profile_name": name, "profile": profile, "trial": trial, "no_cache": no_cache,
-        "status": "failed", "actions": [], "error_type": None, "error_message": None,
+        "status": "failed", "actions": [], "warnings": [], "error_type": None, "error_message": None,
         "step": "not-started",
         "initial_query_records": None,
     }
@@ -420,7 +573,7 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
             if len(csvs) != 1:
                 raise ValueError("Expected exactly one session gallery CSV.")
             record["metrics"] = summarize_csv(csvs[0])
-            record["status"] = "ok"
+            record["status"] = "warning" if record.get("warnings") else "ok"
         except (Exception, KeyboardInterrupt) as exc:
             from dtflow.logging_setup import sanitize
 
@@ -447,7 +600,7 @@ def write_report(records: list[dict], out: Path) -> None:
     """Emit inspectable raw trials and a comparison that never ranks missing data."""
 
     columns = (
-        "case", "trial", "status", "step", "initial_query_records", "gui_gap_over_50_max_ms",
+        "case", "trial", "status", "step", "warning_count", "initial_query_records", "gui_gap_over_50_max_ms",
         "query_done_median_recorded_ms", "prepare_median_recorded_ms",
         "grid_mount_median_recorded_ms", "adjacent_events", "error_type",
     )
@@ -463,6 +616,7 @@ def write_report(records: list[dict], out: Path) -> None:
                 "trial": record["trial"],
                 "status": record["status"],
                 "step": record.get("step"),
+                "warning_count": len(record.get("warnings", [])),
                 "initial_query_records": record.get("initial_query_records"),
                 "gui_gap_over_50_max_ms": metrics.get("gui_gap_over_50_max_ms"),
                 "query_done_median_recorded_ms": metrics.get("query_done_median_recorded_ms"),
