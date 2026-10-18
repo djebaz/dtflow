@@ -1383,7 +1383,9 @@ class GalleryPage(QObject):
 
         async def extend_page(current: GalleryQuery, page: GalleryPage, read) -> GalleryPage:
             """Extend the resident window with independently bounded reads."""
-            while len(page.items) == current.limit and len(page.items) < target_count:
+            if len(page.items) != current.limit:
+                return page
+            while len(page.items) < target_count:
                 remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
                 if remaining <= 0:
                     break
