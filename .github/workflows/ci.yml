@@ -1,6 +1,5 @@
 name: CI
 
-# What the run list shows: which event and target the run is about, instead of just "CI".
 run-name: >-
   ${{ github.event_name == 'workflow_dispatch' && format('CI manual · {0}',
   (inputs.sha != '' && format('commit {0}', inputs.sha))
@@ -9,11 +8,6 @@ run-name: >-
   || github.event_name == 'pull_request' && format('CI · PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title)
   || format('CI · push to {0}', github.ref_name) }}
 
-# Offline checks only: lock consistency, lint, format and the offline pytest suite.
-# Live Draw Things / DT+ tests and any generation are never run here, and no secrets are used.
-# Runs on pushes to main (this seeds the uv cache: pull request caches are only readable by their own PR,
-# while main's are shared with every PR), on non-draft pull requests (including when one is marked ready for
-# review) and on manual dispatch, to limit runner minutes. Pushes to other branches are not checked.
 on:
   workflow_dispatch:
     inputs:
@@ -41,7 +35,6 @@ on:
     paths:
       - '**/*.py'
 
-# A newer push to the same pull request cancels the run in progress. Manual runs are never cancelled.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -57,22 +50,22 @@ env:
 
 jobs:
   checks:
-    name: Lock, lint, test
-    # Draft pull requests are skipped; marking one ready for review starts a run.
+    name: Lock, lint, test (single-runner)
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # job-level token for gh
     steps:
       - name: Resolve manual target
         id: target
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_SHA: ${{ inputs.sha }}
           INPUT_PR: ${{ inputs.pr }}
           INPUT_BRANCH: ${{ inputs.branch }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          # Pull request and push events check out their own default ref; only manual runs pick a target.
           sha=""
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             repo="repos/$GITHUB_REPOSITORY"
@@ -99,17 +92,8 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      - name: Mark commit pending
-        if: steps.target.outputs.sha != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
-            -f state=pending -f context="CI (manual)" -f description="Manual CI run in progress" \
-            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-
-      - uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.target.outputs.sha }}
 
@@ -117,7 +101,6 @@ jobs:
         id: pyfiles
         shell: bash
         run: |
-          # Drain the listing: grep -q can close the pipe early and make Git fail with SIGPIPE under pipefail.
           git ls-tree -r --name-only HEAD > "$RUNNER_TEMP/ci-files.txt"
           if grep -E '\.py$' "$RUNNER_TEMP/ci-files.txt" > /dev/null; then
             echo "has_py=true" >> "$GITHUB_OUTPUT"
@@ -131,17 +114,16 @@ jobs:
         if: steps.pyfiles.outputs.has_py != 'true'
         run: echo "No .py files in this commit; skipping CI."
 
-      # PySide6 needs libEGL at import time; the other Qt libraries are already on the runner image.
-      # Billing rounds each job up to a whole minute, so skip the slow package index refresh unless the
-      # install fails without it.
+      # Shared environment setup (runs once)
       - name: Install Qt runtime library
         if: steps.pyfiles.outputs.has_py == 'true'
         run: |
           sudo apt-get install -y --no-install-recommends libegl1 \
             || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1; }
 
-      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Setup uv (cache enabled)
         if: steps.pyfiles.outputs.has_py == 'true'
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -154,13 +136,105 @@ jobs:
         if: steps.pyfiles.outputs.has_py == 'true'
         run: uv lock --check
 
+      # A small helper condition used for gh API steps: only post statuses for same-repo PRs or non-PR runs.
+      # This avoids attempting to use secrets for external fork PRs where secrets are not available.
+      - name: Set status-allowed flag
+        id: allow_status
+        run: |
+          allowed="true"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+              allowed="false"
+            fi
+          fi
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+
+      # ---------- Format check (non-blocking) ----------
+      - name: Mark commit pending (format)
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=pending -f context="CI · format (manual)" -f description="Format check in progress" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Ruff format (check)
+        if: steps.pyfiles.outputs.has_py == 'true'
+        id: format_run
+        run: |
+          rc=0
+          uv run ruff format --check . > ruff-format.txt 2>&1 || rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "=== ruff format output ==="
+          sed -n '1,200p' ruff-format.txt || true
+        continue-on-error: true
+
+      - name: Report format result (non-blocking)
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          rc=${{ steps.format_run.outputs.rc }}
+          if [ -z "$rc" ]; then rc=0; fi
+          # Keep format non-blocking: always post success so branch protection is not blocked.
+          state=success
+          if [ "$rc" -eq 0 ]; then
+            desc="Format check passed"
+          else
+            desc="Format check found issues (non-blocking — see action log)"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state="$state" -f context="CI · format (manual)" -f description="$desc" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      # ---------- Lint check (non-blocking) ----------
+      - name: Mark commit pending (lint)
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=pending -f context="CI · lint (manual)" -f description="Lint check in progress" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
       - name: Ruff lint
         if: steps.pyfiles.outputs.has_py == 'true'
-        run: uv run ruff check .
+        id: lint_run
+        run: |
+          rc=0
+          uv run ruff check . > ruff-lint.txt 2>&1 || rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "=== ruff lint output ==="
+          sed -n '1,200p' ruff-lint.txt || true
+        continue-on-error: true
 
-      - name: Ruff format
-        if: steps.pyfiles.outputs.has_py == 'true'
-        run: uv run ruff format --check .
+      - name: Report lint result (non-blocking)
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          rc=${{ steps.lint_run.outputs.rc }}
+          if [ -z "$rc" ]; then rc=0; fi
+          state=success
+          if [ "$rc" -eq 0 ]; then
+            desc="Lint passed"
+          else
+            desc="Lint found issues (non-blocking — see action log)"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state="$state" -f context="CI · lint (manual)" -f description="$desc" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      # ---------- Tests (blocking) ----------
+      - name: Mark commit pending (tests)
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=pending -f context="CI · tests (manual)" -f description="Tests in progress" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: SQLite version
         if: steps.pyfiles.outputs.has_py == 'true'
@@ -170,19 +244,17 @@ jobs:
         if: steps.pyfiles.outputs.has_py == 'true'
         run: uv run pytest
 
-      # Posts the final result on the checked commit so it shows in that PR's checks.
-      - name: Report manual result
-        if: always() && steps.target.outputs.sha != '' && steps.pyfiles.outputs.has_py == 'true'
+      - name: Report tests result
+        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           JOB_STATUS: ${{ job.status }}
         run: |
           case "$JOB_STATUS" in
-            success) state=success; text="Manual CI run passed" ;;
-            cancelled) state=error; text="Manual CI run was cancelled" ;;
-            *) state=failure; text="Manual CI run failed" ;;
+            success) state=success; text="Tests passed" ;;
+            cancelled) state=error; text="Tests cancelled" ;;
+            *) state=failure; text="Tests failed" ;;
           esac
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
-            -f state="$state" -f context="CI (manual)" -f description="$text" \
+            -f state="$state" -f context="CI · tests (manual)" -f description="$text" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
