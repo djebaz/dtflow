@@ -57,7 +57,13 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     form.resize(1200, 800)
     form.show()
     gallery.set_active(True)
-    qtbot.waitUntil(lambda: len(gallery.items) == 100 and not gallery._loading, timeout=5000)
+    qtbot.waitUntil(
+        lambda: len(gallery.items) == 100
+        and not gallery._loading
+        and gallery._grid_mount_keys is None
+        and len(gallery._grid_layout_keys) == 100,
+        timeout=5000,
+    )
     yield form, gallery, runner, records, state
     runner.shutdown()
 
@@ -96,7 +102,9 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
     assert tuple(gallery.items) == records[:200]
     assert gallery.table.rowCount() == len(gallery._film_entries) == 200
     qtbot.waitUntil(
-        lambda: len(gallery._grid_layout_keys) == 200 and not gallery.reflow_timer.isActive(),
+        lambda: len(gallery._grid_layout_keys) == 200
+        and gallery._grid_mount_keys is None
+        and not gallery.reflow_timer.isActive(),
         timeout=3000,
     )
     # The append fast path must leave retained cards in their existing cells
