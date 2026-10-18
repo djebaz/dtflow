@@ -1785,7 +1785,9 @@ class GalleryPage(QObject):
                 self._layout_cards()
                 self.cards_layout.activate()
                 self.grid_cards.adjustSize()
-            QTimer.singleShot(0, settle)
+            # Moving 300 cards can queue a second Qt geometry pass after
+            # activate(). Restoring immediately reads stale Y coordinates.
+            QTimer.singleShot(20, settle)
 
         def settle():
             try:
