@@ -342,6 +342,14 @@ class GalleryPage(QObject):
         self._grid_empty: QLabel | None = None
         self._grid_layout_keys: tuple[str, ...] = ()
         self._grid_layout_columns = 0
+        self._grid_mount_keys: tuple[str, ...] | None = None
+        self._grid_mount_columns = 0
+        self._grid_mount_cursor = 0
+        self._grid_mount_retained = 0
+        self._grid_mount_added = 0
+        self._grid_mount_moved = 0
+        self._grid_mount_started = 0.0
+        self._grid_mount_callbacks: list = []
         self._applied_thumbnail_percent: int | None = None
         self._density_anchor: tuple[str, str, int] | None = None
         self._film_buttons: list[QPushButton] = []
@@ -383,7 +391,11 @@ class GalleryPage(QObject):
         self.filter_timer.timeout.connect(lambda: self.refresh(reset=True))
         self.reflow_timer = QTimer(self)
         self.reflow_timer.setSingleShot(True)
-        self.reflow_timer.timeout.connect(self._layout_cards)
+        self.reflow_timer.timeout.connect(self._start_grid_mount)
+        self._grid_mount_timer = QTimer(self)
+        self._grid_mount_timer.setSingleShot(True)
+        self._grid_mount_timer.setInterval(1)
+        self._grid_mount_timer.timeout.connect(self._mount_grid_slice)
         self.density_anchor_timer = QTimer(self)
         self.density_anchor_timer.setSingleShot(True)
         self.density_anchor_timer.timeout.connect(self._restore_density_anchor)
@@ -1917,7 +1929,10 @@ class GalleryPage(QObject):
             # Finalize the layout in this turn, then restore in the next one.
             if anchor and self.mode == mode and mode == "Grid":
                 self.reflow_timer.stop()
-                self._layout_cards()
+                self._start_grid_mount()
+                if self._grid_mount_keys is not None:
+                    self._grid_mount_callbacks.append(prepare)
+                    return
                 self.cards_layout.activate()
                 self.grid_cards.adjustSize()
             # Moving 300 cards can queue a second Qt geometry pass after
@@ -1985,6 +2000,10 @@ class GalleryPage(QObject):
     @Slot()
     def _cancel_preparation(self):
         self.preparation.cancel()
+        if self.runner.closed:
+            self._grid_mount_timer.stop()
+            self._grid_mount_keys = None
+            self._grid_mount_callbacks.clear()
         if self.runner.closed:
             for timer in self.findChildren(QTimer):
                 timer.stop()
@@ -2837,6 +2856,11 @@ class GalleryPage(QObject):
             self._schedule_save()
 
     def _focus_grid_origin(self, button: QPushButton) -> None:
+        if self.runner.closed:
+            return
+        if self._grid_mount_keys is not None:
+            self._grid_mount_callbacks.append(lambda: self._focus_grid_origin(button))
+            return
         button.setFocus(Qt.FocusReason.OtherFocusReason)
         self.grid_scroll.ensureWidgetVisible(button)
 
@@ -2986,9 +3010,91 @@ class GalleryPage(QObject):
             film.setIconSize(film_placeholder.size())
 
     @Slot()
+    def _start_grid_mount(self) -> None:
+        """Mount a committed Grid page in short GUI-thread turns."""
+        if self.runner.closed or not self._grid_buttons:
+            return
+        width = self._thumbnail_pixels(self.slider.value()) + 16
+        columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
+        keys = tuple(self._grid_buttons)
+        if keys == self._grid_layout_keys and columns == self._grid_layout_columns:
+            return
+        if self._grid_mount_keys == keys and self._grid_mount_columns == columns:
+            return
+        self._grid_mount_timer.stop()
+        self._grid_mount_keys = keys
+        self._grid_mount_columns = columns
+        self._grid_mount_retained = (
+            len(self._grid_layout_keys)
+            if columns == self._grid_layout_columns and keys[: len(self._grid_layout_keys)] == self._grid_layout_keys
+            else 0
+        )
+        self._grid_mount_cursor = self._grid_mount_retained
+        self._grid_mount_added = 0
+        self._grid_mount_moved = 0
+        self._grid_mount_started = monotonic()
+        self._grid_mount_timer.start()
+
+    @Slot()
+    def _mount_grid_slice(self) -> None:
+        """Yield between Qt layout insertions; preserve synchronous fixture fallback."""
+        keys = self._grid_mount_keys
+        if keys is None or self.runner.closed:
+            return
+        if keys != tuple(self._grid_buttons):
+            self._start_grid_mount()
+            return
+        width = self._thumbnail_pixels(self.slider.value()) + 16
+        columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
+        if columns != self._grid_mount_columns:
+            self._start_grid_mount()
+            return
+        started = monotonic()
+        while self._grid_mount_cursor < len(keys):
+            index = self._grid_mount_cursor
+            card = self._grid_buttons[keys[index]].parentWidget()
+            position = self.cards_layout.indexOf(card)
+            row, col = divmod(index, columns)
+            if position >= 0:
+                old_row, old_col, _row_span, _col_span = self.cards_layout.getItemPosition(position)
+                if (old_row, old_col) != (row, col):
+                    self.cards_layout.removeWidget(card)
+                    self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
+                    self._grid_mount_moved += 1
+            else:
+                self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
+                self._grid_mount_added += 1
+            card.show()
+            self._grid_mount_cursor += 1
+            if (monotonic() - started) * 1000 >= 4.0:
+                break
+        if self._grid_mount_cursor < len(keys):
+            self._grid_mount_timer.start()
+            return
+        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self._grid_layout_keys = keys
+        self._grid_layout_columns = columns
+        self._grid_mount_keys = None
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=grid_mount_complete elapsed_ms=%.1f mounted=%d columns=%d retained=%d added=%d moved=%d",
+                (monotonic() - self._grid_mount_started) * 1000,
+                len(keys),
+                columns,
+                self._grid_mount_retained,
+                self._grid_mount_added,
+                self._grid_mount_moved,
+            )
+        callbacks, self._grid_mount_callbacks = self._grid_mount_callbacks, []
+        for callback in callbacks:
+            QTimer.singleShot(0, self, callback)
+
+    @Slot()
     def _layout_cards(self) -> None:
         if self.runner.closed or not self._grid_buttons:
             return
+        self._grid_mount_timer.stop()
+        self._grid_mount_keys = None
         started = monotonic()
         width = self._thumbnail_pixels(self.slider.value()) + 16
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
@@ -3023,6 +3129,9 @@ class GalleryPage(QObject):
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._grid_layout_keys = keys
         self._grid_layout_columns = columns
+        callbacks, self._grid_mount_callbacks = self._grid_mount_callbacks, []
+        for callback in callbacks:
+            QTimer.singleShot(0, self, callback)
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d retained=%d added=%d moved=%d",
@@ -3140,6 +3249,12 @@ class GalleryPage(QObject):
 
         def restore():
             if self.runner.closed or generation != self._query_generation:
+                return
+            if self.reflow_timer.isActive():
+                self.reflow_timer.stop()
+                self._start_grid_mount()
+            if self._grid_mount_keys is not None:
+                self._grid_mount_callbacks.append(restore)
                 return
             for name, bar in (
                 ("grid", self.grid_scroll.verticalScrollBar()),
