@@ -167,6 +167,32 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
     return await asyncio.to_thread(read)
 
 
+async def gallery_file_signature(state: Path) -> tuple[tuple[int, int, int, int] | None, ...] | None:
+    """Check gallery database file revisions without querying or building image records.
+
+    The signature is a polling hint, not database authority or a content hash.
+    The UI must perform periodic full reads even if these metadata values match.
+    """
+
+    def read():
+        root = Path(state).resolve()
+        if not (root / "attempts.sqlite3").is_file():
+            return None
+        result = []
+        for name in ("attempts.sqlite3", "image_recycle.sqlite3"):
+            for suffix in ("", "-wal"):
+                path = root / (name + suffix)
+                try:
+                    stat = path.stat()
+                except FileNotFoundError:
+                    result.append(None)
+                    continue
+                result.append((stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns))
+        return tuple(result)
+
+    return await asyncio.to_thread(read)
+
+
 async def query_snapshot(state: Path, query: GalleryQuery, anchor: str | None):
     """Browsing-only fallback; one immutable publication, never the live writer/WAL.
 

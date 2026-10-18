@@ -61,6 +61,7 @@ from dtflow.services.gallery import (
     GalleryEditSource,
     copy_output_paths,
     filter_choices,
+    gallery_file_signature,
     inspect_output,
     load_detail,
     locate_output,
@@ -95,6 +96,7 @@ MAX_QUERY_ITEMS = 200  # GalleryQuery retains its existing per-read safety cap
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 5000
+AUTO_REFRESH_FULL_INTERVAL_S = 30  # a full read periodically guards against missed file metadata changes
 STANDARD_THUMBNAIL_PX = 320
 MIN_THUMBNAIL_PERCENT = 25
 MAX_THUMBNAIL_PERCENT = 250
@@ -366,6 +368,10 @@ class GalleryPage(QObject):
         self._suppress_batch_scroll = False
         self._drag_scroll_positions: dict[str, int] = {}
         self._pending_refresh: tuple[bool, bool] | None = None
+        self._auto_signature: tuple | None = None
+        self._auto_checking = False
+        self._auto_last_full = 0.0
+        self._auto_unchanged_polls = 0
         self._refresh_failing = False
         self._snapshot_at = None
         self._snapshot_warning_dismissed = False
@@ -1260,6 +1266,8 @@ class GalleryPage(QObject):
             self.auto_timer.start()
         else:
             self.auto_timer.stop()
+            if not enabled:
+                self._auto_signature = None
 
     @Slot()
     def _trace_gui_heartbeat(self) -> None:
@@ -1283,18 +1291,26 @@ class GalleryPage(QObject):
             self._perf_stats.flush()
 
     def _auto_refresh_tick(self) -> None:
-        """Do not interrupt adjacent reads or a debounced filter edit."""
-        if not self._active or not self.auto_button.isChecked():
+        """Check for gallery changes without rebuilding unchanged pages every five seconds."""
+        if not self._active or not self.auto_button.isChecked() or self.runner.closed:
             return
         reasons = []
         if self._loading:
             reasons.append("query")
         if self._adjacent_loading:
             reasons.append("adjacent")
+        if self.preparation.active:
+            reasons.append("preparation")
+        if self._grid_mount_keys is not None:
+            reasons.append("mount")
+        if self._pending_page_jump is not None:
+            reasons.append("page_jump")
         if self._suppress_batch_scroll:
             reasons.append("anchor_restore")
         if self.filter_timer.isActive():
             reasons.append("filter_debounce")
+        if self._auto_checking:
+            reasons.append("signature_check")
         if reasons:
             if dev_enabled():
                 log.debug(
@@ -1303,8 +1319,59 @@ class GalleryPage(QObject):
                     len(self.items),
                 )
             return
+        # A snapshot/failure episode needs every live retry and its existing
+        # two-success recovery semantics; a file-stat hint cannot gate recovery.
+        if self._snapshot_at or self._snapshot_warning_episode or self._refresh_failing:
+            self._auto_last_full = monotonic()
+            self.refresh(preserve=True)
+            return
+        self._auto_checking = True
+        self.runner.submit(gallery_file_signature(self.state_dir), self._auto_signature_done)
+
+    def _auto_signature_done(self, signature, error) -> None:
+        """Use inexpensive file metadata as a hint, with a bounded full-read fallback."""
+        self._auto_checking = False
+        if (
+            self.runner.closed
+            or not self._active
+            or not self.auto_button.isChecked()
+            or self._loading
+            or self._adjacent_loading
+            or self.preparation.active
+            or self._grid_mount_keys is not None
+            or self._pending_page_jump is not None
+            or self.filter_timer.isActive()
+        ):
+            return
+        now = monotonic()
+        due = now - self._auto_last_full >= AUTO_REFRESH_FULL_INTERVAL_S
+        changed = (
+            error is not None
+            or signature is None
+            or signature != self._auto_signature
+            or self._snapshot_at is not None
+            or self._snapshot_warning_episode
+            or self._refresh_failing
+        )
+        if not changed and not due:
+            self._auto_unchanged_polls += 1
+            if dev_enabled() and self._auto_unchanged_polls % 6 == 0:
+                log.debug(
+                    "gallery_perf phase=auto_refresh action=unchanged checks=%d mounted=%d",
+                    self._auto_unchanged_polls,
+                    len(self.items),
+                )
+            return
         if dev_enabled():
-            log.debug("gallery_perf phase=auto_refresh action=started mounted=%d", len(self.items))
+            log.debug(
+                "gallery_perf phase=auto_refresh action=started reason=%s skipped_checks=%d mounted=%d",
+                "changed" if changed else "periodic",
+                self._auto_unchanged_polls,
+                len(self.items),
+            )
+        self._auto_unchanged_polls = 0
+        self._auto_signature = signature if error is None else None
+        self._auto_last_full = now
         self.refresh(preserve=True)
 
     def _auto_refresh_changed(self, _checked: bool) -> None:
@@ -1838,6 +1905,7 @@ class GalleryPage(QObject):
             else:
                 self.select(self.items[index].identity, open_detail=False)
             QTimer.singleShot(0, self._sync_pager)
+            self._prioritize_thumbnails()
             self._queue_neighbor_prefetch()
             return
         try:
@@ -2598,6 +2666,30 @@ class GalleryPage(QObject):
         button.clicked.connect(lambda checked=False, source=button: self.select(str(source.property("identity"))))
         return button, CoverPainter(button, "", ("", ""))
 
+    def _prioritize_thumbnails(self) -> None:
+        """Decode visible saved images before speculative neighboring thumbnails."""
+        if len(self._thumb_waiting) < 2 or not self.items:
+            return
+        positions = {item.identity: index for index, item in enumerate(self.items)}
+        if (
+            self._prefetch_zone_hint is not None
+            and self.offset <= self._prefetch_zone_hint < self.offset + len(self.items)
+        ):
+            first = self._prefetch_zone_hint - self.offset
+            last = min(len(self.items) - 1, first + 19)
+        else:
+            visible_first, visible_last = self._visible_range()
+            first = max(0, min(len(self.items) - 1, visible_first - self.offset - 1))
+            last = max(first, min(len(self.items) - 1, visible_last - self.offset - 1))
+            if last - first >= PAGE_SIZE:
+                last = min(len(self.items) - 1, first + 19)
+
+        def priority(entry):
+            position = positions.get(entry[1], len(self.items))
+            return (0 if first <= position <= last else 1, abs(position - first))
+
+        self._thumb_waiting = deque(sorted(self._thumb_waiting, key=priority))
+
     def _queue_thumbnails(self, changed: list[GalleryItem]) -> None:
         for item in changed:
             self._thumb_generation += 1
@@ -2610,6 +2702,7 @@ class GalleryPage(QObject):
         self._thumb_waiting = deque(
             entry for entry in self._thumb_waiting if self._thumb_versions.get(entry[1]) == entry[0]
         )
+        self._prioritize_thumbnails()
         self._pump_thumbnails()
 
     def _pump_thumbnails(self) -> None:
@@ -3456,6 +3549,7 @@ class GalleryPage(QObject):
             # Intermediate Qt geometry changes must not briefly select a
             # different page while the viewport anchor is being restored.
             self._sync_pager()
+            self._prioritize_thumbnails()
             self._queue_neighbor_prefetch()
         self._schedule_save()
 
