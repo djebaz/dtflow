@@ -24,7 +24,7 @@ Safety/lease deadlines, SQLite query bounds, original-file memory caps and provi
 
 `tools/ui/gallery_perf_launch.py` validates a complete per-run profile and changes only process-local constants before constructing the real GUI. No production defaults, user-facing CLI options, configuration schemas or installed runtime dependencies change. Explicit bounds and the cache-prune invariant reject unsafe profiles. The Python module drives `dtflow.cli.main` with fixed `-ml 20 -mc 100 -format jpg`, `-x` and a fresh log directory.
 
-`tools/ui/windows_gallery_benchmark.py` launches this child on an interactive Windows desktop; pywinauto attaches to that exact new process PID, selects Images, exercises Grid/List/Detail, page chips, scrolling and prompt-filter changes. The test does not click Generate, queues, Export, Delete or cache-clearing controls. It exits after finishing, with a timeout; failure retains per-trial evidence and has a nonzero final exit code.
+`tools/ui/windows_gallery_benchmark.py` launches this child on an interactive Windows desktop; pywinauto attaches to that exact new process PID, selects Images and exercises Grid/List/Detail, verified page-chip changes, up/down scrolling, fullscreen enter/Escape exit, and thumbnail slider movement. Prompt-search text entry was intentionally removed because it is not needed to benchmark ordinary browsing. The test does not click Generate, queues, Export, Delete or cache-clearing controls. Each nonessential missed click, wheel verification or slider movement adds a `warnings` entry and processing continues. Such a trial is marked `warning` rather than `ok`, and is excluded from the clean performance comparison; initial GUI readiness and missing gallery data still fail. Each action is bounded; failure retains per-trial evidence and results in a nonzero final exit code.
 
 Run the following one-line command from a Windows source checkout with a prepared uv environment:
 
@@ -51,7 +51,7 @@ Interpretation limits:
 - Thumbnail worker count, lookahead, slice budgets and pixel size can affect 100–200-image navigation. Change one family at a time, repeat trials and review the maximum UI gap alongside total loading time and visual smoothness.
 - A 20,000-entry cache limit or a 256-write backlog normally **cannot be exercised by 100–200 distinct cached images**. These profiles show how to inject values; they do not establish an optimal cap or queue size without a dedicated larger disposable-cache stress fixture. Do not induce pruning of a user's real large cache solely to collect measurements.
 - Five-second polling versus a 30-second full refresh requires a sufficiently long run; a brief smoke is not refresh-performance evidence.
-- The filter test deliberately enters a distinctive nonmatching positive-prompt query and clears it. Stored filter/sort/view settings may change; the saved image content is not edited.
+- Text search is out of scope. The filter-debounce override is configurable but **not exercised** by this suite; never claim that this smoke optimized filter typing latency. Saved sort/view/thumbnail-size preferences may change; slider movement attempts to restore its original value. No saved-image content is edited.
 - No native Windows benchmark results are asserted merely because the script or Linux CI passes. Treat GUIA/UIA accessibility compatibility, DPI, visual correctness and touchpad scroll as owner native-smoke gates.
 
 ## First Windows 10 smoke and diagnostic follow-up
@@ -120,3 +120,7 @@ uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_bench
 - Fixed-default and custom-profile tests, failure evidence and help/invalid-input cases.
 - Actual native Windows source smoke with at least 100–200 real saved outputs, followed by repeated config trials. Record exact commit/build identity and environment.
 - No model download, provider call, inference/training, original-file mutation or potentially billable generation is necessary.
+
+## Recorder-backed browsing scope update (2026-10-19)
+
+Owner results from baseline and workers-3 both showed the full Grid/List/Detail and page/scroll sequence completing through `cycle-1-filter`, then timing out because Qt's prompt field was not exposed as the expected UIA `Edit`. This is a test-harness lookup failure, **not** a gallery benchmark or proof of a QT hang. Subsequent recordings provide `Full screen image view||CheckBox` and `ThumbnailSizeSlider||Slider`. The driver now drops text search and covers page 2 → page 1 (checking the selected chip), Grid/List scroll down/up (checking the existing dev `scroll_intent` wheel log), fullscreen enter/Escape exit, and native slider drag/restore. All individual UI interaction failures become warnings and the sequence continues; those trials are not ranked as successes. The screenshot's filter debounce remains a profile-only, unmeasured parameter. Windows replay of the new sequence is pending.
