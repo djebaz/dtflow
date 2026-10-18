@@ -177,3 +177,26 @@ not physical input or Windows/DPI acceptance. A short post-geometry microprobe
 still showed ordinary GUI-gap outliers, so the original <16/<33 ms goals remain
 open. No provider calls, inference, original mutations or billable operations
 were required.
+
+### Resumed Grid append and diagnostic follow-up
+
+The pending-session Grid experiment was reconstructed on the PR branch instead
+of treating unsaved checkout changes as committed. For an ordinary 100→200
+append with the same column count and retained prefix, the grid layout now
+visits only the 100 new cells. Full reflow remains the conservative path when
+columns or the mounted identity order change, including page replacement,
+backward prepend and 300-card eviction. A presentation regression checks
+retained and appended cell positions after the asynchronous layout settles.
+
+Development-only `-x` instrumentation records Qt timer gaps of at least 50 ms
+(sampled every 20 ms), environment DPI, Auto-refresh skip reasons, bounded
+query stages, worker-to-Qt callback delivery wait, preparation totals, and
+Grid cell counts. Logs contain aggregate counts, durations and lifecycle
+flags; they intentionally omit output identities, prompts and paths.
+See `devdocs/guides/development.md` for event names and interpretation.
+
+The previous session's reported Grid reflow reduction (approximately
+160→26 ms on its local test case) has **not** been independently remeasured
+in this resumed environment. CI, offline renderer and native Windows input
+acceptance are distinct from that report. No provider generation, inference,
+original-output mutation or billable action was involved in this follow-up.
