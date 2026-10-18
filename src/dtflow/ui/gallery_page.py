@@ -2932,9 +2932,7 @@ class GalleryPage(QObject):
         if not self.total:
             return False
         first, _last = self._visible_range()
-        current = self._pending_page_jump or (
-            (first - 1) // PAGE_SIZE + 1 if first else self.offset // PAGE_SIZE + 1
-        )
+        current = self._pending_page_jump or ((first - 1) // PAGE_SIZE + 1 if first else self.offset // PAGE_SIZE + 1)
         target = current + delta
         if target < 1 or target > math.ceil(self.total / PAGE_SIZE):
             return False
