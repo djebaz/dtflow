@@ -400,6 +400,11 @@ class GalleryPage(QObject):
         self._grid_mount_timer.setSingleShot(True)
         self._grid_mount_timer.setInterval(1)
         self._grid_mount_timer.timeout.connect(self._mount_grid_slice)
+        # Keep the immediate preceding/following 100-image batches resident
+        # around the currently visible pager zone, without polling on each scroll event.
+        self._neighbor_prefetch_timer = QTimer(self)
+        self._neighbor_prefetch_timer.setSingleShot(True)
+        self._neighbor_prefetch_timer.timeout.connect(self._prefetch_neighbors)
         self.density_anchor_timer = QTimer(self)
         self.density_anchor_timer.setSingleShot(True)
         self.density_anchor_timer.timeout.connect(self._restore_density_anchor)
@@ -1314,6 +1319,10 @@ class GalleryPage(QObject):
         target_count = min(MAX_MOUNTED_IMAGES, target_count if target_count is not None else query.limit)
         self._query_generation += 1
         generation = self._query_generation
+        # A new query supersedes any older adjacent anchor restoration.
+        # Obsolete callbacks must not retain (or clear) its scroll guard.
+        self._suppress_batch_scroll = False
+        self._neighbor_prefetch_timer.stop()
         self._query_started = monotonic()
         if dev_enabled():
             log.debug(
@@ -1722,6 +1731,7 @@ class GalleryPage(QObject):
             else:
                 self.select(self.items[index].identity, open_detail=False)
             QTimer.singleShot(0, self._sync_pager)
+            self._queue_neighbor_prefetch()
             return
         try:
             query = self._query(offset=target)
@@ -1750,21 +1760,26 @@ class GalleryPage(QObject):
             return "No committed saved outputs match these filters."
         first, last = self._visible_range()
         return (
-            f"Showing {first}–{last} of {self.total}; {len(self.items)} loaded. "
-            "Scroll to load adjacent batches, or use the numbered batch chips to jump."
+            f"Showing {first}–{last} of {self.total}; {len(self.items)} buffered. "
+            "The previous and next 100-image batches load automatically; use the numbered chips to jump."
         )
 
-    def _maybe_load_boundary(self, direction: int) -> None:
-        """Prefetch only in the direction the user actually scrolled.
+    def _queue_neighbor_prefetch(self) -> None:
+        """Coalesce viewport changes into one nearest-neighbor check."""
+        if not self.runner.closed and not self._neighbor_prefetch_timer.isActive():
+            self._neighbor_prefetch_timer.start(0)
 
-        A page jump starts at the top of its mounted batch, where the old
-        proximity-only condition incorrectly fetched earlier pages even when
-        the user scrolled down.
+    def _prefetch_neighbors(self) -> None:
+        """Buffer the zones immediately before and after the visible 100-image zone.
+
+        The active pager zone is determined by the first visible image, not the
+        buffer's starting offset. Only one adjacent read/preparation runs at
+        once, and the existing three-batch eviction keeps resident widgets
+        bounded. A new zone may trigger another check after anchor restoration.
         """
-        if direction not in (-1, 1):
-            return
         if (
-            not self._active
+            self.runner.closed
+            or not self._active
             or self.mode not in ("Grid", "List")
             or not self.items
             or self._loading
@@ -1773,15 +1788,44 @@ class GalleryPage(QObject):
             or self._density_anchor is not None
             or self._pending_refresh is not None
             or self.filter_timer.isActive()
+            or self.reflow_timer.isActive()
+            or self._grid_mount_keys is not None
         ):
             return
-        first, last = self._visible_range()
-        threshold = max(6, min(20, len(self.items) // 8))
-        end = self.offset + len(self.items)
-        if direction > 0 and end < self.total and last >= end - threshold:
-            self._load_adjacent(1)
-        elif direction < 0 and self.offset > 0 and first <= self.offset + threshold:
-            self._load_adjacent(-1)
+        first, _last = self._visible_range()
+        if first < 1:
+            return
+        zone_start = ((first - 1) // PAGE_SIZE) * PAGE_SIZE
+        resident_end = self.offset + len(self.items)
+        # Forward first: scrolling toward the next zone is the common path.
+        # Then fill the previous zone if one exists and is not resident.
+        for target in (zone_start + PAGE_SIZE, zone_start - PAGE_SIZE):
+            if target < 0 or target >= self.total or self.offset <= target < resident_end:
+                continue
+            direction = 1 if target >= resident_end else -1
+            expected = resident_end if direction > 0 else self.offset - PAGE_SIZE
+            if target != expected:
+                continue  # Never bridge a discontinuous page window.
+            if len(self.items) >= MAX_MOUNTED_IMAGES:
+                evicted_start = self.offset if direction > 0 else resident_end - PAGE_SIZE
+                if evicted_start == zone_start:
+                    continue  # Do not evict the zone the user is viewing.
+            if dev_enabled():
+                log.debug(
+                    "gallery_perf phase=neighbor_prefetch active_page=%d direction=%s "
+                    "offset=%d resident=%d",
+                    zone_start // PAGE_SIZE + 1,
+                    "forward" if direction > 0 else "backward",
+                    target,
+                    len(self.items),
+                )
+            self._load_adjacent(direction)
+            return
+
+    def _maybe_load_boundary(self, direction: int) -> None:
+        """User scrolls accelerate the same bidirectional neighbor buffer."""
+        if direction in (-1, 1):
+            self._queue_neighbor_prefetch()
 
     def _load_adjacent(self, direction: int) -> None:
         """Read one contiguous batch from the same browsing authority as the window."""
@@ -1926,7 +1970,6 @@ class GalleryPage(QObject):
 
         def prepare():
             if self.runner.closed or generation != self._query_generation:
-                self._suppress_batch_scroll = False
                 return
             # Adding rows to QGridLayout posts geometry updates; setting the
             # scrollbar before those updates apply can silently clamp to zero.
@@ -1992,7 +2035,9 @@ class GalleryPage(QObject):
                         len(self.items),
                     )
             finally:
-                self._suppress_batch_scroll = False
+                if not self.runner.closed and generation == self._query_generation:
+                    self._suppress_batch_scroll = False
+                    self._queue_neighbor_prefetch()
 
         QTimer.singleShot(0, self, prepare)
         self._schedule_save()
@@ -2856,6 +2901,7 @@ class GalleryPage(QObject):
                 QTimer.singleShot(0, lambda: self._focus_grid_origin(button))
         self.canvas_loading.ensure_front()
         QTimer.singleShot(0, self._sync_pager)
+        self._queue_neighbor_prefetch()
         if persist:
             self._schedule_save()
 
@@ -3013,10 +3059,27 @@ class GalleryPage(QObject):
             film.setIcon(film_icon)
             film.setIconSize(film_placeholder.size())
 
+    def _finish_grid_mount_callbacks(self) -> None:
+        """Release deferred anchor/scroll operations after mount or emptying."""
+        callbacks, self._grid_mount_callbacks = self._grid_mount_callbacks, []
+        for callback in callbacks:
+            QTimer.singleShot(0, self, callback)
+
+    def _reset_empty_grid_mount(self) -> None:
+        """An empty result invalidates cell positions even if keys return later."""
+        self._grid_mount_timer.stop()
+        self._grid_mount_keys = None
+        self._grid_layout_keys = ()
+        self._grid_layout_columns = 0
+        self._finish_grid_mount_callbacks()
+
     @Slot()
     def _start_grid_mount(self) -> None:
         """Mount a committed Grid page in short GUI-thread turns."""
-        if self.runner.closed or not self._grid_buttons:
+        if self.runner.closed:
+            return
+        if not self._grid_buttons:
+            self._reset_empty_grid_mount()
             return
         width = self._thumbnail_pixels(self.slider.value()) + 16
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
@@ -3100,13 +3163,14 @@ class GalleryPage(QObject):
                 self._grid_mount_added,
                 self._grid_mount_moved,
             )
-        callbacks, self._grid_mount_callbacks = self._grid_mount_callbacks, []
-        for callback in callbacks:
-            QTimer.singleShot(0, self, callback)
+        self._finish_grid_mount_callbacks()
 
     @Slot()
     def _layout_cards(self) -> None:
-        if self.runner.closed or not self._grid_buttons:
+        if self.runner.closed:
+            return
+        if not self._grid_buttons:
+            self._reset_empty_grid_mount()
             return
         self._grid_mount_timer.stop()
         self._grid_mount_keys = None
@@ -3115,6 +3179,7 @@ class GalleryPage(QObject):
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
         keys = tuple(self._grid_buttons)
         if keys == self._grid_layout_keys and columns == self._grid_layout_columns:
+            self._finish_grid_mount_callbacks()
             return
         # A pure append at the same column count cannot move existing cells.
         # Skip them altogether: QLayout.indexOf() may scan layout items, so
@@ -3144,9 +3209,7 @@ class GalleryPage(QObject):
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self._grid_layout_keys = keys
         self._grid_layout_columns = columns
-        callbacks, self._grid_mount_callbacks = self._grid_mount_callbacks, []
-        for callback in callbacks:
-            QTimer.singleShot(0, self, callback)
+        self._finish_grid_mount_callbacks()
         if dev_enabled():
             log.debug(
                 "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d retained=%d added=%d moved=%d",
@@ -3232,6 +3295,7 @@ class GalleryPage(QObject):
             # Intermediate Qt geometry changes must not briefly select a
             # different page while the viewport anchor is being restored.
             self._sync_pager()
+            self._queue_neighbor_prefetch()
         self._schedule_save()
 
     def _capture_scroll(self) -> None:
@@ -3284,6 +3348,7 @@ class GalleryPage(QObject):
                     bar.setValue(min(self._scroll[name], bar.maximum()))
 
             if not anchor or target is not None:
+                self._queue_neighbor_prefetch()
                 return
             if self.mode == "Grid":
                 button = self._grid_buttons.get(anchor)
@@ -3304,6 +3369,7 @@ class GalleryPage(QObject):
                     return
                 if row < len(self._film_buttons):
                     self.film_scroll.ensureWidgetVisible(self._film_buttons[row])
+            self._queue_neighbor_prefetch()
 
         QTimer.singleShot(0, self, restore)
 
