@@ -200,3 +200,47 @@ The previous session's reported Grid reflow reduction (approximately
 in this resumed environment. CI, offline renderer and native Windows input
 acceptance are distinct from that report. No provider generation, inference,
 original-output mutation or billable action was involved in this follow-up.
+
+### Owner Windows `-x` trace (2026-10-18)
+
+The supplied `dtflow-bacf927929d4.log` is from native Windows (`win32`),
+Qt 6.12.0, 96 logical DPI and screen DPR 1.0. The session's build identity
+logged `commit=unknown`, so the trace cannot establish an exact Git commit.
+It already contains the first iteration of phase-level diagnostics and the
+retained-prefix Grid layout optimization.
+
+Observed native timings (single session, not repeated controlled benchmarks):
+
+| Operation | Elapsed | Associated observed GUI gap |
+| --- | ---: | ---: |
+| Initial 100-card Grid mount, 2 columns | 219.6 ms | 323.6 ms |
+| Grid append 100→200, retain 100, add 100, 4 columns | 403.0 ms | 478.1 ms |
+| Grid append 200→300, retain 200, add 100, 4 columns | 707.5 ms | 819.2 ms |
+| New-widget preparation for 100→200 | 1171.8 ms total in slices | 82.7 ms during slices |
+| New-widget preparation for 200→300 | 1335.9 ms total in slices | 74.6 ms after adjacent read |
+
+The immediate render reconciliations for these two appends took 32.6 and
+38.0 ms, while adjacent background reads took 253.2 and 610.4 ms. The
+Qt layout insertion is therefore a documented GUI-thread bottleneck in these
+ordinary cases; skipping old card positions alone did **not** prevent
+hundreds-of-milliseconds gaps on the owner's Windows environment. Median
+observed `gui_gap` among the 313 reported gaps over the broader session
+was 99.0 ms (only gaps ≥50 ms were logged, so this is **not** the
+median of all GUI timer intervals). Source reads and thumbnail completion
+are concurrent; the trace does not isolate all painting overhead.
+
+**Follow-up implementation, pending native retest:** timer-driven
+`_start_grid_mount` / `_mount_grid_slice` spreads committed Qt Grid
+insertions across event-loop turns with a 4 ms per-turn target, retaining
+the synchronous `_layout_cards` path for explicit UI/fixture operations.
+Adjacent scroll restoration, normal query restore and original Grid focus
+wait for the mount to finish. A Qt test forces one new layout insertion
+per event-loop turn to verify scheduling. These changes are expected to
+reduce uninterrupted UI blocks, but they may increase total time until
+the complete new page is painted. No performance claim can be made until
+a fresh Windows native/DPI smoke on an identifiable build. Windows input
+freeze and Detail/native regression acceptance remain open.
+
+The previous Linux 10-run microbenchmark and this owner Windows trace use
+different environments and workloads; do not combine them into a comparative
+speedup or infer improvement from CI-only runs.
