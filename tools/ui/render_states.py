@@ -1174,6 +1174,30 @@ def render_gallery_composition_states(shell, state, out):
         # forward eviction: 1–300 buffered -> fetch 301–400 -> keep 101–400.
         # No provider or SQLite access is involved in this UI-only fixture.
         gallery.show_view("Grid")
+        # Real preparation keeps the committed 100-image projection usable
+        # until the next 100 cards/cells/filmstrip entries are ready. These
+        # synthetic records confer no durable output or provider authority.
+        gallery.show_view("Grid")
+        multi_window(1, 100)
+        retained = gallery._grid_buttons[multi_item(1).identity]
+        gallery._adjacent_loading = True
+        gallery._pending_refresh = None
+        gallery._adjacent_done(
+            gallery._query_generation,
+            1,
+            gallery._query(offset=100),
+            gallery._snapshot_at,
+            GalleryResults(tuple(multi_item(i) for i in range(101, 201)), 342, 100, gallery_ui.PAGE_SIZE),
+            None,
+        )
+        assert gallery.preparation.active and len(gallery.items) == 100
+        assert gallery._grid_buttons[multi_item(1).identity] is retained
+        save(form, out / "image-navigation", "images-95-pager-preparing-next-100")
+        wait_for(lambda: not gallery.preparation.active and not gallery._adjacent_loading)
+        assert len(gallery.items) == gallery.table.rowCount() == len(gallery._film_entries) == 200
+        assert gallery._grid_buttons[multi_item(1).identity] is retained
+        snap("images-96-pager-prepared-200")
+
         three_batches = multi_window(1, 300, total=1540)
         gallery.grid_scroll.verticalScrollBar().setValue(0)
         assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == 300
@@ -1211,7 +1235,7 @@ def render_gallery_composition_states(shell, state, out):
             ),
             None,
         )
-        QTest.qWait(160)
+        wait_for(lambda: not gallery.preparation.active and not gallery._adjacent_loading)
         assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES
         assert gallery.offset == 100
         assert gallery.items[0].identity == multi_item(101).identity
@@ -1342,7 +1366,7 @@ def render_gallery_composition_states(shell, state, out):
                 prepended_page(),
                 None,
             )
-            QTest.qWait(150)
+            wait_for(lambda: not gallery.preparation.active and not gallery._adjacent_loading)
             assert gallery.offset == 0
             assert len(gallery.items) == 200
             assert [record.identity for record in gallery.items[:100]] == [

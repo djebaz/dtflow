@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
 from time import monotonic
 
-from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import (
     QIcon,
     QImage,
@@ -78,6 +78,7 @@ from dtflow.ui.gallery_detail_preview import (
 )
 from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_pager import GalleryPager
+from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
@@ -342,6 +343,16 @@ class GalleryPage(QObject):
         self._film_buttons: list[QPushButton] = []
         self._film_painters: list[CoverPainter] = []
         self._film_entries: dict[str, tuple[QPushButton, CoverPainter]] = {}
+        self._prepared_entries: dict[str, dict] = {}
+        self._prepared_sizes: dict[str, int] = {}
+        self._preparation_icons = None
+        self.retirement = GalleryRetirement(self)
+        self.preparation = GalleryPreparation(
+            self,
+            dispose=self._dispose_prepared_entry,
+            observe=self._observe_preparation,
+        )
+        self.runner.shutdown_started.connect(self._cancel_preparation)
 
         self._presentation_painters = apply_gallery(page, sample=False)
         self.surface_painter = self._presentation_painters[0]
@@ -766,17 +777,15 @@ class GalleryPage(QObject):
             card.style().unpolish(card)
             card.style().polish(card)
             card.update()
-        for col in range(self.table.columnCount()):
-            cell = self.table.item(row, col)
-            if cell is None:
-                continue
-            if col == 0:
-                blocked = self.table.blockSignals(True)
-                cell.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
-                self.table.blockSignals(blocked)
-        first = self.table.visualRect(self.table.model().index(row, 0))
-        last = self.table.visualRect(self.table.model().index(row, self.table.columnCount() - 1))
-        self.table.viewport().update(first.united(last))
+        cell = self.table.item(row, 0)
+        if cell is not None:
+            blocked = self.table.blockSignals(True)
+            cell.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+            self.table.blockSignals(blocked)
+        if self.table.isVisible():
+            first = self.table.visualRect(self.table.model().index(row, 0))
+            last = self.table.visualRect(self.table.model().index(row, self.table.columnCount() - 1))
+            self.table.viewport().update(first.united(last))
 
     def _after_selection_edit(self) -> None:
         self.recycle_scope_revision += 1
@@ -1337,6 +1346,18 @@ class GalleryPage(QObject):
                 "snapshot" if result is not None and error is None and result[1].snapshot_at else "live",
                 type(error).__name__ if error else "none",
             )
+        if error is None and result is not None and self._pending_refresh is None:
+            self._prepare_page(
+                result[1].items,
+                generation,
+                lambda: self._apply_query_done(generation, anchor, result, error),
+            )
+        else:
+            self._apply_query_done(generation, anchor, result, error)
+
+    def _apply_query_done(self, generation: int, anchor: str | None, result, error) -> None:
+        if generation != self._query_generation:
+            return
         self._loading = False
         self.refresh_button.setEnabled(True)
         self._sync_pager()
@@ -1695,6 +1716,20 @@ class GalleryPage(QObject):
                 len(page.items) if page is not None else 0,
                 type(error).__name__ if error else "none",
             )
+        if error is None and page is not None and self._pending_refresh is None and self.mode != "Detail":
+            self._prepare_page(
+                page.items,
+                generation,
+                lambda: self._apply_adjacent_done(generation, direction, query, source, page, error, started),
+            )
+        else:
+            self._apply_adjacent_done(generation, direction, query, source, page, error, started)
+
+    def _apply_adjacent_done(
+        self, generation: int, direction: int, query: GalleryQuery, source, page, error, started: float | None = None
+    ) -> None:
+        if generation != self._query_generation:
+            return
         self._adjacent_loading = False
         if self._pending_refresh is not None:
             pending = self._pending_refresh
@@ -1841,6 +1876,132 @@ class GalleryPage(QObject):
         QTimer.singleShot(0, prepare)
         self._schedule_save()
 
+    def _dispose_prepared_entry(self, entry):
+        self.retirement.retire(entry["button"].parentWidget())
+        self.retirement.retire(entry["film"][0])
+
+    @Slot()
+    def _cancel_preparation(self):
+        self.preparation.cancel()
+        if self.runner.closed:
+            for timer in self.findChildren(QTimer):
+                timer.stop()
+        self._preparation_icons = None
+        for entry in self._prepared_entries.values():
+            self._dispose_prepared_entry(entry)
+        self._prepared_entries.clear()
+
+    @staticmethod
+    def _observe_preparation(count, elapsed_ms):
+        if dev_enabled():
+            log.debug("gallery_perf phase=prepare_slice count=%d elapsed_ms=%.1f", count, elapsed_ms)
+
+    def _prepare_page(self, records, generation, done):
+        self._cancel_preparation()
+        missing = tuple(item for item in records if item.identity not in self._grid_buttons)
+        if not missing:
+            done()
+            return
+
+        def ready(entries):
+            if entries is None:
+                self._loading = self._adjacent_loading = False
+                self.refresh_button.setEnabled(True)
+                self._show_refresh_failure(RuntimeError("Gallery preparation failed"), first=True)
+                self._sync_canvas_loading()
+                self._sync_pager()
+                return
+            self._prepared_entries = entries
+            try:
+                done()
+            finally:
+                # A pending refresh, changed source/filter or Detail switch can
+                # reject the result without mounting the staged entries.
+                for entry in self._prepared_entries.values():
+                    self._dispose_prepared_entry(entry)
+                self._prepared_entries.clear()
+
+        self.preparation.start(
+            missing,
+            factory=self._build_prepared_entry,
+            done=ready,
+            valid=lambda: generation == self._query_generation and not self.runner.closed,
+        )
+
+    def _build_prepared_entry(self, item):
+        button, painter, labels, check = self._make_card(item)
+        film = self._make_film_entry()
+        film[0].setProperty("identity", item.identity)
+        dimensions, size = self._dimensions(item), _human_size(item.file_size)
+        filename = _filename(item.path)
+        tooltip = item.issue or item.path
+        button.setAccessibleName(f"Open {filename} in Detail")
+        button.setToolTip(tooltip)
+        painter.badges = (dimensions, size)
+        labels[0].setText(f"{filename}  ·  {size}")
+        labels[0].setToolTip(item.path)
+        labels[1].setText(item.model or "Model not recorded")
+        film[0].setAccessibleName(f"Open {filename}")
+        film[0].setToolTip(tooltip)
+        film[1].badges = (dimensions, size)
+        checked = item.identity in self.selection.checked
+        button.setProperty("checkedSelection", checked)
+        button.parentWidget().setProperty("checkedSelection", checked)
+        cells = []
+        for column, value in enumerate(self._entry_fields(item)):
+            cell = QTableWidgetItem(value)
+            cell.setData(Qt.ItemDataRole.UserRole, item.identity)
+            cell.setToolTip(tooltip if column == 1 else value)
+            if column == 0:
+                cell.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                cell.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+            cells.append(cell)
+        # Polish off-layout widgets now, inside the timed slice, rather than
+        # making the eventual page switch polish 100 new cards synchronously.
+        for widget in (button.parentWidget(), button, check, *labels, film[0]):
+            widget.ensurePolished()
+        percent = self.slider.value()
+        if self._preparation_icons is None or self._preparation_icons[0] != percent:
+            density = self._thumbnail_pixels(percent)
+            placeholder = QPixmap(density, density)
+            placeholder.fill(Qt.GlobalColor.transparent)
+            film_width, film_height = density + 8, round((density + 8) * 0.63)
+            film_placeholder = QPixmap(max(1, film_width - 8), max(1, film_height - 8))
+            film_placeholder.fill(Qt.GlobalColor.transparent)
+            self._preparation_icons = (
+                percent,
+                density,
+                QIcon(placeholder),
+                placeholder.size(),
+                film_width,
+                film_height,
+                QIcon(film_placeholder),
+                film_placeholder.size(),
+            )
+        _percent, density, grid_icon, grid_size, film_width, film_height, film_icon, film_size = self._preparation_icons
+        card = button.parentWidget()
+        card.setFixedWidth(density + 16)
+        button.setFixedSize(density + 16, density + 16)
+        button.setIcon(grid_icon)
+        button.setIconSize(grid_size)
+        film[0].setFixedSize(film_width, film_height)
+        film[0].setIcon(film_icon)
+        film[0].setIconSize(film_size)
+        card.layout().activate()
+        card.resize(card.width(), card.sizeHint().height())
+        return dict(
+            item=item,
+            button=button,
+            painter=painter,
+            labels=labels,
+            check=check,
+            film=film,
+            cells=cells,
+            percent=percent,
+        )
+
     def _render_page(self) -> None:
         started = monotonic()
         previous = {item.identity: item for item in self._rendered_page[1]} if self._rendered_page else {}
@@ -1862,8 +2023,7 @@ class GalleryPage(QObject):
             for identity in set(self._grid_buttons) - identities:
                 card = self._grid_buttons.pop(identity).parentWidget()
                 self.cards_layout.removeWidget(card)
-                card.hide()
-                card.deleteLater()
+                self.retirement.retire(card)
                 del self._grid_painters[identity]
                 del self._grid_labels[identity]
                 self._check_boxes.pop(identity, None)
@@ -1876,7 +2036,6 @@ class GalleryPage(QObject):
                     self._create_card(item)
                 if previous.get(item.identity) != item:
                     self._update_entry(row, item)
-                self._paint_checked_item(row, item.identity)
             for item in image_changes:
                 for painter in (self._grid_painters[item.identity], self._film_entries[item.identity][1]):
                     painter.pixmap, painter.placeholder = QPixmap(), ""
@@ -1921,6 +2080,18 @@ class GalleryPage(QObject):
         return item.read_path, item.file_size, item.issue
 
     def _create_card(self, item: GalleryItem) -> None:
+        prepared = self._prepared_entries.get(item.identity)
+        if prepared is None:
+            button, painter, labels, check = self._make_card(item)
+        else:
+            button, painter, labels, check = (prepared[key] for key in ("button", "painter", "labels", "check"))
+            self._prepared_sizes[item.identity] = prepared["percent"]
+        self._grid_buttons[item.identity] = button
+        self._grid_painters[item.identity] = painter
+        self._grid_labels[item.identity] = labels
+        self._check_boxes[item.identity] = check
+
+    def _make_card(self, item: GalleryItem):
         card = QFrame(self.grid_cards)
         card.setProperty("role", "galleryCard")
         layout = QVBoxLayout(card)
@@ -1936,12 +2107,9 @@ class GalleryPage(QObject):
         check.setGeometry(9, 9, 28, 28)
         check.setChecked(item.identity in self.selection.checked)
         check.toggled.connect(lambda value, identity=item.identity: self._set_checked(identity, value))
-        self._check_boxes[item.identity] = check
         check.raise_()
         painter = CoverPainter(button, "", ("", ""))
         painter.mode = "Fit"
-        self._grid_buttons[item.identity] = button
-        self._grid_painters[item.identity] = painter
         layout.addWidget(button)
         caption = QLabel(card)
         caption.setProperty("role", "galleryCardCaption")
@@ -1950,7 +2118,7 @@ class GalleryPage(QObject):
         model.setProperty("role", "secondary")
         model.setProperty("textRole", "supporting")
         layout.addWidget(model)
-        self._grid_labels[item.identity] = caption, model
+        return button, painter, (caption, model), check
 
     def _reconcile_rows(self) -> None:
         """Keep the actual table items (and icons) when inserting or moving rows."""
@@ -1959,6 +2127,17 @@ class GalleryPage(QObject):
         selected = self.table.currentItem()
         selected_identity = selected.data(Qt.ItemDataRole.UserRole) if selected is not None else None
         selected_column = selected.column() if selected is not None else 0
+        # Ordinary page jumps replace all rows; a single resize avoids 100–200
+        # separate removals/insertions and their repeated model notifications.
+        if not set(current).intersection(desired):
+            self.table.setRowCount(0)
+            self.table.setRowCount(len(desired))
+            self.table.setProperty("hoverRow", -1)
+            return
+        if desired[: len(current)] == current:
+            self.table.setRowCount(len(desired))
+            self.table.setProperty("hoverRow", -1)
+            return
         for row in reversed(range(len(current))):
             if current[row] not in desired:
                 self.table.removeRow(row)
@@ -1985,6 +2164,11 @@ class GalleryPage(QObject):
 
     def _update_entry(self, row: int, item: GalleryItem) -> None:
         """Update only changed metadata, without replacing retained image widgets/cells."""
+        prepared = self._prepared_entries.pop(item.identity, None)
+        if prepared is not None and prepared["item"] == item:
+            for column, cell in enumerate(prepared["cells"]):
+                self.table.setItem(row, column, cell)
+            return
         dimensions, size = self._dimensions(item), _human_size(item.file_size)
         filename = _filename(item.path)
         tooltip = item.issue or item.path
@@ -1997,18 +2181,7 @@ class GalleryPage(QObject):
         caption.setText(f"{filename}  ·  {size}")
         caption.setToolTip(item.path)
         model.setText(item.model or "Model not recorded")
-        loras = "; ".join(f"{identifier} · {weight:g} · Unknown" for identifier, weight in item.loras) or "None"
-        fields = (
-            "",
-            "",
-            filename,
-            item.model or "Not recorded",
-            loras,
-            dimensions,
-            size,
-            _local_timestamp(item.saved_at_utc).replace("\n", " "),
-            item.prompt or "Not recorded",
-        )
+        fields = self._entry_fields(item)
         for column, value in enumerate(fields):
             cell = self.table.item(row, column)
             if cell is None:
@@ -2031,6 +2204,20 @@ class GalleryPage(QObject):
         button.update()
         film_button.update()
 
+    def _entry_fields(self, item):
+        loras = "; ".join(f"{identifier} · {weight:g} · Unknown" for identifier, weight in item.loras) or "None"
+        return (
+            "",
+            "",
+            _filename(item.path),
+            item.model or "Not recorded",
+            loras,
+            self._dimensions(item),
+            _human_size(item.file_size),
+            _local_timestamp(item.saved_at_utc).replace("\n", " "),
+            item.prompt or "Not recorded",
+        )
+
     def _clear_grid(self) -> None:
         while self.cards_layout.count():
             item = self.cards_layout.takeAt(0)
@@ -2045,7 +2232,6 @@ class GalleryPage(QObject):
 
     def _reconcile_filmstrip(self) -> None:
         layout = self._widget("galleryFilmstripScrollContents").layout()
-        parent = self._widget("galleryFilmstripScrollContents")
         identities = {item.identity for item in self.items}
         for identity in set(self._film_entries) - identities:
             button, painter = self._film_entries.pop(identity)
@@ -2059,20 +2245,16 @@ class GalleryPage(QObject):
                 painter.pixmap = QPixmap()
                 self._film_spares.append((button, painter))
             else:
-                button.deleteLater()
+                self.retirement.retire(button)
         for row, item in enumerate(self.items):
             if item.identity not in self._film_entries:
-                if self._film_spares:
+                prepared = self._prepared_entries.get(item.identity)
+                if prepared is not None:
+                    button, painter = prepared["film"]
+                elif self._film_spares:
                     button, painter = self._film_spares.pop(0)
                 else:
-                    button = QPushButton(parent)
-                    button.setProperty("role", "galleryThumbnail")
-                    button.setCheckable(True)
-                    button.setAutoExclusive(True)
-                    button.clicked.connect(
-                        lambda checked=False, source=button: self.select(str(source.property("identity")))
-                    )
-                    painter = CoverPainter(button, "", ("", ""))
+                    button, painter = self._make_film_entry()
                 button.setProperty("identity", item.identity)
                 self._film_entries[item.identity] = button, painter
             button, _painter = self._film_entries[item.identity]
@@ -2082,6 +2264,14 @@ class GalleryPage(QObject):
             button.show()
         self._film_buttons = [self._film_entries[item.identity][0] for item in self.items]
         self._film_painters = [self._film_entries[item.identity][1] for item in self.items]
+
+    def _make_film_entry(self):
+        button = QPushButton(self._widget("galleryFilmstripScrollContents"))
+        button.setProperty("role", "galleryThumbnail")
+        button.setCheckable(True)
+        button.setAutoExclusive(True)
+        button.clicked.connect(lambda checked=False, source=button: self.select(str(source.property("identity"))))
+        return button, CoverPainter(button, "", ("", ""))
 
     def _queue_thumbnails(self, changed: list[GalleryItem]) -> None:
         for item in changed:
@@ -2655,6 +2845,8 @@ class GalleryPage(QObject):
 
     def _size_new_entries(self, identities: list[str]) -> None:
         """Size newly mounted cards without repainting unchanged previews."""
+        percent = self.slider.value()
+        identities = [identity for identity in identities if self._prepared_sizes.pop(identity, None) != percent]
         if not identities:
             return
         density = self._thumbnail_pixels(self.slider.value())
@@ -2677,8 +2869,9 @@ class GalleryPage(QObject):
             film.setIcon(film_icon)
             film.setIconSize(film_placeholder.size())
 
+    @Slot()
     def _layout_cards(self) -> None:
-        if not self._grid_buttons:
+        if self.runner.closed or not self._grid_buttons:
             return
         started = monotonic()
         width = self._thumbnail_pixels(self.slider.value()) + 16
@@ -2971,7 +3164,7 @@ class GalleryPage(QObject):
         self._update_navigation()
 
     def _schedule_save(self) -> None:
-        if self._restoring:
+        if self._restoring or self.runner.closed:
             return
         self._save_dirty = True
         self.save_timer.start()
@@ -2999,8 +3192,9 @@ class GalleryPage(QObject):
             "scroll": dict(self._scroll),
         }
 
+    @Slot()
     def _flush_save(self) -> None:
-        if not self._save_dirty or self._save_running:
+        if self.runner.closed or not self._save_dirty or self._save_running:
             return
         document = self._state_document()
         self._save_dirty = False
