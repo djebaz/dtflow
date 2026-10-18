@@ -28,12 +28,17 @@ on:
         type: string
   push:
     branches: [main]
-    paths:
+    paths: &ci-paths
       - '**/*.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.python-version'
+      - 'src/dtflow/**'
+      - 'tests/**'
+      - '.github/workflows/ci.yml'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - '**/*.py'
+    paths: *ci-paths
 
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
@@ -93,142 +98,124 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ steps.target.outputs.sha }}
 
-      - name: Check if this commit contains Python files
-        id: pyfiles
-        shell: bash
-        run: |
-          git ls-tree -r --name-only HEAD > "$RUNNER_TEMP/ci-files.txt"
-          if grep -E '\.py$' "$RUNNER_TEMP/ci-files.txt" > /dev/null; then
-            echo "has_py=true" >> "$GITHUB_OUTPUT"
-            echo "This commit contains Python files."
-          else
-            echo "has_py=false" >> "$GITHUB_OUTPUT"
-            echo "This commit does not contain Python files; skipping CI."
-          fi
-
-      - name: Skip CI no Python files in this commit
-        if: steps.pyfiles.outputs.has_py != 'true'
-        run: echo "No .py files in this commit; skipping CI."
-
       # Shared environment setup (runs once)
       - name: Install Qt runtime library
-        if: steps.pyfiles.outputs.has_py == 'true'
         run: |
           sudo apt-get install -y --no-install-recommends libegl1 \
             || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1; }
 
       - name: Setup uv (cache enabled)
-        if: steps.pyfiles.outputs.has_py == 'true'
         uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
       - name: Sync environment
-        if: steps.pyfiles.outputs.has_py == 'true'
         run: uv sync --locked
 
       - name: Lock file is current
-        if: steps.pyfiles.outputs.has_py == 'true'
         run: uv lock --check
 
-      # A small helper condition used for gh API steps: only post statuses for same-repo PRs or non-PR runs.
-      # This avoids attempting to use secrets for external fork PRs where secrets are not available.
+      # Guard: only post statuses for same-repo PRs or non-PR runs (fork tokens are read-only)
       - name: Set status-allowed flag
         id: allow_status
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           allowed="true"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
-              allowed="false"
-            fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+            allowed="false"
           fi
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
-      # ---------- Format check (non-blocking) ----------
-      - name: Mark commit pending (format)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
-        env:
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
-            -f state=pending -f context="CI · format (manual)" -f description="Format check in progress" \
-            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-
-      - name: Ruff format (check)
-        if: steps.pyfiles.outputs.has_py == 'true'
+      # ---------- Format and lint (non-blocking: warnings only) ----------
+      - name: Ruff format (check, warnings only)
         id: format_run
+        shell: bash
         run: |
           rc=0
-          uv run ruff format --check . > ruff-format.txt 2>&1 || rc=$?
-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          echo "=== ruff format output ==="
-          sed -n '1,200p' ruff-format.txt || true
-        continue-on-error: true
-
-      - name: Report format result (non-blocking)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
-        env:
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          rc=${{ steps.format_run.outputs.rc }}
-          if [ -z "$rc" ]; then rc=0; fi
-          # Keep format non-blocking: always post success so branch protection is not blocked.
-          state=success
-          if [ "$rc" -eq 0 ]; then
-            desc="Format check passed"
-          else
-            desc="Format check found issues (non-blocking — see action log)"
+          # GitHub format gives one annotation per file; downgrade them to warnings.
+          uv run ruff format --check --output-format=github . > ruff-format.txt 2> ruff-format.err || rc=$?
+          count=$(grep -c '^::error ' ruff-format.txt || true)
+          sed 's/^::error /::warning /' ruff-format.txt
+          cat ruff-format.err
+          if [ "$rc" -gt 1 ]; then
+            echo "::warning title=Ruff format::ruff format could not run (exit $rc); see log"
           fi
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
-            -f state="$state" -f context="CI · format (manual)" -f description="$desc" \
-            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          {
+            echo "### Ruff format"
+            if [ "$rc" -eq 0 ]; then
+              echo "Formatted correctly."
+            else
+              echo "⚠️ ${count} file(s) would be reformatted (non-blocking). Run \`uv run ruff format\`."
+              echo '```'
+              uv run ruff format --check --output-format=concise . 2>&1 | sed -n '1,200p' || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
 
-      # ---------- Lint check (non-blocking) ----------
-      - name: Mark commit pending (lint)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
-        env:
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
-            -f state=pending -f context="CI · lint (manual)" -f description="Lint check in progress" \
-            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-
-      - name: Ruff lint
-        if: steps.pyfiles.outputs.has_py == 'true'
+      - name: Ruff lint (warnings only)
         id: lint_run
+        shell: bash
         run: |
           rc=0
-          uv run ruff check . > ruff-lint.txt 2>&1 || rc=$?
+          # GitHub format gives one annotation per finding; downgrade them to warnings.
+          uv run ruff check --output-format=github . > ruff-lint.txt 2> ruff-lint.err || rc=$?
+          count=$(grep -c '^::error ' ruff-lint.txt || true)
+          sed 's/^::error /::warning /' ruff-lint.txt
+          cat ruff-lint.err
+          if [ "$rc" -gt 1 ]; then
+            echo "::warning title=Ruff lint::ruff check could not run (exit $rc); see log"
+          fi
+          {
+            echo "### Ruff lint"
+            if [ "$rc" -eq 0 ]; then
+              echo "No lint findings."
+            else
+              echo "⚠️ ${count} finding(s) (non-blocking)."
+              echo '```'
+              uv run ruff check --output-format=concise . 2>&1 | sed -n '1,200p' || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          echo "=== ruff lint output ==="
-          sed -n '1,200p' ruff-lint.txt || true
-        continue-on-error: true
+          echo "count=$count" >> "$GITHUB_OUTPUT"
 
-      - name: Report lint result (non-blocking)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+      - name: Report format and lint results (non-blocking)
+        if: steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
+          FORMAT_RC: ${{ steps.format_run.outputs.rc }}
+          FORMAT_COUNT: ${{ steps.format_run.outputs.count }}
+          LINT_RC: ${{ steps.lint_run.outputs.rc }}
+          LINT_COUNT: ${{ steps.lint_run.outputs.count }}
         run: |
-          rc=${{ steps.lint_run.outputs.rc }}
-          if [ -z "$rc" ]; then rc=0; fi
-          state=success
-          if [ "$rc" -eq 0 ]; then
-            desc="Lint passed"
+          # Always success so the statuses never block; the description carries the warning.
+          post() {
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+              -f state=success -f context="$1" -f description="$2" \
+              -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          }
+          if [ "${FORMAT_RC:-0}" -eq 0 ]; then
+            post "CI · format (manual)" "Format check passed"
           else
-            desc="Lint found issues (non-blocking — see action log)"
+            post "CI · format (manual)" "Warning: ${FORMAT_COUNT:-?} file(s) need formatting (non-blocking)"
           fi
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
-            -f state="$state" -f context="CI · lint (manual)" -f description="$desc" \
-            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [ "${LINT_RC:-0}" -eq 0 ]; then
+            post "CI · lint (manual)" "Lint passed"
+          else
+            post "CI · lint (manual)" "Warning: ${LINT_COUNT:-?} lint finding(s) (non-blocking)"
+          fi
 
       # ---------- Tests (blocking) ----------
       - name: Mark commit pending (tests)
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+        if: steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
@@ -237,15 +224,14 @@ jobs:
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: SQLite version
-        if: steps.pyfiles.outputs.has_py == 'true'
         run: uv run python -c "import sqlite3; print(sqlite3.sqlite_version)"
 
       - name: Pytest (offline)
-        if: steps.pyfiles.outputs.has_py == 'true'
         run: uv run pytest
 
       - name: Report tests result
-        if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
+        # always(): otherwise a failed or cancelled run leaves the status pending forever.
+        if: always() && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           JOB_STATUS: ${{ job.status }}
