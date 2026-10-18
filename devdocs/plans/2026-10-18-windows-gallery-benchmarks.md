@@ -54,6 +54,26 @@ Interpretation limits:
 - The filter test deliberately enters a distinctive nonmatching positive-prompt query and clears it. Stored filter/sort/view settings may change; the saved image content is not edited.
 - No native Windows benchmark results are asserted merely because the script or Linux CI passes. Treat GUIA/UIA accessibility compatibility, DPI, visual correctness and touchpad scroll as owner native-smoke gates.
 
+## First Windows 10 smoke and diagnostic follow-up
+
+Owner-run source smoke (2026-10-19, no successful perf result):
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-01 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
+Observed: dependency overlay installed, pywinauto emitted a third-party `SyntaxWarning` about an invalid escape sequence, then `baseline trial=1 status=failed`. Owner additionally observed that the application **did not navigate to Images**. The exact exception, its UIA selector target and whether the child window opened were not included in the pasted console output, so the failing condition is **not established**. The warning is not evidence of the cause.
+
+Follow-up commits make navigation accept Qt's Windows UIA accessibleName (`Show saved Images`), the visible button name (`Images`), or its `imagesNavigationButton` automation ID; reject ambiguous candidates rather than clicking an arbitrary target; assert the Grid control appears after navigation; and preserve the currently attempted action as `step`, the sanitized `error_message`, and exception class in `trial.json` while displaying failure details on stderr. A successful Windows rerun is still required before claiming that UIA works.
+
+When a trial fails, review `tmp/gallery-bench-smoke-XX/baseline-r01/trial.json` (`step`, `error_type`, `error_message`), then `baseline-r01/app-stderr.txt` and the per-session `logs/`. Avoid sharing personal paths or unrelated application data without review. Use a **new** `--out` directory on every rerun.
+
+Corrected quick smoke command, run from a Windows checkout with the latest PR #104 code:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp/gallery-bench-smoke-02 --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
 ## Validation gates
 
 - Python syntax, import, CLI `--help`, profile and log-report unit tests on Linux.
