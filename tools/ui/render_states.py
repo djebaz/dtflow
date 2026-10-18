@@ -1260,6 +1260,83 @@ def render_gallery_composition_states(shell, state, out):
         QTest.qWait(100)
         gallery.pager.on_jump = gallery._jump_to_page
 
+        # Exercise the real bounded-prepend completion, not a manually replaced
+        # static page. From the top of batch 2, an upward scroll must reveal
+        # the *last* row of batch 1 directly above image 81, never image 1.
+        # These records are synthetic; the worker is closed by hold_worker.
+        def prepended_page():
+            return GalleryResults(
+                items=tuple(multi_item(i) for i in range(1, 81)),
+                total=342,
+                offset=0,
+                limit=gallery_ui.PAGE_SIZE,
+            )
+
+        def prepend_from_page_two():
+            gallery._adjacent_loading = True
+            gallery._pending_refresh = None
+            gallery._adjacent_failed_offset = None
+            gallery._adjacent_done(
+                gallery._query_generation,
+                -1,
+                gallery._query(offset=0),
+                gallery._snapshot_at,
+                prepended_page(),
+                None,
+            )
+            QTest.qWait(150)
+            assert gallery.offset == 0
+            assert len(gallery.items) == 160
+            assert [record.identity for record in gallery.items[:80]] == [
+                multi_item(i).identity for i in range(1, 81)
+            ]
+            assert [record.identity for record in gallery.items[80:]] == [
+                multi_item(i).identity for i in range(81, 161)
+            ]
+            for i in range(1, 81):
+                record = gallery.items[i - 1]
+                paint_multi_thumbnail(record, i)
+
+        gallery.show_view("Grid")
+        multi_window(81, 160)
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        QTest.qWait(60)
+        assert gallery._browsing_anchor() == multi_item(81).identity
+        prepend_from_page_two()
+        first, last, visible = grid_visible(loaded=160)
+        assert 80 in visible, f"Upward Grid prepend jumped to {first}–{last}, not image 80"
+        assert first >= 70, f"Upward Grid prepend jumped to first of previous page: {first}"
+        assert gallery.pager.buttons[1].isChecked()
+        snap("images-91-pager-prepend-previous-last-grid")
+
+        gallery.show_view("List")
+        multi_window(81, 160)
+        gallery.table.verticalScrollBar().setValue(0)
+        QTest.qWait(60)
+        assert gallery._browsing_anchor() == multi_item(81).identity
+        prepend_from_page_two()
+        first, last = list_visible(loaded=160)
+        assert first == 80, f"Upward List prepend jumped to image {first}, expected 80"
+        assert last >= 81
+        assert gallery.table.item(79, 2).text() == "image-0080.png"
+        assert gallery.table.item(80, 2).text() == "image-0081.png"
+        assert gallery.pager.buttons[1].isChecked()
+        snap("images-92-pager-prepend-previous-last-list")
+
+        # Early prefetch is different from an edge hit: retain the anchor
+        # instead of pulling the viewport back to the previous batch.
+        multi_window(81, 160)
+        gallery.table.scrollToItem(
+            gallery.table.item(12, 0),
+            gallery_ui.QAbstractItemView.ScrollHint.PositionAtTop,
+        )
+        QTest.qWait(60)
+        before = gallery._browsing_anchor()
+        assert before == multi_item(93).identity
+        prepend_from_page_two()
+        assert gallery._browsing_anchor() == before
+        assert gallery.pager.buttons[2].isChecked()
+
         present(item)
         gallery._sync_pager()
         gallery.show_view("Grid")
