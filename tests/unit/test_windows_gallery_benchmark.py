@@ -646,3 +646,25 @@ def test_scroll_rejects_invalid_direction_or_huge_wheel_count(tmp_path):
         _scroll(object(), 0, [], tmp_path, mode="grid")
     with pytest.raises(ValueError, match="notches"):
         _scroll(object(), -1, [], tmp_path, mode="grid", notches=500)
+
+
+
+def test_scroll_target_falls_back_to_gallery_panel_not_toolbar():
+    from tools.ui.windows_gallery_benchmark import _gallery_wheel_point
+
+    panel_rect = SimpleNamespace(
+        left=300, top=100, width=lambda: 800, height=lambda: 600,
+    )
+
+    class Panel(_HeaderNode):
+        def rectangle(self):
+            return panel_rect
+
+    panel = Panel("GalleryDetailPage")
+    window = SimpleNamespace(
+        descendants=lambda: [panel],
+        rectangle=lambda: SimpleNamespace(left=0, top=0, width=lambda: 1200, height=lambda: 900),
+    )
+    coords, source = _gallery_wheel_point(window, "grid")
+    assert source == "GalleryDetailPage-fallback"
+    assert coords == (716, 532)
