@@ -95,6 +95,9 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
         Qt.ScrollPhase.NoScrollPhase,
         False,
     )
+    # This interaction test needs the real neighbor scheduler, unlike the
+    # otherwise manually driven presentation fixture.
+    gallery._queue_neighbor_prefetch = GalleryPage._queue_neighbor_prefetch.__get__(gallery)
     QApplication.sendEvent(viewport, wheel)
     qtbot.waitUntil(lambda: gallery.preparation.active, timeout=3000)
     assert tuple(gallery.items) == records[:100]
