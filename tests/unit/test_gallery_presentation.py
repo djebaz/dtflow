@@ -117,6 +117,28 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
         assert gallery.cards_layout.getItemPosition(layout_index)[:2] == divmod(index, columns)
 
 
+
+def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot):
+    """A normal 100-card append must not monopolize one Qt callback."""
+    _form, gallery, _runner, records, _state = presentation
+    first = gallery._grid_buttons["0"]
+    gallery._grid_mount_budget_ms = 0.0  # one layout insertion per GUI turn
+    gallery.items, gallery.total = list(records[:200]), 200
+    gallery._render_page()
+    gallery._rendered_page = (0, records[:200])
+    gallery.reflow_timer.stop()
+    gallery._start_grid_mount()
+    assert gallery._grid_mount_keys is not None
+    assert gallery._grid_buttons["0"] is first
+    observed = []
+    QTimer.singleShot(0, lambda: observed.append(gallery._grid_mount_cursor))
+    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None, timeout=5000)
+    assert observed and observed[0] < 200
+    assert len(gallery._grid_layout_keys) == 200
+    assert gallery.cards_layout.indexOf(first.parentWidget()) >= 0
+
+
+
 def test_refresh_during_preparation_commits_only_latest_result(presentation, qtbot):
     _form, gallery, _runner, records, state = presentation
     state["records"] = records[100:200]
