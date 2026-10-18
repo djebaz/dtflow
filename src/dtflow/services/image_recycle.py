@@ -775,7 +775,8 @@ def recycle_outputs(
         canceled = stop.is_set()
         ledger.finish_operation(state, operation_id, "canceled" if canceled else "complete")
     # Cached previews of removed (or possibly removed) outputs go with them; best effort.
-    thumbnail_cache.forget(state, (*recycled, *deleted, *uncertain, *absent))
+    forgotten = thumbnail_cache.forget(state, (*recycled, *deleted, *uncertain, *absent))
+    log.debug("image-removal thumbnail cache entries removed=%d", forgotten)
     # One line per operation in normal mode; per-item detail stays in warnings and -x.
     log.info(
         "image-removal finished operation=%s outcome=%s removed=%d raw=%d absent=%d failed=%d uncertain=%d "
