@@ -104,9 +104,11 @@ def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbo
     strip.complete("example", "Finished", "Saved successfully", "success")
     row = strip.rows["example"]
     assert row.activityProgress.isHidden()
-    qtbot.waitUntil(row.activityLifetimeBar.isVisible, timeout=1000)
+    # Initial state is synchronous. Waiting for Qt visibility may legitimately
+    # deliver a countdown tick before we inspect these initial values.
     assert row.activityLifetimeBar.value() == 6000
     assert strip._expiry["example"] == 6.0
+    qtbot.waitUntil(row.activityLifetimeBar.isVisible, timeout=1000)
     strip.finish("example")
 
     for state in ("stopped", "partial", "warning"):
@@ -170,7 +172,7 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
     window.progress_strip.finish("trash")
 
 
-def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_path):
+def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_path, monkeypatch):
     """All thumbnail views share one 600 px decode; Detail retains original pixels."""
     from PySide6.QtGui import QImage
 
@@ -193,6 +195,22 @@ def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_pa
     assert (full.width(), full.height()) == (1200, 900)
     assert path.read_bytes()  # No derivative is created or written beside the source.
     assert tuple(tmp_path.iterdir()) == (path,)
+
+    # Native codec code may hold Qt's image-plugin mutex. Its raw byte reads
+    # must not re-enter Python, which can invert that mutex with the GIL while
+    # the GUI is painting/capturing another image.
+    from PySide6.QtCore import QBuffer
+
+    def python_read_forbidden(*_args):
+        raise AssertionError("Buffered image codec re-entered Python I/O")
+
+    monkeypatch.setattr(QBuffer, "readData", python_read_forbidden)
+    state = tmp_path / "state"
+    state.mkdir()
+    for side, expected in ((600, (600, 450)), (0, (1200, 900))):
+        buffered, issue = _image(str(path), side, state)
+        assert issue == "" and buffered is not None
+        assert (buffered.width(), buffered.height()) == expected
 
 
 def test_images_grid_and_list_thumbnails_use_320px_standard_and_scale_column(window):
@@ -327,10 +345,30 @@ def test_connection_check_presents_fake_backend_and_closes(window, qtbot):
     assert window.form.statusLabel.text().startswith("Connected")
 
 
-def test_cloud_with_empty_saved_store_is_reported_not_raised(window, qtbot, monkeypatch):
-    monkeypatch.delenv("DRAWTHINGS_API_KEY", raising=False)
+def test_cloud_missing_credentials_are_reported_not_raised(window, qtbot, monkeypatch):
+    from dtflow.core.models import ConnectionStatus
+    from dtflow.ui import main_window
+
+    async def missing_credentials(selection, *, saved):
+        assert selection.name == "cloud"
+        assert saved is window._saved
+        # Deliver the service's missing-credentials outcome through the real
+        # background/GUI boundary. Credential resolution and TLS have their own
+        # lower-layer tests; cold backend setup can exceed this UI wait.
+        return ConnectionStatus(
+            "cloud",
+            "offline://fixture",
+            "2026-10-18T00:00:00+00:00",
+            "unknown",
+            "failed",
+            "unknown",
+            (("authentication_code", "missing_credentials"),),
+        )
+
+    monkeypatch.setattr(main_window, "check_connection", missing_credentials)
     window.form.backendCombo.setCurrentText("cloud")
     window.form.checkButton.click()
+    assert not window.form.checkButton.isEnabled()
     qtbot.waitUntil(lambda: window.form.checkButton.isEnabled(), timeout=5000)
     assert window.form.statusLabel.text().startswith(
         "Authentication failed"

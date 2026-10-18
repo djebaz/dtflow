@@ -1022,7 +1022,7 @@ No generation or saved output</string>
                   <string>Previous</string>
                  </property>
                  <property name="text">
-                  <string>‹</string>
+                  <string/>
                  </property>
                  <property name="enabled">
                   <bool>false</bool>
@@ -1050,7 +1050,7 @@ No generation or saved output</string>
                   <string>Next</string>
                  </property>
                  <property name="text">
-                  <string>›</string>
+                  <string/>
                  </property>
                  <property name="enabled">
                   <bool>false</bool>
