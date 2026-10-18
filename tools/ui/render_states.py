@@ -1180,9 +1180,15 @@ def render_gallery_composition_states(shell, state, out):
         gallery.reflow_timer.stop()
         gallery._layout_cards()
         gallery.cards_layout.activate()
-        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[three_batches[249].identity], 0, 0)
+        gallery.grid_cards.adjustSize()
+        QTest.qWait(80)
+        target_card = gallery._grid_buttons[three_batches[249].identity].parentWidget()
+        gallery.grid_scroll.verticalScrollBar().setValue(target_card.y())
         first, last, visible = grid_visible(loaded=300)
-        assert 250 in visible
+        assert 250 in visible, (
+            f"300-buffer Grid target not visible: {first}–{last}, "
+            f"scroll={gallery.grid_scroll.verticalScrollBar().value()}, card_y={target_card.y()}"
+        )
         assert gallery.pager.status.text() == "300 buffered"
         snap("images-93-pager-three-batches-buffered-grid")
 
