@@ -530,3 +530,18 @@ def test_failed_slider_does_not_abort_next_step(monkeypatch):
     assert benchmark._attempt(record, "cycle-1-list", lambda: record["actions"].append({"action": "List"}))
     assert len(record["warnings"]) == 1
     assert record["actions"] == [{"action": "List"}]
+
+
+def test_scroll_intent_parser_requires_a_real_qt_wheel_event(tmp_path):
+    from tools.ui.windows_gallery_benchmark import _wheel_intents
+
+    log = tmp_path / "dtflow-session.log"
+    log.write_text(
+        "gallery_perf phase=scroll_intent direction=forward source=wheel offset=0 mounted=80\n"
+        "gallery_perf phase=scroll_intent direction=backward source=wheel offset=0 mounted=80\n"
+        "gallery_perf phase=scroll_intent direction=forward source=drag offset=0 mounted=80\n",
+        encoding="utf-8",
+    )
+    events = _wheel_intents(tmp_path)
+    assert len(events) == 2
+    assert {event[3] for event in events} == {"forward", "backward"}
