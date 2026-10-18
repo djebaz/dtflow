@@ -136,8 +136,7 @@ jobs:
         if: steps.pyfiles.outputs.has_py == 'true'
         run: uv lock --check
 
-      # A small helper condition used for gh API steps: only post statuses for same-repo PRs or non-PR runs.
-      # This avoids attempting to use secrets for external fork PRs where secrets are not available.
+      # Guard: only post statuses for same-repo PRs or non-PR runs (avoids secrets on fork runs)
       - name: Set status-allowed flag
         id: allow_status
         run: |
@@ -149,7 +148,7 @@ jobs:
           fi
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
-      # ---------- Format check (non-blocking) ----------
+      # ---------- Format check (non-blocking, with inline warnings) ----------
       - name: Mark commit pending (format)
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
@@ -159,15 +158,33 @@ jobs:
             -f state=pending -f context="CI · format (manual)" -f description="Format check in progress" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
-      - name: Ruff format (check)
+      - name: Ruff format (check) and annotate warnings
         if: steps.pyfiles.outputs.has_py == 'true'
         id: format_run
+        shell: bash
         run: |
           rc=0
           uv run ruff format --check . > ruff-format.txt 2>&1 || rc=$?
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          echo "=== ruff format output ==="
+          echo "=== ruff format output (first 200 lines) ==="
           sed -n '1,200p' ruff-format.txt || true
+          # Emit GitHub warning annotations for each ruff message of form "file:line:col: message"
+          if [ -s ruff-format.txt ]; then
+            grep -E '^[^:]+:[0-9]+:[0-9]+' ruff-format.txt | while IFS= read -r l; do
+              if [[ "$l" =~ ^([^:]+):([0-9]+):([0-9]+):[[:space:]]*(.*)$ ]]; then
+                file="${BASH_REMATCH[1]}"
+                line="${BASH_REMATCH[2]}"
+                col="${BASH_REMATCH[3]}"
+                msg="${BASH_REMATCH[4]}"
+                # Escape newlines and percent for GitHub annotations
+                msg="${msg//$'\n'/ }"
+                msg="${msg//'%'/'%25'}"
+                msg="${msg//$'\r'/ }"
+                msg="${msg//'n'/'\\n'}"
+                echo "::warning file=${file},line=${line},col=${col}::${msg}"
+              fi
+            done
+          fi
         continue-on-error: true
 
       - name: Report format result (non-blocking)
@@ -182,13 +199,13 @@ jobs:
           if [ "$rc" -eq 0 ]; then
             desc="Format check passed"
           else
-            desc="Format check found issues (non-blocking — see action log)"
+            desc="Format check found issues (non-blocking — see action log / annotations)"
           fi
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
             -f state="$state" -f context="CI · format (manual)" -f description="$desc" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
-      # ---------- Lint check (non-blocking) ----------
+      # ---------- Lint check (non-blocking, with inline warnings) ----------
       - name: Mark commit pending (lint)
         if: steps.pyfiles.outputs.has_py == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
@@ -198,15 +215,31 @@ jobs:
             -f state=pending -f context="CI · lint (manual)" -f description="Lint check in progress" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
-      - name: Ruff lint
+      - name: Ruff lint and annotate warnings
         if: steps.pyfiles.outputs.has_py == 'true'
         id: lint_run
+        shell: bash
         run: |
           rc=0
           uv run ruff check . > ruff-lint.txt 2>&1 || rc=$?
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          echo "=== ruff lint output ==="
+          echo "=== ruff lint output (first 200 lines) ==="
           sed -n '1,200p' ruff-lint.txt || true
+          if [ -s ruff-lint.txt ]; then
+            grep -E '^[^:]+:[0-9]+:[0-9]+' ruff-lint.txt | while IFS= read -r l; do
+              if [[ "$l" =~ ^([^:]+):([0-9]+):([0-9]+):[[:space:]]*(.*)$ ]]; then
+                file="${BASH_REMATCH[1]}"
+                line="${BASH_REMATCH[2]}"
+                col="${BASH_REMATCH[3]}"
+                msg="${BASH_REMATCH[4]}"
+                msg="${msg//$'\n'/ }"
+                msg="${msg//'%'/'%25'}"
+                msg="${msg//$'\r'/ }"
+                msg="${msg//'n'/'\\n'}"
+                echo "::warning file=${file},line=${line},col=${col}::${msg}"
+              fi
+            done
+          fi
         continue-on-error: true
 
       - name: Report lint result (non-blocking)
@@ -220,7 +253,7 @@ jobs:
           if [ "$rc" -eq 0 ]; then
             desc="Lint passed"
           else
-            desc="Lint found issues (non-blocking — see action log)"
+            desc="Lint found issues (non-blocking — see action log / annotations)"
           fi
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
             -f state="$state" -f context="CI · lint (manual)" -f description="$desc" \
