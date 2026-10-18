@@ -331,6 +331,7 @@ class GalleryPage(QObject):
         self._pending_page_selection: str | None = None
         self._page_scroll_target: str | None = None
         self._prefetch_zone_hint: int | None = None
+        self._pending_page_jump: int | None = None
         self.items: list[GalleryItem] = []
         self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
@@ -406,6 +407,10 @@ class GalleryPage(QObject):
         self._neighbor_prefetch_timer = QTimer(self)
         self._neighbor_prefetch_timer.setSingleShot(True)
         self._neighbor_prefetch_timer.timeout.connect(self._prefetch_neighbors)
+        self._pending_jump_timer = QTimer(self)
+        self._pending_jump_timer.setSingleShot(True)
+        self._pending_jump_timer.setInterval(40)
+        self._pending_jump_timer.timeout.connect(self._resume_pending_page_jump)
         self.density_anchor_timer = QTimer(self)
         self.density_anchor_timer.setSingleShot(True)
         self.density_anchor_timer.timeout.connect(self._restore_density_anchor)
@@ -1187,6 +1192,8 @@ class GalleryPage(QObject):
             self.refresh(preserve=True)
         elif active:
             self._queue_neighbor_prefetch()
+        if active and self._pending_page_jump is not None:
+            self._pending_jump_timer.start()
 
     def _sync_auto_refresh(self) -> None:
         enabled = self.auto_button.isChecked()
@@ -1303,6 +1310,8 @@ class GalleryPage(QObject):
         self._capture_scroll()
         self._prefetch_zone_hint = None
         if reset:
+            self._pending_page_jump = None
+            self._pending_jump_timer.stop()
             self.offset = 0
         try:
             query = self._query(offset=self.offset)
@@ -1705,9 +1714,39 @@ class GalleryPage(QObject):
             return first, min(self.total, first + len(self.items) - 1)
         return visible[0], visible[-1]
 
+    def _resume_pending_page_jump(self) -> None:
+        """Honor the latest page-chip input once a background mount is stable."""
+        if self.runner.closed:
+            self._pending_page_jump = None
+            return
+        if self._pending_page_jump is None or not self._active:
+            return
+        if (
+            self._loading
+            or self._adjacent_loading
+            or self._suppress_batch_scroll
+            or self._pending_refresh is not None
+            or self.reflow_timer.isActive()
+            or self._grid_mount_keys is not None
+        ):
+            self._pending_jump_timer.start()
+            return
+        target, self._pending_page_jump = self._pending_page_jump, None
+        self._jump_to_page(target)
+
     def _jump_to_page(self, page_number: int) -> None:
-        """Jump within mounted cards or query the requested 100-row batch directly."""
-        if self._loading or self._adjacent_loading or not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
+        """Navigate immediately when ready, or queue the latest busy-time jump."""
+        if not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
+            return
+        if (
+            self._loading
+            or self._adjacent_loading
+            or self._suppress_batch_scroll
+            or self.reflow_timer.isActive()
+            or self._grid_mount_keys is not None
+        ):
+            self._pending_page_jump = page_number
+            self._pending_jump_timer.start()
             return
         target = (page_number - 1) * PAGE_SIZE
         self._prefetch_zone_hint = target
@@ -1757,7 +1796,9 @@ class GalleryPage(QObject):
             loaded=len(self.items),
             active_page=((first - 1) // PAGE_SIZE + 1) if first else 0,
             batch_size=PAGE_SIZE,
-            loading=(loading or self._loading) and not self.items or self._adjacent_loading,
+            # Eager adjacent preparation is background work: keep jump chips
+            # available instead of disabling navigation for each preload.
+            loading=(loading or self._loading) and not self.items,
         )
 
     def _page_summary(self) -> str:
@@ -2888,10 +2929,12 @@ class GalleryPage(QObject):
             self._jump_to_page((self.offset - 1) // PAGE_SIZE + 1)
 
     def _change_page(self, delta: int) -> bool:
-        if self._loading or self._adjacent_loading or not self.total:
+        if not self.total:
             return False
         first, _last = self._visible_range()
-        current = (first - 1) // PAGE_SIZE + 1 if first else self.offset // PAGE_SIZE + 1
+        current = self._pending_page_jump or (
+            (first - 1) // PAGE_SIZE + 1 if first else self.offset // PAGE_SIZE + 1
+        )
         target = current + delta
         if target < 1 or target > math.ceil(self.total / PAGE_SIZE):
             return False
