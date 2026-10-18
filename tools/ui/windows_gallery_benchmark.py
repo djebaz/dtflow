@@ -135,17 +135,35 @@ def _await_query(directory: Path, proc: subprocess.Popen, seconds: float) -> int
     raise TimeoutError("No successful Images query appeared in the DTFlow development log.")
 
 
-def _button(window, name: str):
-    """Resolve one named Qt accessible button; never guess or click coordinates."""
+def _button(window, name: str, *, alternatives: tuple[str, ...] = (),
+            automation_id: str | None = None, timeout: float = 12):
+    """Resolve a unique visible Qt button by UIA name or automation ID.
 
-    button = window.child_window(title=name, control_type="Button")
-    button.wait("exists visible enabled", timeout=12)
-    return button
+    Qt may expose the QPushButton visual label instead of accessibleName.
+    Never click a guessed position when the UIA element cannot be resolved.
+    """
+
+    names = (name, *alternatives)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        matches = []
+        for button in window.descendants(control_type="Button"):
+            info = button.element_info
+            if info.name in names or (automation_id is not None and info.automation_id == automation_id):
+                if button.is_visible() and button.is_enabled():
+                    matches.append(button)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise RuntimeError(f"Ambiguous Qt UIA button: {name}")
+        time.sleep(0.25)
+    raise LookupError(f"Qt UIA button {name!r} missing, disabled or hidden after {timeout:g}s")
 
 
-def _click(window, name: str, actions: list[dict]) -> None:
+def _click(window, name: str, actions: list[dict], *,
+           alternatives: tuple[str, ...] = (), automation_id: str | None = None) -> None:
     started = time.perf_counter()
-    _button(window, name).click_input()
+    _button(window, name, alternatives=alternatives, automation_id=automation_id).click_input()
     actions.append({"action": name, "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
 
 
@@ -180,38 +198,63 @@ def _exercise_prompt_filter(window, actions: list[dict]) -> None:
         time.sleep(1.5)
 
 
-def _drive(proc: subprocess.Popen, directory: Path, actions: list[dict], *, cycles: int, timeout: float) -> int:
-    """Attach only to this newly launched process; never use an existing window."""
+def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int, timeout: float) -> int:
+    """Attach only to the launched child and track the failing UI step."""
 
     from pywinauto import Desktop
 
+    actions = record["actions"]
+    record["step"] = "find-dtflow-window"
     window = Desktop(backend="uia").window(title="DTFlow", process=proc.pid)
     window.wait("exists visible enabled", timeout=timeout)
+    record["step"] = "focus-dtflow-window"
     window.set_focus()
-    _click(window, "Show saved Images", actions)
+    record["step"] = "find-images-navigation"
+    nav = _button(
+        window, "Show saved Images", alternatives=("Images",),
+        automation_id="imagesNavigationButton",
+    )
+    record["step"] = "click-images-navigation"
+    started = time.perf_counter()
+    nav.click_input()
+    actions.append({"action": "Show saved Images", "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
+    record["step"] = "verify-images-workspace"
+    _button(window, "Grid", automation_id="galleryGridButton", timeout=timeout)
+    record["step"] = "await-first-images-query"
     initial_count = _await_query(directory, proc, timeout)
-    _button(window, "Jump to image batch 2")
-    for _ in range(cycles):
-        _click(window, "Grid", actions)
+    record["initial_query_records"] = initial_count
+    record["step"] = "verify-page-two"
+    _button(window, "Jump to image batch 2", automation_id="galleryPagerPage2")
+    for cycle in range(cycles):
+        record["step"] = f"cycle-{cycle + 1}-grid"
+        _click(window, "Grid", actions, automation_id="galleryGridButton")
+        record["step"] = f"cycle-{cycle + 1}-grid-scroll"
         _scroll(window, -1, actions)
         time.sleep(0.8)
         _scroll(window, 1, actions)
         time.sleep(0.8)
-        _click(window, "Jump to image batch 2", actions)
+        record["step"] = f"cycle-{cycle + 1}-page-two"
+        _click(window, "Jump to image batch 2", actions, automation_id="galleryPagerPage2")
         time.sleep(0.8)
-        _click(window, "Jump to image batch 1", actions)
+        record["step"] = f"cycle-{cycle + 1}-page-one"
+        _click(window, "Jump to image batch 1", actions, automation_id="galleryPagerPage1")
         time.sleep(0.8)
-        _click(window, "List", actions)
+        record["step"] = f"cycle-{cycle + 1}-list"
+        _click(window, "List", actions, automation_id="galleryListButton")
         _scroll(window, -1, actions)
         time.sleep(0.8)
         _scroll(window, 1, actions)
         time.sleep(0.8)
-        _click(window, "Detail", actions)
+        record["step"] = f"cycle-{cycle + 1}-detail"
+        _click(window, "Detail", actions, automation_id="galleryDetailButton")
         time.sleep(0.8)
-        _click(window, "Grid", actions)
+        _click(window, "Grid", actions, automation_id="galleryGridButton")
         time.sleep(0.8)
+        record["step"] = f"cycle-{cycle + 1}-filter"
         _exercise_prompt_filter(window, actions)
+    record["step"] = "close-dtflow-window"
     window.close()
+    record["step"] = "wait-for-shutdown"
     return initial_count
 
 
@@ -234,17 +277,19 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
     env["QT_QPA_PLATFORM"] = "windows"
     record: dict = {
         "profile_name": name, "profile": profile, "trial": trial, "no_cache": no_cache,
-        "status": "failed", "actions": [], "error_type": None,
+        "status": "failed", "actions": [], "error_type": None, "error_message": None,
+        "step": "not-started",
         "initial_query_records": None,
     }
     process = None
     stderr = directory / "app-stderr.txt"
     with stderr.open("w", encoding="utf-8") as output:
         try:
+            record["step"] = "launch-child-process"
             process = subprocess.Popen(args, cwd=Path(__file__).resolve().parents[2],
                                        env=env, stdout=subprocess.DEVNULL, stderr=output)
             record["initial_query_records"] = _drive(
-                process, logs, record["actions"], cycles=cycles, timeout=timeout
+                process, logs, record, cycles=cycles, timeout=timeout
             )
             process.wait(timeout=timeout)
             csvs = sorted(logs.glob("dtflow-*-gallery.csv"))
@@ -253,7 +298,14 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
             record["metrics"] = summarize_csv(csvs[0])
             record["status"] = "ok"
         except (Exception, KeyboardInterrupt) as exc:
+            from dtflow.logging_setup import sanitize
+
             record["error_type"] = type(exc).__name__
+            record["error_message"] = sanitize(str(exc))[:240]
+            print(
+                f"{name} trial={trial} failed at {record['step']}: "
+                f"{record['error_type']}: {record['error_message']}", file=sys.stderr, flush=True,
+            )
         finally:
             if process is not None and process.poll() is None:
                 process.terminate()
@@ -270,7 +322,7 @@ def write_report(records: list[dict], out: Path) -> None:
     """Emit inspectable raw trials and a comparison that never ranks missing data."""
 
     columns = (
-        "case", "trial", "status", "initial_query_records", "gui_gap_over_50_max_ms",
+        "case", "trial", "status", "step", "initial_query_records", "gui_gap_over_50_max_ms",
         "query_done_median_recorded_ms", "prepare_median_recorded_ms",
         "grid_mount_median_recorded_ms", "adjacent_events", "error_type",
     )
@@ -285,6 +337,7 @@ def write_report(records: list[dict], out: Path) -> None:
                 "case": record["profile_name"],
                 "trial": record["trial"],
                 "status": record["status"],
+                "step": record.get("step"),
                 "initial_query_records": record.get("initial_query_records"),
                 "gui_gap_over_50_max_ms": metrics.get("gui_gap_over_50_max_ms"),
                 "query_done_median_recorded_ms": metrics.get("query_done_median_recorded_ms"),
