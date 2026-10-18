@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 follow-up: double the default interactive wheel sweep from 96 to 192 notches per direction, exercise wider thumbnail slider changes (55% then 210%) with restoration, and toggle fullscreen from Grid rather than Detail. These are benchmark-only changes and require a new native Windows owner smoke; no provider actions or application defaults change.
+
 - PR #104 browsing smoke scope: owner baseline/workers-3 evidence confirmed page/view/scroll dispatch and showed prompt-filter UIA timeout. Remove prompt typing; add page-chip checked-state verification, Qt `scroll_intent` evidence for both wheel directions, fullscreen enter/Escape exit, and `ThumbnailSizeSlider` UIA drag/restore from the owner's recorder. Nonessential missed clicks, drags and scrolls emit warnings without aborting remaining actions; warning trials are excluded from clean benchmark comparisons. Native Windows validation remains pending.
 
 - PR #104 recorder-backed follow-up: physically open Sort, wait for its exact nested ListItem and click it, using the owner's recorded hierarchy instead of unsupported selection/focus assumptions. `--out` now selects an output root (default `tmp`); reports go under `gallery_bench_smoke/MMddHHmm/`, with timestamp collisions refused. No recorder dependency or recording committed. Regression coverage updated without local test/replay execution; native acceptance remains pending.
