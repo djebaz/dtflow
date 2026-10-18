@@ -17,6 +17,9 @@ from dtflow.ui.runner import AsyncRunner
 
 @pytest.fixture
 def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
+    # These stress fixtures intentionally exercise 100/300, not launch defaults.
+    monkeypatch.setattr(gallery_ui, "PAGE_SIZE", 100)
+    monkeypatch.setattr(gallery_ui, "MAX_MOUNTED_IMAGES", 300)
     form = load_ui(FORMS_DIR / "gallery_detail_page.ui")
     runner = AsyncRunner(form)
     qtbot.addWidget(form, before_close_func=lambda _widget: runner.shutdown())

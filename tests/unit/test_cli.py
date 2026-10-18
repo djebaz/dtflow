@@ -140,6 +140,8 @@ def test_gui_thumbnail_format_is_forwarded(invoke, monkeypatch):
     monkeypatch.setattr(cli, "run_gui_command", lambda **options: calls.append(options) or 0)
     assert invoke("gui", "-format", "webp", state=False)[0] == 0
     assert calls[0]["thumbnail_format"] == "webp"
+    assert calls[0]["gallery_limits"] == (20, 100)
+    assert cli.resolve_gallery_limits(40, None) == (40, 80)  # Default cap rounds down to full batches.
 
 
 @pytest.mark.parametrize(

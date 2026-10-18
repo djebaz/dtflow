@@ -831,6 +831,9 @@ def render_gallery_composition_states(shell, state, out):
     with (
         patch.object(shell.runner, "submit", side_effect=hold_worker),
         patch.object(gallery, "_schedule_save"),
+        # Existing stress/continuity screenshots intentionally retain 100/300.
+        patch.object(gallery_ui, "PAGE_SIZE", 100),
+        patch.object(gallery_ui, "MAX_MOUNTED_IMAGES", 300),
         # Synthetic projections intentionally drive exact row/cell contents;
         # do not submit real neighbor workers during screenshot assembly.
         patch.object(gallery, "_queue_neighbor_prefetch"),
@@ -1013,6 +1016,7 @@ def render_gallery_composition_states(shell, state, out):
                 visible_end=shown_end,
                 loaded=len(records) if loaded is None else loaded,
                 active_page=(shown_start - 1) // gallery_ui.PAGE_SIZE + 1,
+                batch_size=gallery_ui.PAGE_SIZE,
             )
             assert len(gallery.items) == last - first + 1
             assert gallery.table.rowCount() == len(gallery.items)
@@ -1624,6 +1628,20 @@ def render_gallery_composition_states(shell, state, out):
         gallery.prompt.clear()
         gallery.filter_timer.stop()
         gallery.save_timer.stop()
+
+        # Current owner-selected launch defaults, separate from stress fixtures.
+        with (
+            patch.object(gallery_ui, "PAGE_SIZE", 20),
+            patch.object(gallery_ui, "MAX_MOUNTED_IMAGES", 100),
+        ):
+            gallery.show_view("Grid")
+            multi_window(1, 20)
+            gallery.grid_scroll.verticalScrollBar().setValue(0)
+            snap("images-105-pager-default-20-first-batch")
+            multi_window(1, 100)
+            gallery.grid_scroll.verticalScrollBar().setValue(0)
+            assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == 100
+            snap("images-106-pager-default-100-buffered")
 
 
 def render_removal_and_selection_states(shell, item, plan, out):

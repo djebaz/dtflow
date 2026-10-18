@@ -4,8 +4,8 @@ import argparse
 
 from dtflow.core.gallery import MAX_GALLERY_LIMIT
 
-DEFAULT_BATCH = 100
-DEFAULT_CARDS = DEFAULT_BATCH * 3
+DEFAULT_BATCH = 20
+DEFAULT_CARDS = 100
 MAX_READ = MAX_GALLERY_LIMIT  # one read per batch up to this; larger batches read in chunks
 
 
@@ -18,7 +18,7 @@ def resolve(batch: int | None, cards: int | None) -> tuple[int, int]:
     batch = DEFAULT_BATCH if batch is None else batch
     if batch < 1:
         raise ValueError("-ml must be at least 1.")
-    cards = batch * 3 if cards is None else cards
+    cards = DEFAULT_CARDS if cards is None else cards
     if cards < 1:
         raise ValueError("-mc must be at least 1.")
     return batch, max(batch, cards - cards % batch)
@@ -37,5 +37,5 @@ def add_arguments(command: argparse.ArgumentParser) -> None:
         "--cards",
         type=int,
         default=argparse.SUPPRESS,
-        help="Most Grid/List cards kept mounted, rounded down to whole batches (default 3 x -ml).",
+        help=f"Most Grid/List cards kept mounted, rounded down to whole batches (default {DEFAULT_CARDS}; at least one batch).",
     )

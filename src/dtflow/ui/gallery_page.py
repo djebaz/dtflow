@@ -91,7 +91,7 @@ from dtflow.ui.theme import load_tokens
 log = logging.getLogger(__name__)
 
 PAGE_SIZE = gallery_limits.DEFAULT_BATCH
-MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # three contiguous batches, bounded Qt widget residency
+MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # five default batches; bounded buffered Qt cards
 MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
@@ -1568,9 +1568,8 @@ class GalleryPage(QObject):
             self._clear_results_for_reload()
 
         anchor = self._browsing_anchor() if preserve else None
-        # The mounted window may contain three batches (300 records), while
-        # individual GalleryQuery reads are independently capped at MAX_QUERY_ITEMS.
-        # Preserve it through refresh with at most two bounded reads.
+        # Preserve the mounted window through independently bounded reads;
+        # developer launch overrides may exceed the per-query cap.
         target_count = min(MAX_MOUNTED_IMAGES, len(self.items)) if preserve and not reset and self.items else PAGE_SIZE
         if target_count > query.limit:
             query = replace(query, limit=min(MAX_QUERY_ITEMS, target_count))
