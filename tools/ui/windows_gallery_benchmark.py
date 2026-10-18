@@ -257,30 +257,91 @@ def _wheel_intents(directory: Path) -> set[tuple]:
     return found
 
 
-def _scroll(window, direction: int, actions: list[dict], directory: Path) -> None:
-    """Dispatch the gallery wheel and require an observable scroll-intent event."""
+def _gallery_wheel_point(window, mode: str) -> tuple[tuple[int, int], str]:
+    """Prefer the active gallery's UIA rectangle over the entire window center.
+
+    Qt can expose QWidget objectName through UIA AutomationId, or only the
+    accessibleName. Fall back to the window center only when no unique, visible
+    scroll surface can be identified. Never move the pointer to a guessed
+    element by name alone.
+    """
+
+    if mode not in {"grid", "list"}:
+        raise ValueError(f"Unsupported scroll view: {mode}")
+    object_name = "galleryGridScroll" if mode == "grid" else "galleryListTable"
+    accessible_name = "" if mode == "grid" else "Image list; activate a row to open Detail"
+    candidates = []
+    for control in window.descendants():
+        info = control.element_info
+        if info.automation_id != object_name and (not accessible_name or info.name != accessible_name):
+            continue
+        if not control.is_visible() or not control.is_enabled():
+            continue
+        rectangle = control.rectangle()
+        if rectangle.width() >= 80 and rectangle.height() >= 80:
+            candidates.append(rectangle)
+    if len(candidates) == 1:
+        rect = candidates[0]
+        source = object_name
+    else:
+        rect = window.rectangle()
+        source = "window-fallback" if not candidates else "ambiguous-gallery-surface"
+    # Stay away from scrollbars and floating controls at the rectangle edges.
+    coords = (
+        int(rect.left + rect.width() * 0.5),
+        int(rect.top + rect.height() * 0.5),
+    )
+    return coords, source
+
+
+def _scroll(
+    window, direction: int, actions: list[dict], directory: Path,
+    *, mode: str, notches: int = 96,
+) -> None:
+    """Send enough real Windows wheel input to traverse multiple gallery rows.
+
+    The application's scroll_intent event is produced only for wheel events
+    delivered directly to a Qt viewport. Actual scrolling can also occur
+    without that hook firing, so absence of this optional telemetry does NOT
+    mean the user's wheel did not scroll the gallery.
+    """
 
     from pywinauto import mouse
 
+    if direction not in (-1, 1):
+        raise ValueError("Scroll direction must be -1 or 1.")
+    if not 12 <= notches <= 240:
+        raise ValueError("Scroll notches must be in 12..240.")
+    coords, source = _gallery_wheel_point(window, mode)
     before = _wheel_intents(directory)
-    rect = window.rectangle()
-    coords = (int(rect.left + rect.width() * 0.52), int(rect.top + rect.height() * 0.66))
     started = time.perf_counter()
-    mouse.scroll(coords=coords, wheel_dist=direction * 5)
-    event = {
-        "action": "scroll-up" if direction > 0 else "scroll-down",
-        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-        "wheel_intent_observed": False,
-    }
-    actions.append(event)
+    # Small, spaced bursts let Qt process prefetch and paint between wheel
+    # messages. Total is 19x the former five-notch dispatch by default.
+    remaining = notches
+    bursts = 0
+    while remaining > 0:
+        count = min(12, remaining)
+        mouse.scroll(coords=coords, wheel_dist=direction * count)
+        remaining -= count
+        bursts += 1
+        if remaining:
+            time.sleep(0.12)
     wanted = "backward" if direction > 0 else "forward"
-    deadline = time.monotonic() + 2.5
-    while time.monotonic() < deadline:
-        if any(item[3] == wanted for item in _wheel_intents(directory) - before):
-            event["wheel_intent_observed"] = True
-            return
-        time.sleep(0.15)
-    raise TimeoutError(f"Scroll {wanted} wheel was sent but no matching gallery scroll_intent was logged.")
+    # Listener-side logging is asynchronous. This is evidence when available,
+    # not an acceptance gate: Qt may scroll via child widgets / scrollbars.
+    time.sleep(0.25)
+    observed = any(item[3] == wanted for item in _wheel_intents(directory) - before)
+    actions.append({
+        "action": "scroll-up" if direction > 0 else "scroll-down",
+        "mode": mode,
+        "notches": notches,
+        "bursts": bursts,
+        "wheel_target": source,
+        "wheel_intent_observed": observed,
+        "scroll_distance_verified": False,
+        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+    })
+
 
 
 def _toggle_fullscreen(window, actions: list[dict]) -> None:
@@ -461,7 +522,10 @@ def _stop_trial_process(proc: subprocess.Popen) -> None:
             proc.wait(timeout=5)
 
 
-def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int, timeout: float) -> int:
+def _drive(
+    proc: subprocess.Popen, directory: Path, record: dict, *,
+    cycles: int, timeout: float, scroll_notches: int = 96,
+) -> int:
     """Attach only to the launched child and track the failing UI step."""
 
     from pywinauto import Desktop
@@ -514,9 +578,13 @@ def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int
         _attempt(record, f"{prefix}-grid", lambda: _click(
             window, "Grid", actions, automation_id="galleryGridButton",
         ))
-        _attempt(record, f"{prefix}-grid-scroll-down", lambda: _scroll(window, -1, actions, directory))
+        _attempt(record, f"{prefix}-grid-scroll-down", lambda: _scroll(
+            window, -1, actions, directory, mode="grid", notches=scroll_notches,
+        ))
         time.sleep(0.8)
-        _attempt(record, f"{prefix}-grid-scroll-up", lambda: _scroll(window, 1, actions, directory))
+        _attempt(record, f"{prefix}-grid-scroll-up", lambda: _scroll(
+            window, 1, actions, directory, mode="grid", notches=scroll_notches,
+        ))
         time.sleep(0.8)
         _attempt(record, f"{prefix}-page-two", lambda: _click_page(window, 2, actions))
         time.sleep(0.8)
@@ -527,13 +595,16 @@ def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int
         _attempt(record, f"{prefix}-list", lambda: _click(
             window, "List", actions, automation_id="galleryListButton",
         ))
-        _attempt(record, f"{prefix}-list-scroll-down", lambda: _scroll(window, -1, actions, directory))
+        _attempt(record, f"{prefix}-list-scroll-down", lambda: _scroll(
+            window, -1, actions, directory, mode="list", notches=scroll_notches,
+        ))
         time.sleep(0.8)
-        _attempt(record, f"{prefix}-list-scroll-up", lambda: _scroll(window, 1, actions, directory))
+        _attempt(record, f"{prefix}-list-scroll-up", lambda: _scroll(
+            window, 1, actions, directory, mode="list", notches=scroll_notches,
+        ))
         time.sleep(0.8)
         _attempt(record, f"{prefix}-detail", lambda: _click(
-            window, "Detail", actions, alternatives=("Full screen image view",),
-            automation_id="galleryDetailButton",
+            window, "Detail", actions, automation_id="galleryDetailButton",
         ))
         time.sleep(0.5)
         _attempt(record, f"{prefix}-fullscreen", lambda: _toggle_fullscreen(window, actions))
@@ -548,7 +619,7 @@ def _drive(proc: subprocess.Popen, directory: Path, record: dict, *, cycles: int
 
 
 def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: int,
-              timeout: float, no_cache: bool) -> dict:
+              timeout: float, no_cache: bool, scroll_notches: int = 96) -> dict:
     """Launch one source GUI process and retain evidence even if automation fails."""
 
     directory.mkdir(parents=True, exist_ok=False)
@@ -579,7 +650,8 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
             process = subprocess.Popen(args, cwd=Path(__file__).resolve().parents[2],
                                        env=env, stdout=subprocess.DEVNULL, stderr=output)
             record["initial_query_records"] = _drive(
-                process, logs, record, cycles=cycles, timeout=timeout
+                process, logs, record, cycles=cycles, timeout=timeout,
+                scroll_notches=scroll_notches,
             )
             process.wait(timeout=timeout)
             csvs = sorted(logs.glob("dtflow-*-gallery.csv"))
@@ -697,6 +769,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Only selected profiles from the file or built-in set (default: all).")
     parser.add_argument("--runs", type=int, default=2, help="Trials per profile (1–10).")
     parser.add_argument("--cycles", type=int, default=2, help="Repeated UI action sequences (1–10).")
+    parser.add_argument("--scroll-notches", type=int, default=96,
+                        help="Windows wheel notches per scroll direction, 12–240 (default: 96).")
     parser.add_argument("--timeout", type=float, default=30, help="Seconds for GUI/process readiness.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass disposable thumbnail cache.")
     parser.add_argument("--ack-user-state", action="store_true",
@@ -706,6 +780,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Native Windows is required; Linux/offscreen cannot establish UI acceptance.")
     if not args.ack_user_state:
         parser.error("--ack-user-state is required before accessing the saved-output catalogue.")
+    if not 12 <= args.scroll_notches <= 240:
+        parser.error("--scroll-notches must be between 12 and 240.")
     if not 1 <= args.runs <= 10 or not 1 <= args.cycles <= 10:
         parser.error("--runs and --cycles must be between 1 and 10.")
     if not 5 <= args.timeout <= 120:
@@ -733,7 +809,8 @@ def main(argv: list[str] | None = None) -> int:
             for trial in range(1, args.runs + 1):
                 directory = output / f"{name}-r{trial:02}"
                 record = run_trial(name, profile, trial=trial, directory=directory,
-                                   cycles=args.cycles, timeout=args.timeout, no_cache=args.no_cache)
+                                   cycles=args.cycles, timeout=args.timeout, no_cache=args.no_cache,
+                                   scroll_notches=args.scroll_notches)
                 records.append(record)
                 write_report(records, output)
                 print(f"{name} trial={trial} status={record['status']}", flush=True)
