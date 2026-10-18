@@ -154,6 +154,25 @@ During generation or queue dispatch, the window owns the state directory. Genera
 
 ## Images
 
+**Infinite-scroll boundary:** When you scroll upward from the first visible images of a loaded 100-image batch, the previous batch is mounted *above* the existing cards. On reaching the top edge, the preceding batch's **last card/row** appears immediately above the current one (100 before 101); the viewport does not jump to the beginning of that previous batch. If the earlier batch prefetches before the edge, the current image stays anchored. Loading remains bounded to three adjacent batches (300 cards). The [Image Navigation](../plans/2026-10-17-images-hybrid-pagination.md#upward-infinite-scroll-continuity-at-batch-boundaries-2026-10-18) offline fixtures cover Grid and List; real Windows scrolling/trackpad acceptance remains separate.
+
+While browsing Grid or List, changing **Thumbnail size** or **Row density** retains the same top visible image across Grid column and List row-height reflow; the active numbered page follows that identity, not the old scrollbar pixel value. A size change never requests another batch by itself. This behavior has offline Qt fixture coverage but still needs native owner acceptance.
+
+Current trial: **100 images per page chip, up to 300 nearby images buffered** (three contiguous batches). The toolbar reports “N buffered”: this is the bounded resident browsing window, not how many images were ever loaded. At image 506, you may still see “300 buffered”; earlier/later records remain in the database. Database reads themselves remain at most 200 rows per query; a populated three-batch auto-refresh uses two bounded reads. This increases Qt widget and thumbnail residency relative to the previous 80/160 configuration. The owner reports improved scrolling but a short freeze on mounting each new 100-card batch; native profiling remains pending. The approved standalone HTML reference still shows its historical 80-image illustration.
+
+The **Option 2a** pager above the gallery viewport shows the actual visible image range, total and numbered 100-image batch chips (the approved historical HTML mockup still uses 80). Its position and appearance do not change in fullscreen. The **Image Navigation** artifact folder contains the dedicated offline screenshots. The live pager and loading ring are implemented under PR #89; performance follow-up and acceptance are tracked separately from [the implementation plan](../plans/2026-10-17-images-hybrid-pagination.md).
+
+When Images first opens, its saved-output database query can be followed by a read-only
+snapshot fallback. While that read is pending **and no committed image cards are on
+screen**, a thin animated ring appears after 180 ms in the center of the gallery
+canvas. The same presentation is used in Grid, List and Detail and is unchanged
+in fullscreen. It disappears when the read settles, including when there are
+zero matches; an unavailable read without cards shows an error and **Retry**.
+Existing cards remain visible and usable during background refresh; the centered
+overlay never interrupts them. The ring is not generation progress and does not
+imply a provider request. The separate bottom status row continues to disclose
+read-only snapshot fallback and recovery.
+
 While browsing a snapshot, a slim one-line amber bottom-overlay warning stays until live access is stable. A first live result updates that same row to recovering wording; another consecutive live success at least five seconds later clears it. Snapshot results or failed refreshes restart that recovery interval. Close it with × to hide it for the whole episode, including brief live successes, renewed snapshot reads, changing timestamps and tab navigation. Only a new fallback after stable recovery can warn again. Live results and their normal actions return immediately; this delay affects the warning only. The in-gallery snapshot timestamp remains visible while using a snapshot. This condition row never replaces an active confirmation/editor and has no six-second countdown; ordinary outcome warnings still expire normally.
 
 If live database reads fail while the other system is generating, Images tries the last published read-only snapshot and shows its UTC timestamp plus **Live updates unavailable**. It supports browsing, filters, paging and sidecar inspection while new results may be absent; original-file reads still require shared locking. Export, edit/reuse/regeneration and removal cannot use stale snapshot authority. The app retries live access automatically. A snapshot is published after a generation/queue session and on clean app close if committed gallery state changed, or if no snapshot exists (even for an empty library). Failed publication keeps the previous snapshot; none means the ordinary unavailable message remains. Derived-cache cleanup can remove it and `--no-cache` bypasses it. This is not simultaneous cross-runtime generation/database-writer support. See [snapshot architecture, owner acceptance and limitations](../architecture/gallery-snapshot.md).

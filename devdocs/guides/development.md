@@ -95,6 +95,20 @@ interactive desktop acceptance. This setup is not intended for immutable
 production/prebuilt runtimes. It runs no tests, UI renders, training, inference,
 model downloads or provider calls.
 
+## Images performance diagnostics (`-x --dev`)
+
+Use the normal DTFlow launch command with `-x` (equivalent to `--dev`) to enable sanitized debug timing in the existing rotating DTFlow log. **Without `-x`, these `gallery_perf` diagnostic records are not emitted.**
+
+Look for `gallery_perf` entries. Durations are wall-clock milliseconds observed by the application, not benchmarks and not GPU/inference timings:
+
+- `query_start` / `query_done`: query window offset/limit, total async elapsed time, returned count and live/snapshot source.
+- `auto_refresh`: five-second poll started/skipped while a batch or filter edit is still active.
+- `adjacent_start` / `adjacent_read`: adjacent 80-row fetch, direction, returned count, async elapsed time.
+- `adjacent_reconcile` / `render_page` / `grid_layout`: Qt update time, mounted/added/removed card counts and active Grid columns.
+- `thumbnail_end_to_end`: worker enqueue-to-result delay (includes worker queueing and decoding), success and concurrency count. Up to six thumbnail tasks remain active; each result emits a record in dev mode.
+
+**Privacy:** these metrics never include prompts, image/output/metadata paths, selected IDs, request JSON, SQLite parameters, or credentials. They don't change query cadence, rendering behavior, retry semantics or provider billing. A burst of `render_page` and `grid_layout` entries on unchanged five-second polls is a useful signal of unnecessary repaints. Inspect timing patterns alongside visual smoke evidence rather than assuming every repaint is expensive.
+
 ## Diagnostic probes
 
 The diagnostic probes' help is available without submitting generation:

@@ -25,6 +25,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSlider,
     QAbstractSpinBox,
     QApplication,
     QButtonGroup,
@@ -47,6 +48,7 @@ from PySide6.QtWidgets import (
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
+from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError, original_images_lock
 from dtflow.persistence.store import PersistenceError
@@ -74,13 +76,17 @@ from dtflow.ui.gallery_detail_preview import (
     apply_gallery,
     toggle_image_focus,
 )
+from dtflow.ui.gallery_loading import GalleryCanvasLoading
+from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
 log = logging.getLogger(__name__)
 
-PAGE_SIZE = 80
+PAGE_SIZE = 100
+MAX_MOUNTED_IMAGES = PAGE_SIZE * 3  # three contiguous batches, bounded Qt widget residency
+MAX_QUERY_ITEMS = 200  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
 THUMBNAIL_SIDE = 600
@@ -294,6 +300,10 @@ class GalleryPage(QObject):
         self._check_boxes: dict[str, QCheckBox] = {}
         self._active = False
         self._loading = False
+        self._adjacent_loading = False
+        self._adjacent_failed_offset: int | None = None
+        self._suppress_batch_scroll = False
+        self._drag_scroll_positions: dict[str, int] = {}
         self._pending_refresh: tuple[bool, bool] | None = None
         self._refresh_failing = False
         self._snapshot_at = None
@@ -302,6 +312,7 @@ class GalleryPage(QObject):
         self._snapshot_live_since = None
         self._restoring = True
         self._query_generation = 0
+        self._query_started = 0.0
         self._image_generation = 0
         self._detail_generation = 0
         self._presented_item: GalleryItem | None = None
@@ -324,6 +335,10 @@ class GalleryPage(QObject):
         self._grid_painters: dict[str, CoverPainter] = {}
         self._grid_labels: dict[str, tuple[QLabel, QLabel]] = {}
         self._grid_empty: QLabel | None = None
+        self._grid_layout_keys: tuple[str, ...] = ()
+        self._grid_layout_columns = 0
+        self._applied_thumbnail_percent: int | None = None
+        self._density_anchor: tuple[str, str, int] | None = None
         self._film_buttons: list[QPushButton] = []
         self._film_painters: list[CoverPainter] = []
         self._film_entries: dict[str, tuple[QPushButton, CoverPainter]] = {}
@@ -336,6 +351,7 @@ class GalleryPage(QObject):
         self._widget("galleryFixtureOverlay").hide()
 
         self.stack = self._widget("galleryContentStack")
+        self.canvas_loading = GalleryCanvasLoading(self.stack, on_retry=lambda: self.refresh(preserve=True))
         self.grid_scroll = self._widget("galleryGridScroll")
         self.grid_cards = self._widget("galleryGridCards")
         self.cards_layout = self.grid_cards.layout()
@@ -353,18 +369,23 @@ class GalleryPage(QObject):
         self.reflow_timer = QTimer(self)
         self.reflow_timer.setSingleShot(True)
         self.reflow_timer.timeout.connect(self._layout_cards)
+        self.density_anchor_timer = QTimer(self)
+        self.density_anchor_timer.setSingleShot(True)
+        self.density_anchor_timer.timeout.connect(self._restore_density_anchor)
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(250)
         self.save_timer.timeout.connect(self._flush_save)
         self.auto_timer = QTimer(self)
         self.auto_timer.setInterval(AUTO_REFRESH_MS)
-        self.auto_timer.timeout.connect(lambda: self.refresh(preserve=True))
+        self.auto_timer.timeout.connect(self._auto_refresh_tick)
 
         self._setup_filters()
         self._setup_views()
         self._setup_filmstrip()
         self._setup_actions()
+        self.pager = GalleryPager(self.page, self._jump_to_page)
+        self.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
         self._setup_selection_actions()
         self._restore_preferences()
         self._clear_detail()
@@ -483,6 +504,19 @@ class GalleryPage(QObject):
         self.film_scroll.verticalScrollBar().valueChanged.connect(
             lambda value: self._scroll_changed("filmstrip", value)
         )
+        # Qt emits valueChanged for programmatic anchor restore and reflow.
+        # Prefetch only on user scrollbar actions; viewport Wheel is handled
+        # separately in eventFilter.
+        for name, bar in (
+            ("grid", self.grid_scroll.verticalScrollBar()),
+            ("list", self.table.verticalScrollBar()),
+        ):
+            bar.actionTriggered.connect(lambda action, mode=name: self._scrollbar_action(mode, action))
+            bar.sliderPressed.connect(
+                lambda mode=name, scrollbar=bar: self._drag_scroll_positions.__setitem__(mode, scrollbar.value())
+            )
+            bar.sliderMoved.connect(lambda position, mode=name: self._scrollbar_drag(mode, position))
+            bar.sliderReleased.connect(lambda mode=name: self._drag_scroll_positions.pop(mode, None))
 
         for key, callback in (
             ("Left", lambda: self.step(-1)),
@@ -1093,6 +1127,7 @@ class GalleryPage(QObject):
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
         self._active = active
+        self._sync_canvas_loading()
         self._sync_snapshot_warning()
         self._sync_auto_refresh()
         if first_activation:
@@ -1105,6 +1140,18 @@ class GalleryPage(QObject):
             self.auto_timer.start()
         else:
             self.auto_timer.stop()
+
+    def _auto_refresh_tick(self) -> None:
+        """Do not interrupt adjacent reads or a debounced filter edit."""
+        if not self._active or not self.auto_button.isChecked():
+            return
+        if self._loading or self._adjacent_loading or self._suppress_batch_scroll or self.filter_timer.isActive():
+            if dev_enabled():
+                log.debug("gallery_perf phase=auto_refresh action=skipped mounted=%d", len(self.items))
+            return
+        if dev_enabled():
+            log.debug("gallery_perf phase=auto_refresh action=started mounted=%d", len(self.items))
+        self.refresh(preserve=True)
 
     def _auto_refresh_changed(self, _checked: bool) -> None:
         self._sync_auto_refresh()
@@ -1163,7 +1210,7 @@ class GalleryPage(QObject):
         )
 
     def refresh(self, *, reset: bool = False, preserve: bool = True) -> None:
-        if self._loading:
+        if self._loading or self._adjacent_loading:
             if self._pending_refresh is not None:
                 reset = reset or self._pending_refresh[0]
                 preserve = preserve and self._pending_refresh[1]
@@ -1179,13 +1226,61 @@ class GalleryPage(QObject):
             return
 
         anchor = self._browsing_anchor() if preserve else None
-        self._submit_query(query, anchor=anchor)
+        # The mounted window may contain three batches (300 records), while
+        # individual GalleryQuery reads are independently capped at 200.
+        # Preserve it through refresh with at most two bounded reads.
+        target_count = min(MAX_MOUNTED_IMAGES, len(self.items)) if preserve and not reset and self.items else PAGE_SIZE
+        if target_count > query.limit:
+            query = replace(query, limit=min(MAX_QUERY_ITEMS, target_count))
+        self._submit_query(query, anchor=anchor, target_count=target_count)
 
-    def _submit_query(self, query: GalleryQuery, *, anchor: str | None) -> None:
+    def _submit_query(self, query: GalleryQuery, *, anchor: str | None, target_count: int | None = None) -> None:
+        target_count = min(MAX_MOUNTED_IMAGES, target_count if target_count is not None else query.limit)
         self._query_generation += 1
         generation = self._query_generation
+        self._query_started = monotonic()
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=query_start offset=%d limit=%d target_count=%d mounted=%d",
+                query.offset,
+                query.limit,
+                target_count,
+                len(self.items),
+            )
         self._loading = True
-        self.refresh_button.setEnabled(False)
+        self._adjacent_failed_offset = None
+        if not self.items and self._rendered_page is None:
+            # The initial Designer examples are not saved-output records.
+            self._clear_grid()
+        # Do not gray out the Refresh control on every five-second poll:
+        # the previously loaded cards remain readable throughout the query.
+        if not self.items:
+            self.refresh_button.setEnabled(False)
+        # Existing cards are still readable: no transient disabled chips/status
+        # flash every five seconds during an ordinary background refresh.
+        self._sync_pager(loading=not self.items)
+        self._sync_canvas_loading()
+
+        async def extend_page(current: GalleryQuery, page: GalleryPage, read) -> GalleryPage:
+            """Retain up to three buffered batches using bounded 200-row queries."""
+            if len(page.items) != current.limit or target_count <= current.limit:
+                return page
+            remaining = min(target_count - len(page.items), max(0, page.total - current.offset - len(page.items)))
+            if remaining <= 0:
+                return page
+            next_query = replace(
+                current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
+            )
+            extension = await read(next_query)
+            if (
+                extension.total != page.total
+                or extension.snapshot_at != page.snapshot_at
+                or {item.identity for item in page.items} & {item.identity for item in extension.items}
+            ):
+                # Concurrent gallery changes must never produce an inconsistent
+                # mounted sequence. A subsequent poll can refill the window.
+                return page
+            return replace(page, items=(*page.items, *extension.items), limit=len(page.items) + len(extension.items))
 
         async def work():
             current = query
@@ -1194,11 +1289,15 @@ class GalleryPage(QObject):
                 position = await locate_output(self.state_dir, replace(current, offset=0), anchor)
                 if position is not None:
                     anchor_found = True
-                    current = replace(current, offset=(position // PAGE_SIZE) * PAGE_SIZE)
+                    # Keep the current contiguous window when the anchor is still
+                    # inside it; otherwise jump directly to its aligned batch.
+                    if not (current.offset <= position < current.offset + target_count):
+                        current = replace(current, offset=(position // PAGE_SIZE) * PAGE_SIZE)
             page = await query_outputs(self.state_dir, current)
             if page.total and not page.items and current.offset >= page.total:
                 current = replace(current, offset=((page.total - 1) // PAGE_SIZE) * PAGE_SIZE)
                 page = await query_outputs(self.state_dir, current)
+            page = await extend_page(current, page, lambda q: query_outputs(self.state_dir, q))
             choices = await filter_choices(self.state_dir)
             return current, page, choices, anchor_found
 
@@ -1213,7 +1312,14 @@ class GalleryPage(QObject):
                     getattr(cause, "sqlite_errorname", "unavailable"),
                 )
                 try:
-                    return await query_snapshot(self.state_dir, query, anchor)
+                    current, page, choices, anchor_found = await query_snapshot(self.state_dir, query, anchor)
+
+                    async def snapshot_read(q: GalleryQuery) -> GalleryPage:
+                        _query, found, _choices, _anchor_found = await query_snapshot(self.state_dir, q, None)
+                        return found
+
+                    page = await extend_page(current, page, snapshot_read)
+                    return current, page, choices, anchor_found
                 except (PersistenceError, OSError):
                     raise live_error from None
 
@@ -1222,8 +1328,18 @@ class GalleryPage(QObject):
     def _query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
             return
+        if dev_enabled():
+            elapsed_ms = (monotonic() - self._query_started) * 1000
+            log.debug(
+                "gallery_perf phase=query_done elapsed_ms=%.1f returned=%d source=%s error=%s",
+                elapsed_ms,
+                len(result[1].items) if result is not None and error is None else 0,
+                "snapshot" if result is not None and error is None and result[1].snapshot_at else "live",
+                type(error).__name__ if error else "none",
+            )
         self._loading = False
         self.refresh_button.setEnabled(True)
+        self._sync_pager()
         if error is not None or (result is not None and result[1].snapshot_at):
             self._snapshot_live_since = None
         if self._pending_refresh is not None:
@@ -1237,6 +1353,7 @@ class GalleryPage(QObject):
             (log.debug if self._refresh_failing else log.warning)("gallery refresh failed reason=%s", detail)
             self._show_refresh_failure(error, first=not self._refresh_failing)
             self._refresh_failing = True
+            self._sync_canvas_loading()
             return
         recovered = self._refresh_failing
         if recovered:
@@ -1277,6 +1394,8 @@ class GalleryPage(QObject):
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
+        self._sync_pager()
+        self._sync_canvas_loading()
         # Refresh may add/remove outputs even when filters and visible cards match.
         self._hidden_query = None
         self._all_filtered_checked = False
@@ -1295,6 +1414,7 @@ class GalleryPage(QObject):
             # in-flight decodes or reset Detail zoom/pan and browsing position.
             # The total can change outside this page without changing its pixels.
             self._update_navigation()
+            QTimer.singleShot(0, self._sync_pager)
             if self.mode == "Detail" and self._selected() is not None:
                 position = (
                     self.offset + next(i for i, item in enumerate(self.items) if item.identity == self.selected_id) + 1
@@ -1324,6 +1444,7 @@ class GalleryPage(QObject):
 
         self.refresh_button.setToolTip(self._page_summary())
         self._restore_scroll_later(anchor if anchor_found else None)
+        QTimer.singleShot(0, self._sync_pager)
         self._schedule_save()
 
     def _end_snapshot_warning_episode(self):
@@ -1391,17 +1512,337 @@ class GalleryPage(QObject):
         if first:
             feedback(self.page).notice("Saved outputs unavailable", message, "warning")
 
+    def _sync_canvas_loading(self) -> None:
+        """Indicate pending reads only when no committed cards are displayed."""
+        if not self._active or self.items:
+            self.canvas_loading.clear()
+        elif self._loading:
+            # The same query may return either live SQLite rows or snapshot fallback.
+            self.canvas_loading.loading()
+        elif self._refresh_failing:
+            self.canvas_loading.failed()
+        else:
+            self.canvas_loading.clear()
+
+    def _visible_range(self) -> tuple[int, int]:
+        """Resolve visible saved-output positions from mounted Qt widgets."""
+        if not self.items:
+            return 0, 0
+        if self.mode == "Detail":
+            try:
+                position = next(i for i, item in enumerate(self.items) if item.identity == self.selected_id)
+            except StopIteration:
+                position = 0
+            result = self.offset + position + 1
+            return result, result
+        if self.mode == "List":
+            start = self.table.rowAt(0)
+            if start < 0:
+                start = 0
+            last = self.table.rowAt(max(0, self.table_viewport.height() - 1))
+            if last < 0:
+                last = len(self.items) - 1
+            return self.offset + start + 1, self.offset + min(last + 1, len(self.items))
+        scroll_top = self.grid_scroll.verticalScrollBar().value()
+        scroll_bottom = scroll_top + self.grid_viewport.height()
+        visible = [
+            self.offset + index + 1
+            for index, item in enumerate(self.items)
+            if (button := self._grid_buttons.get(item.identity)) is not None
+            and button.parentWidget().geometry().bottom() > scroll_top
+            and button.parentWidget().geometry().top() < scroll_bottom
+        ]
+        if not visible:
+            # A queued grid reflow can briefly leave cards at stale positions.
+            first = self.offset + 1
+            return first, min(self.total, first + len(self.items) - 1)
+        return visible[0], visible[-1]
+
+    def _jump_to_page(self, page_number: int) -> None:
+        """Jump within mounted cards or query the requested 100-row batch directly."""
+        if self._loading or self._adjacent_loading or not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
+            return
+        target = (page_number - 1) * PAGE_SIZE
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=page_jump page=%d target_offset=%d mounted_start=%d mounted=%d resident=%s",
+                page_number,
+                target,
+                self.offset,
+                len(self.items),
+                self.offset <= target < self.offset + len(self.items),
+            )
+        if self.items and self.offset <= target < self.offset + len(self.items):
+            index = target - self.offset
+            if self.mode == "Grid":
+                button = self._grid_buttons.get(self.items[index].identity)
+                if button is not None:
+                    self.reflow_timer.stop()
+                    self._layout_cards()
+                    self.cards_layout.activate()
+                    self.grid_scroll.verticalScrollBar().setValue(button.parentWidget().y())
+            elif self.mode == "List":
+                cell = self.table.item(index, 0)
+                if cell is not None:
+                    self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+            else:
+                self.select(self.items[index].identity, open_detail=False)
+            QTimer.singleShot(0, self._sync_pager)
+            return
+        try:
+            query = self._query(offset=target)
+        except ValidationError as exc:
+            self.refresh_button.setToolTip(str(exc))
+            return
+        self._capture_scroll()
+        self._page_scroll_target = "start"
+        self._submit_query(query, anchor=None)
+
+    def _sync_pager(self, *, loading: bool = False) -> None:
+        """Use the viewport's first visible image, not the fetched window offset."""
+        first, last = self._visible_range()
+        self.pager.present(
+            total=self.total,
+            visible_start=first,
+            visible_end=last,
+            loaded=len(self.items),
+            active_page=((first - 1) // PAGE_SIZE + 1) if first else 0,
+            batch_size=PAGE_SIZE,
+            loading=(loading or self._loading) and not self.items or self._adjacent_loading,
+        )
+
     def _page_summary(self) -> str:
         if not self.total:
             return "No committed saved outputs match these filters."
-        first = self.offset + 1
-        last = self.offset + len(self.items)
+        first, last = self._visible_range()
         return (
-            f"Showing {first}–{last} of {self.total}. "
-            "Scroll beyond a Grid/List page edge or use Ctrl+PageUp/PageDown to paginate."
+            f"Showing {first}–{last} of {self.total}; {len(self.items)} loaded. "
+            "Scroll to load adjacent batches, or use the numbered batch chips to jump."
         )
 
+    def _maybe_load_boundary(self, direction: int) -> None:
+        """Prefetch only in the direction the user actually scrolled.
+
+        A page jump starts at the top of its mounted batch, where the old
+        proximity-only condition incorrectly fetched earlier pages even when
+        the user scrolled down.
+        """
+        if direction not in (-1, 1):
+            return
+        if (
+            not self._active
+            or self.mode not in ("Grid", "List")
+            or not self.items
+            or self._loading
+            or self._adjacent_loading
+            or self._suppress_batch_scroll
+            or self._density_anchor is not None
+            or self._pending_refresh is not None
+            or self.filter_timer.isActive()
+        ):
+            return
+        first, last = self._visible_range()
+        threshold = max(6, min(20, len(self.items) // 8))
+        end = self.offset + len(self.items)
+        if direction > 0 and end < self.total and last >= end - threshold:
+            self._load_adjacent(1)
+        elif direction < 0 and self.offset > 0 and first <= self.offset + threshold:
+            self._load_adjacent(-1)
+
+    def _load_adjacent(self, direction: int) -> None:
+        """Read one contiguous batch from the same browsing authority as the window."""
+        offset = self.offset + len(self.items) if direction > 0 else self.offset - PAGE_SIZE
+        if offset < 0 or offset >= self.total or offset == self._adjacent_failed_offset:
+            return
+        try:
+            query = self._query(offset=offset)
+        except ValidationError:
+            return
+        generation = self._query_generation
+        source = self._snapshot_at
+        started = monotonic()
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=adjacent_start direction=%s offset=%d mounted=%d source=%s",
+                "forward" if direction > 0 else "backward",
+                offset,
+                len(self.items),
+                "snapshot" if source else "live",
+            )
+        self._adjacent_loading = True
+        self._sync_pager()
+
+        async def read():
+            if source:
+                _query, page, _choices, _found = await query_snapshot(self.state_dir, query, None)
+                return page
+            return await query_outputs(self.state_dir, query)
+
+        self.runner.submit(
+            read(),
+            lambda page, error: self._adjacent_done(generation, direction, query, source, page, error, started),
+        )
+
+    def _adjacent_done(
+        self, generation: int, direction: int, query: GalleryQuery, source, page, error, started: float | None = None
+    ) -> None:
+        if generation != self._query_generation:
+            return
+        if dev_enabled() and started is not None:
+            log.debug(
+                "gallery_perf phase=adjacent_read elapsed_ms=%.1f returned=%d error=%s",
+                (monotonic() - started) * 1000,
+                len(page.items) if page is not None else 0,
+                type(error).__name__ if error else "none",
+            )
+        self._adjacent_loading = False
+        if self._pending_refresh is not None:
+            pending = self._pending_refresh
+            self._pending_refresh = None
+            self.refresh(reset=pending[0], preserve=pending[1])
+            return
+        try:
+            current_query = self._query(offset=query.offset)
+        except ValidationError:
+            self._sync_pager()
+            return
+        if query != current_query:
+            # A debounced filter/sort edit invalidates this request.
+            self._sync_pager()
+            return
+        if self.mode == "Detail":
+            # A Grid/List prefetch must not evict the selected Detail image after
+            # the user switches views while that worker is still returning.
+            self._sync_pager()
+            return
+        if error is not None:
+            self._adjacent_failed_offset = query.offset
+            log.warning("gallery adjacent batch read failed reason=%s", type(error).__name__)
+            self.refresh_button.setToolTip("The next image batch could not be loaded. Refresh to retry.")
+            self._sync_pager()
+            return
+        if (
+            page is None
+            or page.total != self.total
+            or page.snapshot_at != source
+            or not page.items
+            or (direction > 0 and query.offset != self.offset + len(self.items))
+            or (direction < 0 and query.offset + len(page.items) != self.offset)
+        ):
+            # Never splice records from different snapshots or shifted sorts.
+            self.refresh(preserve=True)
+            return
+        if {item.identity for item in page.items} & {item.identity for item in self.items}:
+            self.refresh(preserve=True)
+            return
+        anchor = self._browsing_anchor()
+        mode = self.mode
+        # Only expose the preceding row automatically after the user has
+        # actually reached the top of the mounted window. An early prefetch
+        # must preserve the current viewport without pulling it backwards.
+        reveal_previous = direction < 0 and (
+            (mode == "Grid" and self.grid_scroll.verticalScrollBar().value() == 0)
+            or (mode == "List" and self.table.verticalScrollBar().value() == 0)
+        )
+        pixel_offset = 0
+        if mode == "Grid" and anchor in self._grid_buttons:
+            pixel_offset = self._grid_buttons[anchor].parentWidget().y() - self.grid_scroll.verticalScrollBar().value()
+        elif mode == "List":
+            row = self.table.rowAt(0)
+            pixel_offset = self.table.rowViewportPosition(row) if row >= 0 else 0
+
+        # Reflow and table reconciliation can emit scrollbar events. Do not
+        # launch another adjacent query before the anchor has been restored.
+        self._suppress_batch_scroll = True
+        render_started = monotonic()
+        if direction > 0:
+            combined = [*self.items, *page.items]
+            if len(combined) > MAX_MOUNTED_IMAGES:
+                combined = combined[PAGE_SIZE:]
+                self.offset += PAGE_SIZE
+        else:
+            combined = [*page.items, *self.items]
+            self.offset = query.offset
+            if len(combined) > MAX_MOUNTED_IMAGES:
+                combined = combined[:MAX_MOUNTED_IMAGES]
+        self.items = combined
+        self._render_page()
+        self._rendered_page = (self.offset, tuple(self.items))
+        self._adjacent_failed_offset = None
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=adjacent_reconcile elapsed_ms=%.1f mounted=%d",
+                (monotonic() - render_started) * 1000,
+                len(self.items),
+            )
+
+        def prepare():
+            # Adding rows to QGridLayout posts geometry updates; setting the
+            # scrollbar before those updates apply can silently clamp to zero.
+            # Finalize the layout in this turn, then restore in the next one.
+            if anchor and self.mode == mode and mode == "Grid":
+                self.reflow_timer.stop()
+                self._layout_cards()
+                self.cards_layout.activate()
+                self.grid_cards.adjustSize()
+            # Moving 300 cards can queue a second Qt geometry pass after
+            # activate(). Restoring immediately reads stale Y coordinates.
+            QTimer.singleShot(20, settle)
+
+        def settle():
+            try:
+                if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
+                    if mode == "Grid":
+                        button = self._grid_buttons.get(anchor)
+                        if button is not None:
+                            bar = self.grid_scroll.verticalScrollBar()
+                            bar.setValue(button.parentWidget().y() - pixel_offset)
+                        if reveal_previous:
+                            # The last card of the preceding batch is directly
+                            # above the old first row (or alongside it if the
+                            # column count crosses the 100-card boundary).
+                            preceding = self._grid_buttons.get(page.items[-1].identity)
+                            if preceding is not None:
+                                preceding_card = preceding.parentWidget()
+                                if preceding_card.y() < bar.value():
+                                    bar.setValue(preceding_card.y())
+                    elif mode == "List":
+                        row = next(i for i, item in enumerate(self.items) if item.identity == anchor)
+                        cell = self.table.item(row, 0)
+                        if cell is not None:
+                            self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                        if reveal_previous:
+                            # One row above, not the first item of the earlier
+                            # 100-record page. Keep the previous anchor mounted.
+                            preceding_row = next(
+                                (i for i, item in enumerate(self.items) if item.identity == page.items[-1].identity),
+                                None,
+                            )
+                            if preceding_row is not None:
+                                preceding_cell = self.table.item(preceding_row, 0)
+                                if preceding_cell is not None:
+                                    self.table.scrollToItem(preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                self._capture_scroll()
+                self._sync_pager()
+                if dev_enabled():
+                    first, last = self._visible_range()
+                    log.debug(
+                        "gallery_perf phase=adjacent_scroll direction=%s reveal_previous=%s "
+                        "first=%d last=%d mounted=%d",
+                        "forward" if direction > 0 else "backward",
+                        reveal_previous,
+                        first,
+                        last,
+                        len(self.items),
+                    )
+            finally:
+                self._suppress_batch_scroll = False
+
+        QTimer.singleShot(0, prepare)
+        self._schedule_save()
+
     def _render_page(self) -> None:
+        started = monotonic()
         previous = {item.identity: item for item in self._rendered_page[1]} if self._rendered_page else {}
         identities = {item.identity for item in self.items}
         image_changes = [
@@ -1452,13 +1893,28 @@ class GalleryPage(QObject):
                 self._grid_buttons = {item.identity: self._grid_buttons[item.identity] for item in self.items}
             else:
                 self._set_grid_message("No saved outputs match these filters.")
-            self._density_changed()
+            # New cards always need sizing, including the initial read: the
+            # slider may already have been applied before any cards existed.
+            # Retained cards must not be resized again during reconciliation.
+            added = [item.identity for item in self.items if item.identity not in previous]
+            self._size_new_entries(added)
+            if added or len(previous) != len(self.items):
+                self.reflow_timer.start(0)
         finally:
             self._syncing_selection = False
             for widget, enabled in zip(containers, updates, strict=True):
                 widget.setUpdatesEnabled(enabled)
         self._sync_selection_ui()
         self._queue_thumbnails(image_changes)
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=render_page elapsed_ms=%.1f mounted=%d added=%d removed=%d decoded_enqueued=%d",
+                (monotonic() - started) * 1000,
+                len(self.items),
+                sum(item.identity not in previous for item in self.items),
+                len(set(previous) - identities),
+                len(image_changes),
+            )
 
     @staticmethod
     def _image_key(item: GalleryItem) -> tuple[str, int | None, str]:
@@ -1584,6 +2040,8 @@ class GalleryPage(QObject):
         # A first query can fail before the Designer fixtures are removed.
         # Its message is owned by this same layout and was just disposed too.
         self._grid_empty = None
+        self._grid_layout_keys = ()
+        self._grid_layout_columns = 0
 
     def _reconcile_filmstrip(self) -> None:
         layout = self._widget("galleryFilmstripScrollContents").layout()
@@ -1645,7 +2103,7 @@ class GalleryPage(QObject):
             if self._thumb_versions.get(identity) != generation:
                 continue
             self._thumb_active += 1
-
+            started = monotonic()
             selected = next(x for x in self.items if x.identity == identity)
 
             async def work(filename=path, item=selected):
@@ -1653,10 +2111,19 @@ class GalleryPage(QObject):
 
             self.runner.submit(
                 work(),
-                lambda result, error, gen=generation, ident=identity: self._thumbnail_done(gen, ident, result, error),
+                lambda result, error, gen=generation, ident=identity, stamp=started: self._thumbnail_done(
+                    gen, ident, result, error, stamp
+                ),
             )
 
-    def _thumbnail_done(self, generation: int, identity: str, result, error) -> None:
+    def _thumbnail_done(self, generation: int, identity: str, result, error, started: float | None = None) -> None:
+        if dev_enabled() and started is not None:
+            log.debug(
+                "gallery_perf phase=thumbnail_end_to_end elapsed_ms=%.1f success=%s active=%d",
+                (monotonic() - started) * 1000,
+                bool(error is None and result and result[0] is not None),
+                self._thumb_active,
+            )
         self._thumb_active = max(0, self._thumb_active - 1)
         if generation == self._thumb_versions.get(identity) and error is None and result:
             image, issue = result
@@ -1758,6 +2225,7 @@ class GalleryPage(QObject):
                 self._film_buttons[index].setChecked(record.identity == identity)
         self._present_item(item)
         self._update_navigation()
+        self._sync_pager()
         self._schedule_save()
 
     def _update_navigation(self) -> None:
@@ -2019,25 +2487,20 @@ class GalleryPage(QObject):
             return
         if delta > 0 and self.offset + len(self.items) < self.total:
             self._pending_page_selection = "first"
-            self._change_page(1)
+            self._jump_to_page((self.offset + len(self.items)) // PAGE_SIZE + 1)
         elif delta < 0 and self.offset > 0:
             self._pending_page_selection = "last"
-            self._change_page(-1)
+            self._jump_to_page((self.offset - 1) // PAGE_SIZE + 1)
 
     def _change_page(self, delta: int) -> bool:
-        if self._loading:
+        if self._loading or self._adjacent_loading or not self.total:
             return False
-        new_offset = self.offset + delta * PAGE_SIZE
-        if new_offset < 0 or (delta > 0 and new_offset >= self.total):
+        first, _last = self._visible_range()
+        current = (first - 1) // PAGE_SIZE + 1 if first else self.offset // PAGE_SIZE + 1
+        target = current + delta
+        if target < 1 or target > math.ceil(self.total / PAGE_SIZE):
             return False
-        try:
-            query = self._query(offset=max(0, new_offset))
-        except ValidationError as exc:
-            self.refresh_button.setToolTip(str(exc))
-            return False
-        self._capture_scroll()
-        self._page_scroll_target = "start" if delta > 0 else "end"
-        self._submit_query(query, anchor=None)
+        self._jump_to_page(target)
         return True
 
     def show_view(self, mode: str, *, persist: bool = True) -> None:
@@ -2062,6 +2525,8 @@ class GalleryPage(QObject):
             button = self._grid_buttons.get(self._origin_identity)
             if button is not None:
                 QTimer.singleShot(0, lambda: self._focus_grid_origin(button))
+        self.canvas_loading.ensure_front()
+        QTimer.singleShot(0, self._sync_pager)
         if persist:
             self._schedule_save()
 
@@ -2077,6 +2542,24 @@ class GalleryPage(QObject):
 
     def _density_changed(self, *_args) -> None:
         scale_percent = self.slider.value()
+        self._widget("galleryThumbnailSizeValue", QLabel).setText(f"{scale_percent}%")
+        if scale_percent == self._applied_thumbnail_percent:
+            # View switches do not imply a size change or a second full repaint.
+            return
+        # Capture one stable identity before the first geometry mutation. A
+        # scrollbar pixel value points at a different image after row/column
+        # counts change; new slider events reuse this anchor until settled.
+        if self._density_anchor is None and self.items and self._rendered_page is not None:
+            if self.mode == "Grid":
+                identity = self._browsing_anchor()
+                if identity in self._grid_buttons:
+                    card = self._grid_buttons[identity].parentWidget()
+                    self._density_anchor = ("Grid", identity, card.y() - self.grid_scroll.verticalScrollBar().value())
+            elif self.mode == "List":
+                row = self.table.rowAt(0)
+                if 0 <= row < len(self.items):
+                    self._density_anchor = ("List", self.items[row].identity, self.table.rowViewportPosition(row))
+        self._applied_thumbnail_percent = scale_percent
         density = self._thumbnail_pixels(scale_percent)
 
         # CoverPainter owns the visible pixels. One shared transparent icon
@@ -2120,19 +2603,111 @@ class GalleryPage(QObject):
             button.setIconSize(film_placeholder.size())
 
         self.reflow_timer.start(0)
+        if self._density_anchor is not None:
+            self.density_anchor_timer.start(0)
         self._schedule_save()
+
+    def _restore_density_anchor(self) -> None:
+        """Keep the same saved-output identity visible across thumbnail zoom."""
+        anchor = self._density_anchor
+        self._density_anchor = None
+        if anchor is None:
+            return
+        mode, identity, within_viewport = anchor
+        if mode != self.mode:
+            self._sync_pager()
+            return
+        self._suppress_batch_scroll = True
+        try:
+            if mode == "Grid":
+                button = self._grid_buttons.get(identity)
+                if button is not None:
+                    self.reflow_timer.stop()
+                    self._layout_cards()
+                    self.cards_layout.activate()
+                    self.grid_cards.adjustSize()
+                    # Retain the first visible card and its partial-row offset.
+                    bar = self.grid_scroll.verticalScrollBar()
+                    bar.setValue(button.parentWidget().y() - within_viewport)
+            elif mode == "List":
+                row = next((i for i, item in enumerate(self.items) if item.identity == identity), -1)
+                if row >= 0:
+                    cell = self.table.item(row, 0)
+                    if cell is not None:
+                        self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                        if self.table.verticalScrollMode() == QAbstractItemView.ScrollMode.ScrollPerPixel:
+                            bar = self.table.verticalScrollBar()
+                            bar.setValue(bar.value() + self.table.rowViewportPosition(row) - within_viewport)
+            self._capture_scroll()
+            self._sync_pager()
+            if dev_enabled():
+                first, last = self._visible_range()
+                log.debug(
+                    "gallery_perf phase=thumbnail_resize mode=%s scale=%d first=%d last=%d mounted=%d",
+                    mode,
+                    self.slider.value(),
+                    first,
+                    last,
+                    len(self.items),
+                )
+        finally:
+            self._suppress_batch_scroll = False
+
+    def _size_new_entries(self, identities: list[str]) -> None:
+        """Size newly mounted cards without repainting unchanged previews."""
+        if not identities:
+            return
+        density = self._thumbnail_pixels(self.slider.value())
+        placeholder = QPixmap(density, density)
+        placeholder.fill(Qt.GlobalColor.transparent)
+        grid_icon = QIcon(placeholder)
+        film_width, film_height = density + 8, round((density + 8) * 0.63)
+        film_placeholder = QPixmap(max(1, film_width - 8), max(1, film_height - 8))
+        film_placeholder.fill(Qt.GlobalColor.transparent)
+        film_icon = QIcon(film_placeholder)
+        for identity in identities:
+            button = self._grid_buttons[identity]
+            card = button.parentWidget()
+            card.setFixedWidth(density + 16)
+            button.setFixedSize(density + 16, density + 16)
+            button.setIcon(grid_icon)
+            button.setIconSize(placeholder.size())
+            film, _painter = self._film_entries[identity]
+            film.setFixedSize(film_width, film_height)
+            film.setIcon(film_icon)
+            film.setIconSize(film_placeholder.size())
 
     def _layout_cards(self) -> None:
         if not self._grid_buttons:
             return
+        started = monotonic()
         width = self._thumbnail_pixels(self.slider.value()) + 16
         columns = max(1, (self.grid_viewport.width() + 10) // (width + 10))
+        keys = tuple(self._grid_buttons)
+        if keys == self._grid_layout_keys and columns == self._grid_layout_columns:
+            return
         cards = [button.parentWidget() for button in self._grid_buttons.values()]
-        for card in cards:
-            self.cards_layout.removeWidget(card)
+        # An append normally adds only the new cards. Retained cards already
+        # occupy their correct cells and must not be torn down/reinserted.
         for index, card in enumerate(cards):
-            self.cards_layout.addWidget(card, index // columns, index % columns, Qt.AlignmentFlag.AlignTop)
+            position = self.cards_layout.indexOf(card)
+            row, col = divmod(index, columns)
+            if position >= 0:
+                old_row, old_col, _row_span, _col_span = self.cards_layout.getItemPosition(position)
+                if (old_row, old_col) == (row, col):
+                    continue
+                self.cards_layout.removeWidget(card)
+            self.cards_layout.addWidget(card, row, col, Qt.AlignmentFlag.AlignTop)
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self._grid_layout_keys = keys
+        self._grid_layout_columns = columns
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=grid_layout elapsed_ms=%.1f mounted=%d columns=%d",
+                (monotonic() - started) * 1000,
+                len(keys),
+                columns,
+            )
 
     def eventFilter(self, watched, event) -> bool:
         kind = event.type()
@@ -2150,20 +2725,64 @@ class GalleryPage(QObject):
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
             self.reflow_timer.start(0)
         if kind == QEvent.Type.Wheel and watched in (self.grid_viewport, self.table_viewport):
-            bar = (
-                self.grid_scroll.verticalScrollBar()
-                if watched is self.grid_viewport
-                else self.table.verticalScrollBar()
-            )
-            delta = event.angleDelta().y()
-            if delta < 0 and bar.value() >= bar.maximum() and self._change_page(1):
-                return True
-            if delta > 0 and bar.value() <= bar.minimum() and self._change_page(-1):
-                return True
+            vertical_delta = event.angleDelta().y() or event.pixelDelta().y()
+            if vertical_delta:
+                self._request_boundary_prefetch(1 if vertical_delta < 0 else -1, "wheel")
         return False
+
+    def _request_boundary_prefetch(self, direction: int, source: str) -> None:
+        if direction not in (-1, 1):
+            return
+        if dev_enabled():
+            log.debug(
+                "gallery_perf phase=scroll_intent direction=%s source=%s offset=%d mounted=%d",
+                "forward" if direction > 0 else "backward",
+                source,
+                self.offset,
+                len(self.items),
+            )
+        QTimer.singleShot(0, lambda requested=direction: self._maybe_load_boundary(requested))
+
+    def _scrollbar_action(self, mode: str, action: int) -> None:
+        if mode != self.mode.casefold():
+            return
+        # actionTriggered(int) emits a plain integer under Qt; compare the
+        # explicit enum values rather than relying on Enum/int equality.
+        action_value = action.value if isinstance(action, QAbstractSlider.SliderAction) else action
+        # SliderMove is handled by sliderMoved, which yields drag direction.
+        if action_value in (
+            QAbstractSlider.SliderAction.SliderSingleStepAdd.value,
+            QAbstractSlider.SliderAction.SliderPageStepAdd.value,
+            QAbstractSlider.SliderAction.SliderToMaximum.value,
+        ):
+            self._request_boundary_prefetch(1, "scrollbar")
+        elif action_value in (
+            QAbstractSlider.SliderAction.SliderSingleStepSub.value,
+            QAbstractSlider.SliderAction.SliderPageStepSub.value,
+            QAbstractSlider.SliderAction.SliderToMinimum.value,
+        ):
+            self._request_boundary_prefetch(-1, "scrollbar")
+
+    def _scrollbar_drag(self, mode: str, position: int) -> None:
+        if mode != self.mode.casefold():
+            return
+        bar = self.grid_scroll.verticalScrollBar() if mode == "grid" else self.table.verticalScrollBar()
+        previous = self._drag_scroll_positions.get(mode, bar.value())
+        self._drag_scroll_positions[mode] = position
+        if position != previous:
+            self._request_boundary_prefetch(1 if position > previous else -1, "drag")
 
     def _scroll_changed(self, name: str, value: int) -> None:
         self._scroll[name] = max(0, value)
+        if (
+            name in ("grid", "list")
+            and name == self.mode.casefold()
+            and self._density_anchor is None
+            and not self._suppress_batch_scroll
+        ):
+            # Intermediate Qt geometry changes must not briefly select a
+            # different page while the viewport anchor is being restored.
+            self._sync_pager()
         self._schedule_save()
 
     def _capture_scroll(self) -> None:

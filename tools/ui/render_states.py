@@ -24,6 +24,10 @@ from support.network_guard import install  # noqa: E402
 
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+if os.environ["QT_QPA_PLATFORM"] == "offscreen":
+    # Qt 6.12 defaults to an 800x800 virtual screen. Fix the screen geometry
+    # before QApplication starts so fullscreen renders match normal 1600x1000.
+    os.environ["QT_QPA_PLATFORM"] = f"offscreen:configfile={ROOT / 'tools/ui/offscreen-screen.json'}"
 if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
@@ -614,7 +618,10 @@ def render_active_queue_states(shell, out):
 
     def snap(name):
         QTest.qWait(100)
-        save(form, out, name)
+        # Keep this feature's review images together in the Actions archive.
+        target_dir = out / "images" / "pagination" if "-pager-" in name else out
+        target_dir.mkdir(parents=True, exist_ok=True)
+        save(form, target_dir, name)
 
     def hold_worker(coroutine, callback):
         coroutine.close()
@@ -779,7 +786,29 @@ def render_gallery_composition_states(shell, state, out):
 
     def snap(name):
         QTest.qWait(100)
-        save(form, out, name)
+        if "-pager-" in name:
+            bar = gallery._widget("galleryPagerBar")
+            for number, button in gallery.pager.buttons.items():
+                origin = button.mapTo(bar, QPoint(0, 0))
+                if not button.isVisibleTo(bar) or not (
+                    8 <= origin.x()
+                    and origin.x() + button.width() <= bar.width() - 8
+                    and 0 <= origin.y()
+                    and origin.y() + button.height() <= bar.height()
+                ):
+                    raise AssertionError(
+                        f"Pager chip {number} clipped in {name}: "
+                        f"x={origin.x()} width={button.width()} bar_width={bar.width()}"
+                    )
+        if name.startswith("images-") and name.endswith("-fullscreen"):
+            actual = form.grab().size()
+            if actual != QSize(1600, 1000):
+                raise AssertionError(f"{name}: expected 1600x1000, got {actual.width()}x{actual.height()}")
+        # Store the approved pager review states together in one artifact folder.
+        # Other Images screenshots keep their existing paths.
+        target_dir = out / "image-navigation" if "-pager-" in name else out
+        target_dir.mkdir(parents=True, exist_ok=True)
+        save(form, target_dir, name)
 
     def hold_worker(coroutine, callback):
         coroutine.close()
@@ -815,6 +844,573 @@ def render_gallery_composition_states(shell, state, out):
         for key in tuple(shell.progress_strip.rows):
             shell.progress_strip.finish(key)
         present(item)
+        gallery.show_view("Grid")
+        gallery._unselect_all()
+        # The pager's static/fullscreen states are captured before live lazy loading is wired.
+        # Synthetic identities and solid-color fixture pixels never call a provider.
+        pager_records = [
+            replace(item, identity=f"offline-gallery:{index}", attempt_id=f"offline-attempt:{index}")
+            for index in range(101, 125)
+        ]
+        gallery.items, gallery.total, gallery.offset = pager_records, 342, 100
+        gallery._render_page()
+        gallery._rendered_page = (100, tuple(pager_records))
+        gallery.pager.present(total=342, visible_start=101, visible_end=124, loaded=200, active_page=2)
+        assert gallery.pager.buttons[2].isChecked()
+        assert gallery._widget("galleryPagerBar").isVisible()
+        snap("images-65-pager-grid-normal")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            assert gallery._widget("galleryPagerBar").isVisible()
+            snap("images-66-pager-grid-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+        gallery.show_view("List")
+        snap("images-67-pager-list-normal")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            assert gallery._widget("galleryPagerBar").isVisible()
+            snap("images-68-pager-list-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+        gallery.select(pager_records[0].identity)
+        gallery.show_view("Detail")
+        snap("images-69-pager-detail-normal")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            assert gallery._widget("galleryPagerBar").isVisible()
+            snap("images-70-pager-detail-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+        gallery.pager.present(total=342, visible_start=101, visible_end=124, loaded=200, active_page=2, loading=True)
+        snap("images-71-pager-loading")
+        # Empty-state screenshot must contain an actually empty gallery, not
+        # an empty pager displayed over the previously selected Detail image.
+        gallery.items, gallery.total, gallery.offset = [], 0, 0
+        gallery.selected_id = None
+        gallery._render_page()
+        gallery._rendered_page = (0, ())
+        gallery._clear_detail()
+        gallery.show_view("Grid")
+        gallery.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
+        assert gallery._grid_empty is not None
+        snap("images-72-pager-empty")
+
+        # One centered presentation is shared by initial live reads, snapshot
+        # fallback and page jumps. No provider calls; these are GUI states.
+        gallery.canvas_loading.loading(immediate=True)
+        QTest.qWait(110)
+        assert gallery.canvas_loading.ring.timer.isActive()
+        assert gallery.canvas_loading.ring.angle != 0
+        assert gallery.canvas_loading.form.isVisible()
+        snap("images-84-pager-initial-database-loading")
+
+        gallery.canvas_loading.loading(immediate=True)
+        snap("images-85-pager-snapshot-read-loading")
+
+        gallery.total, gallery.offset = 342, 300
+        gallery.pager.present(total=342, visible_start=0, visible_end=0, loaded=0, active_page=4)
+        gallery.canvas_loading.loading(immediate=True, text="Loading page 4…")
+        assert gallery.canvas_loading.status.text() == "Loading page 4…"
+        snap("images-86-pager-direct-jump-loading")
+
+        gallery.canvas_loading.failed()
+        assert not gallery.canvas_loading.ring.timer.isActive()
+        assert gallery.canvas_loading.retry.isVisible()
+        snap("images-87-pager-empty-load-failed")
+        with patch.object(gallery, "refresh") as retry:
+            gallery.canvas_loading.retry.click()
+            retry.assert_called_once_with(preserve=True)
+        gallery.canvas_loading.clear()
+        assert not gallery.canvas_loading.form.isVisible()
+        assert not gallery.canvas_loading.ring.timer.isActive()
+        gallery.total, gallery.offset = 0, 0
+        gallery.pager.present(total=0, visible_start=0, visible_end=0, loaded=0, active_page=0)
+
+        # Multi-batch UX fixtures deliberately build distinct numbered records:
+        # batch 1 (1-100), append batch 2 (101-200), then jump directly to the
+        # short final batch (301-342). These are *offline projections*, not a
+        # claim that production lazy-load orchestration is implemented yet.
+        def multi_item(index):
+            return replace(
+                item,
+                identity=f"offline-multipage:{index:04d}",
+                attempt_id=f"offline-multipage-attempt:{index:04d}",
+                path=str(root / f"image-{index:04d}.png"),
+                metadata_path=str(root / f"metadata-{index:04d}.json"),
+                prompt=f"Offline page fixture image {index:04d}; no generation.",
+            )
+
+        def paint_multi_thumbnail(record, index):
+            # Distinct colored, numbered preview pixels make it possible to
+            # inspect the actual viewport at a page boundary in the artifact.
+            preview = QImage(240, 160, QImage.Format.Format_RGB32)
+            palette = ("#526a83", "#64715d", "#7b6655", "#67627b", "#577879")
+            preview.fill(QColor(palette[(index // 8) % len(palette)]))
+            painter = QPainter(preview)
+            painter.setPen(QColor("#f4f4f4"))
+            painter.drawText(preview.rect(), Qt.AlignmentFlag.AlignCenter, f"IMAGE {index:04d}")
+            painter.end()
+            gallery._thumbnail_done(gallery._thumb_versions[record.identity], record.identity, (preview, ""), None)
+
+        def multi_window(first, last, *, total=342, loaded=None, first_visible=None, last_visible=None):
+            records = [multi_item(i) for i in range(first, last + 1)]
+            gallery.items, gallery.total, gallery.offset = records, total, first - 1
+            gallery._render_page()
+            gallery._rendered_page = (gallery.offset, tuple(records))
+            for index, record in zip(range(first, last + 1), records, strict=True):
+                paint_multi_thumbnail(record, index)
+            QTest.qWait(60)  # settle deferred Grid reflow before taking the screenshot
+            shown_start = first if first_visible is None else first_visible
+            shown_end = min(last, shown_start + 23) if last_visible is None else last_visible
+            gallery.pager.present(
+                total=total,
+                visible_start=shown_start,
+                visible_end=shown_end,
+                loaded=len(records) if loaded is None else loaded,
+                active_page=(shown_start - 1) // gallery_ui.PAGE_SIZE + 1,
+            )
+            assert len(gallery.items) == last - first + 1
+            assert gallery.table.rowCount() == len(gallery.items)
+            assert len(gallery._grid_buttons) == len(gallery.items)
+            return records
+
+        def grid_visible(*, loaded, loading=False):
+            """Present the actual visible Grid card range, not a hardcoded fixture range."""
+            QTest.qWait(60)
+            viewport = gallery.grid_viewport
+            visible = []
+            for position, record in enumerate(gallery.items, gallery.offset + 1):
+                card = gallery._grid_buttons[record.identity].parentWidget()
+                y = card.mapTo(viewport, QPoint(0, 0)).y()
+                if y < viewport.height() and y + card.height() > 0:
+                    visible.append(position)
+            assert visible, "Grid viewport has no visible synthetic cards"
+            first, last = visible[0], visible[-1]
+            gallery.pager.present(
+                total=gallery.total,
+                visible_start=first,
+                visible_end=last,
+                loaded=loaded,
+                active_page=(first - 1) // gallery_ui.PAGE_SIZE + 1,
+                loading=loading,
+            )
+            return first, last, set(visible)
+
+        def list_visible(*, loaded):
+            """Read displayed List rows from the real table viewport."""
+            QTest.qWait(60)
+            top = gallery.table.rowAt(0)
+            assert top >= 0, "No visible List row"
+            bottom = gallery.table.rowAt(gallery.table.viewport().height() - 1)
+            if bottom < 0:
+                bottom = gallery.table.rowCount() - 1
+            first, last = gallery.offset + top + 1, gallery.offset + bottom + 1
+            gallery.pager.present(
+                total=gallery.total,
+                visible_start=first,
+                visible_end=last,
+                loaded=loaded,
+                active_page=(first - 1) // gallery_ui.PAGE_SIZE + 1,
+            )
+            return first, last
+
+        gallery.show_view("Grid")
+        first_batch = multi_window(1, 100, first_visible=1, last_visible=24)
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        start, end, _ = grid_visible(loaded=100)
+        assert start == 1 and end <= 100
+        assert gallery.pager.buttons[1].isChecked()
+        snap("images-73-pager-first-batch-grid")
+
+        # Move the real Qt viewport near the end of the first batch.
+        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[first_batch[-1].identity])
+        QTest.qWait(50)
+        assert gallery.grid_scroll.verticalScrollBar().maximum() > 0
+        at_edge, _end, positions = grid_visible(loaded=100, loading=True)
+        assert at_edge <= 100 and 100 in positions
+        snap("images-74-pager-prefetch-boundary-grid")
+
+        # The second batch is appended to the *same mounted listing* and the
+        # first 100 stable widgets retain identity. Show rows around 100/101.
+        saved_first_button = gallery._grid_buttons[first_batch[0].identity]
+        second_batch = multi_window(1, 200, loaded=200, first_visible=93, last_visible=116)
+        assert gallery._grid_buttons[first_batch[0].identity] is saved_first_button
+        assert second_batch[99].identity in gallery._grid_buttons
+        assert second_batch[100].identity in gallery._grid_buttons
+        # QGridLayout reflows asynchronously after cards are appended. Force
+        # the pending layout to settle before using QScrollArea's widget-based
+        # navigation (a stale card.y() is not a reliable scroll coordinate).
+        gallery.reflow_timer.stop()
+        gallery._layout_cards()
+        gallery.cards_layout.activate()
+        QTest.qWait(100)
+
+        def show_grid_image(index):
+            button = gallery._grid_buttons[second_batch[index - 1].identity]
+            gallery.grid_scroll.ensureWidgetVisible(button, 0, 0)
+            first, last, visible = grid_visible(loaded=200)
+            assert index in visible, (
+                f"Image {index} is not visible after ensureWidgetVisible: "
+                f"visible={first}-{last}, scroll={gallery.grid_scroll.verticalScrollBar().value()}, "
+                f"maximum={gallery.grid_scroll.verticalScrollBar().maximum()}, "
+                f"button_y={button.parentWidget().y()}, "
+                f"viewport_height={gallery.grid_viewport.height()}"
+            )
+            return first, last, visible
+
+        _first, _last, visible = show_grid_image(101)
+        assert second_batch[99].identity in gallery._grid_buttons
+        assert 101 in visible
+        snap("images-75-pager-two-batches-grid")
+
+        first, _last, visible = show_grid_image(159)
+        assert first >= 101
+        assert gallery.pager.buttons[2].isChecked()
+        snap("images-76-pager-scrolled-second-batch-grid")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            snap("images-77-pager-two-batches-grid-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+
+        gallery.show_view("List")
+        # The List really contains 200 distinct table rows and can scroll into batch 2.
+        gallery.table.scrollToItem(gallery.table.item(125, 2))
+        start, _end = list_visible(loaded=200)
+        assert start >= 101 and gallery.pager.buttons[2].isChecked()
+        assert gallery.table.item(99, 2).text() == "image-0100.png"
+        assert gallery.table.item(100, 2).text() == "image-0101.png"
+        snap("images-78-pager-two-batches-list")
+        gallery._widget("galleryFocusButton", QPushButton).click()
+        try:
+            snap("images-79-pager-two-batches-list-fullscreen")
+        finally:
+            gallery._widget("galleryFocusButton", QPushButton).click()
+
+        # Changing size must keep the same saved-output identity on screen,
+        # even when Grid changes column count or List changes row height. No
+        # programmatic geometry update may initiate a neighboring batch read.
+        gallery.show_view("Grid")
+        gallery.reflow_timer.stop()
+        gallery._layout_cards()
+        gallery.cards_layout.activate()
+        gallery.grid_scroll.ensureWidgetVisible(gallery._grid_buttons[second_batch[149].identity], 0, 0)
+        QTest.qWait(60)
+        grid_anchor = gallery._browsing_anchor()
+        assert grid_anchor in {item.identity for item in second_batch[100:]}
+        initial_ids = [item.identity for item in gallery.items]
+        with patch.object(gallery, "_load_adjacent") as fetch:
+            gallery.slider.setValue(190)
+            QTest.qWait(130)
+            assert not gallery.density_anchor_timer.isActive()
+            assert [item.identity for item in gallery.items] == initial_ids
+            card = gallery._grid_buttons[grid_anchor].parentWidget()
+            y = card.mapTo(gallery.grid_viewport, QPoint(0, 0)).y()
+            assert y < gallery.grid_viewport.height() and y + card.height() > 0
+            gallery._sync_pager()
+            assert gallery.pager.buttons[2].isChecked()
+            snap("images-89-pager-resized-grid")
+            gallery.slider.setValue(65)
+            QTest.qWait(130)
+            card = gallery._grid_buttons[grid_anchor].parentWidget()
+            y = card.mapTo(gallery.grid_viewport, QPoint(0, 0)).y()
+            assert y < gallery.grid_viewport.height() and y + card.height() > 0
+            assert gallery.pager.buttons[2].isChecked()
+            fetch.assert_not_called()
+
+        gallery.show_view("List")
+        row_for_anchor = 145
+        gallery.table.scrollToItem(
+            gallery.table.item(row_for_anchor, 0),
+            gallery_ui.QAbstractItemView.ScrollHint.PositionAtTop,
+        )
+        QTest.qWait(60)
+        top_row = gallery.table.rowAt(0)
+        assert top_row >= 100
+        list_anchor = gallery.items[top_row].identity
+        with patch.object(gallery, "_load_adjacent") as fetch:
+            gallery.slider.setValue(200)
+            QTest.qWait(130)
+            actual_row = gallery.table.rowAt(0)
+            assert actual_row >= 0
+            assert gallery.items[actual_row].identity == list_anchor
+            assert gallery.pager.buttons[2].isChecked()
+            snap("images-90-pager-resized-list")
+            gallery.slider.setValue(100)
+            QTest.qWait(130)
+            assert gallery.items[gallery.table.rowAt(0)].identity == list_anchor
+            fetch.assert_not_called()
+
+        # A five-second background refresh must leave populated cards and the
+        # pager's active chip visually unchanged. Reconciliation of identical
+        # records must not trigger another full density repaint.
+        gallery._adjacent_loading = False
+        gallery._loading = True
+        gallery._sync_pager(loading=True)
+        assert gallery.pager.status.text() == "200 buffered"
+        assert gallery.pager.buttons[2].isEnabled()
+        with patch.object(gallery, "_density_changed") as repaint_all:
+            gallery._render_page()
+            repaint_all.assert_not_called()
+        snap("images-88-pager-auto-refresh-no-flash")
+        gallery._loading = False
+        gallery._sync_pager()
+
+        # A programmatic position restore must update the pager but never
+        # schedule more gallery reads. Qt valueChanged fires in this case,
+        # whereas a user Wheel or scrollbar action is a separate input.
+        with patch.object(gallery, "_maybe_load_boundary") as prefetch:
+            bar = gallery.table.verticalScrollBar()
+            if bar.maximum() > 0:
+                bar.setValue(0 if bar.value() else min(3, bar.maximum()))
+                QTest.qWait(30)
+                prefetch.assert_not_called()
+            gallery._scroll_changed("list", bar.value())
+            QTest.qWait(30)
+            prefetch.assert_not_called()
+
+        # Exercise the real third contiguous 100-image batch and the bounded
+        # forward eviction: 1–300 buffered -> fetch 301–400 -> keep 101–400.
+        # No provider or SQLite access is involved in this UI-only fixture.
+        gallery.show_view("Grid")
+        three_batches = multi_window(1, 300, total=1540)
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == 300
+        gallery.reflow_timer.stop()
+        gallery._layout_cards()
+        gallery.cards_layout.activate()
+        gallery.grid_cards.adjustSize()
+        QTest.qWait(80)
+        target_card = gallery._grid_buttons[three_batches[249].identity].parentWidget()
+        gallery.grid_scroll.verticalScrollBar().setValue(target_card.y())
+        first, last, visible = grid_visible(loaded=300)
+        preserved_identity = gallery._browsing_anchor()
+        intended_first = first
+        intended_scroll = gallery.grid_scroll.verticalScrollBar().value()
+        assert 250 in visible, (
+            f"300-buffer Grid target not visible: {first}–{last}, "
+            f"scroll={gallery.grid_scroll.verticalScrollBar().value()}, card_y={target_card.y()}"
+        )
+        assert gallery.pager.status.text() == "300 buffered"
+        snap("images-93-pager-three-batches-buffered-grid")
+
+        gallery._adjacent_loading = True
+        gallery._pending_refresh = None
+        gallery._adjacent_failed_offset = None
+        gallery._adjacent_done(
+            gallery._query_generation,
+            1,
+            gallery._query(offset=300),
+            gallery._snapshot_at,
+            GalleryResults(
+                items=tuple(multi_item(i) for i in range(301, 401)),
+                total=1540,
+                offset=300,
+                limit=gallery_ui.PAGE_SIZE,
+            ),
+            None,
+        )
+        QTest.qWait(160)
+        assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES
+        assert gallery.offset == 100
+        assert gallery.items[0].identity == multi_item(101).identity
+        assert gallery.items[-1].identity == multi_item(400).identity
+        assert multi_item(100).identity not in gallery._grid_buttons
+        assert gallery.pager.status.text() == "300 buffered"
+        first, last, visible = grid_visible(loaded=300)
+        assert 250 in visible, (
+            f"Eviction lost viewport around image 250: {first}–{last}; "
+            f"before={intended_first}, target_scroll={intended_scroll}, "
+            f"preserved_anchor={preserved_identity}, actual_anchor={gallery._browsing_anchor()}, "
+            f"after_scroll={gallery.grid_scroll.verticalScrollBar().value()}, "
+            f"anchor_y={gallery._grid_buttons[preserved_identity].parentWidget().y() if preserved_identity in gallery._grid_buttons else -1}, "
+            f"viewport_h={gallery.grid_viewport.height()}"
+        )
+        snap("images-94-pager-eviction-keeps-300-grid")
+
+        # Exercise the actual numbered Qt button: an offline-only callback
+        # supplies the target batch without reading a DB or paging through 3/4.
+        def fixture_jump(page_number):
+            first = (page_number - 1) * gallery_ui.PAGE_SIZE + 1
+            last = min(342, first + gallery_ui.PAGE_SIZE - 1)
+            multi_window(first, last, first_visible=first, last_visible=min(last, first + 17))
+            # Direct jumps should start at the selected batch, not inherit the
+            # scroll offset of the previous 200-image listing.
+            gallery.table.verticalScrollBar().setValue(0)
+            gallery.grid_scroll.verticalScrollBar().setValue(0)
+            list_visible(loaded=last - first + 1)
+
+        gallery.pager.on_jump = fixture_jump
+        gallery.pager.buttons[4].click()
+        assert gallery.offset == 300 and gallery.total == 342 and len(gallery.items) == 42
+        assert gallery.pager.buttons[4].isChecked()
+        assert gallery.pager.range.text().startswith("301–")
+        snap("images-80-pager-direct-jump-last-batch-list")
+        gallery.show_view("Grid")
+        first, _last, _visible = grid_visible(loaded=42)
+        assert first == 301 and gallery.pager.buttons[4].isChecked()
+        snap("images-81-pager-direct-jump-last-batch-grid")
+
+        # A larger library forces ellipses and tests that 7+ chip controls
+        # still remain inside the pager at a reduced window width.
+        multi_window(1201, 1300, total=2000, first_visible=1201, last_visible=1224)
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        first, _last, _visible = grid_visible(loaded=100)
+        assert first == 1201 and gallery.pager.buttons[13].isChecked()
+        assert len(gallery.pager._gaps) == 2
+        # Regression: after jumping to a loaded batch, the viewport is at
+        # its beginning. A downward user scroll must NOT fetch older images
+        # merely because the backward edge happens to be close.
+        assert gallery.mode == "Grid"
+        assert not gallery._loading and not gallery._adjacent_loading
+        with (
+            patch.object(gallery, "_load_adjacent") as fetch,
+            patch.object(gallery, "_visible_range", return_value=(1201, 1210)),
+        ):
+            gallery._maybe_load_boundary(1)
+            fetch.assert_not_called()
+            gallery._maybe_load_boundary(-1)
+            fetch.assert_called_once_with(-1)
+        with (
+            patch.object(gallery, "_load_adjacent") as fetch,
+            patch.object(gallery, "_visible_range", return_value=(1291, 1300)),
+        ):
+            gallery._maybe_load_boundary(-1)
+            fetch.assert_not_called()
+            gallery._maybe_load_boundary(1)
+            fetch.assert_called_once_with(1)
+        # Input handlers must retain scroll direction when queuing a
+        # deferred fetch, rather than rerunning an undirected proximity test.
+        with patch.object(gallery, "_maybe_load_boundary") as boundary:
+            gallery._request_boundary_prefetch(1, "fixture")
+            QTest.qWait(30)
+            boundary.assert_called_once_with(1)
+
+        class SyntheticWheel:
+            def __init__(self, delta):
+                self.delta = delta
+
+            def type(self):
+                return QEvent.Type.Wheel
+
+            def angleDelta(self):
+                return QPoint(0, self.delta)
+
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery.eventFilter(gallery.grid_viewport, SyntheticWheel(-120))
+            request.assert_called_once_with(1, "wheel")
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery.eventFilter(gallery.grid_viewport, SyntheticWheel(120))
+            request.assert_called_once_with(-1, "wheel")
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery._scrollbar_action("grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepAdd.value)
+            request.assert_called_once_with(1, "scrollbar")
+        with patch.object(gallery, "_request_boundary_prefetch") as request:
+            gallery._scrollbar_action("grid", gallery_ui.QAbstractSlider.SliderAction.SliderPageStepSub.value)
+            request.assert_called_once_with(-1, "scrollbar")
+        snap("images-82-pager-many-pages-ellipsis")
+        form.resize(800, 680)
+        QTest.qWait(130)
+        first, _last, _visible = grid_visible(loaded=100)
+        assert first == 1201
+        snap("images-83-pager-many-pages-narrow")
+        form.resize(1600, 1000)
+        QTest.qWait(100)
+        gallery.pager.on_jump = gallery._jump_to_page
+
+        # Exercise the real bounded-prepend completion. From the top of batch 2,
+        # scrolling up reveals image 100 directly above 101, never image 1.
+        # These records are synthetic; the worker is closed by hold_worker.
+        def prepended_page():
+            return GalleryResults(
+                items=tuple(multi_item(i) for i in range(1, 101)),
+                total=342,
+                offset=0,
+                limit=gallery_ui.PAGE_SIZE,
+            )
+
+        def prepend_from_page_two():
+            gallery._adjacent_loading = True
+            gallery._pending_refresh = None
+            gallery._adjacent_failed_offset = None
+            gallery._adjacent_done(
+                gallery._query_generation,
+                -1,
+                gallery._query(offset=0),
+                gallery._snapshot_at,
+                prepended_page(),
+                None,
+            )
+            QTest.qWait(150)
+            assert gallery.offset == 0
+            assert len(gallery.items) == 200
+            assert [record.identity for record in gallery.items[:100]] == [
+                multi_item(i).identity for i in range(1, 101)
+            ]
+            assert [record.identity for record in gallery.items[100:]] == [
+                multi_item(i).identity for i in range(101, 201)
+            ]
+            for i in range(1, 101):
+                record = gallery.items[i - 1]
+                paint_multi_thumbnail(record, i)
+
+        gallery.show_view("Grid")
+        multi_window(101, 200)
+        gallery.grid_scroll.verticalScrollBar().setValue(0)
+        QTest.qWait(60)
+        assert gallery._browsing_anchor() == multi_item(101).identity
+        bar = gallery.grid_scroll.verticalScrollBar()
+        values = []
+        bar.valueChanged.connect(values.append)
+        try:
+            prepend_from_page_two()
+        finally:
+            bar.valueChanged.disconnect(values.append)
+        first, last, visible = grid_visible(loaded=200)
+        prev_card = gallery._grid_buttons[multi_item(100).identity].parentWidget()
+        anchor_card = gallery._grid_buttons[multi_item(101).identity].parentWidget()
+        assert 100 in visible, (
+            f"Upward Grid prepend jumped to {first}–{last}, not image 100; "
+            f"scroll={bar.value()}/{bar.maximum()} prev_y={prev_card.y()} "
+            f"anchor_y={anchor_card.y()} canvas={gallery.grid_cards.height()} "
+            f"viewport={gallery.grid_viewport.height()} columns={gallery._grid_layout_columns} "
+            f"scroll_history={values[-30:]}"
+        )
+        assert first >= 90, f"Upward Grid prepend jumped to first of previous page: {first}"
+        assert gallery.pager.buttons[1].isChecked()
+        snap("images-91-pager-prepend-previous-last-grid")
+
+        gallery.show_view("List")
+        multi_window(101, 200)
+        gallery.table.verticalScrollBar().setValue(0)
+        QTest.qWait(60)
+        assert gallery._browsing_anchor() == multi_item(101).identity
+        prepend_from_page_two()
+        first, last = list_visible(loaded=200)
+        assert first == 100, f"Upward List prepend jumped to image {first}, expected 100"
+        assert last >= 101
+        assert gallery.table.item(99, 2).text() == "image-0100.png"
+        assert gallery.table.item(100, 2).text() == "image-0101.png"
+        assert gallery.pager.buttons[1].isChecked()
+        snap("images-92-pager-prepend-previous-last-list")
+
+        # Early prefetch is different from an edge hit: retain the anchor
+        # instead of pulling the viewport back to the previous batch.
+        multi_window(101, 200)
+        gallery.table.scrollToItem(
+            gallery.table.item(12, 0),
+            gallery_ui.QAbstractItemView.ScrollHint.PositionAtTop,
+        )
+        QTest.qWait(60)
+        before = gallery._browsing_anchor()
+        assert before == multi_item(113).identity
+        prepend_from_page_two()
+        assert gallery._browsing_anchor() == before
+        assert gallery.pager.buttons[2].isChecked()
+
+        present(item)
+        gallery._sync_pager()
         gallery.show_view("Grid")
         gallery._unselect_all()
         with patch.object(export, "start") as start:
