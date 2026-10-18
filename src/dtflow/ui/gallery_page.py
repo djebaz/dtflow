@@ -2235,6 +2235,9 @@ class GalleryPage(QObject):
                 # Dict order is the query order consumed by the shared grid reflow.
                 self._grid_buttons = {item.identity: self._grid_buttons[item.identity] for item in self.items}
             else:
+                # Clear cached positions at the empty commit itself, not only
+                # when the reflow timer eventually gets its event-loop turn.
+                self._reset_empty_grid_mount()
                 self._set_grid_message("No saved outputs match these filters.")
             # New cards always need sizing, including the initial read: the
             # slider may already have been applied before any cards existed.
