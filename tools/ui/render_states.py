@@ -831,7 +831,11 @@ def render_gallery_composition_states(shell, state, out):
     with (
         patch.object(shell.runner, "submit", side_effect=hold_worker),
         patch.object(gallery, "_schedule_save"),
+        # Synthetic projections intentionally drive exact row/cell contents;
+        # do not submit real neighbor workers during screenshot assembly.
+        patch.object(gallery, "_queue_neighbor_prefetch"),
     ):
+        gallery._neighbor_prefetch_timer.stop()
         gallery.save_timer.stop()
         form.imagesNavigationButton.click()
         gallery.auto_button.setChecked(False)
@@ -843,6 +847,44 @@ def render_gallery_composition_states(shell, state, out):
         shell.inline.dismiss()
         for key in tuple(shell.progress_strip.rows):
             shell.progress_strip.finish(key)
+        # The actual circular buttons use SVGs so font baselines cannot shift
+        # their chevrons. Check painted ink, not just the icon rectangle.
+        chevron_records = [replace(item, identity=f"offline-chevron:{i}") for i in range(3)]
+        gallery.items, gallery.total, gallery.offset = chevron_records, 3, 0
+        gallery._render_page()
+        gallery._rendered_page = (0, tuple(chevron_records))
+        for record in chevron_records:
+            gallery._thumbnail_done(gallery._thumb_versions[record.identity], record.identity, (image, ""), None)
+        gallery.canvas_loading.clear()
+        gallery.select(chevron_records[1].identity)
+        gallery._image_done(gallery._image_generation, gallery.selected_id, (image, ""), None)
+        QTest.qWait(60)
+        for button in (gallery.previous_button, gallery.next_button):
+            assert button.isVisible() and button.isEnabled() and not button.text() and not button.icon().isNull()
+            assert button.iconSize() == QSize(24, 24)
+            pixels = button.grab().toImage()
+            center_x, center_y = (pixels.width() - 1) / 2, (pixels.height() - 1) / 2
+            ink = []
+            for y in range(pixels.height() // 4, pixels.height() * 3 // 4):
+                for x in range(pixels.width() // 4, pixels.width() * 3 // 4):
+                    color = pixels.pixelColor(x, y)
+                    channels = (color.red(), color.green(), color.blue())
+                    if min(channels) > 180 and max(channels) - min(channels) < 8:
+                        ink.append((x, y))
+            assert ink, f"Missing Detail chevron: {button.objectName()}"
+            assert abs((min(x for x, _ in ink) + max(x for x, _ in ink)) / 2 - center_x) <= 1
+            assert abs((min(y for _, y in ink) + max(y for _, y in ink)) / 2 - center_y) <= 1
+        snap("images-97-detail-navigation-centered")
+        gallery.previous_button.click()
+        assert gallery.selected_id == chevron_records[0].identity
+        assert not gallery.previous_button.isEnabled() and gallery.next_button.isEnabled()
+        gallery.next_button.click()
+        assert gallery.selected_id == chevron_records[1].identity
+        gallery.previous_button.click()
+        assert gallery.selected_id == chevron_records[0].identity
+        gallery._image_done(gallery._image_generation, gallery.selected_id, (image, ""), None)
+        snap("images-98-detail-navigation-first-image")
+
         present(item)
         gallery.show_view("Grid")
         gallery._unselect_all()
@@ -960,7 +1002,9 @@ def render_gallery_composition_states(shell, state, out):
             gallery._rendered_page = (gallery.offset, tuple(records))
             for index, record in zip(range(first, last + 1), records, strict=True):
                 paint_multi_thumbnail(record, index)
-            QTest.qWait(60)  # settle deferred Grid reflow before taking the screenshot
+            wait_for(
+                lambda: gallery._grid_mount_keys is None and not gallery.reflow_timer.isActive()
+            )  # wait for all incremental Grid insertions before capturing geometry
             shown_start = first if first_visible is None else first_visible
             shown_end = min(last, shown_start + 23) if last_visible is None else last_visible
             gallery.pager.present(
@@ -1174,6 +1218,34 @@ def render_gallery_composition_states(shell, state, out):
         # forward eviction: 1–300 buffered -> fetch 301–400 -> keep 101–400.
         # No provider or SQLite access is involved in this UI-only fixture.
         gallery.show_view("Grid")
+        # Real preparation keeps the committed 100-image projection usable
+        # until the next 100 cards/cells/filmstrip entries are ready. These
+        # synthetic records confer no durable output or provider authority.
+        gallery.show_view("Grid")
+        multi_window(1, 100)
+        retained = gallery._grid_buttons[multi_item(1).identity]
+        gallery._adjacent_loading = True
+        gallery._pending_refresh = None
+        gallery._adjacent_done(
+            gallery._query_generation,
+            1,
+            gallery._query(offset=100),
+            gallery._snapshot_at,
+            GalleryResults(tuple(multi_item(i) for i in range(101, 201)), 342, 100, gallery_ui.PAGE_SIZE),
+            None,
+        )
+        assert gallery.preparation.active and len(gallery.items) == 100
+        assert gallery._grid_buttons[multi_item(1).identity] is retained
+        save(form, out / "image-navigation", "images-95-pager-preparing-next-100")
+        wait_for(
+            lambda: (
+                not gallery.preparation.active and not gallery._adjacent_loading and not gallery._suppress_batch_scroll
+            )
+        )
+        assert len(gallery.items) == gallery.table.rowCount() == len(gallery._film_entries) == 200
+        assert gallery._grid_buttons[multi_item(1).identity] is retained
+        snap("images-96-pager-prepared-200")
+
         three_batches = multi_window(1, 300, total=1540)
         gallery.grid_scroll.verticalScrollBar().setValue(0)
         assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES == 300
@@ -1182,6 +1254,14 @@ def render_gallery_composition_states(shell, state, out):
         gallery.cards_layout.activate()
         gallery.grid_cards.adjustSize()
         QTest.qWait(80)
+        # A middle 100-image zone has both neighboring zones already
+        # resident, with no further worker read needed for either direction.
+        centered = gallery._grid_buttons[three_batches[149].identity].parentWidget()
+        gallery.grid_scroll.verticalScrollBar().setValue(centered.y())
+        middle_first, _middle_last, middle_visible = grid_visible(loaded=300)
+        assert 150 in middle_visible and 101 <= middle_first <= 200
+        assert gallery.pager.buttons[2].isChecked()
+        snap("images-101-pager-neighbor-buffer-centered")
         target_card = gallery._grid_buttons[three_batches[249].identity].parentWidget()
         gallery.grid_scroll.verticalScrollBar().setValue(target_card.y())
         first, last, visible = grid_visible(loaded=300)
@@ -1211,12 +1291,17 @@ def render_gallery_composition_states(shell, state, out):
             ),
             None,
         )
-        QTest.qWait(160)
+        wait_for(
+            lambda: (
+                not gallery.preparation.active and not gallery._adjacent_loading and not gallery._suppress_batch_scroll
+            )
+        )
         assert len(gallery.items) == gallery_ui.MAX_MOUNTED_IMAGES
         assert gallery.offset == 100
         assert gallery.items[0].identity == multi_item(101).identity
         assert gallery.items[-1].identity == multi_item(400).identity
         assert multi_item(100).identity not in gallery._grid_buttons
+        assert all(button.parentWidget().isVisible() for button in gallery._grid_buttons.values())
         assert gallery.pager.status.text() == "300 buffered"
         first, last, visible = grid_visible(loaded=300)
         assert 250 in visible, (
@@ -1259,27 +1344,27 @@ def render_gallery_composition_states(shell, state, out):
         first, _last, _visible = grid_visible(loaded=100)
         assert first == 1201 and gallery.pager.buttons[13].isChecked()
         assert len(gallery.pager._gaps) == 2
-        # Regression: after jumping to a loaded batch, the viewport is at
-        # its beginning. A downward user scroll must NOT fetch older images
-        # merely because the backward edge happens to be close.
+        # Neighbor buffering is no longer driven by distance to the edge:
+        # a resident 100-card zone requests the immediate next batch even
+        # when its first image is visible. Actual reads remain synthetic here.
         assert gallery.mode == "Grid"
         assert not gallery._loading and not gallery._adjacent_loading
         with (
             patch.object(gallery, "_load_adjacent") as fetch,
             patch.object(gallery, "_visible_range", return_value=(1201, 1210)),
         ):
-            gallery._maybe_load_boundary(1)
-            fetch.assert_not_called()
-            gallery._maybe_load_boundary(-1)
-            fetch.assert_called_once_with(-1)
+            gallery._prefetch_neighbors()
+            fetch.assert_called_once_with(1)
         with (
             patch.object(gallery, "_load_adjacent") as fetch,
             patch.object(gallery, "_visible_range", return_value=(1291, 1300)),
         ):
-            gallery._maybe_load_boundary(-1)
-            fetch.assert_not_called()
-            gallery._maybe_load_boundary(1)
+            gallery._prefetch_neighbors()
             fetch.assert_called_once_with(1)
+        with patch.object(gallery, "_queue_neighbor_prefetch") as schedule:
+            gallery._maybe_load_boundary(-1)
+            gallery._maybe_load_boundary(1)
+            assert schedule.call_count == 2
         # Input handlers must retain scroll direction when queuing a
         # deferred fetch, rather than rerunning an undirected proximity test.
         with patch.object(gallery, "_maybe_load_boundary") as boundary:
@@ -1342,7 +1427,13 @@ def render_gallery_composition_states(shell, state, out):
                 prepended_page(),
                 None,
             )
-            QTest.qWait(150)
+            wait_for(
+                lambda: (
+                    not gallery.preparation.active
+                    and not gallery._adjacent_loading
+                    and not gallery._suppress_batch_scroll
+                )
+            )
             assert gallery.offset == 0
             assert len(gallery.items) == 200
             assert [record.identity for record in gallery.items[:100]] == [
@@ -1408,6 +1499,7 @@ def render_gallery_composition_states(shell, state, out):
         prepend_from_page_two()
         assert gallery._browsing_anchor() == before
         assert gallery.pager.buttons[2].isChecked()
+        snap("images-99-pager-list-prefetch-keeps-anchor")
 
         present(item)
         gallery._sync_pager()
@@ -1432,6 +1524,13 @@ def render_gallery_composition_states(shell, state, out):
         shell.progress_strip.finish("export")
         gallery.export_button.click()
         assert form.imageExportBox.parentWidget() is form.imageExportConnectionHost
+        present(replace(item, file_size=123_456_789))
+        snap("images-100-detail-thumbnail-badges")
+        gallery.slider.setValue(25)
+        QTest.qWait(130)
+        assert gallery._film_entries[item.identity][0].width() == 88
+        snap("images-101-detail-thumbnail-badges-small")
+        gallery.slider.setValue(100)
         present(item)
         raw = gallery._widget("galleryRawMetadata")
         gallery._widget("galleryRawButton", QPushButton).setChecked(True)
@@ -1491,6 +1590,11 @@ def render_gallery_composition_states(shell, state, out):
 def render_removal_and_selection_states(shell, item, plan, out):
     """Images consent, notices and result rows; every removal/query worker is bypassed."""
     recycle, gallery, strip = shell.image_recycle, shell.gallery, activity_strip(shell.form)
+    # These states drive synthetic callbacks explicitly. A real five-second
+    # poll must not overwrite that projection halfway through a slow capture.
+    # Live/snapshot auto-refresh behavior is exercised before this catalogue.
+    gallery.auto_button.setChecked(False)
+    assert not gallery.auto_timer.isActive()
 
     def snap(name):
         QTest.qWait(100)
@@ -1760,7 +1864,9 @@ def render_mapped_gallery_states(app, state, out):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
             shell.gallery.select(item.identity)
+            wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull())
             QTest.qWait(150)
+            save(shell.form, out, "images-102-buffered-detail-decoded")
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
             target = out / "images-07-mapped-edit-eligible.png"
             if not shell.form.grab().save(str(target)):
