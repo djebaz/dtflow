@@ -233,7 +233,20 @@ def _reset_gallery_sort(window, directory: Path, proc: subprocess.Popen, record:
         record["step"] = f"setup-sort-{label}"
         previous = set(_completed_queries(directory))
         started = time.perf_counter()
-        combo.select(label)
+        # Qt's popup items need not be children of the UIA ComboBox, making
+        # ComboBox.select() fail despite a usable dropdown. Drive the real Qt
+        # popup with keyboard input instead. The first two canonical options
+        # are Newest first / Oldest first; verify the text before proceeding.
+        keys = "{F4}{HOME}{DOWN}{ENTER}" if label == "Oldest first" else "{F4}{HOME}{ENTER}"
+        combo.set_focus()
+        if not combo.has_keyboard_focus():
+            raise RuntimeError("Sort dropdown did not receive keyboard focus; no keys sent.")
+        combo.type_keys(keys, pause=0.05, set_foreground=False)
+        deadline = time.monotonic() + timeout
+        while combo.selected_text() != label:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Sort keyboard selection did not reach {label!r}.")
+            time.sleep(0.1)
         setup.append({"action": "sort", "value": label,
                       "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
         record["step"] = f"await-sort-query-{label}"

@@ -156,7 +156,8 @@ def test_checkable_gallery_controls_ignore_text_hidden_and_disabled_matches(name
     [("Newest first", ["Oldest first", "Newest first"]),
      ("Oldest first", ["Newest first"]), ("Model", ["Oldest first", "Newest first"])],
 )
-def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, monkeypatch, restored, expected):
+@pytest.mark.parametrize("focused", [True, False])
+def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, monkeypatch, restored, expected, focused):
     from tools.ui import windows_gallery_benchmark as benchmark
 
     selected = []
@@ -172,7 +173,19 @@ def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, m
         def selected_text(self):
             return self.value
 
-        def select(self, value):
+        def set_focus(self):
+            self.focused = True
+
+        def has_keyboard_focus(self):
+            return self.focused and focused
+
+        def type_keys(self, keys, *, pause, set_foreground):
+            assert pause == 0.05
+            assert self.focused and set_foreground is False
+            value = {
+                "{F4}{HOME}{DOWN}{ENTER}": "Oldest first",
+                "{F4}{HOME}{ENTER}": "Newest first",
+            }[keys]
             assert value != self.value
             selected.append(value)
             self.value = value
@@ -199,6 +212,12 @@ def test_sort_setup_changes_restored_selection_and_verifies_page_one(tmp_path, m
     monkeypatch.setattr(benchmark, "_await_query", await_query)
     monkeypatch.setattr(benchmark, "_button", button)
     record = {}
+    if not focused:
+        with pytest.raises(RuntimeError, match="no keys sent"):
+            benchmark._reset_gallery_sort(Window(), tmp_path, object(), record, timeout=1)
+        assert selected == completions == page_checks == []
+        assert record["setup_actions"] == []
+        return
     benchmark._reset_gallery_sort(Window(), tmp_path, object(), record, timeout=1)
     assert selected == expected
     assert combo.value == "Newest first"

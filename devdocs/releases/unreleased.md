@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 smoke-07 follow-up: operate the identified Qt Sort dropdown through keyboard popup navigation instead of unsupported UIA item selection; verify the selected label before waiting for query/page readiness. No local tests or native rerun executed; owner acceptance remains pending.
+
 - PR #104 smoke-05 follow-up: normalize restored gallery state through the real Sort dropdown (ending on Newest first) and verify page 1 before requiring page 2. Record setup actions separately and require fresh query evidence during sort setup; production persistence remains unchanged. Regression coverage added without local test execution; native smoke remains pending.
 
 - PR #104 smoke-04 follow-up: recognize Qt checkable navigation/view controls exposed to Windows UIA as RadioButton or CheckBox, not only Button. Preserve exact identities, visible/enabled checks and ambiguity rejection; no production UI changes. Regression contracts extended without local test execution; owner native smoke remains pending.

@@ -94,6 +94,14 @@ Owner smoke-05 reached Images and read 20 records, then failed at `verify-page-t
 
 The query-readiness reader distinguishes newly appended completions from prior records across rotation using the opened file identity and match position/content. A startup log without any completion now returns zero rather than raising from an empty `max` argument expansion. Regression contracts cover restored sort choices and fresh-query readiness across rotation; no local tests or benchmark reruns were run. Retry with a fresh `tmp/gallery-bench-smoke-06`; CI and owner Windows acceptance remain pending. This changes only the development harness, not production persistence or gallery paging behavior.
 
+## Qt Sort popup access (smoke-07 follow-up, 2026-10-19)
+
+Owner smoke-07 located the Sort combo but pywinauto `ComboBox.select("Oldest first")` raised `IndexError` at `setup-sort-Oldest first`, before a sort action was recorded. Replace UIA item lookup with keyboard input directed through the exact, visible/enabled Sort combo: F4 opens Qt's popup, Home selects the first option, Down chooses the second for Oldest first, and Enter commits. Newest first uses F4/Home/Enter. These are the first two canonical `SORT_LABELS`; selected text must match the requested label before proceeding, otherwise setup fails explicitly. Fresh-query and checked-page-1 verification remain required. There is no desktop-wide item search, guessed click position or production UI change.
+
+The existing restored-sort contract now checks the keyboard sequences rather than mocking the unsupported item-selection path. No local tests or benchmark reruns were executed, per owner instruction. Static/help checks are not Windows acceptance. Retry with a fresh `tmp/gallery-bench-smoke-08` directory. Qt's [QComboBox keyboard implementation](https://github.com/qt/qtbase/blob/6.12/src/widgets/widgets/qcombobox.cpp) confirms F4 popup opening and popup Enter commit; the owner's native rerun must establish actual UIA/keyboard behavior.
+
+Keyboard input requires confirmed focus on the identified Sort combo; if focus cannot be verified, setup fails without sending keys. It does not refocus the main window while opening/selecting within the popup.
+
 ## Validation gates
 
 - Python syntax, import, CLI `--help`, profile and log-report unit tests on Linux.
