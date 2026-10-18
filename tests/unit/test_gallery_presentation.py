@@ -52,6 +52,10 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     monkeypatch.setattr(gallery_ui, "query_outputs", read)
     monkeypatch.setattr(gallery_ui, "filter_choices", choices)
     gallery = GalleryPage(form, runner=runner, state_dir=tmp_path / "state")
+    # Existing presentation fixtures control their own append requests. Pause
+    # automatic neighbor buffering here; specific tests explicitly enable it.
+    gallery._neighbor_prefetch_timer.stop()
+    monkeypatch.setattr(gallery, "_queue_neighbor_prefetch", lambda: None)
     gallery.auto_button.setChecked(False)
     gallery.preparation.budget_ms = 0  # deterministically one record per event-loop turn
     form.resize(1200, 800)
@@ -233,3 +237,122 @@ def test_shutdown_cancels_uncommitted_widgets(presentation, qtbot):
     assert tuple(gallery.items) == records[:100]
     assert not gallery.preparation.active
     assert not gallery._prepared_entries
+
+
+def test_empty_filter_then_same_grid_cards_are_mounted_again(presentation, qtbot):
+    """Empty filter results must invalidate the previous cell-key cache."""
+    _form, gallery, _runner, records, state = presentation
+    original = gallery._grid_buttons["0"].parentWidget()
+    state["records"] = ()
+    gallery.refresh(reset=True, preserve=False)
+    qtbot.waitUntil(
+        lambda: (
+            not gallery._loading
+            and not gallery.items
+            and gallery._grid_layout_keys == ()
+            and gallery._grid_mount_keys is None
+        ),
+        timeout=5000,
+    )
+    assert gallery.cards_layout.indexOf(original) == -1
+    state["records"] = records[:200]
+    gallery.refresh(reset=True, preserve=False)
+    qtbot.waitUntil(
+        lambda: (
+            not gallery._loading
+            and len(gallery.items) == 100
+            and gallery._grid_mount_keys is None
+            and len(gallery._grid_layout_keys) == 100
+        ),
+        timeout=5000,
+    )
+    first = gallery._grid_buttons["0"].parentWidget()
+    assert gallery.cards_layout.indexOf(first) >= 0
+    assert first.isVisible()
+    assert first is not original
+
+
+def test_empty_result_interrupts_mount_and_releases_callbacks(presentation, qtbot):
+    """An interrupted mount cannot strand anchor callbacks or hide restored cards."""
+    _form, gallery, _runner, records, _state = presentation
+    gallery._grid_mount_budget_ms = 0.0
+    gallery.items, gallery.total = list(records[:200]), 200
+    gallery._render_page()
+    gallery._rendered_page = (0, records[:200])
+    gallery.reflow_timer.stop()
+    gallery._start_grid_mount()
+    assert gallery._grid_mount_keys is not None
+    fired = []
+    gallery._grid_mount_callbacks.append(lambda: fired.append(True))
+    gallery.items, gallery.total = [], 0
+    gallery._render_page()
+    gallery._rendered_page = (0, ())
+    gallery.reflow_timer.stop()
+    gallery._start_grid_mount()
+    assert gallery._grid_mount_keys is None
+    assert gallery._grid_layout_keys == ()
+    assert not gallery._grid_mount_callbacks
+    assert not gallery._grid_mount_timer.isActive()
+    qtbot.waitUntil(lambda: fired == [True], timeout=2000)
+
+    gallery.items, gallery.total = list(records[:200]), 200
+    gallery._render_page()
+    gallery._rendered_page = (0, records[:200])
+    qtbot.waitUntil(
+        lambda: gallery._grid_mount_keys is None and len(gallery._grid_layout_keys) == 200,
+        timeout=5000,
+    )
+    assert gallery.cards_layout.indexOf(gallery._grid_buttons["0"].parentWidget()) >= 0
+    assert gallery._grid_buttons["0"].parentWidget().isVisible()
+
+
+def test_stale_adjacent_prepare_does_not_clear_new_generation_scroll_guard(presentation, qtbot):
+    """Old queued restoration must not change the newer generation's flag."""
+    _form, gallery, _runner, records, _state = presentation
+    gallery._grid_mount_budget_ms = 0.0
+    gallery._load_adjacent(1)
+    qtbot.waitUntil(
+        lambda: gallery._suppress_batch_scroll and bool(gallery._grid_mount_callbacks),
+        timeout=5000,
+    )
+    obsolete_prepare = gallery._grid_mount_callbacks[-1]
+    gallery._query_generation += 1
+    gallery._suppress_batch_scroll = True  # emulate newer generation anchor restoration
+    obsolete_prepare()
+    assert gallery._suppress_batch_scroll is True
+    gallery._suppress_batch_scroll = False
+
+
+def test_neighbor_prefetch_keeps_previous_and_next_zones_buffered(presentation, qtbot):
+    """The active 100-card zone has both neighbors without reaching an edge."""
+    _form, gallery, _runner, records, state = presentation
+    state["records"] = records
+    gallery.refresh(reset=True, preserve=False)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=5000)
+    # Restore the actual automatic scheduling for this test.
+    gallery._queue_neighbor_prefetch = GalleryPage._queue_neighbor_prefetch.__get__(gallery)
+    gallery._queue_neighbor_prefetch()
+    qtbot.waitUntil(
+        lambda: (
+            len(gallery.items) == 200
+            and gallery._grid_mount_keys is None
+            and not gallery._suppress_batch_scroll
+            and not gallery._adjacent_loading
+        ),
+        timeout=5000,
+    )
+    assert gallery.offset == 0
+    gallery._jump_to_page(2)
+    qtbot.waitUntil(
+        lambda: (
+            len(gallery.items) == 300
+            and gallery._grid_mount_keys is None
+            and not gallery._suppress_batch_scroll
+            and not gallery._adjacent_loading
+        ),
+        timeout=8000,
+    )
+    assert gallery.offset == 0
+    assert tuple(gallery.items) == records[:300]
+    assert len(gallery._grid_buttons) == 300
+    assert gallery.cards_layout.indexOf(gallery._grid_buttons["299"].parentWidget()) >= 0
