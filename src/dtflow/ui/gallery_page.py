@@ -2027,6 +2027,7 @@ class GalleryPage(QObject):
             return
         anchor = self._browsing_anchor()
         mode = self.mode
+        scroll_intent_at_capture = getattr(self, "_scroll_intent_revision", 0)
         # Only expose the preceding row automatically after the user has
         # actually reached the top of the mounted window. An early prefetch
         # must preserve the current viewport without pulling it backwards.
@@ -2037,8 +2038,8 @@ class GalleryPage(QObject):
         pixel_offset = 0
         if mode == "Grid" and anchor in self._grid_buttons:
             pixel_offset = self._grid_buttons[anchor].parentWidget().y() - self.grid_scroll.verticalScrollBar().value()
-        elif mode == "List":
-            row = self.table.rowAt(0)
+        elif mode == "List" and anchor:
+            row = next((i for i, item in enumerate(self.items) if item.identity == anchor), -1)
             pixel_offset = self.table.rowViewportPosition(row) if row >= 0 else 0
 
         # Reflow and table reconciliation can emit scrollbar events. Do not
@@ -2088,7 +2089,12 @@ class GalleryPage(QObject):
             try:
                 if self.runner.closed or generation != self._query_generation:
                     return
-                if anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
+                # An earlier asynchronous mount must not undo a wheel/drag/action
+                # received while its layout was settling. That newer input wins.
+                newer_user_scroll = getattr(self, "_scroll_intent_revision", 0) != scroll_intent_at_capture
+                if dev_enabled() and newer_user_scroll:
+                    log.debug("gallery_perf phase=adjacent_restore_skipped reason=newer_user_scroll mode=%s", mode)
+                if not newer_user_scroll and anchor and self.mode == mode and anchor in {item.identity for item in self.items}:
                     if mode == "Grid":
                         button = self._grid_buttons.get(anchor)
                         if button is not None:
@@ -2108,6 +2114,9 @@ class GalleryPage(QObject):
                         cell = self.table.item(row, 0)
                         if cell is not None:
                             self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                            if self.table.verticalScrollMode() == QAbstractItemView.ScrollMode.ScrollPerPixel:
+                                bar = self.table.verticalScrollBar()
+                                bar.setValue(bar.value() + self.table.rowViewportPosition(row) - pixel_offset)
                         if reveal_previous:
                             # One row above, not the first item of the earlier
                             # 100-record page. Keep the previous anchor mounted.
@@ -2125,12 +2134,13 @@ class GalleryPage(QObject):
                     first, last = self._visible_range()
                     log.debug(
                         "gallery_perf phase=adjacent_scroll direction=%s reveal_previous=%s "
-                        "first=%d last=%d mounted=%d",
+                        "first=%d last=%d mounted=%d newer_input=%s",
                         "forward" if direction > 0 else "backward",
                         reveal_previous,
                         first,
                         last,
                         len(self.items),
+                        newer_user_scroll,
                     )
             finally:
                 if not self.runner.closed and generation == self._query_generation:
@@ -3383,6 +3393,7 @@ class GalleryPage(QObject):
     def _request_boundary_prefetch(self, direction: int, source: str) -> None:
         if direction not in (-1, 1):
             return
+        self._scroll_intent_revision = getattr(self, "_scroll_intent_revision", 0) + 1
         self._prefetch_zone_hint = None
         if dev_enabled():
             log.debug(
