@@ -1291,7 +1291,7 @@ class GalleryPage(QObject):
                     anchor_found = True
                     # Keep the current contiguous window when the anchor is still
                     # inside it; otherwise jump directly to its aligned batch.
-                    if not (current.offset <= position < current.offset + current.limit):
+                    if not (current.offset <= position < current.offset + target_count):
                         current = replace(current, offset=(position // PAGE_SIZE) * PAGE_SIZE)
             page = await query_outputs(self.state_dir, current)
             if page.total and not page.items and current.offset >= page.total:
