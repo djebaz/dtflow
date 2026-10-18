@@ -375,7 +375,7 @@ def _gallery_wheel_point(window, mode: str) -> tuple[tuple[int, int], str]:
 
 def _scroll(
     window, direction: int, actions: list[dict], directory: Path,
-    *, mode: str, notches: int = 96,
+    *, mode: str, notches: int = 192,
 ) -> None:
     """Send enough real Windows wheel input to traverse multiple gallery rows.
 
@@ -395,7 +395,7 @@ def _scroll(
     before = _wheel_intents(directory)
     started = time.perf_counter()
     # Small, spaced bursts let Qt process prefetch and paint between wheel
-    # messages. Total is 19x the former five-notch dispatch by default.
+    # messages. Default 192 notches traverses twice the previous sweep.
     remaining = notches
     bursts = 0
     while remaining > 0:
@@ -449,7 +449,11 @@ def _toggle_fullscreen(window, actions: list[dict]) -> None:
 
 
 def _move_thumbnail_slider(window, actions: list[dict]) -> None:
-    """Move the real UIA Slider and restore its previous value after the drag."""
+    """Sweep thumbnail density from small to large and restore the initial value.
+
+    Two distinct targets deliberately exercise major Qt geometry changes;
+    the original value is restored even if a drag fails halfway through.
+    """
 
     from pywinauto import mouse
 
@@ -463,19 +467,18 @@ def _move_thumbnail_slider(window, actions: list[dict]) -> None:
     if len(candidates) != 1:
         raise LookupError(f"Expected one visible ThumbnailSizeSlider, found {len(candidates)}.")
     slider = candidates[0]
-    # The control is QSlider with a known, stable 25..250 range. Require
-    # UIA RangeValue to read and restore the owner's previous preference.
+    # The real QSlider uses 25..250 (%). Do not infer its value from pixels:
+    # observe UIA RangeValue and try to return to the owner's starting value.
     interface = slider.iface_range_value
     original = float(interface.CurrentValue)
     if not 25 <= original <= 250:
         raise ValueError("Thumbnail slider returned a value outside its Qt 25..250 range.")
-    target = 150.0 if original < 130 else 75.0
     rect = slider.rectangle()
     if rect.width() < 60 or rect.height() < 8:
         raise RuntimeError("Thumbnail slider rectangle is too small to drag safely.")
 
     def point(value: float) -> tuple[int, int]:
-        # Leave room for Qt's thumb handle near both ends of the groove.
+        # Allow for the handle at both ends of the Qt slider groove.
         x = rect.left + 12 + (rect.width() - 24) * (value - 25) / 225
         return int(round(x)), int((rect.top + rect.bottom) / 2)
 
@@ -487,21 +490,29 @@ def _move_thumbnail_slider(window, actions: list[dict]) -> None:
         finally:
             mouse.release(coords=point(end))
 
-    started = time.perf_counter()
+    # Two substantially different sizes rather than the former one small
+    # movement (e.g. 131 -> 80). Reflow settles between the two sweeps.
+    targets = (55.0, 210.0)
     try:
-        drag(original, target)
-        actual = float(interface.CurrentValue)
-        if abs(actual - original) < 2:
-            raise RuntimeError("Thumbnail slider did not move after the drag.")
-        actions.append({
-            "action": "thumbnail-slider-drag",
-            "before": original, "after": actual,
-            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-            "verified": True,
-        })
+        for target in targets:
+            before = float(interface.CurrentValue)
+            started = time.perf_counter()
+            drag(before, target)
+            after = float(interface.CurrentValue)
+            if abs(after - before) < 10:
+                raise RuntimeError(
+                    f"Thumbnail slider failed to move meaningfully (started={before:g}, after={after:g})."
+                )
+            actions.append({
+                "action": "thumbnail-slider-drag",
+                "before": before,
+                "target": target,
+                "after": after,
+                "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+                "verified": True,
+            })
+            time.sleep(0.8)
     finally:
-        # Even if the motion is ineffective, always attempt to restore the
-        # original value so subsequent profiles have comparable UI state.
         current = float(interface.CurrentValue)
         if abs(current - original) >= 1:
             drag(current, original)
@@ -510,6 +521,7 @@ def _move_thumbnail_slider(window, actions: list[dict]) -> None:
             raise RuntimeError(
                 f"Thumbnail slider could not restore its initial value (started={original:g}, restored={restored:g})."
             )
+
 
 
 def _reset_gallery_sort(window, directory: Path, proc: subprocess.Popen, record: dict, *, timeout: float) -> None:
@@ -603,7 +615,7 @@ def _stop_trial_process(proc: subprocess.Popen) -> None:
 
 def _drive(
     proc: subprocess.Popen, directory: Path, record: dict, *,
-    cycles: int, timeout: float, scroll_notches: int = 96,
+    cycles: int, timeout: float, scroll_notches: int = 192,
 ) -> int:
     """Attach only to the launched child and track the failing UI step."""
 
@@ -668,6 +680,9 @@ def _drive(
         time.sleep(0.8)
         _attempt(record, f"{prefix}-slider", lambda: _move_thumbnail_slider(window, actions))
         time.sleep(0.5)
+        # Fullscreen must be entered from Grid, not after switching to Detail.
+        _attempt(record, f"{prefix}-grid-fullscreen", lambda: _toggle_fullscreen(window, actions))
+        time.sleep(0.5)
         _attempt(record, f"{prefix}-list", lambda: _click_gallery_mode(window, "List", actions))
         _attempt(record, f"{prefix}-list-scroll-down", lambda: _scroll(
             window, -1, actions, directory, mode="list", notches=scroll_notches,
@@ -679,7 +694,6 @@ def _drive(
         time.sleep(0.8)
         _attempt(record, f"{prefix}-detail", lambda: _click_gallery_mode(window, "Detail", actions))
         time.sleep(0.5)
-        _attempt(record, f"{prefix}-fullscreen", lambda: _toggle_fullscreen(window, actions))
         _attempt(record, f"{prefix}-return-grid", lambda: _click_gallery_mode(window, "Grid", actions))
         time.sleep(0.8)
     record["step"] = "close-dtflow-window"
@@ -689,7 +703,7 @@ def _drive(
 
 
 def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: int,
-              timeout: float, no_cache: bool, scroll_notches: int = 96) -> dict:
+              timeout: float, no_cache: bool, scroll_notches: int = 192) -> dict:
     """Launch one source GUI process and retain evidence even if automation fails."""
 
     directory.mkdir(parents=True, exist_ok=False)
@@ -839,8 +853,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Only selected profiles from the file or built-in set (default: all).")
     parser.add_argument("--runs", type=int, default=2, help="Trials per profile (1–10).")
     parser.add_argument("--cycles", type=int, default=2, help="Repeated UI action sequences (1–10).")
-    parser.add_argument("--scroll-notches", type=int, default=96,
-                        help="Windows wheel notches per scroll direction, 12–240 (default: 96).")
+    parser.add_argument("--scroll-notches", type=int, default=192,
+                        help="Windows wheel notches per scroll direction, 12–240 (default: 192).")
     parser.add_argument("--timeout", type=float, default=30, help="Seconds for GUI/process readiness.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass disposable thumbnail cache.")
     parser.add_argument("--ack-user-state", action="store_true",
