@@ -104,8 +104,7 @@ class _GalleryPerfCsvHandler(logging.Handler):
             return
         # Sanitize before CSV quoting; no prompt or path payload is introduced.
         fields = {
-            key: sanitize(value)
-            for key, value in (part.split("=", 1) for part in message.split() if "=" in part)
+            key: sanitize(value) for key, value in (part.split("=", 1) for part in message.split() if "=" in part)
         }
         phase = fields.pop("phase", "unknown")
         samples = fields.pop("samples", "1")
@@ -246,9 +245,7 @@ class _GalleryPerfAggregationHandler(logging.Handler):
         if phase == "gui_gap" and float(fields.get("elapsed_ms", "0")) >= 100.0:
             self.target.handle(record)
         dimensions = tuple(
-            (name, fields[name])
-            for name in ("direction", "source", "mode", "success")
-            if name in fields
+            (name, fields[name]) for name in ("direction", "source", "mode", "success") if name in fields
         )
         key = (phase, dimensions)
         bucket = self._batches.setdefault(key, {"samples": 0, "first": record.created, "metrics": {}})

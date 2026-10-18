@@ -1923,17 +1923,17 @@ class GalleryPage(QObject):
             return
         # Fetch only the missing adjacent batch; retain the overlapping cards.
         if self.mode in ("Grid", "List") and self.items and target != self._adjacent_failed_offset:
-            direction = (
-                -1 if target == self.offset - PAGE_SIZE
-                else 1 if target == self.offset + len(self.items)
-                else 0
-            )
+            direction = -1 if target == self.offset - PAGE_SIZE else 1 if target == self.offset + len(self.items) else 0
             if direction:
                 self._adjacent_jump_target = target
                 if self._load_adjacent(direction):
                     if dev_enabled():
-                        log.debug("gallery_perf phase=page_jump_reuse page=%d direction=%s mounted=%d",
-                                  page_number, "forward" if direction > 0 else "backward", len(self.items))
+                        log.debug(
+                            "gallery_perf phase=page_jump_reuse page=%d direction=%s mounted=%d",
+                            page_number,
+                            "forward" if direction > 0 else "backward",
+                            len(self.items),
+                        )
                     return
                 self._adjacent_jump_target = None
         try:
@@ -2088,8 +2088,15 @@ class GalleryPage(QObject):
         return True
 
     def _adjacent_done(
-        self, generation: int, direction: int, query: GalleryQuery, source, page, error,
-        started: float | None = None, reveal_previous_requested: bool = False,
+        self,
+        generation: int,
+        direction: int,
+        query: GalleryQuery,
+        source,
+        page,
+        error,
+        started: float | None = None,
+        reveal_previous_requested: bool = False,
     ) -> None:
         if generation != self._query_generation:
             return
@@ -2114,8 +2121,15 @@ class GalleryPage(QObject):
             )
 
     def _apply_adjacent_done(
-        self, generation: int, direction: int, query: GalleryQuery, source, page, error,
-        started: float | None = None, reveal_previous_requested: bool = False,
+        self,
+        generation: int,
+        direction: int,
+        query: GalleryQuery,
+        source,
+        page,
+        error,
+        started: float | None = None,
+        reveal_previous_requested: bool = False,
     ) -> None:
         if generation != self._query_generation:
             return
@@ -2170,8 +2184,7 @@ class GalleryPage(QObject):
         mode = self.mode
         # Scrollbar zero after a page chip is not a request to scroll backward.
         reveal_previous = (
-            direction < 0 and reveal_previous_requested
-            and jump_offset is None and self._pending_page_jump is None
+            direction < 0 and reveal_previous_requested and jump_offset is None and self._pending_page_jump is None
         )
         pixel_offset = 0
         if mode == "Grid" and anchor in self._grid_buttons:
@@ -2270,13 +2283,19 @@ class GalleryPage(QObject):
                                 # One row above, not the first item of the earlier
                                 # 100-record page. Keep the previous anchor mounted.
                                 preceding_row = next(
-                                    (i for i, item in enumerate(self.items) if item.identity == page.items[-1].identity),
+                                    (
+                                        i
+                                        for i, item in enumerate(self.items)
+                                        if item.identity == page.items[-1].identity
+                                    ),
                                     None,
                                 )
                                 if preceding_row is not None:
                                     preceding_cell = self.table.item(preceding_row, 0)
                                     if preceding_cell is not None:
-                                        self.table.scrollToItem(preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                                        self.table.scrollToItem(
+                                            preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop
+                                        )
                 self._capture_scroll()
                 self._sync_pager()
                 if dev_enabled():
@@ -2284,7 +2303,10 @@ class GalleryPage(QObject):
                     if jump_offset is not None:
                         log.debug(
                             "gallery_perf phase=page_jump_settled target_offset=%d first=%d last=%d active_page=%d",
-                            jump_offset, first, last, self._page_chip_target or 0,
+                            jump_offset,
+                            first,
+                            last,
+                            self._page_chip_target or 0,
                         )
                     log.debug(
                         "gallery_perf phase=adjacent_scroll direction=%s reveal_previous=%s "
@@ -2743,9 +2765,8 @@ class GalleryPage(QObject):
         if len(self._thumb_waiting) < 2 or not self.items:
             return
         positions = {item.identity: index for index, item in enumerate(self.items)}
-        if (
-            self._prefetch_zone_hint is not None
-            and self.offset <= self._prefetch_zone_hint < self.offset + len(self.items)
+        if self._prefetch_zone_hint is not None and self.offset <= self._prefetch_zone_hint < self.offset + len(
+            self.items
         ):
             first = self._prefetch_zone_hint - self.offset
             last = min(len(self.items) - 1, first + 19)
