@@ -68,6 +68,4 @@ skip-magic-trailing-comma = false
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-# Report the slowest tests so suite-time regressions stay visible in CI logs.
-addopts = "--durations=25 --durations-min=0.2"
 norecursedirs = [".dtflow", "tmp", ".venv", "build", "dist"]
