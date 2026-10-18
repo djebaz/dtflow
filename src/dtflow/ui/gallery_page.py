@@ -397,6 +397,7 @@ class GalleryPage(QObject):
         self._page_chip_target: int | None = None
         self._adjacent_jump_target: int | None = None
         self._requested_backward_reveal = False
+        self._requested_forward_reveal = False
         self.items: list[GalleryItem] = []
         self._rendered_page: tuple[int, tuple[GalleryItem, ...]] | None = None
         self.total = 0
@@ -1394,6 +1395,7 @@ class GalleryPage(QObject):
             return
         self._page_chip_target = None
         self._requested_backward_reveal = False
+        self._requested_forward_reveal = False
         self.filter_timer.start()
         self._schedule_save()
 
@@ -1450,6 +1452,7 @@ class GalleryPage(QObject):
             self._page_chip_target = None
             self._adjacent_jump_target = None
             self._requested_backward_reveal = False
+            self._requested_forward_reveal = False
             self.offset = 0
         try:
             query = self._query(offset=self.offset)
@@ -1880,6 +1883,7 @@ class GalleryPage(QObject):
         # An explicit chip selection survives nearby Grid row/mount changes.
         self._page_chip_target = page_number
         self._requested_backward_reveal = False
+        self._requested_forward_reveal = False
         self._sync_pager()
         if (
             self._loading
@@ -2041,7 +2045,8 @@ class GalleryPage(QObject):
                     len(self.items),
                 )
             reveal_previous = direction < 0 and self._requested_backward_reveal
-            self._requested_backward_reveal = False
+            # Keep the latest user direction until the delayed read/mount
+            # settles. A wheel can reach the old edge while it is in flight.
             self._load_adjacent(direction, reveal_previous_requested=reveal_previous)
             return
 
@@ -2182,9 +2187,22 @@ class GalleryPage(QObject):
             return
         anchor = self._browsing_anchor()
         mode = self.mode
-        # Scrollbar zero after a page chip is not a request to scroll backward.
+        # The read may have started before the user reached the old edge.
+        # Check the edge *now*, not at initial wheel dispatch or query launch.
+        # A page-chip jump never consumes an edge gesture.
+        bar = self.grid_scroll.verticalScrollBar() if mode == "Grid" else self.table.verticalScrollBar()
+        user_edge = jump_offset is None and self._pending_page_jump is None and self._page_chip_target is None
         reveal_previous = (
-            direction < 0 and reveal_previous_requested and jump_offset is None and self._pending_page_jump is None
+            direction < 0
+            and user_edge
+            and self._requested_backward_reveal
+            and bar.value() == bar.minimum()
+        )
+        reveal_next = (
+            direction > 0
+            and user_edge
+            and self._requested_forward_reveal
+            and bar.value() == bar.maximum()
         )
         pixel_offset = 0
         if mode == "Grid" and anchor in self._grid_buttons:
@@ -2265,6 +2283,15 @@ class GalleryPage(QObject):
                             if button is not None:
                                 bar = self.grid_scroll.verticalScrollBar()
                                 bar.setValue(button.parentWidget().y() - pixel_offset)
+                            if reveal_next:
+                                # Reveal only the first *new row* at the bottom.
+                                # Aligning it to the top would skip visible rows.
+                                following = self._grid_buttons.get(page.items[0].identity)
+                                if following is not None:
+                                    following_card = following.parentWidget()
+                                    desired = following_card.y() + following_card.height() - self.grid_viewport.height() + 1
+                                    if desired > bar.value():
+                                        bar.setValue(min(bar.maximum(), desired))
                             if reveal_previous:
                                 # The last card of the preceding batch is directly
                                 # above the old first row (or alongside it if the
@@ -2279,6 +2306,17 @@ class GalleryPage(QObject):
                             cell = self.table.item(row, 0)
                             if cell is not None:
                                 self.table.scrollToItem(cell, QAbstractItemView.ScrollHint.PositionAtTop)
+                            if reveal_next:
+                                next_row = next(
+                                    (i for i, item in enumerate(self.items) if item.identity == page.items[0].identity),
+                                    None,
+                                )
+                                if next_row is not None:
+                                    next_cell = self.table.item(next_row, 0)
+                                    if next_cell is not None:
+                                        self.table.scrollToItem(
+                                            next_cell, QAbstractItemView.ScrollHint.EnsureVisible
+                                        )
                             if reveal_previous:
                                 # One row above, not the first item of the earlier
                                 # 100-record page. Keep the previous anchor mounted.
@@ -2296,6 +2334,10 @@ class GalleryPage(QObject):
                                         self.table.scrollToItem(
                                             preceding_cell, QAbstractItemView.ScrollHint.PositionAtTop
                                         )
+                if reveal_previous or reveal_next:
+                    # Consume the clamped-edge gesture exactly once.
+                    self._requested_backward_reveal = False
+                    self._requested_forward_reveal = False
                 self._capture_scroll()
                 self._sync_pager()
                 if dev_enabled():
@@ -2310,9 +2352,10 @@ class GalleryPage(QObject):
                         )
                     log.debug(
                         "gallery_perf phase=adjacent_scroll direction=%s reveal_previous=%s "
-                        "first=%d last=%d mounted=%d",
+                        "reveal_next=%s first=%d last=%d mounted=%d",
                         "forward" if direction > 0 else "backward",
                         reveal_previous,
+                        reveal_next,
                         first,
                         last,
                         len(self.items),
@@ -3215,6 +3258,7 @@ class GalleryPage(QObject):
             self._prefetch_zone_hint = None
             self._page_chip_target = None
             self._requested_backward_reveal = False
+            self._requested_forward_reveal = False
         self.mode = mode
         self.stack.setCurrentWidget(self.modes[mode])
         self._widget(f"gallery{mode}Button", QPushButton).setChecked(True)
@@ -3599,8 +3643,11 @@ class GalleryPage(QObject):
             return
         self._prefetch_zone_hint = None
         self._page_chip_target = None
-        scrollbar = self.grid_scroll.verticalScrollBar() if self.mode == "Grid" else self.table.verticalScrollBar()
-        self._requested_backward_reveal = direction < 0 and scrollbar.value() == scrollbar.minimum()
+        # Wheel/actionTriggered fires before Qt necessarily updates the bar;
+        # do not drop an upward gesture just because the bar is still > 0.
+        # The completion path checks whether the old edge was reached.
+        self._requested_backward_reveal = direction < 0
+        self._requested_forward_reveal = direction > 0
         self._sync_pager()
         if dev_enabled():
             log.debug(

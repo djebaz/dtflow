@@ -431,3 +431,62 @@ def test_page_jump_while_neighbor_is_loading_replays_latest_request(presentation
     assert tuple(gallery.items[index : index + gallery_ui.PAGE_SIZE]) == records[200:300]
     assert len(gallery.items) <= gallery_ui.MAX_MOUNTED_IMAGES
     assert gallery._grid_buttons["200"].parentWidget().isVisible()
+
+def test_backward_edge_scroll_reveals_one_row_not_whole_page(presentation, qtbot):
+    """A wheel dispatched before Qt reaches zero must survive async prefetch."""
+    _form, gallery, _runner, records, state = presentation
+    state["records"] = records
+    gallery.offset, gallery.total, gallery.items = 200, 400, list(records[200:400])
+    gallery._render_page()
+    gallery._rendered_page = (200, records[200:400])
+    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None, timeout=5000)
+    bar = gallery.grid_scroll.verticalScrollBar()
+    assert bar.maximum() > 0
+    bar.setValue(1)
+    gallery._request_boundary_prefetch(-1, "wheel")
+    assert gallery._requested_backward_reveal
+    bar.setValue(0)  # the gesture reaches the old edge while the read is pending
+    assert gallery._load_adjacent(-1)
+    qtbot.waitUntil(
+        lambda: (
+            gallery.offset == 100
+            and len(gallery.items) == 300
+            and gallery._grid_mount_keys is None
+            and not gallery._suppress_batch_scroll
+            and not gallery._adjacent_loading
+        ),
+        timeout=9000,
+    )
+    first, last = gallery._visible_range()
+    assert 200 - gallery._grid_layout_columns < first <= 200, (first, last)
+    assert last >= 201
+
+
+def test_forward_edge_scroll_reveals_next_row_not_whole_page(presentation, qtbot):
+    """At the old bottom, revealing the next batch retains nearby images."""
+    _form, gallery, _runner, records, state = presentation
+    state["records"] = records
+    gallery.offset, gallery.total, gallery.items = 0, 400, list(records[:200])
+    gallery._render_page()
+    gallery._rendered_page = (0, records[:200])
+    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None, timeout=5000)
+    bar = gallery.grid_scroll.verticalScrollBar()
+    assert bar.maximum() > 0
+    bar.setValue(bar.maximum())
+    first_before, last_before = gallery._visible_range()
+    gallery._request_boundary_prefetch(1, "wheel")
+    assert gallery._requested_forward_reveal
+    assert gallery._load_adjacent(1)
+    qtbot.waitUntil(
+        lambda: (
+            len(gallery.items) == 300
+            and gallery._grid_mount_keys is None
+            and not gallery._suppress_batch_scroll
+            and not gallery._adjacent_loading
+        ),
+        timeout=9000,
+    )
+    first_after, last_after = gallery._visible_range()
+    assert first_after >= first_before, (first_before, first_after)
+    assert first_after <= last_before + 1, (first_after, last_before)
+    assert last_after >= 201, (first_after, last_after)
