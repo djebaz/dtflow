@@ -58,10 +58,12 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
     form.show()
     gallery.set_active(True)
     qtbot.waitUntil(
-        lambda: len(gallery.items) == 100
-        and not gallery._loading
-        and gallery._grid_mount_keys is None
-        and len(gallery._grid_layout_keys) == 100,
+        lambda: (
+            len(gallery.items) == 100
+            and not gallery._loading
+            and gallery._grid_mount_keys is None
+            and len(gallery._grid_layout_keys) == 100
+        ),
         timeout=5000,
     )
     yield form, gallery, runner, records, state
@@ -102,9 +104,11 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
     assert tuple(gallery.items) == records[:200]
     assert gallery.table.rowCount() == len(gallery._film_entries) == 200
     qtbot.waitUntil(
-        lambda: len(gallery._grid_layout_keys) == 200
-        and gallery._grid_mount_keys is None
-        and not gallery.reflow_timer.isActive(),
+        lambda: (
+            len(gallery._grid_layout_keys) == 200
+            and gallery._grid_mount_keys is None
+            and not gallery.reflow_timer.isActive()
+        ),
         timeout=3000,
     )
     # The append fast path must leave retained cards in their existing cells
@@ -136,7 +140,6 @@ def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot
     assert observed and observed[0] < 200
     assert len(gallery._grid_layout_keys) == 200
     assert gallery.cards_layout.indexOf(first.parentWidget()) >= 0
-
 
 
 def test_refresh_during_preparation_commits_only_latest_result(presentation, qtbot):
