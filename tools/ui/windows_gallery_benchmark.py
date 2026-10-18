@@ -295,6 +295,42 @@ def write_report(records: list[dict], out: Path) -> None:
             })
 
 
+    # Cross-trial comparison: keep missing >50 ms heartbeat gaps as unknown
+    # observations rather than inventing a zero-millisecond latency.
+    grouped: dict[str, list[dict]] = {}
+    for record in records:
+        grouped.setdefault(record["profile_name"], []).append(record)
+    with (out / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=(
+            "profile", "trials", "successful", "observed_gap_max_ms",
+            "median_recorded_query_ms", "notes",
+        ))
+        writer.writeheader()
+        for name, trials in grouped.items():
+            good = [trial for trial in trials if trial["status"] == "ok"]
+            gaps = [
+                trial["metrics"]["gui_gap_over_50_max_ms"]
+                for trial in good
+                if trial["metrics"].get("gui_gap_over_50_max_ms") is not None
+            ]
+            queries = [
+                trial["metrics"]["query_done_median_recorded_ms"]
+                for trial in good
+                if trial["metrics"].get("query_done_median_recorded_ms") is not None
+            ]
+            writer.writerow({
+                "profile": name,
+                "trials": len(trials),
+                "successful": len(good),
+                "observed_gap_max_ms": max(gaps) if gaps else "",
+                "median_recorded_query_ms": round(statistics.median(queries), 2) if queries else "",
+                "notes": (
+                    "incomplete trials" if len(good) != len(trials)
+                    else "no >=50ms gap samples" if not gaps else "observed threshold-crossing gaps"
+                ),
+            })
+
+
 def main(argv: list[str] | None = None) -> int:
     """Drive named performance profiles on an interactive Windows desktop."""
 
