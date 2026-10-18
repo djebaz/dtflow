@@ -451,13 +451,20 @@ def test_fullscreen_uses_recorded_qt_control_and_escape(monkeypatch):
     assert [a["action"] for a in actions] == ["fullscreen-enter", "fullscreen-exit-esc"]
 
 
-def test_thumbnail_slider_uses_uia_slider_and_restores_original_value(monkeypatch):
+@pytest.mark.parametrize(
+    ("starting_value", "expected_targets", "mouse_events"),
+    [(100.0, [55.0, 210.0], 9), (55.0, [210.0, 55.0], 6)],
+)
+def test_thumbnail_slider_uses_uia_slider_and_restores_original_value(
+    monkeypatch, starting_value, expected_targets, mouse_events,
+):
     from tools.ui import windows_gallery_benchmark as benchmark
 
     class Range:
         CurrentValue = 100.0
 
     state = Range()
+    state.CurrentValue = starting_value
     dragged = []
 
     class Rect:
@@ -511,9 +518,9 @@ def test_thumbnail_slider_uses_uia_slider_and_restores_original_value(monkeypatc
 
     actions = []
     benchmark._move_thumbnail_slider(Window(), actions)
-    assert len(dragged) == 9  # Small -> large -> original thumbnail density.
-    assert abs(state.CurrentValue - 100) <= 5
-    assert [action["target"] for action in actions] == [55.0, 210.0]
+    assert len(dragged) == mouse_events
+    assert abs(state.CurrentValue - starting_value) <= 5
+    assert [action["target"] for action in actions] == expected_targets
     assert all(action["action"] == "thumbnail-slider-drag" for action in actions)
     assert all(action["verified"] is True for action in actions)
     assert abs(actions[1]["after"] - actions[0]["after"]) > 100
