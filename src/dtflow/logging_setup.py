@@ -79,6 +79,105 @@ class _SafeFileHandler(logging.handlers.RotatingFileHandler):
                 print(message, file=sys.stderr)
 
 
+
+class _GalleryPerfAggregationHandler(logging.Handler):
+    """Summarize frequent gallery samples on the logging listener thread.
+
+    Measurements still originate in the same workers and GUI callbacks.
+    The ordinary log keeps outliers and lifecycle records individually; the
+    high-frequency measurements are written in bounded statistical batches.
+    """
+
+    _AGGREGATED = frozenset(
+        {"thumbnail_worker", "thumbnail_end_to_end", "scroll_intent", "prepare_slice", "gui_gap"}
+    )
+    _BATCH_SIZE = 64
+    _BATCH_SECONDS = 10.0
+
+    def __init__(self, target: logging.Handler):
+        super().__init__()
+        self.target = target
+        self._batches: dict[tuple[str, tuple[tuple[str, str], ...]], dict] = {}
+
+    @staticmethod
+    def _fields(message: str) -> dict[str, str]:
+        return dict(part.split("=", 1) for part in message.split() if "=" in part)
+
+    def _flush_batch(self, key: tuple[str, tuple[tuple[str, str], ...]]) -> None:
+        batch = self._batches.pop(key, None)
+        if batch is None:
+            return
+        phase, dimensions = key
+        parts = ["gallery_perf", f"phase={phase}_summary", f"samples={batch['samples']}"]
+        parts.extend(f"{name}={value}" for name, value in dimensions)
+        for name, samples in sorted(batch["metrics"].items()):
+            ordered = sorted(samples)
+            count = len(ordered)
+            p95 = ordered[max(0, (95 * count + 99) // 100 - 1)]
+            parts.extend(
+                (
+                    f"{name}_mean={sum(samples) / count:.1f}",
+                    f"{name}_p95={p95:.1f}",
+                    f"{name}_max={ordered[-1]:.1f}",
+                    f"{name}_total={sum(samples):.1f}",
+                )
+            )
+        summary = logging.LogRecord(
+            "dtflow.ui.gallery_perf",
+            logging.DEBUG,
+            "",
+            0,
+            " ".join(parts),
+            (),
+            None,
+        )
+        summary.attempt = "-"
+        self.target.handle(summary)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if not message.startswith("gallery_perf phase="):
+            self.target.handle(record)
+            return
+        fields = self._fields(message)
+        phase = fields.get("phase")
+        if phase not in self._AGGREGATED:
+            self.target.handle(record)
+            return
+        # Keep unusually large GUI stalls individually visible with timestamps.
+        if phase == "gui_gap" and float(fields.get("elapsed_ms", "0")) >= 100.0:
+            self.target.handle(record)
+        dimensions = tuple(
+            (name, fields[name])
+            for name in ("direction", "source", "mode", "success")
+            if name in fields
+        )
+        key = (phase, dimensions)
+        bucket = self._batches.setdefault(
+            key, {"samples": 0, "first": record.created, "metrics": {}}
+        )
+        bucket["samples"] += 1
+        for name, value in fields.items():
+            if name in {"phase", "direction", "source", "mode", "success"}:
+                continue
+            try:
+                number = float(value)
+            except ValueError:
+                continue
+            bucket["metrics"].setdefault(name, []).append(number)
+        if (
+            bucket["samples"] >= self._BATCH_SIZE
+            or record.created - bucket["first"] >= self._BATCH_SECONDS
+        ):
+            self._flush_batch(key)
+
+    def close(self) -> None:
+        for key in tuple(self._batches):
+            self._flush_batch(key)
+        self.target.close()
+        super().close()
+
+
 def default_directory() -> Path:
     """Repository-root ``logs/`` from a source checkout; per-user application data otherwise."""
     root = Path(__file__).resolve().parents[2]
@@ -151,7 +250,8 @@ def configure_logging(
     queue_handler.addFilter(_attach_attempt)
     # QueueHandler bakes tracebacks into the message with its own formatter, so that one must sanitize too.
     queue_handler.setFormatter(_Formatter("%(message)s"))
-    listener = logging.handlers.QueueListener(logging_queue, handler)
+    aggregate_handler = _GalleryPerfAggregationHandler(handler)
+    listener = logging.handlers.QueueListener(logging_queue, aggregate_handler)
     logger = logging.getLogger(LOGGER)
     logger.setLevel(logging.DEBUG if dev else logging.INFO)
     logger.propagate = False
@@ -164,7 +264,7 @@ def configure_logging(
         backend,
         dev,
     )
-    return LogSession(session, path, listener, handler)
+    return LogSession(session, path, listener, aggregate_handler)
 
 
 def dev_enabled() -> bool:
