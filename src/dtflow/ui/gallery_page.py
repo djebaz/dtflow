@@ -2287,8 +2287,14 @@ class GalleryPage(QObject):
                 self._check_boxes.pop(identity, None)
                 self._thumb_versions.pop(identity, None)
 
+            list_started = monotonic()
             self._reconcile_rows()
+            if dev_enabled():
+                log.debug("gallery_perf phase=list_reconcile wall_ms=%.1f rows=%d mode=%s", (monotonic() - list_started) * 1000, self.table.rowCount(), self.mode)
+            film_started = monotonic()
             self._reconcile_filmstrip()
+            if dev_enabled():
+                log.debug("gallery_perf phase=filmstrip_reconcile wall_ms=%.1f count=%d mode=%s", (monotonic() - film_started) * 1000, len(self._film_entries), self.mode)
             for row, item in enumerate(self.items):
                 if item.identity not in self._grid_buttons:
                     self._create_card(item)
@@ -3018,6 +3024,7 @@ class GalleryPage(QObject):
                 row = self.table.rowAt(0)
                 if 0 <= row < len(self.items):
                     self._density_anchor = ("List", self.items[row].identity, self.table.rowViewportPosition(row))
+        resize_started = monotonic()
         self._applied_thumbnail_percent = scale_percent
         density = self._thumbnail_pixels(scale_percent)
 
@@ -3061,6 +3068,8 @@ class GalleryPage(QObject):
             button.setIcon(film_icon)
             button.setIconSize(film_placeholder.size())
 
+        if dev_enabled():
+            log.debug("gallery_perf phase=zoom_reflow wall_ms=%.1f mode=%s mounted=%d scale=%d", (monotonic() - resize_started) * 1000, self.mode, len(self.items), scale_percent)
         self.reflow_timer.start(0)
         if self._density_anchor is not None:
             self.density_anchor_timer.start(0)
@@ -3314,6 +3323,8 @@ class GalleryPage(QObject):
         if watched is self.page and kind == QEvent.Type.Resize:
             QTimer.singleShot(0, self._responsive_selection)
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
+            if dev_enabled():
+                log.debug("gallery_perf phase=grid_resize mounted=%d width=%d", len(self.items), self.grid_viewport.width())
             self.reflow_timer.start(0)
         if kind == QEvent.Type.Wheel and watched in (self.grid_viewport, self.table_viewport):
             vertical_delta = event.angleDelta().y() or event.pixelDelta().y()
