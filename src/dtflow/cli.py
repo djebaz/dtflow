@@ -67,6 +67,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-v", "--version", action="version", version=display_identity())
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
     command.add_argument("-q", "--logs", type=Path, help="Log directory (default: repository logs/ or per-user data).")
+    add_gallery_limit_arguments(command)
     commands = command.add_subparsers(dest="command", required=True)
     gui = commands.add_parser("gui", help=COMMAND_HELP["gui"])
     gui.add_argument(
@@ -678,7 +679,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "gui":
             startup.mark("logging configured")
             try:
-                gallery_limits = resolve_gallery_limits(args.load, args.cards)
+                gallery_limits = resolve_gallery_limits(getattr(args, "load", None), getattr(args, "cards", None))
             except ValueError as exc:
                 print(f"Invalid request: {exc}", file=sys.stderr)
                 return EXIT_INVALID

@@ -26,11 +26,13 @@ def add_arguments(command: argparse.ArgumentParser) -> None:
         "-ml",
         "--load",
         type=int,
+        default=argparse.SUPPRESS,  # accepted before or after the gui subcommand
         help=f"Gallery records per read, {MIN_BATCH}-{MAX_BATCH} (default {DEFAULT_BATCH}); also the page size.",
     )
     command.add_argument(
         "-mc",
         "--cards",
         type=int,
+        default=argparse.SUPPRESS,
         help="Most Grid/List cards kept mounted; a multiple of -ml, at least twice it (default 3 x -ml).",
     )
