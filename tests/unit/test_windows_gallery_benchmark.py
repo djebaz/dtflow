@@ -372,3 +372,161 @@ def test_windows_cleanup_failure_is_not_hidden(monkeypatch):
     monkeypatch.setattr(benchmark.subprocess, "run", lambda *a, **kw: SimpleNamespace(returncode=5))
     with pytest.raises(RuntimeError, match="process-tree cleanup failed"):
         benchmark._stop_trial_process(SimpleNamespace(pid=9001, poll=lambda: None))
+
+
+
+def test_missed_click_is_recorded_as_warning_and_following_actions_continue():
+    from tools.ui.windows_gallery_benchmark import _attempt
+
+    record = {"actions": [], "warnings": []}
+    attempted = []
+
+    def miss():
+        attempted.append("missing-control")
+        raise TimeoutError("UIA action timed out")
+
+    assert _attempt(record, "cycle-1-page-two", miss) is False
+    assert _attempt(record, "cycle-1-page-one", lambda: attempted.append("page-one")) is True
+    assert attempted == ["missing-control", "page-one"]
+    assert record["warnings"] == [{
+        "step": "cycle-1-page-two",
+        "error_type": "TimeoutError",
+        "message": "UIA action timed out",
+    }]
+
+
+def test_page_change_requires_actual_toggle_confirmation(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    class Button:
+        selected = 0
+        clicks = 0
+
+        def get_toggle_state(self):
+            return self.selected
+
+        def click_input(self):
+            self.clicks += 1
+            self.selected = 1
+
+    button = Button()
+    def select(window, name, **kwargs):
+        assert name == "Jump to image batch 2"
+        assert kwargs["automation_id"] == "galleryPagerPage2"
+        return button
+
+    monkeypatch.setattr(benchmark, "_button", select)
+    actions = []
+    benchmark._click_page(object(), 2, actions)
+    assert button.clicks == 1
+    assert actions[0]["verified"] is True
+
+    benchmark._click_page(object(), 2, actions)
+    assert button.clicks == 1  # Already selected: no fake extra click.
+
+
+def test_fullscreen_uses_recorded_qt_control_and_escape(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    events = []
+
+    class Window:
+        def type_keys(self, keys):
+            events.append(("key", keys))
+
+    class Toggle:
+        def click_input(self):
+            events.append(("click", "fullscreen"))
+
+    def find(window, name, **kwargs):
+        assert name == "Full screen image view"
+        assert kwargs["automation_id"] == "galleryFocusButton"
+        return Toggle()
+
+    monkeypatch.setattr(benchmark, "_button", find)
+    monkeypatch.setattr(benchmark.time, "sleep", lambda value: None)
+    actions = []
+    benchmark._toggle_fullscreen(Window(), actions)
+    assert events == [("click", "fullscreen"), ("key", "{ESC}")]
+    assert [a["action"] for a in actions] == ["fullscreen-enter", "fullscreen-exit-esc"]
+
+
+def test_thumbnail_slider_uses_uia_slider_and_restores_original_value(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    class Range:
+        CurrentValue = 100.0
+
+    state = Range()
+    dragged = []
+
+    class Rect:
+        left = 0
+        right = 240
+        top = 0
+        bottom = 20
+
+        def width(self):
+            return 240
+
+        def height(self):
+            return 20
+
+    class Slider:
+        element_info = SimpleNamespace(
+            control_type="Slider", name="ThumbnailSizeSlider",
+            automation_id="galleryThumbnailSizeSlider",
+        )
+        iface_range_value = state
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def rectangle(self):
+            return Rect()
+
+    class Window:
+        def descendants(self):
+            return [Slider()]
+
+    class Mouse:
+        @staticmethod
+        def press(*, coords):
+            dragged.append(("press", coords))
+
+        @staticmethod
+        def move(*, coords):
+            dragged.append(("move", coords))
+
+        @staticmethod
+        def release(*, coords):
+            dragged.append(("release", coords))
+            state.CurrentValue = 25 + (coords[0] - 12) * 225 / 216
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    monkeypatch.setattr(benchmark.time, "sleep", lambda value: None)
+
+    actions = []
+    benchmark._move_thumbnail_slider(Window(), actions)
+    assert len(dragged) == 6
+    assert abs(state.CurrentValue - 100) <= 5
+    assert actions[0]["action"] == "thumbnail-slider-drag"
+    assert actions[0]["verified"] is True
+
+
+def test_failed_slider_does_not_abort_next_step(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=object()))
+    record = {"actions": [], "warnings": []}
+    assert not benchmark._attempt(
+        record, "cycle-1-slider", lambda: benchmark._move_thumbnail_slider(
+            SimpleNamespace(descendants=lambda: []), record["actions"],
+        ),
+    )
+    assert benchmark._attempt(record, "cycle-1-list", lambda: record["actions"].append({"action": "List"}))
+    assert len(record["warnings"]) == 1
+    assert record["actions"] == [{"action": "List"}]
