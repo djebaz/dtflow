@@ -13,6 +13,7 @@ from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
+from threading import Lock
 from time import monotonic, thread_time
 
 from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot, qVersion
@@ -263,18 +264,58 @@ def _date_bounds(text: str) -> tuple[str | None, str | None]:
         ) from exc
 
 
-def _timed_thumbnail_image(path: str, max_side: int, state: Path, *, item: GalleryItem):
-    """Record worker CPU and elapsed time without changing thumbnail results."""
+class _PerfBatchStats:
+    """Bounded, thread-safe timings; emit summaries on the GUI thread only."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._pending: dict[str, dict[str, float]] = {}
+
+    def observe(
+        self, phase: str, elapsed_ms: float, *, count: int = 1, cpu_ms: float = 0.0, success: bool = True
+    ) -> None:
+        with self._lock:
+            stats = self._pending.setdefault(
+                phase, {"samples": 0, "items": 0, "total": 0.0, "maximum": 0.0, "cpu": 0.0, "failures": 0}
+            )
+            stats["samples"] += 1
+            stats["items"] += count
+            stats["total"] += elapsed_ms
+            stats["maximum"] = max(stats["maximum"], elapsed_ms)
+            stats["cpu"] += cpu_ms
+            stats["failures"] += int(not success)
+
+    def flush(self, phase: str | None = None) -> None:
+        with self._lock:
+            names = (phase,) if phase is not None else tuple(self._pending)
+            completed = [(name, self._pending.pop(name)) for name in names if name in self._pending]
+        for name, stats in completed:
+            log.debug(
+                "gallery_perf phase=%s samples=%d items=%d wall_total_ms=%.1f wall_avg_ms=%.1f "
+                "wall_max_ms=%.1f cpu_total_ms=%.1f failures=%d",
+                name,
+                stats["samples"],
+                stats["items"],
+                stats["total"],
+                stats["total"] / stats["samples"],
+                stats["maximum"],
+                stats["cpu"],
+                stats["failures"],
+            )
+
+
+def _timed_thumbnail_image(path: str, max_side: int, state: Path, *, item: GalleryItem, stats: _PerfBatchStats):
+    """Aggregate worker CPU and elapsed time without changing thumbnail results."""
     wall_started = monotonic()
     cpu_started = thread_time()
     try:
         return _image(path, max_side, state, item=item)
     finally:
         if dev_enabled():
-            log.debug(
-                "gallery_perf phase=thumbnail_worker wall_ms=%.1f cpu_ms=%.1f",
+            stats.observe(
+                "thumbnail_workers",
                 (monotonic() - wall_started) * 1000,
-                (thread_time() - cpu_started) * 1000,
+                cpu_ms=(thread_time() - cpu_started) * 1000,
             )
 
 
@@ -379,6 +420,8 @@ class GalleryPage(QObject):
         self._prepared_entries: dict[str, dict] = {}
         self._prepared_sizes: dict[str, int] = {}
         self._preparation_icons = None
+        self._perf_stats = _PerfBatchStats()
+        self._perf_last_flush = monotonic()
         self.retirement = GalleryRetirement(self)
         self.preparation = GalleryPreparation(
             self,
@@ -1225,6 +1268,8 @@ class GalleryPage(QObject):
         gap_ms = (now - self._gui_heartbeat_at) * 1000
         self._gui_heartbeat_at = now
         if gap_ms >= 50:
+            self._perf_stats.observe("gui_gaps", gap_ms)
+        if gap_ms >= 250:
             log.debug(
                 "gallery_perf phase=gui_gap elapsed_ms=%.1f mode=%s mounted=%d query_busy=%s preparation_busy=%s",
                 gap_ms,
@@ -1233,6 +1278,9 @@ class GalleryPage(QObject):
                 self._loading or self._adjacent_loading,
                 self.preparation.active,
             )
+        if now - self._perf_last_flush >= 2:
+            self._perf_last_flush = now
+            self._perf_stats.flush()
 
     def _auto_refresh_tick(self) -> None:
         """Do not interrupt adjacent reads or a debounced filter edit."""
@@ -2135,10 +2183,9 @@ class GalleryPage(QObject):
             self._dispose_prepared_entry(entry)
         self._prepared_entries.clear()
 
-    @staticmethod
-    def _observe_preparation(count, elapsed_ms):
+    def _observe_preparation(self, count, elapsed_ms):
         if dev_enabled():
-            log.debug("gallery_perf phase=prepare_slice count=%d elapsed_ms=%.1f", count, elapsed_ms)
+            self._perf_stats.observe("prepare_slices", elapsed_ms, count=count)
 
     def _prepare_page(self, records, generation, done):
         self._cancel_preparation()
@@ -2155,6 +2202,7 @@ class GalleryPage(QObject):
 
         def ready(entries):
             if dev_enabled():
+                self._perf_stats.flush("prepare_slices")
                 log.debug(
                     "gallery_perf phase=prepare_complete elapsed_ms=%.1f new=%d reused=%d success=%s",
                     (monotonic() - prepare_started) * 1000,
@@ -2575,7 +2623,7 @@ class GalleryPage(QObject):
 
             async def work(filename=path, item=selected):
                 return await asyncio.to_thread(
-                    _timed_thumbnail_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item
+                    _timed_thumbnail_image, filename, THUMBNAIL_SIDE, self.state_dir, item=item, stats=self._perf_stats
                 )
 
             self.runner.submit(
@@ -2587,11 +2635,10 @@ class GalleryPage(QObject):
 
     def _thumbnail_done(self, generation: int, identity: str, result, error, started: float | None = None) -> None:
         if dev_enabled() and started is not None:
-            log.debug(
-                "gallery_perf phase=thumbnail_end_to_end elapsed_ms=%.1f success=%s active=%d",
+            self._perf_stats.observe(
+                "thumbnail_end_to_end",
                 (monotonic() - started) * 1000,
-                bool(error is None and result and result[0] is not None),
-                self._thumb_active,
+                success=bool(error is None and result and result[0] is not None),
             )
         self._thumb_active = max(0, self._thumb_active - 1)
         if generation == self._thumb_versions.get(identity) and error is None and result:
@@ -2621,6 +2668,9 @@ class GalleryPage(QObject):
                 else:
                     self._show_unavailable(identity, issue)
         self._pump_thumbnails()
+        if dev_enabled() and self._thumb_active == 0 and not self._thumb_waiting:
+            self._perf_stats.flush("thumbnail_workers")
+            self._perf_stats.flush("thumbnail_end_to_end")
 
     def _show_unavailable(self, identity: str, issue: str) -> None:
         """Paint a confirmed-missing pictogram or the generic unavailable text in Grid, List and filmstrip.
@@ -3659,6 +3709,8 @@ class GalleryPage(QObject):
     def save_now(self) -> None:
         """Persist the latest viewer state before the shared async runner is shut down."""
 
+        if dev_enabled():
+            self._perf_stats.flush()
         self.save_timer.stop()
         future = self._save_future
         if future is not None and not future.done():
