@@ -195,3 +195,7 @@ Application state and durable outputs use `.dtflow/`; retained live evidence use
 ### PR #104 owner UIA follow-up (2026-10-19)
 
 Owner evidence shows baseline and workers-3 navigating Images, switching Grid/List/Detail, scrolling and changing pages before both trial runs stopped at prompt-filter lookup. Text search has been explicitly removed from the browsing benchmark. The owner's recorder shows `Full screen image view||CheckBox` and `ThumbnailSizeSlider||Slider`; the harness uses these UIA names to exercise fullscreen and slider drag/restore. Each missed click, scroll-intent verification or slider movement is logged as a warning and the next step is attempted. Status `warning` is excluded from clean performance comparisons; initial GUI/query failure still aborts that trial. The feature requires a new Windows smoke; no successful post-change run is claimed.
+
+### Extended owner-requested gallery benchmark actions (2026-10-19)
+
+The PR #104 smoke now uses 192 wheel notches for each up/down sweep in Grid and List, configurable via `--scroll-notches 12..240`; moves the thumbnail slider toward 55% and 210% and attempts to restore its starting value; and toggles fullscreen **from Grid**, not from Detail. Detail is still exercised as a separate view change. Retain the same wheel count, DPI, viewport and gallery image set when comparing tuning profiles. Missing UIA actions remain recoverable warnings, not automatic proof of a Qt freeze. A fresh native Windows smoke is still necessary to accept this revised sequence.
