@@ -2671,9 +2671,8 @@ class GalleryPage(QObject):
         if len(self._thumb_waiting) < 2 or not self.items:
             return
         positions = {item.identity: index for index, item in enumerate(self.items)}
-        if (
-            self._prefetch_zone_hint is not None
-            and self.offset <= self._prefetch_zone_hint < self.offset + len(self.items)
+        if self._prefetch_zone_hint is not None and self.offset <= self._prefetch_zone_hint < self.offset + len(
+            self.items
         ):
             first = self._prefetch_zone_hint - self.offset
             last = min(len(self.items) - 1, first + 19)
