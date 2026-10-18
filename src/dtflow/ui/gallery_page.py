@@ -1332,7 +1332,15 @@ class GalleryPage(QObject):
             next_query = replace(
                 current, offset=current.offset + len(page.items), limit=min(MAX_QUERY_ITEMS, remaining)
             )
+            extension_started = monotonic()
             extension = await read(next_query)
+            if dev_enabled():
+                log.debug(
+                    "gallery_perf phase=query_extension elapsed_ms=%.1f offset=%d returned=%d",
+                    (monotonic() - extension_started) * 1000,
+                    next_query.offset,
+                    len(extension.items),
+                )
             if (
                 extension.total != page.total
                 or extension.snapshot_at != page.snapshot_at
@@ -1347,19 +1355,40 @@ class GalleryPage(QObject):
             current = query
             anchor_found = False
             if anchor:
+                locate_started = monotonic()
                 position = await locate_output(self.state_dir, replace(current, offset=0), anchor)
+                if dev_enabled():
+                    log.debug(
+                        "gallery_perf phase=query_locate elapsed_ms=%.1f found=%s",
+                        (monotonic() - locate_started) * 1000,
+                        position is not None,
+                    )
                 if position is not None:
                     anchor_found = True
                     # Keep the current contiguous window when the anchor is still
                     # inside it; otherwise jump directly to its aligned batch.
                     if not (current.offset <= position < current.offset + target_count):
                         current = replace(current, offset=(position // PAGE_SIZE) * PAGE_SIZE)
+            page_started = monotonic()
             page = await query_outputs(self.state_dir, current)
+            if dev_enabled():
+                log.debug(
+                    "gallery_perf phase=query_read elapsed_ms=%.1f offset=%d returned=%d",
+                    (monotonic() - page_started) * 1000,
+                    current.offset,
+                    len(page.items),
+                )
             if page.total and not page.items and current.offset >= page.total:
                 current = replace(current, offset=((page.total - 1) // PAGE_SIZE) * PAGE_SIZE)
                 page = await query_outputs(self.state_dir, current)
             page = await extend_page(current, page, lambda q: query_outputs(self.state_dir, q))
+            facets_started = monotonic()
             choices = await filter_choices(self.state_dir)
+            if dev_enabled():
+                log.debug(
+                    "gallery_perf phase=query_facets elapsed_ms=%.1f",
+                    (monotonic() - facets_started) * 1000,
+                )
             return current, page, choices, anchor_found
 
         async def with_fallback():
@@ -1384,7 +1413,24 @@ class GalleryPage(QObject):
                 except (PersistenceError, OSError):
                     raise live_error from None
 
-        self.runner.submit(with_fallback(), lambda result, error: self._query_done(generation, anchor, result, error))
+        worker_finished = [None]
+
+        async def timed_query():
+            try:
+                return await with_fallback()
+            finally:
+                worker_finished[0] = monotonic()
+
+        def delivered(result, error):
+            if dev_enabled() and worker_finished[0] is not None:
+                log.debug(
+                    "gallery_perf phase=query_delivery elapsed_ms=%.1f generation_current=%s",
+                    (monotonic() - worker_finished[0]) * 1000,
+                    generation == self._query_generation,
+                )
+            self._query_done(generation, anchor, result, error)
+
+        self.runner.submit(timed_query(), delivered)
 
     def _query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
@@ -1956,11 +2002,25 @@ class GalleryPage(QObject):
     def _prepare_page(self, records, generation, done):
         self._cancel_preparation()
         missing = tuple(item for item in records if item.identity not in self._grid_buttons)
+        prepare_started = monotonic()
         if not missing:
+            if dev_enabled():
+                log.debug(
+                    "gallery_perf phase=prepare_complete elapsed_ms=0.0 new=0 reused=%d",
+                    len(records),
+                )
             done()
             return
 
         def ready(entries):
+            if dev_enabled():
+                log.debug(
+                    "gallery_perf phase=prepare_complete elapsed_ms=%.1f new=%d reused=%d success=%s",
+                    (monotonic() - prepare_started) * 1000,
+                    len(missing),
+                    len(records) - len(missing),
+                    entries is not None,
+                )
             if entries is None:
                 self._loading = self._adjacent_loading = False
                 self.refresh_button.setEnabled(True)
