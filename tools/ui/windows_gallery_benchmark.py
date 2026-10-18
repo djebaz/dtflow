@@ -16,43 +16,43 @@ import statistics
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
 from pathlib import Path
 
-DEFAULT_CASES = ("20:100", "40:120", "100:200")
+from tools.ui.gallery_perf_launch import validate_profile
+
+# Each trial differs from production defaults in just one family.
+DEFAULT_PROFILES = {
+    "baseline": {},
+    "workers-3": {"thumbnail_workers": 3},
+    "lookahead-1": {"lookahead_screens": 1},
+    "preparation-2ms": {"preparation_budget_ms": 2},
+    "mount-2ms": {"mount_budget_ms": 2},
+    "thumbnails-480px": {"thumbnail_side_px": 480},
+    "pending-writes-64": {"pending_cache_writes": 64},
+    "cache-prune-earlier": {"cache_entries": 10000, "cache_prune_to": 8000, "cache_prune_every": 250},
+    "refresh-10s": {"refresh_ms": 10000, "full_refresh_s": 60},
+    "debounce-faster": {"filter_debounce_ms": 150, "save_debounce_ms": 125, "page_jump_debounce_ms": 20},
+}
 QUERY_DONE = re.compile(r"gallery_perf phase=query_done\b[^\n]*\breturned=(\d+)\b[^\n]*\berror=none\b")
 
 
-@dataclass(frozen=True)
-class Case:
-    """Source-only gallery configuration under test."""
+def load_profiles(path: Path | None, names: list[str] | None) -> dict[str, dict]:
+    """Load one-factor experiments or explicit benchmark profiles."""
 
-    batch: int
-    cards: int
-    format: str = "jpg"
-
-    @property
-    def name(self) -> str:
-        return f"load{self.batch}-cards{self.cards}-{self.format}"
-
-
-def parse_case(value: str, fmt: str = "jpg") -> Case:
-    """Resolve explicit batch/card inputs exactly as the current gallery does."""
-
-    from dtflow.gallery_limits import resolve
-
-    match = re.fullmatch(r"(\d+):(\d+)", value)
-    if match is None:
-        raise ValueError("Cases must use BATCH:CARDS (for example 20:100).")
-    batch, requested = map(int, match.groups())
-    actual_batch, actual_cards = resolve(batch, requested)
-    if actual_cards != requested:
-        raise ValueError(f"Cards must be a multiple of batch: {value} resolves to {actual_cards} cards.")
-    if fmt not in ("jpg", "webp"):
-        raise ValueError("Thumbnail format must be jpg or webp.")
-    if requested > 1000 or batch > 1000:
-        raise ValueError("Keep ordinary benchmark limits at or below 1000; stress-test separately.")
-    return Case(actual_batch, actual_cards, fmt)
+    raw = DEFAULT_PROFILES if path is None else json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError("Profiles must be a non-empty mapping of names to overrides.")
+    selected = list(raw) if names is None else names
+    if not selected or len(set(selected)) != len(selected):
+        raise ValueError("Select at least one distinct profile.")
+    profiles = {}
+    for name in selected:
+        if name not in raw:
+            raise ValueError(f"Unknown profile: {name}")
+        if not re.fullmatch(r"[a-z][a-z0-9-]{0,48}", name):
+            raise ValueError(f"Unsafe profile name: {name}")
+        profiles[name] = validate_profile(raw[name])
+    return profiles
 
 
 def _number(value: str) -> float | None:
@@ -196,23 +196,25 @@ def _drive(proc: subprocess.Popen, directory: Path, actions: list[dict], *, cycl
     return initial_count
 
 
-def run_trial(case: Case, *, trial: int, directory: Path, cycles: int, timeout: float, no_cache: bool) -> dict:
+def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: int,
+              timeout: float, no_cache: bool) -> dict:
     """Launch one source GUI process and retain evidence even if automation fails."""
 
     directory.mkdir(parents=True, exist_ok=False)
     logs = directory / "logs"
     logs.mkdir()
+    profile_path = directory / "profile.json"
+    profile_path.write_text(json.dumps(profile, indent=2), encoding="utf-8")
     args = [
-        sys.executable, "-c", "from dtflow.cli import main; raise SystemExit(main())",
-        "-x", "-q", str(logs), "gui", "-ml", str(case.batch),
-        "-mc", str(case.cards), "-format", case.format,
+        sys.executable, "-m", "tools.ui.gallery_perf_launch",
+        "--profile", str(profile_path), "--logs", str(logs),
     ]
     if no_cache:
-        args.append("-nc")
+        args.append("--no-cache")
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "windows"
     record: dict = {
-        "case": asdict(case), "trial": trial, "no_cache": no_cache,
+        "profile_name": name, "profile": profile, "trial": trial, "no_cache": no_cache,
         "status": "failed", "actions": [], "error_type": None,
         "initial_query_records": None,
     }
@@ -261,7 +263,7 @@ def write_report(records: list[dict], out: Path) -> None:
         for record in records:
             metrics = record.get("metrics", {})
             writer.writerow({
-                "case": Case(**record["case"]).name,
+                "case": record["profile_name"],
                 "trial": record["trial"],
                 "status": record["status"],
                 "initial_query_records": record.get("initial_query_records"),
@@ -275,50 +277,52 @@ def write_report(records: list[dict], out: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse arguments without importing or launching Windows automation for help."""
+    """Drive named performance profiles on an interactive Windows desktop."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, required=True, help="New output directory under ignored tmp/.")
-    parser.add_argument("--cases", nargs="+", default=list(DEFAULT_CASES), metavar="BATCH:CARDS")
-    parser.add_argument("--formats", nargs="+", choices=("jpg", "webp"), default=["jpg"])
-    parser.add_argument("--runs", type=int, default=3, help="Trials per configuration (1–10).")
+    parser.add_argument("--out", type=Path, required=True, help="Fresh output directory under ignored tmp/.")
+    parser.add_argument("--profiles-file", type=Path,
+                        help="JSON mapping profile names to overrides; otherwise use built-in one-factor profiles.")
+    parser.add_argument("--profiles", nargs="+", metavar="NAME",
+                        help="Only selected profiles from the file or built-in set (default: all).")
+    parser.add_argument("--runs", type=int, default=2, help="Trials per profile (1–10).")
     parser.add_argument("--cycles", type=int, default=2, help="Repeated UI action sequences (1–10).")
-    parser.add_argument("--timeout", type=float, default=30, help="Seconds for UI and process readiness.")
-    parser.add_argument("--no-cache", action="store_true", help="Bypass DTFlow thumbnail disk cache.")
+    parser.add_argument("--timeout", type=float, default=30, help="Seconds for GUI/process readiness.")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass disposable thumbnail cache.")
     parser.add_argument("--ack-user-state", action="store_true",
-                        help="Explicitly allow the source app to read saved outputs and update viewer preferences/cache.")
+                        help="Allow reading saved outputs and updating preferences/disposable cache.")
     args = parser.parse_args(argv)
     if sys.platform != "win32":
-        parser.error("Native Windows is required. Linux/offscreen runs cannot verify pywinauto behaviour.")
+        parser.error("Native Windows is required; Linux/offscreen cannot establish UI acceptance.")
     if not args.ack_user_state:
-        parser.error("--ack-user-state is required before automating the saved-output catalogue.")
+        parser.error("--ack-user-state is required before accessing the saved-output catalogue.")
     if not 1 <= args.runs <= 10 or not 1 <= args.cycles <= 10:
         parser.error("--runs and --cycles must be between 1 and 10.")
     if not 5 <= args.timeout <= 120:
         parser.error("--timeout must be between 5 and 120 seconds.")
     try:
-        cases = [parse_case(case, fmt) for case in args.cases for fmt in args.formats]
-    except ValueError as exc:
+        profiles = load_profiles(args.profiles_file, args.profiles)
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
-    if len(cases) * args.runs > 40:
+    if len(profiles) * args.runs > 40:
         parser.error("Limit the matrix to 40 runs per invocation.")
     if args.out.exists():
-        parser.error("--out must be a fresh directory (never mix different benchmark sessions).")
+        parser.error("--out must be new; never mix benchmarking sessions.")
     try:
         import pywinauto  # noqa: F401
     except ImportError:
-        parser.error("pywinauto is required. Use: uv run --frozen --with pywinauto==0.6.9 python ...")
+        parser.error("pywinauto missing; use uv run --frozen --with pywinauto==0.6.9 python -m ...")
     records = []
     args.out.mkdir(parents=True)
     try:
-        for case in cases:
-            for index in range(1, args.runs + 1):
-                directory = args.out / f"{case.name}-r{index:02}"
-                record = run_trial(case, trial=index, directory=directory, cycles=args.cycles,
-                                   timeout=args.timeout, no_cache=args.no_cache)
+        for name, profile in profiles.items():
+            for trial in range(1, args.runs + 1):
+                directory = args.out / f"{name}-r{trial:02}"
+                record = run_trial(name, profile, trial=trial, directory=directory,
+                                   cycles=args.cycles, timeout=args.timeout, no_cache=args.no_cache)
                 records.append(record)
                 write_report(records, args.out)
-                print(f"{case.name} trial={index} status={record['status']}", flush=True)
+                print(f"{name} trial={trial} status={record['status']}", flush=True)
     except KeyboardInterrupt:
         write_report(records, args.out)
         return 130
