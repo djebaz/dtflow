@@ -7,6 +7,7 @@ The Qt model stores bounded projections, never complete JSONL payloads.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu, QSt
 from dtflow._diagnostic_export import export_matching
 from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, snapshot
 from dtflow.diagnostic_projection import characteristics
+from dtflow.logging_setup import LOGGER
 from dtflow.ui.logs_delegate import LogCellDelegate
 from dtflow.ui.theme import load_tokens
 
@@ -209,10 +211,6 @@ class LogsWorkspace(QObject):
         chosen = self.form.logsSessionCombo.currentText()
         # UUID-based session names are not chronological. Prefer the session
         # owned by this process, then the newest active JSONL file.
-        from dtflow.logging_setup import LOGGER
-
-        import logging
-
         active = next(
             (
                 getattr(handler, "_dtflow_session")
@@ -221,6 +219,7 @@ class LogsWorkspace(QObject):
             ),
             None,
         )
+
         def modified(session):
             try:
                 return (self.directory / f"dtflow-{session}.jsonl").stat().st_mtime_ns
