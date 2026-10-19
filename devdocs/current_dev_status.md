@@ -1,5 +1,7 @@
 # Current development status
 
+**5.0.0 release preparation (2026-10-19):** version metadata/uv lock updated on `release/5.0.0`; [consolidated release notes](releases/v5.0.0.md) describe final behavior and complete PR attribution since published 4.0.0, not superseded implementation checkpoints. Exact-head validation and final clean Windows artifact acceptance remain pending. No build, tag or publication yet; see the [release preparation plan](plans/2026-10-19-release-5.0.0.md).
+
 **PR #105 delivery (2026-10-19):** structured JSONL writer/typed producers, shared reader and explicit exports, migrated Windows benchmark consumers, and a native Logs workspace are implemented. Includes bounded 500-row bidirectional paging, active log-directory override, separate action deliveries, incremental Follow/selection preservation, search/session-wide filters/metric sort, details/copy/raw-file/folder actions and whole-millisecond timing-chip display. Raw diagnostic precision stays intact. [Delivery audit and evidence](plans/2026-10-19-structured-log-viewer.md).
 
 Runtime head `b2fdf1d`: [CI 39234187459](https://github.com/djebaz/dtflow/actions/runs/39234187459) executed 612 passed / 3 skipped, lock and Ruff checks (format/lint exit 0; non-blocking workflow policy). UI-render workflow was skipped. Owner reports the Windows render command now works; full native/packaged/performance acceptance is not claimed. Check CI again on the later display/documentation closeout head.

@@ -1,6 +1,6 @@
 # DTFlow release roadmap
 
-**Status:** Planned milestones; no release is created by this document. 0.1.0, 0.3.0, 0.3.5 and [0.3.8](https://github.com/djebaz/dtflow/releases/tag/v0.3.8) are published. The owner-selected [4.0.0 release](../releases/v4.0.0.md) is in preparation, consolidating implemented daily-use refinements without declaring the provisional roadmap gates complete. Final clean Windows executable acceptance remains required. Follow [the release guide](../guides/releasing.md).
+**Status:** Planned milestones; no release is created by this document. 0.1.0, 0.3.0, 0.3.5, 0.3.8 and [4.0.0](https://github.com/djebaz/dtflow/releases/tag/v4.0.0) are published. The owner-selected [5.0.0 release](../releases/v5.0.0.md) is in preparation, consolidating final delivered source behavior without declaring the provisional roadmap gates complete. Final clean Windows executable acceptance remains required; open Logs follow-ups remain explicit. Follow the [5.0.0 preparation plan](2026-10-19-release-5.0.0.md) and [release guide](../guides/releasing.md).
 **Audience:** Personal use initially; public distribution is a separate later decision.  
 **References:** [implementation phases](initial.md), [CLI plan](phase-3-cli.md), [TanqueStudio parity](tanquestudio-parity.md), [pending release notes](../releases/unreleased.md).
 
