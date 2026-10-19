@@ -1,6 +1,13 @@
 # Unreleased
 
+- PR #105: one rotating structured JSONL diagnostic stream, typed application/backend/gallery events, bounded admission and explicit evidence-loss/close accounting; shared reader/exports and migrated Windows benchmark consumers. Historical text/CSV stays untouched; CSV/JSONL excerpts and benchmark reports are explicit derived artifacts.
+- PR #105 Logs: native status-bar workspace with session-wide search/filters and numeric metric sorting, bounded Previous/Next paging, incremental Follow with surviving selection, details/raw/selected/visible copying, CSV/JSONL export and explicit raw-file/folder actions. Active `--logs` overrides are honored. Timing chips show rounded integer milliseconds while raw records, exports, filters and sorting retain precision.
+- PR #105 Windows render startup: use a drive-colon-free offscreen config path and apply Windows fonts to configured offscreen platforms. Owner reports the command working; full render/native acceptance is not certified.
+- Remaining PR #105 implementation and acceptance are explicitly deferred to [#106](https://github.com/djebaz/dtflow/issues/106) and [#107](https://github.com/djebaz/dtflow/issues/107). See the [delivery audit](../plans/2026-10-19-structured-log-viewer.md) for exact-head evidence and limitations.
+
+
 ## Highlights
+
 
 - PR #104 benchmark closeout (owner Windows observations, 2026-10-19): native pywinauto gallery profile smoke and independent Grid `-ml/-mc` matrix; position-driven continuous wheel journeys, page-1 button readiness polling, explicit visible-first-index targets (not `buffered` or `total`), 100 ms browsing-only GUI-stall threshold and provisional best-combination console/JSON report. Latest owner `10190342.zip`: both `100/300` and `200/600` journeys completed without automation warnings; round trips 7.45 s vs 6.93 s, worst counted browsing stall 111 ms vs 385 ms, page-1 readiness 3.23 s vs 10.70 s. Single-run evidence; no production limit or tuning default changed. Longer first usable page readiness at high `-ml` is deferred to a separate optimization PR, not silently accepted as resolved. Exact current-head CI/packaged acceptance must be checked separately.
 

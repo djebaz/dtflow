@@ -11,10 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _VISIBLE_RANGE = re.compile(r"(?<!\d)([\d,]+)\s*[-–—]\s*([\d,]+)\s+of\s+([\d,]+)(?!\d)")
-_LOG_VIEW = re.compile(
-    r"gallery_perf phase=benchmark_view\b[^\n]*\bfirst=(\d+)\b[^\n]*"
-    r"\blast=(\d+)\b[^\n]*\btotal=(\d+)\b"
-)
 
 
 @dataclass(frozen=True)
@@ -41,88 +37,90 @@ def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | Non
     return position if position.valid() else None
 
 
-def parse_benchmark_view(text: str) -> GridPosition | None:
-    """Read the most recent position published by the benchmark-only pager."""
-
-    matches = list(_LOG_VIEW.finditer(text))
-    if not matches:
-        return None
-    latest = matches[-1]
-    position = GridPosition(*(int(value) for value in latest.groups()), "pager-log")
-    return position if position.valid() else None
-
-
 class GridProgressProbe:
-    """Prefer the recorded UIA Text control; fall back to benchmark pager logs.
+    """Read the dedicated read-only status input through Windows UI Automation.
 
-    Windows UIA sometimes exposes the QLabel's accessibleName (the static
-    'Visible image range') instead of its changing displayed text. Fallback
-    reads the same pager values emitted in a benchmark child, not estimated
-    wheel distances. No click or mutation of the control is required.
+    The observed Windows UIA AutomationId includes the complete Qt parent path.
+    Use only its Edit control and ValuePattern; no text-label or log fallback.
     """
 
     def __init__(self, window, logs: Path):
-        self.logs = logs
-        self._label = None
-        self._uia_unavailable = False
-        try:
-            candidate = window.child_window(title="Visible image range", control_type="Text")
-            if not hasattr(candidate, "exists") or candidate.exists(timeout=0.2):
-                self._label = candidate
-        except Exception:
-            pass
+        self.window = window
+        del logs
+        self._control = None
         self.last: GridPosition | None = None
+        self.last_error: str | None = None
 
-    def _uia(self) -> GridPosition | None:
-        if self._label is None or self._uia_unavailable:
+    @staticmethod
+    def _parse(value: str) -> GridPosition | None:
+        match = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
+        if match is None:
             return None
-        label = self._label
-        values = []
-        try:
-            values.append(label.window_text())
-        except Exception:
-            pass
-        try:
-            values.append(label.iface_text.DocumentRange.GetText(-1))
-        except Exception:
-            pass
-        try:
-            values.append(label.legacy_properties().get("Value", ""))
-        except Exception:
-            pass
-        for text in values:
-            match = parse_visible_range(str(text))
-            if match:
-                return match
-        # A Qt QLabel's accessibleName can mask its displayed text on
-        # Windows. If none of its accessible text patterns exposes numbers,
-        # do not make three slow cross-process calls on every wheel pulse.
-        self._uia_unavailable = True
-        return None
-
-    def _log(self) -> GridPosition | None:
-        paths = []
-        try:
-            for path in self.logs.glob("dtflow-*.log*"):
-                if "-gallery" not in path.name and path.is_file():
-                    paths.append((path.stat().st_mtime_ns, path))
-        except OSError:
+        first, total = (int(part) for part in match.groups())
+        if not 1 <= first <= total:
             return None
-        for _timestamp, path in sorted(paths, reverse=True):
-            try:
-                with path.open("rb") as stream:
-                    stream.seek(0, 2)
-                    stream.seek(max(0, stream.tell() - 131_072))
-                    content = stream.read().decode("utf-8", "replace")
-            except OSError:
-                continue
-            position = parse_benchmark_view(content)
-            if position:
-                return position
-        return None
+        return GridPosition(first, first, total, "grid-footer-uia")
 
     def read(self) -> GridPosition | None:
-        position = self._uia() or self._log()
-        if position is not None:
+        try:
+            if self._control is None:
+                candidate = self.window.child_window(
+                    auto_id="QApplication.MainWindow.statusbar.dtflowGridPositionGroup.dtflowStatusGridFirstVisibleIndex",
+                    control_type="Edit",
+                )
+                if not candidate.exists(timeout=0):
+                    self.last_error = "status_input_not_found"
+                    return None
+                # Resolve the WindowSpecification once. Keeping the spec would
+                # repeat the potentially slow UIA search on every read.
+                self._control = candidate.wrapper_object()
+            value = self._control.get_value()
+            position = self._parse(str(value))
+            if position is None:
+                self.last_error = "status_input_value_invalid"
+                return None
             self.last = position
-        return position
+            self.last_error = None
+            return position
+        except (AttributeError, LookupError, RuntimeError, OSError) as exc:
+            self.last_error = "status_input_read_" + type(exc).__name__
+            self._control = None
+            return None
+
+    def diagnose(self) -> dict:
+        """Inspect only relevant UIA properties after a failed seek, not per pulse.
+
+        Do not include arbitrary application input values in benchmark logs.
+        """
+        result = {"last_error": self.last_error, "matching_controls": []}
+        try:
+            for widget in self.window.descendants():
+                info = widget.element_info
+                ident = info.automation_id or ""
+                kind = info.control_type or ""
+                name = info.name or ""
+                if ident != "dtflowStatusGridFirstVisibleIndex" and not (
+                    kind == "Edit" and re.fullmatch(r"[0-9]+/[0-9]+", name)
+                ):
+                    continue
+                result["matching_controls"].append(
+                    {
+                        "automation_id": ident,
+                        "control_type": kind,
+                        "name": name if re.fullmatch(r"[0-9]+/[0-9]+", name) else "<other>",
+                        "value_pattern": self._value_pattern_status(widget),
+                    }
+                )
+                if len(result["matching_controls"]) == 8:
+                    break
+        except Exception as exc:
+            result["diagnostic_error"] = type(exc).__name__
+        return result
+
+    @staticmethod
+    def _value_pattern_status(widget) -> str:
+        try:
+            # No untrusted text is logged; only pattern availability.
+            return "available" if widget.iface_value is not None else "missing"
+        except Exception as exc:
+            return type(exc).__name__

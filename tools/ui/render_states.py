@@ -24,11 +24,20 @@ from support.network_guard import install  # noqa: E402
 
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+platform_name = os.environ["QT_QPA_PLATFORM"].split(":", 1)[0]
 if os.environ["QT_QPA_PLATFORM"] == "offscreen":
     # Qt 6.12 defaults to an 800x800 virtual screen. Fix the screen geometry
     # before QApplication starts so fullscreen renders match normal 1600x1000.
-    os.environ["QT_QPA_PLATFORM"] = f"offscreen:configfile={ROOT / 'tools/ui/offscreen-screen.json'}"
-if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
+    # Qt splits platform arguments at every colon, including a Windows drive
+    # separator. A path relative to the launch directory avoids that ambiguity.
+    try:
+        screen_config = os.path.relpath(ROOT / "tools/ui/offscreen-screen.json")
+    except ValueError as exc:
+        raise SystemExit(
+            "Run the offscreen renderer from the repository drive or set an explicit QT_QPA_PLATFORM."
+        ) from exc
+    os.environ["QT_QPA_PLATFORM"] = f"offscreen:configfile={screen_config}"
+if sys.platform == "win32" and platform_name == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
@@ -40,6 +49,7 @@ from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow import gallery_limits  # noqa: E402
+from dtflow._diagnostic_notifications import DiagnosticNotice  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
@@ -63,6 +73,7 @@ from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui import lora_panel as lora_ui  # noqa: E402
 from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
+from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
 from dtflow.ui.generation_page import GenerationPage  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
@@ -904,6 +915,17 @@ def render_gallery_composition_states(shell, state, out):
         gallery.pager.present(total=342, visible_start=101, visible_end=124, loaded=200, active_page=2)
         assert gallery.pager.buttons[2].isChecked()
         assert gallery._widget("galleryPagerBar").isVisible()
+        # Global status-bar index is intentionally understated and Images-only.
+        shell._sync_grid_index_status(101, 342)
+        assert shell.grid_index_group.isVisible()
+        assert shell.grid_index_label.text() == "101/342"
+        assert not shell.grid_index_label.hasFrame()
+        snap("images-65a-status-position-subtle")
+        form.generationNavigationButton.click()
+        assert not shell.grid_index_group.isVisible()
+        snap("generation-65b-status-position-hidden")
+        form.imagesNavigationButton.click()
+        assert shell.grid_index_group.isVisible()
         snap("images-65-pager-grid-normal")
         gallery._widget("galleryFocusButton", QPushButton).click()
         try:
@@ -966,7 +988,7 @@ def render_gallery_composition_states(shell, state, out):
         snap("images-87-pager-empty-load-failed")
         with patch.object(gallery, "refresh") as retry:
             gallery.canvas_loading.retry.click()
-            retry.assert_called_once_with(preserve=True)
+            retry.assert_called_once_with(preserve=True, trigger="retry")
         gallery.canvas_loading.clear()
         assert not gallery.canvas_loading.form.isVisible()
         assert not gallery.canvas_loading.ring.timer.isActive()
@@ -2185,6 +2207,12 @@ def render_shell_states(shell, capture):
     shell.about()
     capture("shell-01-about")
     clear()
+    mailbox = DiagnosticNotice()
+    mailbox.post("Offline fixture: diagnostic evidence is incomplete; logging failed or records were rejected.")
+    receiver = DiagnosticNoticeReceiver(shell, mailbox)
+    receiver.deliver()
+    capture("shell-21-diagnostic-warning")
+    clear()
     with patch.object(type(shell.queue), "dispatching_here", new_callable=PropertyMock, return_value=True):
         shell._confirm_close()
         capture("shell-02-close-consent-dispatch")
@@ -2401,6 +2429,118 @@ def render_inpaint_states(shell, state, capture):
         strip.finish(key)
 
 
+def render_logs_states(shell, capture):
+    """Real Qt Logs presentations, including bounded paging and Follow inserts."""
+    from datetime import datetime
+
+    from dtflow._diagnostic_reader import RecordRef
+    from dtflow.ui.logs_workspace import row_preview, session_label
+
+    shell._toggle_logs()
+    shell.logs.stop()  # no background file reader/polling in offline screenshots
+    panel = shell.logs_form
+    panel.logsCounter.setText("No records yet in this session.")
+    shell.logs.model.replace([])
+    capture("logs-01-empty")
+
+    def record(seq, level, event, component):
+        return {
+            "v": 1,
+            "seq": seq,
+            "ts": f"2026-10-19T09:12:{seq % 60:02d}.000Z",
+            "level": level,
+            "component": component,
+            "event": event,
+        }
+
+    rows = [
+        (record(1, "INFO", "app.window_ready", "app"), RecordRef("fixture", 1, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(2, "DEBUG", "gallery.gui_gap", "gallery"), RecordRef("fixture", 2, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(3, "WARNING", "diagnostics.loss", "diagnostics"), RecordRef("fixture", 3, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(4, "ERROR", "generation.failed", "generation"), RecordRef("fixture", 4, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(5, "INFO", "logging.message", "backend"), RecordRef("fixture", 5, 0, 0, 0, 0, "fixture.jsonl")),
+    ]
+    rows[1][0]["data"] = {"elapsed_ms": 117.4, "sql_cpu_ms": 0.4, "max_ms": 118.6, "mounted": 100, "mode": "grid"}
+    shell.logs.model.replace(
+        rows,
+        [
+            ((("state", "ready"),), 0),
+            row_preview(rows[1][0]),
+            ((("reason", "queue_bytes"), ("count", "1")), 0),
+            ((("category", "backend"), ("retryable", "false")), 0),
+            ((), 0, "Generic library message without characteristics (fixture)"),
+        ],
+    )
+    panel.logsCounter.setText("5 of 5 matching records · complete · page 1 · showing 5")
+    panel.logsSessionCombo.blockSignals(True)
+    panel.logsSessionCombo.clear()
+    for number, sid, written, current in (
+        (1, "3f2a9c1e-fixture", datetime(2026, 10, 19, 9, 12), True),
+        (2, "81bd04aa-fixture", datetime(2026, 10, 18, 22, 40), False),
+    ):
+        panel.logsSessionCombo.addItem(session_label(number, sid, written, current=current), sid)
+    panel.logsSessionCombo.blockSignals(False)
+    capture("logs-02-mixed-severity")
+
+    # Exercise the shared projection: integer timing chips beside exact raw JSON.
+    shell.logs._show_detail(rows[1][0], None)
+    capture("logs-07-whole-milliseconds")
+    panel.logsDetail.hide()
+
+    paging_rows = [
+        (record(seq, "DEBUG", "gallery.query_done", "gallery"), RecordRef("fixture", seq, 0, 0, 0, 0, "fixture.jsonl"))
+        for seq in range(501, 1001)
+    ]
+    shell.logs.model.replace(paging_rows, [((("returned", "20"),), 0)] * len(paging_rows))
+    panel.logsPreviousButton.setEnabled(True)
+    panel.logsNextButton.setEnabled(True)
+    panel.logsCounter.setText("1204 of 1204 matching records · pending · page 2 · showing 500")
+    panel.logsRefreshButton.setText("Refresh (new)")
+    shell.logs._set_pending(True)
+    panel.logsFollowButton.blockSignals(True)
+    panel.logsFollowButton.setChecked(False)
+    panel.logsFollowButton.blockSignals(False)
+    panel.logsOperationStatus.setText("Exported diagnostic-excerpt.csv (synthetic presentation)")
+    capture("logs-05-paging")
+
+    panel.logsRefreshButton.setText("Refresh")
+    shell.logs._set_pending(False)
+    shell.logs.model.replace(rows, [((("state", "fixture"),), 0)] * len(rows))
+    panel.logsTable.selectRow(1)
+    added = (record(6, "INFO", "gallery.query_done", "gallery"), RecordRef("fixture", 6, 0, 0, 0, 0, "fixture.jsonl"))
+    previews = list(shell.logs.model.previews)
+    shell.logs.model.reconcile([added, *rows], [((("returned", "20"),), 0), *previews])
+    panel.logsPreviousButton.setEnabled(False)
+    panel.logsNextButton.setEnabled(False)
+    panel.logsCounter.setText("6 of 6 matching records · pending · page 1 · showing 6")
+    capture("logs-06-follow-selection")
+    panel.logsOperationStatus.clear()
+
+    shell.logs._show_detail(
+        {
+            "v": 1,
+            "seq": 4,
+            "ts": "2026-10-19T09:12:04.000Z",
+            "level": "ERROR",
+            "component": "generation",
+            "event": "generation.failed",
+            "msg": "Backend rejected the request (fixture)",
+            "data": {"category": "backend", "retryable": False},
+        },
+        None,
+    )
+    capture("logs-03-details")
+
+    panel.logsDetail.hide()
+    from dtflow.ui.logs_workspace import INCOMPLETE_NOTICE
+
+    panel.logsNotice.setText(INCOMPLETE_NOTICE.format(reasons="missing_segment"))
+    panel.logsNotice.show()
+    capture("logs-04-reader-error")
+    panel.logsNotice.hide()
+    shell._close_logs()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "tmp" / "ui-renders", help="Screenshot directory")
@@ -2614,6 +2754,7 @@ def main():
             render_queue_states(shell, capture)
             render_shell_states(shell, capture)
             render_inpaint_states(shell, state, capture)
+            render_logs_states(shell, capture)
         except BaseException:
             # Print before shutdown: a stuck shutdown would otherwise hide the original failure.
             traceback.print_exc()

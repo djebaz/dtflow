@@ -1,0 +1,22 @@
+/* DTFlow Logs view tokens — additions to the base DTFlow palette (tokens/colors.css) */
+:root{
+  /* severity stripe (DEBUG/WARNING/ERROR reuse --color-disabled / --color-warning / --color-error) */
+  --color-log-info:#8a99a6;
+  /* rows & surfaces */
+  --color-log-row-hover:#292d31;
+  --color-log-code-surface:#191919;
+  --color-log-popup-surface:#292929;
+  --color-log-notice-surface:#32291e;
+  /* event / characteristic label pairs (bg / fg), assigned by stable hash of the name */
+  --color-log-pill-1-bg:#263b46;--color-log-pill-1-fg:#a9cfe8;
+  --color-log-pill-2-bg:#30394a;--color-log-pill-2-fg:#aebfec;
+  --color-log-pill-3-bg:#283b34;--color-log-pill-3-fg:#a8d5bc;
+  --color-log-pill-4-bg:#403629;--color-log-pill-4-fg:#e8c894;
+  --color-log-pill-5-bg:#393044;--color-log-pill-5-fg:#cbb5ed;
+  --color-log-pill-6-bg:#403039;--color-log-pill-6-fg:#e4b0c3;
+  --color-log-pill-7-bg:#293d40;--color-log-pill-7-fg:#a5d2d4;
+  --color-log-pill-8-bg:#38372c;--color-log-pill-8-fg:#d8d0a0;
+  /* layout */
+  --size-log-row-action:28px;
+  --size-log-table-min:700px;
+}

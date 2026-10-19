@@ -34,6 +34,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.tasks import settle
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
@@ -475,13 +476,29 @@ async def cached_inventory(
     try:
         identity = await _cache_identity(selection, saved)
     except (BackendError, ValidationError):
-        log.info("inventory cache miss backend=%s reason=identity", selection.name)
+        diagnostic_event(
+            log,
+            "inventory.cache_miss",
+            level=logging.INFO,
+            data={
+                "backend": selection.name,
+                "reason": "identity",
+            },
+        )
         return None
     if identity is None:
         return None
     kind, endpoint, credential = identity
     snapshot = await asyncio.to_thread(load_inventory, state, kind, endpoint=endpoint, credential=credential)
-    log.info("inventory cache %s backend=%s", "hit" if snapshot is not None else "miss reason=absent_or_mismatch", kind)
+    diagnostic_event(
+        log,
+        "inventory.cache_read",
+        level=logging.INFO,
+        data={
+            "hit": snapshot is not None,
+            "backend": kind,
+        },
+    )
     return snapshot
 
 
@@ -563,7 +580,15 @@ class InventoryDisplayMemory:
             try:
                 await asyncio.to_thread(save_inventory, state, kind, snapshot, credential=credential)
             except OSError as exc:
-                log.warning("inventory cache not written backend=%s reason=%s", kind, type(exc).__name__)
+                diagnostic_event(
+                    log,
+                    "inventory.cache_not_written",
+                    level=logging.WARNING,
+                    data={
+                        "backend": kind,
+                        "reason": type(exc).__name__,
+                    },
+                )
         return snapshot
 
 
@@ -581,11 +606,15 @@ async def refresh_inventory(
     """
     async with open_session(selection, state, timeouts=timeouts, saved=saved, durable=False) as service:
         snapshot = await service.get_inventory(refresh=True)
-    log.info(
-        "inventory refresh ok backend=%s entries=%d metadata=%s",
-        selection.name,
-        len(snapshot.entries),
-        dict(snapshot.diagnostics).get("model_metadata", "unknown"),
+    diagnostic_event(
+        log,
+        "inventory.refresh_ok",
+        level=logging.INFO,
+        data={
+            "backend": selection.name,
+            "entries": len(snapshot.entries),
+            "metadata": dict(snapshot.diagnostics).get("model_metadata", "unknown"),
+        },
     )
     if not no_cache:
         await remember_inventory(selection, state, snapshot, saved)
@@ -602,9 +631,24 @@ async def remember_inventory(
             return
         kind, _, credential = identity
         await asyncio.to_thread(save_inventory, state, kind, snapshot, credential=credential)
-        log.info("inventory cache write backend=%s", kind)
+        diagnostic_event(
+            log,
+            "inventory.cache_write",
+            level=logging.INFO,
+            data={
+                "backend": kind,
+            },
+        )
     except (BackendError, ValidationError, OSError) as exc:
-        log.warning("inventory cache not written backend=%s reason=%s", selection.name, type(exc).__name__)
+        diagnostic_event(
+            log,
+            "inventory.cache_not_written",
+            level=logging.WARNING,
+            data={
+                "backend": selection.name,
+                "reason": type(exc).__name__,
+            },
+        )
 
 
 async def read_attempt(state: Path, request_id: str) -> AttemptEvidence | None:

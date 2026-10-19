@@ -1,0 +1,772 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/djebaz/dtflow/blob/main/devdocs/schemas/diagnostic-record-v1.schema.json",
+  "title": "DTFlow compact diagnostic JSONL record v1 — proposed",
+  "description": "Compact, searchable, extensible record. Validate individual decoded lines only; physical byte bounds, privacy allowlists, source clocks, rotation/session reconciliation, and benchmark completeness are external invariants (PR #105 G1–G6). No runtime schema dependency is required.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "seq",
+    "ts",
+    "level",
+    "component",
+    "event"
+  ],
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "Record format version. A session.started record identifies session-level protocol and instrumentation."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Increasing listener-assigned persisted sequence within the session. Session comes from the verified filename/segment identity and session.started."
+    },
+    "ts": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "description": "Source UTC timestamp in milliseconds; never listener or flush arrival time."
+    },
+    "level": {
+      "enum": [
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL"
+      ]
+    },
+    "component": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Searchable, stable component (e.g. gallery, generation, backend). Preserve exact Python logger namespace in session-specific context or data only when necessary."
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+      "maxLength": 180,
+      "description": "Dotted extensible event name; prefixes are searchable and do not need new schema definitions."
+    },
+    "kind": {
+      "enum": [
+        "event",
+        "measurement",
+        "aggregate"
+      ],
+      "description": "Optional category; defaults to event for ordinary log lines. Must be explicit for aggregates and benchmark-critical measurements."
+    },
+    "msg": {
+      "type": "string",
+      "description": "Optional sanitized readable summary; machine fields are never parsed from msg."
+    },
+    "data": {
+      "$ref": "#/$defs/safeData",
+      "description": "Optional flat or nested JSON-native filterable properties. Writer enforces safe keys, privacy and byte budgets."
+    },
+    "mono_ns": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Optional source monotonic clock; required by the benchmarking/instrumentation policy when timing-critical, not every ordinary record."
+    },
+    "ctx": {
+      "$ref": "#/$defs/context",
+      "description": "Optional only when correlation context is available."
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    },
+    "agg": {
+      "$ref": "#/$defs/aggregation",
+      "description": "Required for kind=aggregate. Full metric names/units stay readable."
+    }
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "required": [
+            "data"
+          ]
+        },
+        {
+          "required": [
+            "msg"
+          ]
+        }
+      ]
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "aggregate"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "agg"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "agg"
+        ]
+      },
+      "then": {
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "const": "aggregate"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "session.started"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "required": [
+              "version",
+              "source_commit",
+              "build_state",
+              "runtime",
+              "platform",
+              "dev",
+              "instrumentation_version",
+              "schema_version",
+              "queue_max_records",
+              "queue_max_bytes",
+              "max_record_bytes",
+              "aggregation_policy",
+              "session_id"
+            ],
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "source_commit": {
+                "type": "string"
+              },
+              "build_state": {
+                "enum": [
+                  "clean",
+                  "dirty",
+                  "unknown"
+                ]
+              },
+              "runtime": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              },
+              "dev": {
+                "type": "boolean"
+              },
+              "backend": {
+                "type": "string"
+              },
+              "instrumentation_version": {
+                "type": "string"
+              },
+              "schema_version": {
+                "const": 1
+              },
+              "queue_max_records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "queue_max_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_record_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "aggregation_policy": {
+                "type": "string"
+              },
+              "session_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "session.closed"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "required": [
+              "observed",
+              "admitted",
+              "rejected",
+              "dropped",
+              "written_records",
+              "aggregate_source_samples",
+              "writer_failures",
+              "serialization_failures"
+            ],
+            "properties": {
+              "observed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "admitted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rejected": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "dropped": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "written_records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "aggregate_source_samples": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "writer_failures": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "serialization_failures": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "last_seq": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "diagnostics.loss"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "required": [
+              "reason",
+              "count",
+              "affects_measurements"
+            ],
+            "properties": {
+              "reason": {
+                "enum": [
+                  "queue_records",
+                  "queue_bytes",
+                  "capture_limit",
+                  "writer_error",
+                  "serialization_error",
+                  "shutdown_timeout",
+                  "other"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "affects_measurements": {
+                "type": "boolean"
+              },
+              "level": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "diagnostics.record_rejected"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "required": [
+              "original_event",
+              "reason",
+              "limit_bytes",
+              "original_content_available"
+            ],
+            "properties": {
+              "original_event": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "record_too_large",
+                  "capture_too_large",
+                  "unsupported_value",
+                  "serialization_error",
+                  "other"
+                ]
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "estimated_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "limit_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "original_content_available": {
+                "const": false
+              }
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.gui_gap"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "measurement"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "required": [
+              "elapsed_ms",
+              "mode",
+              "mounted",
+              "query_busy",
+              "preparation_busy"
+            ],
+            "properties": {
+              "elapsed_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "mode": {
+                "type": "string"
+              },
+              "mounted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "query_busy": {
+                "type": "boolean"
+              },
+              "preparation_busy": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "required": [
+          "data",
+          "mono_ns",
+          "kind"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.query_done"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "measurement"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "required": [
+              "elapsed_ms",
+              "returned",
+              "source",
+              "error"
+            ],
+            "properties": {
+              "elapsed_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "returned": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "source": {
+                "enum": [
+                  "live",
+                  "snapshot",
+                  "unknown"
+                ]
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "data",
+          "mono_ns",
+          "kind"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.scroll_intent"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "measurement"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "required": [
+              "direction",
+              "source",
+              "offset",
+              "mounted"
+            ],
+            "properties": {
+              "direction": {
+                "enum": [
+                  "forward",
+                  "backward"
+                ]
+              },
+              "source": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mounted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mode": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "data",
+          "mono_ns",
+          "kind"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "jsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        }
+      ]
+    },
+    "safeData": {
+      "type": "object",
+      "maxProperties": 4096,
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      },
+      "description": "Extensible JSON-native data: each field remains typed and searchable. Structural acceptance DOES NOT imply privacy permission; capture must allowlist keys/values and apply recursive sanitization, depth and byte limits."
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      },
+      "required": [],
+      "properties": {
+        "backend": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "attempt_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "queue_id": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "benchmark_run_id": {
+          "type": "string"
+        },
+        "trial_id": {
+          "type": "string"
+        },
+        "action_id": {
+          "type": "string"
+        }
+      },
+      "description": "Optional safe correlation identifiers; extra IDs are extensible but still subject to privacy allowlist. Do not put prompts, filesystem paths, authorization data or provider payloads here."
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "message",
+        "traceback"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "traceback": {
+          "type": "string"
+        }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "mean",
+        "max",
+        "total"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mean": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number",
+          "description": "Optional: present only when measured from real source samples; never infer from summary mean/max."
+        },
+        "max": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      }
+    },
+    "aggregation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "samples",
+        "window_start",
+        "window_end",
+        "metrics"
+      ],
+      "properties": {
+        "samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "window_start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "window_end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "minProperties": 1,
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/metric"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Per-metric source sample count and statistics, preserving recorded source keys (including mounted/offset counts) without invented suffixes. Units follow the event contract, never magnitude. p95 is optional where true source samples are unavailable (such as _PerfBatchStats summaries)."
+        }
+      }
+    }
+  }
+}

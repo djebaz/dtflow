@@ -12,6 +12,7 @@ from PySide6.QtGui import QActionGroup, QGuiApplication, QIcon, QPainter, QPixma
 from PySide6.QtWidgets import QFrame, QMenu, QPushButton, QWidget
 
 from dtflow.core.gallery import GalleryQuery
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.image_removal_preferences import load_mode, save_mode
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
 from dtflow.services.image_recycle import RecycleUnavailable, prepare_recycle, recycle_outputs
@@ -324,7 +325,7 @@ class ImageRecyclePanel(QObject):
         self.gallery.set_recycle_busy(False)
         if error is not None:
             self._finish_with_error(error)
-            self.gallery.refresh(preserve=True)
+            self.gallery.refresh(preserve=True, trigger="removal")
             return
         self._phase = "idle"
         self.gallery.recycle_completed(result.recycled + result.deleted + result.absent)
@@ -401,7 +402,15 @@ class ImageRecyclePanel(QObject):
         self._phase = "idle"
         self._running = False
         self.gallery.set_recycle_busy(False)
-        log.warning("image recycling failed phase=%s reason=%s", phase, type(error).__name__)
+        diagnostic_event(
+            log,
+            "images.recycle.failed",
+            level=logging.WARNING,
+            data={
+                "phase": phase,
+                "reason": type(error).__name__,
+            },
+        )
         if phase == "preflight":
             reason = (
                 str(error)

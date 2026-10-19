@@ -22,6 +22,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.tasks import settle
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.queues import delete_idle_queues, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
@@ -171,7 +172,15 @@ async def dispatch_queue(
         )
         # Real adapters accept only inventory-listed models, so refresh once before dispatching.
         await service.get_inventory(refresh=True)
-        log.info("command=queue start backend=%s", recorded["name"])
+        diagnostic_event(
+            log,
+            "queue.command",
+            level=logging.INFO,
+            data={
+                "backend": recorded["name"],
+                "command": "queue",
+            },
+        )
         return await QueueDispatcher(store, service, on_settle=on_settle, on_event=on_event).run(queue_id)
     finally:
         try:

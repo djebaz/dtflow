@@ -257,12 +257,15 @@ def test_logging_destination_failure_does_not_change_the_command(tmp_path, capsy
 def test_log_file_records_lifecycle_without_prompt_or_secret(invoke, tmp_path, monkeypatch):
     monkeypatch.setenv("DRAWTHINGS_API_KEY", "FAKE-API-KEY-SENTINEL")
     code, out, err = invoke("generate", "-b", "fake", "-p", "SECRET PROMPT TEXT")
-    (log_file,) = (tmp_path / "logs").glob("dtflow-*.log")
-    text = log_file.read_text()
-    assert code == 0 and "attempt succeeded" in text and "backend=fake" in text
+    (log_file,) = (tmp_path / "logs").glob("dtflow-*.jsonl")
+    text = log_file.read_text(encoding="utf-8")
+    rows = [json.loads(line) for line in text.splitlines()]
+    events = {row["event"]: row for row in rows}
+    assert code == 0 and "generation.attempt_succeeded" in events
+    assert events["generation.attempt_prepared"]["data"]["backend"] == "fake"
     assert "SECRET PROMPT TEXT" not in text + out + err and "FAKE-API-KEY-SENTINEL" not in text + out + err
     attempt = json.loads(out)["attempt_id"]
-    assert f"attempt={attempt}" in text  # correlated to the durable attempt
+    assert events["generation.attempt_succeeded"]["ctx"]["attempt_id"] == attempt  # correlated to the durable attempt
 
 
 # -- composition: explicit selection, no silent fallback ------------------------------------------------------------

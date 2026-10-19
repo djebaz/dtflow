@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 from dtflow.core.export import ExportOptions
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import ValidationError
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.export_preferences import load_export_preferences, save_export_preferences
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
 from dtflow.services.image_export import export_outputs
@@ -210,7 +211,14 @@ class ImageExportPanel(QObject):
         self._set_running(False)
         self.cache_changed.emit()
         if failure:
-            log.warning("image export stopped reason=%s", type(failure).__name__)
+            diagnostic_event(
+                log,
+                "images.export.stopped",
+                level=logging.WARNING,
+                data={
+                    "reason": type(failure).__name__,
+                },
+            )
             message = (
                 str(failure)
                 if isinstance(failure, (ValidationError, OriginalImagesBusyError, OriginalImagesUnavailableError))
@@ -237,12 +245,16 @@ class ImageExportPanel(QObject):
         if result.exported or result.skipped:
             self._exported_folder = Path(result.destination)
             self.form.imageExportOpenButton.setEnabled(True)
-        log.info(
-            "image export completed exported=%d skipped=%d failed=%d cancelled=%s",
-            result.exported,
-            result.skipped,
-            result.failed,
-            result.cancelled,
+        diagnostic_event(
+            log,
+            "images.export.completed",
+            level=logging.INFO,
+            data={
+                "exported": result.exported,
+                "skipped": result.skipped,
+                "failed": result.failed,
+                "cancelled": result.cancelled,
+            },
         )
 
     def open_folder(self) -> None:

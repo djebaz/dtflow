@@ -34,6 +34,7 @@ from dtflow.core.models import (
     ValidationError,
     eligible_model_ids,
 )
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
 from dtflow.services.catalogue import Catalogue
 from dtflow.services.connection import (
@@ -81,13 +82,15 @@ UNCLASSIFIED_FAMILY = "__unclassified__"  # base-model combo data for checkpoint
 log = logging.getLogger(__name__)
 
 
-def failure_reason(failure: BaseException) -> str:
-    """Short log text for a failure: the backend's own code and category when it has them, else the type name."""
+def failure_fields(failure: BaseException) -> dict:
+    """Safe diagnostic fields for a failure: the type name, plus the backend's own code and category when it has them."""
+    fields = {"reason": type(failure).__name__}
     detail = getattr(failure, "failure", None)
     code, category = getattr(detail, "code", None), getattr(detail, "category", None)
     if code:
-        return f"{type(failure).__name__} code={code} category={getattr(category, 'value', category)}"
-    return type(failure).__name__
+        fields["code"] = str(code)
+        fields["category"] = str(getattr(category, "value", category))
+    return fields
 
 
 PREVIEW_MIN_HEIGHT = 180
@@ -529,7 +532,15 @@ class GenerationPage:
                 self._forms[self._provider] = self._provider_form()
             self._provider = name
             self._apply_provider_form(self._forms.get(name, {}))
-            log.info("form fields switched provider=%s remembered=%s", name, name in self._forms)
+            diagnostic_event(
+                log,
+                "generation.provider_switched",
+                level=logging.INFO,
+                data={
+                    "provider": name,
+                    "remembered": name in self._forms,
+                },
+            )
 
     def form_document(self) -> dict:
         """The remembered form values (credential-free, unvalidated)."""
@@ -563,7 +574,17 @@ class GenerationPage:
             return None
         page.widthSpinBox.setValue(new[0])
         page.heightSpinBox.setValue(new[1])
-        log.info("size adjusted from %dx%d to %dx%d", *old, *new)
+        diagnostic_event(
+            log,
+            "generation.size_adjusted",
+            level=logging.INFO,
+            data={
+                "old_width_px": old[0],
+                "old_height_px": old[1],
+                "width_px": new[0],
+                "height_px": new[1],
+            },
+        )
         return f"Size adjusted from {old[0]}x{old[1]} to {new[0]}x{new[1]} (multiples of 64)."
 
     def _allow_local_bridge_model(self, request):
@@ -667,7 +688,14 @@ class GenerationPage:
 
     def _set_busy(self, busy: bool) -> None:
         if busy != self._busy:
-            log.debug("generate page busy=%s", busy)
+            diagnostic_event(
+                log,
+                "generation.page_state",
+                level=logging.DEBUG,
+                data={
+                    "busy": busy,
+                },
+            )
         self._busy = busy
         self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
@@ -783,8 +811,23 @@ class GenerationPage:
             request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
         except FormError as exc:
             self._mark(exc.widget)
-            log.info("generate rejected backend=%s field=%s", name, exc.widget or "-")
-            log.debug("generate validation message=%s", exc)
+            diagnostic_event(
+                log,
+                "generation.rejected",
+                level=logging.INFO,
+                data={
+                    "backend": name,
+                    "field": exc.widget or "-",
+                },
+            )
+            diagnostic_event(
+                log,
+                "generation.validation_failed",
+                level=logging.DEBUG,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
             self._status(Presentation("error", "Invalid request", str(exc)))
             return
         if edit is not None and request.batch_size * request.batch_count != 1:
@@ -792,16 +835,28 @@ class GenerationPage:
             return
         self._reuse_source_identity = None
         self._request = request
-        log.info("generate submitted backend=%s operation=%s", name, "inpaint" if edit else "txt2img")
-        log.debug(
-            "generate request model=%s size=%dx%d steps=%d sampler=%s seed=%s loras=%s",
-            request.model_id,
-            request.width_px,
-            request.height_px,
-            request.steps,
-            request.sampler_id.value,
-            request.seed,
-            [f"{item.identifier}@{item.weight}" for item in request.loras],
+        diagnostic_event(
+            log,
+            "generation.submitted",
+            level=logging.INFO,
+            data={
+                "backend": name,
+                "operation": "inpaint" if edit else "txt2img",
+            },
+        )
+        diagnostic_event(
+            log,
+            "generation.request_validated",
+            level=logging.DEBUG,
+            data={
+                "model_id": request.model_id,
+                "width_px": request.width_px,
+                "height_px": request.height_px,
+                "steps": request.steps,
+                "sampler_id": request.sampler_id.value,
+                "seed": request.seed,
+                "lora_count": len(request.loras),
+            },
         )
         self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
         self.page.resultList.clear()
@@ -915,14 +970,27 @@ class GenerationPage:
         self._activity.set(generating=False, run_state=RunState())
         self._set_busy(False)
         if failure is not None:
-            log.warning("generate failed reason=%s", failure_reason(failure))
+            diagnostic_event(
+                log,
+                "generation.failed",
+                level=logging.WARNING,
+                data=failure_fields(failure),
+            )
             presentation = present_generation_failure(failure)
             self._status(presentation)
             activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
             if dev_enabled():
                 self._show_failure_details(failure)
             return
-        log.info("generate saved backend=%s outputs=%d", outcome.backend_id, len(outcome.output_paths))
+        diagnostic_event(
+            log,
+            "generation.outputs_saved",
+            level=logging.INFO,
+            data={
+                "backend": outcome.backend_id,
+                "outputs": len(outcome.output_paths),
+            },
+        )
         presentation = present_outcome(outcome)
         self._status(presentation)
         activity_strip(self.page).complete(
@@ -965,7 +1033,16 @@ class GenerationPage:
             if result is None:
                 continue
             reasons = ", ".join(result["reasons"]) or "none"
-            log.debug("image quality output=%d label=%s signals=%s", index, result["label"], reasons)
+            diagnostic_event(
+                log,
+                "generation.image_quality",
+                level=logging.DEBUG,
+                data={
+                    "output": index,
+                    "label": result["label"],
+                    "signals": reasons,
+                },
+            )
             lines.append(f"  output {index + 1}: {result['label']} (signals: {reasons})")
             lines.append("    " + ", ".join(f"{k}={v}" for k, v in result["metrics"].items()))
         return "\n\nimage quality (export detector, advisory):\n" + "\n".join(lines) if lines else ""
@@ -1074,7 +1151,14 @@ class GenerationPage:
         self._inventory_notice = "Refreshing inventory…"
         self._inventory_error = ""
         self._write_inventory_stats()
-        log.info("inventory refresh requested backend=%s", name)
+        diagnostic_event(
+            log,
+            "generation.inventory_refresh_requested",
+            level=logging.INFO,
+            data={
+                "backend": name,
+            },
+        )
         source, revision = self._current_inventory_source(), self._inventory_revision
         self._runner.submit(
             self._refresh(name, endpoint, self._saved()),
@@ -1311,7 +1395,12 @@ class GenerationPage:
         self._set_busy(False)
         if failure is not None:
             shown = present_generation_failure(failure)
-            log.warning("inventory refresh failed reason=%s", failure_reason(failure))
+            diagnostic_event(
+                log,
+                "generation.inventory_refresh_failed",
+                level=logging.WARNING,
+                data=failure_fields(failure),
+            )
             self._inventory_notice = (
                 "Refresh failed · showing previous inventory"
                 if self._inventory_snapshot
@@ -1515,12 +1604,26 @@ class GenerationPage:
         combo = self.page.configurationCombo
         combo.clear()
         if failure is not None:
-            log.warning("configuration scan failed reason=%s", type(failure).__name__)
+            diagnostic_event(
+                log,
+                "generation.configuration_scan_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(failure).__name__,
+                },
+            )
             combo.setCurrentIndex(-1)
             return
         paths, presets, preset_failure = result
         if preset_failure is not None:
-            log.warning("preset scan failed reason=%s", type(preset_failure).__name__)
+            diagnostic_event(
+                log,
+                "generation.preset_scan_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(preset_failure).__name__,
+                },
+            )
         for preset in presets:
             combo.addItem(f"Preset · {preset['name']}", ("preset", preset))
         own = {preset["name"] for preset in presets}

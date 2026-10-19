@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, Slot
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QFontMetrics, QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
+    QHBoxLayout,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
@@ -26,7 +27,8 @@ from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
-from dtflow.logging_setup import dev_enabled
+from dtflow.diagnostics import event as diagnostic_event
+from dtflow.logging_setup import configured_directory, dev_enabled
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -53,6 +55,7 @@ from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
+from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
@@ -218,6 +221,21 @@ class MainWindow:
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
         self.shell.centerStack.addWidget(self.gallery_detail)
         self.shell.rightStack.addWidget(QWidget())
+        self.logs_marker = QWidget()
+        form.workspaceStack.addWidget(self.logs_marker)
+        self.logs_form = load_ui(FORMS_DIR / "logs_workspace.ui")
+        self.shell.leftStack.addWidget(QWidget())
+        self.shell.centerStack.addWidget(self.logs_form)
+        self.shell.rightStack.addWidget(QWidget())
+        self._logs_previous_page = form.connectionPage
+        self._logs_active = False
+        self.logs = LogsWorkspace(
+            self.logs_form,
+            configured_directory(),
+            self._close_logs,
+            runner=self.runner,
+            escape_owner=self._inline_consumes_escape,
+        )
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
         self.progress_strip = ActivityStrip(form)
@@ -309,7 +327,46 @@ class MainWindow:
         about_button.setDefaultAction(form.aboutAction)
         about_button.setAutoRaise(True)
         about_button.setAccessibleName("About DTFlow")
-        form.statusBar().addPermanentWidget(about_button)
+        status_actions = QWidget(form.statusBar())
+        status_actions_layout = QHBoxLayout(status_actions)
+        status_actions_layout.setContentsMargins(0, 0, 12, 0)
+        status_actions_layout.setSpacing(6)
+        about_button.setFixedSize(20, 20)
+        logs_button = QToolButton(status_actions)
+        logs_button.setObjectName("logsStatusButton")
+        logs_button.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "list.svg")))
+        logs_button.setIconSize(QSize(16, 16))
+        logs_button.setAutoRaise(True)
+        logs_button.setFixedSize(20, 20)
+        logs_button.setCheckable(True)
+        logs_button.setToolTip("Open Logs workspace")
+        logs_button.setAccessibleName("Open Logs workspace")
+        logs_button.clicked.connect(self._toggle_logs)
+        status_actions_layout.addWidget(about_button)
+        status_actions_layout.addWidget(logs_button)
+        grid_status_group = QWidget(form.statusBar())
+        grid_status_group.setObjectName("dtflowGridPositionGroup")
+        grid_status_group.setAccessibleName("Grid position")
+        grid_status_layout = QHBoxLayout(grid_status_group)
+        grid_status_layout.setContentsMargins(0, 0, 0, 0)
+        grid_status_layout.setSpacing(0)
+        grid_index = QLineEdit("0/0", grid_status_group)
+        grid_index.setObjectName("dtflowStatusGridFirstVisibleIndex")
+        grid_index.setReadOnly(True)
+        grid_index.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        grid_index.setFixedWidth(70)
+        grid_index.setFrame(False)
+        grid_index.setStyleSheet("QLineEdit { background: transparent; border: none; color: #8a8a8a; padding: 0; }")
+        grid_index.setAccessibleName("0/0")
+        grid_index.setToolTip("First visible image position in the Grid workspace")
+        grid_status_layout.addWidget(grid_index)
+        form.statusBar().addPermanentWidget(grid_status_group)
+        form.statusBar().addPermanentWidget(status_actions)
+        self.grid_index_group = grid_status_group
+        grid_status_group.setVisible(form.workspaceStack.currentWidget() is self.images_page)
+        self.grid_index_label = grid_index
+        self.gallery.grid_position_changed.connect(self._sync_grid_index_status)
+        self.logs_button = logs_button
         form.statusBar().setSizeGripEnabled(False)
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
@@ -365,7 +422,14 @@ class MainWindow:
                 _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
             )
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
-        log.info("window ready state=%s", "default" if state_dir is None else "custom")
+        diagnostic_event(
+            log,
+            "app.window_ready",
+            level=logging.INFO,
+            data={
+                "state": "default" if state_dir is None else "custom",
+            },
+        )
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
         self.refresh_credentials()
@@ -379,7 +443,14 @@ class MainWindow:
 
     def _originals_ready_checked(self, _result, error) -> None:
         if error is not None:
-            log.warning("original-image readiness unavailable reason=%s", type(error).__name__)
+            diagnostic_event(
+                log,
+                "app.original_image_readiness_unavailable",
+                level=logging.WARNING,
+                data={
+                    "reason": type(error).__name__,
+                },
+            )
             InlineNotice.warning(
                 self.form,
                 "Original images unavailable",
@@ -407,10 +478,41 @@ class MainWindow:
         self.generation.sync_backend()
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
 
+    def _toggle_logs(self) -> None:
+        if self.form.workspaceStack.currentWidget() is self.logs_marker:
+            self._close_logs()
+        else:
+            self._logs_previous_page = self.form.workspaceStack.currentWidget()
+            self.form.workspaceStack.setCurrentWidget(self.logs_marker)
+
+    def _inline_consumes_escape(self) -> bool:
+        """An active shared confirmation, editor or notice takes Escape before the Logs workspace."""
+        if self.inline.active():
+            self.inline.dismiss()
+            return True
+        return False
+
+    def _close_logs(self) -> None:
+        if self.form.workspaceStack.currentWidget() is self.logs_marker:
+            self.form.workspaceStack.setCurrentWidget(self._logs_previous_page)
+
+    def _sync_grid_index_status(self, first: int, total: int) -> None:
+        """Publish the real Grid viewport position in the global status bar."""
+        self.grid_index_label.setText(f"{first}/{total}")
+        self.grid_index_label.setAccessibleName(f"{first}/{total}")
+
     def _workspace_changed(self, index: int) -> None:
-        """Switch content and use the compact full-width chrome for Images only."""
-        self.gallery.recycle_scope_revision += 1
-        self.inline.dismiss()
+        """Switch mounted workspaces without resetting active operations."""
+        logs_active = self.form.workspaceStack.currentWidget() is self.logs_marker
+        if logs_active:
+            self.logs_button.setChecked(True)
+            self.logs.open()
+        else:
+            self.logs_button.setChecked(False)
+            self.logs.stop()
+        if not logs_active:
+            self.gallery.recycle_scope_revision += 1
+            self.inline.dismiss()
         if index == 0:
             self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
@@ -421,8 +523,11 @@ class MainWindow:
             self.form.queueNavigationButton,
             self.form.imagesNavigationButton,
         )
-        buttons[index].setChecked(True)
-        self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)
+        if index < len(buttons):
+            buttons[index].setChecked(True)
+        images_active = self.form.workspaceStack.currentWidget() is self.images_page
+        self.grid_index_group.setVisible(images_active)
+        self.gallery.set_active(images_active)
         self._place_export_panel()
         self._responsive_workspace()
 
@@ -471,7 +576,33 @@ class MainWindow:
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
+        logs = self.form.workspaceStack.currentWidget() is self.logs_marker
         images = self.form.workspaceStack.currentWidget() is self.images_page
+        if self._logs_active != logs:
+            self._logs_active = logs
+            if logs:
+                self._logs_previous_sizes = shell.workspaceSplitter.sizes()
+                for slot, frame in (
+                    (self.logs_form.logsBrandSlot, shell.brandFrame),
+                    (self.logs_form.logsNavigationSlot, shell.navigationFrame),
+                ):
+                    # The four navigation buttons need their own size hint;
+                    # the old 248–300 px rail width clips them in a header row.
+                    width = shell.leftRail.width()
+                    if frame is shell.navigationFrame:
+                        width = max(width, frame.sizeHint().width())
+                    slot.setFixedSize(width, frame.height())
+                    layout = slot.layout()
+                    if layout is None:
+                        layout = QHBoxLayout(slot)
+                        layout.setContentsMargins(0, 0, 0, 0)
+                    layout.addWidget(frame)
+            elif self._gallery_chrome_active is False:
+                shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+                shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+                shell.brandFrame.show()
+                shell.navigationFrame.show()
+                shell.workspaceSplitter.setSizes(self._logs_previous_sizes)
         if images != self._gallery_chrome_active:
             self._gallery_chrome_active = images
             shell.setProperty("galleryMode", images)
@@ -488,19 +619,23 @@ class MainWindow:
                 self.gallery_detail.galleryHeaderScroll.setFixedHeight(shell.brandFrame.height())
                 self.gallery_detail.galleryBrandSlotLayout.addWidget(shell.brandFrame)
                 self.gallery_detail.galleryNavigationSlotLayout.addWidget(shell.navigationFrame)
-            else:
+            elif not logs:
                 shell.leftRailLayout.insertWidget(0, shell.brandFrame)
                 shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
             shell.brandFrame.show()
             shell.navigationFrame.show()
             self.gallery_detail.galleryBrandSlot.setVisible(images)
             self.gallery_detail.galleryNavigationSlot.setVisible(images)
-            shell.leftRail.setVisible(not images)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        # Logs and Images use the full-width center workspace, regardless of
+        # whether the Images page changed during this navigation.
+        shell.leftRail.setVisible(not images and not logs)
+        shell.rightRail.setVisible(not images and not logs and not narrow)
+        self.logs_form.logsBrandSlot.setVisible(logs)
+        self.logs_form.logsNavigationSlot.setVisible(logs)
         shell.runControl.setVisible(True)
         self._align_run_control()
-        shell.rightRail.setVisible(not images and not narrow)
 
     def _sync_activity_progress(self):
         if self.progress_strip.retired:
@@ -540,7 +675,14 @@ class MainWindow:
             self.form.endpointEdit.setText(endpoint)
         self.generation.restore(document.get("form"), document.get("forms"))
         self.generation.inpaint.restore(document.get("edit"))
-        log.info("last session restored provider=%s", provider if provider in BACKENDS else "-")
+        diagnostic_event(
+            log,
+            "app.last_session_restored",
+            level=logging.INFO,
+            data={
+                "provider": provider if provider in BACKENDS else "-",
+            },
+        )
 
     def _session_document(self) -> dict:
         return {
@@ -569,15 +711,41 @@ class MainWindow:
     def _write_session(self, document: dict) -> None:
         try:
             save_last_session(self.state_dir, document)
-            log.info("last session saved")
+            diagnostic_event(
+                log,
+                "app.last_session_saved",
+                level=logging.INFO,
+                data={},
+            )
         except OSError as exc:
-            log.warning("last session not saved reason=%s", type(exc).__name__)
+            diagnostic_event(
+                log,
+                "app.last_session_not_saved",
+                level=logging.WARNING,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
 
     def _endpoint_entered(self) -> None:
-        log.info("endpoint changed backend=%s", self.form.backendCombo.currentText())
+        diagnostic_event(
+            log,
+            "app.endpoint_changed",
+            level=logging.INFO,
+            data={
+                "backend": self.form.backendCombo.currentText(),
+            },
+        )
 
     def _backend_changed(self, name: str) -> None:
-        log.info("provider changed backend=%s", name)
+        diagnostic_event(
+            log,
+            "app.provider_changed",
+            level=logging.INFO,
+            data={
+                "backend": name,
+            },
+        )
         self.form.endpointEdit.setEnabled(name == "local")
         self.form.credentialBox.setEnabled(name == "cloud")
         self._selection_changed()
@@ -702,7 +870,14 @@ class MainWindow:
 
     def _cache_measured(self, usage, failure) -> None:
         if failure is not None:
-            log.warning("cache measurement failed reason=%s", type(failure).__name__)
+            diagnostic_event(
+                log,
+                "app.cache_measurement_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(failure).__name__,
+                },
+            )
             self.form.cacheStatusLabel.setText(
                 str(failure)
                 if isinstance(failure, (CacheBusyError, CacheCleanupError, CacheSafetyError))
@@ -754,7 +929,14 @@ class MainWindow:
     def _cache_cleared(self, names: str, failure) -> None:
         self.progress_strip.finish("cache")
         if failure is not None:
-            log.warning("cache cleanup failed reason=%s", type(failure).__name__)
+            diagnostic_event(
+                log,
+                "app.cache_cleanup_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(failure).__name__,
+                },
+            )
             self.progress_strip.complete(
                 "cache",
                 "Cache not cleared",
@@ -861,7 +1043,14 @@ class MainWindow:
         self._busy = True
         self.form.checkButton.setEnabled(False)
         self._present(Presentation("warning", "Checking", ""))
-        log.info("connection check started backend=%s", selection.name)
+        diagnostic_event(
+            log,
+            "app.connection_check_started",
+            level=logging.INFO,
+            data={
+                "backend": selection.name,
+            },
+        )
         saved: CredentialProvider | None = self._saved if self._saved.available() else None
         revision = self._selection_revision
         self.runner.submit(
@@ -877,7 +1066,14 @@ class MainWindow:
         if revision is not None and revision != self._selection_revision:
             return  # The provider/endpoint changed while the old check was running.
         shown = present_failure(failure) if failure else present_status(status)
-        log.info("connection check result level=%s headline=%s", shown.level, shown.headline)
+        diagnostic_event(
+            log,
+            "app.connection_check_result",
+            level=logging.INFO,
+            data={
+                "level": shown.level,
+            },
+        )
         self._present(shown)
         if failure is None and shown.level == "ok":
             self.remember()
@@ -887,11 +1083,23 @@ class MainWindow:
             self._saved.save(self.form.keyEdit.text())
         except (BackendError, ValidationError, SecureStorageUnavailable) as exc:
             code = exc.failure.code if isinstance(exc, BackendError) else str(exc)
-            log.warning("api key not saved reason=%s", type(exc).__name__)
+            diagnostic_event(
+                log,
+                "app.api_key_not_saved",
+                level=logging.WARNING,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
             self.form.credentialStatusLabel.setText(f"Key not saved: {code}")
             self.form.keyEdit.clear()
             return
-        log.info("api key saved")
+        diagnostic_event(
+            log,
+            "app.api_key_saved",
+            level=logging.INFO,
+            data={},
+        )
         self.refresh_credentials()
         self.generation.credentials_changed()
 
@@ -903,10 +1111,22 @@ class MainWindow:
             try:
                 self._saved.remove()
             except BackendError as exc:
-                log.warning("api key not removed code=%s", exc.failure.code)
+                diagnostic_event(
+                    log,
+                    "app.api_key_not_removed",
+                    level=logging.WARNING,
+                    data={
+                        "code": exc.failure.code,
+                    },
+                )
                 self.form.credentialStatusLabel.setText(f"Key not removed: {exc.failure.code}")
                 return
-            log.info("api key removed")
+            diagnostic_event(
+                log,
+                "app.api_key_removed",
+                level=logging.INFO,
+                data={},
+            )
             self.refresh_credentials()
             self.generation.credentials_changed()
 
@@ -979,7 +1199,14 @@ class MainWindow:
 
     def _images_reconciled(self, outcome, error) -> None:
         if error is not None:
-            log.warning("image-recycle reconciliation skipped reason=%s", type(error).__name__)
+            diagnostic_event(
+                log,
+                "app.image_recycle_reconciliation_skipped",
+                level=logging.WARNING,
+                data={
+                    "reason": type(error).__name__,
+                },
+            )
             if isinstance(error, (OriginalImagesUnavailableError, OriginalImagesBusyError)):
                 message = (
                     "Interrupted removal intents could not be reconciled because original-file access "
@@ -996,7 +1223,7 @@ class MainWindow:
                 )
             return
         if outcome and any(outcome):
-            self.gallery.refresh(preserve=True)
+            self.gallery.refresh(preserve=True, trigger="removal_reconcile")
         if outcome is not None and outcome.delete_uncertain:
             count = outcome.delete_uncertain
             InlineNotice.warning(
@@ -1082,5 +1309,10 @@ class MainWindow:
         self.image_export.cancel()
         self.image_recycle.cancel()
         self.gallery.save_now()
-        log.info("window closed")
+        diagnostic_event(
+            log,
+            "app.window_closed",
+            level=logging.INFO,
+            data={},
+        )
         self.runner.shutdown()

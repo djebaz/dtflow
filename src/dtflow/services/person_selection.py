@@ -20,6 +20,7 @@ from PIL import Image
 
 from dtflow.core.image_inputs import ImageContent
 from dtflow.core.models import ValidationError
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.person_models import ModelRef, PersonModels
 from dtflow.services.artifact_paths import ArtifactReadPaths
 
@@ -211,7 +212,14 @@ def _read_model(stored: str) -> bytes:
     except OSError as exc:
         reason = "could not be read"
         error = exc
-    log.warning("person model read failed reason=%s", type(error).__name__)
+    diagnostic_event(
+        log,
+        "images.person.read_failed",
+        level=logging.WARNING,
+        data={
+            "reason": type(error).__name__,
+        },
+    )
     raise ValidationError(f"A selected model file {reason}; choose it again with Models….") from error
 
 
@@ -223,21 +231,61 @@ def model_issue(models: PersonModels) -> str | None:
         try:
             path = model_read_path(ref.path)
             if not stat.S_ISREG(path.stat().st_mode):
-                log.warning("person model readiness refused model=%s reason=not_regular", role)
+                diagnostic_event(
+                    log,
+                    "images.person.readiness_refused",
+                    level=logging.WARNING,
+                    data={
+                        "model": role,
+                        "reason": "not_regular",
+                    },
+                )
                 return f"The saved {role} model is not a regular file; choose it again with Models…."
             with path.open("rb") as stream:
                 stream.read(1)  # Check access, not model validity; never load the full model here.
         except ValidationError as exc:
-            log.warning("person model readiness refused model=%s reason=unreachable", role)
+            diagnostic_event(
+                log,
+                "images.person.readiness_refused",
+                level=logging.WARNING,
+                data={
+                    "model": role,
+                    "reason": "unreachable",
+                },
+            )
             return str(exc)
         except FileNotFoundError:
-            log.warning("person model readiness refused model=%s reason=not_found", role)
+            diagnostic_event(
+                log,
+                "images.person.readiness_refused",
+                level=logging.WARNING,
+                data={
+                    "model": role,
+                    "reason": "not_found",
+                },
+            )
             return f"The saved {role} model was not found on this system; choose it again with Models…."
         except PermissionError:
-            log.warning("person model readiness refused model=%s reason=permission_denied", role)
+            diagnostic_event(
+                log,
+                "images.person.readiness_refused",
+                level=logging.WARNING,
+                data={
+                    "model": role,
+                    "reason": "permission_denied",
+                },
+            )
             return f"The saved {role} model cannot be read (permission denied); choose it again with Models…."
         except OSError as exc:
-            log.warning("person model readiness failed model=%s reason=%s", role, type(exc).__name__)
+            diagnostic_event(
+                log,
+                "images.person.readiness_failed",
+                level=logging.WARNING,
+                data={
+                    "model": role,
+                    "reason": type(exc).__name__,
+                },
+            )
             return f"The saved {role} model could not be read; choose it again with Models…."
     return None
 

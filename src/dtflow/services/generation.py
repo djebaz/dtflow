@@ -26,7 +26,8 @@ from dtflow.core.models import (
 )
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
-from dtflow.logging_setup import ATTEMPT
+from dtflow.diagnostics import ATTEMPT
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.original_io import (
     OriginalImagesBusyError,
     OriginalImagesUnavailableError,
@@ -212,8 +213,15 @@ class GenerationService:
             request = replace(request, image_inputs=replace(request.image_inputs, attempt_id=attempt_id))
         ATTEMPT.set(attempt_id)
         await self.store.create(attempt_id, caps.backend_id, request)
-        log.info(
-            "attempt prepared backend=%s request=%s model=%s", caps.backend_id, request.request_id, request.model_id
+        diagnostic_event(
+            log,
+            "generation.attempt_prepared",
+            level=logging.INFO,
+            data={
+                "backend": caps.backend_id,
+                "request_id": request.request_id,
+                "model_id": request.model_id,
+            },
         )
         stage = SubmissionStage.NOT_SUBMITTED
         outcome = RemoteOutcome.NOT_STARTED
@@ -300,7 +308,14 @@ class GenerationService:
             await self.store.transition(
                 attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
             )
-            log.info("attempt succeeded outputs=%d", len(paths))
+            diagnostic_event(
+                log,
+                "generation.attempt_succeeded",
+                level=logging.INFO,
+                data={
+                    "outputs": len(paths),
+                },
+            )
             return SavedGeneration(
                 attempt_id,
                 paths,
@@ -310,7 +325,15 @@ class GenerationService:
                 display_image=display_image,
             )
         except asyncio.CancelledError:
-            log.warning("attempt interrupted locally stage=%s outcome=%s", stage, outcome)
+            diagnostic_event(
+                log,
+                "generation.attempt_interrupted",
+                level=logging.WARNING,
+                data={
+                    "stage": stage,
+                    "outcome": outcome,
+                },
+            )
             failure = BackendFailure(
                 ErrorCategory.CANCELLATION,
                 "local_cancelled",
@@ -347,8 +370,15 @@ class GenerationService:
             raise
         except BackendError as exc:
             failure = exc.failure
-            log.error(
-                "attempt failed code=%s category=%s outcome=%s", failure.code, failure.category, failure.remote_outcome
+            diagnostic_event(
+                log,
+                "generation.attempt_failed",
+                level=logging.ERROR,
+                data={
+                    "code": failure.code,
+                    "category": failure.category,
+                    "outcome": failure.remote_outcome,
+                },
             )
             await self.store.transition(
                 attempt_id,
