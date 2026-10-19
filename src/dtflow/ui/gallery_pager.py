@@ -84,7 +84,7 @@ class GalleryPager:
                 button = QPushButton(str(number), self.page)
                 button.setObjectName(f"galleryPagerPage{number}")
                 button.setProperty("role", "galleryPagerChip")
-                button.setAccessibleName("DTFlow Grid Page 1" if number == 1 else f"Jump to image batch {number}")
+                button.setAccessibleName(f"Jump to image batch {number}")
                 first = (number - 1) * batch_size + 1
                 last = min(total, number * batch_size)
                 button.setToolTip(f"Jump to images {first}–{last}")
