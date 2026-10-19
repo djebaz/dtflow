@@ -17,6 +17,7 @@ from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail
 from dtflow._diagnostic_export import export_matching
 from dtflow.diagnostic_projection import characteristics
 from dtflow.ui.theme import load_tokens
+from dtflow.ui.logs_delegate import LogCellDelegate
 
 
 class _Signals(QObject):
@@ -99,6 +100,9 @@ class LogsWorkspace(QObject):
         self.pool = QThreadPool.globalInstance()
         self.model = _LogModel(form.logsTable)
         self.form.logsTable.setModel(self.model)
+        self.delegate = LogCellDelegate(self.form.logsTable)
+        self.form.logsTable.setItemDelegate(self.delegate)
+        self.delegate.actionRequested.connect(self._row_action)
         self.form.logsTable.verticalHeader().hide()
         header = self.form.logsTable.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
@@ -309,22 +313,18 @@ class LogsWorkspace(QObject):
             self.refresh()
 
     def _row_clicked(self, index):
+        # Selection alone never opens details; actions use the painted delegate.
         if index.column() != 4:
+            self.form.logsFollowButton.setChecked(False)
+
+    def _row_action(self, row, action):
+        if row >= len(self.model.refs):
             return
         self.form.logsFollowButton.setChecked(False)
-        if index.row() >= len(self.model.refs):
-            return
-        ref = self.model.refs[index.row()]
-        # Until a painted two-action delegate is installed, the column uses a
-        # menu to keep Details and Copy raw as separate explicit actions.
-        menu = QMenu(self.form.logsTable)
-        details = menu.addAction("Details")
-        raw = menu.addAction("Copy raw JSONL")
-        choice = menu.exec(self.form.logsTable.viewport().mapToGlobal(
-            self.form.logsTable.visualRect(index).bottomRight()))
-        if choice == details:
+        ref = self.model.refs[row]
+        if action == "details":
             self._run(lambda: read_detail(self.directory, ref), self._show_detail)
-        elif choice == raw:
+        elif action == "copy":
             self._run(lambda: read_detail(self.directory, ref), self._copy_record)
 
     def _show_detail(self, record, error):
