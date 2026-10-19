@@ -77,7 +77,9 @@ class _LogModel(QAbstractTableModel):
             if column == 2:
                 return record["event"]
             if column == 3:
-                return self.previews[index.row()] if index.row() < len(self.previews) else "Loading characteristics…"
+                return ("   ".join(f"{key}: {value}" for key, value in self.previews[index.row()][0])
+                        + (f"   +{self.previews[index.row()][1]} more" if self.previews[index.row()][1] else ""))
+                        if index.row() < len(self.previews) else "Loading characteristics…"
             return "Details   Copy"
         if role == Qt.ItemDataRole.ToolTipRole:
             return f"{record['level']} · {record['component']} · {record['event']} · seq {record['seq']}"
@@ -260,12 +262,9 @@ class LogsWorkspace(QObject):
                 try:
                     full = read_detail(self.directory, ref)
                     pairs, more = characteristics(full, limit=6, preview_bytes=64)
-                    preview = "   ".join(f"{key}: {value}" for key, value in pairs)
-                    if more:
-                        preview += f"   +{more} more"
-                    projections.append(preview)
+                    projections.append((pairs, more))
                 except Exception:
-                    projections.append("Details unavailable")
+                    projections.append(((("Details", "unavailable"),), 0))
             return status, count, page, cursor, projections
 
         self._run(load, self._show_results)
