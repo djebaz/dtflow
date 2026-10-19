@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter
-from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionHeader
+from PySide6.QtGui import QColor, QCursor, QFontMetrics, QIcon, QPainter
+from PySide6.QtWidgets import QApplication, QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionHeader
 
 from dtflow.diagnostic_projection import stable_color_index
 from dtflow.ui.theme import load_tokens
@@ -237,6 +237,13 @@ class LogHeaderView(QHeaderView):
         option = QStyleOptionHeader()
         self.initStyleOption(option)
         option.rect, option.section, option.text = rect, logical_index, ""
+        option.position = QStyleOptionHeader.SectionPosition.Middle
+        # Keep the hover and pressed feedback the base paintSection gives the other sections.
+        cursor = self.viewport().mapFromGlobal(QCursor.pos())
+        if self.viewport().rect().contains(cursor) and self.logicalIndexAt(cursor) == logical_index:
+            option.state |= QStyle.StateFlag.State_MouseOver
+            if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+                option.state |= QStyle.StateFlag.State_Sunken
         self.style().drawControl(QStyle.ControlElement.CE_Header, option, painter, self)
         active = self.active_part()
         separator_start = parts[0][2] + self.fontMetrics().horizontalAdvance(parts[0][0])

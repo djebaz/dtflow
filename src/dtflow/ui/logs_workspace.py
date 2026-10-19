@@ -155,19 +155,28 @@ class _Job(QRunnable):
             pass
 
 
+def segment_age(basename: str) -> int:
+    """Rotation age from a canonical segment name: 0 for the active file, else its numeric suffix."""
+    suffix = basename.rsplit(".jsonl", 1)[-1]
+    return int(suffix[1:]) if suffix[1:].isdigit() else 0
+
+
 def count_arrivals(directory: Path, session_id: str, boundary, filters, *, cancelled=None):
     """Matching records not wholly inside the shown snapshot, through the shared reader.
 
-    `boundary` maps each (device, inode) of the shown snapshot to its size; rotation renames
-    keep the inode, so a record is new when it lies beyond that size or in a new file. Only a
-    count is retained, never the arriving records.
+    `boundary` maps each (device, inode) of the shown snapshot to its (size, rotation age).
+    Rotation renames keep the inode and only raise the age, so a record is new when it lies
+    beyond the shown size, sits in an unknown file, or sits in a file whose age is lower than
+    recorded (a new file reusing a deleted segment's inode). Only a count is retained, never
+    the arriving records.
     """
     total = 0
 
     def collect(record, ref):
         nonlocal total
         shown = boundary.get((ref.device, ref.inode))
-        if (shown is None or ref.offset + ref.length > shown) and match(record, **filters):
+        new = shown is None or segment_age(ref.basename) < shown[1] or ref.offset + ref.length > shown[0]
+        if new and match(record, **filters):
             total += 1
 
     def reset():
@@ -450,6 +459,8 @@ class LogsWorkspace(QObject):
         self._counted_snapshot = None
         self._counted_at = 0.0
         self._outside_watch = False
+        self._outside_armed = False
+        self._outside_widgets = []
         self._facets = (None, [], [], [], [])
         self._programmatic = False
         self._timer = QTimer(form)
@@ -818,6 +829,8 @@ class LogsWorkspace(QObject):
             self.form.logsNotice.setText(f"Diagnostic reader unavailable: {error}")
             self.form.logsNotice.show()
             self.form.logsCounter.setText("Read failed")
+            # Keep readable earlier rows; never leave an earlier empty-state message describing this failure.
+            self._set_empty("" if self.model.rows else "Records could not be read.")
             return
         status, count, page, _next, projections, choices = result
         self._page = page
@@ -962,7 +975,7 @@ class LogsWorkspace(QObject):
             self._set_pending(True, None, detail="The session changed since this page was read")
             return
         sid, filters = self._query_key[0], self._query_key[1]
-        boundary = {(device, inode): size for _name, device, inode, size in self._file_snapshot}
+        boundary = {(device, inode): (size, segment_age(name)) for name, device, inode, size in self._file_snapshot}
         cancel = Event()
         self._counted_at = time.monotonic()
 
@@ -990,14 +1003,27 @@ class LogsWorkspace(QObject):
         )
 
     def _watch_outside(self, enabled):
-        app = QApplication.instance()
-        if app is None or enabled == self._outside_watch:
+        """Filter only the Logs widgets outside the details pane, and only while it is shown."""
+        if enabled == self._outside_watch:
             return
         self._outside_watch = enabled
+        self._outside_armed = False
         if enabled:
-            app.installEventFilter(self)
+            detail = self.form.logsDetail
+            self._outside_widgets = [
+                widget
+                for widget in (self.form, *self.form.findChildren(QWidget))
+                if widget is not detail and not detail.isAncestorOf(widget)
+            ]
+            for widget in self._outside_widgets:
+                widget.installEventFilter(self)
         else:
-            app.removeEventFilter(self)
+            for widget in self._outside_widgets:
+                try:
+                    widget.removeEventFilter(self)
+                except RuntimeError:
+                    pass  # already destroyed with the form
+            self._outside_widgets = []
 
     def eventFilter(self, watched, event):
         kind = event.type()
@@ -1005,9 +1031,16 @@ class LogsWorkspace(QObject):
             if kind in (QEvent.Type.Show, QEvent.Type.Hide):
                 self._watch_outside(kind == QEvent.Type.Show and self.active)
             return False
-        if kind == QEvent.Type.MouseButtonPress and self._outside_watch and self._outside_press(watched, event):
-            self.form.logsDetail.hide()
-        # Never consume the press: selection, copy and row gestures continue normally.
+        if not self._outside_watch:
+            return False
+        if kind == QEvent.Type.MouseButtonPress:
+            self._outside_armed = self._outside_armed or self._outside_press(watched, event)
+        elif kind == QEvent.Type.MouseButtonRelease and self._outside_armed:
+            # Collapse after the release is handled, so the table does not grow under the pressed row
+            # before its click completes.
+            self._outside_armed = False
+            QTimer.singleShot(0, self.form.logsDetail, self.form.logsDetail.hide)
+        # Never consume the event: selection, copy and row gestures continue normally.
         return False
 
     def _outside_press(self, watched, event):
