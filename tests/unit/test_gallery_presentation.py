@@ -331,7 +331,12 @@ def test_empty_filter_then_same_grid_cards_are_mounted_again(presentation, qtbot
         ),
         timeout=5000,
     )
-    assert gallery.cards_layout.indexOf(original) == -1
+    # Retirement can already have deleted the old C++ frame by the time
+    # waitUntil returns. Never pass a deleted Qt wrapper into QLayout.indexOf.
+    from shiboken6 import isValid
+
+    assert "0" not in gallery._grid_buttons
+    assert not isValid(original) or gallery.cards_layout.indexOf(original) == -1
     state["records"] = records[:200]
     gallery.refresh(reset=True, preserve=False)
     qtbot.waitUntil(
