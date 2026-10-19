@@ -42,7 +42,7 @@ def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | Non
 class GridProgressProbe:
     """Read the dedicated bottom-bar index, with no alternate UIA selector.
 
-    galleryGridFirstVisibleIndex is the canonical Qt objectName. We retain
+    dtflowStatusGridFirstVisibleIndex is the canonical Qt objectName. We retain
     a single cached UIA wrapper to avoid enumerating the full window tree.
     """
 
@@ -56,13 +56,13 @@ class GridProgressProbe:
         try:
             if self._control is None:
                 control = self.window.child_window(
-                    auto_id="galleryGridFirstVisibleIndex", control_type="Text"
+                    auto_id="dtflowStatusGridFirstVisibleIndex", control_type="Text"
                 )
                 if not control.exists(timeout=0):
                     return None
                 self._control = control
             name = self._control.element_info.name or ""
-            match = re.fullmatch(r"DTFlow grid first visible index: ([0-9]+) / total: ([0-9]+)", name)
+            match = re.fullmatch(r"DTFlow status grid first visible index: ([0-9]+) / total: ([0-9]+)", name)
             if match is None:
                 return None
             first = int(match.group(1))
