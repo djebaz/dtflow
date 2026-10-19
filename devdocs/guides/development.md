@@ -209,3 +209,7 @@ uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_bench
 ```
 
 Large limits are not meaningfully tested when the saved-output catalogue is too small; first-query shortfall is a recorded warning. Scroll dispatch is not proof of physical image movement. No new product settings, dependencies or billable services are involved. Windows acceptance is pending.
+
+### Faster position-driven Grid matrix (2026-10-19)
+
+The newer `--grid-matrix` smoke supersedes its fixed wheel-step count: **click page 1 → rapidly wheel down until the first visible image is approximately #300 → wheel back until the first visible image is #1 → click page 1 again**. It checks the UIA `Visible image range` text (as identified by the owner's Windows recorder), falling back to a benchmark-only log of `GalleryPager.present` values when Windows UIA masks the displayed numbers. The limit pair never determines scrolling distance. Short 55-ms pulse gaps do not wait for adjacent thumbnail batches; timeouts (default 12 s per direction) and unobserved positions are warnings and exclude a case from clean ranking. The normal multi-view smoke is unchanged. CLI: `--grid-matrix`, `--grid-target-card 300`, `--grid-seek-timeout 12`, with `-ml/-mc` pairs given as `ML:MC`. No Sort manipulation, generation or live-provider calls. Windows acceptance is pending.
