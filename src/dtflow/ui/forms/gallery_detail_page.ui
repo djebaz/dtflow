@@ -3534,6 +3534,24 @@ No generation or saved output</string>
      </layout>
     </widget>
    </item>
+   <item>
+    <widget class="QFrame" name="galleryGridPositionFooter">
+     <property name="minimumSize"><size><width>0</width><height>26</height></size></property>
+     <layout class="QHBoxLayout" name="galleryGridPositionFooterLayout">
+      <property name="leftMargin"><number>10</number></property>
+      <property name="rightMargin"><number>10</number></property>
+      <property name="topMargin"><number>2</number></property>
+      <property name="bottomMargin"><number>2</number></property>
+      <item>
+       <widget class="QLabel" name="galleryGridFirstVisibleIndex">
+        <property name="text"><string>First visible: 0</string></property>
+        <property name="accessibleName"><string>DTFlow grid first visible index: 0</string></property>
+        <property name="role" stdset="0"><string>secondary</string></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
   </layout>
   <property name="toolTip">
    <string>Browse committed saved outputs and recorded provenance.</string>
