@@ -48,9 +48,14 @@ def test_named_profiles_load_with_exact_explicit_overrides(tmp_path):
 
 def _jsonl_record(seq, event, data, *, kind="event", agg=None):
     record = {
-        "v": 1, "seq": seq, "ts": f"2026-10-19T00:00:{seq:02d}.000Z",
-        "level": "DEBUG", "component": "gallery", "event": event,
-        "kind": kind, "data": data,
+        "v": 1,
+        "seq": seq,
+        "ts": f"2026-10-19T00:00:{seq:02d}.000Z",
+        "level": "DEBUG",
+        "component": "gallery",
+        "event": event,
+        "kind": kind,
+        "data": data,
     }
     if kind == "measurement":
         record["mono_ns"] = seq * 1_000_000_000
@@ -63,42 +68,67 @@ def _write_jsonl_session(directory, observations):
     directory.mkdir(exist_ok=True)
     session = "benchmarktest"
     start = {
-        "session_id": session, "version": "test", "source_commit": "unknown",
-        "build_state": "unknown", "runtime": "python", "platform": "test",
-        "dev": True, "instrumentation_version": "gallery-jsonl-v1",
-        "schema_version": 1, "queue_max_records": 1024,
-        "queue_max_bytes": 8 * 1024 * 1024, "max_record_bytes": 1_048_576,
+        "session_id": session,
+        "version": "test",
+        "source_commit": "unknown",
+        "build_state": "unknown",
+        "runtime": "python",
+        "platform": "test",
+        "dev": True,
+        "instrumentation_version": "gallery-jsonl-v1",
+        "schema_version": 1,
+        "queue_max_records": 1024,
+        "queue_max_bytes": 8 * 1024 * 1024,
+        "max_record_bytes": 1_048_576,
         "aggregation_policy": "test",
     }
     records = [_jsonl_record(1, "session.started", start)]
-    records.extend(_jsonl_record(index, event, data, kind=kind, agg=agg)
-                   for index, (event, data, kind, agg) in enumerate(observations, 2))
+    records.extend(
+        _jsonl_record(index, event, data, kind=kind, agg=agg)
+        for index, (event, data, kind, agg) in enumerate(observations, 2)
+    )
     closing_seq = len(records) + 1
     close = {
-        "observed": len(records), "admitted": len(records),
-        "rejected": 0, "dropped": 0, "written_records": closing_seq,
-        "aggregate_source_samples": 0, "writer_failures": 0,
+        "observed": len(records),
+        "admitted": len(records),
+        "rejected": 0,
+        "dropped": 0,
+        "written_records": closing_seq,
+        "aggregate_source_samples": 0,
+        "writer_failures": 0,
         "serialization_failures": 0,
     }
     records.append(_jsonl_record(closing_seq, "session.closed", close))
     (directory / f"dtflow-{session}.jsonl").write_text(
-        "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8",
+        "".join(json.dumps(row) + "\n" for row in records),
+        encoding="utf-8",
     )
 
 
 def test_report_uses_original_diagnostic_max_and_never_invents_missing_events(tmp_path):
     logs = tmp_path / "logs"
-    _write_jsonl_session(logs, [
-        ("gallery.query_done", {"elapsed_ms": 28, "returned": 20,
-         "source": "live", "error": None}, "measurement", None),
-        ("gallery.performance_aggregate", {"phase": "gui_gaps"}, "aggregate", {
-            "samples": 3,
-            "window_start": "2026-10-19T00:00:01.000Z",
-            "window_end": "2026-10-19T00:00:02.000Z",
-            "metrics": {"wall_max_ms": {"count": 3, "mean": 0, "p95": 0,
-                                      "max": 87, "total": 0}},
-        }),
-    ])
+    _write_jsonl_session(
+        logs,
+        [
+            (
+                "gallery.query_done",
+                {"elapsed_ms": 28, "returned": 20, "source": "live", "error": None},
+                "measurement",
+                None,
+            ),
+            (
+                "gallery.performance_aggregate",
+                {"phase": "gui_gaps"},
+                "aggregate",
+                {
+                    "samples": 3,
+                    "window_start": "2026-10-19T00:00:01.000Z",
+                    "window_end": "2026-10-19T00:00:02.000Z",
+                    "metrics": {"wall_max_ms": {"count": 3, "mean": 0, "p95": 0, "max": 87, "total": 0}},
+                },
+            ),
+        ],
+    )
     result = summarize_jsonl(logs)
     assert result["gui_gap_over_50_max_ms"] == 87
     assert result["query_done_median_recorded_ms"] == 28
@@ -106,11 +136,16 @@ def test_report_uses_original_diagnostic_max_and_never_invents_missing_events(tm
     assert result["phase_counts"]["gui_gaps"] == 3
 
     write_report(
-        [{
-            "profile_name": "baseline", "profile": validate_profile({}),
-            "trial": 1, "status": "ok", "initial_query_records": 20,
-            "metrics": result,
-        }],
+        [
+            {
+                "profile_name": "baseline",
+                "profile": validate_profile({}),
+                "trial": 1,
+                "status": "ok",
+                "initial_query_records": 20,
+                "metrics": result,
+            }
+        ],
         tmp_path / "out",
     )
     rows = list(csv.DictReader((tmp_path / "out" / "results.csv").open(newline="", encoding="utf-8")))
@@ -120,15 +155,22 @@ def test_report_uses_original_diagnostic_max_and_never_invents_missing_events(tm
 
 def test_missing_gallery_query_cannot_be_ranked(tmp_path):
     logs = tmp_path / "logs"
-    _write_jsonl_session(logs, [
-        ("gallery.performance_aggregate", {"phase": "gui_gaps"}, "aggregate", {
-            "samples": 1,
-            "window_start": "2026-10-19T00:00:01.000Z",
-            "window_end": "2026-10-19T00:00:01.000Z",
-            "metrics": {"wall_max_ms": {"count": 1, "mean": 80,
-                                      "p95": 80, "max": 80, "total": 80}},
-        }),
-    ])
+    _write_jsonl_session(
+        logs,
+        [
+            (
+                "gallery.performance_aggregate",
+                {"phase": "gui_gaps"},
+                "aggregate",
+                {
+                    "samples": 1,
+                    "window_start": "2026-10-19T00:00:01.000Z",
+                    "window_end": "2026-10-19T00:00:01.000Z",
+                    "metrics": {"wall_max_ms": {"count": 1, "mean": 80, "p95": 80, "max": 80, "total": 80}},
+                },
+            ),
+        ],
+    )
     with pytest.raises(ValueError, match="query"):
         summarize_jsonl(logs)
 
@@ -316,13 +358,21 @@ def test_query_readiness_ignores_old_completions_across_rotation(tmp_path):
     sid = "benchmarktest"
     current = tmp_path / f"dtflow-{sid}.jsonl"
     started = {
-        "session_id": sid, "version": "test", "source_commit": "unknown",
-        "build_state": "unknown", "runtime": "python", "platform": "test",
-        "dev": True, "instrumentation_version": "gallery-jsonl-v1",
-        "schema_version": 1, "queue_max_records": 1024,
-        "queue_max_bytes": 8 * 1024 * 1024, "max_record_bytes": 1_048_576,
+        "session_id": sid,
+        "version": "test",
+        "source_commit": "unknown",
+        "build_state": "unknown",
+        "runtime": "python",
+        "platform": "test",
+        "dev": True,
+        "instrumentation_version": "gallery-jsonl-v1",
+        "schema_version": 1,
+        "queue_max_records": 1024,
+        "queue_max_bytes": 8 * 1024 * 1024,
+        "max_record_bytes": 1_048_576,
         "aggregation_policy": "test",
     }
+
     def append(*records):
         with current.open("a", encoding="utf-8") as stream:
             for row in records:
@@ -330,17 +380,37 @@ def test_query_readiness_ignores_old_completions_across_rotation(tmp_path):
 
     append(_jsonl_record(1, "session.started", started))
     assert benchmark._read_query_count(tmp_path) == 0
-    append(_jsonl_record(2, "gallery.query_done", {
-        "elapsed_ms": 28, "returned": 80, "source": "live", "error": None,
-    }, kind="measurement"))
+    append(
+        _jsonl_record(
+            2,
+            "gallery.query_done",
+            {
+                "elapsed_ms": 28,
+                "returned": 80,
+                "source": "live",
+                "error": None,
+            },
+            kind="measurement",
+        )
+    )
     previous = set(benchmark._completed_queries(tmp_path))
     assert previous == {(sid, 2)}
     current.rename(tmp_path / f"dtflow-{sid}.jsonl.1")
     # The writer creates the new active segment after rotation; the old
     # segment alone is an incomplete snapshot, not clean live evidence.
-    append(_jsonl_record(3, "gallery.query_done", {
-        "elapsed_ms": 30, "returned": 20, "source": "live", "error": None,
-    }, kind="measurement"))
+    append(
+        _jsonl_record(
+            3,
+            "gallery.query_done",
+            {
+                "elapsed_ms": 30,
+                "returned": 20,
+                "source": "live",
+                "error": None,
+            },
+            kind="measurement",
+        )
+    )
     assert previous.issubset(benchmark._completed_queries(tmp_path))
     assert benchmark._await_query(tmp_path, SimpleNamespace(poll=lambda: None), 1, after=previous) == 20
 
@@ -645,14 +715,27 @@ def test_failed_slider_does_not_abort_next_step(monkeypatch):
 def test_scroll_intent_parser_requires_a_real_qt_wheel_event(tmp_path):
     from tools.ui.windows_gallery_benchmark import _wheel_intents
 
-    _write_jsonl_session(tmp_path, [
-        ("gallery.scroll_intent", {
-            "direction": direction, "source": source, "offset": 0, "mounted": 80,
-        }, "measurement", None)
-        for direction, source in (
-            ("forward", "wheel"), ("backward", "wheel"), ("forward", "drag"),
-        )
-    ])
+    _write_jsonl_session(
+        tmp_path,
+        [
+            (
+                "gallery.scroll_intent",
+                {
+                    "direction": direction,
+                    "source": source,
+                    "offset": 0,
+                    "mounted": 80,
+                },
+                "measurement",
+                None,
+            )
+            for direction, source in (
+                ("forward", "wheel"),
+                ("backward", "wheel"),
+                ("forward", "drag"),
+            )
+        ],
+    )
     events = _wheel_intents(tmp_path)
     assert len(events) == 2
     assert {event[2] for event in events} == {"forward", "backward"}

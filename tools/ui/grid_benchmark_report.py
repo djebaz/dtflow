@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from dtflow._diagnostic_reader import EvidenceError, discover, scan
+from dtflow._diagnostic_reader import discover, scan
 
 _THRESHOLD_MS = 100
 ATTRIBUTION_POLICY = "jsonl-v1-source-millisecond-exact-window"
@@ -36,7 +36,8 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
         if start.tzinfo is not None and end.tzinfo is not None and end >= start:
             intervals.append((start, end))
     total_ms = sum(
-        float(action["duration_ms"]) for action in actions
+        float(action["duration_ms"])
+        for action in actions
         if action.get("action") in ("grid-seek-down", "grid-seek-up")
         and type(action.get("duration_ms")) in (int, float)
     )
@@ -44,18 +45,20 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
     gaps = []
     states = []
     for sid in sessions:
+
         def reset():
             gaps.clear()
+
         def collect(record, _ref):
             if record["event"] != "gallery.gui_gap" or record.get("kind") != "measurement":
                 return
             data = record["data"]
-            if (str(data["mode"]).lower() != "grid" or data["mounted"] <= 0
-                    or data["elapsed_ms"] < _THRESHOLD_MS):
+            if str(data["mode"]).lower() != "grid" or data["mounted"] <= 0 or data["elapsed_ms"] < _THRESHOLD_MS:
                 return
             timestamp = datetime.fromisoformat(record["ts"].replace("Z", "+00:00"))
             if any(start <= timestamp <= end for start, end in intervals):
                 gaps.append(float(data["elapsed_ms"]))
+
         status = scan(logs, sid, on_record=collect, on_reset=reset)
         states.append(status)
     complete = len(states) == 1 and states[0].complete

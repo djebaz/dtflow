@@ -3,6 +3,7 @@
 Single record policy is owned by _diagnostic_schema.  This module never
 writes, repairs, reinterprets, or deletes canonical log segments.
 """
+
 from __future__ import annotations
 
 import heapq
@@ -147,8 +148,11 @@ def _opened(segment: Segment):
         raise EvidenceError("snapshot_changed") from exc
     try:
         st = os.fstat(fd)
-        if (not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) !=
-                (segment.device, segment.inode) or st.st_size < segment.size):
+        if (
+            not stat.S_ISREG(st.st_mode)
+            or (st.st_dev, st.st_ino) != (segment.device, segment.inode)
+            or st.st_size < segment.size
+        ):
             raise EvidenceError("snapshot_changed")
         # No redirect after fd was opened.
         try:
@@ -176,8 +180,9 @@ def _read_lines(segment: Segment, cancelled: Callable[[], bool] | None) -> Itera
             if not raw:
                 raise EvidenceError("snapshot_changed")
             length = len(raw)
-            if length > MAX_RECORD_BYTES or (length == limit and not raw.endswith(b"\n") and
-                                             offset + length < segment.size):
+            if length > MAX_RECORD_BYTES or (
+                length == limit and not raw.endswith(b"\n") and offset + length < segment.size
+            ):
                 raise EvidenceError("oversized_or_truncated_line")
             if not raw.endswith(b"\n"):
                 # A partial active tail is not an accepted record.
@@ -186,16 +191,29 @@ def _read_lines(segment: Segment, cancelled: Callable[[], bool] | None) -> Itera
                 record = _decode_record(raw)
             except (UnicodeError, ValueError, TypeError, RecursionError, CaptureRejected) as exc:
                 raise EvidenceError("invalid_record") from exc
-            ref = RecordRef(segment.path.name.split(".jsonl", 1)[0][7:], record["seq"],
-                            segment.device, segment.inode, offset, length, segment.path.name)
+            ref = RecordRef(
+                segment.path.name.split(".jsonl", 1)[0][7:],
+                record["seq"],
+                segment.device,
+                segment.inode,
+                offset,
+                length,
+                segment.path.name,
+            )
             yield record, ref
             offset += length
             seen += 1
 
 
-def scan(directory: Path, session_id: str, *, cancelled=None,
-         on_record: Callable[[dict, RecordRef], None] | None = None,
-         on_reset: Callable[[], None] | None = None, attempts: int = 3) -> SessionStatus:
+def scan(
+    directory: Path,
+    session_id: str,
+    *,
+    cancelled=None,
+    on_record: Callable[[dict, RecordRef], None] | None = None,
+    on_reset: Callable[[], None] | None = None,
+    attempts: int = 3,
+) -> SessionStatus:
     """Read a stable snapshot, with bounded retries on rename/rotation races.
 
     Status never upgrades unsealed or lossy diagnostics to complete.
@@ -274,10 +292,23 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
             reasons.append("startup_missing")
         if not closed:
             reasons.append("seal_missing")
-        state = ("incompatible" if any(x in reasons for x in
-                 ("invalid_record", "session_identity_mismatch", "conflicting_sequence",
-                  "duplicate_startup", "duplicate_seal", "records_after_seal"))
-                 else "incomplete" if reasons else "complete")
+        state = (
+            "incompatible"
+            if any(
+                x in reasons
+                for x in (
+                    "invalid_record",
+                    "session_identity_mismatch",
+                    "conflicting_sequence",
+                    "duplicate_startup",
+                    "duplicate_seal",
+                    "records_after_seal",
+                )
+            )
+            else "incomplete"
+            if reasons
+            else "complete"
+        )
         if (
             segments[-1].age == 0
             and not closed
@@ -298,9 +329,20 @@ def _value(record: dict, path: tuple[str, ...]):
     return True, obj
 
 
-def match(record: dict, *, search: str = "", level: str = "", component: str = "",
-          event: str = "", family: str = "", from_ts: str = "", to_ts: str = "",
-          field: tuple[str, ...] = (), op: str = "=", value=None) -> bool:
+def match(
+    record: dict,
+    *,
+    search: str = "",
+    level: str = "",
+    component: str = "",
+    event: str = "",
+    family: str = "",
+    from_ts: str = "",
+    to_ts: str = "",
+    field: tuple[str, ...] = (),
+    op: str = "=",
+    value=None,
+) -> bool:
     """Typed AND predicates; never coerce numeric strings or equate booleans/numbers."""
     if level and record["level"] != level:
         return False
@@ -316,6 +358,7 @@ def match(record: dict, *, search: str = "", level: str = "", component: str = "
     if to_ts and record["ts"] > to_ts:
         return False
     if search:
+
         def atoms(node):
             if type(node) is dict:
                 for k, v in node.items():
@@ -330,6 +373,7 @@ def match(record: dict, *, search: str = "", level: str = "", component: str = "
                 yield str(node).lower()
             else:
                 yield str(node)
+
         if not any(search.casefold() in s.casefold() for s in atoms(record)):
             return False
     if field:
@@ -341,8 +385,9 @@ def match(record: dict, *, search: str = "", level: str = "", component: str = "
         if op == "contains":
             return type(actual) is str and type(value) is str and value.casefold() in actual.casefold()
         if actual is None or value is None:
-            return op in ("=", "!=") and ((actual is None) == (value is None) if op == "=" else
-                                         (actual is None) != (value is None))
+            return op in ("=", "!=") and (
+                (actual is None) == (value is None) if op == "=" else (actual is None) != (value is None)
+            )
         numeric = type(actual) in (int, float) and type(value) in (int, float)
         compatible = numeric or type(actual) is type(value)
         if not compatible or type(actual) in (dict, list) or type(value) in (dict, list):
@@ -353,13 +398,11 @@ def match(record: dict, *, search: str = "", level: str = "", component: str = "
             return actual != value
         if not numeric:
             return False
-        return {"<":actual < value, "<=":actual <= value, ">":actual > value,
-                ">=":actual >= value}[op]
+        return {"<": actual < value, "<=": actual <= value, ">": actual > value, ">=": actual >= value}[op]
     return True
 
 
-def iter_records(directory: Path, session_id: str, *, cancelled=None,
-                 require_complete: bool = False):
+def iter_records(directory: Path, session_id: str, *, cancelled=None, require_complete: bool = False):
     """Stream a bounded-size snapshot only; callers must inspect session status."""
     buffer = []
     buffer_bytes = 0
@@ -404,6 +447,7 @@ def _sort_primary(record: dict, sort: str, metric: tuple[str, ...]):
 
 class _Candidate:
     """Heap root is the worst retained candidate under requested ordering."""
+
     __slots__ = ("primary", "seq", "ref", "tiny", "descending")
 
     def __init__(self, primary, seq, ref, tiny, descending):
@@ -415,13 +459,22 @@ class _Candidate:
         if (self.primary is None) != (other.primary is None):
             return self.primary is None
         if self.primary != other.primary:
-            return (self.primary < other.primary if self.descending
-                    else self.primary > other.primary)
+            return self.primary < other.primary if self.descending else self.primary > other.primary
         return self.seq > other.seq  # stable ascending seq tie-breaker
 
 
-def query(directory: Path, session_id: str, *, filters=None, sort="ts",
-          descending=True, cursor=None, limit=PAGE_SIZE, metric=(), cancelled=None):
+def query(
+    directory: Path,
+    session_id: str,
+    *,
+    filters=None,
+    sort="ts",
+    descending=True,
+    cursor=None,
+    limit=PAGE_SIZE,
+    metric=(),
+    cancelled=None,
+):
     """Whole-session bounded top-k page; cursor is the last page's primary/seq.
 
     The result count covers all accepted matching records, not only the page.
@@ -435,16 +488,18 @@ def query(directory: Path, session_id: str, *, filters=None, sort="ts",
         raise ValueError("Numeric metric key required")
     filters = filters or {}
     count, heap = 0, []
+
     def reset():
         nonlocal count, heap
         count, heap = 0, []
+
     def selected(record, ref):
         nonlocal count
         if not match(record, **filters):
             return
         count += 1
         primary = _sort_primary(record, sort, tuple(metric))
-        tiny = {key:record[key] for key in ("seq","ts","level","component","event")}
+        tiny = {key: record[key] for key in ("seq", "ts", "level", "component", "event")}
         item = _Candidate(primary, record["seq"], ref, tiny, descending)
         if cursor is not None:
             # Cursor may only be obtained from a previous page, not an
@@ -456,11 +511,11 @@ def query(directory: Path, session_id: str, *, filters=None, sort="ts",
             heapq.heappush(heap, item)
         elif heap[0] < item:
             heapq.heapreplace(heap, item)
+
     status = scan(directory, session_id, cancelled=cancelled, on_record=selected, on_reset=reset)
     sorted_rows = sorted(heap, reverse=True)
     page = [(item.tiny, item.ref) for item in sorted_rows]
-    next_cursor = ((sorted_rows[-1].primary, sorted_rows[-1].seq)
-                   if len(sorted_rows) == limit else None)
+    next_cursor = (sorted_rows[-1].primary, sorted_rows[-1].seq) if len(sorted_rows) == limit else None
     # Projections are constrained to five short fields and locator metadata.
     return status, count, page, next_cursor
 
@@ -468,8 +523,9 @@ def query(directory: Path, session_id: str, *, filters=None, sort="ts",
 def read_detail(directory: Path, ref: RecordRef) -> dict:
     """Hydrate a selected record only when path, handle and sequence still agree."""
     parts = snapshot(directory, ref.session_id)
-    item = next((x for x in parts if x.path.name == ref.basename and
-                 (x.device,x.inode)==(ref.device,ref.inode)), None)
+    item = next(
+        (x for x in parts if x.path.name == ref.basename and (x.device, x.inode) == (ref.device, ref.inode)), None
+    )
     if item is None or ref.offset + ref.length > item.size:
         raise EvidenceError("detail_unavailable")
     with _opened(item) as stream:
@@ -488,9 +544,8 @@ def read_detail(directory: Path, ref: RecordRef) -> dict:
     # byte ranges; rotation/replacement is still unavailable.
     current = snapshot(directory, ref.session_id)
     if len(current) != len(parts) or any(
-        (old.path, old.device, old.inode) != (new.path, new.device, new.inode)
-        or new.size < old.size
-        for old, new in zip(parts, current)
+        (old.path, old.device, old.inode) != (new.path, new.device, new.inode) or new.size < old.size
+        for old, new in zip(parts, current, strict=False)
     ):
         raise EvidenceError("detail_unavailable")
     return record

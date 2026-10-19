@@ -19,8 +19,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from tools.ui.gallery_perf_launch import validate_profile
 from dtflow._diagnostic_reader import EvidenceError, discover, scan
+from tools.ui.gallery_perf_launch import validate_profile
 
 # Each trial differs from production defaults in just one family.
 DEFAULT_PROFILES = {
@@ -39,6 +39,7 @@ DEFAULT_GRID_MATRIX = ((20, 50), (20, 100), (50, 150), (100, 300), (200, 600), (
 # Keep the product's actual batch-rounding semantics for each case.
 GRID_MAX_LOAD = 300
 GRID_MAX_CARDS = 1000
+
 
 def load_profiles(path: Path | None, names: list[str] | None) -> dict[str, dict]:
     """Load one-factor experiments or explicit benchmark profiles."""
@@ -179,17 +180,23 @@ def _completed_queries(directory: Path) -> dict[tuple, int]:
     """Fresh query identity uses session and persisted sequence, not path offsets."""
     records = {}
     for sid in discover(directory):
+
         def reset():
             for key in tuple(records):
                 if key[0] == sid:
                     del records[key]
+
         def collect(record, _loc):
             data = record.get("data", {})
-            if (record["event"] == "gallery.query_done"
-                    and record.get("kind") == "measurement"
-                    and type(data.get("returned")) is int and data["returned"] > 0
-                    and data.get("error") is None):
+            if (
+                record["event"] == "gallery.query_done"
+                and record.get("kind") == "measurement"
+                and type(data.get("returned")) is int
+                and data["returned"] > 0
+                and data.get("error") is None
+            ):
                 records[(sid, record["seq"])] = data["returned"]
+
         status = scan(directory, sid, on_record=collect, on_reset=reset)
         if status.state not in ("pending", "complete"):
             raise EvidenceError("query_evidence_" + status.state)
@@ -482,15 +489,20 @@ def _wheel_intents(directory: Path) -> set[tuple]:
     """Only individual wheel receipts, identified by session and sequence."""
     found = set()
     for sid in discover(directory):
+
         def reset():
             found.difference_update({x for x in found if x[0] == sid})
+
         def collect(record, _loc):
             data = record.get("data", {})
-            if (record["event"] == "gallery.scroll_intent"
-                    and record.get("kind") == "measurement"
-                    and data.get("source") == "wheel"
-                    and data.get("direction") in ("forward", "backward")):
+            if (
+                record["event"] == "gallery.scroll_intent"
+                and record.get("kind") == "measurement"
+                and data.get("source") == "wheel"
+                and data.get("direction") in ("forward", "backward")
+            ):
                 found.add((sid, record["seq"], data["direction"]))
+
         status = scan(directory, sid, on_record=collect, on_reset=reset)
         if status.state not in ("pending", "complete"):
             raise EvidenceError("wheel_evidence_" + status.state)

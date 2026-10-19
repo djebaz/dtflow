@@ -1,4 +1,5 @@
 """Explicit, bounded derived diagnostics exports; not a second logging sink."""
+
 from __future__ import annotations
 
 import csv
@@ -11,17 +12,20 @@ from pathlib import Path
 from uuid import uuid4
 
 from dtflow._diagnostic_reader import (
-    EvidenceError, discover, query, read_detail, snapshot,
     PAGE_SIZE,
+    EvidenceError,
+    query,
+    read_detail,
+    snapshot,
 )
 from dtflow._diagnostic_schema import sanitize
 
-_CSV_COLUMNS = ("seq", "ts", "level", "component", "event", "kind",
-                "msg", "data", "ctx", "agg", "error")
+_CSV_COLUMNS = ("seq", "ts", "level", "component", "event", "kind", "msg", "data", "ctx", "agg", "error")
 
 
 def _safe(record):
     """Defensive second-line string sanitizer for derived human-readable output."""
+
     def clean(obj, depth=0):
         if depth > 16:
             raise EvidenceError("export_depth_limit")
@@ -30,17 +34,26 @@ def _safe(record):
         if type(obj) is list:
             return [clean(value, depth + 1) for value in obj]
         if type(obj) is dict:
-            return {sanitize(str(key)): clean(value, depth + 1)
-                    for key, value in obj.items()}
+            return {sanitize(str(key)): clean(value, depth + 1) for key, value in obj.items()}
         if obj is None or type(obj) in (bool, int, float):
             return obj
         raise EvidenceError("export_unsupported_value")
+
     return clean(record)
 
 
-def export_matching(directory: Path, session_id: str, destination: Path,
-                    *, fmt="jsonl", filters=None, sort="ts", descending=True,
-                    metric=(), cancelled=None) -> dict:
+def export_matching(
+    directory: Path,
+    session_id: str,
+    destination: Path,
+    *,
+    fmt="jsonl",
+    filters=None,
+    sort="ts",
+    descending=True,
+    metric=(),
+    cancelled=None,
+) -> dict:
     """Export matching records and publish a source-status manifest LAST.
 
     The caller owns a native destination picker and background worker.
@@ -49,8 +62,7 @@ def export_matching(directory: Path, session_id: str, destination: Path,
     if fmt not in ("jsonl", "csv", "text"):
         raise ValueError("Unsupported export format")
     destination = Path(destination)
-    if destination.suffix != (".jsonl" if fmt == "jsonl" else
-                              ".csv" if fmt == "csv" else ".txt"):
+    if destination.suffix != (".jsonl" if fmt == "jsonl" else ".csv" if fmt == "csv" else ".txt"):
         raise ValueError("Export extension does not match format")
     if destination.name.startswith("dtflow-") or destination.name.startswith("."):
         raise EvidenceError("canonical_export_name_forbidden")
@@ -83,9 +95,15 @@ def export_matching(directory: Path, session_id: str, destination: Path,
             cursor = None
             while True:
                 result, _total, page, next_cursor = query(
-                    directory, session_id, filters=filters, sort=sort,
-                    descending=descending, cursor=cursor, limit=PAGE_SIZE,
-                    metric=metric, cancelled=cancelled,
+                    directory,
+                    session_id,
+                    filters=filters,
+                    sort=sort,
+                    descending=descending,
+                    cursor=cursor,
+                    limit=PAGE_SIZE,
+                    metric=metric,
+                    cancelled=cancelled,
                 )
                 if snapshot(directory, session_id) != snapshot_before:
                     raise EvidenceError("snapshot_changed")
@@ -94,31 +112,39 @@ def export_matching(directory: Path, session_id: str, destination: Path,
                 status = result
                 if not page:
                     break
-                for projection, ref in page:
+                for _projection, ref in page:
                     record = _safe(read_detail(directory, ref))
                     if fmt == "jsonl":
-                        raw = (json.dumps(record, ensure_ascii=False, allow_nan=False,
-                                          separators=(",", ":")) + "\n").encode("utf-8")
+                        raw = (
+                            json.dumps(record, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n"
+                        ).encode("utf-8")
                     elif fmt == "text":
-                        raw = (f'{record["ts"]} {record["level"]} {record["event"]}: '
-                               f'{record.get("msg", "")} '
-                               + json.dumps(record.get("data", {}), ensure_ascii=False,
-                                            allow_nan=False, separators=(",", ":"))
-                               + "\n").encode("utf-8")
+                        raw = (
+                            f"{record['ts']} {record['level']} {record['event']}: "
+                            f"{record.get('msg', '')} "
+                            + json.dumps(
+                                record.get("data", {}), ensure_ascii=False, allow_nan=False, separators=(",", ":")
+                            )
+                            + "\n"
+                        ).encode("utf-8")
                     else:
                         # Constant columns, with nested JSON in bounded scalar cells.
                         import io
+
                         buf = io.StringIO(newline="")
                         writer = csv.DictWriter(buf, fieldnames=_CSV_COLUMNS)
                         if count == 0:
                             writer.writeheader()
-                        writer.writerow({
-                            key: (json.dumps(record[key], ensure_ascii=False,
-                                             separators=(",", ":"), allow_nan=False)
-                                  if key in ("data", "ctx", "agg", "error") and key in record
-                                  else record.get(key, ""))
-                            for key in _CSV_COLUMNS
-                        })
+                        writer.writerow(
+                            {
+                                key: (
+                                    json.dumps(record[key], ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+                                    if key in ("data", "ctx", "agg", "error") and key in record
+                                    else record.get(key, "")
+                                )
+                                for key in _CSV_COLUMNS
+                            }
+                        )
                         raw = buf.getvalue().encode("utf-8")
                     write(raw, out)
                     start_seq = ref.seq if start_seq is None else min(start_seq, ref.seq)
@@ -141,14 +167,23 @@ def export_matching(directory: Path, session_id: str, destination: Path,
             "source_session_id": session_id,
             "record_version": 1,
             "source_evidence": {"state": status.state, "reasons": list(status.reasons)},
-            "snapshot": [{"segment": s.path.name, "bytes": s.size}
-                         for s in snapshot_before],
-            "selection": {"format": fmt, "sort": sort, "descending": descending,
-                          "exported_records": count, "query_policy": "v1",
-                          "filters_redacted": bool(filters)},
-            "artifact": {"basename": destination.name, "size_bytes": bytes_written,
-                         "sha256": digest.hexdigest(), "first_seq": start_seq,
-                         "last_seq": end_seq, "export_status": "complete"},
+            "snapshot": [{"segment": s.path.name, "bytes": s.size} for s in snapshot_before],
+            "selection": {
+                "format": fmt,
+                "sort": sort,
+                "descending": descending,
+                "exported_records": count,
+                "query_policy": "v1",
+                "filters_redacted": bool(filters),
+            },
+            "artifact": {
+                "basename": destination.name,
+                "size_bytes": bytes_written,
+                "sha256": digest.hexdigest(),
+                "first_seq": start_seq,
+                "last_seq": end_seq,
+                "export_status": "complete",
+            },
         }
         # Publish the data first without overwriting, and the completion
         # manifest last. Interrupted/failed operations may leave an orphan

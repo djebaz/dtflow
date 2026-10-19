@@ -37,20 +37,34 @@ def _trial(ml, mc, *, seconds, stalls=0, worst=0, ok=True, target=300):
 def test_browsing_gui_gap_counter_excludes_startup_and_after_scroll(tmp_path):
     logs = tmp_path / "logs"
     logs.mkdir()
+
     def record(seq, ts, event, data, *, kind="event"):
         return {
-            "v": 1, "seq": seq, "ts": ts, "level": "DEBUG",
-            "component": "gallery", "event": event, "kind": kind, "data": data,
+            "v": 1,
+            "seq": seq,
+            "ts": ts,
+            "level": "DEBUG",
+            "component": "gallery",
+            "event": event,
+            "kind": kind,
+            "data": data,
             **({"mono_ns": seq * 1_000_000_000} if kind == "measurement" else {}),
         }
 
     started = {
-        "session_id": "example", "version": "test", "source_commit": "unknown",
-        "build_state": "unknown", "runtime": "python", "platform": "test",
-        "dev": True, "instrumentation_version": "gallery-jsonl-v1",
-        "schema_version": 1, "queue_max_records": 1024,
+        "session_id": "example",
+        "version": "test",
+        "source_commit": "unknown",
+        "build_state": "unknown",
+        "runtime": "python",
+        "platform": "test",
+        "dev": True,
+        "instrumentation_version": "gallery-jsonl-v1",
+        "schema_version": 1,
+        "queue_max_records": 1024,
         "queue_max_bytes": 8 * 1024 * 1024,
-        "max_record_bytes": 1_048_576, "aggregation_policy": "test",
+        "max_record_bytes": 1_048_576,
+        "aggregation_policy": "test",
     }
     rows = [record(1, "2026-10-19T00:00:00.000Z", "session.started", started)]
     for seq, ts, elapsed, mode, mounted in (
@@ -59,18 +73,35 @@ def test_browsing_gui_gap_counter_excludes_startup_and_after_scroll(tmp_path):
         (4, "2026-10-19T00:00:15.000Z", 900, "List", 100),
         (5, "2026-10-19T00:00:35.000Z", 1200, "Grid", 100),
     ):
-        rows.append(record(seq, ts, "gallery.gui_gap", {
-            "elapsed_ms": elapsed, "mode": mode, "mounted": mounted,
-            "query_busy": seq == 3, "preparation_busy": False,
-        }, kind="measurement"))
+        rows.append(
+            record(
+                seq,
+                ts,
+                "gallery.gui_gap",
+                {
+                    "elapsed_ms": elapsed,
+                    "mode": mode,
+                    "mounted": mounted,
+                    "query_busy": seq == 3,
+                    "preparation_busy": False,
+                },
+                kind="measurement",
+            )
+        )
     closed = {
-        "observed": 5, "admitted": 5, "rejected": 0, "dropped": 0,
-        "written_records": 6, "aggregate_source_samples": 0,
-        "writer_failures": 0, "serialization_failures": 0,
+        "observed": 5,
+        "admitted": 5,
+        "rejected": 0,
+        "dropped": 0,
+        "written_records": 6,
+        "aggregate_source_samples": 0,
+        "writer_failures": 0,
+        "serialization_failures": 0,
     }
     rows.append(record(6, "2026-10-19T00:00:36.000Z", "session.closed", closed))
     (logs / "dtflow-example.jsonl").write_text(
-        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8",
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
     )
     actions = [
         {
