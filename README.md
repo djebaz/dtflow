@@ -119,6 +119,9 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Testing](devdocs/guides/testing.md), [development tools](devdocs/guides/development.md) and [Windows builds](devdocs/guides/building.md).
 - [Image-operation preparation](devdocs/architecture/image-operations.md) — developer-only permit-gated single-shot path; no default image capability or accepted editor/checkpoint support.
 - [Architecture](devdocs/architecture/), [runtime layout](devdocs/architecture/runtime-layout.md) and the [design system reference](devdocs/design-system/README.md).
+- [Structured diagnostics architecture](devdocs/architecture/structured-diagnostics.md) — current centralized logging foundation and the proposed JSONL ownership/evidence boundaries (PR #105, not yet shipped).
+- [Efficient Qt model/view patterns](devdocs/guides/qt-model-view-patterns.md) — bounded table updates, worker/search integration and external reference implementations.
+
 - [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
 - [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
 
