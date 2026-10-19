@@ -8,7 +8,7 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Changed
 
-- **Logs workspace presentation (#108):** the event column header paints separate `COMPONENT` and `EVENT` sort targets in one section; with Follow off, Refresh shows the number of matching arrivals since the shown snapshot (`Refresh (3 new)`, marked `incomplete` when session evidence is incomplete) through a single bounded background count; empty sessions and filters with no matches show a panel in place of the table; a primary click elsewhere in Logs collapses the details pane without consuming the click, while splitter, scroll bar and row-action presses keep it open. Not yet rendered or accepted on Windows.
+- **Logs workspace presentation (#108):** the event column header paints separate `COMPONENT` and `EVENT` sort targets in one section; with Follow off, Refresh shows the number of matching arrivals since the shown snapshot (`Refresh (3 new)`, marked `incomplete` when session evidence is incomplete) through a single bounded background count; empty sessions and filters with no matches show a panel in place of the table; a primary click elsewhere in Logs collapses the details pane without consuming the click, while splitter, scroll bar and row-action presses keep it open. While Logs is open, no header navigation tab stays selected; closing Logs reselects the previous page's tab. Not yet rendered or accepted on Windows.
 
 ## Fixed
 
