@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import hashlib
 
-from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPen
-from PySide6.QtWidgets import QStyledItemDelegate, QStyle, QStyleOptionViewItem
+from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFontMetrics, QPainter
+from PySide6.QtWidgets import QStyledItemDelegate, QStyle
 
 from dtflow.ui.theme import load_tokens
 
@@ -84,7 +84,7 @@ class LogCellDelegate(QStyledItemDelegate):
         return QSize(option.rect.width(), 56)
 
     def editorEvent(self, event, model, option, index):
-        if index.column() != 4 or event.type() != event.Type.MouseButtonRelease:
+        if index.column() != 4 or event.type() != QEvent.Type.MouseButtonRelease:
             return False
         if event.button() != Qt.MouseButton.LeftButton or not option.rect.contains(event.position().toPoint()):
             return False
