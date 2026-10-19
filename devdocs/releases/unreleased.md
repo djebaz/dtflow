@@ -200,3 +200,5 @@ PR #102 preparation evidence: [lock/lint/test CI passed at `2d66450`](https://gi
 - PR #104 Grid matrix start guard: reject dispatched-but-unverified page-1 input as proof of the starting position. Require first visible saved image #1 before downward scrolling; retry up to 3 seconds and skip invalid runs. Native Windows replay pending.
 
 - PR #104 Grid startup race: a page-1 chip click can queue while adjacent loading or Grid mounting is busy, then reset scroll after the benchmark begins. Require a fresh application `page_jump page=1` processing event after the click, plus stable visible first image #1, before enabling timed wheel input. Add queued-click and applied-click regression coverage. Native Windows replay pending.
+
+- PR #104 Grid start simplification: poll the enabled numbered page-1 button at approximately five checks per second, click once when available, require visible first image #1, and remove the brittle `page_jump` diagnostic-log synchronization. Continuous scroll remains independent of subsequent batch loading; Windows acceptance pending.
