@@ -90,7 +90,7 @@ The [JSON Schema v1](../schemas/diagnostic-record-v1.schema.json) and [source-ba
 - The shared reader and export implement the catalogue's [shared typed-query rules](../architecture/diagnostic-event-schema.md#shared-query-semantics--phase-2-contract) and [JSONL excerpt/manifest boundary](../architecture/diagnostic-event-schema.md#canonical-sessions-versus-derived-jsonl-excerpts). Excerpts preserve original sequence numbers and source status but are never canonical sessions or clean-benchmark evidence; ordinary v1 record shapes stay unchanged.
 
 
-## Architecture and evidence guards
+## Accepted owner-review guards
 
 G1–G5 remain design/evidence invariants. The outstanding implementation/measurement portions are explicitly assigned above; do not describe them as completed merely because the PR lands.
 
