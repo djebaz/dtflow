@@ -40,11 +40,10 @@ def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | Non
 
 
 class GridProgressProbe:
-    """Read the actual N/total status-bar text through UI Automation.
+    """Read the dedicated read-only status input through Windows UI Automation.
 
-    Qt QLabel objectName is not guaranteed to appear as an AutomationId on
-    Windows. Resolve the uniquely formatted status label by its UIA Name,
-    cache the control, and re-resolve it if the wrapper becomes stale.
+    The Qt QLineEdit has the stable objectName dtflowStatusGridFirstVisibleIndex.
+    Use only its Edit control and ValuePattern; no text-label or log fallback.
     """
 
     def __init__(self, window, logs: Path):
@@ -56,7 +55,7 @@ class GridProgressProbe:
 
     @staticmethod
     def _parse(value: str) -> GridPosition | None:
-        match = re.fullmatch(r"([0-9]+)/([0-9]+)", value.strip())
+        match = re.fullmatch(r"([0-9]+)/([0-9]+)", value)
         if match is None:
             return None
         first, total = (int(part) for part in match.groups())
@@ -66,31 +65,24 @@ class GridProgressProbe:
 
     def read(self) -> GridPosition | None:
         try:
-            # Name is dynamic, but the compact raw N/total format is unique to
-            # the status widget and does not depend on Qt exposing objectName.
             if self._control is None:
-                control = self.window.child_window(
-                    title_re=r"^[0-9]+/[0-9]+$", control_type="Text"
+                candidate = self.window.child_window(
+                    auto_id="dtflowStatusGridFirstVisibleIndex",
+                    control_type="Edit",
                 )
-                if not control.exists(timeout=0):
-                    self.last_error = "status_label_not_found"
+                if not candidate.exists(timeout=0):
+                    self.last_error = "status_input_not_found"
                     return None
-                self._control = control
-            control = self._control
-            value = control.element_info.name or ""
-            position = self._parse(value)
+                self._control = candidate
+            value = self._control.iface_value.CurrentValue
+            position = self._parse(str(value))
             if position is None:
-                # Some UIA wrappers expose QLabel text via window_text() even
-                # when the cached accessible Name is delayed.
-                position = self._parse(control.window_text())
-            if position is None:
-                self.last_error = "status_label_value_invalid"
-                self._control = None
+                self.last_error = "status_input_value_invalid"
                 return None
-            self.last_error = None
             self.last = position
+            self.last_error = None
             return position
         except (AttributeError, LookupError, RuntimeError, OSError) as exc:
-            self.last_error = "uia_read_" + type(exc).__name__
+            self.last_error = "status_input_read_" + type(exc).__name__
             self._control = None
             return None
