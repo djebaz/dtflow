@@ -28,7 +28,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.logging_setup import default_directory, dev_enabled
+from dtflow.logging_setup import configured_directory, dev_enabled
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -231,7 +231,7 @@ class MainWindow:
         self._logs_active = False
         self.logs = LogsWorkspace(
             self.logs_form,
-            default_directory(),
+            configured_directory(),
             self._close_logs,
             runner=self.runner,
             escape_owner=self._inline_consumes_escape,

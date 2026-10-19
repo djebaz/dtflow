@@ -1055,7 +1055,8 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
     mouse_moves = []
     sys.modules["pywinauto"].mouse = SimpleNamespace(move=lambda *, coords: mouse_moves.append(coords))
     monkeypatch.setattr(
-        benchmark, "_grid_batch_button",
+        benchmark,
+        "_grid_batch_button",
         lambda *_a: SimpleNamespace(
             rectangle=lambda: SimpleNamespace(left=10, right=50, top=10, bottom=34),
             element_info=SimpleNamespace(name="Jump to image batch 1"),
@@ -1170,7 +1171,8 @@ def test_grid_matrix_samples_first_query_after_scrolls(monkeypatch, tmp_path):
     mouse_moves = []
     sys.modules["pywinauto"].mouse = SimpleNamespace(move=lambda *, coords: mouse_moves.append(coords))
     monkeypatch.setattr(
-        benchmark, "_grid_batch_button",
+        benchmark,
+        "_grid_batch_button",
         lambda *_a: SimpleNamespace(
             rectangle=lambda: SimpleNamespace(left=10, right=50, top=10, bottom=34),
             element_info=SimpleNamespace(name="Jump to image batch 1"),
@@ -1303,7 +1305,10 @@ def test_grid_progress_reads_status_input_value_pattern(tmp_path):
     state["first"] = 1
     assert probe.read().first == 1
     assert window.lookups == [
-        {"auto_id": "QApplication.MainWindow.statusbar.dtflowGridPositionGroup.dtflowStatusGridFirstVisibleIndex", "control_type": "Edit"}
+        {
+            "auto_id": "QApplication.MainWindow.statusbar.dtflowGridPositionGroup.dtflowStatusGridFirstVisibleIndex",
+            "control_type": "Edit",
+        }
     ]
 
 
@@ -1685,8 +1690,6 @@ def test_grid_page_one_lookup_uses_inspected_automation_id():
     assert benchmark._grid_batch_button(Window(), 1) is chip
 
 
-
-
 def test_grid_start_clicks_page_one_and_verifies_live_range(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
@@ -1755,7 +1758,8 @@ def test_grid_start_rejects_unverified_page_one_click(monkeypatch, tmp_path):
 
     monkeypatch.setattr(benchmark, "_grid_batch_button", lambda _window, page: object())
     monkeypatch.setattr(
-        benchmark, "_activate_grid_batch_chip",
+        benchmark,
+        "_activate_grid_batch_chip",
         lambda _chip: attempts.append("click") or "mouse-click",
     )
     actions = []

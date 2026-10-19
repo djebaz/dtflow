@@ -448,13 +448,17 @@ def _sort_primary(record: dict, sort: str, metric: tuple[str, ...]):
 class _Candidate:
     """Heap root is the worst retained candidate under requested ordering."""
 
-    __slots__ = ("primary", "seq", "ref", "tiny", "descending")
+    __slots__ = ("primary", "seq", "ref", "tiny", "descending", "backwards")
 
-    def __init__(self, primary, seq, ref, tiny, descending):
+    def __init__(self, primary, seq, ref, tiny, descending, backwards=False):
         self.primary, self.seq, self.ref = primary, seq, ref
         self.tiny, self.descending = tiny, descending
+        self.backwards = backwards
 
     def __lt__(self, other):
+        return other._worse(self) if self.backwards else self._worse(other)
+
+    def _worse(self, other):
         # Missing numeric metrics are last in either direction.
         if (self.primary is None) != (other.primary is None):
             return self.primary is None
@@ -474,11 +478,17 @@ def query(
     limit=PAGE_SIZE,
     metric=(),
     cancelled=None,
+    before=False,
+    project=None,
 ):
     """Whole-session bounded top-k page; cursor is the last page's primary/seq.
 
     The result count covers all accepted matching records, not only the page.
     The caller must check status; page data alone is not a complete-session claim.
+    With before=True, select the nearest preceding page in the same ordering.
+    An optional bounded projection is computed only for retained candidates during
+    the scan, avoiding a second file read per displayed row. UI projections include
+    their exact sort cursor; the default reader/export envelope stays unchanged.
     """
     if limit < 1 or limit > PAGE_SIZE:
         raise ValueError("Invalid page size")
@@ -487,26 +497,32 @@ def query(
     if sort == "metric" and not metric:
         raise ValueError("Numeric metric key required")
     filters = filters or {}
-    count, heap = 0, []
+    count, eligible, heap = 0, 0, []
 
     def reset():
-        nonlocal count, heap
-        count, heap = 0, []
+        nonlocal count, eligible, heap
+        count, eligible, heap = 0, 0, []
 
     def selected(record, ref):
-        nonlocal count
+        nonlocal count, eligible
         if not match(record, **filters):
             return
         count += 1
         primary = _sort_primary(record, sort, tuple(metric))
         tiny = {key: record[key] for key in ("seq", "ts", "level", "component", "event")}
-        item = _Candidate(primary, record["seq"], ref, tiny, descending)
+        item = _Candidate(primary, record["seq"], ref, tiny, descending, before)
         if cursor is not None:
             # Cursor may only be obtained from a previous page, not an
             # arbitrary input string or query expression.
             boundary = _Candidate(cursor[0], cursor[1], ref, tiny, descending)
-            if not item < boundary:
+            if not (boundary._worse(item) if before else item._worse(boundary)):
                 return
+        eligible += 1
+        if len(heap) >= limit and not heap[0] < item:
+            return
+        if project is not None:
+            tiny["preview"] = project(record)
+            tiny["cursor"] = (primary, record["seq"])
         if len(heap) < limit:
             heapq.heappush(heap, item)
         elif heap[0] < item:
@@ -514,8 +530,11 @@ def query(
 
     status = scan(directory, session_id, cancelled=cancelled, on_record=selected, on_reset=reset)
     sorted_rows = sorted(heap, reverse=True)
+    if before:
+        sorted_rows.reverse()
     page = [(item.tiny, item.ref) for item in sorted_rows]
-    next_cursor = (sorted_rows[-1].primary, sorted_rows[-1].seq) if len(sorted_rows) == limit else None
+    edge = sorted_rows[0 if before else -1] if sorted_rows else None
+    next_cursor = (edge.primary, edge.seq) if edge is not None and eligible > limit else None
     # Projections are constrained to five short fields and locator metadata.
     return status, count, page, next_cursor
 

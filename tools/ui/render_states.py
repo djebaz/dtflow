@@ -2421,7 +2421,7 @@ def render_inpaint_states(shell, state, capture):
 
 
 def render_logs_states(shell, capture):
-    """Four real Qt Logs presentations using synthetic schema-shaped records only."""
+    """Real Qt Logs presentations, including bounded paging and Follow inserts."""
     from datetime import datetime
 
     from dtflow._diagnostic_reader import RecordRef
@@ -2438,7 +2438,7 @@ def render_logs_states(shell, capture):
         return {
             "v": 1,
             "seq": seq,
-            "ts": f"2026-10-19T09:12:{seq:02d}.000Z",
+            "ts": f"2026-10-19T09:12:{seq % 60:02d}.000Z",
             "level": level,
             "component": component,
             "event": event,
@@ -2453,10 +2453,10 @@ def render_logs_states(shell, capture):
     shell.logs.model.replace(
         rows,
         [
-            "state: ready",
-            "elapsed_ms: 117.4   mounted: 100   mode: grid",
-            "reason: queue_bytes   count: 1",
-            "category: backend   retryable: false",
+            ((("state", "ready"),), 0),
+            ((("elapsed_ms", "117.4"), ("mounted", "100"), ("mode", "grid")), 0),
+            ((("reason", "queue_bytes"), ("count", "1")), 0),
+            ((("category", "backend"), ("retryable", "false")), 0),
         ],
     )
     panel.logsStatus.setText("4 matching · illustrative fixture")
@@ -2469,6 +2469,31 @@ def render_logs_states(shell, capture):
         panel.logsSessionCombo.addItem(session_label(number, sid, written, current=current), sid)
     panel.logsSessionCombo.blockSignals(False)
     capture("logs-02-mixed-severity")
+
+    paging_rows = [
+        (record(seq, "DEBUG", "gallery.query_done", "gallery"), RecordRef("fixture", seq, 0, 0, 0, 0, "fixture.jsonl"))
+        for seq in range(501, 1001)
+    ]
+    shell.logs.model.replace(paging_rows, [((("returned", "20"),), 0)] * len(paging_rows))
+    panel.logsPreviousButton.setEnabled(True)
+    panel.logsNextButton.setEnabled(True)
+    panel.logsStatus.setText("1204 matching · pending · page 2 · displaying 500")
+    panel.logsFollowButton.blockSignals(True)
+    panel.logsFollowButton.setChecked(False)
+    panel.logsFollowButton.blockSignals(False)
+    panel.logsOperationStatus.setText("Exported diagnostic-excerpt.csv (synthetic presentation)")
+    capture("logs-05-paging")
+
+    shell.logs.model.replace(rows, [((("state", "fixture"),), 0)] * len(rows))
+    panel.logsTable.selectRow(1)
+    added = (record(5, "INFO", "gallery.query_done", "gallery"), RecordRef("fixture", 5, 0, 0, 0, 0, "fixture.jsonl"))
+    previews = list(shell.logs.model.previews)
+    shell.logs.model.reconcile([added, *rows], [((("returned", "20"),), 0), *previews])
+    panel.logsPreviousButton.setEnabled(False)
+    panel.logsNextButton.setEnabled(False)
+    panel.logsStatus.setText("5 matching · pending · page 1 · displaying 5")
+    capture("logs-06-follow-selection")
+    panel.logsOperationStatus.clear()
 
     panel.logsDetailTitle.setText("generation.failed")
     panel.logsDetailText.setPlainText(

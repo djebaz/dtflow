@@ -489,29 +489,33 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
         observed = probe.read()
         footer_read_ms = round((time.perf_counter() - read_started) * 1000, 2)
         if observed is not None and observed.first == 1:
-            actions.append({
-                "action": "click-page-one-start",
-                "verified": True,
-                "visible_first": 1,
-                "source": observed.source,
-                "click_attempts": attempts,
-                "activation_method": method,
-                "page_one_lookup_ms": lookup_ms,
-                "page_one_click_ms": click_ms,
-                "footer_read_ms": footer_read_ms,
-                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-            })
+            actions.append(
+                {
+                    "action": "click-page-one-start",
+                    "verified": True,
+                    "visible_first": 1,
+                    "source": observed.source,
+                    "click_attempts": attempts,
+                    "activation_method": method,
+                    "page_one_lookup_ms": lookup_ms,
+                    "page_one_click_ms": click_ms,
+                    "footer_read_ms": footer_read_ms,
+                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+                }
+            )
             return
         time.sleep(0.2)
 
-    actions.append({
-        "action": "click-page-one-start",
-        "verified": False,
-        "visible_first": observed.first if observed is not None else None,
-        "click_attempts": attempts,
-        "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-        "probe_diagnostics": probe.diagnose() if callable(getattr(probe, "diagnose", None)) else None,
-    })
+    actions.append(
+        {
+            "action": "click-page-one-start",
+            "verified": False,
+            "visible_first": observed.first if observed is not None else None,
+            "click_attempts": attempts,
+            "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+            "probe_diagnostics": probe.diagnose() if callable(getattr(probe, "diagnose", None)) else None,
+        }
+    )
     raise TimeoutError(
         "Grid startup could not verify first visible image 1 after clicking Page 1 "
         f"({timeout:g}s; attempts={attempts}; "
@@ -1123,17 +1127,21 @@ def _drive(
 
         pager_chip = _grid_batch_button(window, 1)
         pager_rect = pager_chip.rectangle()
-        mouse.move(coords=(
-            int((pager_rect.left + pager_rect.right) / 2),
-            int((pager_rect.top + pager_rect.bottom) / 2),
-        ))
+        mouse.move(
+            coords=(
+                int((pager_rect.left + pager_rect.right) / 2),
+                int((pager_rect.top + pager_rect.bottom) / 2),
+            )
+        )
         wheel_point = _gallery_wheel_point(window, "grid")
         mouse.move(coords=wheel_point[0])
-        actions.append({
-            "action": "grid-wheel-pointer-position",
-            "pager_name": pager_chip.element_info.name,
-            "wheel_target": wheel_point[1],
-        })
+        actions.append(
+            {
+                "action": "grid-wheel-pointer-position",
+                "pager_name": pager_chip.element_info.name,
+                "wheel_target": wheel_point[1],
+            }
+        )
         pulse_notches = min(12, max(2, scroll_notches // 16))
         # The same saved-image index is targeted for every -ml/-mc case.
         # Pulse size and pause are identical; total pulses vary to actually

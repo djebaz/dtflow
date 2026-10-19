@@ -117,3 +117,9 @@ The real `tools/ui/render_states.py` must define synthetic **empty**, **mixed-se
 - The modified shared `chevron.svg`, `detail.svg` and `json.svg` retain the same drawing paths; their added C2PA metadata is provenance, not a visual icon redesign. No provenance removal or asset normalization is part of this documentation review.
 
 **Verification:** this update used source/diff inspection only; no browser launch, render, test, lint, format, runtime, benchmark, storage-size comparison or live session validation was performed. The studies do not establish native PySide6, keyboard, accessibility, Windows/DPI or performance acceptance.
+
+## PR #105 paging and Follow source checkpoint (2026-10-19)
+
+The native footer has Previous page / Next page controls. Each request reads the whole retained session for filtering/sorting, but displays at most 500 projected rows; the match count is session-wide. Paging pauses Follow. Refresh keeps the current query/page cursor; explicit Follow returns to the newest first page. No page-history or full-record cache grows with navigation. Appends/pruning can change later page results; this is live retained-session browsing, not an export snapshot.
+
+Same-query updates reconcile resident rows by `(session_id, seq)` with batched model notifications and preserve surviving selected/current identities and the paused top-row anchor. Full details remain lazy; previews come from the shared reader scan. Export completion is shown separately from query status. Offline `logs-05-paging` and `logs-06-follow-selection` definitions extend the canonical preview script; they have not been rendered or accepted on Windows.

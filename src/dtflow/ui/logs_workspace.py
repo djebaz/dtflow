@@ -10,8 +10,19 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event
 
-from PySide6.QtCore import QAbstractTableModel, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QItemSelectionModel,
+    QModelIndex,
+    QObject,
+    QRunnable,
+    Qt,
+    QThreadPool,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
 
@@ -55,7 +66,7 @@ def session_label(number: int, session_id: str, last_write: datetime | None, *, 
     return " · ".join(parts)
 
 
-def session_facets(directory: Path, session_id: str) -> tuple[list[str], list[str]]:
+def session_facets(directory: Path, session_id: str, *, cancelled=None) -> tuple[list[str], list[str]]:
     """Session-wide component and event names through the shared reader, bounded per list."""
     components, events = set(), set()
 
@@ -69,7 +80,7 @@ def session_facets(directory: Path, session_id: str) -> tuple[list[str], list[st
         components.clear()
         events.clear()
 
-    scan(directory, session_id, on_record=collect, on_reset=reset)
+    scan(directory, session_id, on_record=collect, on_reset=reset, cancelled=cancelled)
     return sorted(components), sorted(events)
 
 
@@ -87,7 +98,11 @@ class _Job(QRunnable):
             value, error = self.func(), None
         except Exception as exc:
             value, error = None, f"{type(exc).__name__}: {exc}"
-        self.signals.ready.emit(self.token, value, error)
+        try:
+            self.signals.ready.emit(self.token, value, error)
+        except RuntimeError:
+            # The owning form may have been destroyed while the worker finished.
+            pass
 
 
 class _LogModel(QAbstractTableModel):
@@ -119,6 +134,49 @@ class _LogModel(QAbstractTableModel):
         self.refs = [ref for _record, ref in page][:PAGE_SIZE]
         self.previews = list(previews or ())[:PAGE_SIZE]
         self.endResetModel()
+
+    def reconcile(self, page, previews):
+        """Apply a bounded page with batched removals/inserts and stable Qt indexes."""
+        page = page[:PAGE_SIZE]
+        wanted = [(ref.session_id, ref.seq) for _, ref in page]
+        keep = set(wanted)
+        # Remove obsolete ranges backwards so each notification uses current indexes.
+        end = len(self.refs) - 1
+        while end >= 0:
+            if (self.refs[end].session_id, self.refs[end].seq) in keep:
+                end -= 1
+                continue
+            start = end
+            while start > 0 and (self.refs[start - 1].session_id, self.refs[start - 1].seq) not in keep:
+                start -= 1
+            self.beginRemoveRows(QModelIndex(), start, end)
+            del self.rows[start : end + 1]
+            del self.refs[start : end + 1]
+            del self.previews[start : end + 1]
+            self.endRemoveRows()
+            end = start - 1
+        changed = []
+        row = 0
+        while row < len(page):
+            if row < len(self.refs) and (self.refs[row].session_id, self.refs[row].seq) == wanted[row]:
+                if self.rows[row] != page[row][0] or self.previews[row] != previews[row]:
+                    changed.append(row)
+                self.rows[row], self.refs[row], self.previews[row] = page[row][0], page[row][1], previews[row]
+                row += 1
+                continue
+            start = row
+            next_key = (self.refs[row].session_id, self.refs[row].seq) if row < len(self.refs) else None
+            while row < len(page) and wanted[row] != next_key:
+                row += 1
+            self.beginInsertRows(QModelIndex(), start, row - 1)
+            self.rows[start:start] = [tiny for tiny, _ in page[start:row]]
+            self.refs[start:start] = [ref for _, ref in page[start:row]]
+            self.previews[start:start] = previews[start:row]
+            self.endInsertRows()
+            changed.extend(range(start, row))
+        if changed:
+            self.dataChanged.emit(self.index(min(changed), 0), self.index(max(changed), 4))
+        return changed
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or index.row() >= len(self.rows):
@@ -210,6 +268,8 @@ class LogsWorkspace(QObject):
         self.form.logsFollowButton.setChecked(True)
         self.form.logsCloseButton.clicked.connect(on_close)
         self.form.logsRefreshButton.clicked.connect(lambda: self.refresh(facets=True))
+        self.form.logsPreviousButton.clicked.connect(lambda: self._navigate_page(before=True))
+        self.form.logsNextButton.clicked.connect(lambda: self._navigate_page(before=False))
         self.form.logsMoreFiltersButton.clicked.connect(
             lambda: self.form.logsAdvanced.setVisible(not self.form.logsAdvanced.isVisible())
         )
@@ -244,6 +304,15 @@ class LogsWorkspace(QObject):
         self.form.logsTable.verticalScrollBar().valueChanged.connect(self._scrolled)
         self.form.logsTable.selectionModel().selectionChanged.connect(self._selection_changed)
         self.token = 0
+        self._tokens = {}
+        self._cancellations = {}
+        self._query_busy = False
+        self._query_key = None
+        self._first_cursor = None
+        self._next_cursor = None
+        self._page_cursor = None
+        self._page_before = False
+        self._page_number = 0
         self.active = False
         self._jobs = []
         self._last = ()
@@ -257,16 +326,28 @@ class LogsWorkspace(QObject):
         self._timer.timeout.connect(self._poll)
         self.form.destroyed.connect(self.stop)
 
-    def _run(self, func, callback):
+    def _run(self, func, callback, *, kind, cancel=None):
+        old = self._cancellations.get(kind)
+        if old is not None:
+            old.set()
         self.token += 1
         token = self.token
+        self._tokens[kind] = token
+        if cancel is not None:
+            self._cancellations[kind] = cancel
         signals = _Signals(self.form)
 
         def arrived(received, value, error):
-            if received == self.token and self.active:
-                callback(value, error)
-            if signals in self._jobs:
-                self._jobs.remove(signals)
+            try:
+                if received == self._tokens.get(kind) and self.active:
+                    callback(value, error)
+            finally:
+                if received == self._tokens.get(kind):
+                    self._tokens.pop(kind, None)
+                    self._cancellations.pop(kind, None)
+                if signals in self._jobs:
+                    self._jobs.remove(signals)
+                signals.deleteLater()
 
         signals.ready.connect(arrived, Qt.ConnectionType.QueuedConnection)
         self._jobs.append(signals)
@@ -314,7 +395,11 @@ class LogsWorkspace(QObject):
 
     def stop(self):
         self.active = False
-        self.token += 1
+        self._tokens.clear()
+        for cancel in self._cancellations.values():
+            cancel.set()
+        self._cancellations.clear()
+        self._query_busy = False
         self._timer.stop()
 
     def escape(self):
@@ -441,53 +526,110 @@ class LogsWorkspace(QObject):
         header.setSortIndicator(-1, Qt.SortOrder.DescendingOrder)
 
     def refresh(self, *_, facets=False):
-        """Query the selected session; `facets` rescans session-wide filter choices (explicit Refresh/session)."""
+        self._request_page(facets=facets)
+
+    def _navigate_page(self, *, before):
+        if self._query_busy:
+            return
+        cursor = self._first_cursor if before else self._next_cursor
+        if cursor is None or (before and self._page_number == 0):
+            return
+        self.form.logsFollowButton.setChecked(False)
+        self._request_page(facets=False, navigation=(cursor, before, self._page_number + (-1 if before else 1)))
+
+    def _page_controls(self):
+        self.form.logsPreviousButton.setEnabled(not self._query_busy and self._page_number > 0)
+        self.form.logsNextButton.setEnabled(not self._query_busy and self._next_cursor is not None)
+
+    def _request_page(self, *, facets=False, navigation=None):
         self.form.logsRefreshButton.setText("Refresh")
         if not self.active:
             return
         sid = self._session()
         if not sid:
+            old = self._cancellations.get("query")
+            if old is not None:
+                old.set()
+            self._tokens.pop("query", None)
+            self._query_busy = False
+            self._query_key = None
+            self._page_number = 0
+            self._first_cursor = self._next_cursor = None
             self.model.replace([])
+            self._page = []
+            self._page_controls()
             self.form.logsStatus.setText("No diagnostic sessions")
             return
         try:
             filters, (sort, desc, metric) = self._query_arguments()
         except ValueError as exc:
+            old = self._cancellations.get("query")
+            if old is not None:
+                old.set()
+            self._tokens.pop("query", None)
+            self._query_busy = False
+            self.form.logsPreviousButton.setEnabled(False)
+            self.form.logsNextButton.setEnabled(False)
             self.form.logsNotice.setText(str(exc))
             self.form.logsNotice.show()
             return
+        key = (sid, filters, sort, desc, metric)
+        same_query = key == self._query_key
+        if not same_query or self.form.logsFollowButton.isChecked():
+            cursor, before, number = None, False, 0
+        elif navigation is not None:
+            cursor, before, number = navigation
+        else:
+            cursor, before, number = self._page_cursor, self._page_before, self._page_number
+        if self._query_key is not None and sid != self._query_key[0]:
+            for kind in ("detail", "copy"):
+                self._tokens.pop(kind, None)
+            self.form.logsDetail.hide()
         self._show_sort_indicator()
+        self._query_busy = True
+        self._page_controls()
         self.form.logsStatus.setText("Loading session…")
         # Filter, sort and Follow refreshes reuse the session-wide choices and merge newly shown
         # values; only an explicit Refresh, session change or reopen rescans them.
         cached = self._facets if self._facets[0] == sid and not facets else None
+        cancel = Event()
         fallback = self._facets if self._facets[0] == sid else (sid, [], [])
 
         def load():
             status, count, page, cursor = query(
-                self.directory, sid, filters=filters, sort=sort, descending=desc, metric=metric
+                self.directory,
+                sid,
+                filters=filters,
+                sort=sort,
+                descending=desc,
+                metric=metric,
+                cursor=request_cursor,
+                before=before,
+                cancelled=cancel.is_set,
+                project=lambda record: characteristics(record, limit=6, preview_bytes=64),
             )
-            projections = []
-            # Page-only bounded previews, never complete records in the model.
-            for _tiny, ref in page:
-                try:
-                    full = read_detail(self.directory, ref)
-                    pairs, more = characteristics(full, limit=6, preview_bytes=64)
-                    projections.append((pairs, more))
-                except Exception:
-                    projections.append(((("Details", "unavailable"),), 0))
             choices = cached
             if choices is None:
                 try:
-                    choices = (sid, *session_facets(self.directory, sid))
+                    choices = (sid, *session_facets(self.directory, sid, cancelled=cancel.is_set))
                 except Exception:
-                    # Filter choices are a convenience; a failed rescan never fails the page.
+                    # A failed choice rescan never discards an otherwise readable page.
                     choices = fallback
-            return status, count, page, cursor, projections, choices
+            return status, count, page, cursor, [tiny["preview"] for tiny, _ in page], choices
 
-        self._run(load, self._show_results)
+        request_cursor = cursor
 
-    def _show_results(self, result, error):
+        def delivered(result, error):
+            self._query_busy = False
+            if not error:
+                self._query_key = key
+                self._page_cursor, self._page_before, self._page_number = request_cursor, before, number
+            self._show_results(result, error, incremental=same_query, navigating=navigation is not None)
+            self._page_controls()
+
+        self._run(load, delivered, kind="query", cancel=cancel)
+
+    def _show_results(self, result, error, *, incremental=False, navigating=False):
         if error:
             self.form.logsNotice.setText(f"Diagnostic reader unavailable: {error}")
             self.form.logsNotice.show()
@@ -495,11 +637,31 @@ class LogsWorkspace(QObject):
             return
         status, count, page, _next, projections, choices = result
         self._page = page
+        self._first_cursor = page[0][0]["cursor"] if page else None
+        # A preceding page always has a forward neighbor (the page just left).
+        self._next_cursor = page[-1][0]["cursor"] if page and self._page_before else _next
+        table = self.form.logsTable
+        selected = {
+            (self.model.refs[index.row()].session_id, self.model.refs[index.row()].seq)
+            for index in table.selectionModel().selectedRows()
+        }
+        current = table.currentIndex()
+        current_key = (
+            (self.model.refs[current.row()].session_id, self.model.refs[current.row()].seq)
+            if current.isValid()
+            else None
+        )
+        top = table.rowAt(0)
+        anchor = self.model.refs[top] if top >= 0 else None
         self._programmatic = True
         try:
-            self.model.replace(page, projections)
+            if incremental:
+                changed = self.model.reconcile(page, projections)
+            else:
+                self.model.replace(page, projections)
+                changed = range(len(page))
             # Size only the bounded, resident page. Never scan the session for geometry.
-            for row in range(len(page)):
+            for row in changed:
                 index = self.model.index(row, 3)
                 option = QStyleOptionViewItem()
                 option.font = self.form.logsTable.font()
@@ -507,11 +669,25 @@ class LogsWorkspace(QObject):
                 option.rect.setWidth(self.form.logsTable.columnWidth(3))
                 height = self.delegate.sizeHint(option, index).height()
                 self.form.logsTable.setRowHeight(row, min(168, max(53, height)))
-            if self.form.logsFollowButton.isChecked():
+            selection = table.selectionModel()
+            for row, ref in enumerate(self.model.refs):
+                identity = (ref.session_id, ref.seq)
+                if identity in selected:
+                    selection.select(
+                        self.model.index(row, 0),
+                        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+                    )
+                if identity == current_key:
+                    selection.setCurrentIndex(self.model.index(row, 0), QItemSelectionModel.SelectionFlag.NoUpdate)
+                if not navigating and anchor is not None and identity == (anchor.session_id, anchor.seq):
+                    table.scrollTo(self.model.index(row, 0), table.ScrollHint.PositionAtTop)
+            if navigating or self.form.logsFollowButton.isChecked():
                 self.form.logsTable.scrollToTop()
         finally:
             self._programmatic = False
-        self.form.logsStatus.setText(f"{count} matching · {status.state} · displaying {len(page)}")
+        self.form.logsStatus.setText(
+            f"{count} matching · {status.state} · page {self._page_number + 1} · displaying {len(page)}"
+        )
         self.form.logsNotice.setVisible(status.state not in ("complete", "pending"))
         self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
         self._last = tuple((r.seq for _, r in page))
@@ -545,7 +721,7 @@ class LogsWorkspace(QObject):
             combo.blockSignals(False)
 
     def _poll(self):
-        if not self.active:
+        if not self.active or self._query_busy:
             return
         sid = self._session()
         if not sid:
@@ -580,9 +756,9 @@ class LogsWorkspace(QObject):
         self.form.logsFollowButton.setChecked(False)
         ref = self.model.refs[row]
         if action == "details":
-            self._run(lambda: read_detail(self.directory, ref), self._show_detail)
+            self._run(lambda: read_detail(self.directory, ref), self._show_detail, kind="detail")
         elif action == "copy":
-            self._run(lambda: read_detail(self.directory, ref), self._copy_record)
+            self._run(lambda: read_detail(self.directory, ref), self._copy_record, kind="copy")
 
     def _show_detail(self, record, error):
         if error:
@@ -631,7 +807,7 @@ class LogsWorkspace(QObject):
                 QApplication.clipboard().setText(value)
                 self.form.logsStatus.setText(f"Copied {len(refs)} {label} records")
 
-        self._run(collect, delivered)
+        self._run(collect, delivered, kind="copy")
 
     def _save_menu(self):
         menu = QMenu(self.form.logsSaveMenu)
@@ -707,9 +883,10 @@ class LogsWorkspace(QObject):
             lambda: export_matching(
                 self.directory, sid, target, fmt=fmt, filters=filters, sort=sort, descending=desc, metric=metric
             ),
-            lambda value, error: self.form.logsStatus.setText(
+            lambda value, error: self.form.logsOperationStatus.setText(
                 "Export failed: " + error if error else f"Exported {value}"
             ),
+            kind=f"export:{self.token + 1}",
         )
 
     def clear_filters(self):

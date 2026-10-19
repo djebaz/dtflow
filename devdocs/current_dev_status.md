@@ -279,3 +279,5 @@ Source-present, not runtime-accepted: headless preparation, request v2/DB v3 bac
 - 2026-10-10: A [plan for Inpaint and image-to-image in queues](plans/2026-10-10-inpaint-queues.md) is proposed (plan only, nothing implemented; queues, planner and CLI still refuse image operations).
 - 2026-10-10: queued Inpaint edits (Queues tab Create queue/Plan with a Strengths dimension in Seed, Pair and Cross) are source-present on PR #66; see [plan](plans/2026-10-10-inpaint-queues.md). Not runtime-accepted: owner Windows smoke on local and DT+ cloud (step 4) is pending.
 
+
+PR #105 step 2 source correction (2026-10-19): Logs now has bounded bidirectional 500-row paging, active log-directory lookup, isolated action deliveries and incremental Follow reconciliation with surviving selection/anchor preservation. Preview definitions are extended; deferred runtime/Windows contracts are recorded in the [structured Logs plan](plans/2026-10-19-structured-log-viewer.md#step-2-corrective-checkpoint--logs-findings-14-2026-10-19). No runtime acceptance is implied.

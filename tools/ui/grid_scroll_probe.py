@@ -37,8 +37,6 @@ def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | Non
     return position if position.valid() else None
 
 
-
-
 class GridProgressProbe:
     """Read the dedicated read-only status input through Windows UI Automation.
 
@@ -105,12 +103,14 @@ class GridProgressProbe:
                     kind == "Edit" and re.fullmatch(r"[0-9]+/[0-9]+", name)
                 ):
                     continue
-                result["matching_controls"].append({
-                    "automation_id": ident,
-                    "control_type": kind,
-                    "name": name if re.fullmatch(r"[0-9]+/[0-9]+", name) else "<other>",
-                    "value_pattern": self._value_pattern_status(widget),
-                })
+                result["matching_controls"].append(
+                    {
+                        "automation_id": ident,
+                        "control_type": kind,
+                        "name": name if re.fullmatch(r"[0-9]+/[0-9]+", name) else "<other>",
+                        "value_pattern": self._value_pattern_status(widget),
+                    }
+                )
                 if len(result["matching_controls"]) == 8:
                     break
         except Exception as exc:

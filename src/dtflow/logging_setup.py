@@ -34,6 +34,7 @@ __all__ = [
     "LogSession",
     "LoggingSetupError",
     "configure_logging",
+    "configured_directory",
     "default_directory",
     "dev_enabled",
     "sanitize",
@@ -58,6 +59,15 @@ def default_directory() -> Path:
     if os.name == "nt":
         return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "DTFlow" / "logs"
     return Path.home() / ".local" / "state" / "dtflow" / "logs"
+
+
+def configured_directory() -> Path:
+    """Use the active logging session's destination, including CLI overrides."""
+    for handler in logging.getLogger(LOGGER).handlers:
+        directory = getattr(handler, "_dtflow_directory", None)
+        if directory is not None:
+            return directory
+    return default_directory()
 
 
 @dataclass
@@ -208,6 +218,7 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
     admission = Admission()
     capture_handler = CaptureHandler(admission)
     capture_handler._dtflow_session = session
+    capture_handler._dtflow_directory = path.absolute().parent
     listener = DiagnosticListener(admission, sink, startup)
     listener.ownership = lease
     logger.setLevel(logging.DEBUG if dev else logging.INFO)

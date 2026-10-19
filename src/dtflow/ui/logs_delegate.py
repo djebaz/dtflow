@@ -124,6 +124,7 @@ class LogCellDelegate(QStyledItemDelegate):
                     QRect(option.rect.x(), option.rect.y(), mid - option.rect.x(), option.rect.height()),
                     QRect(mid, option.rect.y(), option.rect.right() + 1 - mid, option.rect.height()),
                 ),
+                strict=True,
             ):
                 icon_size = QSize(18, 18)
                 icon_rect = QRect(

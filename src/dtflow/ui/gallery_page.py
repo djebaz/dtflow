@@ -16,7 +16,19 @@ from pathlib import Path, PureWindowsPath
 from threading import Lock
 from time import monotonic, monotonic_ns, thread_time
 
-from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Signal, Slot, qVersion
+from PySide6.QtCore import (
+    QByteArray,
+    QDataStream,
+    QEvent,
+    QIODevice,
+    QObject,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+    Slot,
+    qVersion,
+)
 from PySide6.QtGui import (
     QIcon,
     QImage,
