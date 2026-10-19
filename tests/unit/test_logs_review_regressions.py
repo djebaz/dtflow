@@ -33,9 +33,7 @@ def test_refresh_discloses_incomplete_evidence_with_zero_matching_arrivals(qtbot
     button = QToolButton()
     qtbot.addWidget(button)
     controller = SimpleNamespace(form=SimpleNamespace(logsRefreshButton=button))
-    logs_workspace.LogsWorkspace._set_pending(
-        controller, True, 0, incomplete=True, detail="Source has a sequence gap"
-    )
+    logs_workspace.LogsWorkspace._set_pending(controller, True, 0, incomplete=True, detail="Source has a sequence gap")
     assert button.text().strip() == "Refresh (0 new · incomplete)"
     assert button.property("pending") is True
     assert "sequence gap" in button.toolTip()
