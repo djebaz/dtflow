@@ -20,6 +20,12 @@ The default cases are `20:50 20:100 50:150 100:300 200:600 300:1000`. Each launc
 
 This is intentionally a **fast, position-driven scrolling stress test**, not a wait-until-every-thumbnail-is-decoded test. Grid-card displacement and end points must be observed, rather than inferred from how many wheel events were sent. Treat mount duration and GUI heartbeat separately from input-to-paint latency. The changed test awaits a native Windows acceptance run.
 
+### Equal starting position despite a busy first batch
+
+The real Windows `10190307.zip` trace used `--grid-target-card 200`, but the `-ml 80 -mc 200` trial had already reached **visible images 281–295 before the measured down leg**; the automated user sent 555 wheel notches and hit the 12-second timeout while reversing the overshoot. Its maximum first-visible image was 301, even though the target was 200. The early page-1 click is dispatched without verifying the resulting viewport, so it cannot establish an equal starting position by itself.
+
+The Grid matrix now **homes upward with live wheel events until `Visible image range` confirms first image #1** before beginning the timed down-to-target-and-back journey. Homing uses the independent wheel sender, so it also sends input while the initial batch is querying/preparing and while UIA/log position reads are delayed. It is separately recorded as `grid-home-start` and excluded from the measured round-trip and browsing-only stall ranking. If image #1 cannot be confirmed within the configured `--grid-seek-timeout`, the run is warned and not ranked; it does not silently start at image #281 or pass by clicking page 1 afterward. This avoids mistaking `-mc` (a resident-card buffer cap) for a limit on how far a user may browse.
+
 ### Continuous scrolling without a query barrier; direct console report
 
 The Grid-only matrix **does not call `_await_query` before the first page-1 attempt or first wheel input**. It tries the actual page-1 chip immediately after entering Grid. The chip is disabled until Qt commits an initial batch; if unavailable, the runner records `click-page-one-start: not-ready` and **starts wheel input anyway**, rather than blocking for a batch. The final page-1 click is still performed. An initial viewport with no mounted cards physically cannot scroll yet: wheel events are still sent and their first visible movement is independently observed after Qt makes cards available.
