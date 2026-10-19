@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from tools.ui.gallery_perf_launch import DEFAULTS, validate_profile
-from tools.ui.windows_gallery_benchmark import load_profiles, summarize_csv, write_report
+from tools.ui.windows_gallery_benchmark import load_profiles, summarize_jsonl, write_report
 
 
 def test_validated_profile_changes_one_parameter_without_changing_defaults():
@@ -46,56 +46,71 @@ def test_named_profiles_load_with_exact_explicit_overrides(tmp_path):
         load_profiles(profiles, ["missing"])
 
 
+def _jsonl_record(seq, event, data, *, kind="event", agg=None):
+    record = {
+        "v": 1, "seq": seq, "ts": f"2026-10-19T00:00:{seq:02d}.000Z",
+        "level": "DEBUG", "component": "gallery", "event": event,
+        "kind": kind, "data": data,
+    }
+    if kind == "measurement":
+        record["mono_ns"] = seq * 1_000_000_000
+    if agg is not None:
+        record["agg"] = agg
+    return record
+
+
+def _write_jsonl_session(directory, observations):
+    directory.mkdir(exist_ok=True)
+    session = "benchmarktest"
+    start = {
+        "session_id": session, "version": "test", "source_commit": "unknown",
+        "build_state": "unknown", "runtime": "python", "platform": "test",
+        "dev": True, "instrumentation_version": "gallery-jsonl-v1",
+        "schema_version": 1, "queue_max_records": 1024,
+        "queue_max_bytes": 8 * 1024 * 1024, "max_record_bytes": 1_048_576,
+        "aggregation_policy": "test",
+    }
+    records = [_jsonl_record(1, "session.started", start)]
+    records.extend(_jsonl_record(index, event, data, kind=kind, agg=agg)
+                   for index, (event, data, kind, agg) in enumerate(observations, 2))
+    closing_seq = len(records) + 1
+    close = {
+        "observed": len(records), "admitted": len(records),
+        "rejected": 0, "dropped": 0, "written_records": closing_seq,
+        "aggregate_source_samples": 0, "writer_failures": 0,
+        "serialization_failures": 0,
+    }
+    records.append(_jsonl_record(closing_seq, "session.closed", close))
+    (directory / f"dtflow-{session}.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8",
+    )
+
+
 def test_report_uses_original_diagnostic_max_and_never_invents_missing_events(tmp_path):
-    metrics = tmp_path / "metrics.csv"
-    with metrics.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(
-            stream, fieldnames=("utc", "phase", "metric", "samples", "mean", "p95", "max", "total", "details")
-        )
-        writer.writeheader()
-        writer.writerows(
-            [
-                {
-                    "utc": "",
-                    "phase": "query_done",
-                    "metric": "elapsed_ms",
-                    "samples": "1",
-                    "mean": "28",
-                    "p95": "28",
-                    "max": "28",
-                    "total": "28",
-                    "details": "",
-                },
-                {
-                    "utc": "",
-                    "phase": "gui_gaps",
-                    "metric": "wall_max_ms",
-                    "samples": "3",
-                    "mean": "0",
-                    "p95": "0",
-                    "max": "87",
-                    "total": "0",
-                    "details": "",
-                },
-            ]
-        )
-    result = summarize_csv(metrics)
+    logs = tmp_path / "logs"
+    _write_jsonl_session(logs, [
+        ("gallery.query_done", {"elapsed_ms": 28, "returned": 20,
+         "source": "live", "error": None}, "measurement", None),
+        ("gallery.performance_aggregate", {"phase": "gui_gaps"}, "aggregate", {
+            "samples": 3,
+            "window_start": "2026-10-19T00:00:01.000Z",
+            "window_end": "2026-10-19T00:00:02.000Z",
+            "metrics": {"wall_max_ms": {"count": 3, "mean": 0, "p95": 0,
+                                      "max": 87, "total": 0}},
+        }),
+    ])
+    result = summarize_jsonl(logs)
     assert result["gui_gap_over_50_max_ms"] == 87
     assert result["query_done_median_recorded_ms"] == 28
     assert result["prepare_median_recorded_ms"] is None
     assert result["phase_counts"]["gui_gaps"] == 3
 
     write_report(
-        [
-            {
-                "profile_name": "baseline",
-                "profile": validate_profile({}),
-                "trial": 1,
-                "status": "ok",
-                "initial_query_records": 20,
-                "metrics": result,
-            }
-        ],
+        [{
+            "profile_name": "baseline", "profile": validate_profile({}),
+            "trial": 1, "status": "ok", "initial_query_records": 20,
+            "metrics": result,
+        }],
         tmp_path / "out",
     )
     rows = list(csv.DictReader((tmp_path / "out" / "results.csv").open(newline="", encoding="utf-8")))
@@ -104,10 +119,18 @@ def test_report_uses_original_diagnostic_max_and_never_invents_missing_events(tm
 
 
 def test_missing_gallery_query_cannot_be_ranked(tmp_path):
-    path = tmp_path / "empty.csv"
-    path.write_text("phase,metric,samples,mean,max\ngui_gaps,wall_max_ms,1,80,80\n")
+    logs = tmp_path / "logs"
+    _write_jsonl_session(logs, [
+        ("gallery.performance_aggregate", {"phase": "gui_gaps"}, "aggregate", {
+            "samples": 1,
+            "window_start": "2026-10-19T00:00:01.000Z",
+            "window_end": "2026-10-19T00:00:01.000Z",
+            "metrics": {"wall_max_ms": {"count": 1, "mean": 80,
+                                      "p95": 80, "max": 80, "total": 80}},
+        }),
+    ])
     with pytest.raises(ValueError, match="query"):
-        summarize_csv(path)
+        summarize_jsonl(logs)
 
 
 class _FakeInfo:
