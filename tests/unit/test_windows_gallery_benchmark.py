@@ -1645,6 +1645,39 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["last_after"] == 200
 
 
+def test_grid_page_one_lookup_uses_exact_name_without_tree_scan():
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    class Chip:
+        def exists(self, *, timeout):
+            assert timeout == 0
+            return True
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def wrapper_object(self):
+            return self
+
+    chip = Chip()
+
+    class Window:
+        def child_window(self, **criteria):
+            assert criteria == {
+                "title": "Jump to image batch 1",
+                "control_type": "Button",
+            }
+            return chip
+
+        def descendants(self):
+            pytest.fail("Page 1 lookup must not enumerate the full UIA tree")
+
+    assert benchmark._grid_batch_button(Window(), 1) is chip
+
+
 def test_grid_start_clicks_page_one_and_verifies_live_range(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
@@ -1676,6 +1709,9 @@ def test_grid_start_clicks_page_one_and_verifies_live_range(monkeypatch, tmp_pat
     assert events == ["resolve-page-one", "activate-page-one"]
     assert actions[-1]["verified"] is True
     assert actions[-1]["click_attempts"] == 1
+    assert actions[-1]["page_one_lookup_ms"] >= 0
+    assert actions[-1]["page_one_click_ms"] >= 0
+    assert actions[-1]["footer_read_ms"] >= 0
     assert actions[-1]["visible_first"] == 1
 
 
