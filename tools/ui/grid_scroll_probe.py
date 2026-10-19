@@ -73,8 +73,10 @@ class GridProgressProbe:
                 if not candidate.exists(timeout=0):
                     self.last_error = "status_input_not_found"
                     return None
-                self._control = candidate
-            value = self._control.iface_value.CurrentValue
+                # Resolve the WindowSpecification once. Keeping the spec would
+                # repeat the potentially slow UIA search on every read.
+                self._control = candidate.wrapper_object()
+            value = self._control.get_value()
             position = self._parse(str(value))
             if position is None:
                 self.last_error = "status_input_value_invalid"
@@ -86,3 +88,39 @@ class GridProgressProbe:
             self.last_error = "status_input_read_" + type(exc).__name__
             self._control = None
             return None
+
+    def diagnose(self) -> dict:
+        """Inspect only relevant UIA properties after a failed seek, not per pulse.
+
+        Do not include arbitrary application input values in benchmark logs.
+        """
+        result = {"last_error": self.last_error, "matching_controls": []}
+        try:
+            for widget in self.window.descendants():
+                info = widget.element_info
+                ident = info.automation_id or ""
+                kind = info.control_type or ""
+                name = info.name or ""
+                if ident != "dtflowStatusGridFirstVisibleIndex" and not (
+                    kind == "Edit" and re.fullmatch(r"[0-9]+/[0-9]+", name)
+                ):
+                    continue
+                result["matching_controls"].append({
+                    "automation_id": ident,
+                    "control_type": kind,
+                    "name": name if re.fullmatch(r"[0-9]+/[0-9]+", name) else "<other>",
+                    "value_pattern": self._value_pattern_status(widget),
+                })
+                if len(result["matching_controls"]) == 8:
+                    break
+        except Exception as exc:
+            result["diagnostic_error"] = type(exc).__name__
+        return result
+
+    @staticmethod
+    def _value_pattern_status(widget) -> str:
+        try:
+            # No untrusted text is logged; only pattern availability.
+            return "available" if widget.iface_value is not None else "missing"
+        except Exception as exc:
+            return type(exc).__name__
