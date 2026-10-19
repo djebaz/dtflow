@@ -18,11 +18,11 @@ _GUI_GAP = re.compile(
     r"gallery_perf phase=gui_gap\b[^\n]*\belapsed_ms=([\d.]+)\b"
     r"[^\n]*\bmode=Grid\b[^\n]*\bmounted=(\d+)\b"
 )
-_THRESHOLD_MS = 250
+_THRESHOLD_MS = 100
 
 
 def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
-    """Count only logged >=250ms Grid GUI gaps during the actual wheel journeys."""
+    """Count only logged >=100ms Grid GUI gaps during the actual wheel journeys."""
 
     intervals = []
     for item in actions:
@@ -51,7 +51,7 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
                     if "gallery_perf phase=" in line:
                         instrumented = True
                     match = _GUI_GAP.search(line)
-                    if not match or int(match.group(2)) <= 0:
+                    if not match or int(match.group(2)) <= 0 or float(match.group(1)) < _THRESHOLD_MS:
                         continue
                     try:
                         timestamp = datetime.fromisoformat(line.split(" ", 1)[0])
@@ -72,7 +72,7 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
             continue
     return {
         "diagnostics_available": instrumented and bool(intervals),
-        "grid_stalls_250ms": len(gaps),
+        "grid_stalls_100ms": len(gaps),
         "grid_stall_max_ms": round(max(gaps, default=0), 2),
         "round_trip_ms": round(total_ms, 2),
         "observed_browsing_legs": len(intervals),
@@ -112,13 +112,13 @@ def rank_grid_matrix(records: list[dict]) -> dict:
         if len(clean) == len(trials) and clean:
             responsiveness = [r["grid_responsiveness"] for r in clean]
             round_trips = [r["round_trip_ms"] for r in responsiveness]
-            stalls = [r["grid_stalls_250ms"] for r in responsiveness]
+            stalls = [r["grid_stalls_100ms"] for r in responsiveness]
             max_gap = max(r["grid_stall_max_ms"] for r in responsiveness)
             candidate = {
                 "ml": ml, "mc": mc, "effective_mc": effective_mc,
                 "trials": len(trials), "clean_trials": len(clean),
                 "median_round_trip_ms": round(statistics.median(round_trips), 2),
-                "total_grid_stalls_250ms": sum(stalls),
+                "total_grid_stalls_100ms": sum(stalls),
                 "worst_grid_stall_ms": max_gap,
                 "eligible": True,
             }
@@ -127,14 +127,14 @@ def rank_grid_matrix(records: list[dict]) -> dict:
                 "ml": ml, "mc": mc, "effective_mc": effective_mc,
                 "trials": len(trials), "clean_trials": len(clean),
                 "median_round_trip_ms": None,
-                "total_grid_stalls_250ms": None,
+                "total_grid_stalls_100ms": None,
                 "worst_grid_stall_ms": None,
                 "eligible": False,
             }
         ranking.append(candidate)
     complete = [r for r in ranking if r["eligible"]]
     complete.sort(key=lambda r: (
-        r["total_grid_stalls_250ms"] / r["trials"],
+        r["total_grid_stalls_100ms"] / r["trials"],
         r["worst_grid_stall_ms"],
         r["median_round_trip_ms"],
         r["ml"], r["mc"],
@@ -158,7 +158,7 @@ def rank_grid_matrix(records: list[dict]) -> dict:
             if not stable else None
         ),
         "ranking_rule": (
-            "Fewest observed >=250ms Grid-thread gaps per trial, then lowest worst gap, "
+            "Fewest observed >=100ms Grid-thread gaps per trial, then lowest worst gap, "
             "then shortest median completed round trip. Startup gaps are excluded."
         ),
     }
@@ -170,11 +170,11 @@ def grid_console_report(report: dict) -> str:
     lines = [
         "",
         f"GRID SCROLL BENCHMARK  |  image #1 -> #{report.get('target_card') or '?'} -> #1",
-        "Requested       Effective   Clean    Grid stalls >=250ms   Worst gap   Median trip",
+        "Requested       Effective   Clean    Grid stalls >=100ms   Worst gap   Median trip",
     ]
     for case in report["ranking"]:
         if case["eligible"]:
-            gaps = f"{case['total_grid_stalls_250ms']:>6}"
+            gaps = f"{case['total_grid_stalls_100ms']:>6}"
             worst = f"{case['worst_grid_stall_ms']:>7.1f} ms"
             trip = f"{case['median_round_trip_ms']/1000:>7.2f} s"
         else:
