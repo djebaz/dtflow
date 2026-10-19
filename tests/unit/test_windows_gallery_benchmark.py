@@ -872,6 +872,8 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
                         lambda window, mode, actions: trace.append("view-" + mode))
     monkeypatch.setattr(benchmark, "_click_grid_page_one",
                         lambda window, actions, *, at: trace.append("page-one-" + at))
+    monkeypatch.setattr(benchmark, "_verify_grid_start_at_one",
+                        lambda window, probe, actions: trace.append("verified-start"))
     monkeypatch.setattr(benchmark, "_seek_grid_card",
                         lambda window, probe, actions, *, target, direction, **kwargs:
                             trace.append(("seek", direction, target, kwargs["wheel_point"])))
@@ -890,6 +892,9 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
         (-1, 300), (1, 1),
     ]
     assert trace.index("view-Grid") < trace.index("images-or-page", 1)
+    assert trace.index("verified-start") < next(
+        i for i, event in enumerate(trace) if isinstance(event, tuple) and event[1] == -1
+    )
     assert trace[-2:] == ["page-one-end", "close"]
     assert set(value for value in trace if isinstance(value, str) and value.startswith("view-")) == {"view-Grid"}
 
@@ -933,6 +938,7 @@ def test_grid_matrix_samples_first_query_after_scrolls(monkeypatch, tmp_path):
                         lambda *a: events.append("sample-query") or 100)
     monkeypatch.setattr(benchmark, "_click_gallery_mode", lambda *a: None)
     monkeypatch.setattr(benchmark, "_click_grid_page_one", lambda *a, **kw: None)
+    monkeypatch.setattr(benchmark, "_verify_grid_start_at_one", lambda *a: True)
     monkeypatch.setattr(benchmark, "_seek_grid_card",
                         lambda window, probe, actions, *, direction, **kw: events.append(
                             "down" if direction < 0 else "up"
@@ -1175,3 +1181,44 @@ def test_grid_page_one_early_does_not_wait_for_disabled_chip(monkeypatch):
         "reason": "LookupError",
         "dispatch_ms": actions[0]["dispatch_ms"],
     })]
+
+
+def test_grid_start_verification_retries_and_observes_first_card(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    positions = iter([GridPosition(281, 295, 833, "pager-log"),
+                      GridPosition(1, 15, 833, "pager-log")])
+    class Probe:
+        def read(self):
+            return next(positions, GridPosition(1, 15, 833, "pager-log"))
+
+    attempts = []
+    class Chip:
+        def click_input(self):
+            attempts.append("click")
+
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    monkeypatch.setattr(benchmark.time, "sleep", lambda _value: None)
+    actions = []
+    assert benchmark._verify_grid_start_at_one(object(), Probe(), actions, timeout=1)
+    assert attempts == ["click"]
+    assert actions[-1]["verified"] is True
+    assert actions[-1]["first"] == 1
+
+
+def test_grid_start_verification_never_accepts_image_281(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    class Probe:
+        def read(self):
+            return GridPosition(281, 295, 833, "pager-log")
+
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: SimpleNamespace(click_input=lambda: None))
+    monkeypatch.setattr(benchmark.time, "sleep", lambda _value: None)
+    actions = []
+    with pytest.raises(TimeoutError, match="not confirmed at image 1"):
+        benchmark._verify_grid_start_at_one(object(), Probe(), actions, timeout=0.005)
+    assert actions[-1]["verified"] is False
+    assert actions[-1]["first"] == 281
