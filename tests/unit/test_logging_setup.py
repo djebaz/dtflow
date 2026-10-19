@@ -317,7 +317,9 @@ def test_retention_skips_an_idle_owner_in_another_process(tmp_path, monkeypatch)
 
 
 def test_capture_formats_safe_primitives_before_redaction_and_refreshes_secrets(monkeypatch):
-    record = logging.LogRecord("dtflow.test", logging.INFO, __file__, 1, "progress %d/%d: %s", (3, 4, "image/png"), None)
+    record = logging.LogRecord(
+        "dtflow.test", logging.INFO, __file__, 1, "progress %d/%d: %s", (3, 4, "image/png"), None
+    )
     captured, _ = schema.capture(record)
     assert captured["msg"] == "progress 3/4: image/png"
     record.msg, record.args = "value %(value)s", {"value": "NEW-SECRET-SENTINEL"}
@@ -328,7 +330,9 @@ def test_capture_formats_safe_primitives_before_redaction_and_refreshes_secrets(
     assert "[redacted]" in schema.capture(record)[0]["msg"]
 
 
-@pytest.mark.parametrize("template,args", [("%(x)999999999s", {"x": "a"}), ("%.999999999f", (1.0,)), ("%*s", (100, "a"))])
+@pytest.mark.parametrize(
+    "template,args", [("%(x)999999999s", {"x": "a"}), ("%.999999999f", (1.0,)), ("%*s", (100, "a"))]
+)
 def test_capture_rejects_unbounded_format_expansion(template, args):
     record = logging.LogRecord("dtflow.test", logging.INFO, __file__, 1, "placeholder", (), None)
     record.msg, record.args = template, args
@@ -345,7 +349,10 @@ def test_spaced_private_paths_are_redacted_without_leaking_suffixes(path):
 def test_tracebacks_keep_package_location_without_private_root_or_locals():
     location = str(Path(schema.__file__).parent / "f9_trace_fixture.py")
     try:
-        exec(compile("private_local = 'PRIVATE-LOCAL-SENTINEL'\nraise ValueError('fixture failure')", location, "exec"), {})
+        exec(
+            compile("private_local = 'PRIVATE-LOCAL-SENTINEL'\nraise ValueError('fixture failure')", location, "exec"),
+            {},
+        )
     except ValueError:
         record = logging.LogRecord("dtflow.test", logging.ERROR, __file__, 1, "failed", (), sys.exc_info())
     captured, _ = schema.capture(record)
@@ -380,7 +387,14 @@ def test_small_concurrent_captures_do_not_reserve_a_megabyte_each(monkeypatch):
         return result
 
     monkeypatch.setattr(writer, "capture", capture_together)
-    threads = [threading.Thread(target=handler.emit, args=(logging.LogRecord("dtflow.test", logging.INFO, __file__, 1, "small", (), None),), daemon=True) for _ in range(12)]
+    threads = [
+        threading.Thread(
+            target=handler.emit,
+            args=(logging.LogRecord("dtflow.test", logging.INFO, __file__, 1, "small", (), None),),
+            daemon=True,
+        )
+        for _ in range(12)
+    ]
     try:
         for thread in threads:
             thread.start()
@@ -413,7 +427,14 @@ def test_idle_listener_flushes_source_window_without_waiting_for_close(tmp_path,
     monkeypatch.setattr(writer.JsonlHandler, "write_record", observe)
     session = configure_logging(directory=tmp_path, session="idle", dev=True)
     try:
-        event(logging.getLogger("dtflow.test"), "gallery.scroll_intent", level=logging.DEBUG, kind="measurement", source_mono_ns=100_000_000_000, data={"direction": "forward", "source": "wheel", "offset": 20, "mounted": 100})
+        event(
+            logging.getLogger("dtflow.test"),
+            "gallery.scroll_intent",
+            level=logging.DEBUG,
+            kind="measurement",
+            source_mono_ns=100_000_000_000,
+            data={"direction": "forward", "source": "wheel", "offset": 20, "mounted": 100},
+        )
         assert written.wait(3), "Individual wheel receipt missing"
         assert not flushed.is_set()
         clock[0] = 110.1

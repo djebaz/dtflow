@@ -194,7 +194,10 @@ def test_diagnostic_warning_is_delivered_once_without_replacing_confirmation(win
     row = window.progress_strip.rows["diagnostics"]
     assert row.activityDetail.text() == "Diagnostic evidence is incomplete; review the logs."
     assert row.property("feedbackState") == "warning" and window.progress_strip._expiry["diagnostics"] == 6.0
-    assert button.property("confirmationPending") and window.inline.form.inlineTitleLabel.text() == "Keep this confirmation"
+    assert (
+        button.property("confirmationPending")
+        and window.inline.form.inlineTitleLabel.text() == "Keep this confirmation"
+    )
     assert not receiver.timer.isActive() and mailbox.take() is None
     receiver.deliver()
     assert window.progress_strip.rows["diagnostics"] is row
@@ -210,6 +213,7 @@ def test_diagnostic_receiver_stops_at_shutdown_without_consuming_a_late_notice(w
     receiver.deliver()
     assert "diagnostics" not in window.progress_strip.rows
     assert mailbox.take() == "Late diagnostic warning must not reopen a window."
+
 
 def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_path, monkeypatch):
     """All thumbnail views share one 600 px decode; Detail retains original pixels."""

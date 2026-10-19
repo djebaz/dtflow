@@ -221,7 +221,7 @@ class JsonlHandler(logging.handlers.RotatingFileHandler):
                     self.doRollover()
                 except OSError as exc:
                     self.rotation_failures = min(self.rotation_failures + 1, 6)
-                    self.rotation_retry_at = monotonic() + min(0.05 * 2 ** self.rotation_failures, 2.0)
+                    self.rotation_retry_at = monotonic() + min(0.05 * 2**self.rotation_failures, 2.0)
                     self.warn()
                     raise RotationUnavailable("diagnostic rotation unavailable") from exc
                 self.rotation_failures = 0
@@ -311,7 +311,12 @@ class DiagnosticListener(logging.handlers.QueueListener):
 
     def _unwritten(self, payload):
         # Write losses are a subset of admitted work, not admission drops.
-        if payload["event"] not in {"session.started", "session.closed", "diagnostics.loss", "diagnostics.record_rejected"}:
+        if payload["event"] not in {
+            "session.started",
+            "session.closed",
+            "diagnostics.loss",
+            "diagnostics.record_rejected",
+        }:
             self.admission.counts["unwritten_records"] += 1
             key = ("writer_error", payload["level"], payload.get("kind") in ("measurement", "aggregate"))
             self.admission.losses[key] += 1

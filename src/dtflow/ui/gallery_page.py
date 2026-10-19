@@ -1462,7 +1462,9 @@ class GalleryPage(QObject):
         # two-success recovery semantics; a file-stat hint cannot gate recovery.
         if self._snapshot_at or self._snapshot_warning_episode or self._refresh_failing:
             if dev_enabled():
-                measurement(log, "gallery.auto_refresh", action="started", reason="live_recovery", mounted=len(self.items))
+                measurement(
+                    log, "gallery.auto_refresh", action="started", reason="live_recovery", mounted=len(self.items)
+                )
             self._auto_last_full = monotonic()
             self.refresh(preserve=True, trigger="live_recovery")
             return
@@ -1500,7 +1502,9 @@ class GalleryPage(QObject):
                     )
                     if active
                 ]
-                measurement(log, "gallery.auto_refresh", action="late_skipped", reasons=reasons, mounted=len(self.items))
+                measurement(
+                    log, "gallery.auto_refresh", action="late_skipped", reasons=reasons, mounted=len(self.items)
+                )
             return
         now = monotonic()
         due = now - self._auto_last_full >= AUTO_REFRESH_FULL_INTERVAL_S
