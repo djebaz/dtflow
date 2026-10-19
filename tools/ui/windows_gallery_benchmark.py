@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from tools.ui.gallery_perf_launch import validate_profile
+from dtflow._diagnostic_reader import EvidenceError, discover, scan
 
 # Each trial differs from production defaults in just one family.
 DEFAULT_PROFILES = {
@@ -38,12 +39,6 @@ DEFAULT_GRID_MATRIX = ((20, 50), (20, 100), (50, 150), (100, 300), (200, 600), (
 # Keep the product's actual batch-rounding semantics for each case.
 GRID_MAX_LOAD = 300
 GRID_MAX_CARDS = 1000
-
-SCROLL_INTENT = re.compile(
-    r"gallery_perf phase=scroll_intent\b[^\n]*\bdirection=(forward|backward)\b[^\n]*\bsource=wheel\b"
-)
-QUERY_DONE = re.compile(r"gallery_perf phase=query_done\b[^\n]*\breturned=(\d+)\b[^\n]*\berror=none\b")
-
 
 def load_profiles(path: Path | None, names: list[str] | None) -> dict[str, dict]:
     """Load one-factor experiments or explicit benchmark profiles."""
@@ -111,40 +106,61 @@ def _number(value: str) -> float | None:
         return None
 
 
-def summarize_csv(path: Path) -> dict:
-    """Read the application's existing sanitized listener-side gallery CSV.
-
-    These are aggregated diagnostic samples. Their P95 cannot be reconstructed
-    as a global percentile, so only directly observed maxima and medians of
-    recorded per-event means are reported.
-    """
-
+def summarize_jsonl(directory: Path) -> dict:
+    """Preserve recorded per-metric maxima/medians, not global raw-sample percentiles."""
+    sessions = discover(directory)
+    if len(sessions) != 1:
+        raise EvidenceError("expected_one_jsonl_session")
     metrics: dict[tuple[str, str], list[float]] = {}
     events: dict[str, int] = {}
-    with path.open(newline="", encoding="utf-8") as stream:
-        reader = csv.DictReader(stream)
-        required = {"phase", "metric", "samples", "mean", "max"}
-        if not required.issubset(reader.fieldnames or []):
-            raise ValueError("DTFlow gallery CSV schema is missing required fields.")
-        for row in reader:
-            phase = row["phase"]
-            metric = row["metric"]
-            count = int(row["samples"] or 1)
-            events[phase] = events.get(phase, 0) + count
-            number = _number(row["max"])
-            if number is not None and metric:
-                metrics.setdefault((phase, metric), []).append(number)
+    aggregated = set()
+    raw = []
 
-    def maximum(*keys: tuple[str, str]) -> float | None:
-        found = [number for key in keys for number in metrics.get(key, [])]
-        return max(found) if found else None
+    def reset():
+        metrics.clear()
+        events.clear()
+        aggregated.clear()
+        raw.clear()
 
-    def median(phase: str, metric: str) -> float | None:
-        values = metrics.get((phase, metric), [])
+    def add(phase, name, count, maximum):
+        events[phase] = events.get(phase, 0) + count
+        metrics.setdefault((phase, name), []).append(round(float(maximum), 1))
+
+    def collect(record, _ref):
+        name = record["event"]
+        if name == "gallery.performance_aggregate":
+            phase = record["data"]["phase"]
+            aggregated.add(phase)
+            for key, stat in record["agg"]["metrics"].items():
+                add(phase, key, int(stat["count"]), stat["max"])
+        elif name == "gallery.source_summary":
+            data = record["data"]
+            phase, count = data["phase"], data["samples"]
+            for key in ("wall_total_ms", "wall_avg_ms", "wall_max_ms", "cpu_total_ms"):
+                add(phase, key, count, data[key])
+        elif name.startswith("gallery.") and record.get("kind") == "measurement":
+            raw.append((name.removeprefix("gallery."), record.get("data", {})))
+
+    status = scan(directory, sessions[0], on_record=collect, on_reset=reset)
+    if not status.complete:
+        raise EvidenceError("benchmark_" + status.state + ":" + ",".join(status.reasons))
+    for phase, data in raw:
+        if phase in aggregated:
+            continue
+        for key, value in data.items():
+            if type(value) in (int, float):
+                add(phase, key, 1, value)
+
+    def maximum(*keys):
+        values = [n for key in keys for n in metrics.get(key, ())]
+        return max(values) if values else None
+
+    def median(phase, name):
+        values = metrics.get((phase, name), ())
         return round(statistics.median(values), 2) if values else None
 
     if not any(name in events for name in ("query_done", "adjacent_read")):
-        raise ValueError("No successful gallery query diagnostics were recorded.")
+        raise EvidenceError("missing_successful_gallery_query")
     return {
         "query_events": events.get("query_done", 0),
         "adjacent_events": events.get("adjacent_read", 0),
@@ -154,31 +170,33 @@ def summarize_csv(path: Path) -> dict:
         "grid_mount_median_recorded_ms": median("grid_mount_complete", "elapsed_ms"),
         "thumbnail_median_recorded_ms": median("thumbnail_end_to_end_summary", "elapsed_ms"),
         "phase_counts": events,
+        "diagnostic_contract": "jsonl-v1-source-ms-legacy-per-metric-1dp-maxima",
+        "evidence_status": status.state,
     }
 
 
 def _completed_queries(directory: Path) -> dict[tuple, int]:
-    """Read successful completion records with identities stable across rotation."""
-
+    """Fresh query identity uses session and persisted sequence, not path offsets."""
     records = {}
-    for path in directory.glob("dtflow-*.log*"):
-        if "-gallery" in path.name:
-            continue
-        try:
-            with path.open(encoding="utf-8", errors="replace") as stream:
-                identity = os.fstat(stream.fileno())
-                data = stream.read()
-        except OSError:
-            continue
-        for match in QUERY_DONE.finditer(data):
-            key = (identity.st_dev, identity.st_ino, match.start(), match.group(0))
-            records[key] = int(match.group(1))
+    for sid in discover(directory):
+        def reset():
+            for key in tuple(records):
+                if key[0] == sid:
+                    del records[key]
+        def collect(record, _loc):
+            data = record.get("data", {})
+            if (record["event"] == "gallery.query_done"
+                    and record.get("kind") == "measurement"
+                    and type(data.get("returned")) is int and data["returned"] > 0
+                    and data.get("error") is None):
+                records[(sid, record["seq"])] = data["returned"]
+        status = scan(directory, sid, on_record=collect, on_reset=reset)
+        if status.state not in ("pending", "complete"):
+            raise EvidenceError("query_evidence_" + status.state)
     return records
 
 
 def _read_query_count(directory: Path) -> int:
-    """Read live query completion records from the rotating text log."""
-
     return max(_completed_queries(directory).values(), default=0)
 
 
@@ -461,20 +479,21 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
 
 
 def _wheel_intents(directory: Path) -> set[tuple]:
-    """Use existing -x events to verify that the gallery received a wheel."""
-
+    """Only individual wheel receipts, identified by session and sequence."""
     found = set()
-    for path in directory.glob("dtflow-*.log*"):
-        if "-gallery" in path.name:
-            continue
-        try:
-            with path.open(encoding="utf-8", errors="replace") as stream:
-                identity = os.fstat(stream.fileno())
-                data = stream.read()
-        except OSError:
-            continue
-        for match in SCROLL_INTENT.finditer(data):
-            found.add((identity.st_dev, identity.st_ino, match.start(), match.group(1)))
+    for sid in discover(directory):
+        def reset():
+            found.difference_update({x for x in found if x[0] == sid})
+        def collect(record, _loc):
+            data = record.get("data", {})
+            if (record["event"] == "gallery.scroll_intent"
+                    and record.get("kind") == "measurement"
+                    and data.get("source") == "wheel"
+                    and data.get("direction") in ("forward", "backward")):
+                found.add((sid, record["seq"], data["direction"]))
+        status = scan(directory, sid, on_record=collect, on_reset=reset)
+        if status.state not in ("pending", "complete"):
+            raise EvidenceError("wheel_evidence_" + status.state)
     return found
 
 
@@ -1286,10 +1305,7 @@ def run_trial(
                 grid_seek_timeout=grid_seek_timeout,
             )
             process.wait(timeout=timeout)
-            csvs = sorted(logs.glob("dtflow-*-gallery.csv"))
-            if len(csvs) != 1:
-                raise ValueError("Expected exactly one session gallery CSV.")
-            record["metrics"] = summarize_csv(csvs[0])
+            record["metrics"] = summarize_jsonl(logs)
             if grid_limits is not None:
                 from tools.ui.grid_benchmark_report import analyze_grid_trial
 
