@@ -1050,6 +1050,17 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=FakeDesktop))
     monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    # The matrix physically hovers a numbered chip, then the Grid viewport.
+    mouse_moves = []
+    sys.modules["pywinauto"].mouse = SimpleNamespace(move=lambda *, coords: mouse_moves.append(coords))
+    monkeypatch.setattr(
+        benchmark, "_grid_batch_button",
+        lambda *_a: SimpleNamespace(
+            rectangle=lambda: SimpleNamespace(left=10, right=50, top=10, bottom=34),
+            element_info=SimpleNamespace(name="Jump to image batch 1"),
+        ),
+    )
+    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_a: ((300, 400), "grid"))
     monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: FakeButton())
     monkeypatch.setattr(
@@ -1153,6 +1164,17 @@ def test_grid_matrix_samples_first_query_after_scrolls(monkeypatch, tmp_path):
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=Desktop))
     monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    # The matrix physically hovers a numbered chip, then the Grid viewport.
+    mouse_moves = []
+    sys.modules["pywinauto"].mouse = SimpleNamespace(move=lambda *, coords: mouse_moves.append(coords))
+    monkeypatch.setattr(
+        benchmark, "_grid_batch_button",
+        lambda *_a: SimpleNamespace(
+            rectangle=lambda: SimpleNamespace(left=10, right=50, top=10, bottom=34),
+            element_info=SimpleNamespace(name="Jump to image batch 1"),
+        ),
+    )
+    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_a: ((300, 400), "grid"))
     monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: SimpleNamespace(click_input=lambda: None))
     monkeypatch.setattr(
