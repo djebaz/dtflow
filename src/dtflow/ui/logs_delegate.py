@@ -19,7 +19,7 @@ class LogCellDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self.tokens = load_tokens()
         icons_dir = Path(__file__).parents[1] / "resources" / "images" / "gallery"
-        self.action_icons = (QIcon(str(icons_dir / "document.svg")), QIcon(str(icons_dir / "copy.svg")))
+        self.action_icons = (QIcon(str(icons_dir / "detail.svg")), QIcon(str(icons_dir / "json.svg")))
 
     def _color(self, key):
         return QColor(self.tokens[key])
