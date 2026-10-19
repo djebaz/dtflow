@@ -681,19 +681,14 @@ def _seek_grid_card(
     probe_ms = 0.0
     insufficient_catalogue = False
 
-    # The Grid pager can temporarily report first=1,last=PAGE_SIZE
-    # before its geometry has settled. A large -ml (e.g. 200) therefore
-    # cannot use last >= target as proof of scrolling to card 200.
-    tolerance = min(25, max(10, target // 10))
-
     def at_target(position) -> bool:
         if position is None:
             return False
         if direction > 0:
             return position.first == 1
-        # Compare only the *first visible index*, not total, buffered, or
-        # the potentially stale end of the initially mounted batch.
-        return target - tolerance <= position.first <= target + tolerance
+        # Stop at the first observed image index >= target, including any
+        # overshoot. Do not reverse just to settle within a tolerance band.
+        return position.first >= target
 
     def send_wheel() -> None:
         try:
@@ -701,24 +696,21 @@ def _seek_grid_card(
                 position = state["position"]
                 if at_target(position):
                     break
-                if direction < 0 and position is not None and position.first > target + tolerance:
-                    wheel_direction, notches = 1, 1
-                else:
-                    wheel_direction = direction
-                    distance = (
-                        max(0, target - position.first)
-                        if direction < 0 and position is not None
-                        else max(0, position.first - 1)
-                        if position is not None
-                        else target
-                    )
-                    notches = (
-                        pulse_notches
-                        if distance > 100
-                        else min(pulse_notches, 6)
-                        if distance > 30
-                        else min(pulse_notches, 2)
-                    )
+                wheel_direction = direction
+                distance = (
+                    max(0, target - position.first)
+                    if direction < 0 and position is not None
+                    else max(0, position.first - 1)
+                    if position is not None
+                    else target
+                )
+                notches = (
+                    pulse_notches
+                    if distance > 100
+                    else min(pulse_notches, 6)
+                    if distance > 30
+                    else min(pulse_notches, 2)
+                )
                 sent_at = time.perf_counter()
                 mouse.scroll(coords=coords, wheel_dist=wheel_direction * notches)
                 stats["input_ms"] += (time.perf_counter() - sent_at) * 1000
@@ -797,7 +789,7 @@ def _seek_grid_card(
         "started_at": started_at,
         "finished_at": ended_at,
         "target_reached": reached,
-        "target_tolerance": tolerance if direction < 0 else 0,
+        "target_tolerance": 0,
         "position_history": history,
     }
     actions.append(action)
