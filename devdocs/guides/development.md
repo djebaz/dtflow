@@ -235,3 +235,9 @@ Owner-native Windows evidence `10190234.zip` showed the old 55-ms pulse driver t
 ### Matrix start and automatic ranking (2026-10-19)
 
 The Grid-only Windows pywinauto matrix no longer awaits the initial `query_done` or loops on an initially disabled page-1 chip. It attempts that chip once, then sends wheel input in a **separate continuous wheel thread**, including while the initial and adjacent batches are querying/preparing and while the main thread probes visible-image positions. Slow UI Automation cannot stop the wheel sender. The first saved-image viewport may not move until Qt commits it; the benchmark records this rather than pretending images were scrolled. Only the final page-1 click retains the selected-chip verification. The normal Grid/List/Detail profile smoke is unchanged. After the matrix, the console prints a provisional/verified best `-ml/-mc` based on complete journeys and Grid GUI-stall events during scrolling; `benchmark_report.txt` and `best_combination.json` are saved incrementally. Source/Windows acceptance pending.
+
+### Windows offscreen renderer startup
+
+Run `uv run python tools/ui/render_states.py --out tmp/ui-renders` from the checkout. The renderer passes its screen configuration as a path relative to the launch directory: Qt uses colons to separate platform arguments, so an absolute `C:\...` path in `offscreen:configfile=...` is parsed as `configfile=C` and exits with `Could not find platform config file C`. Launch from the repository drive when using the automatic configuration. Explicit platform overrides remain unchanged.
+
+For Windows offscreen rendering, the script defaults `QT_QPA_FONTDIR` to `%WINDIR%\Fonts`, including when offscreen has configuration arguments. An explicitly supplied font directory is preserved. These settings affect offline screenshot startup; they are not native Windows/DPI acceptance.

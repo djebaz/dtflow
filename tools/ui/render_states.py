@@ -24,11 +24,20 @@ from support.network_guard import install  # noqa: E402
 
 install()  # before provider/client imports; the guard rejects unregistered DNS/sockets
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+platform_name = os.environ["QT_QPA_PLATFORM"].split(":", 1)[0]
 if os.environ["QT_QPA_PLATFORM"] == "offscreen":
     # Qt 6.12 defaults to an 800x800 virtual screen. Fix the screen geometry
     # before QApplication starts so fullscreen renders match normal 1600x1000.
-    os.environ["QT_QPA_PLATFORM"] = f"offscreen:configfile={ROOT / 'tools/ui/offscreen-screen.json'}"
-if sys.platform == "win32" and os.environ["QT_QPA_PLATFORM"] == "offscreen":
+    # Qt splits platform arguments at every colon, including a Windows drive
+    # separator. A path relative to the launch directory avoids that ambiguity.
+    try:
+        screen_config = os.path.relpath(ROOT / "tools/ui/offscreen-screen.json")
+    except ValueError as exc:
+        raise SystemExit(
+            "Run the offscreen renderer from the repository drive or set an explicit QT_QPA_PLATFORM."
+        ) from exc
+    os.environ["QT_QPA_PLATFORM"] = f"offscreen:configfile={screen_config}"
+if sys.platform == "win32" and platform_name == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
