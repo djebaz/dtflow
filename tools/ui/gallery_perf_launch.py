@@ -123,7 +123,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--logs", type=Path, required=True, help="Fresh trial diagnostic folder.")
     parser.add_argument("--pid-file", type=Path, help="Internal trial file for the actual GUI interpreter PID.")
     parser.add_argument("--no-cache", action="store_true", help="Do not read or write disposable thumbnail cache.")
+    parser.add_argument("--ml", type=int, default=20,
+                        help="Gallery batch size passed as DTFlow -ml (default: 20).")
+    parser.add_argument("--mc", type=int, default=100,
+                        help="Gallery mounted-card cap passed as DTFlow -mc (default: 100).")
     args = parser.parse_args(argv)
+    from dtflow.gallery_limits import resolve as resolve_gallery_limits
+
+    try:
+        ml, mc = resolve_gallery_limits(args.ml, args.mc)
+    except ValueError as exc:
+        parser.error(str(exc))
     profile = validate_profile(json.loads(args.profile.read_text(encoding="utf-8")))
     if args.pid_file is not None:
         # Windows virtual-environment python.exe can be a redirector. Popen.pid
@@ -134,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     apply_profile(profile)
     from dtflow.cli import main as dtflow_main
 
-    cli = ["-x", "-q", str(args.logs), "gui", "-ml", "20", "-mc", "100", "-format", "jpg"]
+    cli = ["-x", "-q", str(args.logs), "gui", "-ml", str(ml), "-mc", str(mc), "-format", "jpg"]
     if args.no_cache:
         cli.append("-nc")
     return dtflow_main(cli)
