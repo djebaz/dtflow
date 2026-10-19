@@ -59,9 +59,7 @@ def test_arrival_count_is_filtered_against_shown_bytes_and_reports_incomplete(mo
         return status
 
     monkeypatch.setattr(logs_workspace, "scan", fake_scan)
-    counted, observed = logs_workspace.count_arrivals(
-        tmp_path, "test", {(7, 8): (100, 0)}, {"component": "gallery"}
-    )
+    counted, observed = logs_workspace.count_arrivals(tmp_path, "test", {(7, 8): (100, 0)}, {"component": "gallery"})
     assert counted == 1
     assert observed.state == "incomplete"
     assert observed.reasons == ("sequence_gap",)
