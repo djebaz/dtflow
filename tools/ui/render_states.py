@@ -2409,6 +2409,58 @@ def render_inpaint_states(shell, state, capture):
         strip.finish(key)
 
 
+def render_logs_states(shell, capture):
+    """Four real Qt Logs presentations using synthetic schema-shaped records only."""
+    from dtflow._diagnostic_reader import RecordRef
+
+    shell._toggle_logs()
+    shell.logs.stop()  # no background file reader/polling in offline screenshots
+    panel = shell.logs_form
+    panel.logsStatus.setText("No diagnostic sessions")
+    shell.logs.model.replace([])
+    capture("logs-01-empty")
+
+    def record(seq, level, event, component):
+        return {
+            "v": 1, "seq": seq, "ts": f"2026-10-19T09:12:{seq:02d}.000Z",
+            "level": level, "component": component, "event": event,
+        }
+
+    rows = [
+        (record(1, "INFO", "app.window_ready", "app"),
+         RecordRef("fixture", 1, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(2, "DEBUG", "gallery.gui_gap", "gallery"),
+         RecordRef("fixture", 2, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(3, "WARNING", "diagnostics.loss", "diagnostics"),
+         RecordRef("fixture", 3, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(4, "ERROR", "generation.failed", "generation"),
+         RecordRef("fixture", 4, 0, 0, 0, 0, "fixture.jsonl")),
+    ]
+    shell.logs.model.replace(rows, [
+        "state: ready",
+        "elapsed_ms: 117.4   mounted: 100   mode: grid",
+        "reason: queue_bytes   count: 1",
+        "category: backend   retryable: false",
+    ])
+    panel.logsStatus.setText("4 matching · illustrative fixture")
+    capture("logs-02-mixed-severity")
+
+    panel.logsDetailTitle.setText("generation.failed")
+    panel.logsDetailText.setPlainText(
+        '{"v":1,"seq":4,"level":"ERROR","event":"generation.failed",'
+        '"data":{"category":"backend","retryable":false}}'
+    )
+    panel.logsDetail.show()
+    capture("logs-03-details")
+
+    panel.logsDetail.hide()
+    panel.logsNotice.setText("Incomplete evidence · source segment missing")
+    panel.logsNotice.show()
+    capture("logs-04-reader-error")
+    panel.logsNotice.hide()
+    shell._close_logs()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "tmp" / "ui-renders", help="Screenshot directory")
@@ -2622,6 +2674,7 @@ def main():
             render_queue_states(shell, capture)
             render_shell_states(shell, capture)
             render_inpaint_states(shell, state, capture)
+            render_logs_states(shell, capture)
         except BaseException:
             # Print before shutdown: a stuck shutdown would otherwise hide the original failure.
             traceback.print_exc()
