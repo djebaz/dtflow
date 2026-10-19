@@ -418,11 +418,34 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
     raise TimeoutError(f"Page 1 was clicked at {at} but did not become selected.")
 
 
+def _grid_batch_button(window, number: int):
+    """Find the unique enabled pager chip by its UIA accessible batch name.
+
+    The displayed chip can move after each jump; never reuse screen coordinates
+    or rely on its Qt automation ID. Match the number as a whole token so batch
+    2 cannot accidentally select batch 20.
+    """
+    import re
+
+    pattern = re.compile(rf"\\bbatch\\s+{number}\\b", re.IGNORECASE)
+    matches = [
+        widget for widget in window.descendants()
+        if widget.element_info.control_type in {"Button", "CheckBox", "RadioButton"}
+        and pattern.search(widget.element_info.name or "")
+        and widget.is_visible() and widget.is_enabled()
+    ]
+    if len(matches) > 1:
+        raise RuntimeError(f"Ambiguous enabled pager button containing batch {number}")
+    if not matches:
+        raise LookupError(f"No enabled pager button containing batch {number}")
+    return matches[0]
+
+
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
     """Verify page 2 -> page 1 using fresh UIA targets after pager reflow.
 
     The pager can recreate/reposition its chips after each page transition.
-    Click only a newly resolved, enabled chip with the requested automation ID;
+    Resolve the unique enabled chip by its accessible name containing batch N;
     independently verify the first visible image, never the pointer position.
     """
     started = time.perf_counter()
@@ -434,18 +457,7 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
 
     while time.monotonic() < deadline:
         try:
-            chip = _button(
-                window, f"Jump to image batch {phase}",
-                automation_id=f"galleryPagerPage{phase}", timeout=0.01,
-            )
-            # Avoid accidentally clicking a repositioned neighbour: the
-            # requested control must still carry the expected UIA identity.
-            info = chip.element_info
-            expected = f"galleryPagerPage{phase}"
-            if getattr(info, "automation_id", "") != expected and (
-                getattr(info, "name", "") != f"Jump to image batch {phase}"
-            ):
-                raise LookupError("pager_identity_changed")
+            chip = _grid_batch_button(window, phase)
             rect = chip.rectangle()
             if rect.width() <= 0 or rect.height() <= 0:
                 raise LookupError("pager_geometry_unavailable")
