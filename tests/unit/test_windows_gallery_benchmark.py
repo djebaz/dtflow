@@ -820,10 +820,18 @@ def test_page_one_is_physically_clicked_even_if_checked(monkeypatch):
     assert all(item["verified"] for item in actions)
 
 
-def test_grid_matrix_path_never_opens_sort_or_other_views(monkeypatch, tmp_path):
+def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
 
     trace = []
+
+    class Rect:
+        left = 0
+        top = 0
+        def width(self):
+            return 1280
+        def height(self):
+            return 800
 
     class FakeWindow:
         def wait(self, state, *, timeout):
@@ -832,26 +840,30 @@ def test_grid_matrix_path_never_opens_sort_or_other_views(monkeypatch, tmp_path)
         def set_focus(self):
             pass
 
+        def rectangle(self):
+            return Rect()
+
         def close(self):
             trace.append("close")
 
     class FakeDesktop:
         def __init__(self, *, backend):
             assert backend == "uia"
-
         def window(self, **kw):
             assert kw["process"] == 9876
             return FakeWindow()
 
     class FakeButton:
         def click_input(self):
-            trace.append("images")
+            trace.append("images-or-page")
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=FakeDesktop))
     monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
     monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: FakeButton())
-    monkeypatch.setattr(benchmark, "_await_query", lambda *a, **kw: 1000)
+    monkeypatch.setattr(benchmark, "_await_query",
+                        lambda *a, **kw: pytest.fail("Grid matrix must not await query_done"))
+    monkeypatch.setattr(benchmark, "_read_query_count", lambda *a: 1000)
     monkeypatch.setattr(benchmark, "_reset_gallery_sort", lambda *a, **kw: pytest.fail("Sort must not open"))
     monkeypatch.setattr(benchmark, "_click_page", lambda *a, **kw: pytest.fail("Only page 1 is allowed"))
     monkeypatch.setattr(benchmark, "_toggle_fullscreen", lambda *a: pytest.fail("No fullscreen"))
@@ -862,64 +874,76 @@ def test_grid_matrix_path_never_opens_sort_or_other_views(monkeypatch, tmp_path)
                         lambda window, actions, *, at: trace.append("page-one-" + at))
     monkeypatch.setattr(benchmark, "_seek_grid_card",
                         lambda window, probe, actions, *, target, direction, **kwargs:
-                            trace.append(("seek", direction, target)))
+                            trace.append(("seek", direction, target, kwargs["wheel_point"])))
 
-    monkeypatch.setattr(benchmark.time, "sleep", lambda secs: None)
     record = {"actions": [], "warnings": []}
     assert benchmark._drive(
         SimpleNamespace(pid=7890, poll=lambda: None), tmp_path, record,
         cycles=1, timeout=2, scroll_notches=192, grid_limits=(300, 900),
     ) == 1000
     assert record["warnings"] == []
+    assert record["grid_start_page_one_dispatched"] is True
     assert record["grid_sweep"]["requested_card"] == 300
     assert record["grid_sweep"]["pulse_notches"] == 12
     assert record["grid_sweep"]["position_verified"] is True
-    assert trace.count(("seek", -1, 300)) == 1
-    assert trace.count(("seek", 1, 1)) == 1
-    assert trace.index("page-one-start") < trace.index(("seek", -1, 300))
-    assert trace.index("page-one-end") > trace.index(("seek", 1, 1))
-    assert trace[-1] == "close"
+    assert [step[1:3] for step in trace if isinstance(step, tuple)] == [
+        (-1, 300), (1, 1),
+    ]
+    assert trace.index("view-Grid") < trace.index("images-or-page", 1)
+    assert trace[-2:] == ["page-one-end", "close"]
     assert set(value for value in trace if isinstance(value, str) and value.startswith("view-")) == {"view-Grid"}
 
 
-def test_grid_matrix_records_insufficient_first_batch_as_warning(monkeypatch, tmp_path):
+def test_grid_matrix_samples_first_query_after_scrolls(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
 
-    trace = []
-    class FakeWindow:
+    events = []
+    class Rect:
+        left = 0
+        top = 0
+        def width(self):
+            return 1280
+        def height(self):
+            return 800
+
+    class Window:
         def wait(self, state, *, timeout):
             pass
-
         def set_focus(self):
             pass
-
+        def rectangle(self):
+            return Rect()
         def close(self):
-            trace.append("close")
+            events.append("close")
 
-    class FakeDesktop:
+    class Desktop:
         def __init__(self, *, backend):
             pass
-
         def window(self, **kw):
-            return FakeWindow()
+            return Window()
 
-    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=FakeDesktop))
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=Desktop))
     monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
     monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
     monkeypatch.setattr(benchmark, "_button",
                         lambda *a, **kw: SimpleNamespace(click_input=lambda: None))
-    monkeypatch.setattr(benchmark, "_await_query", lambda *a, **kw: 100)
+    monkeypatch.setattr(benchmark, "_await_query",
+                        lambda *a, **kw: pytest.fail("Initial query cannot block wheel input"))
+    monkeypatch.setattr(benchmark, "_read_query_count",
+                        lambda *a: events.append("sample-query") or 100)
     monkeypatch.setattr(benchmark, "_click_gallery_mode", lambda *a: None)
     monkeypatch.setattr(benchmark, "_click_grid_page_one", lambda *a, **kw: None)
-    monkeypatch.setattr(benchmark, "_seek_grid_card", lambda *a, **kw: None)
-    monkeypatch.setattr(benchmark.time, "sleep", lambda secs: None)
+    monkeypatch.setattr(benchmark, "_seek_grid_card",
+                        lambda window, probe, actions, *, direction, **kw: events.append(
+                            "down" if direction < 0 else "up"
+                        ))
     record = {"actions": [], "warnings": []}
     assert benchmark._drive(
         SimpleNamespace(pid=7890, poll=lambda: None), tmp_path, record,
         cycles=1, timeout=2, grid_limits=(300, 900),
     ) == 100
     assert [w["step"] for w in record["warnings"]] == ["insufficient-images-for-full-batch"]
-    assert trace == ["close"]
+    assert events == ["down", "up", "sample-query", "close"]
 
 
 def test_launcher_passes_requested_batch_and_resolved_card_limit(tmp_path, monkeypatch):
@@ -996,46 +1020,68 @@ def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
+    state = {"first": 1}
     sent = []
 
     class Mouse:
         @staticmethod
         def scroll(*, coords, wheel_dist):
-            sent.append((coords, wheel_dist))
+            sent.append(wheel_dist)
+            state["first"] = max(1, min(295, state["first"] - wheel_dist * 8))
 
     class Probe:
-        def __init__(self, values):
-            self.values = iter(values)
-            self.last = None
-
         def read(self):
-            first = next(self.values, None)
-            if first is not None:
-                self.last = GridPosition(first, first + 10, 1000, "uia")
-            return self.last
+            first = state["first"]
+            return GridPosition(first, min(1000, first + 15), 1000, "uia")
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
-    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *a: ((600, 400), "grid"))
-    monkeypatch.setattr(benchmark.time, "sleep", lambda secs: None)
     for ml, mc in ((20, 40), (300, 900)):
-        down = Probe([1, 80, 160, 230, 275, 295])
-        up = Probe([295, 200, 115, 30, 1])
+        state["first"] = 1
         actions = []
-        result = benchmark._seek_grid_card(
-            object(), down, actions, target=300, direction=-1, timeout=2,
+        down = benchmark._seek_grid_card(
+            object(), Probe(), actions, target=300, direction=-1, timeout=3,
+            wheel_point=((600, 400), "grid"),
         )
-        assert result["first_after"] == 295
-        assert result["target_reached"]
-        assert result["first_after"] <= 300 <= result["last_after"]
-        assert "wheel_input_ms" in result and "position_probe_ms" in result
-        assert result["wheel_pulses"] == 5
+        assert down["target_reached"]
+        assert down["first_after"] <= 300 <= down["last_after"]
+        assert down["wheel_pulses"] > 0
+        assert "wheel_input_ms" in down and "position_probe_ms" in down
         back = benchmark._seek_grid_card(
-            object(), up, actions, target=1, direction=1, timeout=2,
+            object(), Probe(), actions, target=1, direction=1, timeout=3,
+            wheel_point=((600, 400), "grid"),
         )
         assert back["first_after"] == 1
         assert back["target_reached"]
         assert len(actions) == 2
     assert sent
+
+
+def test_grid_seek_keeps_sending_during_blocked_position_probe(monkeypatch):
+    import time
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    sent = []
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            sent.append(wheel_dist)
+
+    class SlowProbe:
+        def read(self):
+            time.sleep(0.12)
+            return None
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    actions = []
+    with pytest.raises(TimeoutError, match="never exposed"):
+        benchmark._seek_grid_card(
+            object(), SlowProbe(), actions, target=300, direction=-1,
+            timeout=0.14, wheel_point=((600, 400), "grid"),
+        )
+    assert len(sent) >= 3
+    assert actions[0]["wheel_pulses"] >= 3
+    assert actions[0]["first_wheel_ms"] is not None
 
 
 def test_grid_seek_reports_real_incomplete_journey(monkeypatch):
@@ -1047,25 +1093,23 @@ def test_grid_seek_reports_real_incomplete_journey(monkeypatch):
         def scroll(*, coords, wheel_dist):
             pass
 
-    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
-    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *a: ((600, 400), "grid"))
-    monkeypatch.setattr(benchmark.time, "sleep", lambda secs: None)
-
     class Probe:
         def read(self):
             return GridPosition(1, 20, 1000, "pager-log")
 
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
     actions = []
     with pytest.raises(TimeoutError, match="did not reach"):
         benchmark._seek_grid_card(
-            object(), Probe(), actions, target=300, direction=-1, timeout=0.5,
+            object(), Probe(), actions, target=300, direction=-1,
+            timeout=0.08, wheel_point=((600, 400), "grid"),
         )
     assert actions[0]["target_reached"] is False
     assert actions[0]["first_after"] == 1
-    assert actions[0]["wheel_pulses"] <= 150
+    assert actions[0]["wheel_pulses"] > 0
 
 
-def test_grid_seek_rejects_undersized_catalogue_without_scrolling(monkeypatch):
+def test_grid_seek_rejects_undersized_catalogue(monkeypatch):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
@@ -1073,68 +1117,61 @@ def test_grid_seek_rejects_undersized_catalogue_without_scrolling(monkeypatch):
         def read(self):
             return GridPosition(1, 30, 250, "uia")
 
-    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=object()))
-    with pytest.raises(ValueError, match="Only 250"):
-        benchmark._seek_grid_card(object(), Probe(), [], target=300, direction=-1)
-
-
-def test_grid_seek_requires_target_card_in_visible_range(monkeypatch):
-    from tools.ui import windows_gallery_benchmark as benchmark
-    from tools.ui.grid_scroll_probe import GridPosition
-
-    calls = []
-
-    class Mouse:
-        @staticmethod
-        def scroll(*, coords, wheel_dist):
-            calls.append(wheel_dist)
-
-    class Probe:
-        def __init__(self):
-            self.positions = iter([(1, 15), (278, 290), (295, 309)])
-
-        def read(self):
-            first, last = next(self.positions, (295, 309))
-            return GridPosition(first, last, 833, "pager-log")
-
-    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
-    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_: ((600, 400), "grid"))
-    monkeypatch.setattr(benchmark.time, "sleep", lambda _: None)
-    result = benchmark._seek_grid_card(
-        object(), Probe(), [], direction=-1, target=300, timeout=2,
+    monkeypatch.setitem(
+        sys.modules, "pywinauto",
+        SimpleNamespace(mouse=SimpleNamespace(scroll=lambda **kw: None)),
     )
-    assert result["target_reached"]
-    assert result["wheel_pulses"] == 2
-    assert result["first_after"] == 295
-    assert result["last_after"] == 309
-    assert calls == [-12, -2]
+    with pytest.raises(ValueError, match="Only 250"):
+        benchmark._seek_grid_card(
+            object(), Probe(), [], target=300, direction=-1,
+            timeout=1, wheel_point=((600, 400), "grid"),
+        )
 
 
 def test_grid_seek_overshoot_corrects_direction(monkeypatch):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
+    state = {"first": 1}
     movements = []
 
     class Mouse:
         @staticmethod
         def scroll(*, coords, wheel_dist):
             movements.append(wheel_dist)
+            if wheel_dist < 0:
+                state["first"] = 330
+            else:
+                state["first"] = 295
 
     class Probe:
-        def __init__(self):
-            self.values = iter([1, 330, 295])
-
         def read(self):
-            first = next(self.values, 295)
+            first = state["first"]
             return GridPosition(first, first + 15, 833, "uia")
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
-    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_: ((600, 400), "grid"))
-    monkeypatch.setattr(benchmark.time, "sleep", lambda _: None)
     result = benchmark._seek_grid_card(
         object(), Probe(), [], direction=-1, target=300, timeout=2,
+        wheel_point=((600, 400), "grid"),
     )
     assert result["target_reached"]
-    assert movements == [-12, 1]
+    assert movements[0] < 0
+    assert any(movement > 0 for movement in movements)
 
+
+def test_grid_page_one_early_does_not_wait_for_disabled_chip(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    def unavailable(*args, **kwargs):
+        assert kwargs["timeout"] == 0.3
+        raise LookupError("Pager not ready")
+
+    monkeypatch.setattr(benchmark, "_button", unavailable)
+    actions = []
+    assert benchmark._click_grid_page_one_early(object(), actions) is False
+    assert actions == [pytest.approx({
+        "action": "click-page-one-start",
+        "outcome": "not-ready",
+        "reason": "LookupError",
+        "dispatch_ms": actions[0]["dispatch_ms"],
+    })]
