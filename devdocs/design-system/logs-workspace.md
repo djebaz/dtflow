@@ -1,6 +1,6 @@
 # Logs workspace — compact event and characteristic explorer
 
-**Status:** reviewed design direction for [draft PR #105](../plans/2026-10-19-structured-log-viewer.md), not yet a PySide6 workspace. [Open the standalone offline HTML mockup](../mockups/dtflow_logs_workspace.html). The HTML is a **synthetic interaction study**, never a substitute for Qt Designer or the canonical `tools/ui/render_states.py` previews. Companion references: [app-shell study](../mockups/dtflow_app_shell_with_logs.html) (header, navigation, status bar), [Logs color card](cards/colors-logs.html), [proposed Logs tokens](tokens/logs.css) and [all-components catalog](components/dtflow_all_components.html). The bundled HTML snapshots embed copies of styles/assets; editing the source token CSS does not automatically update those bundles. The [compact JSONL schema](../architecture/diagnostic-event-schema.md) is storage authority; this is only a view/query contract.
+**Status (2026-10-19):** native PySide6 source is implemented in PR #105 using the canonical Designer form, shared runtime tokens/QSS and Qt model/delegate. The [delivery audit](../plans/2026-10-19-structured-log-viewer.md) records CI and scoped Windows render-startup feedback. [#106](https://github.com/djebaz/dtflow/issues/106) owns remaining memory/export-cancel/lazy-creation work; [#107](https://github.com/djebaz/dtflow/issues/107) owns native/fault/performance/policy acceptance. [Offline HTML mockup](../mockups/dtflow_logs_workspace.html), [app-shell study](../mockups/dtflow_app_shell_with_logs.html), color card and component catalog are synthetic design references, not production UI or acceptance evidence. Runtime appearance authority remains Designer, `tokens.json`, shared QSS and the existing theme loader.
 
 ## Final compact row geometry
 
@@ -68,7 +68,7 @@ Visible controls may live in a compact primary toolbar plus an expandable **More
 
 **Follow and Refresh (live behaviour, demonstrated with synthetic arrivals):**
 
-- **Follow on:** newest-first, the table stays pinned to the top and new records are inserted above. Scrolling down by more than a few pixels, opening details, changing filters or using a nondefault sort switches Follow off; it never pulls the viewport back. The Follow button turns accent blue while on.
+- **Follow on:** newest-first, the table stays pinned to the top and new records are inserted above. Scrolling down by more than a few pixels, opening details, selecting rows or using a nondefault sort switches Follow off; filter changes retain the current Follow choice; it never pulls the viewport back. The Follow button turns accent blue while on.
 - **Follow off:** new records are held back and the list does not move. **Refresh** shows the count (`Refresh (3 new)`, accent border). Clicking Refresh adds the held records above and adjusts the scroll offset so the row the user was reading stays at the same position.
 - Turning Follow on flushes held records and jumps to the top. Never steal selection.
 - The static HTML demo emits a synthetic record about every 3 seconds only to show this behaviour; it does not claim real new messages.
@@ -93,7 +93,7 @@ Native keyboard behavior must preserve shared overlay/editor ownership: Escape d
 
 ## Tokens and design-system alignment
 
-The Logs content study reuses DTFlow tokens (`colors`, `typography`, `spacing`) plus the proposed additions below in [tokens/logs.css](tokens/logs.css). These additions are documentation-only, not yet canonical runtime tokens; the generated bundle wrappers also contain literal styling, so this is not a repository-wide no-hardcoded-colors claim. Phase 3 must promote accepted additions into the existing runtime `tokens.json` and scoped shared QSS through the existing loader, with the token mapping and `DESIGN.md` snapshot kept aligned; never load this CSS as a second native theme.
+The Logs content study reuses DTFlow tokens (`colors`, `typography`, `spacing`) plus the proposed additions below in [tokens/logs.css](tokens/logs.css). The accepted native palette is present in runtime `tokens.json`, scoped shared QSS and `DESIGN.md`; the CSS remains a documentation reference and is never loaded as a second native theme. Generated bundle wrappers embed styling, so they must be refreshed deliberately and may drift from production.
 
 | New token | Use |
 | --- | --- |
@@ -112,7 +112,7 @@ The real `tools/ui/render_states.py` must define synthetic **empty**, **mixed-se
 ## Source-review limits and implementation handoff
 
 - The standalone bundle's `predicate` helper does not implement the authoritative typed-query contract: mixed-type `!=` can match, string/bool relational comparisons can run, and `contains` coerces its operand. Native filters must use the shared Phase 2 query implementation, not copy this demo helper. Search in the demo scans serialized records rather than only the agreed safe scalar fields; its aggregate display projection is also illustrative, not the shared schema/projection authority.
-- The demo stores synthetic arrivals in growing `entries`/`pending` arrays and renders/sorts its whole synthetic dataset. That is acceptable only as an interaction illustration, not a scalable reader/model implementation; native pagination, memory limits, pending-arrival accounting and anchor behavior remain pending.
+- The demo stores synthetic arrivals in growing `entries`/`pending` arrays and renders/sorts its whole synthetic dataset. That is acceptable only as an interaction illustration, not a scalable reader/model implementation; native keyset pagination, bounded pending metadata and identity-based reconciliation are implemented; full byte budgets remain #106 and native anchor/performance acceptance remains #107.
 - The standalone, shell and component HTML files are generated self-contained bundles with embedded resources. Their copies of tokens/icons can drift from the source files and from each other; refresh the affected bundles deliberately after design-source changes. The shell and component catalog are not canonical Designer forms or production dependencies.
 - The modified shared `chevron.svg`, `detail.svg` and `json.svg` retain the same drawing paths; their added C2PA metadata is provenance, not a visual icon redesign. No provenance removal or asset normalization is part of this documentation review.
 
@@ -123,3 +123,7 @@ The real `tools/ui/render_states.py` must define synthetic **empty**, **mixed-se
 The native footer has Previous page / Next page controls. Each request reads the whole retained session for filtering/sorting, but displays at most 500 projected rows; the match count is session-wide. Paging pauses Follow. Refresh keeps the current query/page cursor; explicit Follow returns to the newest first page. No page-history or full-record cache grows with navigation. Appends/pruning can change later page results; this is live retained-session browsing, not an export snapshot.
 
 Same-query updates reconcile resident rows by `(session_id, seq)` with batched model notifications and preserve surviving selected/current identities and the paused top-row anchor. Full details remain lazy; previews come from the shared reader scan. Export completion is shown separately from query status. Offline `logs-05-paging` and `logs-06-follow-selection` definitions extend the canonical preview script; they have not been rendered or accepted on Windows.
+
+## Whole-millisecond timing display
+
+Numeric `*_ms` characteristics display as rounded integers in the table and readable detail chips: `117.4` displays as `117`, `118.6` as `119`, and `0.4` as `0`. Other units/types keep their existing display rules. Projection v2 changes display text only: raw JSON details/copy/exports, recorded source timestamps and numeric sorting/filtering retain full precision. `logs-07-whole-milliseconds` defines the corresponding offline table/detail state; it is not a native Windows acceptance claim.

@@ -1,10 +1,10 @@
-# Diagnostic events v1 — schema proposal and legacy migration inventory
+# Diagnostic events v1 — contract and legacy migration inventory
 
-**Status: Phase 1 writer/producer source implemented; acceptance and Phase 2/3 consumers pending.** Prepared for [draft PR #105](https://github.com/djebaz/dtflow/pull/105) from legacy source at `36202c6`, then reconciled with the Phase 1 source checkpoint (2026-10-19). This remains source inspection, not retained-user-log analysis or a certified exhaustive AST audit. The [PR plan/G1–G6](../plans/2026-10-19-structured-log-viewer.md) remain binding; the machine-readable schema is documentation, while `_diagnostic_schema.py` implements the shared runtime record/privacy policy. No schema-validation run or emitted-record acceptance is claimed; readers, exports, typed queries and native UI remain unimplemented.
+**Status (2026-10-19):** writer/producer, shared reader/export, typed-query/benchmark and native Logs source are implemented in PR #105. The inventory was prepared from source, not a certified exhaustive emitted-record audit. `_diagnostic_schema.py` owns runtime record/privacy validation; the JSON Schema documents that contract. See the [delivery audit](../plans/2026-10-19-structured-log-viewer.md), [implementation follow-up #106](https://github.com/djebaz/dtflow/issues/106) and [acceptance follow-up #107](https://github.com/djebaz/dtflow/issues/107).
 
 ## Compact and searchable record contract
 
-**Phase 1 source contract, not shipped or accepted:** aim for reasonable storage overhead with bounded writes, responsive reads and preserved evidence. Equal byte size or a fixed percentage target is not required; any measured overhead must be assessed alongside retention and native UI impact. No representative session-byte comparison has yet been measured. This compact v1 supersedes the earlier 11-required-field envelope and 16 closed typed-event contracts.
+**Implemented source contract; exhaustive acceptance pending (#107):** aim for reasonable storage overhead with bounded writes, responsive reads and preserved evidence. Equal byte size or a fixed percentage target is not required; any measured overhead must be assessed alongside retention and native UI impact. No representative session-byte comparison has yet been measured. This compact v1 supersedes the earlier 11-required-field envelope and 16 closed typed-event contracts.
 
 - **Physical:** UTF-8 JSON object per LF-terminated line; no BOM, pretty-printing or partial records. Maximum 1 MiB including LF; retain the 1,000,000-byte rollover target. Do not truncate tracebacks or records.
 - **Required on every record:** `v=1`, persistent increasing `seq`, source UTC millisecond `ts`, `level`, `component`, and hierarchical dotted `event`. These are stable search keys for time, severity, subsystem, event/sub-event and identity.
@@ -86,7 +86,7 @@ Critical IDs in the right column are implemented by Phase 1 producers; wildcard 
 
 The repository search also locates logging in `persistence/last_session.py`, `persistence/image_recycle.py`, `persistence/windows_original.py`, `backends/drawthings/codec.py`, `backends/drawthings/cloud_assets.py`, `ui/desktop_open.py`, `ui/image_recycle_panel.py`, `ui/gallery_preparation.py`, `services/person_selection.py` and `ui/app.py`. These require a full call-site check when migrating; their presence in a code-search result does **not** imply that every module emits a runtime record. Standalone `tools/images/*` logging is separately scoped and must not be silently forced into desktop session semantics.
 
-## Semantic decisions before Phase 1
+## Semantic migration decisions
 
 - **Ordinary vs typed:** consumer-critical event fields require review; ordinary new dotted events and sub-events require no schema registration, and unstructured Python messages go to `logging.message`, with no extracted machine data. Keep existing levels and -x verbosity boundaries unless the PR explicitly changes them.
 - **Aggregation ownership:** `gallery.source_summary` represents summaries already computed in `_PerfBatchStats`. `gallery.performance_aggregate` represents listener aggregation over retained *source measurements* and requires a real sample-population/metrics object. Both have explicit source window bounds. Do not merge, reaggregate or compute a global p95 from summaries.
@@ -106,7 +106,7 @@ The repository search also locates logging in `persistence/last_session.py`, `pe
 1. Phase 1 source checkpoint: `logging_setup.configure_logging` composes `diagnostics.event`/`measurement`/`source_summary`, `_diagnostic_schema.capture`/`validate_record` and `_diagnostic_writer` admission/listener/sink internals. Existing `log.*` sites in CLI/startup, gallery, generation/queues, inventory/assets/catalogue, persistence/original-file guards and desktop controls now emit literal semantic IDs and explicit safe fields. Backend observations log counts/known scalar projections, not provider dictionaries, filenames, metadata contents or raw LoRA/model JSON. This is source presence, not certified exhaustive coverage or runtime parity; ordinary extensions still need no registration.
 2. Phase 2: use the shared validator/reader for all viewers, exports and #104 benchmark tools; certify evidence completeness only after seal/rotation/loss checks. Do not use a second set of regex field maps.
 3. Phase 3: render synthetic instances of the *same* schema in the native Logs table; do not invent one-off UI formats or bypass the shared redaction boundary.
-4. Deferred owner/CI: reconcile affected tests, run exact-head checks and native Windows benchmark replay/large-log UX under G6 before Ready/Merge. Existing text/CSV benchmark readers deliberately remain untouched in Phase 1 and are incompatible with new sessions until Phase 2. No tests or validation were run for this source checkpoint.
+4. The shared JSONL consumers and test migration are source-present; ordinary CI evidence is in the delivery plan. The owner moved remaining G6 evidence to #107 and remaining byte-budget/export-cancel implementation to #106. Historical text/CSV readers/conversion are out of scope; no native acceptance follows from a green ordinary suite.
 
 ## Source and review links
 
@@ -124,3 +124,7 @@ The existing benchmark's `thumbnail_median_recorded_ms` lookup previously refere
 - [Existing centralized logger](../../src/dtflow/logging_setup.py), [gallery producer](../../src/dtflow/ui/gallery_page.py), [gallery service](../../src/dtflow/services/gallery.py), [generation service](../../src/dtflow/services/generation.py), [backend producer](../../src/dtflow/backends/drawthings/backend.py).
 - [Windows benchmark consumer](../../tools/ui/windows_gallery_benchmark.py), [Grid benchmark report](../../tools/ui/grid_benchmark_report.py).
 - [Structured diagnostics ownership](structured-diagnostics.md) and [Qt model/view guide](../guides/qt-model-view-patterns.md).
+
+## Display-only millisecond formatting
+
+Native Logs characteristic projection v2 displays finite numeric `*_ms` values as rounded integers in table and readable inspector chips (for example `117.4` → `117`). Raw JSONL, raw inspector/copy, CSV/JSONL exports, source timestamps and numeric filter/sort values retain source precision. This is an explicit UI formatting choice, not the benchmark's legacy one-decimal reporting policy or a storage/schema change. Cross-consumer fidelity and benchmark parity remain #107 acceptance.

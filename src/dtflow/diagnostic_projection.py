@@ -7,8 +7,9 @@ numeric types and semantic event/severity meanings are never modified.
 from __future__ import annotations
 
 import json
+import math
 
-PROJECTION_VERSION = 1
+PROJECTION_VERSION = 2
 _ORDER = (
     "wall_elapsed_ms",
     "elapsed_ms",
@@ -59,7 +60,10 @@ def characteristics(record: dict, *, limit: int | None = None, preview_bytes: in
     result = []
     for key in visible:
         value = data[key]
-        if type(value) in (dict, list):
+        if key.endswith("_ms") and type(value) is float and math.isfinite(value):
+            # Human-facing timing chips use whole milliseconds; records stay exact.
+            display = str(round(value))
+        elif type(value) in (dict, list):
             display = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         elif value is None:
             display = "null"

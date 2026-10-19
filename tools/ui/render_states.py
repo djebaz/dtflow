@@ -2434,7 +2434,7 @@ def render_logs_states(shell, capture):
     from datetime import datetime
 
     from dtflow._diagnostic_reader import RecordRef
-    from dtflow.ui.logs_workspace import session_label
+    from dtflow.ui.logs_workspace import row_preview, session_label
 
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
@@ -2460,11 +2460,12 @@ def render_logs_states(shell, capture):
         (record(4, "ERROR", "generation.failed", "generation"), RecordRef("fixture", 4, 0, 0, 0, 0, "fixture.jsonl")),
         (record(5, "INFO", "logging.message", "backend"), RecordRef("fixture", 5, 0, 0, 0, 0, "fixture.jsonl")),
     ]
+    rows[1][0]["data"] = {"elapsed_ms": 117.4, "sql_cpu_ms": 0.4, "max_ms": 118.6, "mounted": 100, "mode": "grid"}
     shell.logs.model.replace(
         rows,
         [
             ((("state", "ready"),), 0),
-            ((("elapsed_ms", "117.4"), ("mounted", "100"), ("mode", "grid")), 0),
+            row_preview(rows[1][0]),
             ((("reason", "queue_bytes"), ("count", "1")), 0),
             ((("category", "backend"), ("retryable", "false")), 0),
             ((), 0, "Generic library message without characteristics (fixture)"),
@@ -2480,6 +2481,11 @@ def render_logs_states(shell, capture):
         panel.logsSessionCombo.addItem(session_label(number, sid, written, current=current), sid)
     panel.logsSessionCombo.blockSignals(False)
     capture("logs-02-mixed-severity")
+
+    # Exercise the shared projection: integer timing chips beside exact raw JSON.
+    shell.logs._show_detail(rows[1][0], None)
+    capture("logs-07-whole-milliseconds")
+    panel.logsDetail.hide()
 
     paging_rows = [
         (record(seq, "DEBUG", "gallery.query_done", "gallery"), RecordRef("fixture", seq, 0, 0, 0, 0, "fixture.jsonl"))

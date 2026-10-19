@@ -1,5 +1,7 @@
 # Phase 1 diagnostic logging corrections — PR #105
 
+**Delivery disposition (2026-10-19):** F1–F8 remain source-implemented; F9 is explicitly carried by [#107](https://github.com/djebaz/dtflow/issues/107). The [current delivery audit](2026-10-19-structured-log-viewer.md) supersedes historical phase/draft/merge-gate wording below. Ordinary CI at runtime head `b2fdf1d` passed 612 tests / 3 skips with lock/Ruff checks; it does not certify all F9 fault/native/policy scenarios. Per-commit statements below describe what ran at those historical checkpoints, not the full PR's current validation state.
+
 ## Scope and authority
 
 Follow-up to the [Phase 1 review](PR%20105%20phase%201-logging%20review.md) against the [binding implementation plan](2026-10-19-structured-log-viewer.md), G1–G6 and the [JSONL contract](../architecture/diagnostic-event-schema.md). Correct the existing pipeline, not replace it. Owner reports pytest green on `843b36b`; the restored UI failure code/category was a real regression, not solely stale assertions. No local acceptance is implied.

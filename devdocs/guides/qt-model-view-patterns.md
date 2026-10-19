@@ -1,6 +1,6 @@
 # Efficient Qt model/view patterns for large diagnostics
 
-**Status:** reusable engineering/research guide (2026-10-19), not proof of an implemented DTFlow Logs workspace. The [PR #105 plan](../plans/2026-10-19-structured-log-viewer.md) owns its precise limits, phases and acceptance rules; [structured diagnostics architecture](../architecture/structured-diagnostics.md) owns data-source boundaries. These patterns may also apply to other large DTFlow lists. Performance claims require native Windows measurements.
+**Status:** reusable engineering/research guide (2026-10-19), with an implemented DTFlow Logs model/reader in PR #105; not proof of native performance. The [PR #105 delivery plan](../plans/2026-10-19-structured-log-viewer.md) owns its precise implemented/deferred scope; [structured diagnostics architecture](../architecture/structured-diagnostics.md) owns data-source boundaries. These patterns may also apply to other large DTFlow lists. Performance claims require native Windows measurements.
 
 ## Recommended widgets
 
@@ -59,3 +59,7 @@ These are **patterns to study**, not new runtime dependencies or a blanket licen
 Documented patterns do not establish performance. Confirm on the owner's Windows setup that large sessions, full-session sorted searches, follow/pause, selection/detail hydration, session rotation and corruption never block ordinary page switches or generation, and that shutdown never invokes callbacks on deleted Qt objects. Keep GUI stalls and test results as *measured* evidence, not assumed benefits of choosing `QTableView`.
 
 No tests, UI renders or native benchmark runs were performed as part of this reference.
+
+## PR #105 implementation disposition
+
+`_LogModel.reconcile` and worker keyset queries implement bounded resident pages and batched same-query Follow updates. Characteristic projection v2 formats numeric `*_ms` display text as whole milliseconds while keeping raw values exact. End-to-end byte/pending-work enforcement and export cancellation remain [#106](https://github.com/djebaz/dtflow/issues/106); native model/lifetime/memory/selection evidence remains [#107](https://github.com/djebaz/dtflow/issues/107). The original design budgets above must not be read as already measured or enforced everywhere.

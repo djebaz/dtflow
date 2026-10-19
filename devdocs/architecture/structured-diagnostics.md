@@ -1,14 +1,14 @@
 # Structured diagnostics architecture
 
-**Status:** Phase 1 JSONL writer/typed-producer source is implemented on draft [PR #105](../plans/2026-10-19-structured-log-viewer.md) (2026-10-19); readers, exports, benchmark migration and native Logs UI remain pending. No syntax/import checks, tests or runtime/Windows acceptance were executed. The pre-Phase-1 facts below explain the retained foundation, not the current file format. The [implementation plan](../plans/2026-10-19-structured-log-viewer.md) owns G1–G6; this reference explains boundaries, not a second specification.
+**Status (2026-10-19):** PR #105 implements the writer/typed producers, shared Qt-free reader/export layer, benchmark migration and native Logs workspace. [Delivery audit](../plans/2026-10-19-structured-log-viewer.md) records code and CI evidence separately. [#106](https://github.com/djebaz/dtflow/issues/106) owns remaining byte-budget/export-cancel implementation; [#107](https://github.com/djebaz/dtflow/issues/107) owns fault/native/schema/benchmark/storage/policy acceptance. The owner explicitly moved those outstanding gates to follow-ups; no exhaustive runtime or Windows acceptance is claimed.
 
-The [proposed compact, searchable event contract and legacy migration inventory](diagnostic-event-schema.md) and [record JSON Schema v1](../schemas/diagnostic-record-v1.schema.json) complement this ownership guide. The current design uses a strict small searchable envelope and flexible safe typed payloads: **new ordinary event/sub-event names do not require schema registration**, while benchmark/integrity fields remain selectively enforced. They are preparatory design proposals, not shipped behavior; the implementation plan's G1–G6 rules take precedence. The inventory is sourced from code rather than retained user log samples, and its unfinalized families must be reconciled in Phase 1.
+The [proposed compact, searchable event contract and legacy migration inventory](diagnostic-event-schema.md) and [record JSON Schema v1](../schemas/diagnostic-record-v1.schema.json) complement this ownership guide. The current design uses a strict small searchable envelope and flexible safe typed payloads: **new ordinary event/sub-event names do not require schema registration**, while benchmark/integrity fields remain selectively enforced. They document the implemented v1 format and its intended invariants; the plan's delivery disposition identifies what remains unverified. The inventory is sourced from code rather than retained user log samples, and exhaustive producer/schema agreement remains follow-up acceptance in #107.
 
 ## Pre-Phase-1 foundation: retained ownership
 
-`src/dtflow/logging_setup.py` already owns `configure_logging`, a standard-library `QueueHandler`/`QueueListener`, sanitization, rotated per-session text files, session pruning, and listener-side gallery performance aggregation/CSV fanout. `AGENTS.md` already requires a shared logger. This is meaningful existing centralization; a competing logging engine is unnecessary.
+Before this PR, `src/dtflow/logging_setup.py` owned `configure_logging`, a standard-library `QueueHandler`/`QueueListener`, sanitization, rotated per-session text files, session pruning, and listener-side gallery performance aggregation/CSV fanout. `AGENTS.md` already requires a shared logger. This is meaningful existing centralization; a competing logging engine is unnecessary.
 
-What is *not* centralized yet is the **machine-readable meaning** of diagnostics. For example, `src/dtflow/ui/gallery_page.py` emits `gallery_perf phase=gui_gap elapsed_ms=... mode=... mounted=...` using formatting; `logging_setup.py` interprets such messages for aggregation/CSV, while `tools/ui/windows_gallery_benchmark.py` and `tools/ui/grid_benchmark_report.py` interpret text files through their own regex/readers. That string contract is fragile even though all producers share the primary file-writing pipeline.
+The pre-migration fragmentation concerned the **machine-readable meaning** of diagnostics. For example, `src/dtflow/ui/gallery_page.py` emits `gallery_perf phase=gui_gap elapsed_ms=... mode=... mounted=...` using formatting; `logging_setup.py` interprets such messages for aggregation/CSV, while `tools/ui/windows_gallery_benchmark.py` and `tools/ui/grid_benchmark_report.py` interpret text files through their own regex/readers. That string contract is fragile even though all producers share the primary file-writing pipeline.
 
 Legacy baseline (inspected before Phase 1):
 
@@ -22,7 +22,7 @@ logging_setup.py: QueueHandler -> QueueListener -> sanitization/aggregation
 Separate benchmark tools -> text/CSV regex parsing
 ```
 
-Target design (writer/producers present in Phase 1 source; reader and consumers still pending, not shipped):
+Implemented source topology (not a native performance claim):
 
 ```text
 Ordinary logging.getLogger(...)    DTFlow typed event/measurement helper
@@ -42,15 +42,15 @@ Ordinary logging.getLogger(...)    DTFlow typed event/measurement helper
 
 ## Ownership and dependency boundaries
 
-Phase 1 keeps configuration/session lifecycle and JSONL-only retention in `logging_setup.py`; `diagnostics.py` is the producer API (`event`, `measurement`, `source_summary`, `ATTEMPT`). `_diagnostic_schema.py` owns bounded capture, recursive sanitization, exception extraction and record/critical-field policy; `_diagnostic_writer.py` owns `QueueHandler`/`QueueListener` subclasses, admission accounting, listener aggregation, UTF-8/LF rotation and close seals. UI/services/backends import producer APIs only. Phase 2 must reuse schema/privacy/validation rather than restoring regexes or adding a second parser; no reader/export implementation is claimed here.
+Phase 1 keeps configuration/session lifecycle and JSONL-only retention in `logging_setup.py`; `diagnostics.py` is the producer API (`event`, `measurement`, `source_summary`, `ATTEMPT`). `_diagnostic_schema.py` owns bounded capture, recursive sanitization, exception extraction and record/critical-field policy; `_diagnostic_writer.py` owns `QueueHandler`/`QueueListener` subclasses, admission accounting, listener aggregation, UTF-8/LF rotation and close seals. UI/services/backends import producer APIs only. `_diagnostic_reader` reuses record validation and owns discovery, status, whole-session queries and lazy details; `_diagnostic_export` and the Qt/benchmark consumers use that boundary rather than alternate parsers.
 
 The queue budget includes conservative reservations for concurrent capture, not just queued records (1,024 pending records / 8 MiB; depth 16 / 4,096 nodes). A source observation is never retained as a mutable `LogRecord`, traceback or provider graph on the queue. The listener keeps at most 64 aggregate groups, each with at most 64 samples and a fixed small metric set; reaching group capacity flushes the oldest batch early without discarding observations. Known dimensions/attempt IDs are length-bounded for batching; extensions outside this policy remain individual records. All individual wheel receipts and >=100 ms GUI outliers remain observable. Original numeric metric keys such as `mounted`/`offset` are preserved rather than receiving invented suffixes; the documentary schema permits those source keys.
 
-`session.started` declares instrumentation, capacities, `source-64-or-10s-bounded64-legacy1dp-v1` and numeric policy. Typed individual observations/source-summary data retain native finite values; listener batch inputs preserve the old one-decimal population before computing statistics. Phase 2's legacy report adapter must apply the former one-decimal rendering precision to individual/source-summary/statistic values where the old text/CSV did so, explicitly in report metadata, without changing raw JSONL or silently correcting report conventions. Source timestamp attribution is the separately versioned intentional precision change under G5.
+`session.started` declares instrumentation, capacities, `source-64-or-10s-bounded64-legacy1dp-v1` and numeric policy. Typed individual observations/source-summary data retain native finite values; listener batch inputs preserve the old one-decimal population before computing statistics. The migrated legacy report adapter is required to apply the former one-decimal rendering precision to individual/source-summary/statistic values where the old text/CSV did so, explicitly in report metadata, without changing raw JSONL or silently correcting report conventions. Source timestamp attribution is the separately versioned intentional precision change under G5.
 
 `session.closed` counts distinguish `observed`, `admitted`, `capture_rejected`, `dropped`, `processed_records`, serialization rejections/failures and persisted `written_records` (including controls/seal). On a drained close, observed = admitted + capture_rejected + dropped, and processed_records = admitted; timeout is unsealed. `aggregate_source_samples` counts listener inputs, while `source_summary_samples` counts upstream summarized populations; neither is a persisted-record count and overlapping populations must not be added as unique measurements. A seal with any nonzero loss/failure is not clean evidence. Capture rejections coalesce in fixed reason/severity/measurement buckets: markers explicitly identify their last representative event and count, not a complete list of lost identities. The close deadline is two seconds; a timed-out or failed sink cannot certify closure and no fallback file is written.
 
-Accepted exception traces retain all captured frames and causal/context chains without locals or source-code snippets, with recursive sanitization. Unsupported groups, deep/oversized traces or unsupported generic objects are rejected explicitly, never formatted through arbitrary repr or silently truncated. Read/copy/export privacy reuse and evidence-status enforcement are Phase 2 work; their runtime presence is not implied by this writer checkpoint.
+Accepted exception traces retain all captured frames and causal/context chains without locals or source-code snippets, with recursive sanitization. Unsupported groups, deep/oversized traces or unsupported generic objects are rejected explicitly, never formatted through arbitrary repr or silently truncated. Read/copy/export privacy reuse and evidence-status enforcement are implemented consumer paths; exhaustive privacy/evidence fidelity remains #107.
 
 ### Phase 1 corrective source checkpoint
 
@@ -100,9 +100,9 @@ The existing interactive Windows gallery benchmark is a **consumer of evidence**
 ## Lifecycle and acceptance boundaries
 
 - Keep caller-side log emission nonblocking; listener-side I/O, rotation and aggregation must never stall Qt. Setup, disk-full and serialization failures must be fail-soft for generation, **without** claiming diagnostic completeness.
-- New sessions use the planned single JSONL stream. Historical `.log` and gallery CSV files remain intact and are **not** silently migrated, removed or parsed as new-format sessions.
+- New sessions use the single JSONL stream. Historical `.log` and gallery CSV files remain intact and are **not** silently migrated, removed or parsed as new-format sessions.
 - The Logs workspace is a read-only consumer of local diagnostic evidence; it must not create recursive logging traffic for polling/filtering or change durable generation/output state.
-- The owner's plan specifies no test modifications or execution during implementation phases. The plan's **G6 gate** requires deferred reconciliation, strict exact-head CI, repeated native Windows real-log benchmarks and owner large-log/UX acceptance before Ready/Merge. Code presence is not benchmark proof.
+- The owner's 2026-10-19 delivery disposition moves unfinished implementation to #106 and comprehensive G6 acceptance to #107. Ordinary final-head CI is still required for this delivery; strict lint/format gating and repeated native/fault/large-log evidence remain explicitly deferred. Code presence and green tests are not benchmark proof.
 
 ## References and provenance
 
@@ -111,3 +111,9 @@ The existing interactive Windows gallery benchmark is a **consumer of evidence**
 - [Qt model/view patterns](../guides/qt-model-view-patterns.md) — presentation and background-reader integration.
 
 No third-party implementation code is copied here.
+
+## Native reader and display boundary
+
+`LogsWorkspace` uses the configured logging destination, one resident 500-row page and forward/back keyset queries on workers. Same-query Follow reconciles rows by `(session_id, seq)` instead of resetting the model; selected raw details and clipboard/export content are read on demand. The form is currently created at startup. Query/detail/copy and each export have independent delivery tokens; hiding Logs cancels reads/delivery, not an already-started export.
+
+The shared display projection v2 rounds finite numeric `*_ms` characteristic values to whole milliseconds in table/inspector chips. Timestamp precision, raw JSON/clipboard/exports and numeric filters/sort keys remain unchanged. The 16 MiB worker and 32 MiB display targets are not enforced end to end yet (#106); count/record bounds must not be described as complete byte-budget enforcement.
