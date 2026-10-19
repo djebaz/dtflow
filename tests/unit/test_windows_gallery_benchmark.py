@@ -983,8 +983,8 @@ def test_grid_progress_uses_recorded_uia_text_and_log_fallback(tmp_path):
 
     log = tmp_path / "dtflow-123.log"
     log.write_text(
-        "gallery_perf phase=benchmark_view first=1 last=20 total=1000 loaded=40\\n"
-        "gallery_perf phase=benchmark_view first=295 last=320 total=1000 loaded=100\\n",
+        "gallery_perf phase=benchmark_view first=1 last=20 total=1000 loaded=40\n"
+        "gallery_perf phase=benchmark_view first=295 last=320 total=1000 loaded=100\n",
         encoding="utf-8",
     )
     fallback = GridProgressProbe(object(), tmp_path)
