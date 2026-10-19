@@ -1,3 +1,17 @@
+## PR #104 handoff — current Grid benchmark and next optimization (2026-10-19)
+
+**Current behavior overrides earlier interim descriptions in this guide.** The interactive Windows Grid matrix polls an enabled numbered page-1 chip roughly every 200 ms after the spinner, clicks once, verifies first visible image **#1**, and then drives a time-bounded, continuous down/up wheel journey independent of subsequent batch queries. Position acceptance uses the **first visible saved-image index**, not `total`, `buffered`, or an oversized initial `last` index. The final physical page-1 click remains. The matrix never changes Sort. The separate eight-profile multi-view benchmark still exists.
+
+Console and saved JSON/text reports identify the *provisional* best `-ml/-mc` combination from clean completed journeys, prioritized by Grid GUI heartbeat gaps **≥100 ms** during actual scrolling, worst gap and median round-trip time; startup is measured separately. In owner Windows `10190342.zip`, `100/300` completed in 7.45 s with one >=100 ms stall (worst 111 ms), and `200/600` completed in 6.93 s with one (worst 385 ms). Initial page-1 readiness was 3.23 s versus 10.70 s. These are one-run owner observations, not a definitive production default or a statistically verified winner.
+
+The **next PR** should isolate startup readiness/first usable page, particularly the query/preparation/Grid-mount path at higher `-ml`, without changing the completed PR #104 benchmark protocol or prematurely tuning production defaults. Require repeated native Windows measurements, stable real navigation and continuous scrolling across batch boundaries.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --runs 3 --cycles 1 --ack-user-state
+```
+
+---
+
 # Development tools and conventions
 
 See [AGENTS.md](../../AGENTS.md) for repository rules, [current development status](../current_dev_status.md) for implementation orientation, and [testing](testing.md) for validation commands, and [version bump and release](releasing.md) for the uv recipe and owner build handoff.
@@ -119,6 +133,32 @@ For a Windows smoke test, preserve the rotating log and the exact PR/build revis
 
 **Privacy:** these metrics never include prompts, image/output/metadata paths, selected IDs, request JSON, SQLite parameters, or credentials. They don't change query cadence, rendering behavior, retry semantics or provider billing. A burst of `render_page` and `grid_layout` entries on unchanged five-second polls is a useful signal of unnecessary repaints. Inspect timing patterns alongside visual smoke evidence rather than assuming every repaint is expensive.
 
+## Native Windows Images performance matrix (experimental PR #104)
+
+The [Windows gallery benchmarking plan](../plans/2026-10-18-windows-gallery-benchmarks.md) describes the **separate** development-only pywinauto driver. This drives the actual PySide6 Images interface on an **interactive Windows desktop**, unlike offscreen UI renders or the synthetic transition microbenchmark. It reuses the application’s existing `-x` log and per-session gallery CSV; it does not add a second Qt timing subsystem.
+
+**This matrix varies the gallery tuning constants, not the paging defaults.** All runs use source `-ml 20 -mc 100 -format jpg`. Built-in profiles exercise worker count, lookahead, GUI preparation/mount budgets, thumbnail side length, pending disk-cache writes, disk-cache pruning, refresh cadence and filter/save/page-jump debounces. `--profiles-file` accepts named JSON overrides; missing fields use the unchanged defaults. Only one tuning family should change at a time for interpretable comparisons.
+
+Run from the checked-out PR #104 source branch after `uv sync --frozen`, in PowerShell with the desktop unlocked and no competing DTFlow process:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
+To exercise the built-in matrix (longer, not a quick smoke):
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --runs 2 --cycles 2 --ack-user-state
+```
+
+`--out tmp` selects the output root (also the default). Each invocation prints and creates `tmp/gallery_bench_smoke/MMddHHmm/` using local month/day/hour/minute; a same-minute collision is refused without overwriting evidence, so wait a minute or choose another root. Reports are `results.csv`, `results.json` and `summary.csv`, with each trial’s `profile.json`, `trial.json`, standard log and gallery CSV retained beneath that timestamped directory. A failed trial does not count as a performance win. The automation’s `dispatch_ms` measures action dispatch, not click-to-paint time, and heartbeat gaps under 50 ms are not recorded as freeze samples.
+
+Windows virtual environments can use a launcher PID different from the interpreter hosting Qt. The harness reads the child-published `app-process.json` and records both `launcher_pid` and `app_pid` in `trial.json`; it never attaches to an arbitrary existing DTFlow window. Failed-trial cleanup targets only that launcher's process tree, and a cleanup failure stops the matrix. See the [PID follow-up and pending native smoke](../plans/2026-10-18-windows-gallery-benchmarks.md#windows-virtual-environment-pid-follow-up-2026-10-19).
+
+**Safety and reproducibility:** `--ack-user-state` is mandatory because the GUI uses the normal source-checkout state and may modify saved viewer preferences or disposable thumbnail cache. This harness does **not** sandbox that existing catalogue; use disposable state where possible and back up important state before running. Do not run a cache-eviction trial against a valuable populated cache. The driver automates Images view switching, verified page-chip changes, up/down scrolling, fullscreen enter/Escape exit and thumbnail-size slider movement. It does not interact with text search. Missed UI interactions become recorded warnings rather than aborting later steps; a warning trial is not a clean benchmark result. It does not click generation, export, removal or cache-clear actions; no inference or provider submission is intended. Pin the source revision, Windows/DPI, image set, cache condition and input sequence, and do not compare different cache conditions as though they were controlled. The test is **not Windows-accepted or benchmark-validated** until the owner runs it; review the complete report and actual GUI behavior.
+
+A gallery with only 100–200 images cannot meaningfully test a 20,000-entry disk-cache eviction threshold or saturate a 256-entry write queue; those variables need a distinct safe stress scenario. Likewise, refresh profiling needs runs long enough for multiple polls/full refreshes. Keep these results marked *unmeasured* rather than pretending short smoke runs optimize every parameter.
+
 ## Diagnostic probes
 
 The diagnostic probes' help is available without submitting generation:
@@ -165,3 +205,31 @@ The standalone [image detector tool](../../tools/images/README.md) reports provi
 ## Working directories
 
 Application state and durable outputs use `.dtflow/`; retained live evidence uses `test-runs/`; diagnostics use `logs/`; disposable scratch uses `tmp/`. These repository-development paths are ignored by Git. See [runtime layout](../architecture/runtime-layout.md) before changing ownership or cleanup behavior.
+
+### PR #104 owner UIA follow-up (2026-10-19)
+
+Owner evidence shows baseline and workers-3 navigating Images, switching Grid/List/Detail, scrolling and changing pages before both trial runs stopped at prompt-filter lookup. Text search has been explicitly removed from the browsing benchmark. The owner's recorder shows `Full screen image view||CheckBox` and `ThumbnailSizeSlider||Slider`; the harness uses these UIA names to exercise fullscreen and slider drag/restore. Each missed click, scroll-intent verification or slider movement is logged as a warning and the next step is attempted. Status `warning` is excluded from clean performance comparisons; initial GUI/query failure still aborts that trial. The feature requires a new Windows smoke; no successful post-change run is claimed.
+
+### Extended owner-requested gallery benchmark actions (2026-10-19)
+
+The PR #104 smoke now uses 192 wheel notches for each up/down sweep in Grid and List, configurable via `--scroll-notches 12..240`; moves the thumbnail slider toward 55% and 210% and attempts to restore its starting value; and toggles fullscreen **from Grid**, not from Detail. Detail is still exercised as a separate view change. Retain the same wheel count, DPI, viewport and gallery image set when comparing tuning profiles. Missing UIA actions remain recoverable warnings, not automatic proof of a Qt freeze. A fresh native Windows smoke is still necessary to accept this revised sequence.
+
+### Native Grid `-ml`/`-mc` matrix (2026-10-19)
+
+PR #104 adds a separate `--grid-matrix` mode to the Windows pywinauto benchmark. It launches the real Qt GUI for each requested `-ml:-mc` pair and uses DTFlow's existing limit resolver, so `20:50` effectively buffers 40 cards while `300:1000` buffers 900. Test only Grid: select Images, **click page 1** (even if checked), scroll down then back up for a number of steps computed from resident batch count, and **click page 1** again. No Sort dropdown changes or other view switches. Every case has a fresh process/log directory and saves requested/effective limits and action evidence. For example:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --runs 1 --cycles 1 --ack-user-state
+```
+
+Large limits are not meaningfully tested when the saved-output catalogue is too small; first-query shortfall is a recorded warning. Scroll dispatch is not proof of physical image movement. No new product settings, dependencies or billable services are involved. Windows acceptance is pending.
+
+### Faster position-driven Grid matrix (2026-10-19)
+
+The newer `--grid-matrix` smoke supersedes its fixed wheel-step count: **click page 1 → rapidly wheel down until image #300 is within the visible range → wheel back until the first visible image is #1 → click page 1 again**. It checks the UIA `Visible image range` text (as identified by the owner's Windows recorder), falling back to a benchmark-only log of `GalleryPager.present` values when Windows UIA masks the displayed numbers. The limit pair never determines scrolling distance. Short 15-ms pulse gaps do not wait for adjacent thumbnail batches; timeouts (default 12 s per direction) and unobserved positions are warnings and exclude a case from clean ranking. The normal multi-view smoke is unchanged. CLI: `--grid-matrix`, `--grid-target-card 300`, `--grid-seek-timeout 12`, with `-ml/-mc` pairs given as `ML:MC`. No Sort manipulation, generation or live-provider calls. Windows acceptance is pending.
+
+Owner-native Windows evidence `10190234.zip` showed the old 55-ms pulse driver taking roughly 11–12 seconds **per direction** at 10/50 and 50/150, with one of two cases missing both endpoints. The revised 15-ms/12-notch coarse pulse driver and exact visible-image acceptance require a new native smoke; do not attribute earlier results to the new pacing.
+
+### Matrix start and automatic ranking (2026-10-19)
+
+The Grid-only Windows pywinauto matrix no longer awaits the initial `query_done` or loops on an initially disabled page-1 chip. It attempts that chip once, then sends wheel input in a **separate continuous wheel thread**, including while the initial and adjacent batches are querying/preparing and while the main thread probes visible-image positions. Slow UI Automation cannot stop the wheel sender. The first saved-image viewport may not move until Qt commits it; the benchmark records this rather than pretending images were scrolled. Only the final page-1 click retains the selected-chip verification. The normal Grid/List/Detail profile smoke is unchanged. After the matrix, the console prints a provisional/verified best `-ml/-mc` based on complete journeys and Grid GUI-stall events during scrolling; `benchmark_report.txt` and `best_combination.json` are saved incrementally. Source/Windows acceptance pending.
