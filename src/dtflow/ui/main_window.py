@@ -537,8 +537,15 @@ class MainWindow:
                     (self.logs_form.logsBrandSlot, shell.brandFrame),
                     (self.logs_form.logsNavigationSlot, shell.navigationFrame),
                 ):
-                    slot.setFixedSize(shell.leftRail.width(), frame.height())
-                    slot.layout().addWidget(frame) if slot.layout() else QHBoxLayout(slot).addWidget(frame)
+                    # The four navigation buttons need their own size hint;
+                    # the old 248–300 px rail width clips them in a header row.
+                    width = max(shell.leftRail.width(), frame.sizeHint().width()) if frame is shell.navigationFrame else shell.leftRail.width()
+                    slot.setFixedSize(width, frame.height())
+                    layout = slot.layout()
+                    if layout is None:
+                        layout = QHBoxLayout(slot)
+                        layout.setContentsMargins(0, 0, 0, 0)
+                    layout.addWidget(frame)
             elif self._gallery_chrome_active is False:
                 shell.leftRailLayout.insertWidget(0, shell.brandFrame)
                 shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
