@@ -372,7 +372,10 @@ class LogsWorkspace(QObject):
         if error:
             self.form.logsDetailText.setPlainText("Details unavailable: " + error)
         else:
-            self.form.logsDetailTitle.setText(record["event"])
+            self.form.logsDetailTitle.setText(
+                f"{record['event']}  ·  {record['level']}  ·  {record['component']}  ·  "
+                f"seq {record['seq']}  ·  {record['ts']}"
+            )
             self.form.logsDetailText.setPlainText(json.dumps(record, indent=2, ensure_ascii=False))
         self.form.logsDetail.show()
 
