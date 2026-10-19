@@ -1267,24 +1267,19 @@ def test_grid_target_not_reached_when_only_total_and_buffer_equal_target():
     assert not (position.first <= 200 <= position.last)
 
 
-def test_grid_progress_reads_status_bar_by_stable_id(tmp_path):
+def test_grid_progress_reads_status_input_value_pattern(tmp_path):
     from tools.ui.grid_scroll_probe import GridProgressProbe
 
     state = {"first": 1}
 
     class Control:
         @property
-        def element_info(self):
-            return SimpleNamespace(
-                name=f"{state['first']}/1000"
-            )
+        def iface_value(self):
+            return SimpleNamespace(CurrentValue=f"{state['first']}/1000")
 
         def exists(self, *, timeout):
             assert timeout == 0
             return True
-
-        def window_text(self):
-            return self.element_info.name
 
     class Window:
         def __init__(self):
@@ -1303,7 +1298,7 @@ def test_grid_progress_reads_status_bar_by_stable_id(tmp_path):
     state["first"] = 1
     assert probe.read().first == 1
     assert window.lookups == [
-        {"title_re": r"^[0-9]+/[0-9]+$", "control_type": "Text"}
+        {"auto_id": "dtflowStatusGridFirstVisibleIndex", "control_type": "Edit"}
     ]
 
 
