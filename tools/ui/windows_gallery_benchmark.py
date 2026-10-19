@@ -95,12 +95,6 @@ def parse_grid_matrix(specs: list[str]) -> list[tuple[int, int, int]]:
     return combinations
 
 
-def _grid_sweep_steps(ml: int, effective_mc: int) -> int:
-    """Bounded sweep depth scales with the number of resident batches."""
-
-    return min(12, max(4, (effective_mc + ml - 1) // ml + 2))
-
-
 def _require_complete_first_batch(returned: int, ml: int) -> None:
     """Prevent incomplete catalogue coverage from being ranked as clean."""
 
@@ -502,6 +496,107 @@ def _scroll(
 
 
 
+def _seek_grid_card(
+    window, probe, actions: list[dict], *, target: int, direction: int,
+    pulse_notches: int = 6, timeout: float = 12.0,
+) -> dict:
+    """Fast continuous wheel scroll driven by actual visible card positions.
+
+    Every configuration has the same visible-index destination, independent
+    of batch or mounted-card limits. This is not a batch-completion wait.
+    Stop on a confirmed position or report an incomplete journey; no
+    inferred success from how many wheel messages were dispatched.
+    """
+
+    from pywinauto import mouse
+
+    if direction not in (-1, 1):
+        raise ValueError("Grid seek direction must be -1 or 1.")
+    if not 1 <= pulse_notches <= 12 or timeout <= 0:
+        raise ValueError("Grid wheel pulse or timeout is invalid.")
+    start = probe.read()
+    if start is None:
+        raise LookupError("No numeric Visible image range from UIA or benchmark pager logs.")
+    if direction < 0 and start.total < target:
+        raise ValueError(
+            f"Only {start.total} matching saved images; cannot scroll to card {target}."
+        )
+    coords, source = _gallery_wheel_point(window, "grid")
+    started = time.perf_counter()
+    deadline = time.monotonic() + timeout
+    furthest = start.first
+    current = start
+    pulses = 0
+    total_notches = 0
+    history = [{"first": start.first, "last": start.last, "source": start.source}]
+    reached = False
+
+    while time.monotonic() < deadline and pulses < 150:
+        # The position is the first *visible* saved image, not the batch
+        # number or scrollbar pixel offset. A small neighborhood of card
+        # #300 is comparable across all -ml/-mc settings.
+        if direction < 0:
+            reached = target - 15 <= current.first <= target + 25
+        else:
+            reached = current.first == 1
+        if reached:
+            break
+
+        if direction < 0 and current.first > target + 25:
+            # Overshot #300: correct with small upward wheel pulses instead
+            # of pretending a larger index is the requested destination.
+            wheel_direction = 1
+            notch_count = 1
+        else:
+            wheel_direction = direction
+            distance = abs(target - current.first) if direction < 0 else current.first - 1
+            notch_count = (
+                min(pulse_notches, 6) if distance > 65
+                else min(pulse_notches, 3) if distance > 25
+                else 1
+            )
+        mouse.scroll(coords=coords, wheel_dist=wheel_direction * notch_count)
+        pulses += 1
+        total_notches += notch_count
+        time.sleep(0.055)
+        observed = probe.read()
+        if observed is not None:
+            current = observed
+            furthest = max(furthest, observed.first) if direction < 0 else min(furthest, observed.first)
+            if (not history or observed.first != history[-1]["first"]):
+                history.append({
+                    "first": observed.first, "last": observed.last,
+                    "source": observed.source,
+                })
+        # No additional fixed batch-load delay; Qt prefetches while the
+        # automation continues sending real wheel input.
+
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    action = {
+        "action": "grid-seek-down" if direction < 0 else "grid-seek-up",
+        "requested_first_card": target if direction < 0 else 1,
+        "first_before": start.first,
+        "first_after": current.first,
+        "last_after": current.last,
+        "furthest_first": furthest,
+        "source": current.source,
+        "wheel_target": source,
+        "wheel_pulses": pulses,
+        "wheel_notches_dispatched": total_notches,
+        "duration_ms": duration_ms,
+        "target_reached": reached,
+        "position_history": history,
+    }
+    actions.append(action)
+    if not reached:
+        raise TimeoutError(
+            f"Grid {'down' if direction < 0 else 'up'} seek did not reach "
+            f"visible image {'~' + str(target) if direction < 0 else '1'} "
+            f"(last first={current.first}, pulses={pulses}, elapsed={duration_ms:g} ms)."
+        )
+    return action
+
+
 def _toggle_fullscreen(window, actions: list[dict]) -> None:
     """Enter via the actual Qt checkbox; Escape restores the normal window."""
 
@@ -696,6 +791,7 @@ def _drive(
     proc: subprocess.Popen, directory: Path, record: dict, *,
     cycles: int, timeout: float, scroll_notches: int = 192,
     grid_limits: tuple[int, int] | None = None,
+    grid_target_card: int = 300, grid_seek_timeout: float = 12.0,
 ) -> int:
     """Attach only to the launched child and track the failing UI step."""
 
@@ -748,31 +844,40 @@ def _drive(
         _attempt(record, "grid-page-one-start", lambda: _click_grid_page_one(
             window, actions, at="start",
         ))
-        steps = _grid_sweep_steps(ml, effective_mc)
-        # More mounted batches need more wheel steps to traverse the buffer.
-        # Individual bursts remain short enough for Qt to run its event loop.
-        per_step_notches = max(12, scroll_notches // 3)
+        from tools.ui.grid_scroll_probe import GridProgressProbe
+
+        probe = GridProgressProbe(window, directory)
+        # The same saved-image index is targeted for every -ml/-mc case.
+        # Pulse size and pause are identical; total pulses vary to actually
+        # reach that index, instead of sweeping a fixed, incomparable offset.
+        pulse_notches = min(8, max(2, scroll_notches // 32))
         record["grid_sweep"] = {
-            "steps_per_direction": steps,
-            "notches_per_step": per_step_notches,
-            "passes": cycles,
-            "max_planned_notches_per_direction": steps * per_step_notches * cycles,
-            "scroll_distance_verified": False,
+            "requested_card": grid_target_card,
+            "pulse_notches": pulse_notches,
+            "seek_timeout_s": grid_seek_timeout,
+            "cycles": cycles,
+            "position_verified": False,
         }
         for cycle in range(cycles):
             prefix = f"cycle-{cycle + 1}"
-            for direction, label in ((-1, "down"), (1, "up")):
-                for step in range(1, steps + 1):
-                    if proc.poll() is not None:
-                        raise RuntimeError("DTFlow exited during the Grid limit matrix sweep.")
-                    _attempt(
-                        record, f"{prefix}-grid-scroll-{label}-{step}",
-                        lambda d=direction: _scroll(
-                            window, d, actions, directory,
-                            mode="grid", notches=per_step_notches,
-                        ),
-                    )
-                    time.sleep(0.25)
+            for direction, label, card in ((-1, "down", grid_target_card), (1, "up", 1)):
+                if proc.poll() is not None:
+                    raise RuntimeError("DTFlow exited during the Grid limit matrix sweep.")
+                succeeded = _attempt(
+                    record, f"{prefix}-grid-seek-{label}",
+                    lambda d=direction, c=card: _seek_grid_card(
+                        window, probe, actions, target=c, direction=d,
+                        pulse_notches=pulse_notches, timeout=grid_seek_timeout,
+                    ),
+                )
+                if label == "down":
+                    record["grid_sweep"][f"cycle_{cycle+1}_down_reached"] = succeeded
+                else:
+                    record["grid_sweep"][f"cycle_{cycle+1}_up_reached"] = succeeded
+        record["grid_sweep"]["position_verified"] = not any(
+            failure["step"].startswith("cycle-") and "grid-seek-" in failure["step"]
+            for failure in record.get("warnings", [])
+        )
         _attempt(record, "grid-page-one-end", lambda: _click_grid_page_one(
             window, actions, at="end",
         ))
@@ -829,7 +934,8 @@ def _drive(
 
 def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: int,
               timeout: float, no_cache: bool, scroll_notches: int = 192,
-              grid_limits: tuple[int, int, int] | None = None) -> dict:
+              grid_limits: tuple[int, int, int] | None = None,
+              grid_target_card: int = 300, grid_seek_timeout: float = 12.0) -> dict:
     """Launch one source GUI process and retain evidence even if automation fails."""
 
     directory.mkdir(parents=True, exist_ok=False)
@@ -843,7 +949,7 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
         "--pid-file", str(directory / "app-process.json"),
     ]
     if grid_limits is not None:
-        args.extend(["--ml", str(grid_limits[0]), "--mc", str(grid_limits[1])])
+        args.extend(["--ml", str(grid_limits[0]), "--mc", str(grid_limits[1]), "--grid-progress"])
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "windows"
     record: dict = {
@@ -867,6 +973,7 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
                 process, logs, record, cycles=cycles, timeout=timeout,
                 scroll_notches=scroll_notches,
                 grid_limits=(grid_limits[0], grid_limits[2]) if grid_limits else None,
+                grid_target_card=grid_target_card, grid_seek_timeout=grid_seek_timeout,
             )
             process.wait(timeout=timeout)
             csvs = sorted(logs.glob("dtflow-*-gallery.csv"))
@@ -998,6 +1105,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cycles", type=int, default=2, help="Repeated UI action sequences (1–10).")
     parser.add_argument("--scroll-notches", type=int, default=192,
                         help="Windows wheel notches per scroll direction, 12–240 (default: 192).")
+    parser.add_argument("--grid-target-card", type=int, default=300,
+                        help="Grid matrix: seek the first visible image near this card (default: 300).")
+    parser.add_argument("--grid-seek-timeout", type=float, default=12,
+                        help="Grid matrix: timeout for each scroll direction in seconds (default: 12).")
     parser.add_argument("--timeout", type=float, default=30, help="Seconds for GUI/process readiness.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass disposable thumbnail cache.")
     parser.add_argument("--ack-user-state", action="store_true",
@@ -1007,6 +1118,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Native Windows is required; Linux/offscreen cannot establish UI acceptance.")
     if not args.ack_user_state:
         parser.error("--ack-user-state is required before accessing the saved-output catalogue.")
+    if not 20 <= args.grid_target_card <= 1000:
+        parser.error("--grid-target-card must be between 20 and 1000.")
+    if not 3 <= args.grid_seek_timeout <= 60:
+        parser.error("--grid-seek-timeout must be between 3 and 60 seconds.")
     if not 12 <= args.scroll_notches <= 240:
         parser.error("--scroll-notches must be between 12 and 240.")
     if not 1 <= args.runs <= 10 or not 1 <= args.cycles <= 10:
@@ -1049,7 +1164,9 @@ def main(argv: list[str] | None = None) -> int:
                 directory = output / f"{name}-r{trial:02}"
                 record = run_trial(name, profile, trial=trial, directory=directory,
                                    cycles=args.cycles, timeout=args.timeout, no_cache=args.no_cache,
-                                   scroll_notches=args.scroll_notches, grid_limits=grid_limits)
+                                   scroll_notches=args.scroll_notches, grid_limits=grid_limits,
+                                   grid_target_card=args.grid_target_card,
+                                   grid_seek_timeout=args.grid_seek_timeout)
                 records.append(record)
                 write_report(records, output)
                 print(f"{name} trial={trial} status={record['status']}", flush=True)
