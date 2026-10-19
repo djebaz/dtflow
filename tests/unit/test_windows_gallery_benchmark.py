@@ -1343,7 +1343,7 @@ def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
     assert sent
 
 
-def test_grid_seek_keeps_sending_during_blocked_position_probe(monkeypatch):
+def test_grid_seek_does_not_dispatch_without_position_evidence(monkeypatch):
     import time
 
     from tools.ui import windows_gallery_benchmark as benchmark
@@ -1372,9 +1372,9 @@ def test_grid_seek_keeps_sending_during_blocked_position_probe(monkeypatch):
             timeout=0.14,
             wheel_point=((600, 400), "grid"),
         )
-    assert len(sent) >= 3
-    assert actions[0]["wheel_pulses"] >= 3
-    assert actions[0]["first_wheel_ms"] is not None
+    assert sent == []
+    assert actions[0]["wheel_pulses"] == 0
+    assert actions[0]["first_wheel_ms"] is None
 
 
 def test_grid_seek_reports_real_incomplete_journey(monkeypatch):
