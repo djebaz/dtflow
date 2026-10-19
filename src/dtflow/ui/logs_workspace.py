@@ -41,9 +41,20 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow._diagnostic_export import export_matching
-from dtflow._diagnostic_reader import PAGE_SIZE, discover, match, query, read_detail, scan, snapshot
+from dtflow._diagnostic_reader import (
+    PAGE_SIZE,
+    EvidenceError,
+    discover,
+    match,
+    query,
+    read_detail,
+    scan,
+    segment_age,
+    snapshot,
+)
 from dtflow.diagnostic_projection import characteristics
 from dtflow.logging_setup import LOGGER
+from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.desktop_open import open_local_path
 from dtflow.ui.logs_delegate import LogCellDelegate, LogHeaderView
 from dtflow.ui.theme import load_tokens
@@ -166,12 +177,6 @@ class _Job(QRunnable):
             pass
 
 
-def segment_age(basename: str) -> int:
-    """Rotation age from a canonical segment name: 0 for the active file, else its numeric suffix."""
-    suffix = basename.rsplit(".jsonl", 1)[-1]
-    return int(suffix[1:]) if suffix[1:].isdigit() else 0
-
-
 def count_arrivals(directory: Path, session_id: str, boundary, filters, *, cancelled=None):
     """Matching records not wholly inside the shown snapshot, through the shared reader.
 
@@ -205,6 +210,47 @@ def refresh_label(count, *, incomplete=False):
     if not count:
         return "Refresh"
     return f"Refresh ({count} new{' · incomplete' if incomplete else ''})"
+
+
+# Plain-language export failures for reader reasons a person can act on.
+EXPORT_FAILURES = {
+    "snapshot_changed": "the session files changed while reading; try again",
+    "session_rotated": "the oldest log file was rotated away during the export; try again",
+    "consumer_record_limit": "too many matching records; narrow the filters",
+    "session_unavailable": "the session files are no longer available",
+}
+
+
+def export_outcome(manifest) -> tuple[str, str]:
+    """Overlay state and one-line summary of a published export manifest."""
+    artifact, selection = manifest["artifact"], manifest["selection"]
+    evidence = manifest["source_evidence"]
+    text = f"{artifact['basename']} · {selection['exported_records']} records · source {evidence['state']}"
+    if evidence["state"] in ("complete", "pending"):
+        return "success", text
+    state, text = "warning", text + " (" + ", ".join(evidence["reasons"]) + ")"
+    return state, text
+
+
+class _ExportSignals(QObject):
+    progress = Signal(int, int)
+    finished = Signal(object, object)
+
+
+class _ExportJob(QRunnable):
+    def __init__(self, func, signals):
+        super().__init__()
+        self.func, self.signals = func, signals
+
+    def run(self):
+        try:
+            value, error = self.func(), None
+        except Exception as exc:
+            value, error = None, exc
+        try:
+            self.signals.finished.emit(value, error)
+        except RuntimeError:
+            pass  # the window closed while the export finished
 
 
 class _LogModel(QAbstractTableModel):
@@ -501,6 +547,9 @@ class LogsWorkspace(QObject):
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._poll)
         self.form.destroyed.connect(self.stop)
+        # One export at a time; it outlives navigation and reports through the shared overlay.
+        self._export_cancel = None
+        self.form.destroyed.connect(self._cancel_export)
         # Outside-click dismissal is watched only while the details pane is shown.
         self.form.logsDetail.installEventFilter(self)
 
@@ -1231,7 +1280,7 @@ class LogsWorkspace(QObject):
             for label, fmt in (("Export matching CSV", "csv"), ("Export matching JSONL", "jsonl"))
         }
         for action in exports:
-            action.setEnabled(bool(self._session()))
+            action.setEnabled(bool(self._session()) and self._export_cancel is None)
         menu.addSeparator()
         current_segment = self.directory / f"dtflow-{self._session()}.jsonl"
         open_raw = menu.addAction("Open raw file")
@@ -1293,15 +1342,64 @@ class LogsWorkspace(QObject):
         if target.exists():
             self.form.logsStatus.setText(f"Export not started: {target.name} already exists; choose a new name")
             return
-        self._run(
-            lambda: export_matching(
-                self.directory, sid, target, fmt=fmt, filters=filters, sort=sort, descending=desc, metric=metric
-            ),
-            lambda value, error: self.form.logsOperationStatus.setText(
-                "Export failed: " + error if error else f"Exported {value}"
-            ),
-            kind=f"export:{self.token + 1}",
+        self._start_export(sid, target, fmt, filters, sort, desc, metric)
+
+    def _start_export(self, sid, target, fmt, filters, sort, desc, metric):
+        """Run one export on the pool; progress, cancel and outcome use the shared overlay."""
+        cancel = Event()
+        self._export_cancel = cancel
+        signals = _ExportSignals(self.form)
+        strip = activity_strip(self.form)
+        label = f"Exporting {target.name}"
+        if strip is not None:
+            strip.start(
+                "logs-export", label, cancel.set, stop_text="Cancel export", detail="Selecting matching records…"
+            )
+        self.form.logsOperationStatus.setText(label + "…")
+
+        def progressed(done, total):
+            if strip is not None and self._export_cancel is cancel and not cancel.is_set():
+                strip.update("logs-export", done, total, detail=f"{done} of {total} records written")
+
+        def finished(manifest, error):
+            self._export_cancel = None
+            signals.deleteLater()
+            if error is None:
+                state, text = export_outcome(manifest)
+                title = "Logs exported"
+            elif isinstance(error, EvidenceError) and error.reason == "cancelled":
+                state, title, text = "stopped", "Logs export cancelled", f"{target.name} was not written."
+            else:
+                reason = error.reason if isinstance(error, EvidenceError) else ""
+                state, title = "error", "Logs export failed"
+                text = f"{target.name}: " + EXPORT_FAILURES.get(reason, f"{type(error).__name__}: {error}")
+            self.form.logsOperationStatus.setText(f"{title}: {text}")
+            if strip is not None:
+                strip.complete("logs-export", title, text, state)
+
+        signals.progress.connect(progressed, Qt.ConnectionType.QueuedConnection)
+        signals.finished.connect(finished, Qt.ConnectionType.QueuedConnection)
+        self.pool.start(
+            _ExportJob(
+                lambda: export_matching(
+                    self.directory,
+                    sid,
+                    target,
+                    fmt=fmt,
+                    filters=filters,
+                    sort=sort,
+                    descending=desc,
+                    metric=metric,
+                    cancelled=cancel.is_set,
+                    progress=signals.progress.emit,
+                ),
+                signals,
+            )
         )
+
+    def _cancel_export(self, *_):
+        if self._export_cancel is not None:
+            self._export_cancel.set()
 
     def clear_filters(self):
         self.form.logsSearch.clear()

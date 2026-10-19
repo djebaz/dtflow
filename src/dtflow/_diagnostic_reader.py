@@ -21,6 +21,8 @@ from dtflow._diagnostic_schema import MAX_RECORD_BYTES, CaptureRejected, validat
 _SEGMENT = re.compile(r"^dtflow-([A-Za-z0-9_-]{1,128})\.jsonl(?:\.([1-3]))?$")
 _LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 PAGE_SIZE = 500
+# Ordered references kept by `select`; bodies are never retained, so this bounds a small per-record cost.
+SELECT_LIMIT = 250_000
 MAX_WORKER_BYTES = 16 * 1024 * 1024
 MAX_DISPLAY_BYTES = 32 * 1024 * 1024
 
@@ -276,8 +278,13 @@ def scan(
                     previous = seq
                     count += 1
             # Revalidate the paths AFTER scanning, so renamed/pruned files cannot
-            # be mixed with newly reused basenames and certified clean.
-            if snapshot(directory, session_id) != segments:
+            # be mixed with newly reused basenames and certified clean. Appends to
+            # the same files are not a change: this pass read only up to `segments`.
+            after = snapshot(directory, session_id)
+            if len(after) != len(segments) or any(
+                (old.path, old.device, old.inode) != (new.path, new.device, new.inode) or new.size < old.size
+                for old, new in zip(segments, after, strict=True)
+            ):
                 raise EvidenceError("snapshot_changed")
         except EvidenceError as exc:
             last_reason = exc.reason
@@ -537,6 +544,90 @@ def query(
     next_cursor = (edge.primary, edge.seq) if edge is not None and eligible > limit else None
     # Projections are constrained to five short fields and locator metadata.
     return status, count, page, next_cursor
+
+
+def segment_age(basename: str) -> int:
+    """Rotation age from a canonical segment name: 0 for the active file, else its numeric suffix."""
+    suffix = basename.rsplit(".jsonl", 1)[-1]
+    return int(suffix[1:]) if suffix[1:].isdigit() else 0
+
+
+def select(
+    directory: Path,
+    session_id: str,
+    *,
+    filters=None,
+    sort="ts",
+    descending=True,
+    metric=(),
+    accept=None,
+    cancelled=None,
+    limit=SELECT_LIMIT,
+):
+    """Every matching record's reference in query order, from one whole-session scan.
+
+    Only locators and sort keys are retained, never record bodies. `accept(ref)` can
+    restrict the selection, for example to a fixed snapshot of a growing session.
+    """
+    if sort not in ("ts", "event", "component", "level", "seq", "metric"):
+        raise ValueError("Unsupported sort")
+    if sort == "metric" and not metric:
+        raise ValueError("Numeric metric key required")
+    filters = filters or {}
+    items = []
+
+    def selected(record, ref):
+        if accept is not None and not accept(ref):
+            return
+        if not match(record, **filters):
+            return
+        if len(items) >= limit:
+            raise EvidenceError("consumer_record_limit")
+        items.append(_Candidate(_sort_primary(record, sort, tuple(metric)), record["seq"], ref, None, descending))
+
+    status = scan(directory, session_id, cancelled=cancelled, on_record=selected, on_reset=items.clear)
+    items.sort(reverse=True)
+    return status, tuple(item.ref for item in items)
+
+
+def read_located(directory: Path, refs) -> list:
+    """Hydrate records by file identity, following rotation renames of a growing session.
+
+    Each file is located by (device, inode) at the same or a higher rotation age (a lower
+    age is a different file reusing the inode), opened once for all of its records and
+    closed again, so the writer's rotation is never held up for long. A record whose file
+    is gone, shrank or no longer holds that sequence comes back as None.
+    """
+    refs = tuple(refs)
+    records = [None] * len(refs)
+    groups = {}
+    for index, ref in enumerate(refs):
+        groups.setdefault((ref.device, ref.inode, segment_age(ref.basename)), []).append(index)
+    current = snapshot(directory, refs[0].session_id) if refs else ()
+    for (device, inode, age), indexes in groups.items():
+        item = next((x for x in current if (x.device, x.inode) == (device, inode) and x.age >= age), None)
+        if item is None:
+            continue
+        try:
+            with _opened(item) as stream:
+                for index in sorted(indexes, key=lambda i: refs[i].offset):
+                    ref = refs[index]
+                    if ref.offset + ref.length > item.size:
+                        continue
+                    stream.seek(ref.offset)
+                    raw = stream.read(ref.length)
+                    if len(raw) > MAX_RECORD_BYTES or not raw.endswith(b"\n"):
+                        continue
+                    try:
+                        record = _decode_record(raw)
+                    except (UnicodeError, ValueError, TypeError, RecursionError, CaptureRejected):
+                        continue
+                    if record["seq"] == ref.seq:
+                        records[index] = record
+        except EvidenceError:
+            # Renamed or replaced between the snapshot and the open; its records stay None.
+            continue
+    return records
 
 
 def read_detail(directory: Path, ref: RecordRef) -> dict:

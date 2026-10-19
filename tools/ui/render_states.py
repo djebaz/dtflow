@@ -2510,7 +2510,9 @@ def render_logs_states(shell, capture):
     panel.logsFollowButton.setChecked(False)
     panel.logsFollowButton.setText(ICON_GAP + "Follow: Off")
     panel.logsFollowButton.blockSignals(False)
-    panel.logsOperationStatus.setText("Exported diagnostic-excerpt.csv (synthetic presentation)")
+    panel.logsOperationStatus.setText(
+        "Logs exported: diagnostic-excerpt.csv · 1204 records · source pending (synthetic presentation)"
+    )
     capture("logs-05-paging")
 
     shell.logs._set_pending(True, 2, incomplete=True, detail="Synthetic incomplete-evidence count")
@@ -2531,6 +2533,19 @@ def render_logs_states(shell, capture):
     shell.logs.active, shell.logs._query_busy, shell.logs._spin_angle = True, True, 15
     shell.logs._spin()
     capture("logs-11-refreshing")
+    # Export of the live session: progress with Cancel, then a disclosed incomplete-source outcome.
+    strip = shell.progress_strip
+    strip.start("logs-export", "Exporting diagnostic-excerpt.jsonl", lambda: None, stop_text="Cancel export")
+    strip.update("logs-export", 640, 1204, detail="640 of 1204 records written (synthetic presentation)")
+    capture("logs-12-export-progress")
+    strip.complete(
+        "logs-export",
+        "Logs exported",
+        "diagnostic-excerpt.jsonl · 1204 records · source incomplete (seal_missing) (synthetic presentation)",
+        "warning",
+    )
+    capture("logs-13-export-incomplete-source")
+    strip.finish("logs-export")
     shell.logs.active, shell.logs._query_busy = False, False
     shell.logs._spin()
     shell.logs.model.set_sort_state("ts", True)

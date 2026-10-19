@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import os
 import tempfile
@@ -12,10 +13,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from dtflow._diagnostic_reader import (
-    PAGE_SIZE,
+    MAX_WORKER_BYTES,
     EvidenceError,
-    query,
-    read_detail,
+    read_located,
+    segment_age,
+    select,
     snapshot,
 )
 from dtflow._diagnostic_schema import sanitize
@@ -42,6 +44,19 @@ def _safe(record):
     return clean(record)
 
 
+def _batches(refs, *, limit=2000):
+    """Consecutive ref groups bounded by count and by encoded bytes held in memory."""
+    batch, size = [], 0
+    for ref in refs:
+        if batch and (len(batch) >= limit or size + ref.length > MAX_WORKER_BYTES // 2):
+            yield batch
+            batch, size = [], 0
+        batch.append(ref)
+        size += ref.length
+    if batch:
+        yield batch
+
+
 def export_matching(
     directory: Path,
     session_id: str,
@@ -53,11 +68,19 @@ def export_matching(
     descending=True,
     metric=(),
     cancelled=None,
+    progress=None,
 ) -> dict:
     """Export matching records and publish a source-status manifest LAST.
 
     The caller owns a native destination picker and background worker.
     No copied source record is interpreted as a new session seal.
+
+    The selection is fixed to the session as it stood when the export started: records
+    appended later are left out, and rotation renames are followed by file identity, so
+    the live session exports too. Incomplete or incompatible sources still export, with
+    their evidence state and reasons disclosed in the manifest. `progress(done, total)`
+    reports written records from the worker thread. If retention prunes a captured file
+    before its records are copied, the export fails and publishes nothing.
     """
     if fmt not in ("jsonl", "csv", "text"):
         raise ValueError("Unsupported export format")
@@ -72,6 +95,12 @@ def export_matching(
     if destination.exists() or manifest_path.exists():
         raise FileExistsError("Export pair already exists")
     snapshot_before = snapshot(directory, session_id)
+    shown = {(s.device, s.inode): (s.size, s.age) for s in snapshot_before}
+
+    def within(ref):
+        limit = shown.get((ref.device, ref.inode))
+        return limit is not None and segment_age(ref.basename) >= limit[1] and ref.offset + ref.length <= limit[0]
+
     temp_path = None
     bytes_written = 0
     digest = hashlib.sha256()
@@ -96,28 +125,31 @@ def export_matching(
                 # A zero-match filtered export is still a valid CSV document.
                 # Write its schema once, even when no data row is selected.
                 write((",".join(_CSV_COLUMNS) + "\r\n").encode("utf-8"), out)
-            cursor = None
-            while True:
-                result, _total, page, next_cursor = query(
-                    directory,
-                    session_id,
-                    filters=filters,
-                    sort=sort,
-                    descending=descending,
-                    cursor=cursor,
-                    limit=PAGE_SIZE,
-                    metric=metric,
-                    cancelled=cancelled,
-                )
-                if snapshot(directory, session_id) != snapshot_before:
-                    raise EvidenceError("snapshot_changed")
-                if result.state not in ("complete", "pending"):
-                    raise EvidenceError("source_" + result.state)
-                status = result
-                if not page:
-                    break
-                for _projection, ref in page:
-                    record = _safe(read_detail(directory, ref))
+            status, refs = select(
+                directory,
+                session_id,
+                filters=filters,
+                sort=sort,
+                descending=descending,
+                metric=metric,
+                accept=within,
+                cancelled=cancelled,
+            )
+            # Retention may prune a captured file while a live session rotates. Its records are
+            # gone, so the export fails rather than claim a completed excerpt of the snapshot.
+            present = {(segment.device, segment.inode) for segment in status.segments}
+            if any(key not in present for key in shown):
+                raise EvidenceError("session_rotated")
+            total = len(refs)
+            if progress:
+                progress(0, total)
+            done = 0
+            for batch in _batches(refs):
+                for ref, located in zip(batch, read_located(directory, batch), strict=True):
+                    done += 1
+                    if located is None:
+                        raise EvidenceError("session_rotated")
+                    record = _safe(located)
                     if fmt == "jsonl":
                         raw = (
                             json.dumps(record, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n"
@@ -133,8 +165,6 @@ def export_matching(
                         ).encode("utf-8")
                     else:
                         # Constant columns, with nested JSON in bounded scalar cells.
-                        import io
-
                         buf = io.StringIO(newline="")
                         writer = csv.DictWriter(buf, fieldnames=_CSV_COLUMNS)
                         writer.writerow(
@@ -152,15 +182,12 @@ def export_matching(
                     start_seq = ref.seq if start_seq is None else min(start_seq, ref.seq)
                     end_seq = ref.seq if end_seq is None else max(end_seq, ref.seq)
                     count += 1
-                if next_cursor is None:
-                    break
-                cursor = next_cursor
+                if cancelled and cancelled():
+                    raise EvidenceError("cancelled")
+                if progress:
+                    progress(done, total)
             out.flush()
             os.fsync(out.fileno())
-        if snapshot(directory, session_id) != snapshot_before:
-            raise EvidenceError("snapshot_changed")
-        if status is None:
-            raise EvidenceError("empty_export_snapshot")
         manifest = {
             "manifest_version": 1,
             "artifact_kind": "diagnostic_excerpt",
@@ -169,7 +196,9 @@ def export_matching(
             "source_session_id": session_id,
             "record_version": 1,
             "source_evidence": {"state": status.state, "reasons": list(status.reasons)},
+            # The fixed selection boundary: records wholly inside these files and sizes.
             "snapshot": [{"segment": s.path.name, "bytes": s.size} for s in snapshot_before],
+            "snapshot_policy": "records_within_start_snapshot",
             "selection": {
                 "format": fmt,
                 "sort": sort,

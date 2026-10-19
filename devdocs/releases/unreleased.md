@@ -12,6 +12,8 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Fixed
 
+- **Logs export (#111):** exporting the current, still-growing session works: the export pins the session as it stood at start, follows rotation renames and leaves later appends out. Unsealed or incomplete sessions export with their evidence state and reasons disclosed instead of being refused. Exports show progress with Cancel in the shared bottom overlay, run one at a time, keep running and report their outcome after leaving Logs, and summarize the result as file name, record count and source state instead of a raw manifest. A reader pass no longer treats appends to the same files as a snapshot change, so busy live sessions no longer read as incomplete for that reason. Not yet accepted on Windows.
+
 ## Release audit
 
 - PRs: #109
