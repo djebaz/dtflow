@@ -40,41 +40,53 @@ def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | Non
 
 
 class GridProgressProbe:
-    """Read the gallery's actual visible range via its live UIA Text element.
+    """Read the canonical Qt pager range using a targeted, cached UIA selector.
 
-    Qt may expose accessibleName instead of QLabel text. The pager publishes
-    its changing range in accessibleName, so reacquire the live Text control
-    rather than caching an outdated element or parsing obsolete text logs.
+    Qt objectName 'galleryPagerRange' is the preferred AutomationId. Some
+    Windows Qt builds expose only the dynamic accessible name, so a unique
+    title regex is the fallback. Never walk the full window tree per sample.
     """
 
     def __init__(self, window, logs: Path):
         self.window = window
-        del logs  # signature retained for benchmark callers; no text-log fallback
+        del logs  # Kept for benchmark API compatibility.
+        self._control = None
         self.last: GridPosition | None = None
 
+    @staticmethod
+    def _position(control) -> GridPosition | None:
+        name = control.element_info.name or ""
+        if name.startswith("Visible image range:"):
+            value = name.split(":", 1)[1].strip()
+            parsed = parse_visible_range(value)
+            if parsed is not None:
+                return parsed
+        return parse_visible_range(control.window_text())
+
     def read(self) -> GridPosition | None:
-        matches = []
-        try:
-            for control in self.window.descendants():
-                info = control.element_info
-                if info.control_type != "Text":
-                    continue
-                name = info.name or ""
-                if not name.startswith("Visible image range"):
-                    continue
-                # The dynamically published accessible name is authoritative.
-                value = name.removeprefix("Visible image range").lstrip(": ").strip()
-                position = parse_visible_range(value)
-                if position is None:
-                    try:
-                        position = parse_visible_range(control.window_text())
-                    except (AttributeError, RuntimeError, ValueError):
-                        pass
+        if self._control is not None:
+            try:
+                position = self._position(self._control)
                 if position is not None:
-                    matches.append(position)
-        except (LookupError, RuntimeError, OSError):
-            return None
-        if len(matches) != 1:
-            return None  # never guess among duplicated/stale controls
-        self.last = matches[0]
-        return self.last
+                    self.last = position
+                    return position
+            except (AttributeError, LookupError, RuntimeError, OSError):
+                self._control = None
+
+        for selector in (
+            {"auto_id": "galleryPagerRange", "control_type": "Text"},
+            {"title_re": r"^Visible image range: ", "control_type": "Text"},
+        ):
+            try:
+                candidate = self.window.child_window(**selector)
+                if not candidate.exists(timeout=0):
+                    continue
+                position = self._position(candidate)
+                if position is None:
+                    continue
+                self._control = candidate
+                self.last = position
+                return position
+            except (AttributeError, LookupError, RuntimeError, OSError):
+                continue
+        return None
