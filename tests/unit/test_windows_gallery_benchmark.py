@@ -1647,9 +1647,18 @@ def test_grid_start_selects_newest_once_and_waits_for_visible_image(monkeypatch,
     assert actions[-1]["visible_first"] == 1
 
 
-def test_grid_start_already_newest_does_not_toggle_sort(monkeypatch, tmp_path):
+def test_grid_start_already_newest_still_selects_it_once(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
+
+    events = []
+
+    class Option:
+        def wait(self, *_args, **_kwargs):
+            return None
+
+        def click_input(self):
+            events.append("select-newest")
 
     class Combo:
         def wait(self, *_args, **_kwargs):
@@ -1659,7 +1668,10 @@ def test_grid_start_already_newest_does_not_toggle_sort(monkeypatch, tmp_path):
             return "Newest first"
 
         def click_input(self):
-            pytest.fail("Newest is already selected; do not open the popup")
+            events.append("open-sort")
+
+        def child_window(self, **_kwargs):
+            return Option()
 
     class Window:
         def child_window(self, **_kwargs):
@@ -1673,11 +1685,19 @@ def test_grid_start_already_newest_does_not_toggle_sort(monkeypatch, tmp_path):
     benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=1)
     assert actions[-1]["verified"] is True
     assert actions[-1]["sort_changed"] is False
+    assert events == ["open-sort", "select-newest"]
 
 
 def test_grid_start_rejects_newest_when_visible_position_is_not_one(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
+
+    class Option:
+        def wait(self, *_args, **_kwargs):
+            return None
+
+        def click_input(self):
+            return None
 
     class Combo:
         def wait(self, *_args, **_kwargs):
@@ -1687,7 +1707,10 @@ def test_grid_start_rejects_newest_when_visible_position_is_not_one(monkeypatch,
             return "Newest first"
 
         def click_input(self):
-            pytest.fail("Do not toggle sort to fake a reset")
+            return None
+
+        def child_window(self, **_kwargs):
+            return Option()
 
     class Window:
         def child_window(self, **_kwargs):
