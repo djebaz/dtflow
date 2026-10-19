@@ -278,6 +278,16 @@ class LogsWorkspace(QObject):
         status, count, page, _next, projections = result
         self._page = page
         self.model.replace(page, projections)
+        # Size only the bounded, resident page. Never scan the session for geometry.
+        for row in range(len(page)):
+            index = self.model.index(row, 3)
+            option = self.form.logsTable.viewOptions() if hasattr(self.form.logsTable, "viewOptions") else None
+            if option is None:
+                continue
+            option.rect = self.form.logsTable.visualRect(index)
+            option.rect.setWidth(self.form.logsTable.columnWidth(3))
+            height = self.delegate.sizeHint(option, index).height()
+            self.form.logsTable.setRowHeight(row, min(168, max(53, height)))
         self.form.logsTable.resizeRowsToContents()  # only the bounded visible page; no full-session scan
         self.form.logsStatus.setText(f"{count} matching · {status.state} · displaying {len(page)}")
         self.form.logsNotice.setVisible(status.state not in ("complete", "pending"))
