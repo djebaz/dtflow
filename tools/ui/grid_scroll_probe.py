@@ -62,14 +62,17 @@ class GridProgressProbe:
     def __init__(self, window, logs: Path):
         self.logs = logs
         self._label = None
+        self._uia_unavailable = False
         try:
-            self._label = window.child_window(title="Visible image range", control_type="Text")
-        except (AttributeError, LookupError, RuntimeError):
+            candidate = window.child_window(title="Visible image range", control_type="Text")
+            if not hasattr(candidate, "exists") or candidate.exists(timeout=0.2):
+                self._label = candidate
+        except Exception:
             pass
         self.last: GridPosition | None = None
 
     def _uia(self) -> GridPosition | None:
-        if self._label is None:
+        if self._label is None or self._uia_unavailable:
             return None
         label = self._label
         values = []
@@ -89,6 +92,10 @@ class GridProgressProbe:
             match = parse_visible_range(str(text))
             if match:
                 return match
+        # A Qt QLabel's accessibleName can mask its displayed text on
+        # Windows. If none of its accessible text patterns exposes numbers,
+        # do not make three slow cross-process calls on every wheel pulse.
+        self._uia_unavailable = True
         return None
 
     def _log(self) -> GridPosition | None:
