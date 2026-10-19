@@ -130,3 +130,19 @@ Owner results from baseline and workers-3 both showed the full Grid/List/Detail 
 After a successful owner Windows baseline smoke (the separate workers-3 run was voluntarily closed), the owner requested a stronger interaction sequence. The test now issues **192 Windows wheel notches down and up** in each of Grid and List (16 bounded bursts per direction, configurable with `--scroll-notches` in 12..240). Wheel dispatch and whether an optional `scroll_intent` event appeared are logged separately; wheel distance is not treated as automatically verified if the log event is absent.
 
 In Grid, the benchmark drags the accessible `ThumbnailSizeSlider` toward **55% and 210%**, allowing layout to settle between changes, then attempts to restore the saved starting position; significant failure to restore is recorded as a warning. The **Full screen image view** toggle is now entered and exited while **Grid** is selected, before switching to List. Detail remains an ordinary view-switch test but no longer owns fullscreen. No production defaults, paging limits or generated image content change. This new sequence requires native Windows replay before any new performance conclusions are made.
+
+## Dedicated Grid limit matrix (2026-10-19)
+
+The product's original 20/100 limit is still fixed across the **original eight performance-parameter tuning profiles**. A separate opt-in `--grid-matrix` mode now varies the **real CLI `-ml` batch size and `-mc` mounted-card cap** in independent native Windows runs, without changing production defaults or combining with those tuning profiles.
+
+Default cases: `20:50`, `20:100`, `50:150`, `100:300`, `200:600`, `300:1000`. The validated product resolver rounds mounted cards down to a whole batch: effective caps are respectively 40, 100, 150, 300, 600, 900. Each run preserves requested and effective values in `trial.json`/`results.csv`, under a unique named case folder. A custom matrix accepts at most 16 nonduplicate cases with `-ml` 1..300, `-mc` 1..1000 and `mc >= ml`; no matrix/tuning-profile combinations or more than 40 total trials per invocation.
+
+**Grid-only actions:** open Images, choose Grid, **physically click page 1**, then perform a bounded number of down-wheel steps followed by the same number upward. Steps adapt to `ceil(effective_mc / ml) + 2` (bounded 4..12), using `max(12, --scroll-notches / 3)` integer wheel notches per step. When finished, **physically click page 1 again**, close only the launched trial process, and collect the same diagnostic CSV and -x logs. **Do not touch the Sort dropdown.** This mode never touches text search, List, Detail, fullscreen or the thumbnail-size slider.
+
+The first-query record count is not necessarily the total catalogue size. It only indicates how much of the requested initial batch loaded; a partial first batch (`returned < ml`) is recorded as a warning and excluded from clean comparisons. A larger `-mc` cannot be fully exercised unless the existing catalogue contains enough outputs to reach that cap. The number of wheel messages is recorded, but **actual image displacement remains unverified** unless independent Qt evidence proves it; missing raw scroll-intent lines are not treated as a Windows scroll failure. GUI gap maxima include startup unless phase-scoped separately. Do not call a profile fast or stable from startup maxima, dispatched wheel count alone or one run. User preferences can still be updated by normal gallery navigation; this is not a sandboxed copy of the user's library.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix 20:50 20:100 50:150 100:300 200:600 300:1000 --runs 1 --cycles 1 --ack-user-state
+```
+
+This is opt-in offline interaction testing; it does not invoke generation/training/provider APIs. Native acceptance remains pending.
