@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
 
 from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, snapshot
@@ -107,6 +107,11 @@ class LogsWorkspace(QObject):
         self.delegate = LogCellDelegate(self.form.logsTable)
         self.form.logsTable.setItemDelegate(self.delegate)
         self.delegate.actionRequested.connect(self._row_action)
+        # Keyboard equivalents of painted actions; do not open the inspector on selection alone.
+        for key, action in (("Return", "details"), ("Ctrl+Return", "details"), ("Ctrl+Shift+C", "copy")):
+            shortcut = QShortcut(QKeySequence(key), self.form.logsTable)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda action=action: self._selected_action(action))
         self.form.logsTable.verticalHeader().hide()
         header = self.form.logsTable.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
@@ -289,7 +294,6 @@ class LogsWorkspace(QObject):
             option.rect.setWidth(self.form.logsTable.columnWidth(3))
             height = self.delegate.sizeHint(option, index).height()
             self.form.logsTable.setRowHeight(row, min(168, max(53, height)))
-        self.form.logsTable.resizeRowsToContents()  # only the bounded visible page; no full-session scan
         self.form.logsStatus.setText(f"{count} matching · {status.state} · displaying {len(page)}")
         self.form.logsNotice.setVisible(status.state not in ("complete", "pending"))
         self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
@@ -348,6 +352,11 @@ class LogsWorkspace(QObject):
         # Selection alone never opens details; actions use the painted delegate.
         if index.column() != 4:
             self.form.logsFollowButton.setChecked(False)
+
+    def _selected_action(self, action):
+        index = self.form.logsTable.currentIndex()
+        if index.isValid():
+            self._row_action(index.row(), action)
 
     def _row_action(self, row, action):
         if row >= len(self.model.refs):
