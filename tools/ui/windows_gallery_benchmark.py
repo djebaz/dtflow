@@ -419,27 +419,19 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
 
 
 def _grid_batch_button(window, number: int):
-    """Find the unique enabled pager chip by its UIA accessible batch name.
+    """Resolve a fresh pager button by its exact, stable accessible name.
 
-    The displayed chip can move after each jump; never reuse screen coordinates
-    or rely on its Qt automation ID. Match the number as a whole token so batch
-    2 cannot accidentally select batch 20.
+    Qt assigns objectName galleryPagerPage<N>, but Windows UIA qualifies
+    AutomationId with its parent hierarchy. Do not guess that full path or
+    enumerate every descendant on each lookup.
     """
-    import re
-
-    pattern = re.compile(rf"\bbatch\s+{number}\b", re.IGNORECASE)
-    matches = [
-        widget for widget in window.descendants()
-        if widget.element_info.control_type in {"Button", "CheckBox", "RadioButton"}
-        and pattern.search(widget.element_info.name or "")
-        and widget.is_visible() and widget.is_enabled()
-    ]
-    if len(matches) > 1:
-        raise RuntimeError(f"Ambiguous enabled pager button containing batch {number}")
-    if not matches:
-        raise LookupError(f"No enabled pager button containing batch {number}")
-    return matches[0]
-
+    button = window.child_window(
+        title=f"Jump to image batch {number}",
+        control_type="Button",
+    )
+    if not button.exists(timeout=0) or not button.is_visible() or not button.is_enabled():
+        raise LookupError(f"Page {number} button is not currently ready")
+    return button.wrapper_object()
 
 
 def _activate_grid_batch_chip(chip):
@@ -465,13 +457,19 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
     observed = None
     while time.monotonic() < deadline:
         try:
+            lookup_started = time.perf_counter()
             chip = _grid_batch_button(window, 1)
+            lookup_ms = round((time.perf_counter() - lookup_started) * 1000, 2)
             attempts += 1
+            click_started = time.perf_counter()
             method = _activate_grid_batch_chip(chip)
+            click_ms = round((time.perf_counter() - click_started) * 1000, 2)
         except (LookupError, RuntimeError, TimeoutError):
             time.sleep(0.2)
             continue
+        read_started = time.perf_counter()
         observed = probe.read()
+        footer_read_ms = round((time.perf_counter() - read_started) * 1000, 2)
         if observed is not None and observed.first == 1:
             actions.append({
                 "action": "click-page-one-start",
@@ -480,6 +478,9 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
                 "source": observed.source,
                 "click_attempts": attempts,
                 "activation_method": method,
+                "page_one_lookup_ms": lookup_ms,
+                "page_one_click_ms": click_ms,
+                "footer_read_ms": footer_read_ms,
                 "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
             })
             return
