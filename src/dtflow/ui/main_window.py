@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer, Slot
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QFontMetrics, QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -329,7 +329,9 @@ class MainWindow:
         status_actions_layout.addWidget(about_button)
         logs_button = QToolButton(status_actions)
         logs_button.setObjectName("logsStatusButton")
-        logs_button.setText("≡")
+        logs_button.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "list.svg")))
+        logs_button.setIconSize(QSize(16, 16))
+        logs_button.setAutoRaise(True)
         logs_button.setFixedSize(20, 20)
         logs_button.setCheckable(True)
         logs_button.setToolTip("Open Logs workspace")
