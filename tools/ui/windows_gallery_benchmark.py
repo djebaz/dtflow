@@ -460,78 +460,52 @@ def _activate_grid_batch_chip(chip):
 
 
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
-    """Verify page 2 -> page 1 using fresh UIA targets after pager reflow.
+    """Select Newest once if necessary and verify the actual Grid start.
 
-    The pager can recreate/reposition its chips after each page transition.
-    Resolve the unique enabled chip by its accessible name containing batch N;
-    independently verify the first visible image, never the pointer position.
+    Do not toggle Oldest/Newest, retry an already-selected chip, or treat
+    a successful UIA click/checked state as evidence that image 1 is visible.
     """
+    del directory  # No query-log barrier on the Grid input path.
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
-    attempts = {2: 0, 1: 0}
+    combo = window.child_window(title="Sort saved outputs", control_type="ComboBox")
+    combo.wait("exists visible enabled", timeout=timeout)
+    sort_changed = False
+    if combo.selected_text() != "Newest first":
+        combo.click_input()
+        option = combo.child_window(title="Newest first", control_type="ListItem")
+        option.wait("exists visible enabled", timeout=timeout)
+        option.click_input()
+        sort_changed = True
+
     observed = None
-    phase = 2
-    del directory  # Readiness depends on the actual viewport, not log delivery.
-
     while time.monotonic() < deadline:
-        try:
-            chip = _grid_batch_button(window, phase)
-            rect = chip.rectangle()
-            if rect.width() <= 0 or rect.height() <= 0:
-                raise LookupError("pager_geometry_unavailable")
-        except (LookupError, RuntimeError, TimeoutError):
-            time.sleep(0.2)
-            continue
-
-        observed = probe.read()
-        if phase == 2 and observed is not None and observed.first >= 21:
-            actions.append({
-                "action": "click-page-two-start",
-                "verified": True, "visible_first": observed.first,
-                "source": observed.source, "click_attempts": attempts[2],
-            })
-            phase = 1
-            # Reacquire the newly positioned page-one chip in the next loop.
-            continue
-        if phase == 1 and observed is not None and observed.first == 1:
-            actions.append({
-                "action": "click-page-one-start",
-                "verified": True, "visible_first": 1,
-                "source": observed.source, "click_attempts": attempts[1],
-                "page_two_verified": True,
-                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-            })
-            return
-
-        try:
-            # The wrapper was resolved AFTER the previous transition; Qt may
-            # have moved page one to the left of the selected page-two chip.
-            attempts[phase] += 1
-            activation = _activate_grid_batch_chip(chip)
-            actions.append({
-                "action": f"page-{phase}-activation-attempt",
-                "attempt": attempts[phase],
-                "method": activation,
-                "target_name": chip.element_info.name,
-            })
-        except (LookupError, RuntimeError, TimeoutError):
-            time.sleep(0.2)
-            continue
+        if combo.selected_text() == "Newest first":
+            observed = probe.read()
+            if observed is not None and observed.first == 1:
+                actions.append({
+                    "action": "grid-start-newest",
+                    "verified": True,
+                    "sort_changed": sort_changed,
+                    "visible_first": 1,
+                    "source": observed.source,
+                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+                })
+                return
         time.sleep(0.2)
 
     actions.append({
-        "action": "click-page-one-start", "verified": False,
-        "phase": f"page-{phase}",
-        "visible_first": observed.first if observed else None,
-        "page_two_click_attempts": attempts[2],
-        "click_attempts": attempts[1],
+        "action": "grid-start-newest",
+        "verified": False,
+        "sort_changed": sort_changed,
+        "selected_sort": combo.selected_text(),
+        "visible_first": observed.first if observed is not None else None,
         "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
     })
     raise TimeoutError(
-        "Grid startup could not verify page 2 then page 1 "
-        f"({timeout:g}s; phase=page-{phase}; page2_clicks={attempts[2]}, "
-        f"page1_clicks={attempts[1]}, first="
-        f"{observed.first if observed else 'unknown'})."
+        "Grid startup did not reach first visible image 1 with Newest first "
+        f"({timeout:g}s; sort_changed={sort_changed}; "
+        f"first={observed.first if observed is not None else 'unknown'})."
     )
 
 
@@ -1108,18 +1082,16 @@ def _drive(
         lambda: _click_gallery_mode(window, "Grid", record.setdefault("setup_actions", [])),
     )
     if grid_limits is not None:
-        # The dedicated limit sweep never opens or modifies the Sort dropdown.
-        # Page 1 is physically clicked both before and after scrolling.
+        # Set Newest once for the dedicated sweep, then verify the actual viewport.
         ml, effective_mc = grid_limits
         from tools.ui.grid_scroll_probe import GridProgressProbe
 
         probe = GridProgressProbe(window, directory)
-        # The startup spinner has no numbered chips. Do not start wheel input
-        # until an enabled page-1 chip exists, was clicked, and the viewport
-        # reports first=1. Only this initial readiness gate may wait.
+        # Start only after Newest is selected and the viewport reports image 1.
+        # No sort round trip and no diagnostic-query wait on the input path.
         start_ok = _attempt(
             record,
-            "grid-wait-numbered-pages",
+            "grid-start-newest",
             lambda: _wait_for_grid_page_one(
                 window,
                 probe,
