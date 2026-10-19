@@ -14,8 +14,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from support.fake_vault import Vault  # noqa: E402
 
+from dtflow._diagnostic_notifications import DiagnosticNotice  # noqa: E402
 from dtflow.build import display_identity  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.runner import AsyncRunner  # noqa: E402
@@ -171,6 +173,43 @@ def test_destructive_recycle_confirmation_uses_red_trash_icon(window):
     assert progress_symbol.text() == ""
     window.progress_strip.finish("trash")
 
+
+def test_diagnostic_warning_is_delivered_once_without_replacing_confirmation(window, qtbot):
+    window.show()
+    mailbox = DiagnosticNotice()
+
+    def report():
+        mailbox.post("Diagnostic evidence is incomplete; review the logs.")
+        mailbox.post("Duplicate warning must not replace the first one.")
+
+    worker = threading.Thread(target=report, daemon=True)
+    worker.start()
+    worker.join(3)
+    assert not worker.is_alive()
+    button = window.gallery.delete_button
+    window.inline.arm(button, "Keep this confirmation", "Scope remains protected", lambda: None, danger=True)
+    receiver = DiagnosticNoticeReceiver(window, mailbox)
+    assert receiver.parent() is window.form
+    qtbot.waitUntil(lambda: "diagnostics" in window.progress_strip.rows, timeout=2000)
+    row = window.progress_strip.rows["diagnostics"]
+    assert row.activityDetail.text() == "Diagnostic evidence is incomplete; review the logs."
+    assert row.property("feedbackState") == "warning" and window.progress_strip._expiry["diagnostics"] == 6.0
+    assert button.property("confirmationPending") and window.inline.form.inlineTitleLabel.text() == "Keep this confirmation"
+    assert not receiver.timer.isActive() and mailbox.take() is None
+    receiver.deliver()
+    assert window.progress_strip.rows["diagnostics"] is row
+    window.inline.dismiss()
+
+
+def test_diagnostic_receiver_stops_at_shutdown_without_consuming_a_late_notice(window):
+    mailbox = DiagnosticNotice()
+    receiver = DiagnosticNoticeReceiver(window, mailbox)
+    window.runner.shutdown()
+    assert not receiver.timer.isActive()
+    mailbox.post("Late diagnostic warning must not reopen a window.")
+    receiver.deliver()
+    assert "diagnostics" not in window.progress_strip.rows
+    assert mailbox.take() == "Late diagnostic warning must not reopen a window."
 
 def test_gallery_thumbnail_decode_is_fixed_600px_and_detail_uses_original(tmp_path, monkeypatch):
     """All thumbnail views share one 600 px decode; Detail retains original pixels."""
