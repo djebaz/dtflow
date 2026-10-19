@@ -62,15 +62,14 @@ class GridProgressProbe:
                     return None
                 self._control = control
             name = self._control.element_info.name or ""
-            match = re.fullmatch(r"DTFlow grid first visible index: ([0-9]+)", name)
+            match = re.fullmatch(r"DTFlow grid first visible index: ([0-9]+) / total: ([0-9]+)", name)
             if match is None:
                 return None
             first = int(match.group(1))
-            if first < 1:
+            total = int(match.group(2))
+            if first < 1 or total < first:
                 return None
-            # The dedicated index is the scroll checkpoint. The original
-            # range/total are not inferred from that number.
-            position = GridPosition(first, first, first, "grid-footer-uia")
+            position = GridPosition(first, first, total, "grid-footer-uia")
             self.last = position
             return position
         except (AttributeError, LookupError, RuntimeError, OSError):
