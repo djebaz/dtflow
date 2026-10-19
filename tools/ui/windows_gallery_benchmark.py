@@ -741,7 +741,6 @@ def _seek_grid_card(
             observed = probe.read()
             probe_ms += (time.perf_counter() - read_at) * 1000
             if observed is not None:
-                state["position"]
                 state["position"] = observed
                 if furthest is None:
                     furthest = observed.first
