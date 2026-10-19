@@ -2439,7 +2439,7 @@ def render_logs_states(shell, capture):
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
     panel = shell.logs_form
-    from dtflow.ui.logs_workspace import EMPTY_SESSION, NO_MATCHES
+    from dtflow.ui.logs_workspace import EMPTY_SESSION, ICON_GAP, NO_MATCHES
 
     shell.logs.model.replace([])
     shell.logs._set_empty(EMPTY_SESSION)
@@ -2505,6 +2505,7 @@ def render_logs_states(shell, capture):
     shell.logs._set_pending(True, 3, detail="3 new records match the current filters")
     panel.logsFollowButton.blockSignals(True)
     panel.logsFollowButton.setChecked(False)
+    panel.logsFollowButton.setText(ICON_GAP + "Follow: Off")
     panel.logsFollowButton.blockSignals(False)
     panel.logsOperationStatus.setText("Exported diagnostic-excerpt.csv (synthetic presentation)")
     capture("logs-05-paging")
@@ -2517,6 +2518,9 @@ def render_logs_states(shell, capture):
     shell.logs.model.replace(rows, [((("state", "fixture"),), 0)] * len(rows))
     shell.logs.model.set_sort_state("component", False)
     panel.logsSortNote.setText("Component · A → Z")
+    panel.logsCounter.setText("5 of 5 matching records · complete · page 1 · showing 5")
+    panel.logsPreviousButton.setEnabled(False)
+    panel.logsNextButton.setEnabled(False)
     capture("logs-10-component-sort")
     # One spinner frame of the Refresh icon during a page read; no reader runs offline.
     shell.logs.active, shell.logs._query_busy, shell.logs._spin_angle = True, True, 15
