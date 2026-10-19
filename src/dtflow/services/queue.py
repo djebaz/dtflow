@@ -12,7 +12,6 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -22,6 +21,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.tasks import settle
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
@@ -100,7 +100,8 @@ class QueueDispatcher:
             await self.store.record_queue_event(queue_id, kind, detail, at_utc=at_utc)
         except Exception as exc:
             diagnostic_event(
-                log, "queue.event_evidence_not_recorded",
+                log,
+                "queue.event_evidence_not_recorded",
                 level=logging.WARNING,
                 data={
                     "kind": kind,
@@ -186,7 +187,8 @@ class QueueDispatcher:
             except PersistenceError:
                 # The state store itself failed: leave the durable reservation for the next owner's reconciliation.
                 diagnostic_event(
-                    log, "queue.settlement_unavailable",
+                    log,
+                    "queue.settlement_unavailable",
                     level=logging.ERROR,
                     data={
                         "item_id": item_id,
@@ -206,7 +208,8 @@ class QueueDispatcher:
             if self.on_settle is not None:
                 self.on_settle(item_id, state)
             diagnostic_event(
-                log, "queue.item_settled",
+                log,
+                "queue.item_settled",
                 level=logging.INFO,
                 data={
                     "item_id": item_id,

@@ -31,13 +31,15 @@ _PRIVATE_KEY = re.compile(
 _PATTERNS = (
     (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+"), "Bearer [redacted]"),
     (
-        re.compile(r'''(?i)\b(authorization|api[_-]?key|token|secret|password|shared[_-]?secret)(["']?\s*[:=]\s*)\S+'''),
+        re.compile(
+            r"""(?i)\b(authorization|api[_-]?key|token|secret|password|shared[_-]?secret)(["']?\s*[:=]\s*)\S+"""
+        ),
         r"\1\2[redacted]",
     ),
     (re.compile(r"(?i)\b(?:positive[_ ]?|negative[_ ]?)?prompt\s*[:=].*"), "prompt=[redacted]"),
     (re.compile(r"[A-Za-z0-9+/=_-]{200,}"), "[redacted-payload]"),
-    (re.compile(r'''(?:[A-Za-z]:[\\/]|\\\\)[^\s"'<>]+|(?<![\w:])/(?:[^\s/"'<>]+/)+[^\s"'<>]*'''), "[redacted-path]"),
-    (re.compile(r'''(?<!\w)(?:[^\s"'<>:\\/]+[\\/])+[^\s"'<>:]+'''), "[redacted-path]"),
+    (re.compile(r"""(?:[A-Za-z]:[\\/]|\\\\)[^\s"'<>]+|(?<![\w:])/(?:[^\s/"'<>]+/)+[^\s"'<>]*"""), "[redacted-path]"),
+    (re.compile(r"""(?<!\w)(?:[^\s"'<>:\\/]+[\\/])+[^\s"'<>:]+"""), "[redacted-path]"),
 )
 
 
@@ -224,8 +226,12 @@ def validate_record(record: dict, *, persisted: bool = True) -> None:
         raise CaptureRejected("unsupported_value")
     required = {"v", "ts", "level", "component", "event"} | ({"seq"} if persisted else set())
     allowed = required | {"seq", "kind", "msg", "data", "mono_ns", "ctx", "error", "agg"}
-    if (not required <= record.keys() or not record.keys() <= allowed
-            or type(record["v"]) is not int or record["v"] != RECORD_VERSION):
+    if (
+        not required <= record.keys()
+        or not record.keys() <= allowed
+        or type(record["v"]) is not int
+        or record["v"] != RECORD_VERSION
+    ):
         raise CaptureRejected("unsupported_value")
     if persisted and (type(record["seq"]) is not int or record["seq"] < 1):
         raise CaptureRejected("unsupported_value")
@@ -243,7 +249,17 @@ def validate_record(record: dict, *, persisted: bool = True) -> None:
         raise CaptureRejected("unsupported_value")
     if type(record.get("data", {})) is not dict or type(record.get("ctx", {})) is not dict:
         raise CaptureRejected("unsupported_value")
-    for key in ("backend", "job_id", "attempt_id", "operation_id", "queue_id", "item_id", "benchmark_run_id", "trial_id", "action_id"):
+    for key in (
+        "backend",
+        "job_id",
+        "attempt_id",
+        "operation_id",
+        "queue_id",
+        "item_id",
+        "benchmark_run_id",
+        "trial_id",
+        "action_id",
+    ):
         if key in record.get("ctx", {}) and type(record["ctx"][key]) is not str:
             raise CaptureRejected("unsupported_value")
     if "mono_ns" in record and (type(record["mono_ns"]) is not int or record["mono_ns"] < 0):
@@ -255,46 +271,96 @@ def validate_record(record: dict, *, persisted: bool = True) -> None:
     name = record["event"]
     data = record.get("data", {})
     fields = {
-        "gallery.gui_gap": {"elapsed_ms": (int, float), "mode": (str,), "mounted": (int,),
-                            "query_busy": (bool,), "preparation_busy": (bool,)},
-        "gallery.query_done": {"elapsed_ms": (int, float), "returned": (int,), "source": (str,),
-                               "error": (str, type(None))},
+        "gallery.gui_gap": {
+            "elapsed_ms": (int, float),
+            "mode": (str,),
+            "mounted": (int,),
+            "query_busy": (bool,),
+            "preparation_busy": (bool,),
+        },
+        "gallery.query_done": {
+            "elapsed_ms": (int, float),
+            "returned": (int,),
+            "source": (str,),
+            "error": (str, type(None)),
+        },
         "gallery.scroll_intent": {"direction": (str,), "source": (str,), "offset": (int,), "mounted": (int,)},
     }.get(name, {})
     controls = {
-        "session.started": {"session_id": (str,), "version": (str,), "source_commit": (str,),
-                            "build_state": (str,), "runtime": (str,), "platform": (str,), "dev": (bool,),
-                            "instrumentation_version": (str,), "schema_version": (int,),
-                            "queue_max_records": (int,), "queue_max_bytes": (int,), "max_record_bytes": (int,),
-                            "aggregation_policy": (str,)},
-        "session.closed": {key: (int,) for key in ("observed", "admitted", "rejected", "dropped", "written_records",
-                          "aggregate_source_samples", "writer_failures", "serialization_failures")},
+        "session.started": {
+            "session_id": (str,),
+            "version": (str,),
+            "source_commit": (str,),
+            "build_state": (str,),
+            "runtime": (str,),
+            "platform": (str,),
+            "dev": (bool,),
+            "instrumentation_version": (str,),
+            "schema_version": (int,),
+            "queue_max_records": (int,),
+            "queue_max_bytes": (int,),
+            "max_record_bytes": (int,),
+            "aggregation_policy": (str,),
+        },
+        "session.closed": {
+            key: (int,)
+            for key in (
+                "observed",
+                "admitted",
+                "rejected",
+                "dropped",
+                "written_records",
+                "aggregate_source_samples",
+                "writer_failures",
+                "serialization_failures",
+            )
+        },
         "diagnostics.loss": {"reason": (str,), "count": (int,), "affects_measurements": (bool,)},
-        "diagnostics.record_rejected": {"original_event": (str,), "reason": (str,), "limit_bytes": (int,),
-                                        "original_content_available": (bool,)},
+        "diagnostics.record_rejected": {
+            "original_event": (str,),
+            "reason": (str,),
+            "limit_bytes": (int,),
+            "original_content_available": (bool,),
+        },
     }.get(name, {})
     for key, types in controls.items():
         if key not in data or type(data[key]) not in types or (type(data[key]) is int and data[key] < 0):
             raise CaptureRejected("unsupported_value")
     if controls and record.get("kind", "event") != "event":
         raise CaptureRejected("unsupported_value")
-    if name == "session.started" and (not SESSION_NAME.fullmatch(data["session_id"])
-            or data["schema_version"] != RECORD_VERSION or data["build_state"] not in ("clean", "dirty", "unknown")):
+    if name == "session.started" and (
+        not SESSION_NAME.fullmatch(data["session_id"])
+        or data["schema_version"] != RECORD_VERSION
+        or data["build_state"] not in ("clean", "dirty", "unknown")
+    ):
         raise CaptureRejected("unsupported_value")
     if name == "diagnostics.record_rejected" and data["original_content_available"] is not False:
         raise CaptureRejected("unsupported_value")
     if name == "diagnostics.record_rejected" and data["reason"] not in {
-        "record_too_large", "capture_too_large", "unsupported_value", "serialization_error", "other",
+        "record_too_large",
+        "capture_too_large",
+        "unsupported_value",
+        "serialization_error",
+        "other",
     }:
         raise CaptureRejected("unsupported_value")
     if name == "diagnostics.loss" and data["reason"] not in {
-        "queue_records", "queue_bytes", "capture_limit", "writer_error", "serialization_error", "shutdown_timeout", "other",
+        "queue_records",
+        "queue_bytes",
+        "capture_limit",
+        "writer_error",
+        "serialization_error",
+        "shutdown_timeout",
+        "other",
     }:
         raise CaptureRejected("unsupported_value")
     if "error" in record:
         error = record["error"]
-        if (type(error) is not dict or set(error) != {"type", "message", "traceback"}
-                or any(type(value) is not str for value in error.values())):
+        if (
+            type(error) is not dict
+            or set(error) != {"type", "message", "traceback"}
+            or any(type(value) is not str for value in error.values())
+        ):
             raise CaptureRejected("unsupported_value")
     for key, types in fields.items():
         if key not in data or type(data[key]) not in types:
@@ -309,13 +375,20 @@ def validate_record(record: dict, *, persisted: bool = True) -> None:
         raise CaptureRejected("unsupported_value")
     if record.get("kind") == "aggregate":
         agg = record.get("agg", {})
-        if (type(agg) is not dict or not {"samples", "window_start", "window_end", "metrics"} <= agg.keys()
-                or not agg["metrics"] or type(agg["samples"]) is not int or agg["samples"] < 1):
+        if (
+            type(agg) is not dict
+            or not {"samples", "window_start", "window_end", "metrics"} <= agg.keys()
+            or not agg["metrics"]
+            or type(agg["samples"]) is not int
+            or agg["samples"] < 1
+        ):
             raise CaptureRejected("unsupported_value")
         if not agg.keys() <= {"samples", "window_start", "window_end", "metrics", "dimensions"}:
             raise CaptureRejected("unsupported_value")
         dimensions = agg.get("dimensions", {})
-        if type(dimensions) is not dict or any(type(value) not in (str, int, float, bool) for value in dimensions.values()):
+        if type(dimensions) is not dict or any(
+            type(value) not in (str, int, float, bool) for value in dimensions.values()
+        ):
             raise CaptureRejected("unsupported_value")
         bounds = []
         for stamp in (agg["window_start"], agg["window_end"]):
@@ -335,7 +408,13 @@ def validate_record(record: dict, *, persisted: bool = True) -> None:
         for key, metric in agg["metrics"].items():
             if not re.fullmatch(r"[a-z][a-z0-9_]*", key) or type(metric) is not dict:
                 raise CaptureRejected("unsupported_value")
-            if not {"count", "mean", "max", "total"} <= metric.keys() or not metric.keys() <= {"count", "mean", "max", "total", "p95"}:
+            if not {"count", "mean", "max", "total"} <= metric.keys() or not metric.keys() <= {
+                "count",
+                "mean",
+                "max",
+                "total",
+                "p95",
+            }:
                 raise CaptureRejected("unsupported_value")
             if type(metric["count"]) is not int or metric["count"] < 1:
                 raise CaptureRejected("unsupported_value")

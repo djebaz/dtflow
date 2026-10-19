@@ -10,10 +10,10 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QObject, Qt, Signal, Slot
 from PySide6.QtWidgets import QFileDialog, QWidget
 
-from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.export import ExportOptions
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import ValidationError
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.export_preferences import load_export_preferences, save_export_preferences
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
 from dtflow.services.image_export import export_outputs
@@ -212,7 +212,8 @@ class ImageExportPanel(QObject):
         self.cache_changed.emit()
         if failure:
             diagnostic_event(
-                log, "images.export.stopped",
+                log,
+                "images.export.stopped",
                 level=logging.WARNING,
                 data={
                     "reason": type(failure).__name__,
@@ -245,7 +246,8 @@ class ImageExportPanel(QObject):
             self._exported_folder = Path(result.destination)
             self.form.imageExportOpenButton.setEnabled(True)
         diagnostic_event(
-            log, "images.export.completed",
+            log,
+            "images.export.completed",
             level=logging.INFO,
             data={
                 "exported": result.exported,

@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.model_profiles import community_model_ids
 from dtflow.core.models import InventorySnapshot
+from dtflow.diagnostics import event as diagnostic_event
 
 log = logging.getLogger(__name__)
 
@@ -105,7 +105,8 @@ def _records(path: Path) -> list[dict]:
         return []
     except (OSError, ValueError) as exc:
         diagnostic_event(
-            log, "catalogue.ignored",
+            log,
+            "catalogue.ignored",
             level=logging.WARNING,
             data={
                 "reason": type(exc).__name__,
@@ -114,10 +115,11 @@ def _records(path: Path) -> list[dict]:
         return []
     if not isinstance(document, list):
         diagnostic_event(
-            log, "catalogue.ignored",
+            log,
+            "catalogue.ignored",
             level=logging.WARNING,
             data={
-                "reason": 'shape',
+                "reason": "shape",
             },
         )
         return []

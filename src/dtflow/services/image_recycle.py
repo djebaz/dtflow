@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.gallery import GalleryQuery
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
 from dtflow.persistence import thumbnail_cache, windows_original
@@ -452,11 +452,12 @@ def prepare_recycle(
     if permanent:
         if Path(state).absolute() != Path(state).resolve():
             diagnostic_event(
-                log, "images.recycle.preflight_refused",
+                log,
+                "images.recycle.preflight_refused",
                 level=logging.DEBUG,
                 data={
                     "action": action,
-                    "stage": 'state_redirected',
+                    "stage": "state_redirected",
                 },
             )
             raise RecycleUnavailable("Redirected application state is ineligible.", stage="state_redirected")
@@ -531,7 +532,8 @@ def prepare_recycle(
         tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique), action, tuple(absent_targets)
     )
     diagnostic_event(
-        log, "images.recycle.preflight",
+        log,
+        "images.recycle.preflight",
         level=logging.DEBUG,
         data={
             "action": action,
@@ -592,7 +594,8 @@ def _permanent_remove(state: Path, target: RecycleTarget) -> None:
 def _refused(identity: str, stage: str) -> None:
     """A confirmed image refused by its fresh execution checks; nothing was changed."""
     diagnostic_event(
-        log, "images.recycle.item_refused",
+        log,
+        "images.recycle.item_refused",
         level=logging.DEBUG,
         data={
             "stage": stage,
@@ -655,7 +658,8 @@ def _dispose(
         # Stable output identities and sanitized adapter stages
         # are safe; do not log full paths or raw OS exceptions.
         diagnostic_event(
-            log, "images.recycle.image_recycle",
+            log,
+            "images.recycle.image_recycle",
             level=logging.WARNING,
             data={
                 "outcome": state_value,
@@ -705,7 +709,8 @@ def recycle_outputs(
         # Requested counts are physical files, matching the per-file outcomes that complete them.
         ledger.start_operation(state, operation_id, len(targets) + plan.raw_count)
         diagnostic_event(
-            log, "images.recycle.started",
+            log,
+            "images.recycle.started",
             level=logging.DEBUG,
             data={
                 "operation": operation_id,
@@ -802,7 +807,8 @@ def recycle_outputs(
     # Cached previews of removed (or possibly removed) outputs go with them; best effort.
     forgotten = thumbnail_cache.forget(state, (*recycled, *deleted, *uncertain, *absent))
     diagnostic_event(
-        log, "images.recycle.thumbnail_entries_removed",
+        log,
+        "images.recycle.thumbnail_entries_removed",
         level=logging.DEBUG,
         data={
             "removed": forgotten,
@@ -810,11 +816,12 @@ def recycle_outputs(
     )
     # One line per operation in normal mode; per-item detail stays in warnings and -x.
     diagnostic_event(
-        log, "images.recycle.finished",
+        log,
+        "images.recycle.finished",
         level=logging.INFO,
         data={
             "operation": operation_id,
-            "outcome": 'canceled' if canceled else 'complete',
+            "outcome": "canceled" if canceled else "complete",
             "removed": len(recycled) + len(deleted),
             "raw": len(raw_disposed),
             "absent": len(absent),

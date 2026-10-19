@@ -24,9 +24,9 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.gallery_limits import add_arguments as add_gallery_limit_arguments
 from dtflow.gallery_limits import resolve as resolve_gallery_limits
-from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.queues import post_control, read_queues
@@ -634,7 +634,8 @@ async def run(args: argparse.Namespace) -> int:
     selection = selection_for(args.backend, args.endpoint, args.state, scenario=getattr(args, "scenario", "success"))
     async with open_session(selection, args.state, output=getattr(args, "out", None), timeouts=policy) as service:
         diagnostic_event(
-            log, "cli.command",
+            log,
+            "cli.command",
             level=logging.INFO,
             data={
                 "command": args.command,
@@ -706,26 +707,27 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(run(args))
     except (KeyboardInterrupt, asyncio.CancelledError):
         diagnostic_event(
-            log, "cli.interrupted_locally",
+            log,
+            "cli.interrupted_locally",
             level=logging.WARNING,
-            data={
-            },
+            data={},
         )
         print("Local waiting interrupted. Inspect durable attempts; do not replay unknown outcomes.", file=sys.stderr)
         return EXIT_INTERRUPTED
     except ValidationError as exc:
         diagnostic_event(
-            log, "cli.invalid_request",
+            log,
+            "cli.invalid_request",
             level=logging.ERROR,
-            data={
-            },
+            data={},
         )
         print(f"Invalid request: {exc}", file=sys.stderr)
         return EXIT_INVALID
     except BackendError as exc:
         failure = exc.failure
         diagnostic_event(
-            log, "cli.backend_failure",
+            log,
+            "cli.backend_failure",
             level=logging.ERROR,
             data={
                 "code": failure.code,
@@ -752,7 +754,8 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_FAILED
     except (PersistenceError, OSError, TimeoutError) as exc:
         diagnostic_event(
-            log, "cli.local_failure",
+            log,
+            "cli.local_failure",
             level=logging.ERROR,
             data={
                 "reason": type(exc).__name__,

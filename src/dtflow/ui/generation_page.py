@@ -531,7 +531,8 @@ class GenerationPage:
             self._provider = name
             self._apply_provider_form(self._forms.get(name, {}))
             diagnostic_event(
-                log, "generation.provider_switched",
+                log,
+                "generation.provider_switched",
                 level=logging.INFO,
                 data={
                     "provider": name,
@@ -572,7 +573,8 @@ class GenerationPage:
         page.widthSpinBox.setValue(new[0])
         page.heightSpinBox.setValue(new[1])
         diagnostic_event(
-            log, "generation.size_adjusted",
+            log,
+            "generation.size_adjusted",
             level=logging.INFO,
             data={
                 "old_width_px": old[0],
@@ -685,7 +687,8 @@ class GenerationPage:
     def _set_busy(self, busy: bool) -> None:
         if busy != self._busy:
             diagnostic_event(
-                log, "generation.page_state",
+                log,
+                "generation.page_state",
                 level=logging.DEBUG,
                 data={
                     "busy": busy,
@@ -807,15 +810,17 @@ class GenerationPage:
         except FormError as exc:
             self._mark(exc.widget)
             diagnostic_event(
-                log, "generation.rejected",
+                log,
+                "generation.rejected",
                 level=logging.INFO,
                 data={
                     "backend": name,
-                    "field": exc.widget or '-',
+                    "field": exc.widget or "-",
                 },
             )
             diagnostic_event(
-                log, "generation.validation_failed",
+                log,
+                "generation.validation_failed",
                 level=logging.DEBUG,
                 data={
                     "reason": type(exc).__name__,
@@ -829,15 +834,17 @@ class GenerationPage:
         self._reuse_source_identity = None
         self._request = request
         diagnostic_event(
-            log, "generation.submitted",
+            log,
+            "generation.submitted",
             level=logging.INFO,
             data={
                 "backend": name,
-                "operation": 'inpaint' if edit else 'txt2img',
+                "operation": "inpaint" if edit else "txt2img",
             },
         )
         diagnostic_event(
-            log, "generation.request_validated",
+            log,
+            "generation.request_validated",
             level=logging.DEBUG,
             data={
                 "model_id": request.model_id,
@@ -962,7 +969,8 @@ class GenerationPage:
         self._set_busy(False)
         if failure is not None:
             diagnostic_event(
-                log, "generation.failed",
+                log,
+                "generation.failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(failure).__name__,
@@ -975,7 +983,8 @@ class GenerationPage:
                 self._show_failure_details(failure)
             return
         diagnostic_event(
-            log, "generation.outputs_saved",
+            log,
+            "generation.outputs_saved",
             level=logging.INFO,
             data={
                 "backend": outcome.backend_id,
@@ -1025,11 +1034,12 @@ class GenerationPage:
                 continue
             reasons = ", ".join(result["reasons"]) or "none"
             diagnostic_event(
-                log, "generation.image_quality",
+                log,
+                "generation.image_quality",
                 level=logging.DEBUG,
                 data={
                     "output": index,
-                    "label": result['label'],
+                    "label": result["label"],
                     "signals": reasons,
                 },
             )
@@ -1142,7 +1152,8 @@ class GenerationPage:
         self._inventory_error = ""
         self._write_inventory_stats()
         diagnostic_event(
-            log, "generation.inventory_refresh_requested",
+            log,
+            "generation.inventory_refresh_requested",
             level=logging.INFO,
             data={
                 "backend": name,
@@ -1385,7 +1396,8 @@ class GenerationPage:
         if failure is not None:
             shown = present_generation_failure(failure)
             diagnostic_event(
-                log, "generation.inventory_refresh_failed",
+                log,
+                "generation.inventory_refresh_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(failure).__name__,
@@ -1595,7 +1607,8 @@ class GenerationPage:
         combo.clear()
         if failure is not None:
             diagnostic_event(
-                log, "generation.configuration_scan_failed",
+                log,
+                "generation.configuration_scan_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(failure).__name__,
@@ -1606,7 +1619,8 @@ class GenerationPage:
         paths, presets, preset_failure = result
         if preset_failure is not None:
             diagnostic_event(
-                log, "generation.preset_scan_failed",
+                log,
+                "generation.preset_scan_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(preset_failure).__name__,

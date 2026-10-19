@@ -28,8 +28,14 @@ from dtflow._diagnostic_writer import Admission, CaptureHandler, DiagnosticListe
 from dtflow.diagnostics import ATTEMPT
 
 __all__ = [
-    "ATTEMPT", "SECRET_ENVIRONMENT", "LogSession", "LoggingSetupError", "configure_logging",
-    "default_directory", "dev_enabled", "sanitize",
+    "ATTEMPT",
+    "SECRET_ENVIRONMENT",
+    "LogSession",
+    "LoggingSetupError",
+    "configure_logging",
+    "default_directory",
+    "dev_enabled",
+    "sanitize",
 ]
 LOGGER = "dtflow"
 MAX_BYTES = 1_000_000
@@ -87,7 +93,7 @@ def _prune(directory: Path, keep: str) -> None:
         group["time"] = max(group["time"], info.st_mtime_ns)
         group["paths"].append(path)
     sessions = sorted(groups.values(), key=lambda group: group["time"], reverse=True)
-    for stale in sessions[RETAINED_SESSIONS - 1:]:
+    for stale in sessions[RETAINED_SESSIONS - 1 :]:
         for path in stale["paths"]:
             path.unlink(missing_ok=True)
 
@@ -105,8 +111,9 @@ def configure_logging(
     if not _CONFIGURATION.acquire(blocking=False):
         raise LoggingSetupError("Diagnostic configuration is already in progress.")
     try:
-        return _configure_logging(directory=directory, dev=dev, build=build, backend=backend,
-                                  session=session, report_error=report_error)
+        return _configure_logging(
+            directory=directory, dev=dev, build=build, backend=backend, session=session, report_error=report_error
+        )
     finally:
         _CONFIGURATION.release()
 
@@ -138,16 +145,25 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
     build = build or {}
     status = build.get("source_status", "unknown")
     startup = {
-        "session_id": session, "version": sanitize(build.get("version", "unknown")),
+        "session_id": session,
+        "version": sanitize(build.get("version", "unknown")),
         "source_commit": sanitize(build.get("source_commit", "unknown")),
         "build_state": status if status in ("clean", "dirty") else "unknown",
-        "source_status": sanitize(status), "runtime": f"Python {sys.version_info.major}.{sys.version_info.minor}",
-        "platform": sys.platform, "dev": dev,
-        "instrumentation_version": INSTRUMENTATION_VERSION, "schema_version": 1,
-        "queue_max_records": QUEUE_RECORDS, "queue_max_bytes": QUEUE_BYTES,
-        "max_record_bytes": MAX_RECORD_BYTES, "aggregation_policy": AGGREGATION_POLICY,
-        "aggregation_max_groups": 64, "aggregation_max_samples": 64, "aggregation_window_s": 10,
-        "capture_max_depth": 16, "capture_max_nodes": 4096,
+        "source_status": sanitize(status),
+        "runtime": f"Python {sys.version_info.major}.{sys.version_info.minor}",
+        "platform": sys.platform,
+        "dev": dev,
+        "instrumentation_version": INSTRUMENTATION_VERSION,
+        "schema_version": 1,
+        "queue_max_records": QUEUE_RECORDS,
+        "queue_max_bytes": QUEUE_BYTES,
+        "max_record_bytes": MAX_RECORD_BYTES,
+        "aggregation_policy": AGGREGATION_POLICY,
+        "aggregation_max_groups": 64,
+        "aggregation_max_samples": 64,
+        "aggregation_window_s": 10,
+        "capture_max_depth": 16,
+        "capture_max_nodes": 4096,
         "numeric_policy": "native-observations-legacy1dp-listener-statistics-v1",
     }
     if "source_modified" in build:

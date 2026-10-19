@@ -7,6 +7,7 @@ from time import monotonic
 from PySide6.QtCore import QObject, QTimer
 
 from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 
 
@@ -92,7 +93,8 @@ class GalleryPreparation(QObject):
             done = self._done
             self.cancel()
             diagnostic_event(
-                log, "gallery.preparation_failed",
+                log,
+                "gallery.preparation_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(exc).__name__,

@@ -9,7 +9,8 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from dtflow import startup
-from dtflow.diagnostics import event as diagnostic_event, measurement
+from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import measurement
 from dtflow.persistence import thumbnail_cache
 from dtflow.persistence.gallery_snapshot import configure, finish_at_close
 from dtflow.ui.brand import app_icon
@@ -64,6 +65,10 @@ def _preload_drawthings() -> None:
     try:
         import dtflow.backends.drawthings.backend  # noqa: F401
     except Exception:  # pragma: no cover - the real use reports the failure with context
-        diagnostic_event(logging.getLogger("dtflow.startup"), "app.provider_preload_failed", level=logging.DEBUG, exc_info=True)
+        diagnostic_event(
+            logging.getLogger("dtflow.startup"), "app.provider_preload_failed", level=logging.DEBUG, exc_info=True
+        )
         return
-    measurement(logging.getLogger("dtflow.startup"), "app.provider_preloaded", elapsed_ms=(time.perf_counter() - started) * 1000)
+    measurement(
+        logging.getLogger("dtflow.startup"), "app.provider_preloaded", elapsed_ms=(time.perf_counter() - started) * 1000
+    )

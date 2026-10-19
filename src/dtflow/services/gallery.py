@@ -155,7 +155,8 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
         )
         if dev_enabled():
             measurement(
-                log, "gallery.query_worker",
+                log,
+                "gallery.query_worker",
                 sql_wall_ms=sql_wall_ms,
                 sql_cpu_ms=sql_cpu_ms,
                 build_wall_ms=(monotonic() - build_started) * 1000,

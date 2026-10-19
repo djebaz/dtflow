@@ -26,7 +26,8 @@ from dtflow.core.models import (
 )
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
-from dtflow.diagnostics import ATTEMPT, event as diagnostic_event
+from dtflow.diagnostics import ATTEMPT
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.original_io import (
     OriginalImagesBusyError,
     OriginalImagesUnavailableError,
@@ -213,7 +214,8 @@ class GenerationService:
         ATTEMPT.set(attempt_id)
         await self.store.create(attempt_id, caps.backend_id, request)
         diagnostic_event(
-            log, "generation.attempt_prepared",
+            log,
+            "generation.attempt_prepared",
             level=logging.INFO,
             data={
                 "backend": caps.backend_id,
@@ -307,7 +309,8 @@ class GenerationService:
                 attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
             )
             diagnostic_event(
-                log, "generation.attempt_succeeded",
+                log,
+                "generation.attempt_succeeded",
                 level=logging.INFO,
                 data={
                     "outputs": len(paths),
@@ -323,7 +326,8 @@ class GenerationService:
             )
         except asyncio.CancelledError:
             diagnostic_event(
-                log, "generation.attempt_interrupted",
+                log,
+                "generation.attempt_interrupted",
                 level=logging.WARNING,
                 data={
                     "stage": stage,
@@ -367,7 +371,8 @@ class GenerationService:
         except BackendError as exc:
             failure = exc.failure
             diagnostic_event(
-                log, "generation.attempt_failed",
+                log,
+                "generation.attempt_failed",
                 level=logging.ERROR,
                 data={
                     "code": failure.code,

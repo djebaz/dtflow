@@ -405,15 +405,25 @@ class DrawThingsBackend:
                     )
                 if spec:
                     diagnostic_event(
-                        log, "backend.model_description_selected", level=logging.DEBUG,
-                        data={"model_id": request.model_id, "advertised": request.model_id in self._model_specs,
-                              "field_count": len(spec)},
+                        log,
+                        "backend.model_description_selected",
+                        level=logging.DEBUG,
+                        data={
+                            "model_id": request.model_id,
+                            "advertised": request.model_id in self._model_specs,
+                            "field_count": len(spec),
+                        },
                     )
                 if request.loras:
                     diagnostic_event(
-                        log, "backend.loras_selected", level=logging.DEBUG,
-                        data={"lora_count": len(request.loras), "base_version": base_version,
-                              "prepared_count": len(request.prepared_assets)},
+                        log,
+                        "backend.loras_selected",
+                        level=logging.DEBUG,
+                        data={
+                            "lora_count": len(request.loras),
+                            "base_version": base_version,
+                            "prepared_count": len(request.prepared_assets),
+                        },
                     )
                 emit("preparing", stage="wire_validated")
                 async with self._lane:
@@ -470,7 +480,9 @@ class DrawThingsBackend:
                             items = getattr(stream, label, None)
                             if items:
                                 diagnostic_event(
-                                    log, "backend.grpc_metadata_observed", level=logging.DEBUG,
+                                    log,
+                                    "backend.grpc_metadata_observed",
+                                    level=logging.DEBUG,
                                     data={"stage": label, "observed": True},
                                 )
                     stage = SubmissionStage.TERMINAL_OBSERVED
@@ -632,7 +644,9 @@ class DrawThingsBackend:
             item["file"]: item for item in items if isinstance(item, dict) and isinstance(item.get("file"), str)
         }
         diagnostic_event(
-            log, "backend.model_descriptions_observed", level=logging.DEBUG,
+            log,
+            "backend.model_descriptions_observed",
+            level=logging.DEBUG,
             data={"model_count": len(self._model_specs)},
         )
 

@@ -17,6 +17,7 @@ SCHEMA_VERSION = 1
 FILENAME = "last_session.json"
 
 from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 
 
@@ -29,19 +30,21 @@ def load_last_session(state: Path) -> dict | None:
         return None
     except (OSError, ValueError):
         diagnostic_event(
-            log, "app.session.ignored",
+            log,
+            "app.session.ignored",
             level=logging.WARNING,
             data={
-                "reason": 'unreadable',
+                "reason": "unreadable",
             },
         )
         return None
     if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
         diagnostic_event(
-            log, "app.session.ignored",
+            log,
+            "app.session.ignored",
             level=logging.WARNING,
             data={
-                "reason": 'schema',
+                "reason": "schema",
             },
         )
         return None

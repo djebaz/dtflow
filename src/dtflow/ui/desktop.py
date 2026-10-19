@@ -73,16 +73,17 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
         return run_gui(no_cache=args.no_cache)
     except KeyboardInterrupt:
         diagnostic_event(
-            log, "app.desktop_interrupted_locally",
+            log,
+            "app.desktop_interrupted_locally",
             level=logging.WARNING,
-            data={
-            },
+            data={},
         )
         return 130
     except Exception as exc:
         # Keep exception contents (potentially credentials or request data) out of dialogs.
         diagnostic_event(
-            log, "app.desktop_failed",
+            log,
+            "app.desktop_failed",
             level=logging.ERROR,
             data={
                 "type": type(exc).__name__,

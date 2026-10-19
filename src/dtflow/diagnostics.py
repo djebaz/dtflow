@@ -65,13 +65,26 @@ def source_summary(logger: logging.Logger, phase: str, stats: dict) -> None:
         source_timestamp=stats["window_end"],
         source_mono_ns=stats["last_mono_ns"],
         data={
-            "phase": phase, "samples": count, "items": stats["items"],
-            "wall_total_ms": stats["total"], "wall_avg_ms": stats["total"] / count,
-            "wall_max_ms": stats["maximum"], "cpu_total_ms": stats["cpu"], "failures": stats["failures"],
+            "phase": phase,
+            "samples": count,
+            "items": stats["items"],
+            "wall_total_ms": stats["total"],
+            "wall_avg_ms": stats["total"] / count,
+            "wall_max_ms": stats["maximum"],
+            "cpu_total_ms": stats["cpu"],
+            "failures": stats["failures"],
         },
         aggregation={
-            "samples": count, "window_start": stats["window_start"], "window_end": stats["window_end"],
-            "metrics": {"wall_ms": {"count": count, "mean": stats["total"] / count,
-                                    "max": stats["maximum"], "total": stats["total"]}},
+            "samples": count,
+            "window_start": stats["window_start"],
+            "window_end": stats["window_end"],
+            "metrics": {
+                "wall_ms": {
+                    "count": count,
+                    "mean": stats["total"] / count,
+                    "max": stats["maximum"],
+                    "total": stats["total"],
+                }
+            },
         },
     )

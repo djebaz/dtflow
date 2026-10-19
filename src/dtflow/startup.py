@@ -33,7 +33,8 @@ def report(title: str) -> None:
         phase_timings.append({"phase": name, "elapsed_ms": (moment - previous) * 1000})
         previous = moment
     diagnostic_event(
-        log, "app.startup_timings",
+        log,
+        "app.startup_timings",
         level=logging.DEBUG,
         data={
             "title": title,

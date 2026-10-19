@@ -14,7 +14,6 @@ import os
 from pathlib import Path
 from typing import Protocol
 
-from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.models import (
     AssetBackend,
     AssetContent,
@@ -28,6 +27,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.tasks import settle
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.store import PersistenceError
 
@@ -108,11 +108,12 @@ class AssetService:
             if negotiation.status == "exists":
                 receipt = await self.registry.confirm(asset_id, operation, negotiation.reference, "already_exists")
                 diagnostic_event(
-                    log, "assets.prepared",
+                    log,
+                    "assets.prepared",
                     level=logging.INFO,
                     data={
                         "receipt": receipt.receipt_id,
-                        "source": 'already_exists',
+                        "source": "already_exists",
                     },
                 )
                 return receipt
@@ -169,10 +170,10 @@ class AssetService:
                 await settle(self._settle_unknown(asset_id, operation, "receipt_write_failed", True))
             except Exception:
                 diagnostic_event(
-                    log, "assets.receipt_write_failed",
+                    log,
+                    "assets.receipt_write_failed",
                     level=logging.ERROR,
-                    data={
-                    },
+                    data={},
                 )
             raise _failure(
                 ErrorCategory.PERSISTENCE,
@@ -181,11 +182,12 @@ class AssetService:
                 RemoteOutcome.SUCCEEDED,
             ) from None
         diagnostic_event(
-            log, "assets.prepared",
+            log,
+            "assets.prepared",
             level=logging.INFO,
             data={
                 "receipt": receipt.receipt_id,
-                "source": 'transfer',
+                "source": "transfer",
             },
         )
         return receipt

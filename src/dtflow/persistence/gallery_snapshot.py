@@ -182,17 +182,22 @@ def _close_summary(state, result, before=None, checked_stamp=None):
     with _stats_lock:
         stats = _session_stats.get(state, _PublicationStats())
         diagnostic_event(
-            log, "gallery.snapshot.app_close",
+            log,
+            "gallery.snapshot.app_close",
             level=logging.INFO,
             data={
                 "result": result,
                 "updated_before_close": bool(stats.publications if before is None else before),
-                "updated_on_close": result == 'saved',
+                "updated_on_close": result == "saved",
                 "session_publications": stats.publications,
-                "images_added_this_session": stats.added if stats.added is not None else 'unknown',
-                "images_removed_this_session": stats.removed if stats.removed is not None else 'unknown',
-                "last_updated": checked_stamp or stats.last_updated or 'unavailable',
-                "timestamp_source": 'checked_snapshot' if checked_stamp else 'last_known_session_publication' if stats.last_updated else 'unavailable',
+                "images_added_this_session": stats.added if stats.added is not None else "unknown",
+                "images_removed_this_session": stats.removed if stats.removed is not None else "unknown",
+                "last_updated": checked_stamp or stats.last_updated or "unavailable",
+                "timestamp_source": "checked_snapshot"
+                if checked_stamp
+                else "last_known_session_publication"
+                if stats.last_updated
+                else "unavailable",
             },
         )
 
@@ -254,13 +259,14 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                     if info[1] == signature:
                         result = "unchanged"
                         diagnostic_event(
-                            log, "gallery.snapshot.publication_skipped",
+                            log,
+                            "gallery.snapshot.publication_skipped",
                             level=logging.INFO,
                             data={
                                 "trigger": reason,
                                 "last_updated": checked_stamp,
                                 "elapsed_ms": (time.monotonic() - started) * 1000,
-                                "reason": 'unchanged',
+                                "reason": "unchanged",
                                 "images_added": 0,
                                 "images_removed": 0,
                             },
@@ -273,7 +279,8 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                 checked_stamp = None
                 baseline_known = False  # Rebuild, but do not invent deltas against an unreadable baseline.
                 diagnostic_event(
-                    log, "gallery.snapshot.baseline_unavailable_rebuilding",
+                    log,
+                    "gallery.snapshot.baseline_unavailable_rebuilding",
                     level=logging.INFO,
                     data={
                         "reason": type(exc).__name__,
@@ -317,7 +324,8 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                     baseline_known = False
                     checked_stamp = None
                     diagnostic_event(
-                        log, "gallery.snapshot.baseline_comparison_unavailable",
+                        log,
+                        "gallery.snapshot.baseline_comparison_unavailable",
                         level=logging.INFO,
                         data={
                             "reason": type(exc).__name__,
@@ -358,12 +366,13 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
             stats.removed = stats.removed + removed if stats.removed is not None and removed is not None else None
             stats.last_updated = published_utc
         diagnostic_event(
-            log, "gallery.snapshot.saved",
+            log,
+            "gallery.snapshot.saved",
             level=logging.INFO,
             data={
                 "trigger": reason,
-                "images_added": added if added is not None else 'unknown',
-                "images_removed": removed if removed is not None else 'unknown',
+                "images_added": added if added is not None else "unknown",
+                "images_removed": removed if removed is not None else "unknown",
                 "images_total": images,
                 "committed_attempts_total": count,
                 "last_updated": published_utc,
@@ -375,14 +384,15 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
         # Publication is advisory and must not change successful generation,
         # invoke retries, expose private paths or delete the previous snapshot.
         diagnostic_event(
-            log, "gallery.snapshot.not_published",
+            log,
+            "gallery.snapshot.not_published",
             level=logging.WARNING,
             data={
                 "trigger": reason,
                 "stage": stage,
                 "reason": type(exc).__name__,
-                "errno": getattr(exc, 'errno', None),
-                "winerror": getattr(exc, 'winerror', None),
+                "errno": getattr(exc, "errno", None),
+                "winerror": getattr(exc, "winerror", None),
             },
         )
         return False
@@ -396,10 +406,10 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                 temporary.unlink(missing_ok=True)
         except OSError:
             diagnostic_event(
-                log, "gallery.snapshot.scratch_cleanup_unavailable",
+                log,
+                "gallery.snapshot.scratch_cleanup_unavailable",
                 level=logging.DEBUG,
-                data={
-                },
+                data={},
             )
 
 
@@ -415,10 +425,10 @@ def schedule_publish(state: Path, *, reason="generation_session_end"):
             return _pool.submit(publish_if_changed, Path(state), reason=reason)
         except RuntimeError:
             diagnostic_event(
-                log, "gallery.snapshot.publication_worker_unavailable_during",
+                log,
+                "gallery.snapshot.publication_worker_unavailable_during",
                 level=logging.WARNING,
-                data={
-                },
+                data={},
             )
             return None
 
@@ -431,7 +441,8 @@ def finish_at_close(state: Path) -> None:
             future.result()
         except Exception as exc:
             diagnostic_event(
-                log, "gallery.snapshot.close_publication_unavailable",
+                log,
+                "gallery.snapshot.close_publication_unavailable",
                 level=logging.WARNING,
                 data={
                     "reason": type(exc).__name__,

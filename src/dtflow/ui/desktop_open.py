@@ -19,6 +19,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
 from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 
 WSLPATH_TIMEOUT = 5
@@ -58,7 +59,8 @@ def _validate_target(path: str, *, directory: bool) -> str | None:
         return f"the {kind} is inaccessible (permission denied)."
     except OSError as exc:
         diagnostic_event(
-            log, "app.desktop_open.target_unavailable",
+            log,
+            "app.desktop_open.target_unavailable",
             level=logging.WARNING,
             data={
                 "reason": type(exc).__name__,
@@ -80,19 +82,21 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
         launcher = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
     if wslpath is None:
         diagnostic_event(
-            log, "app.desktop_open.unavailable",
+            log,
+            "app.desktop_open.unavailable",
             level=logging.WARNING,
             data={
-                "reason": 'no-wslpath',
+                "reason": "no-wslpath",
             },
         )
         return "wslpath is unavailable in this WSL session."
     if launcher is None:
         diagnostic_event(
-            log, "app.desktop_open.unavailable",
+            log,
+            "app.desktop_open.unavailable",
             level=logging.WARNING,
             data={
-                "reason": 'no-explorer' if directory else 'no-powershell',
+                "reason": "no-explorer" if directory else "no-powershell",
             },
         )
         name = "Windows Explorer" if directory else "PowerShell (powershell.exe or pwsh.exe)"
@@ -108,7 +112,8 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
         diagnostic_event(
-            log, "app.desktop_open.path_translation_failed",
+            log,
+            "app.desktop_open.path_translation_failed",
             level=logging.WARNING,
             data={
                 "reason": type(exc).__name__,
@@ -140,16 +145,18 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
             )
         except subprocess.TimeoutExpired:
             diagnostic_event(
-                log, "app.desktop_open.association_unconfirmed",
+                log,
+                "app.desktop_open.association_unconfirmed",
                 level=logging.WARNING,
                 data={
-                    "reason": 'timeout',
+                    "reason": "timeout",
                 },
             )
             return "the Windows viewer hand-off could not be confirmed."
         except (OSError, subprocess.SubprocessError) as exc:
             diagnostic_event(
-                log, "app.desktop_open.association_failed",
+                log,
+                "app.desktop_open.association_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(exc).__name__,
@@ -168,7 +175,8 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
         )
     except OSError as exc:
         diagnostic_event(
-            log, "app.desktop_open.launch_failed",
+            log,
+            "app.desktop_open.launch_failed",
             level=logging.WARNING,
             data={
                 "reason": type(exc).__name__,
@@ -189,7 +197,8 @@ def open_local_path(path: str, *, runner, directory: bool, on_error) -> None:
     def done(reason, error):
         if error is not None:
             diagnostic_event(
-                log, "app.desktop_open.preparation_failed",
+                log,
+                "app.desktop_open.preparation_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(error).__name__,

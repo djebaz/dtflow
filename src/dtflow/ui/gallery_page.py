@@ -51,7 +51,8 @@ from dtflow import gallery_limits
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
-from dtflow.diagnostics import event as diagnostic_event, measurement, source_summary
+from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import measurement, source_summary
 from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import thumbnail_cache
@@ -210,7 +211,8 @@ def _image(
             held = monotonic() - leased
             if held >= 0.5:
                 diagnostic_event(
-                    log, "gallery.thumbnail_read_slow",
+                    log,
+                    "gallery.thumbnail_read_slow",
                     level=logging.DEBUG,
                     data={
                         "lease_wait_ms": (leased - requested) * 1000,
@@ -291,7 +293,8 @@ def configure_limits(*, batch: int | None = None, cards: int | None = None) -> N
     global PAGE_SIZE, MAX_MOUNTED_IMAGES
     PAGE_SIZE, MAX_MOUNTED_IMAGES = gallery_limits.resolve(batch, cards)
     diagnostic_event(
-        log, "gallery.limits",
+        log,
+        "gallery.limits",
         level=logging.INFO,
         data={
             "batch": PAGE_SIZE,
@@ -318,7 +321,8 @@ async def _extend_page(current: GalleryQuery, page: GalleryPage, read, target_co
         extension = await read(next_query)
         if dev_enabled():
             measurement(
-                log, "gallery.query_extension",
+                log,
+                "gallery.query_extension",
                 elapsed_ms=(monotonic() - extension_started) * 1000,
                 offset=next_query.offset,
                 returned=len(extension.items),
@@ -377,8 +381,17 @@ class _PerfBatchStats:
         observed_mono = monotonic_ns()
         with self._lock:
             stats = self._pending.setdefault(
-                phase, {"samples": 0, "items": 0, "total": 0.0, "maximum": 0.0, "cpu": 0.0, "failures": 0,
-                        "window_start": observed_at, "window_end": observed_at}
+                phase,
+                {
+                    "samples": 0,
+                    "items": 0,
+                    "total": 0.0,
+                    "maximum": 0.0,
+                    "cpu": 0.0,
+                    "failures": 0,
+                    "window_start": observed_at,
+                    "window_end": observed_at,
+                },
             )
             stats["window_start"] = min(stats["window_start"], observed_at)
             stats["window_end"] = max(stats["window_end"], observed_at)
@@ -594,7 +607,8 @@ class GalleryPage(QObject):
         if dev_enabled():
             screen = QApplication.primaryScreen()
             measurement(
-                log, "gallery.runtime",
+                log,
+                "gallery.runtime",
                 platform=sys.platform,
                 qt=qVersion(),
                 dpr=screen.devicePixelRatio() if screen is not None else 1.0,
@@ -1382,7 +1396,8 @@ class GalleryPage(QObject):
             self._perf_stats.observe("gui_gaps", gap_ms)
         if gap_ms >= 100:
             measurement(
-                log, "gallery.gui_gap",
+                log,
+                "gallery.gui_gap",
                 elapsed_ms=gap_ms,
                 mode=self.mode,
                 mounted=len(self.items),
@@ -1417,10 +1432,11 @@ class GalleryPage(QObject):
         if reasons:
             if dev_enabled():
                 measurement(
-                    log, "gallery.auto_refresh",
-                    reasons=','.join(reasons),
+                    log,
+                    "gallery.auto_refresh",
+                    reasons=",".join(reasons),
                     mounted=len(self.items),
-                    action='skipped',
+                    action="skipped",
                 )
             return
         # A snapshot/failure episode needs every live retry and its existing
@@ -1461,19 +1477,21 @@ class GalleryPage(QObject):
             self._auto_unchanged_polls += 1
             if dev_enabled() and self._auto_unchanged_polls % 6 == 0:
                 measurement(
-                    log, "gallery.auto_refresh",
+                    log,
+                    "gallery.auto_refresh",
                     checks=self._auto_unchanged_polls,
                     mounted=len(self.items),
-                    action='unchanged',
+                    action="unchanged",
                 )
             return
         if dev_enabled():
             measurement(
-                log, "gallery.auto_refresh",
-                reason='changed' if changed else 'periodic',
+                log,
+                "gallery.auto_refresh",
+                reason="changed" if changed else "periodic",
                 skipped_checks=self._auto_unchanged_polls,
                 mounted=len(self.items),
-                action='started',
+                action="started",
             )
         self._auto_unchanged_polls = 0
         self._auto_signature = signature if error is None else None
@@ -1596,7 +1614,8 @@ class GalleryPage(QObject):
         self._query_started = monotonic()
         if dev_enabled():
             measurement(
-                log, "gallery.query_start",
+                log,
+                "gallery.query_start",
                 offset=query.offset,
                 limit=query.limit,
                 target_count=target_count,
@@ -1627,7 +1646,8 @@ class GalleryPage(QObject):
                 position = await locate_output(self.state_dir, replace(current, offset=0), anchor)
                 if dev_enabled():
                     measurement(
-                        log, "gallery.query_locate",
+                        log,
+                        "gallery.query_locate",
                         elapsed_ms=(monotonic() - locate_started) * 1000,
                         found=position is not None,
                     )
@@ -1641,7 +1661,8 @@ class GalleryPage(QObject):
             page = await query_outputs(self.state_dir, current)
             if dev_enabled():
                 measurement(
-                    log, "gallery.query_read",
+                    log,
+                    "gallery.query_read",
                     elapsed_ms=(monotonic() - page_started) * 1000,
                     offset=current.offset,
                     returned=len(page.items),
@@ -1654,7 +1675,8 @@ class GalleryPage(QObject):
             choices = await filter_choices(self.state_dir)
             if dev_enabled():
                 measurement(
-                    log, "gallery.query_facets",
+                    log,
+                    "gallery.query_facets",
                     elapsed_ms=(monotonic() - facets_started) * 1000,
                 )
             return current, page, choices, anchor_found
@@ -1665,11 +1687,12 @@ class GalleryPage(QObject):
             except PersistenceError as live_error:
                 cause = live_error.__cause__ or live_error
                 diagnostic_event(
-                    log, "gallery.live_query_unavailable",
+                    log,
+                    "gallery.live_query_unavailable",
                     level=logging.DEBUG,
                     data={
                         "reason": type(cause).__name__,
-                        "sqlite_code": getattr(cause, 'sqlite_errorname', 'unavailable'),
+                        "sqlite_code": getattr(cause, "sqlite_errorname", "unavailable"),
                     },
                 )
                 try:
@@ -1695,7 +1718,8 @@ class GalleryPage(QObject):
         def delivered(result, error):
             if dev_enabled() and worker_finished[0] is not None:
                 measurement(
-                    log, "gallery.query_delivery",
+                    log,
+                    "gallery.query_delivery",
                     elapsed_ms=(monotonic() - worker_finished[0]) * 1000,
                     generation_current=generation == self._query_generation,
                 )
@@ -1709,10 +1733,11 @@ class GalleryPage(QObject):
         if dev_enabled():
             elapsed_ms = (monotonic() - self._query_started) * 1000
             measurement(
-                log, "gallery.query_done",
+                log,
+                "gallery.query_done",
                 elapsed_ms=elapsed_ms,
                 returned=len(result[1].items) if result is not None and error is None else 0,
-                source='snapshot' if result is not None and error is None and result[1].snapshot_at else 'live',
+                source="snapshot" if result is not None and error is None and result[1].snapshot_at else "live",
                 error=type(error).__name__ if error else None,
             )
         if error is None and result is not None and self._pending_refresh is None:
@@ -1750,10 +1775,10 @@ class GalleryPage(QObject):
             self._refresh_failing = False
             # Force a normal reconciliation, not first-render fixture teardown.
             diagnostic_event(
-                log, "gallery.refresh_recovered",
+                log,
+                "gallery.refresh_recovered",
                 level=logging.INFO,
-                data={
-                },
+                data={},
             )
 
         query, page, choices, anchor_found = result
@@ -1765,10 +1790,11 @@ class GalleryPage(QObject):
                 inline.dismiss()
             self._presented_item = None
             diagnostic_event(
-                log, "gallery.source_selected",
+                log,
+                "gallery.source_selected",
                 level=logging.INFO,
                 data={
-                    "source": 'snapshot' if page.snapshot_at else 'live',
+                    "source": "snapshot" if page.snapshot_at else "live",
                 },
             )
         if page.snapshot_at:
@@ -1853,7 +1879,8 @@ class GalleryPage(QObject):
         self._snapshot_warning_dismissed = False
         self._snapshot_live_since = None
         diagnostic_event(
-            log, "gallery.live_access_recovered",
+            log,
+            "gallery.live_access_recovered",
             level=logging.INFO,
             data={
                 "auto_refresh": self.auto_button.isChecked(),
@@ -2000,7 +2027,8 @@ class GalleryPage(QObject):
         self._prefetch_zone_hint = target
         if dev_enabled():
             measurement(
-                log, "gallery.page_jump",
+                log,
+                "gallery.page_jump",
                 page=page_number,
                 target_offset=target,
                 mounted_start=self.offset,
@@ -2114,8 +2142,9 @@ class GalleryPage(QObject):
                     continue
             if dev_enabled():
                 measurement(
-                    log, "gallery.neighbor_prefetch",
-                    direction='forward' if direction > 0 else 'backward',
+                    log,
+                    "gallery.neighbor_prefetch",
+                    direction="forward" if direction > 0 else "backward",
                     ahead=room[1],
                     behind=room[-1],
                     need=need,
@@ -2143,11 +2172,12 @@ class GalleryPage(QObject):
         started = monotonic()
         if dev_enabled():
             measurement(
-                log, "gallery.adjacent_start",
-                direction='forward' if direction > 0 else 'backward',
+                log,
+                "gallery.adjacent_start",
+                direction="forward" if direction > 0 else "backward",
                 offset=offset,
                 mounted=len(self.items),
-                source='snapshot' if source else 'live',
+                source="snapshot" if source else "live",
             )
         self._adjacent_loading = True
         self._sync_pager()
@@ -2173,7 +2203,8 @@ class GalleryPage(QObject):
             return
         if dev_enabled() and started is not None:
             measurement(
-                log, "gallery.adjacent_read",
+                log,
+                "gallery.adjacent_read",
                 elapsed_ms=(monotonic() - started) * 1000,
                 returned=len(page.items) if page is not None else 0,
                 error=type(error).__name__ if error else None,
@@ -2215,7 +2246,8 @@ class GalleryPage(QObject):
         if error is not None:
             self._adjacent_failed_offset = query.offset
             diagnostic_event(
-                log, "gallery.adjacent_batch_read_failed",
+                log,
+                "gallery.adjacent_batch_read_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(error).__name__,
@@ -2279,7 +2311,8 @@ class GalleryPage(QObject):
         self._adjacent_failed_offset = None
         if dev_enabled():
             measurement(
-                log, "gallery.adjacent_reconcile",
+                log,
+                "gallery.adjacent_reconcile",
                 elapsed_ms=(monotonic() - render_started) * 1000,
                 mounted=len(self.items),
             )
@@ -2342,8 +2375,9 @@ class GalleryPage(QObject):
                 if dev_enabled():
                     first, last = self._visible_range()
                     measurement(
-                        log, "gallery.adjacent_scroll",
-                        direction='forward' if direction > 0 else 'backward',
+                        log,
+                        "gallery.adjacent_scroll",
+                        direction="forward" if direction > 0 else "backward",
                         reveal_previous=reveal_previous,
                         first=first,
                         last=last,
@@ -2389,7 +2423,8 @@ class GalleryPage(QObject):
         if not missing:
             if dev_enabled():
                 measurement(
-                    log, "gallery.prepare_complete",
+                    log,
+                    "gallery.prepare_complete",
                     reused=len(records),
                     elapsed_ms=0.0,
                     new=0,
@@ -2401,7 +2436,8 @@ class GalleryPage(QObject):
             if dev_enabled():
                 self._perf_stats.flush("prepare_slices")
                 measurement(
-                    log, "gallery.prepare_complete",
+                    log,
+                    "gallery.prepare_complete",
                     elapsed_ms=(monotonic() - prepare_started) * 1000,
                     new=len(missing),
                     reused=len(records) - len(missing),
@@ -2533,7 +2569,8 @@ class GalleryPage(QObject):
             self._reconcile_rows()
             if dev_enabled():
                 measurement(
-                    log, "gallery.list_reconcile",
+                    log,
+                    "gallery.list_reconcile",
                     wall_ms=(monotonic() - list_started) * 1000,
                     rows=self.table.rowCount(),
                     mode=self.mode,
@@ -2542,7 +2579,8 @@ class GalleryPage(QObject):
             self._reconcile_filmstrip()
             if dev_enabled():
                 measurement(
-                    log, "gallery.filmstrip_reconcile",
+                    log,
+                    "gallery.filmstrip_reconcile",
                     wall_ms=(monotonic() - film_started) * 1000,
                     count=len(self._film_entries),
                     mode=self.mode,
@@ -2586,7 +2624,8 @@ class GalleryPage(QObject):
         self._queue_thumbnails(image_changes)
         if dev_enabled():
             measurement(
-                log, "gallery.render_page",
+                log,
+                "gallery.render_page",
                 elapsed_ms=(monotonic() - started) * 1000,
                 mounted=len(self.items),
                 added=sum((item.identity not in previous for item in self.items)),
@@ -3107,7 +3146,8 @@ class GalleryPage(QObject):
         if error is not None or not result or result[0] is None:
             if error is not None:
                 diagnostic_event(
-                    log, "gallery.detail_image_read_failed",
+                    log,
+                    "gallery.detail_image_read_failed",
                     level=logging.WARNING,
                     data={
                         "reason": type(error).__name__,
@@ -3375,7 +3415,8 @@ class GalleryPage(QObject):
 
         if dev_enabled():
             measurement(
-                log, "gallery.zoom_reflow",
+                log,
+                "gallery.zoom_reflow",
                 wall_ms=(monotonic() - resize_started) * 1000,
                 mode=self.mode,
                 mounted=len(self.items),
@@ -3422,7 +3463,8 @@ class GalleryPage(QObject):
             if dev_enabled():
                 first, last = self._visible_range()
                 measurement(
-                    log, "gallery.thumbnail_resize",
+                    log,
+                    "gallery.thumbnail_resize",
                     mode=mode,
                     scale=self.slider.value(),
                     first=first,
@@ -3549,7 +3591,8 @@ class GalleryPage(QObject):
         self._grid_mount_keys = None
         if dev_enabled():
             measurement(
-                log, "gallery.grid_mount_complete",
+                log,
+                "gallery.grid_mount_complete",
                 elapsed_ms=(monotonic() - self._grid_mount_started) * 1000,
                 work_ms=self._grid_mount_work_ms,
                 max_slice_ms=self._grid_mount_max_slice_ms,
@@ -3626,7 +3669,8 @@ class GalleryPage(QObject):
         self._finish_grid_mount_callbacks()
         if dev_enabled():
             measurement(
-                log, "gallery.grid_layout",
+                log,
+                "gallery.grid_layout",
                 elapsed_ms=(monotonic() - started) * 1000,
                 mounted=len(keys),
                 columns=columns,
@@ -3651,7 +3695,8 @@ class GalleryPage(QObject):
         if watched is self.grid_viewport and kind == QEvent.Type.Resize:
             if dev_enabled():
                 measurement(
-                    log, "gallery.grid_resize",
+                    log,
+                    "gallery.grid_resize",
                     mounted=len(self.items),
                     width=self.grid_viewport.width(),
                 )
@@ -3669,8 +3714,9 @@ class GalleryPage(QObject):
         self._scroll_direction = direction
         if dev_enabled():
             measurement(
-                log, "gallery.scroll_intent",
-                direction='forward' if direction > 0 else 'backward',
+                log,
+                "gallery.scroll_intent",
+                direction="forward" if direction > 0 else "backward",
                 source=source,
                 offset=self.offset,
                 mounted=len(self.items),
@@ -3830,7 +3876,8 @@ class GalleryPage(QObject):
             else:
                 if error is not None:
                     diagnostic_event(
-                        log, "gallery.read_action_failed",
+                        log,
+                        "gallery.read_action_failed",
                         level=logging.WARNING,
                         data={
                             "action": action,
@@ -3978,10 +4025,10 @@ class GalleryPage(QObject):
             self._save_future = None
             self._save_dirty = True
             diagnostic_event(
-                log, "gallery.preferences_save_skipped",
+                log,
+                "gallery.preferences_save_skipped",
                 level=logging.INFO,
-                data={
-                },
+                data={},
             )
 
     def save_now(self) -> None:
@@ -3996,7 +4043,8 @@ class GalleryPage(QObject):
                 future.result(timeout=5)
             except Exception as exc:
                 diagnostic_event(
-                    log, "gallery.preferences_save_failed",
+                    log,
+                    "gallery.preferences_save_failed",
                     level=logging.WARNING,
                     data={
                         "reason": type(exc).__name__,
@@ -4008,7 +4056,8 @@ class GalleryPage(QObject):
             self._save_dirty = False
         except Exception as exc:
             diagnostic_event(
-                log, "gallery.preferences_save_failed",
+                log,
+                "gallery.preferences_save_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(exc).__name__,
@@ -4020,7 +4069,8 @@ class GalleryPage(QObject):
         self._save_future = None
         if error is not None:
             diagnostic_event(
-                log, "gallery.preferences_save_failed",
+                log,
+                "gallery.preferences_save_failed",
                 level=logging.WARNING,
                 data={
                     "reason": type(error).__name__,

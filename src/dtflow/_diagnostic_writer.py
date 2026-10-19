@@ -33,9 +33,16 @@ class Admission:
         self.inflight = 0
         self.accepting = True
         self.counts = Counter(
-            observed=0, admitted=0, rejected=0, dropped=0,
-            writer_failures=0, serialization_failures=0, aggregate_source_samples=0,
-            capture_rejected=0, processed_records=0, source_summary_samples=0,
+            observed=0,
+            admitted=0,
+            rejected=0,
+            dropped=0,
+            writer_failures=0,
+            serialization_failures=0,
+            aggregate_source_samples=0,
+            capture_rejected=0,
+            processed_records=0,
+            source_summary_samples=0,
         )
         self.losses = Counter()
         self.capture_rejections = {}
@@ -45,7 +52,14 @@ class Admission:
     def loss(self, reason: str, level: str, measurement: bool, *, rejected=False) -> None:
         # Called with lock held; keys are from fixed policy categories, not events.
         self.counts["rejected" if rejected else "dropped"] += 1
-        if reason not in {"queue_records", "queue_bytes", "capture_limit", "writer_error", "serialization_error", "shutdown_timeout"}:
+        if reason not in {
+            "queue_records",
+            "queue_bytes",
+            "capture_limit",
+            "writer_error",
+            "serialization_error",
+            "shutdown_timeout",
+        }:
             reason = "other"
         self.losses[reason, level, measurement] += 1
 
@@ -214,13 +228,24 @@ class DiagnosticListener(logging.handlers.QueueListener):
             reason = exc.reason if isinstance(exc, CaptureRejected) else "serialization_error"
             with self.admission.lock:
                 self.admission.counts["serialization_failures"] += 1
-                self.admission.loss(reason, payload.get("level", "ERROR"), payload.get("kind") in ("measurement", "aggregate"), rejected=True)
+                self.admission.loss(
+                    reason,
+                    payload.get("level", "ERROR"),
+                    payload.get("kind") in ("measurement", "aggregate"),
+                    rejected=True,
+                )
             self.sink.warn()
             marker = {
-                "ts": payload.get("ts", utc_timestamp()), "level": "WARNING", "component": "dtflow.diagnostics",
+                "ts": payload.get("ts", utc_timestamp()),
+                "level": "WARNING",
+                "component": "dtflow.diagnostics",
                 "event": "diagnostics.record_rejected",
-                "data": {"original_event": payload.get("event", "logging.message"), "reason": reason,
-                         "limit_bytes": MAX_RECORD_BYTES, "original_content_available": False},
+                "data": {
+                    "original_event": payload.get("event", "logging.message"),
+                    "reason": reason,
+                    "limit_bytes": MAX_RECORD_BYTES,
+                    "original_content_available": False,
+                },
             }
             if isinstance(exc, CaptureRejected) and exc.size is not None:
                 marker["data"]["size_bytes"] = exc.size
@@ -230,7 +255,9 @@ class DiagnosticListener(logging.handlers.QueueListener):
                 self.failure = True
 
     def _control(self, name, data, *, level="INFO"):
-        self._write({"ts": utc_timestamp(), "level": level, "component": "dtflow.diagnostics", "event": name, "data": data})
+        self._write(
+            {"ts": utc_timestamp(), "level": level, "component": "dtflow.diagnostics", "event": name, "data": data}
+        )
 
     def _flush_losses(self):
         _, losses = self.admission.snapshot()
@@ -243,8 +270,10 @@ class DiagnosticListener(logging.handlers.QueueListener):
             marker = {
                 "original_event": original,
                 "reason": "capture_too_large" if key[0] == "capture_limit" else "unsupported_value",
-                "count": delta, "representative_event_only": True,
-                "limit_bytes": MAX_RECORD_BYTES, "original_content_available": False,
+                "count": delta,
+                "representative_event_only": True,
+                "limit_bytes": MAX_RECORD_BYTES,
+                "original_content_available": False,
             }
             if estimate is not None:
                 marker["estimated_bytes"] = estimate
@@ -255,8 +284,11 @@ class DiagnosticListener(logging.handlers.QueueListener):
             if not delta:
                 continue
             reason, level, measurement = key
-            self._control("diagnostics.loss", {"reason": reason, "count": delta, "level": level,
-                                               "affects_measurements": measurement}, level="WARNING")
+            self._control(
+                "diagnostics.loss",
+                {"reason": reason, "count": delta, "level": level, "affects_measurements": measurement},
+                level="WARNING",
+            )
             self.last_losses[key] = count
             self.sink.warn()
 
@@ -267,23 +299,40 @@ class DiagnosticListener(logging.handlers.QueueListener):
         for name, values in batch["metrics"].items():
             values.sort()
             count = len(values)
-            metrics[name] = {"count": count, "mean": sum(values) / count,
-                             "p95": values[max(0, (95 * count + 99) // 100 - 1)],
-                             "max": values[-1], "total": sum(values)}
+            metrics[name] = {
+                "count": count,
+                "mean": sum(values) / count,
+                "p95": values[max(0, (95 * count + 99) // 100 - 1)],
+                "max": values[-1],
+                "total": sum(values),
+            }
         # Every accepted raw phase has at least one measured numeric field.
         payload = {
-            "ts": batch["last"], "mono_ns": batch["last_mono"], "level": "DEBUG", "component": "dtflow.ui.gallery_perf",
-            "event": "gallery.performance_aggregate", "kind": "aggregate", "data": {"phase": phase},
-            "agg": {"samples": batch["samples"], "window_start": batch["first"], "window_end": batch["last"],
-                    "dimensions": dict(dimensions), "metrics": metrics},
+            "ts": batch["last"],
+            "mono_ns": batch["last_mono"],
+            "level": "DEBUG",
+            "component": "dtflow.ui.gallery_perf",
+            "event": "gallery.performance_aggregate",
+            "kind": "aggregate",
+            "data": {"phase": phase},
+            "agg": {
+                "samples": batch["samples"],
+                "window_start": batch["first"],
+                "window_end": batch["last"],
+                "dimensions": dict(dimensions),
+                "metrics": metrics,
+            },
         }
         if attempt:
             payload["ctx"] = {"attempt_id": attempt}
         self._write(payload)
 
     def _consume(self, payload):
-        if (payload["event"] == "gallery.source_summary" and payload.get("kind") == "aggregate"
-                and type(payload.get("data", {}).get("samples")) is int):
+        if (
+            payload["event"] == "gallery.source_summary"
+            and payload.get("kind") == "aggregate"
+            and type(payload.get("data", {}).get("samples")) is int
+        ):
             with self.admission.lock:
                 self.admission.counts["source_summary_samples"] += payload["data"]["samples"]
         phase = payload["event"].removeprefix("gallery.")
@@ -294,11 +343,16 @@ class DiagnosticListener(logging.handlers.QueueListener):
         attempt = payload.get("ctx", {}).get("attempt_id")
         # Fixed cardinality/metric bounds, not an extensible-object cache.
         # Extra fields are preserved raw rather than silently discarded.
-        if (any(key not in _METRICS and key not in _DIMENSIONS and key not in {"query_busy", "preparation_busy"} for key in fields)
-                or any(type(fields[key]) not in (str, bool, int, float) for key in _DIMENSIONS if key in fields)
-                or any(isinstance(fields.get(key), str) and len(fields[key]) > 128 for key in _DIMENSIONS)
-                or (attempt is not None and (type(attempt) is not str or len(attempt) > 128))
-                or not any(name in _METRICS and type(value) in (int, float) for name, value in fields.items())):
+        if (
+            any(
+                key not in _METRICS and key not in _DIMENSIONS and key not in {"query_busy", "preparation_busy"}
+                for key in fields
+            )
+            or any(type(fields[key]) not in (str, bool, int, float) for key in _DIMENSIONS if key in fields)
+            or any(isinstance(fields.get(key), str) and len(fields[key]) > 128 for key in _DIMENSIONS)
+            or (attempt is not None and (type(attempt) is not str or len(attempt) > 128))
+            or not any(name in _METRICS and type(value) in (int, float) for name, value in fields.items())
+        ):
             self._write(payload)
             return
         # Wheel readiness and >=100ms outliers must remain individually observable.
@@ -309,10 +363,17 @@ class DiagnosticListener(logging.handlers.QueueListener):
         key = (phase, dimensions, attempt)
         if key not in self.batches and len(self.batches) >= 64:
             self._flush_batch(next(iter(self.batches)))
-        batch = self.batches.setdefault(key, {
-            "samples": 0, "first": payload["ts"], "last": payload["ts"],
-            "first_mono": payload["mono_ns"], "last_mono": payload["mono_ns"], "metrics": {},
-        })
+        batch = self.batches.setdefault(
+            key,
+            {
+                "samples": 0,
+                "first": payload["ts"],
+                "last": payload["ts"],
+                "first_mono": payload["mono_ns"],
+                "last_mono": payload["mono_ns"],
+                "metrics": {},
+            },
+        )
         batch["samples"] += 1
         batch["first"] = min(batch["first"], payload["ts"])
         batch["last"] = max(batch["last"], payload["ts"])
@@ -367,8 +428,9 @@ class DiagnosticListener(logging.handlers.QueueListener):
             if not self.failure and not self.sink.failed and not self.admission.expired.is_set():
                 # The seal reports loss honestly; readers must reject any nonzero
                 # loss/rejection count even when closure itself succeeded.
-                self._control("session.closed", {**counts, "written_records": self.sink.seq + 1,
-                                                  "last_seq": self.sink.seq + 1})
+                self._control(
+                    "session.closed", {**counts, "written_records": self.sink.seq + 1, "last_seq": self.sink.seq + 1}
+                )
         except Exception:
             with self.admission.lock:
                 self.admission.counts["writer_failures"] += 1
