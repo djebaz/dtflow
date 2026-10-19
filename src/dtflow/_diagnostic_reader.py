@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import heapq
 import json
+import math
 import os
 import re
 import stat
@@ -21,6 +22,44 @@ _LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 PAGE_SIZE = 500
 MAX_WORKER_BYTES = 16 * 1024 * 1024
 MAX_DISPLAY_BYTES = 32 * 1024 * 1024
+
+
+def _pairs_unique(pairs):
+    """Reject ambiguous duplicate keys in untrusted on-disk records."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate_json_key")
+        result[key] = value
+    return result
+
+
+def _bad_constant(value):
+    raise ValueError("nonfinite_json_constant")
+
+
+def _decode_record(raw: bytes) -> dict:
+    """Decode one bounded physical line, rejecting unsafe JSON shapes."""
+    record = json.loads(
+        raw.decode("utf-8"),
+        object_pairs_hook=_pairs_unique,
+        parse_constant=_bad_constant,
+    )
+    nodes = 0
+    stack = [(record, 0)]
+    while stack:
+        node, depth = stack.pop()
+        nodes += 1
+        if nodes > 4096 or depth > 16:
+            raise ValueError("json_structure_budget")
+        if type(node) is dict:
+            stack.extend((value, depth + 1) for value in node.values())
+        elif type(node) is list:
+            stack.extend((value, depth + 1) for value in node)
+        elif type(node) is float and not math.isfinite(node):
+            raise ValueError("nonfinite_json_number")
+    validate_record(record)
+    return record
 
 
 class EvidenceError(ValueError):
@@ -144,9 +183,8 @@ def _read_lines(segment: Segment, cancelled: Callable[[], bool] | None) -> Itera
                 # A partial active tail is not an accepted record.
                 raise EvidenceError("partial_tail")
             try:
-                record = json.loads(raw.decode("utf-8"))
-                validate_record(record)
-            except (UnicodeError, ValueError, TypeError, CaptureRejected) as exc:
+                record = _decode_record(raw)
+            except (UnicodeError, ValueError, TypeError, RecursionError, CaptureRejected) as exc:
                 raise EvidenceError("invalid_record") from exc
             ref = RecordRef(segment.path.name.split(".jsonl", 1)[0][7:], record["seq"],
                             segment.device, segment.inode, offset, length, segment.path.name)
@@ -419,9 +457,8 @@ def read_detail(directory: Path, ref: RecordRef) -> dict:
     if len(raw) > MAX_RECORD_BYTES or not raw.endswith(b"\n"):
         raise EvidenceError("detail_unavailable")
     try:
-        record = json.loads(raw)
-        validate_record(record)
-    except (ValueError, TypeError, CaptureRejected) as exc:
+        record = _decode_record(raw)
+    except (UnicodeError, ValueError, TypeError, RecursionError, CaptureRejected) as exc:
         raise EvidenceError("detail_unavailable") from exc
     if record["seq"] != ref.seq:
         raise EvidenceError("detail_unavailable")
