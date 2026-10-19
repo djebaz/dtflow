@@ -313,14 +313,33 @@ def test_run_directory_uses_requested_timestamp_without_merging_runs(tmp_path):
 def test_query_readiness_ignores_old_completions_across_rotation(tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
 
-    log = tmp_path / "dtflow-session.log"
-    log.write_text("session starting\n", encoding="utf-8")
+    sid = "benchmarktest"
+    current = tmp_path / f"dtflow-{sid}.jsonl"
+    started = {
+        "session_id": sid, "version": "test", "source_commit": "unknown",
+        "build_state": "unknown", "runtime": "python", "platform": "test",
+        "dev": True, "instrumentation_version": "gallery-jsonl-v1",
+        "schema_version": 1, "queue_max_records": 1024,
+        "queue_max_bytes": 8 * 1024 * 1024, "max_record_bytes": 1_048_576,
+        "aggregation_policy": "test",
+    }
+    def append(*records):
+        with current.open("a", encoding="utf-8") as stream:
+            for row in records:
+                stream.write(json.dumps(row) + "\n")
+
+    append(_jsonl_record(1, "session.started", started))
     assert benchmark._read_query_count(tmp_path) == 0
-    log.write_text("gallery_perf phase=query_done returned=80 error=none\n", encoding="utf-8")
+    append(_jsonl_record(2, "gallery.query_done", {
+        "elapsed_ms": 28, "returned": 80, "source": "live", "error": None,
+    }, kind="measurement"))
     previous = set(benchmark._completed_queries(tmp_path))
-    log.rename(tmp_path / "dtflow-session.log.1")
+    assert previous == {(sid, 2)}
+    current.rename(tmp_path / f"dtflow-{sid}.jsonl.1")
     assert set(benchmark._completed_queries(tmp_path)) == previous
-    log.write_text("gallery_perf phase=query_done returned=20 error=none\n", encoding="utf-8")
+    append(_jsonl_record(3, "gallery.query_done", {
+        "elapsed_ms": 30, "returned": 20, "source": "live", "error": None,
+    }, kind="measurement"))
     assert benchmark._await_query(tmp_path, SimpleNamespace(poll=lambda: None), 1, after=previous) == 20
 
 
@@ -624,13 +643,14 @@ def test_failed_slider_does_not_abort_next_step(monkeypatch):
 def test_scroll_intent_parser_requires_a_real_qt_wheel_event(tmp_path):
     from tools.ui.windows_gallery_benchmark import _wheel_intents
 
-    log = tmp_path / "dtflow-session.log"
-    log.write_text(
-        "gallery_perf phase=scroll_intent direction=forward source=wheel offset=0 mounted=80\n"
-        "gallery_perf phase=scroll_intent direction=backward source=wheel offset=0 mounted=80\n"
-        "gallery_perf phase=scroll_intent direction=forward source=drag offset=0 mounted=80\n",
-        encoding="utf-8",
-    )
+    _write_jsonl_session(tmp_path, [
+        ("gallery.scroll_intent", {
+            "direction": direction, "source": source, "offset": 0, "mounted": 80,
+        }, "measurement", None)
+        for direction, source in (
+            ("forward", "wheel"), ("backward", "wheel"), ("forward", "drag"),
+        )
+    ])
     events = _wheel_intents(tmp_path)
     assert len(events) == 2
     assert {event[3] for event in events} == {"forward", "backward"}
