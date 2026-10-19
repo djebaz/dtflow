@@ -4,6 +4,8 @@
 
 Run the same **saved-image journey** for every `-ml/-mc` configuration, without opening Sort or changing the user's ordering: Images → Grid → **click page 1** → fast wheel scroll until **image #300 is inside the visible range** → fast wheel scroll back until **image #1** is first → **click page 1 again**. There are no sleeps waiting for whole batches to load, and no List/Detail/fullscreen/thumbnail-slider actions in this mode.
 
+**Position parsing invariant:** only the exact visible-range label (`first–last of total`) is accepted. Neither the trailing `of total` number nor the independent `N buffered` status is the scroll position. For example, `1–20 of 200` alongside `200 buffered` does **not** mean the user has reached card #200.
+
 The native Windows recorder identifies the actual position control as `Gallery batch navigation → Visible image range||Text`. The driver reads its numeric text when UIA exposes it. Some Qt/Windows combinations return only the static accessible name; a **benchmark-child-only** diagnostic of the exact `GalleryPager.present` values provides a fallback. Each action records its initial/final visible image index, observed progress, input count and duration. A failed or undersized journey is a warning, **not** a successful benchmark. The return to image #1 must be confirmed *before* the final page-1 click.
 
 ```powershell
