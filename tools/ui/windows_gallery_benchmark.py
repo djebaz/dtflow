@@ -375,34 +375,49 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
     raise TimeoutError(f"Page 1 was clicked at {at} but did not become selected.")
 
 
-def _click_grid_page_one_early(window, actions: list[dict]) -> bool:
-    """Try page 1 once without waiting for initial batch preparation.
+def _wait_for_grid_page_one(window, probe, actions: list[dict], *, timeout: float) -> None:
+    """Wait until the initial spinner gives way to enabled numbered pager chips.
 
-    The pager is normally disabled before the first committed page. This
-    expected unavailability must not hold the first wheel event hostage.
+    This is a startup-only readiness check; adjacent queries do not pause the
+    subsequent continuous wheel sender.
     """
 
     started = time.perf_counter()
-    try:
-        button = _button(
-            window, "Jump to image batch 1",
-            automation_id="galleryPagerPage1", timeout=0.3,
-        )
-        button.click_input()
-    except (LookupError, RuntimeError, TimeoutError) as exc:
-        actions.append({
-            "action": "click-page-one-start",
-            "outcome": "not-ready",
-            "reason": type(exc).__name__,
-            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-        })
-        return False
+    deadline = time.monotonic() + timeout
+    attempts = 0
+    observed = None
+    while time.monotonic() < deadline:
+        try:
+            chip = _button(
+                window, "Jump to image batch 1",
+                automation_id="galleryPagerPage1", timeout=0.3,
+            )
+            chip.click_input()
+            attempts += 1
+        except (LookupError, RuntimeError, TimeoutError):
+            time.sleep(0.1)
+            continue
+        observed = probe.read()
+        if observed is not None and observed.first == 1:
+            actions.append({
+                "action": "click-page-one-start",
+                "verified": True, "visible_first": 1,
+                "source": observed.source, "click_attempts": attempts,
+                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
+            return
+        time.sleep(0.12)
     actions.append({
         "action": "click-page-one-start",
-        "outcome": "dispatched",
-        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        "verified": False,
+        "visible_first": observed.first if observed else None,
+        "click_attempts": attempts,
+        "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
     })
-    return True
+    raise TimeoutError(
+        "Numbered page controls not ready at image 1 before the startup deadline "
+        f"({timeout:g}s; last first={observed.first if observed else 'unknown'})."
+    )
 
 
 def _wheel_intents(directory: Path) -> set[tuple]:
@@ -926,46 +941,36 @@ def _drive(
         # The dedicated limit sweep never opens or modifies the Sort dropdown.
         # Page 1 is physically clicked both before and after scrolling.
         ml, effective_mc = grid_limits
-        record["grid_start_page_one_dispatched"] = _click_grid_page_one_early(window, actions)
         from tools.ui.grid_scroll_probe import GridProgressProbe
 
         probe = GridProgressProbe(window, directory)
-        # Normalize every case to image #1 *using real wheel input*, not a
-        # query_done or batch-preparation wait. The last Windows run showed
-        # -ml80/-mc200 already at visible #281 when its down leg started.
-        # This homing leg is recorded separately and EXCLUDED from round-trip
-        # ranking; scroll wheels continue while Qt is querying/loading.
+        # The startup spinner has no numbered chips. Do not start wheel input
+        # until an enabled page-1 chip exists, was clicked, and the viewport
+        # reports first=1. Only this initial readiness gate may wait.
+        start_ok = _attempt(
+            record, "grid-wait-numbered-pages",
+            lambda: _wait_for_grid_page_one(
+                window, probe, actions, timeout=timeout,
+            ),
+        )
+        record["grid_start_verified"] = start_ok
+        if not start_ok:
+            record["grid_sweep"] = {
+                "requested_card": grid_target_card,
+                "cycles": cycles, "position_verified": False,
+                "skipped_reason": "numbered-pager-not-ready",
+            }
+            record["step"] = "close-dtflow-window"
+            window.close()
+            record["step"] = "wait-for-shutdown"
+            return _read_query_count(directory)
+        # Subsequent reads/preparation never pause the scrolling sender.
         rect = window.rectangle()
         wheel_point = (
             (int(rect.left + rect.width() * 0.56), int(rect.top + rect.height() * 0.72)),
             "window-grid-fast",
         )
         pulse_notches = min(12, max(2, scroll_notches // 16))
-        start_ok = _attempt(
-            record, "grid-home-before-measured-scroll",
-            lambda: _seek_grid_card(
-                window, probe, actions, target=1, direction=1,
-                pulse_notches=pulse_notches, timeout=grid_seek_timeout,
-                wheel_point=wheel_point, action_name="grid-home-start",
-            ),
-        )
-        record["grid_start_verified"] = start_ok
-        record["grid_start_home_ms"] = next(
-            (a["duration_ms"] for a in reversed(actions)
-             if a.get("action") == "grid-home-start"), None,
-        )
-        if not start_ok:
-            # No misleading score if an initial query left the viewport at an
-            # unknown card: never measure an incomparable downward journey.
-            record["grid_sweep"] = {
-                "requested_card": grid_target_card,
-                "cycles": cycles, "position_verified": False,
-                "skipped_reason": "unverified-start-position",
-            }
-            record["step"] = "close-dtflow-window"
-            window.close()
-            record["step"] = "wait-for-shutdown"
-            return _read_query_count(directory)
         # The same saved-image index is targeted for every -ml/-mc case.
         # Pulse size and pause are identical; total pulses vary to actually
         # reach that index, instead of sweeping a fixed, incomparable offset.
