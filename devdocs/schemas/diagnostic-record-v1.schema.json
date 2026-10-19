@@ -1,0 +1,1060 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/djebaz/dtflow/blob/main/devdocs/schemas/diagnostic-record-v1.schema.json",
+  "title": "DTFlow proposed diagnostic JSONL record v1",
+  "description": "Draft for PR #105, not runtime implementation. Physical line limits, sanitization, temporal semantics and cross-record completeness are enforced outside JSON Schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "session_id",
+    "seq",
+    "timestamp",
+    "monotonic_ns",
+    "level",
+    "component",
+    "event",
+    "kind",
+    "message",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "maxLength": 128
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "monotonic_ns": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "level": {
+      "enum": [
+        "DEBUG",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL"
+      ]
+    },
+    "component": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+      "maxLength": 150
+    },
+    "kind": {
+      "enum": [
+        "event",
+        "measurement",
+        "aggregate"
+      ]
+    },
+    "message": {
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/safeData"
+    },
+    "context": {
+      "$ref": "#/$defs/context"
+    },
+    "error": {
+      "$ref": "#/$defs/error"
+    },
+    "aggregation": {
+      "$ref": "#/$defs/aggregation"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "aggregate"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "required": [
+          "aggregation"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "event",
+              "measurement"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "aggregation"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "session.started"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "source_commit",
+              "build_state",
+              "runtime",
+              "platform",
+              "dev",
+              "instrumentation_version",
+              "schema_version",
+              "queue_max_records",
+              "queue_max_bytes",
+              "max_record_bytes",
+              "aggregation_policy"
+            ],
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "source_commit": {
+                "type": "string"
+              },
+              "build_state": {
+                "enum": [
+                  "clean",
+                  "dirty",
+                  "unknown"
+                ]
+              },
+              "runtime": {
+                "type": "string"
+              },
+              "platform": {
+                "type": "string"
+              },
+              "dev": {
+                "type": "boolean"
+              },
+              "backend": {
+                "type": "string"
+              },
+              "instrumentation_version": {
+                "type": "string"
+              },
+              "schema_version": {
+                "const": 1
+              },
+              "queue_max_records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "queue_max_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_record_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "aggregation_policy": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "session.closed"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "observed",
+              "admitted",
+              "rejected",
+              "dropped",
+              "written_records",
+              "aggregate_source_samples",
+              "writer_failures",
+              "serialization_failures"
+            ],
+            "properties": {
+              "observed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "admitted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rejected": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "dropped": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "written_records": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "aggregate_source_samples": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "writer_failures": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "serialization_failures": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "last_seq": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "diagnostics.loss"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "count",
+              "affects_measurements"
+            ],
+            "properties": {
+              "reason": {
+                "enum": [
+                  "queue_records",
+                  "queue_bytes",
+                  "capture_limit",
+                  "writer_error",
+                  "serialization_error",
+                  "shutdown_timeout",
+                  "other"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "affects_measurements": {
+                "type": "boolean"
+              },
+              "level": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "diagnostics.record_rejected"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "original_event",
+              "reason",
+              "limit_bytes",
+              "original_content_available"
+            ],
+            "properties": {
+              "original_event": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": [
+                  "record_too_large",
+                  "capture_too_large",
+                  "unsupported_value",
+                  "serialization_error",
+                  "other"
+                ]
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "estimated_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "limit_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "original_content_available": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "logging.message"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.query_done"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "measurement"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "elapsed_ms",
+              "returned",
+              "source",
+              "error"
+            ],
+            "properties": {
+              "elapsed_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "returned": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "source": {
+                "enum": [
+                  "live",
+                  "snapshot",
+                  "unknown"
+                ]
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.scroll_intent"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "measurement"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "direction",
+              "source",
+              "offset",
+              "mounted"
+            ],
+            "properties": {
+              "direction": {
+                "enum": [
+                  "forward",
+                  "backward"
+                ]
+              },
+              "source": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mounted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mode": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.gui_gap"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "measurement"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "elapsed_ms",
+              "mode",
+              "mounted",
+              "query_busy",
+              "preparation_busy"
+            ],
+            "properties": {
+              "elapsed_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "mode": {
+                "type": "string"
+              },
+              "mounted": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "query_busy": {
+                "type": "boolean"
+              },
+              "preparation_busy": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.query_worker"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "measurement"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sql_wall_ms",
+              "sql_cpu_ms",
+              "build_wall_ms",
+              "build_cpu_ms",
+              "rows"
+            ],
+            "properties": {
+              "sql_wall_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "sql_cpu_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "build_wall_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "build_cpu_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.performance_aggregate"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "aggregate"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "phase"
+            ],
+            "properties": {
+              "phase": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "gallery.source_summary"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "aggregate"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "phase",
+              "samples",
+              "items",
+              "wall_total_ms",
+              "wall_avg_ms",
+              "wall_max_ms",
+              "cpu_total_ms",
+              "failures"
+            ],
+            "properties": {
+              "phase": {
+                "type": "string"
+              },
+              "samples": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "wall_total_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "wall_avg_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "wall_max_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "cpu_total_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "failures": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "generation.attempt_prepared"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "backend",
+              "request_id",
+              "model_id"
+            ],
+            "properties": {
+              "backend": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string"
+              },
+              "model_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "generation.attempt_succeeded"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "outputs"
+            ],
+            "properties": {
+              "outputs": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "generation.attempt_interrupted"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stage",
+              "outcome"
+            ],
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "generation.attempt_failed"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "category",
+              "outcome"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "queue.item_settled"
+          }
+        },
+        "required": [
+          "event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "jsonValue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        }
+      ]
+    },
+    "safeData": {
+      "type": "object",
+      "maxProperties": 4096,
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      },
+      "description": "Unknown event data permitted only by an explicit reviewed safe-fields policy; JSON Schema validation alone does not authorize arbitrary captured objects."
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "backend": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "attempt_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "queue_id": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "benchmark_run_id": {
+          "type": "string"
+        },
+        "trial_id": {
+          "type": "string"
+        },
+        "action_id": {
+          "type": "string"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "message",
+        "traceback"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "traceback": {
+          "type": "string"
+        }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "mean",
+        "p95",
+        "max",
+        "total"
+      ],
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mean": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      }
+    },
+    "aggregation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "samples",
+        "window_start",
+        "window_end",
+        "metrics"
+      ],
+      "properties": {
+        "samples": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "window_start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "window_end": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "minProperties": 1,
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*(?:_ms|_bytes|_count)$": {
+              "$ref": "#/$defs/metric"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}
