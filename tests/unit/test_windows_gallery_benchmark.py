@@ -1009,8 +1009,9 @@ def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
             self.last = None
 
         def read(self):
-            first = next(self.values)
-            self.last = GridPosition(first, first + 10, 1000, "uia")
+            first = next(self.values, None)
+            if first is not None:
+                self.last = GridPosition(first, first + 10, 1000, "uia")
             return self.last
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
