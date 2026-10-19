@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 Grid scroll matrix: opt-in `--grid-matrix` benchmark varies CLI `-ml`/`-mc` (from 20:50 through 300:1000) across separate native Windows processes. Preserves true product whole-batch cap rounding, records requested/effective limits, scrolls Grid down/up in bounded resident-batch-based steps, physically clicks page 1 before and after, and never touches Sort. Existing tuning profiles still use 20/100. No Windows replay or provider execution yet.
+
 - PR #104 follow-up: double the default interactive wheel sweep from 96 to 192 notches per direction, exercise wider thumbnail slider changes (55% then 210%) with restoration, and toggle fullscreen from Grid rather than Detail. These are benchmark-only changes and require a new native Windows owner smoke; no provider actions or application defaults change.
 
 - PR #104 browsing smoke scope: owner baseline/workers-3 evidence confirmed page/view/scroll dispatch and showed prompt-filter UIA timeout. Remove prompt typing; add page-chip checked-state verification, Qt `scroll_intent` evidence for both wheel directions, fullscreen enter/Escape exit, and `ThumbnailSizeSlider` UIA drag/restore from the owner's recorder. Nonessential missed clicks, drags and scrolls emit warnings without aborting remaining actions; warning trials are excluded from clean benchmark comparisons. Native Windows validation remains pending.
