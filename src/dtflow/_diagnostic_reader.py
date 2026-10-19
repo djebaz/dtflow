@@ -155,7 +155,7 @@ def _read_lines(segment: Segment, cancelled: Callable[[], bool] | None) -> Itera
 
 def scan(directory: Path, session_id: str, *, cancelled=None,
          on_record: Callable[[dict, RecordRef], None] | None = None,
-         attempts: int = 3) -> SessionStatus:
+         on_reset: Callable[[], None] | None = None, attempts: int = 3) -> SessionStatus:
     """Read a stable snapshot, with bounded retries on rename/rotation races.
 
     Status never upgrades unsealed or lossy diagnostics to complete.
@@ -163,6 +163,8 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
     last_reason = "snapshot_changed"
     for attempt in range(min(max(attempts, 1), 3)):
         segments = snapshot(directory, session_id)
+        if on_reset:
+            on_reset()
         count, previous, startup, closed = 0, 0, False, False
         reasons = []
         duplicate = {}
@@ -305,44 +307,87 @@ def iter_records(directory: Path, session_id: str, *, cancelled=None,
         if len(buffer) >= 10000:
             raise EvidenceError("consumer_record_limit")
         buffer.append((record, ref))
-    status = scan(directory, session_id, cancelled=cancelled, on_record=collect)
+    status = scan(directory, session_id, cancelled=cancelled, on_record=collect, on_reset=buffer.clear)
     if require_complete and not status.complete:
         raise EvidenceError("session_" + status.state)
     return status, tuple(buffer)
 
 
-def query(directory: Path, session_id: str, *, filters=None, sort="ts",
-          descending=True, offset=0, limit=PAGE_SIZE, cancelled=None):
-    """Whole-session count and bounded page, never cache all matching record payloads.
+def _sort_primary(record: dict, sort: str, metric: tuple[str, ...]):
+    if sort == "level":
+        return _LEVELS.index(record["level"])
+    if sort == "metric":
+        present, value = _value(record, metric)
+        if not present or type(value) not in (float, int):
+            return None
+        return value
+    if sort in ("event", "component"):
+        raw = record[sort]
+        return (raw.casefold(), raw)
+    return record[sort]
 
-    Offset pages re-scan the stable snapshot; offset itself does not grow memory.
+
+class _Candidate:
+    """Heap root is the worst retained candidate under requested ordering."""
+    __slots__ = ("primary", "seq", "ref", "tiny", "descending")
+
+    def __init__(self, primary, seq, ref, tiny, descending):
+        self.primary, self.seq, self.ref = primary, seq, ref
+        self.tiny, self.descending = tiny, descending
+
+    def __lt__(self, other):
+        # Missing numeric metrics are last in either direction.
+        if (self.primary is None) != (other.primary is None):
+            return self.primary is None
+        if self.primary != other.primary:
+            return (self.primary < other.primary if self.descending
+                    else self.primary > other.primary)
+        return self.seq > other.seq  # stable ascending seq tie-breaker
+
+
+def query(directory: Path, session_id: str, *, filters=None, sort="ts",
+          descending=True, cursor=None, limit=PAGE_SIZE, metric=(), cancelled=None):
+    """Whole-session bounded top-k page; cursor is the last page's primary/seq.
+
+    The result count covers all accepted matching records, not only the page.
+    The caller must check status; page data alone is not a complete-session claim.
     """
-    if offset < 0 or limit < 1 or limit > PAGE_SIZE:
-        raise ValueError("Invalid page size or offset")
-    filters = filters or {}
-    if sort not in ("ts", "event", "component", "level", "seq"):
+    if limit < 1 or limit > PAGE_SIZE:
+        raise ValueError("Invalid page size")
+    if sort not in ("ts", "event", "component", "level", "seq", "metric"):
         raise ValueError("Unsupported sort")
-    selected = []
-    count = 0
-    def projected(record, ref):
+    if sort == "metric" and not metric:
+        raise ValueError("Numeric metric key required")
+    filters = filters or {}
+    count, heap = 0, []
+    def reset():
+        nonlocal count, heap
+        count, heap = 0, []
+    def selected(record, ref):
         nonlocal count
         if not match(record, **filters):
             return
         count += 1
-        value = _LEVELS.index(record["level"]) if sort == "level" else record[sort]
-        # Bounded projection (no error tracebacks or nested large JSON in the heap).
+        primary = _sort_primary(record, sort, tuple(metric))
         tiny = {key:record[key] for key in ("seq","ts","level","component","event")}
-        data = (value, record["seq"], ref, tiny)
-        selected.append(data)
-        if len(selected) > offset + limit:
-            raise EvidenceError("unbounded_offset_query")
-    # Only the initial page fits here; advanced keyset paging is required before
-    # the full UI integration. Never silently return incomplete counts.
-    if offset + limit > PAGE_SIZE:
-        raise EvidenceError("keyset_required")
-    status = scan(directory, session_id, cancelled=cancelled, on_record=projected)
-    selected.sort(key=lambda x:(x[0],x[1]), reverse=descending)
-    return status, count, [(x[3],x[2]) for x in selected[offset:offset+limit]]
+        item = _Candidate(primary, record["seq"], ref, tiny, descending)
+        if cursor is not None:
+            # Cursor may only be obtained from a previous page, not an
+            # arbitrary input string or query expression.
+            boundary = _Candidate(cursor[0], cursor[1], ref, tiny, descending)
+            if not item < boundary:
+                return
+        if len(heap) < limit:
+            heapq.heappush(heap, item)
+        elif heap[0] < item:
+            heapq.heapreplace(heap, item)
+    status = scan(directory, session_id, cancelled=cancelled, on_record=selected, on_reset=reset)
+    sorted_rows = sorted(heap, reverse=True)
+    page = [(item.tiny, item.ref) for item in sorted_rows]
+    next_cursor = ((sorted_rows[-1].primary, sorted_rows[-1].seq)
+                   if len(sorted_rows) == limit else None)
+    # Projections are constrained to five short fields and locator metadata.
+    return status, count, page, next_cursor
 
 
 def read_detail(directory: Path, ref: RecordRef) -> dict:
