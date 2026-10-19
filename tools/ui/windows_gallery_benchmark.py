@@ -181,12 +181,12 @@ def _completed_queries(directory: Path) -> dict[tuple, int]:
     records = {}
     for sid in discover(directory):
 
-        def reset():
+        def reset(*, sid=sid):
             for key in tuple(records):
                 if key[0] == sid:
                     del records[key]
 
-        def collect(record, _loc):
+        def collect(record, _loc, *, sid=sid):
             data = record.get("data", {})
             if (
                 record["event"] == "gallery.query_done"
@@ -490,10 +490,10 @@ def _wheel_intents(directory: Path) -> set[tuple]:
     found = set()
     for sid in discover(directory):
 
-        def reset():
+        def reset(*, sid=sid):
             found.difference_update({x for x in found if x[0] == sid})
 
-        def collect(record, _loc):
+        def collect(record, _loc, *, sid=sid):
             data = record.get("data", {})
             if (
                 record["event"] == "gallery.scroll_intent"
