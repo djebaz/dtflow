@@ -337,8 +337,8 @@ class MainWindow:
         logs_button.setToolTip("Open Logs workspace")
         logs_button.setAccessibleName("Open Logs workspace")
         logs_button.clicked.connect(self._toggle_logs)
-        status_actions_layout.addWidget(logs_button)
         status_actions_layout.addWidget(about_button)
+        status_actions_layout.addWidget(logs_button)
         grid_status_group = QWidget(form.statusBar())
         grid_status_group.setObjectName("dtflowGridPositionGroup")
         grid_status_group.setAccessibleName("Grid position")
@@ -355,8 +355,8 @@ class MainWindow:
         grid_index.setAccessibleName("0/0")
         grid_index.setToolTip("First visible image position in the Grid workspace")
         grid_status_layout.addWidget(grid_index)
-        form.statusBar().addPermanentWidget(status_actions)
         form.statusBar().addPermanentWidget(grid_status_group)
+        form.statusBar().addPermanentWidget(status_actions)
         self.grid_index_group = grid_status_group
         grid_status_group.setVisible(form.workspaceStack.currentWidget() is self.images_page)
         self.grid_index_label = grid_index
