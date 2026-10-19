@@ -989,7 +989,6 @@
       "required": [
         "count",
         "mean",
-        "p95",
         "max",
         "total"
       ],
@@ -1002,7 +1001,8 @@
           "type": "number"
         },
         "p95": {
-          "type": "number"
+          "type": "number",
+          "description": "Optional: present only when measured from real source samples; never infer from summary mean/max."
         },
         "max": {
           "type": "number"
@@ -1052,7 +1052,8 @@
               "$ref": "#/$defs/metric"
             }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "description": "Per-metric source sample count and statistics. p95 is optional where true source samples are unavailable (such as _PerfBatchStats summaries)."
         }
       }
     }
