@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QLineEdit,
+    QHBoxLayout,
     QMainWindow,
     QPlainTextEdit,
     QToolButton,
@@ -27,7 +28,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.logging_setup import dev_enabled
+from dtflow.logging_setup import default_directory, dev_enabled
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -228,7 +229,7 @@ class MainWindow:
         self.shell.rightStack.addWidget(QWidget())
         self._logs_previous_page = form.connectionPage
         self._logs_active = False
-        self.logs = LogsWorkspace(self.logs_form, self.state_dir.parent / "logs", self._close_logs)
+        self.logs = LogsWorkspace(self.logs_form, default_directory(), self._close_logs)
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
         self.progress_strip = ActivityStrip(form)
@@ -535,7 +536,7 @@ class MainWindow:
                 for slot, frame in ((self.logs_form.logsBrandSlot, shell.brandFrame),
                                     (self.logs_form.logsNavigationSlot, shell.navigationFrame)):
                     slot.setFixedSize(shell.leftRail.width(), frame.height())
-                    slot.layout().addWidget(frame) if slot.layout() else __import__("PySide6.QtWidgets", fromlist=["QHBoxLayout"]).QHBoxLayout(slot).addWidget(frame)
+                    slot.layout().addWidget(frame) if slot.layout() else QHBoxLayout(slot).addWidget(frame)
             elif self._gallery_chrome_active is False:
                 shell.leftRailLayout.insertWidget(0, shell.brandFrame)
                 shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
