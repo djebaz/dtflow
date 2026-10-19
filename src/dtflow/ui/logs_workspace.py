@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu
 
 from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail
 from dtflow._diagnostic_export import export_matching
+from dtflow.diagnostic_projection import characteristics
 from dtflow.ui.theme import load_tokens
 
 
@@ -43,6 +44,7 @@ class _LogModel(QAbstractTableModel):
         self.rows = []
         self.refs = []
         self.palette = load_tokens()
+        self.previews = []
 
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self.rows)
@@ -55,10 +57,11 @@ class _LogModel(QAbstractTableModel):
             return self.HEADERS[section]
         return None
 
-    def replace(self, page):
+    def replace(self, page, previews=None):
         self.beginResetModel()
         self.rows = [record for record, _ref in page][:PAGE_SIZE]
         self.refs = [ref for _record, ref in page][:PAGE_SIZE]
+        self.previews = list(previews or ())[:PAGE_SIZE]
         self.endResetModel()
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
@@ -73,7 +76,7 @@ class _LogModel(QAbstractTableModel):
             if column == 2:
                 return record["event"]
             if column == 3:
-                return record["component"]
+                return self.previews[index.row()] if index.row() < len(self.previews) else "Loading characteristics…"
             return "Details   Copy"
         if role == Qt.ItemDataRole.ToolTipRole:
             return f"{record['level']} · {record['component']} · {record['event']} · seq {record['seq']}"
@@ -242,8 +245,24 @@ class LogsWorkspace(QObject):
             self.form.logsNotice.show()
             return
         self.form.logsStatus.setText("Loading session…")
-        self._run(lambda: query(self.directory, sid, filters=filters, sort=sort, descending=desc),
-                  self._show_results)
+        def load():
+            status, count, page, cursor = query(
+                self.directory, sid, filters=filters, sort=sort, descending=desc)
+            projections = []
+            # Page-only bounded previews, never complete records in the model.
+            for _tiny, ref in page:
+                try:
+                    full = read_detail(self.directory, ref)
+                    pairs, more = characteristics(full, limit=6, preview_bytes=64)
+                    preview = "   ".join(f"{key}: {value}" for key, value in pairs)
+                    if more:
+                        preview += f"   +{more} more"
+                    projections.append(preview)
+                except Exception:
+                    projections.append("Details unavailable")
+            return status, count, page, cursor, projections
+
+        self._run(load, self._show_results)
 
     def _show_results(self, result, error):
         if error:
@@ -251,9 +270,9 @@ class LogsWorkspace(QObject):
             self.form.logsNotice.show()
             self.form.logsStatus.setText("Read failed")
             return
-        status, count, page, _next = result
+        status, count, page, _next, projections = result
         self._page = page
-        self.model.replace(page)
+        self.model.replace(page, projections)
         self.form.logsStatus.setText(f"{count} matching · {status.state} · displaying {len(page)}")
         self.form.logsNotice.setVisible(status.state not in ("complete", "pending"))
         self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
