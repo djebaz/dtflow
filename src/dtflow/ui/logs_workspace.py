@@ -485,6 +485,7 @@ class LogsWorkspace(QObject):
         self.refresh()
 
     def _toggle_follow(self, enabled):
+        self.form.logsFollowButton.setText("Follow: On" if enabled else "Follow: Off")
         if enabled:
             self.form.logsSortCombo.blockSignals(True)
             self.form.logsSortCombo.setCurrentIndex(0)
