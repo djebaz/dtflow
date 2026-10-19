@@ -12,5 +12,5 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Release audit
 
-- PRs: #109 (expected release-preparation PR; verify after creation)
+- PRs: #109
 - Scope: Version bump to 5.0.0 and consolidation of final behavior/PR references. No post-5.0.0 feature changes recorded.
