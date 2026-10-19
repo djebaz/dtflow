@@ -223,7 +223,9 @@ def _button(window, name: str, *, alternatives: tuple[str, ...] = (),
             return matches[0]
         if len(matches) > 1:
             raise RuntimeError(f"Ambiguous Qt UIA button: {name}")
-        time.sleep(0.25)
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            time.sleep(min(0.25, remaining))
     raise LookupError(
         f"Qt UIA button {name!r} missing, disabled or hidden after {timeout:g}s "
         "(searched Button/CheckBox/RadioButton roles)"
