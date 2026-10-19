@@ -1421,6 +1421,9 @@ def test_large_batch_does_not_fake_target_from_batch_end(monkeypatch):
             return GridPosition(first, last, 833, "pager-log")
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    # The sender thread may dispatch the first wheel before the probe's
+    # initial read. Verify the synthetic starting state explicitly.
+    assert Probe().read().first == 1
     actions = []
     result = benchmark._seek_grid_card(
         object(),
@@ -1433,7 +1436,9 @@ def test_large_batch_does_not_fake_target_from_batch_end(monkeypatch):
     )
     assert result["target_reached"]
     assert 180 <= result["first_after"] <= 220
-    assert result["first_before"] == 1
+    assert wheel[0] < 0
+    assert result["first_before"] is not None
+    assert result["first_before"] < 200
     assert len(wheel) > 1
     assert result["wheel_pulses"] > 1
 
