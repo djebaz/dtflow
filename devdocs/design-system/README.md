@@ -2,7 +2,7 @@
 
 DTFlow is a compact, image-first native desktop workspace for AI image generation and queue workflows. Built as a Qt Widgets application, it prioritizes efficient layouts, clear interaction states, and a restrained visual language where the generated image dominates the interface.
 
-For the planned [compact Logs workspace UX](logs-workspace.md), see its [offline HTML interaction concept](../mockups/dtflow_logs_workspace.html). This is a PR #105 design proposal, not a runtime Qt screenshot or a replacement for the canonical Designer/render-state workflow.
+For the planned [compact Logs workspace UX](logs-workspace.md), see the [standalone interaction study](../mockups/dtflow_logs_workspace.html), [app-shell study](../mockups/dtflow_app_shell_with_logs.html), [Logs color card](cards/colors-logs.html) and [all-components catalog](components/dtflow_all_components.html). These are PR #105 synthetic HTML design references, not runtime Qt screenshots or replacements for the canonical Designer/render-state workflow. The bundled studies embed their own asset/style snapshots and do not automatically track edits to source CSS.
 
 ## Overview
 
@@ -179,7 +179,7 @@ Component CSS lives in `components/components.css` (imported by `styles.css`) an
 
 ## Intentional additions
 
-*None — all components are sourced from the DTFlow Qt codebase. Section-card icons use the supplied `assets/icons/*.svg` via the `icon` slot.*.svg` in the source) were not supplied, so `SectionCard` takes an optional `icon` slot and the kit omits them.*
+The [Logs token proposal](tokens/logs.css) adds documentation-only surfaces, an INFO stripe, deterministic event/key pill pairs and row-action sizing, shown in the [Logs color card](cards/colors-logs.html). It is not yet part of runtime `tokens.json` or shared QSS. Accepted additions must be promoted through the existing theme loader and documented token mapping in Phase 3; no separate native Logs stylesheet. Section-card icons use supplied `assets/icons/*.svg` via the optional `icon` slot.
 
 ## How to use this system
 
@@ -199,13 +199,13 @@ Read `DESIGN.md` for the complete layout specification, component checklist, and
 ## Files in this system
 
 - `styles.css` — web-based token reference (mirrors `tokens.json` for documentation)
-- `tokens/` — individual token CSS files (colors, typography, spacing)
+- `tokens/` — individual token CSS files (colors, typography, spacing); [logs.css](tokens/logs.css) is a separately loaded proposal, not imported globally by `styles.css`
 - `cards/` — foundation specimen cards showing colors, type, and spacing in context
 - `components/layout/` — `SectionCard` component + card
 - `ui_kits/connection/`, `generate/`, `queues/`, `images/` — one clickable kit per view, each built only from `components/` and its own `.ui` source (shared layout in `ui_kits/shared.css`, chrome in `ui_kits/Chrome.jsx`)
 - `SKILL.md` — agent skill entry
 - Source: [djebaz/dtflow](https://github.com/djebaz/dtflow) — explore for fuller context
-- `readme.md` (this file) — design guide and manifest
+- `README.md` (this file) — design guide and manifest
 
 ---
 

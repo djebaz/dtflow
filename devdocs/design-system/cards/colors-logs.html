@@ -1,0 +1,43 @@
+<!-- @dsCard group="Colors" viewport="700x470" name="Logs View Colors" -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="../tokens/logs.css">
+  <style>
+    body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .row { display: flex; gap: 12px; }
+    .item { flex: 1; min-width: 0; }
+    .swatch { height: 56px; border-radius: 6px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.1); }
+    .label { font-size: 10pt; font-weight: 500; color: var(--color-text); }
+    .hex { font-size: 9pt; color: var(--color-secondary); font-family: Consolas, monospace; }
+    .heading { font-size: 9pt; font-weight: 600; color: var(--color-secondary); }
+    .pills { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .pill { display: inline-block; padding: 4px 7px; border-radius: 4px; font-size: 9pt; font-weight: 600; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <div class="heading">Severity stripe and surfaces</div>
+  <div class="row">
+    <div class="item"><div class="swatch" style="background-color: var(--color-log-info);"></div><div class="label">Log Info</div><div class="hex">#8a99a6</div></div>
+    <div class="item"><div class="swatch" style="background-color: var(--color-log-row-hover);"></div><div class="label">Row Hover</div><div class="hex">#292d31</div></div>
+    <div class="item"><div class="swatch" style="background-color: var(--color-log-code-surface);"></div><div class="label">Code Surface</div><div class="hex">#191919</div></div>
+    <div class="item"><div class="swatch" style="background-color: var(--color-log-popup-surface);"></div><div class="label">Popup Surface</div><div class="hex">#292929</div></div>
+    <div class="item"><div class="swatch" style="background-color: var(--color-log-notice-surface);"></div><div class="label">Notice Surface</div><div class="hex">#32291e</div></div>
+  </div>
+  <div class="heading">Event and characteristic label pairs (background / text, chosen by stable hash)</div>
+  <div class="pills">
+    <div><span class="pill" style="background: var(--color-log-pill-1-bg); color: var(--color-log-pill-1-fg);">gallery.query</span><div class="hex">#263b46 / #a9cfe8</div></div>
+    <div><span class="pill" style="background: var(--color-log-pill-2-bg); color: var(--color-log-pill-2-fg);">gallery.query</span><div class="hex">#30394a / #aebfec</div></div>
+    <div><span class="pill" style="background: var(--color-log-pill-3-bg); color: var(--color-log-pill-3-fg);">gallery.query</span><div class="hex">#283b34 / #a8d5bc</div></div>
+    <div><span class="pill" style="background: var(--color-log-pill-4-bg); color: var(--color-log-pill-4-fg);">gallery.query</span><div class="hex">#403629 / #e8c894</div></div>
+    <div><span class="pill" style="background: var(--color-log-pill-5-bg); color: var(--color-log-pill-5-fg);">gallery.query</span><div class="hex">#393044 / #cbb5ed</div></div>
+    <div><span class="pill" style="background: var(--color-log-pill-6-bg); color: var(--color-log-pill-6-fg);">gallery.query</span><div class="hex">#403039 / #e4b0c3</div></div>
+    <div><span class="pill" style="background: var(--color-log-pill-7-bg); color: var(--color-log-pill-7-fg);">gallery.query</span><div class="hex">#293d40 / #a5d2d4</div></div>
+    <div><span class="pill" style="background: var(--color-log-pill-8-bg); color: var(--color-log-pill-8-fg);">gallery.query</span><div class="hex">#38372c / #d8d0a0</div></div>
+  </div>
+  <div class="hex">DEBUG, WARNING and ERROR stripes reuse --color-disabled, --color-warning and --color-error. Sizes: --size-log-row-action 28px, --size-log-table-min 700px.</div>
+</body>
+</html>
