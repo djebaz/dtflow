@@ -209,6 +209,7 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
         reasons = []
         last_record = None
         last_segment = None
+        partial_on_active = False
         try:
             for segment in segments:
                 for record, loc in _read_lines(segment, cancelled):
@@ -264,8 +265,10 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
             last_reason = exc.reason
             if exc.reason == "snapshot_changed" and attempt < 2:
                 continue
-            if exc.reason == "cancelled":
+            if exc.reason in ("cancelled", "consumer_record_limit", "consumer_memory_limit"):
                 raise
+            if exc.reason == "partial_tail":
+                partial_on_active = segment.age == 0
             reasons.append(exc.reason)
         if not startup:
             reasons.append("startup_missing")
@@ -275,8 +278,12 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
                  ("invalid_record", "session_identity_mismatch", "conflicting_sequence",
                   "duplicate_startup", "duplicate_seal", "records_after_seal"))
                  else "incomplete" if reasons else "complete")
-        if (segments[-1].age == 0 and not closed
-                and set(reasons) <= {"seal_missing", "partial_tail"}):
+        if (
+            segments[-1].age == 0
+            and not closed
+            and set(reasons) <= {"seal_missing", "partial_tail"}
+            and ("partial_tail" not in reasons or partial_on_active)
+        ):
             state = "pending"
         return SessionStatus(session_id, state, tuple(dict.fromkeys(reasons)), count, segments)
     raise EvidenceError(last_reason)
@@ -355,13 +362,26 @@ def iter_records(directory: Path, session_id: str, *, cancelled=None,
                  require_complete: bool = False):
     """Stream a bounded-size snapshot only; callers must inspect session status."""
     buffer = []
+    buffer_bytes = 0
+
+    def reset():
+        nonlocal buffer_bytes
+        buffer.clear()
+        buffer_bytes = 0
+
     def collect(record, ref):
-        # No unlimited materialization: this convenience method is for small
-        # diagnostic consumers only and fails closed above a bounded limit.
+        nonlocal buffer_bytes
+        # Convenience materialization is deliberately byte-bounded as well
+        # as count-bounded: 10k records may each be close to 1 MiB.
+        charge = ref.length + 512
         if len(buffer) >= 10000:
             raise EvidenceError("consumer_record_limit")
+        if buffer_bytes + charge > MAX_WORKER_BYTES:
+            raise EvidenceError("consumer_memory_limit")
+        buffer_bytes += charge
         buffer.append((record, ref))
-    status = scan(directory, session_id, cancelled=cancelled, on_record=collect, on_reset=buffer.clear)
+
+    status = scan(directory, session_id, cancelled=cancelled, on_record=collect, on_reset=reset)
     if require_complete and not status.complete:
         raise EvidenceError("session_" + status.state)
     return status, tuple(buffer)
