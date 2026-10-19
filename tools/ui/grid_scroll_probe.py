@@ -53,76 +53,41 @@ def parse_benchmark_view(text: str) -> GridPosition | None:
 
 
 class GridProgressProbe:
-    """Prefer the recorded UIA Text control; fall back to benchmark pager logs.
+    """Read the gallery's actual visible range via its live UIA Text element.
 
-    Windows UIA sometimes exposes the QLabel's accessibleName (the static
-    'Visible image range') instead of its changing displayed text. Fallback
-    reads the same pager values emitted in a benchmark child, not estimated
-    wheel distances. No click or mutation of the control is required.
+    Qt may expose accessibleName instead of QLabel text. The pager publishes
+    its changing range in accessibleName, so reacquire the live Text control
+    rather than caching an outdated element or parsing obsolete text logs.
     """
 
     def __init__(self, window, logs: Path):
-        self.logs = logs
-        self._label = None
-        self._uia_unavailable = False
-        try:
-            candidate = window.child_window(title="Visible image range", control_type="Text")
-            if not hasattr(candidate, "exists") or candidate.exists(timeout=0.2):
-                self._label = candidate
-        except Exception:
-            pass
+        self.window = window
+        self.logs = logs  # signature retained for the benchmark callers
         self.last: GridPosition | None = None
 
-    def _uia(self) -> GridPosition | None:
-        if self._label is None or self._uia_unavailable:
-            return None
-        label = self._label
-        values = []
-        try:
-            values.append(label.window_text())
-        except Exception:
-            pass
-        try:
-            values.append(label.iface_text.DocumentRange.GetText(-1))
-        except Exception:
-            pass
-        try:
-            values.append(label.legacy_properties().get("Value", ""))
-        except Exception:
-            pass
-        for text in values:
-            match = parse_visible_range(str(text))
-            if match:
-                return match
-        # A Qt QLabel's accessibleName can mask its displayed text on
-        # Windows. If none of its accessible text patterns exposes numbers,
-        # do not make three slow cross-process calls on every wheel pulse.
-        self._uia_unavailable = True
-        return None
-
-    def _log(self) -> GridPosition | None:
-        paths = []
-        try:
-            for path in self.logs.glob("dtflow-*.log*"):
-                if "-gallery" not in path.name and path.is_file():
-                    paths.append((path.stat().st_mtime_ns, path))
-        except OSError:
-            return None
-        for _timestamp, path in sorted(paths, reverse=True):
-            try:
-                with path.open("rb") as stream:
-                    stream.seek(0, 2)
-                    stream.seek(max(0, stream.tell() - 131_072))
-                    content = stream.read().decode("utf-8", "replace")
-            except OSError:
-                continue
-            position = parse_benchmark_view(content)
-            if position:
-                return position
-        return None
-
     def read(self) -> GridPosition | None:
-        position = self._uia() or self._log()
-        if position is not None:
-            self.last = position
-        return position
+        matches = []
+        try:
+            for control in self.window.descendants():
+                info = control.element_info
+                if info.control_type != "Text":
+                    continue
+                name = info.name or ""
+                if not name.startswith("Visible image range"):
+                    continue
+                # The dynamically published accessible name is authoritative.
+                value = name.removeprefix("Visible image range").lstrip(": ").strip()
+                position = parse_visible_range(value)
+                if position is None:
+                    try:
+                        position = parse_visible_range(control.window_text())
+                    except (AttributeError, RuntimeError, ValueError):
+                        pass
+                if position is not None:
+                    matches.append(position)
+        except (LookupError, RuntimeError, OSError):
+            return None
+        if len(matches) != 1:
+            return None  # never guess among duplicated/stale controls
+        self.last = matches[0]
+        return self.last
