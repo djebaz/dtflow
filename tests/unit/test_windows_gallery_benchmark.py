@@ -1273,3 +1273,68 @@ def test_grid_home_does_not_accept_stale_position_281(monkeypatch):
     assert actions[-1]["first_after"] == 281
     assert inputs and all(delta > 0 for delta in inputs)
 
+
+def test_large_batch_does_not_fake_target_from_batch_end(monkeypatch):
+    """Regression: -ml 200 returned 1–200 of 833 and stopped after one pulse."""
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    state = {"first": 1}
+    wheel = []
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            wheel.append(wheel_dist)
+            # The initial visible end is 200, but position only advances after
+            # real wheel messages. Simulate slow-ish continuous progress.
+            if wheel_dist < 0:
+                state["first"] = min(190, state["first"] + 35)
+            else:
+                state["first"] = max(1, state["first"] - 8)
+
+    class Probe:
+        def read(self):
+            first = state["first"]
+            last = 200 if first == 1 else min(833, first + 14)
+            return GridPosition(first, last, 833, "pager-log")
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    actions = []
+    result = benchmark._seek_grid_card(
+        object(), Probe(), actions, target=200, direction=-1,
+        timeout=3, wheel_point=((600, 400), "grid"),
+    )
+    assert result["target_reached"]
+    assert 180 <= result["first_after"] <= 220
+    assert result["first_before"] == 1
+    assert len(wheel) > 1
+    assert result["wheel_pulses"] > 1
+
+
+def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    sent = []
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            sent.append(wheel_dist)
+
+    class Probe:
+        def read(self):
+            return GridPosition(1, 200, 833, "pager-log")
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    actions = []
+    with pytest.raises(TimeoutError, match="did not reach card 200"):
+        benchmark._seek_grid_card(
+            object(), Probe(), actions, target=200, direction=-1,
+            timeout=0.12, wheel_point=((600, 400), "grid"),
+        )
+    assert len(sent) >= 1
+    assert actions[-1]["target_reached"] is False
+    assert actions[-1]["first_after"] == 1
+    assert actions[-1]["last_after"] == 200
