@@ -945,6 +945,7 @@ def test_grid_matrix_samples_first_query_after_scrolls(monkeypatch, tmp_path):
                         lambda *a: events.append("sample-query") or 100)
     monkeypatch.setattr(benchmark, "_click_gallery_mode", lambda *a: None)
     monkeypatch.setattr(benchmark, "_click_grid_page_one", lambda *a, **kw: None)
+    monkeypatch.setattr(benchmark, "_wait_for_grid_page_one", lambda *a, **kw: None)
     monkeypatch.setattr(benchmark, "_seek_grid_card",
                         lambda window, probe, actions, *, direction, **kw: events.append(
                             "home" if kw.get("action_name") == "grid-home-start"
@@ -956,7 +957,7 @@ def test_grid_matrix_samples_first_query_after_scrolls(monkeypatch, tmp_path):
         cycles=1, timeout=2, grid_limits=(300, 900),
     ) == 100
     assert [w["step"] for w in record["warnings"]] == ["insufficient-images-for-full-batch"]
-    assert events == ["home", "down", "up", "sample-query", "close"]
+    assert events == ["down", "up", "sample-query", "close"]
 
 
 def test_launcher_passes_requested_batch_and_resolved_card_limit(tmp_path, monkeypatch):
@@ -1196,24 +1197,6 @@ def test_grid_seek_overshoot_corrects_direction(monkeypatch):
     assert result["target_reached"]
     assert movements[0] < 0
     assert any(movement > 0 for movement in movements)
-
-
-def test_grid_page_one_early_does_not_wait_for_disabled_chip(monkeypatch):
-    from tools.ui import windows_gallery_benchmark as benchmark
-
-    def unavailable(*args, **kwargs):
-        assert kwargs["timeout"] == 0.3
-        raise LookupError("Pager not ready")
-
-    monkeypatch.setattr(benchmark, "_button", unavailable)
-    actions = []
-    assert benchmark._click_grid_page_one_early(object(), actions) is False
-    assert actions == [pytest.approx({
-        "action": "click-page-one-start",
-        "outcome": "not-ready",
-        "reason": "LookupError",
-        "dispatch_ms": actions[0]["dispatch_ms"],
-    })]
 
 
 def test_grid_home_corrects_stale_first_card_by_scrolling_up(monkeypatch):
