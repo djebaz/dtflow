@@ -34,6 +34,11 @@ DEFAULT_PROFILES = {
     "refresh-10s": {"refresh_ms": 10000, "full_refresh_s": 60},
     "debounce-faster": {"filter_debounce_ms": 150, "save_debounce_ms": 125, "page_jump_debounce_ms": 20},
 }
+DEFAULT_GRID_MATRIX = ((20, 50), (20, 100), (50, 150), (100, 300), (200, 600), (300, 1000))
+# Keep the product's actual batch-rounding semantics for each case.
+GRID_MAX_LOAD = 300
+GRID_MAX_CARDS = 1000
+
 SCROLL_INTENT = re.compile(r"gallery_perf phase=scroll_intent\b[^\n]*\bdirection=(forward|backward)\b[^\n]*\bsource=wheel\b")
 QUERY_DONE = re.compile(r"gallery_perf phase=query_done\b[^\n]*\breturned=(\d+)\b[^\n]*\berror=none\b")
 
@@ -55,6 +60,45 @@ def load_profiles(path: Path | None, names: list[str] | None) -> dict[str, dict]
             raise ValueError(f"Unsafe profile name: {name}")
         profiles[name] = validate_profile(raw[name])
     return profiles
+
+
+def parse_grid_matrix(specs: list[str]) -> list[tuple[int, int, int]]:
+    """Resolve requested `-ml:-mc` cases without changing DTFlow defaults.
+
+    The effective card cap rounds down to full batches. Reject empty,
+    duplicate or excessive matrices before opening any desktop windows.
+    """
+
+    from dtflow.gallery_limits import resolve as resolve_gallery_limits
+
+    raw = list(specs) if specs else [f"{ml}:{mc}" for ml, mc in DEFAULT_GRID_MATRIX]
+    if len(raw) > 16:
+        raise ValueError("Grid limit matrix may contain at most 16 cases.")
+    combinations = []
+    seen = set()
+    for spec in raw:
+        parts = spec.split(":")
+        if len(parts) != 2 or not all(part.isdecimal() for part in parts):
+            raise ValueError(f"Invalid Grid limit pair {spec!r}; expected ML:MC.")
+        ml, mc = (int(part) for part in parts)
+        if not 1 <= ml <= GRID_MAX_LOAD or not 1 <= mc <= GRID_MAX_CARDS:
+            raise ValueError(
+                f"Grid limit pair must have -ml 1..{GRID_MAX_LOAD} and -mc 1..{GRID_MAX_CARDS}."
+            )
+        if ml > mc:
+            raise ValueError("Grid -mc must be at least -ml for a meaningful cap comparison.")
+        if (ml, mc) in seen:
+            raise ValueError(f"Duplicate Grid limit pair: {spec}.")
+        seen.add((ml, mc))
+        _batch, effective_mc = resolve_gallery_limits(ml, mc)
+        combinations.append((ml, mc, effective_mc))
+    return combinations
+
+
+def _grid_sweep_steps(ml: int, effective_mc: int) -> int:
+    """Bounded sweep depth scales with the number of resident batches."""
+
+    return min(12, max(4, (effective_mc + ml - 1) // ml + 2))
 
 
 def _number(value: str) -> float | None:
@@ -300,6 +344,31 @@ def _click_page(window, number: int, actions: list[dict]) -> None:
             return
         time.sleep(0.1)
     raise TimeoutError(f"Page {number} did not become selected after the click.")
+
+
+def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
+    """Physically click page 1 even when it is already selected."""
+
+    name = "Jump to image batch 1"
+    button = _button(window, name, automation_id="galleryPagerPage1", timeout=5)
+    started = time.perf_counter()
+    button.click_input()
+    # The pager may recreate chips on a page jump; find a fresh wrapper.
+    deadline = time.monotonic() + 6
+    while time.monotonic() < deadline:
+        try:
+            selected = _button(window, name, automation_id="galleryPagerPage1", timeout=1)
+            if selected.get_toggle_state() == 1:
+                actions.append({
+                    "action": "click-page-one-" + at,
+                    "verified": True,
+                    "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+                })
+                return
+        except (LookupError, RuntimeError):
+            pass
+        time.sleep(0.15)
+    raise TimeoutError(f"Page 1 was clicked at {at} but did not become selected.")
 
 
 def _wheel_intents(directory: Path) -> set[tuple]:
@@ -616,6 +685,7 @@ def _stop_trial_process(proc: subprocess.Popen) -> None:
 def _drive(
     proc: subprocess.Popen, directory: Path, record: dict, *,
     cycles: int, timeout: float, scroll_notches: int = 192,
+    grid_limits: tuple[int, int] | None = None,
 ) -> int:
     """Attach only to the launched child and track the failing UI step."""
 
@@ -655,6 +725,55 @@ def _drive(
         record, "setup-grid",
         lambda: _click_gallery_mode(window, "Grid", record.setdefault("setup_actions", [])),
     )
+    if grid_limits is not None:
+        # The dedicated limit sweep never opens or modifies the Sort dropdown.
+        # Page 1 is physically clicked both before and after scrolling.
+        ml, effective_mc = grid_limits
+        if initial_count < ml:
+            _attempt(
+                record, "insufficient-images-for-full-batch",
+                lambda: (_ for _ in ()).throw(
+                    ValueError(
+                        f"Only {initial_count} first-query images for -ml {ml}; "
+                        "this case cannot exercise a complete initial batch."
+                    )
+                ),
+            )
+        _attempt(record, "grid-page-one-start", lambda: _click_grid_page_one(
+            window, actions, at="start",
+        ))
+        steps = _grid_sweep_steps(ml, effective_mc)
+        # More mounted batches need more wheel steps to traverse the buffer.
+        # Individual bursts remain short enough for Qt to run its event loop.
+        per_step_notches = max(12, scroll_notches // 3)
+        record["grid_sweep"] = {
+            "steps_per_direction": steps,
+            "notches_per_step": per_step_notches,
+            "passes": cycles,
+            "max_planned_notches_per_direction": steps * per_step_notches * cycles,
+            "scroll_distance_verified": False,
+        }
+        for cycle in range(cycles):
+            prefix = f"cycle-{cycle + 1}"
+            for direction, label in ((-1, "down"), (1, "up")):
+                for step in range(1, steps + 1):
+                    if proc.poll() is not None:
+                        raise RuntimeError("DTFlow exited during the Grid limit matrix sweep.")
+                    _attempt(
+                        record, f"{prefix}-grid-scroll-{label}-{step}",
+                        lambda d=direction: _scroll(
+                            window, d, actions, directory,
+                            mode="grid", notches=per_step_notches,
+                        ),
+                    )
+                    time.sleep(0.25)
+        _attempt(record, "grid-page-one-end", lambda: _click_grid_page_one(
+            window, actions, at="end",
+        ))
+        record["step"] = "close-dtflow-window"
+        window.close()
+        record["step"] = "wait-for-shutdown"
+        return initial_count
     _attempt(
         record, "setup-sort",
         lambda: _reset_gallery_sort(window, directory, proc, record, timeout=timeout),
@@ -703,7 +822,8 @@ def _drive(
 
 
 def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: int,
-              timeout: float, no_cache: bool, scroll_notches: int = 192) -> dict:
+              timeout: float, no_cache: bool, scroll_notches: int = 192,
+              grid_limits: tuple[int, int, int] | None = None) -> dict:
     """Launch one source GUI process and retain evidence even if automation fails."""
 
     directory.mkdir(parents=True, exist_ok=False)
@@ -716,8 +836,8 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
         "--profile", str(profile_path), "--logs", str(logs),
         "--pid-file", str(directory / "app-process.json"),
     ]
-    if no_cache:
-        args.append("--no-cache")
+    if grid_limits is not None:
+        args.extend(["--ml", str(grid_limits[0]), "--mc", str(grid_limits[1])])
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "windows"
     record: dict = {
@@ -725,6 +845,10 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
         "status": "failed", "actions": [], "warnings": [], "error_type": None, "error_message": None,
         "step": "not-started",
         "initial_query_records": None,
+        "benchmark_mode": "grid-matrix" if grid_limits is not None else "profiles",
+        "requested_ml": grid_limits[0] if grid_limits else 20,
+        "requested_mc": grid_limits[1] if grid_limits else 100,
+        "effective_mc": grid_limits[2] if grid_limits else 100,
     }
     process = None
     stderr = directory / "app-stderr.txt"
@@ -736,6 +860,7 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
             record["initial_query_records"] = _drive(
                 process, logs, record, cycles=cycles, timeout=timeout,
                 scroll_notches=scroll_notches,
+                grid_limits=(grid_limits[0], grid_limits[2]) if grid_limits else None,
             )
             process.wait(timeout=timeout)
             csvs = sorted(logs.glob("dtflow-*-gallery.csv"))
@@ -769,7 +894,9 @@ def write_report(records: list[dict], out: Path) -> None:
     """Emit inspectable raw trials and a comparison that never ranks missing data."""
 
     columns = (
-        "case", "trial", "status", "step", "warning_count", "initial_query_records", "gui_gap_over_50_max_ms",
+        "case", "trial", "status", "step", "warning_count", "benchmark_mode",
+        "requested_ml", "requested_mc", "effective_mc",
+        "initial_query_records", "gui_gap_over_50_max_ms",
         "query_done_median_recorded_ms", "prepare_median_recorded_ms",
         "grid_mount_median_recorded_ms", "adjacent_events", "error_type",
     )
@@ -786,6 +913,10 @@ def write_report(records: list[dict], out: Path) -> None:
                 "status": record["status"],
                 "step": record.get("step"),
                 "warning_count": len(record.get("warnings", [])),
+                "benchmark_mode": record.get("benchmark_mode", "profiles"),
+                "requested_ml": record.get("requested_ml", 20),
+                "requested_mc": record.get("requested_mc", 100),
+                "effective_mc": record.get("effective_mc", 100),
                 "initial_query_records": record.get("initial_query_records"),
                 "gui_gap_over_50_max_ms": metrics.get("gui_gap_over_50_max_ms"),
                 "query_done_median_recorded_ms": metrics.get("query_done_median_recorded_ms"),
@@ -851,6 +982,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="JSON mapping profile names to overrides; otherwise use built-in one-factor profiles.")
     parser.add_argument("--profiles", nargs="+", metavar="NAME",
                         help="Only selected profiles from the file or built-in set (default: all).")
+    parser.add_argument(
+        "--grid-matrix", nargs="*", metavar="ML:MC",
+        help="Grid-only scroll matrix. With no pairs uses 20:50 20:100 50:150 "
+             "100:300 200:600 300:1000. Does not change Sort.",
+    )
     parser.add_argument("--runs", type=int, default=2, help="Trials per profile (1–10).")
     parser.add_argument("--cycles", type=int, default=2, help="Repeated UI action sequences (1–10).")
     parser.add_argument("--scroll-notches", type=int, default=192,
@@ -870,8 +1006,20 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--runs and --cycles must be between 1 and 10.")
     if not 5 <= args.timeout <= 120:
         parser.error("--timeout must be between 5 and 120 seconds.")
+    if args.grid_matrix is not None and (args.profiles is not None or args.profiles_file is not None):
+        parser.error("--grid-matrix cannot be combined with tuning profiles.")
     try:
-        profiles = load_profiles(args.profiles_file, args.profiles)
+        if args.grid_matrix is not None:
+            combinations = parse_grid_matrix(args.grid_matrix)
+            profiles = {
+                f"grid-ml{ml:03d}-mc{mc:04d}": (validate_profile({}), (ml, mc, effective))
+                for ml, mc, effective in combinations
+            }
+        else:
+            profiles = {
+                name: (profile, None)
+                for name, profile in load_profiles(args.profiles_file, args.profiles).items()
+            }
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
     if len(profiles) * args.runs > 40:
@@ -889,12 +1037,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Benchmark output: {output}", flush=True)
     records = []
     try:
-        for name, profile in profiles.items():
+        for name, (profile, grid_limits) in profiles.items():
             for trial in range(1, args.runs + 1):
                 directory = output / f"{name}-r{trial:02}"
                 record = run_trial(name, profile, trial=trial, directory=directory,
                                    cycles=args.cycles, timeout=args.timeout, no_cache=args.no_cache,
-                                   scroll_notches=args.scroll_notches)
+                                   scroll_notches=args.scroll_notches, grid_limits=grid_limits)
                 records.append(record)
                 write_report(records, output)
                 print(f"{name} trial={trial} status={record['status']}", flush=True)
