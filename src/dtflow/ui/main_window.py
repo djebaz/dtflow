@@ -566,12 +566,16 @@ class MainWindow:
             shell.navigationFrame.show()
             self.gallery_detail.galleryBrandSlot.setVisible(images)
             self.gallery_detail.galleryNavigationSlot.setVisible(images)
-            shell.leftRail.setVisible(not images and not logs)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        # Logs and Images use the full-width center workspace, regardless of
+        # whether the Images page changed during this navigation.
+        shell.leftRail.setVisible(not images and not logs)
+        shell.rightRail.setVisible(not images and not logs and not narrow)
+        self.logs_form.logsBrandSlot.setVisible(logs)
+        self.logs_form.logsNavigationSlot.setVisible(logs)
         shell.runControl.setVisible(True)
         self._align_run_control()
-        shell.rightRail.setVisible(not images and not logs and not narrow)
 
     def _sync_activity_progress(self):
         if self.progress_strip.retired:
