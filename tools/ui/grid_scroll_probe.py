@@ -31,7 +31,9 @@ class GridPosition:
 def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | None:
     """Parse the actual pager text, e.g. `1–24 of 1,200`."""
 
-    match = _VISIBLE_RANGE.search(text)
+    # Accept only the range label itself, never a concatenated UIA subtree
+    # containing a matching total or a separate "200 buffered" status.
+    match = _VISIBLE_RANGE.fullmatch(text.strip())
     if not match:
         return None
     numbers = [int(part.replace(",", "")) for part in match.groups()]
