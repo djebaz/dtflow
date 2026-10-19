@@ -77,9 +77,11 @@ class _LogModel(QAbstractTableModel):
             if column == 2:
                 return record["event"]
             if column == 3:
-                return ("   ".join(f"{key}: {value}" for key, value in self.previews[index.row()][0])
-                        + (f"   +{self.previews[index.row()][1]} more" if self.previews[index.row()][1] else ""))
-                        if index.row() < len(self.previews) else "Loading characteristics…"
+                if index.row() >= len(self.previews):
+                    return "Loading characteristics…"
+                pairs, more = self.previews[index.row()]
+                summary = "   ".join(f"{key}: {value}" for key, value in pairs)
+                return summary + (f"   +{more} more" if more else "")
             return "Details   Copy"
         if role == Qt.ItemDataRole.ToolTipRole:
             return f"{record['level']} · {record['component']} · {record['event']} · seq {record['seq']}"
@@ -379,7 +381,7 @@ class LogsWorkspace(QObject):
             return
 
         def collect():
-            return "\\n".join(
+            return "\n".join(
                 json.dumps(read_detail(self.directory, ref), ensure_ascii=False, separators=(",", ":"))
                 for ref in refs
             )
