@@ -339,8 +339,12 @@ class MainWindow:
         logs_button.setAccessibleName("Open Logs workspace")
         logs_button.clicked.connect(self._toggle_logs)
         status_actions_layout.addWidget(logs_button)
-        grid_index = QLabel("0/0", form.statusBar())
+        grid_index = QLineEdit("0/0", form.statusBar())
         grid_index.setObjectName("dtflowStatusGridFirstVisibleIndex")
+        grid_index.setReadOnly(True)
+        grid_index.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        grid_index.setFixedWidth(92)
+        grid_index.setFrame(False)
         grid_index.setAccessibleName("0/0")
         grid_index.setToolTip("First visible image position in the Grid workspace")
         form.statusBar().addPermanentWidget(grid_index)
@@ -473,9 +477,7 @@ class MainWindow:
     def _sync_grid_index_status(self, first: int, total: int) -> None:
         """Publish the real Grid viewport position in the global status bar."""
         self.grid_index_label.setText(f"{first}/{total}")
-        self.grid_index_label.setAccessibleName(
-            f"{first}/{total}"
-        )
+        self.grid_index_label.setAccessibleName(f"{first}/{total}")
 
     def _workspace_changed(self, index: int) -> None:
         """Switch mounted workspaces without resetting active operations."""
