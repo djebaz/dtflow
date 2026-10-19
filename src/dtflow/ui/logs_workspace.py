@@ -208,7 +208,7 @@ def refresh_label(count, *, incomplete=False):
     if count is None:
         return "Refresh (new)"
     if not count:
-        return "Refresh"
+        return "Refresh (0 new · incomplete)" if incomplete else "Refresh"
     return f"Refresh ({count} new{' · incomplete' if incomplete else ''})"
 
 
@@ -217,6 +217,7 @@ EXPORT_FAILURES = {
     "snapshot_changed": "the session files changed while reading; try again",
     "session_rotated": "the oldest log file was rotated away during the export; try again",
     "consumer_record_limit": "too many matching records; narrow the filters",
+    "consumer_memory_limit": "matching records exceed the export memory budget; narrow the filters",
     "session_unavailable": "the session files are no longer available",
 }
 
@@ -846,7 +847,7 @@ class LogsWorkspace(QObject):
     def _set_pending(self, pending, count=None, *, incomplete=False, detail=""):
         """Refresh label and accent border for held-back matching records (count None: unknown)."""
         button = self.form.logsRefreshButton
-        pending = bool(pending and (count is None or count > 0))
+        pending = bool(pending and (count is None or count > 0 or incomplete))
         button.setText(ICON_GAP + (refresh_label(count, incomplete=incomplete) if pending else "Refresh"))
         button.setToolTip(detail or "Reload the selected session")
         if button.property("pending") != pending:
