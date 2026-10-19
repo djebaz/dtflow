@@ -146,3 +146,17 @@ uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_bench
 ```
 
 This is opt-in offline interaction testing; it does not invoke generation/training/provider APIs. Native acceptance remains pending.
+
+## Position-driven Grid stress benchmark (2026-10-19, supersedes fixed-step matrix)
+
+Owner requested a much shorter, **faster continuous scroll between the same saved-image indices for every `-ml/-mc` pair**, after finding the previous resident-batch-dependent wheel-step matrix too slow. The former `steps=ceil(mc/ml)+2` algorithm is removed from `--grid-matrix`; only its requested/effective case parameters and isolated launch/reporting model remain.
+
+With the default `--grid-target-card 300`, every case follows exactly the same target itinerary: real Grid → click page 1 → scroll down until **first visible saved image is within #285–#325** → reverse until **first visible image is #1** → click page 1 again. Position comes primarily from the owner's recorded UIA `Visible image range||Text` control inside `Gallery batch navigation`. The UIA `Text` element may expose only its accessible name instead of the changing QLabel text; the fallback is a low-overhead benchmark-child hook that logs `GalleryPager.present`'s existing `visible_start/visible_end/total/loaded` values, and does not alter UI layout or production defaults.
+
+Continuous wheel input uses short pulses (default at most 6 notches per pulse), adaptive reduction near image #300, and 55 ms between pulses, with **no batch-load barrier and no 250-ms pause after each step**. Each direction is bounded by `--grid-seek-timeout` (default 12 seconds), and by 150 wheel pulses. If an exact position cannot be read, the app contains fewer than #300 matching images, or the requested end range is not reached, the test writes a recoverable warning and does not treat the journey as verified. Logs retain both the position trace and number of wheel events; the runner does not interpret wheel dispatch as proof of card displacement. Final page-1 click occurs **after** trying to verify that the return scroll reached #1 and is never used to fake a completed return.
+
+Matrix cases remain `20:50 20:100 50:150 100:300 200:600 300:1000` with effective card caps `40 100 150 300 600 900`. Sort stays untouched and the normal multi-view tuning mode is unchanged. Use identical catalogue, sort preference, scale, viewport, cache state and target image for comparisons. This new sequence has not been Windows-smoke accepted.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --grid-seek-timeout 12 --runs 1 --cycles 1 --ack-user-state
+```
