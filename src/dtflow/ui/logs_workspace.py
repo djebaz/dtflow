@@ -207,11 +207,34 @@ class LogsWorkspace(QObject):
         self.active = True
         sessions = discover(self.directory)
         chosen = self.form.logsSessionCombo.currentText()
+        # UUID-based session names are not chronological. Prefer the session
+        # owned by this process, then the newest active JSONL file.
+        from dtflow.logging_setup import LOGGER
+
+        import logging
+
+        active = next(
+            (
+                getattr(handler, "_dtflow_session")
+                for handler in logging.getLogger(LOGGER).handlers
+                if getattr(handler, "_dtflow_session", None) in sessions
+            ),
+            None,
+        )
+        def modified(session):
+            try:
+                return (self.directory / f"dtflow-{session}.jsonl").stat().st_mtime_ns
+            except OSError:
+                return -1
+
+        sessions.sort(key=lambda sid: (modified(sid), sid), reverse=True)
         self.form.logsSessionCombo.blockSignals(True)
         self.form.logsSessionCombo.clear()
-        self.form.logsSessionCombo.addItems(reversed(sessions))
+        self.form.logsSessionCombo.addItems(sessions)
         if chosen in sessions:
             self.form.logsSessionCombo.setCurrentText(chosen)
+        elif active:
+            self.form.logsSessionCombo.setCurrentText(active)
         self.form.logsSessionCombo.blockSignals(False)
         self.refresh()
         self._timer.start()
