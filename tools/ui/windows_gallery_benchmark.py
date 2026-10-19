@@ -419,12 +419,12 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
 
 
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
-    """Poll for the enabled page-1 chip, then click once and start from #1.
+    """Retry a physical page-1 click every ~200 ms until image 1 is visible.
 
-    No diagnostic log event is required. Only initial pager readiness is
-    gated; subsequent adjacent queries never pause the wheel sender.
+    A successful UIA click_input call confirms only dispatch, not navigation.
+    Re-resolve the chip on each attempt because Qt can replace pager widgets.
+    No diagnostic log event gates startup; the first visible image is authority.
     """
-
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
     attempts = 0
@@ -441,19 +441,19 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
                 timeout=0.01,
             )
         except (LookupError, RuntimeError, TimeoutError):
-            # The spinner may be visible and the numbered chips not yet
-            # committed. Retry at roughly five polls per second.
             time.sleep(0.2)
             continue
 
-        if not clicked:
-            try:
-                chip.click_input()
-                attempts += 1
-                clicked = True
-            except (LookupError, RuntimeError, TimeoutError):
-                time.sleep(0.2)
-                continue
+        try:
+            # Retry even after a successful return: the mouse can move to the
+            # target without Qt receiving or processing a page transition.
+            attempts += 1
+            chip.click_input()
+            clicked = True
+        except (LookupError, RuntimeError, TimeoutError):
+            time.sleep(0.2)
+            continue
+
         observed = probe.read()
         if observed is not None and observed.first == 1:
             actions.append(
@@ -480,7 +480,7 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
     )
     raise TimeoutError(
         "Page-1 chip did not become clickable at image 1 before the startup deadline "
-        f"({timeout:g}s; clicked={clicked}, first="
+        f"({timeout:g}s; clicked={clicked}, attempts={attempts}, first="
         f"{observed.first if observed else 'unknown'})."
     )
 
