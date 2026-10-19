@@ -1,8 +1,8 @@
 # Structured diagnostics architecture
 
-**Status:** design target for draft [PR #105](../../devdocs/plans/2026-10-19-structured-log-viewer.md), **not implemented** as of its plan-only head (2026-10-19). The legacy implementation facts below were inspected in the repository; neither JSONL behavior nor its throughput/Windows performance has been verified. The [implementation plan](../plans/2026-10-19-structured-log-viewer.md) owns the binding requirements and accepted G1–G6 guards. This reference explains the rationale and subsystem boundaries, not a second specification.
+**Status:** design target for draft [PR #105](../plans/2026-10-19-structured-log-viewer.md), **not implemented** (2026-10-19). The legacy implementation facts below were inspected in the repository; neither JSONL behavior nor its throughput/Windows performance has been verified. The [implementation plan](../plans/2026-10-19-structured-log-viewer.md) owns the binding requirements and accepted G1–G6 guards. This reference explains the rationale and subsystem boundaries, not a second specification.
 
-The [proposed diagnostic event catalogue and legacy migration inventory](diagnostic-event-schema.md) and [record JSON Schema v1](../schemas/diagnostic-record-v1.schema.json) complement this ownership guide. They are preparatory design proposals, not shipped behavior; the implementation plan's G1–G6 rules take precedence. The inventory is sourced from code rather than retained user log samples, and its unfinalized families must be reconciled in Phase 1.
+The [proposed compact, searchable event contract and legacy migration inventory](diagnostic-event-schema.md) and [record JSON Schema v1](../schemas/diagnostic-record-v1.schema.json) complement this ownership guide. The current design uses a strict small searchable envelope and flexible safe typed payloads: **new ordinary event/sub-event names do not require schema registration**, while benchmark/integrity fields remain selectively enforced. They are preparatory design proposals, not shipped behavior; the implementation plan's G1–G6 rules take precedence. The inventory is sourced from code rather than retained user log samples, and its unfinalized families must be reconciled in Phase 1.
 
 ## Existing foundation: retain it
 
@@ -57,10 +57,13 @@ This is **logical centralization**, not a demand for one giant source file. Poss
 
 ## Events, evidence and privacy
 
+The format aims to remain near current text logs in total bytes at equivalent verbosity, **not** to minimize every field at the expense of filtering or benchmark trust. Store session build/runtime metadata once in `session.started`; use only a handful of stable top-level search characteristics per record, keep typed descriptive names inside `data`, and rely on the shared Qt-free reader for full-retained-session field comparisons and hierarchical event-prefix filters. Rotation gaps/startup loss make evidence incomplete rather than triggering invented metadata. Storage parity remains unmeasured until owner replay.
+
+
 The [plan's schema and G1–G5](../plans/2026-10-19-structured-log-viewer.md#accepted-owner-review-guards) are authoritative. The guiding invariants are:
 
-- Source timestamp/monotonic observation time are captured at the event origin; persisted `seq` identifies listener-written order and **must not** be used as a substitute for source time. Aggregates retain their source window and sample population.
-- Typed `event`, `kind`, `data`, `context` and optional `error` fields carry diagnostics independently of human `message` formatting. Generic Python log records use a clearly defined fallback; do not infer field types from a message's words.
+- Source `ts` and relevant monotonic `mono_ns` observation time are captured at the event origin; persisted `seq` identifies listener-written order and **must not** be used as a substitute for source time. Aggregates retain their source window and sample population.
+- Top-level searchable `ts`, `level`, `component`, and dotted `event`, with optional `kind`, flexible typed `data`, `ctx`, `error` and `agg`, carry diagnostics independently of human `msg` formatting. Generic Python log records use a clearly defined fallback; do not infer field types from a message's words.
 - The same recursive privacy/sanitization rules apply before persistence and at read/export/copy boundaries. No prompts, authorization headers, secret environment values, raw images, cloud payloads or exception locals. Sanitization must not be delegated independently to each Qt view or report.
 - The current unbounded `queue.SimpleQueue` is an **identified design risk** for the target: G2 proposes bounded nonblocking admission, explicit loss/rejection accounting, and a close seal. Those sizes are *proposed safety defaults*, not measured throughput.
 - A missing seal, missing required segment/sequence, loss marker, unsupported schema, malformed record, failed write or truncated evidence must be visible as incomplete/incompatible—not silently accepted as clean. A live active session is pending, not certified complete.
