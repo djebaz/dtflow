@@ -21,6 +21,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 
+from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 
 
@@ -63,8 +65,7 @@ def bridge(state: Path):
     """Return a source-only Windows command/state mapping, or None on native FS."""
     if os.name == "nt":
         return None
-    from dtflow.diagnostics import event as diagnostic_event
-from dtflow.services.artifact_paths import ArtifactReadPaths
+    from dtflow.services.artifact_paths import ArtifactReadPaths
 
     paths = ArtifactReadPaths.discover()
     state = Path(state).absolute()

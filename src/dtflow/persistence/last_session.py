@@ -13,10 +13,10 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from dtflow.diagnostics import event as diagnostic_event
+
 SCHEMA_VERSION = 1
 FILENAME = "last_session.json"
-
-from dtflow.diagnostics import event as diagnostic_event
 
 log = logging.getLogger(__name__)
 

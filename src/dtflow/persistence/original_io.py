@@ -14,6 +14,8 @@ import time
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
+from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 # Only report waits worth noticing; an uncontended lease is per-image routine.
 _SLOW_LEASE_SECONDS = 0.5
@@ -34,8 +36,7 @@ def windows_originals_bridge(state: Path):
     """Check static bridge prerequisites without starting any helper or taking a lock."""
     if os.name == "nt":
         return None
-    from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.windows_original import WindowsBridgeError, bridge
+    from dtflow.persistence.windows_original import WindowsBridgeError, bridge
 
     try:
         return bridge(Path(state))
