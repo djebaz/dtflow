@@ -62,7 +62,7 @@ class GridProgressProbe:
                     return None
                 self._control = control
             name = self._control.element_info.name or ""
-            match = re.fullmatch(r"DTFlow status grid first visible index: ([0-9]+) / total: ([0-9]+)", name)
+            match = re.fullmatch(r"([0-9]+)/([0-9]+)", name)
             if match is None:
                 return None
             first = int(match.group(1))
