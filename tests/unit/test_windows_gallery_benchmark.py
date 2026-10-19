@@ -1620,124 +1620,77 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["last_after"] == 200
 
 
-def test_grid_start_selects_newest_once_and_waits_for_visible_image(monkeypatch, tmp_path):
-    from tools.ui import windows_gallery_benchmark as benchmark
-    from tools.ui.grid_scroll_probe import GridPosition
-
-    state = {"sort": "Oldest first", "first": 21, "clicks": 0}
-
-    class Option:
-        def wait(self, *_args, **_kwargs):
-            return None
-
-        def click_input(self):
-            state["sort"] = "Newest first"
-            state["first"] = 1
-
-    class Combo:
-        def wait(self, *_args, **_kwargs):
-            return None
-
-        def selected_text(self):
-            return state["sort"]
-
-        def click_input(self):
-            state["clicks"] += 1
-
-        def child_window(self, **_kwargs):
-            return Option()
-
-    class Window:
-        def child_window(self, **_kwargs):
-            return Combo()
-
-    class Probe:
-        def read(self):
-            return GridPosition(state["first"], state["first"] + 19, 833, "uia")
-
-    actions = []
-    benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=1)
-    assert state["clicks"] == 1
-    assert actions[-1]["verified"] is True
-    assert actions[-1]["sort_changed"] is True
-    assert actions[-1]["visible_first"] == 1
-
-
-def test_grid_start_already_newest_still_selects_it_once(monkeypatch, tmp_path):
+def test_grid_start_clicks_page_one_and_verifies_live_range(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
     events = []
+    first = [281]
 
-    class Option:
-        def wait(self, *_args, **_kwargs):
-            return None
+    class Chip:
+        pass
 
-        def click_input(self):
-            events.append("select-newest")
+    def find(_window, number):
+        assert number == 1
+        events.append("resolve-page-one")
+        return Chip()
 
-    class Combo:
-        def wait(self, *_args, **_kwargs):
-            return None
+    def activate(_chip):
+        events.append("activate-page-one")
+        first[0] = 1
+        return "uia-invoke"
 
-        def selected_text(self):
-            return "Newest first"
+    class Probe:
+        def read(self):
+            return GridPosition(first[0], first[0] + 19, 833, "uia")
 
-        def click_input(self):
-            events.append("open-sort")
+    monkeypatch.setattr(benchmark, "_grid_batch_button", find)
+    monkeypatch.setattr(benchmark, "_activate_grid_batch_chip", activate)
+    actions = []
+    benchmark._wait_for_grid_page_one(object(), Probe(), actions, directory=tmp_path, timeout=1)
+    assert events == ["resolve-page-one", "activate-page-one"]
+    assert actions[-1]["verified"] is True
+    assert actions[-1]["click_attempts"] == 1
+    assert actions[-1]["visible_first"] == 1
 
-        def child_window(self, **_kwargs):
-            return Option()
+
+def test_grid_start_uses_page_one_without_sort_dropdown(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
 
     class Window:
         def child_window(self, **_kwargs):
-            return Combo()
+            pytest.fail("Grid matrix must not open the Sort dropdown")
 
     class Probe:
         def read(self):
             return GridPosition(1, 20, 833, "uia")
 
+    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda _window, page: object())
+    monkeypatch.setattr(benchmark, "_activate_grid_batch_chip", lambda _chip: "mouse-click")
     actions = []
     benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=1)
     assert actions[-1]["verified"] is True
-    assert actions[-1]["sort_changed"] is False
-    assert events == ["open-sort", "select-newest"]
 
 
-def test_grid_start_rejects_newest_when_visible_position_is_not_one(monkeypatch, tmp_path):
+def test_grid_start_rejects_unverified_page_one_click(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    class Option:
-        def wait(self, *_args, **_kwargs):
-            return None
-
-        def click_input(self):
-            return None
-
-    class Combo:
-        def wait(self, *_args, **_kwargs):
-            return None
-
-        def selected_text(self):
-            return "Newest first"
-
-        def click_input(self):
-            return None
-
-        def child_window(self, **_kwargs):
-            return Option()
-
-    class Window:
-        def child_window(self, **_kwargs):
-            return Combo()
+    attempts = []
 
     class Probe:
         def read(self):
             return GridPosition(281, 295, 833, "uia")
 
+    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda _window, page: object())
+    monkeypatch.setattr(
+        benchmark, "_activate_grid_batch_chip",
+        lambda _chip: attempts.append("click") or "mouse-click",
+    )
     actions = []
-    with pytest.raises(TimeoutError, match="did not reach first visible image 1"):
-        benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=0.12)
+    with pytest.raises(TimeoutError, match="could not verify first visible image 1"):
+        benchmark._wait_for_grid_page_one(object(), Probe(), actions, directory=tmp_path, timeout=0.12)
+    assert attempts
     assert actions[-1]["verified"] is False
     assert actions[-1]["visible_first"] == 281
