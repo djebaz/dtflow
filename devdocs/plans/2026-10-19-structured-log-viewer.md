@@ -4,7 +4,7 @@
 
 The owner requested a reviewable squash delivery and moved unfinished work into two follow-up issues. **This disposition supersedes the original all-gates-before-merge schedule below without claiming those gates passed.** Phases 1–3 are implemented in source. The table below distinguishes implementation from evidence.
 
-- [#106](https://github.com/djebaz/dtflow/issues/106): end-to-end worker/display byte budgets, diagnostic export cancellation and low-priority evaluation of lazy Logs creation.
+- [#106](https://github.com/djebaz/dtflow/issues/106): end-to-end worker/display byte budgets (including selection and batch hydration), and low-priority evaluation of lazy Logs creation. PR #111 implements export cancellation and adds a conservative, explicit over-budget failure for selected export candidates; actual end-to-end peak-byte guarantees remain outstanding.
 - [#107](https://github.com/djebaz/dtflow/issues/107): F9/G6/R0–R4 fault/native/schema/projection/benchmark/storage/policy acceptance, plus strict lint/format gating.
 - Ordinary CI must execute successfully on the final PR head. The existing non-blocking Ruff policy is disclosed; changing that policy is in #107. A skipped render is not evidence of rendering.
 - Owner feedback confirms the Windows render command works after `b2fdf1d`; it does not certify a complete batch, native interaction/DPI, performance or a packaged release.
