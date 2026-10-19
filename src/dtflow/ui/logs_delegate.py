@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter
-from PySide6.QtWidgets import QStyle, QStyledItemDelegate
+from PySide6.QtGui import QColor, QCursor, QFontMetrics, QIcon, QPainter
+from PySide6.QtWidgets import QApplication, QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionHeader
 
 from dtflow.diagnostic_projection import stable_color_index
 from dtflow.ui.theme import load_tokens
@@ -119,9 +119,17 @@ class LogCellDelegate(QStyledItemDelegate):
             painter.setPen(self._color("color.secondary"))
             painter.drawText(rect.adjusted(2, 25, 0, 0), Qt.AlignmentFlag.AlignTop, timestamp[11:])
         elif col == 2:
+            # Component as a quiet first line, so the COMPONENT sort target orders something visible.
+            component = metrics.elidedText(record["component"], Qt.TextElideMode.ElideRight, max(10, rect.width() - 4))
+            painter.setPen(self._color("color.secondary"))
+            painter.drawText(
+                QRect(rect.x() + 2, rect.y(), rect.width() - 2, 16),
+                Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
+                component,
+            )
             full = record["event"]
             shortened = metrics.elidedText(full, Qt.TextElideMode.ElideRight, max(10, rect.width() - 18))
-            self._pill(painter, QRect(rect.x(), rect.y() + 9, rect.width(), 26), shortened, full)
+            self._pill(painter, QRect(rect.x(), rect.y() + 18, rect.width(), 24), shortened, full)
         elif col == 3:
             pairs, overflow = self._preview(index)
             message = self._message(index)
@@ -176,3 +184,85 @@ class LogCellDelegate(QStyledItemDelegate):
         mid = option.rect.x() + option.rect.width() // 2
         self.actionRequested.emit(index.row(), "details" if event.position().x() < mid else "copy")
         return True
+
+
+class LogHeaderView(QHeaderView):
+    """Horizontal header whose split section paints two independent sort targets.
+
+    The model returns that section's text as ``"FIRST ↕ . SECOND ↓"``; the view paints
+    each part in its own hit area and reports which part a click landed on.
+    """
+
+    SPLIT_SEPARATOR = " . "
+    # Matches the shared QSS `QHeaderView::section` horizontal padding.
+    PADDING = 5
+
+    def __init__(self, split_section, active_part, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.split_section = split_section
+        # `active_part()` names the part (0 or 1) that is sorted, or None; the active part is brighter.
+        self.active_part = active_part
+        self.clicked_part = 0
+        self.tokens = load_tokens()
+
+    def _parts(self, rect):
+        """Text and hit rectangle of each part of the split section."""
+        model = self.model()
+        text = model.headerData(self.split_section, Qt.Orientation.Horizontal) if model is not None else ""
+        parts = str(text or "").split(self.SPLIT_SEPARATOR, 1)
+        if len(parts) != 2:
+            return ()
+        metrics = self.fontMetrics()
+        first = metrics.horizontalAdvance(parts[0])
+        gap = metrics.horizontalAdvance(self.SPLIT_SEPARATOR)
+        # Each part owns half of the separator, so the hit areas cover the whole section.
+        split = rect.x() + self.PADDING + first + gap // 2
+        return (
+            (parts[0], QRect(rect.x(), rect.y(), split - rect.x(), rect.height()), rect.x() + self.PADDING),
+            (parts[1], QRect(split, rect.y(), rect.right() + 1 - split, rect.height()), split + gap - gap // 2),
+        )
+
+    def part_at(self, x):
+        """Index of the split-section part under viewport x, or 0 elsewhere."""
+        position = self.sectionViewportPosition(self.split_section)
+        rect = QRect(position, 0, self.sectionSize(self.split_section), self.height())
+        for number, (_text, hit, _start) in enumerate(self._parts(rect)):
+            if hit.left() <= x <= hit.right():
+                return number
+        return 0
+
+    def mousePressEvent(self, event):
+        # sectionClicked follows on release over the same section; remember which part was pressed.
+        self.clicked_part = self.part_at(event.position().toPoint().x())
+        super().mousePressEvent(event)
+
+    def paintSection(self, painter, rect, logical_index):
+        parts = self._parts(rect) if logical_index == self.split_section else ()
+        if not parts:
+            super().paintSection(painter, rect, logical_index)
+            return
+        painter.save()
+        option = QStyleOptionHeader()
+        self.initStyleOption(option)
+        option.rect, option.section, option.text = rect, logical_index, ""
+        option.position = QStyleOptionHeader.SectionPosition.Middle
+        # Keep the hover and pressed feedback the base paintSection gives the other sections.
+        cursor = self.viewport().mapFromGlobal(QCursor.pos())
+        if self.viewport().rect().contains(cursor) and self.logicalIndexAt(cursor) == logical_index:
+            option.state |= QStyle.StateFlag.State_MouseOver
+            if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+                option.state |= QStyle.StateFlag.State_Sunken
+        self.style().drawControl(QStyle.ControlElement.CE_Header, option, painter, self)
+        active = self.active_part()
+        separator_start = parts[0][2] + self.fontMetrics().horizontalAdvance(parts[0][0])
+        text_flags = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine
+        painter.setPen(QColor(self.tokens["color.secondary"]))
+        painter.drawText(
+            QRect(separator_start, rect.y(), rect.right() - separator_start, rect.height()),
+            text_flags,
+            self.SPLIT_SEPARATOR,
+        )
+        for number, (text, _hit, start) in enumerate(parts):
+            painter.setPen(QColor(self.tokens["color.text" if active in (None, number) else "color.secondary"]))
+            painter.drawText(QRect(start, rect.y(), max(0, rect.right() - start), rect.height()), text_flags, text)
+        painter.restore()
