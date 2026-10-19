@@ -339,9 +339,9 @@ class MainWindow:
         logs_button.setAccessibleName("Open Logs workspace")
         logs_button.clicked.connect(self._toggle_logs)
         status_actions_layout.addWidget(logs_button)
-        grid_index = QLabel("Grid first visible: 0", form.statusBar())
+        grid_index = QLabel("0/0", form.statusBar())
         grid_index.setObjectName("dtflowStatusGridFirstVisibleIndex")
-        grid_index.setAccessibleName("DTFlow status grid first visible index: 0 / total: 0")
+        grid_index.setAccessibleName("0/0")
         grid_index.setToolTip("First visible image position in the Grid workspace")
         form.statusBar().addPermanentWidget(grid_index)
         self.grid_index_label = grid_index
@@ -472,9 +472,9 @@ class MainWindow:
 
     def _sync_grid_index_status(self, first: int, total: int) -> None:
         """Publish the real Grid viewport position in the global status bar."""
-        self.grid_index_label.setText(f"Grid first visible: {first}")
+        self.grid_index_label.setText(f"{first}/{total}")
         self.grid_index_label.setAccessibleName(
-            f"DTFlow status grid first visible index: {first} / total: {total}"
+            f"{first}/{total}"
         )
 
     def _workspace_changed(self, index: int) -> None:
