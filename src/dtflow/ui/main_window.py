@@ -539,7 +539,9 @@ class MainWindow:
                 ):
                     # The four navigation buttons need their own size hint;
                     # the old 248–300 px rail width clips them in a header row.
-                    width = max(shell.leftRail.width(), frame.sizeHint().width()) if frame is shell.navigationFrame else shell.leftRail.width()
+                    width = shell.leftRail.width()
+                    if frame is shell.navigationFrame:
+                        width = max(width, frame.sizeHint().width())
                     slot.setFixedSize(width, frame.height())
                     layout = slot.layout()
                     if layout is None:
