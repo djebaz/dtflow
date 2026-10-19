@@ -16,7 +16,7 @@ from pathlib import Path, PureWindowsPath
 from threading import Lock
 from time import monotonic, monotonic_ns, thread_time
 
-from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Slot, qVersion
+from PySide6.QtCore import QByteArray, QDataStream, QEvent, QIODevice, QObject, QSize, Qt, QTimer, Signal, Slot, qVersion
 from PySide6.QtGui import (
     QIcon,
     QImage,
@@ -445,6 +445,8 @@ def _timed_thumbnail_image(path: str, max_side: int, state: Path, *, item: Galle
 
 class GalleryPage(QObject):
     """Bind saved-output services to the existing Designer gallery without owning generation."""
+
+    grid_position_changed = Signal(int, int)
 
     def __init__(
         self,
@@ -2120,10 +2122,7 @@ class GalleryPage(QObject):
     def _sync_pager(self, *, loading: bool = False) -> None:
         """Use the viewport's first visible image, not the fetched window offset."""
         first, last = self._visible_range()
-        # Dedicated bottom-bar UIA signal for fast native Grid benchmarking.
-        label = self._widget("galleryGridFirstVisibleIndex", QLabel)
-        label.setText(f"First visible: {first}")
-        label.setAccessibleName(f"DTFlow grid first visible index: {first} / total: {self.total}")
+        self.grid_position_changed.emit(first if self.mode == "Grid" else 0, self.total)
         self.pager.present(
             total=self.total,
             visible_start=first,
