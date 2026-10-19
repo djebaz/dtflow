@@ -419,85 +419,99 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
 
 
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
-    """Retry a physical page-1 click every ~200 ms until image 1 is visible.
+    """Verify a real page 2 -> page 1 navigation before the Grid sweep.
 
-    A successful UIA click_input call confirms only dispatch, not navigation.
-    Re-resolve the chip on each attempt because Qt can replace pager widgets.
-    No diagnostic log event gates startup; the first visible image is authority.
+    A selected page-one chip may do nothing on click. Never infer that a
+    click_input() return value or the chip's checked state proves navigation.
     """
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
-    attempts = 0
+    attempts = {2: 0, 1: 0}
     observed = None
-    clicked = False
-    # Kept in the signature for existing callers. Readiness is UI-only.
+    phase = 2
+    # The startup gate is based on visible images, not log-flush timing.
     del directory
+
     while time.monotonic() < deadline:
         try:
             chip = _button(
                 window,
-                "Jump to image batch 1",
-                automation_id="galleryPagerPage1",
+                f"Jump to image batch {phase}",
+                automation_id=f"galleryPagerPage{phase}",
                 timeout=0.01,
             )
         except (LookupError, RuntimeError, TimeoutError):
             time.sleep(0.2)
             continue
 
-        # The selected pager chip is checkable, not a navigation receipt.
-        # If the viewport already starts at image 1, clicking it is redundant.
+        # Do not treat page-one's initial position as successful navigation:
+        # we deliberately require a verified departure to page two first.
         observed = probe.read()
-        if observed is not None and observed.first == 1:
-            actions.append(
-                {
-                    "action": "click-page-one-start",
-                    "verified": True,
-                    "visible_first": 1,
-                    "source": observed.source,
-                    "click_attempts": attempts,
-                    "already_at_page_one": attempts == 0,
-                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-                }
-            )
+        if phase == 2 and observed is not None and observed.first > 1:
+            actions.append({
+                "action": "click-page-two-start",
+                "verified": True,
+                "visible_first": observed.first,
+                "source": observed.source,
+                "click_attempts": attempts[2],
+            })
+            phase = 1
+            continue
+        if phase == 1 and observed is not None and observed.first == 1:
+            actions.append({
+                "action": "click-page-one-start",
+                "verified": True,
+                "visible_first": 1,
+                "source": observed.source,
+                "click_attempts": attempts[1],
+                "page_two_verified": True,
+                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
             return
 
         try:
-            # Dispatch alone is not evidence; retry until the independent
-            # visible-position probe confirms the navigation.
-            attempts += 1
+            attempts[phase] += 1
             chip.click_input()
-            clicked = True
         except (LookupError, RuntimeError, TimeoutError):
             time.sleep(0.2)
             continue
 
         observed = probe.read()
-        if observed is not None and observed.first == 1:
-            actions.append(
-                {
-                    "action": "click-page-one-start",
-                    "verified": True,
-                    "visible_first": 1,
-                    "source": observed.source,
-                    "click_attempts": attempts,
-                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-                }
-            )
+        if phase == 2 and observed is not None and observed.first > 1:
+            actions.append({
+                "action": "click-page-two-start",
+                "verified": True,
+                "visible_first": observed.first,
+                "source": observed.source,
+                "click_attempts": attempts[2],
+            })
+            phase = 1
+        elif phase == 1 and observed is not None and observed.first == 1:
+            actions.append({
+                "action": "click-page-one-start",
+                "verified": True,
+                "visible_first": 1,
+                "source": observed.source,
+                "click_attempts": attempts[1],
+                "page_two_verified": True,
+                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
             return
         time.sleep(0.2)
 
-    actions.append(
-        {
-            "action": "click-page-one-start",
-            "verified": False,
-            "visible_first": observed.first if observed else None,
-            "click_attempts": attempts,
-            "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-        }
-    )
+    actions.append({
+        "action": "click-page-one-start",
+        "verified": False,
+        "phase": f"page-{phase}",
+        "visible_first": observed.first if observed else None,
+        "page_two_click_attempts": attempts[2],
+        "click_attempts": attempts[1],
+        "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+    })
     raise TimeoutError(
-        "Page-1 chip did not become clickable at image 1 before the startup deadline "
-        f"({timeout:g}s; clicked={clicked}, attempts={attempts}, first="
+        "Grid startup could not verify page 2 then page 1 "
+        f"({timeout:g}s; phase=page-{phase}; page2_clicks={attempts[2]}, "
+        f"page1_clicks={attempts[1]}, first="
         f"{observed.first if observed else 'unknown'})."
     )
 
