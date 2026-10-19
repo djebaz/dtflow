@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate
 
 from dtflow.diagnostic_projection import stable_color_index
@@ -16,6 +18,8 @@ class LogCellDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.tokens = load_tokens()
+        icons_dir = Path(__file__).parents[1] / "resources" / "images" / "gallery"
+        self.action_icons = (QIcon(str(icons_dir / "document.svg")), QIcon(str(icons_dir / "copy.svg")))
 
     def _color(self, key):
         return QColor(self.tokens[key])
@@ -114,17 +118,21 @@ class LogCellDelegate(QStyledItemDelegate):
             self._chips(painter, rect, metrics, pairs[:6], overflow, draw=True)
         elif col == 4:
             mid = option.rect.x() + option.rect.width() // 2
-            painter.setPen(self._color("color.secondary"))
-            painter.drawText(
-                QRect(option.rect.x(), option.rect.y(), mid - option.rect.x(), option.rect.height()),
-                Qt.AlignmentFlag.AlignCenter,
-                "Details",
-            )
-            painter.drawText(
-                QRect(mid, option.rect.y(), option.rect.right() + 1 - mid, option.rect.height()),
-                Qt.AlignmentFlag.AlignCenter,
-                "Copy",
-            )
+            for icon, cell in zip(
+                self.action_icons,
+                (
+                    QRect(option.rect.x(), option.rect.y(), mid - option.rect.x(), option.rect.height()),
+                    QRect(mid, option.rect.y(), option.rect.right() + 1 - mid, option.rect.height()),
+                ),
+            ):
+                icon_size = QSize(18, 18)
+                icon_rect = QRect(
+                    cell.center().x() - icon_size.width() // 2,
+                    cell.center().y() - icon_size.height() // 2,
+                    icon_size.width(),
+                    icon_size.height(),
+                )
+                icon.paint(painter, icon_rect, Qt.AlignmentFlag.AlignCenter)
         painter.restore()
 
     def sizeHint(self, option, index):
