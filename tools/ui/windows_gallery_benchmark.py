@@ -1058,6 +1058,7 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
         "step": "not-started",
         "initial_query_records": None,
         "benchmark_mode": "grid-matrix" if grid_limits is not None else "profiles",
+        "grid_target_card": grid_target_card if grid_limits else None,
         "requested_ml": grid_limits[0] if grid_limits else 20,
         "requested_mc": grid_limits[1] if grid_limits else 100,
         "effective_mc": grid_limits[2] if grid_limits else 100,
@@ -1080,6 +1081,10 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
             if len(csvs) != 1:
                 raise ValueError("Expected exactly one session gallery CSV.")
             record["metrics"] = summarize_csv(csvs[0])
+            if grid_limits is not None:
+                from tools.ui.grid_benchmark_report import analyze_grid_trial
+
+                record["grid_responsiveness"] = analyze_grid_trial(logs, record["actions"])
             record["status"] = "warning" if record.get("warnings") else "ok"
         except (Exception, KeyboardInterrupt) as exc:
             from dtflow.logging_setup import sanitize
@@ -1175,6 +1180,12 @@ def write_report(records: list[dict], out: Path) -> None:
                     else "no >=50ms gap samples" if not gaps else "observed threshold-crossing gaps"
                 ),
             })
+
+    # Keep an updated console-friendly leaderboard on disk after each trial.
+    # Grid ranking explicitly excludes startup GUI gaps and failed journeys.
+    from tools.ui.grid_benchmark_report import write_grid_report
+
+    write_grid_report(records, out)
 
 
 def _create_run_directory(root: Path, *, now: datetime | None = None) -> Path:
@@ -1276,6 +1287,10 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         write_report(records, output)
         return 130
+    if args.grid_matrix is not None:
+        from tools.ui.grid_benchmark_report import grid_console_report, rank_grid_matrix
+
+        print(grid_console_report(rank_grid_matrix(records)), end="", flush=True)
     return 0 if records and all(record["status"] == "ok" for record in records) else 1
 
 
