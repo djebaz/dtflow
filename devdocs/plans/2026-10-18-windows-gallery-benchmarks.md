@@ -1,3 +1,30 @@
+## Current PR #104 closeout and successor scope (2026-10-19)
+
+**This section supersedes earlier interim Grid-matrix startup, stopping and ranking descriptions below.** The earlier experiment notes are retained as a troubleshooting history, not as current behavior. No production gallery performance defaults are changed in PR #104.
+
+### Current Grid-only contract
+
+- Interactive Windows pywinauto drives the real Images → Grid UI; `-ml`/`-mc` are source-launch trial parameters resolved through the application limit contract, with separate processes and logs. No Sort menu, generation or other view is touched in this Grid-only matrix. The separate eight-profile multi-view experiment remains available.
+- **Startup:** once the initial spinner gives way to an enabled numbered page-1 chip, the runner polls the control at roughly 200 ms intervals, clicks once, and verifies the actual first visible saved image is **#1**. The earlier dependency on a `page_jump` log event was removed. This is bounded startup readiness, not a wait for every decoded thumbnail or each subsequent batch.
+- **Continuous journey:** after startup, a dedicated wheel-input thread continues through adjacent reads, preparation and thumbnail loading without UIA/log polling pacing wheel events. Each direction has a bounded timeout. The downward destination is checked using **the first visible image index** within a bounded tolerance (±20 for requested #200; ±25 for #300), never `last`, catalogue `total`, or `N buffered`. The upward leg must return to first visible image **#1**. The actual position trace and wheel counts are retained; incomplete legs are warnings, not successes. Physically click page 1 again at the end.
+- **Scoring:** the end-of-run console report and `benchmark_report.txt`/`best_combination.json` rank only clean complete journeys with usable `-x` diagnostics. Primary metric: counts of individual **Grid GUI heartbeat gaps ≥100 ms during active scrolling**, then worst gap, then median completed round-trip duration. Startup gaps are reported separately, not folded into the browsing score. One trial per pair yields a *provisional* leader; >=3 clean repeats per compared case are required for repeatability.
+- The Windows `10190324.zip` trace exposed a false positive at high batch sizes (`1–200 of 833` accepted as reaching #200 after one wheel pulse). This was corrected by the first-visible-index stop rule. `10190328.zip` subsequently showed two clean, same-target journeys: `20/200` 10.27 s and `200/300` 7.08 s, with the latter provisionally faster after startup. This does not establish a production default.
+- The latest owner Windows `10190342.zip` run was reported clean (no automation warnings): `100/300` readiness 3.23 s, scroll round trip 7.45 s, one ≥100 ms browsing stall (worst 111 ms); `200/600` readiness 10.70 s, round trip 6.93 s, one ≥100 ms browsing stall (worst 385 ms). These are separate single-trial observations under that run's parameters, not a statistical ranking across archives. Owner feedback: the startup wait is improved but still longer than desired.
+
+### Next PR, not part of #104
+
+Investigate and optimize *initial usable gallery readiness* for large `-ml` batches: query → Qt preparation → first committed/mounted cards → enabled page chips. Prefer progressive first usable page without unnecessary full-batch work, but preserve correct geometry, pager navigation, subsequent continuous scrolling, resident cap and query snapshot semantics. Instrument and validate **time to first usable card/page-1 button** separately from sustained browsing. Do not optimize solely for the harness: measure production UI behavior on native Windows, with repeatable controlled runs (including longer journeys beyond an initial 200-card batch), and preserve current working behavior until accepted.
+
+### Reproduce
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --grid-seek-timeout 12 --runs 3 --cycles 1 --ack-user-state
+```
+
+Native-Windows trial outcomes above are owner evidence. This closeout does **not** claim that the latest checkout's Python unit suite, CI or packaged executable has been revalidated; review GitHub checks before squash-merging. Neither training nor inference is part of the harness.
+
+---
+
 # Native Windows gallery performance autotuning
 
 Date: 2026-10-18  
