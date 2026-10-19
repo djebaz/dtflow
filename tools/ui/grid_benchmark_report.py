@@ -59,7 +59,14 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
                         continue
                     if timestamp.tzinfo is None:
                         continue
-                    if any(start <= timestamp <= end for start, end in intervals):
+                    # DTFlow text logs have whole-second timestamps; the
+                    # benchmark actions retain milliseconds. Include the two
+                    # boundary seconds rather than silently losing an event.
+                    if any(
+                        start.replace(microsecond=0) <= timestamp
+                        and timestamp <= end.replace(microsecond=0)
+                        for start, end in intervals
+                    ):
                         gaps.append(float(match.group(1)))
         except OSError:
             continue
@@ -162,7 +169,7 @@ def grid_console_report(report: dict) -> str:
         return ""
     lines = [
         "",
-        f"GRID SCROLL BENCHMARK  ·  image #1 → #{report.get('target_card') or '?'} → #1",
+        f"GRID SCROLL BENCHMARK  |  image #1 -> #{report.get('target_card') or '?'} -> #1",
         "Requested       Effective   Clean    Grid stalls >=250ms   Worst gap   Median trip",
     ]
     for case in report["ranking"]:
