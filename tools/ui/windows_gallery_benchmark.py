@@ -419,19 +419,24 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
 
 
 def _grid_batch_button(window, number: int):
-    """Resolve a pager chip from its Qt-generated UIA AutomationId, never title.
+    """Resolve the Windows-observed pager AutomationId, not mutable text.
 
-    DTFlow's Qt accessibility bridge qualifies objectName with the ancestor
-    path on Windows. The suffix is stable even when that path changes.
+    Accessibility Insights exposes checkable Qt QPushButton pager chips as
+    UIA CheckBox controls. The complete path below was observed for Page 1.
     """
-    suffix = f"galleryPagerPage{number}"
-    button = window.child_window(
-        control_type="Button",
-        predicate_func=lambda info: (info.automation_id or "").split(".")[-1] == suffix,
+    if number != 1:
+        raise ValueError("Only Page 1 has a verified Windows AutomationId")
+    chip = window.child_window(
+        auto_id=(
+            "QApplication.MainWindow.central.WorkspaceShell.workspaceSplitter."
+            "centerRail.centerStack.GalleryDetailPage.galleryPagerBar."
+            "galleryPagerChips.galleryPagerPage1"
+        ),
+        control_type="CheckBox",
     )
-    if not button.exists(timeout=0) or not button.is_visible() or not button.is_enabled():
-        raise LookupError(f"Page {number} button is not currently ready")
-    return button.wrapper_object()
+    if not chip.exists(timeout=0) or not chip.is_visible() or not chip.is_enabled():
+        raise LookupError("Verified Page 1 UIA control is not ready")
+    return chip.wrapper_object()
 
 
 def _activate_grid_batch_chip(chip):
