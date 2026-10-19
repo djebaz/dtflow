@@ -491,6 +491,7 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
         "visible_first": observed.first if observed is not None else None,
         "click_attempts": attempts,
         "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+        "probe_diagnostics": probe.diagnose() if callable(getattr(probe, "diagnose", None)) else None,
     })
     raise TimeoutError(
         "Grid startup could not verify first visible image 1 after clicking Page 1 "
@@ -786,6 +787,8 @@ def _seek_grid_card(
         "position_history": history,
         "position_probe_error": getattr(probe, "last_error", None),
     }
+    if not reached and callable(getattr(probe, "diagnose", None)):
+        action["position_probe_diagnostics"] = probe.diagnose()
     actions.append(action)
     if send_errors:
         raise RuntimeError(f"Grid wheel sender failed: {type(send_errors[0]).__name__}")
