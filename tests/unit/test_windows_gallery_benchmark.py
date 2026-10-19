@@ -1300,7 +1300,7 @@ def test_grid_progress_reads_status_input_value_pattern(tmp_path):
     state["first"] = 1
     assert probe.read().first == 1
     assert window.lookups == [
-        {"auto_id": "dtflowStatusGridFirstVisibleIndex", "control_type": "Edit"}
+        {"auto_id": "QApplication.MainWindow.statusbar.dtflowGridPositionGroup.dtflowStatusGridFirstVisibleIndex", "control_type": "Edit"}
     ]
 
 
