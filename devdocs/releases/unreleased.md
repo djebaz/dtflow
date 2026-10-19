@@ -16,6 +16,5 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Release audit
 
-- PRs: #109
-- Scope: Version bump to 5.0.0 and consolidation of final behavior/PR references.
-- Post-5.0.0: Logs presentation follow-up for #108.
+- Pending PR: [#111](https://github.com/djebaz/dtflow/pull/111) (implements [issue #108](https://github.com/djebaz/dtflow/issues/108)); this is post-5.0.0-release-preparation source work, not part of the merged [#109](https://github.com/djebaz/dtflow/pull/109) version bump.
+- Acceptance still required: native Windows Logs/export/cancellation/fault checks (#107) and end-to-end worker/pending/display budgets (#106). No tag or publication is implied by this note.
