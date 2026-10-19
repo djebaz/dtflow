@@ -2123,7 +2123,7 @@ class GalleryPage(QObject):
         # Dedicated bottom-bar UIA signal for fast native Grid benchmarking.
         label = self._widget("galleryGridFirstVisibleIndex", QLabel)
         label.setText(f"First visible: {first}")
-        label.setAccessibleName(f"DTFlow grid first visible index: {first}")
+        label.setAccessibleName(f"DTFlow grid first visible index: {first} / total: {self.total}")
         self.pager.present(
             total=self.total,
             visible_start=first,
