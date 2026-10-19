@@ -112,7 +112,10 @@ def _opened(segment: Segment):
                 (segment.device, segment.inode) or st.st_size < segment.size):
             raise EvidenceError("snapshot_changed")
         # No redirect after fd was opened.
-        path_st = segment.path.lstat()
+        try:
+            path_st = segment.path.lstat()
+        except OSError as exc:
+            raise EvidenceError("snapshot_changed") from exc
         if (path_st.st_dev, path_st.st_ino) != (st.st_dev, st.st_ino):
             raise EvidenceError("snapshot_changed")
         return os.fdopen(fd, "rb", buffering=0)
@@ -167,6 +170,7 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
         count, previous, startup, closed = 0, 0, False, False
         reasons = []
         last_record = None
+        last_segment = None
         try:
             for segment in segments:
                 for record, loc in _read_lines(segment, cancelled):
@@ -175,10 +179,17 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
                         # Rotation copies may repeat the boundary record. Do not
                         # keep an unbounded per-sequence dictionary: accept only
                         # the adjacent identical record; older overlaps fail closed.
-                        if seq == previous and record == last_record:
+                        if (
+                            seq == previous
+                            and record == last_record
+                            and last_segment is not None
+                            and segment != last_segment
+                            and loc.offset == 0
+                        ):
                             continue
                         raise EvidenceError("conflicting_sequence")
                     last_record = record
+                    last_segment = segment
                     if previous and seq != previous + 1:
                         reasons.append("sequence_gap")
                     if count == 0 and seq != 1:
@@ -413,5 +424,7 @@ def read_detail(directory: Path, ref: RecordRef) -> dict:
     except (ValueError, TypeError, CaptureRejected) as exc:
         raise EvidenceError("detail_unavailable") from exc
     if record["seq"] != ref.seq:
+        raise EvidenceError("detail_unavailable")
+    if snapshot(directory, ref.session_id) != parts:
         raise EvidenceError("detail_unavailable")
     return record
