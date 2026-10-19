@@ -1645,37 +1645,29 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["last_after"] == 200
 
 
-def test_grid_page_one_lookup_uses_exact_name_without_tree_scan():
+def test_grid_page_one_lookup_finds_named_button_after_reflow():
     from tools.ui import windows_gallery_benchmark as benchmark
 
-    class Chip:
-        def exists(self, *, timeout):
-            assert timeout == 0
-            return True
-
-        def is_visible(self):
-            return True
-
-        def is_enabled(self):
-            return True
-
-        def wrapper_object(self):
-            return self
-
-    chip = Chip()
+    def chip(name, enabled=True):
+        return SimpleNamespace(
+            element_info=SimpleNamespace(control_type="Button", name=name),
+            is_visible=lambda: True,
+            is_enabled=lambda: enabled,
+        )
 
     class Window:
-        def child_window(self, **criteria):
-            assert criteria == {
-                "title": "Jump to image batch 1",
-                "control_type": "Button",
-            }
-            return chip
-
         def descendants(self):
-            pytest.fail("Page 1 lookup must not enumerate the full UIA tree")
+            return [
+                chip("Jump to image batch 10"),
+                chip("Jump to image batch 1", enabled=False),
+                chip("Jump to image batch 1"),
+            ]
 
-    assert benchmark._grid_batch_button(Window(), 1) is chip
+    result = benchmark._grid_batch_button(Window(), 1)
+    assert result.element_info.name == "Jump to image batch 1"
+    assert result.is_enabled()
+
+
 
 
 def test_grid_start_clicks_page_one_and_verifies_live_range(monkeypatch, tmp_path):
