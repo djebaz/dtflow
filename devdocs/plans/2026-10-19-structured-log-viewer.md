@@ -8,6 +8,7 @@ Implement issue #96 on top of merged PR #104 (`2945157`): purpose-designed struc
 - Out: legacy text/CSV adapters or conversion, gallery optimization, provider changes, inference, model downloads, new runtime dependencies, release/version bump, packaged build, and changes to durable job/output schemas.
 - Existing `.log`/gallery CSV evidence remains untouched. New sessions write only `dtflow-<session>.jsonl` and its rotated siblings; benchmark result CSV/JSON artifacts remain reports, not parallel logging sinks.
 - Permanent companion references: [structured diagnostics ownership and evidence boundaries](../architecture/structured-diagnostics.md) and [Qt model/view performance patterns and implementation references](../guides/qt-model-view-patterns.md). These are explanatory guides; **this plan and its G1–G6 acceptance guards remain authoritative**. The design targets are not yet runtime behavior.
+- Proposed Phase 1 data contract: [diagnostic event catalogue, audited producer/consumer migration inventory and privacy decisions](../architecture/diagnostic-event-schema.md), with a [JSON Schema draft 2020-12 file for record v1](../schemas/diagnostic-record-v1.schema.json). These are **pre-implementation proposals**, not an implemented writer or certified exhaustive call-site audit; resolve the remaining catalogue entries before migrating those producers. G1–G6 retain precedence.
 
 
 ## User decisions
@@ -21,6 +22,8 @@ Implement issue #96 on top of merged PR #104 (`2945157`): purpose-designed struc
 - Follow the requested fast implementation workflow: do not create or modify any tests/fixtures, or run tests, linters, syntax/import checks, CLI validation, builds, screenshots/renders, recording replays, benchmarks or live/provider work. All test reconciliation is deferred until the implementation phases are finished; list affected contracts without editing them. Owner/CI execute acceptance after that deferred work. Existing CI can fail old-format expectations during implementation; keep that explicit and never disable checks to conceal it.
 
 ## Event contract (schema version 1)
+
+The machine-readable proposal and event-specific field types live in the [v1 schema](../schemas/diagnostic-record-v1.schema.json); the [event catalogue](../architecture/diagnostic-event-schema.md) records existing sources, critical typed event mappings, generic logging fallback, source-versus-listener aggregation and privacy rules. The schema validates individual records only; G2–G5 control cross-record evidence completeness and benchmark interpretation. Do not infer real runtime output from illustrative examples.
 
 Each UTF-8, BOM-free physical line is one JSON object with a terminating LF. Escape multiline messages/tracebacks inside JSON strings; never pretty-print records across physical lines. Disallow non-finite numbers and arbitrary object reprs in structured fields.
 
@@ -95,7 +98,8 @@ Status: pending.
 
 - Strengthen the existing `logging_setup.py` authority under G1, preserving nonblocking callers, normal/development verbosity and measurement sites. Implement G2 bounded admission/completeness and G3 size handling; serialize, rotate and aggregate on the listener, preserving source timestamp/context across that boundary.
 - Replace automatic text/CSV fanout with one structured JSONL sink. Retain the existing 1 MB / 3 backups / 20-session limits for new JSONL files and the documented source/packaged log locations and explicit log-location override. Pruning touches only recognized JSONL session files, never old text/CSV or outputs/state.
-- Audit and migrate all DTFlow-owned logging producers to stable semantic events and typed `data`; record the event families and units in the architecture documentation. Preserve large GUI-gap records individually, existing listener batching and source-side thumbnail aggregates. Add source window bounds where aggregation currently loses them.
+- Audit and migrate all DTFlow-owned logging producers to stable semantic events and typed `data`; record the event families and units in the architecture documentation.
+- Reconcile the proposed [event migration inventory](../architecture/diagnostic-event-schema.md) with all production logging call sites before finalizing the typed v1 catalogue. Preserve the required fields and aggregation semantics of the [draft JSON Schema](../schemas/diagnostic-record-v1.schema.json), with G1–G5 as acceptance authority. Generic standard logging remains supported without typed-field guessing. Preserve large GUI-gap records individually, existing listener batching and source-side thumbnail aggregates. Add source window bounds where aggregation currently loses them.
 - Preserve fail-soft logging: sanitized one-time reporting of setup/write/serialization errors must not retry generation or raise into UI/provider workflows. Flush pending aggregates on clean close.
 - Update repository logging contracts/docs to describe JSONL; record existing logging assertions/fixtures needing deferred reconciliation without editing them. No validation execution.
 - Use the [diagnostics architecture reference](../architecture/structured-diagnostics.md) as the ownership/dependency diagram and rationale, keeping its implemented-versus-planned labels accurate. This preparatory documentation addition is separate from the three implementation-phase commits.
@@ -148,4 +152,4 @@ Status: pending.
 
 - Baseline inspected read-only: clean main at merged #104, current asynchronous logger/text+CSV aggregation, benchmark regex/CSV consumers, existing Qt table-model example and four-page navigation assumptions.
 - Owner reviews at initial plan head accepted as required plan guards: G1 architecture ownership, G2 backpressure/completeness, G3 size/tracebacks, G4 stable bounded reading, G5 metric parity and G6 deferred acceptance. Feedback reviewed against current source only; implementation remains pending.
-- No files other than this plan have been changed for this PR. No tests, checks, renders, benchmarks or provider actions have been run.
+- Preparatory documentation includes the architecture/model-view references and the proposed schema/catalogue; no runtime UI/logging code or test files were changed for this preparatory work. No tests, checks, renders, benchmarks or provider actions were run for these documentation commits.
