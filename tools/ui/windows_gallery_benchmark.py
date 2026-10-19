@@ -279,6 +279,19 @@ def _gallery_mode_button(window, mode: str, *, timeout: float = 6):
 
     if mode not in {"Grid", "List", "Detail"}:
         raise ValueError(f"Unknown gallery mode: {mode}")
+    if mode == "Grid":
+        control = window.child_window(
+            auto_id=(
+                "QApplication.MainWindow.central.WorkspaceShell.workspaceSplitter."
+                "centerRail.centerStack.GalleryDetailPage.galleryBrandRow."
+                "galleryHeaderScroll.qt_scrollarea_viewport."
+                "galleryHeaderScrollContents.galleryGridButton"
+            ),
+            control_type="CheckBox",
+        )
+        if not control.exists(timeout=timeout):
+            raise LookupError("Windows-observed Grid CheckBox was not found")
+        return control.wrapper_object()
     automation_id = f"gallery{mode}Button"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -1057,7 +1070,7 @@ def _drive(
     nav.click_input()
     actions.append({"action": "Show saved Images", "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
     record["step"] = "verify-images-workspace"
-    _button(window, "Grid", automation_id="galleryGridButton", timeout=timeout)
+    _gallery_mode_button(window, "Grid", timeout=timeout)
     # The ordinary full-view smoke retains its query-readiness barrier.
     # Grid-matrix runs must begin immediately while the initial query runs.
     if grid_limits is None:
