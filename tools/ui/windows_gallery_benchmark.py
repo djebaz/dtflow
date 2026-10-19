@@ -571,6 +571,11 @@ def _seek_grid_card(
         # No additional fixed batch-load delay; Qt prefetches while the
         # automation continues sending real wheel input.
 
+    # A final UIA/log sample may land exactly as the timeout elapses.
+    reached = (
+        target - 15 <= current.first <= target + 25
+        if direction < 0 else current.first == 1
+    )
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     action = {
         "action": "grid-seek-down" if direction < 0 else "grid-seek-up",
