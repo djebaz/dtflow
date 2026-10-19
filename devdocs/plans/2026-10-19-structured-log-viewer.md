@@ -7,6 +7,8 @@ Implement issue #96 on top of merged PR #104 (`2945157`): purpose-designed struc
 - In: JSONL schema/writer, typed DTFlow emitters, existing gallery aggregation semantics, new-session readers, CSV export, benchmark reader migration, and an in-window Logs workspace.
 - Out: legacy text/CSV adapters or conversion, gallery optimization, provider changes, inference, model downloads, new runtime dependencies, release/version bump, packaged build, and changes to durable job/output schemas.
 - Existing `.log`/gallery CSV evidence remains untouched. New sessions write only `dtflow-<session>.jsonl` and its rotated siblings; benchmark result CSV/JSON artifacts remain reports, not parallel logging sinks.
+- Permanent companion references: [structured diagnostics ownership and evidence boundaries](../architecture/structured-diagnostics.md) and [Qt model/view performance patterns and implementation references](../guides/qt-model-view-patterns.md). These are explanatory guides; **this plan and its G1–G6 acceptance guards remain authoritative**. The design targets are not yet runtime behavior.
+
 
 ## User decisions
 
@@ -96,6 +98,8 @@ Status: pending.
 - Audit and migrate all DTFlow-owned logging producers to stable semantic events and typed `data`; record the event families and units in the architecture documentation. Preserve large GUI-gap records individually, existing listener batching and source-side thumbnail aggregates. Add source window bounds where aggregation currently loses them.
 - Preserve fail-soft logging: sanitized one-time reporting of setup/write/serialization errors must not retry generation or raise into UI/provider workflows. Flush pending aggregates on clean close.
 - Update repository logging contracts/docs to describe JSONL; record existing logging assertions/fixtures needing deferred reconciliation without editing them. No validation execution.
+- Use the [diagnostics architecture reference](../architecture/structured-diagnostics.md) as the ownership/dependency diagram and rationale, keeping its implemented-versus-planned labels accurate. This preparatory documentation addition is separate from the three implementation-phase commits.
+
 
 ## Phase 2 — Readers, exports and benchmark migration
 
@@ -115,6 +119,7 @@ Status: pending.
 
 - Add a small Logs control beside Help and lazy-create the canonical Designer Logs form when first opened. Integrate a dedicated main-window workspace safely: the current navigation handler assumes exactly four indexed pages and must explicitly support Logs without indexing a nonexistent navigation button. Back restores the prior page, shell/rail arrangement and ongoing work; navigation never cancels a generation/export/queue task.
 - Session selector defaults to the current/newest JSONL session. Filters: text, level, component/event and application/gallery category. Table columns: Time, Level, Component, Event, Summary, Metrics. Default order is newest first; header sorting and filters apply to the selected session, not only the currently loaded page.
+- Follow the [Qt model/view performance guide](../guides/qt-model-view-patterns.md): keep whole-session query/sort off the GUI thread, deliver model changes on the owning Qt thread, avoid per-cell widgets or all-row resize scans, and retain stable selection across batched Follow updates. Examples are implementation references, not preapproved dependencies.
 - Use `QTableView`/`QAbstractTableModel`, fixed-height single-line rows, elided summaries, shared token colors and a read-only expandable details pane. Tint severity cells only: subdued DEBUG, ordinary INFO, amber WARNING, red ERROR/CRITICAL. Preserve full timestamp, data, context and traceback in selectable details. Do not introduce global palette changes or large per-row widgets.
 - Parse/filter on background workers via existing AsyncRunner facilities; only mutate the model on the GUI thread. Batch insert/remove updates for follow, avoid per-record resets and resize-to-contents scans, and preserve selected records by `(session_id, seq)`.
 - Default Follow is on for the current session, polling once per second only while Logs is visible. Pause follow when the user selects/inspects/scrolls older content or applies a nondefault sort; explicit Follow resumes at newest. Never pull the viewport away during inspection. No recursive log events for reads/refreshes.
