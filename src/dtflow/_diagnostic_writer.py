@@ -157,6 +157,10 @@ class RotationUnavailable(OSError):
     """No record was written; retry rotation later without growing the file."""
 
 
+class RotationDeferred(RotationUnavailable):
+    """A rollover is still backing off; no new rotation attempt failed."""
+
+
 class JsonlHandler(logging.handlers.RotatingFileHandler):
     """Single binary UTF-8/LF sink, using existing stdlib rotation machinery."""
 
@@ -216,7 +220,7 @@ class JsonlHandler(logging.handlers.RotatingFileHandler):
                 self.stream = self._open()
             if self.stream.tell() and self.stream.tell() + len(line) > self.maxBytes:
                 if monotonic() < self.rotation_retry_at:
-                    raise RotationUnavailable("diagnostic rotation deferred")
+                    raise RotationDeferred("diagnostic rotation deferred")
                 try:
                     self.doRollover()
                 except OSError as exc:
@@ -266,10 +270,13 @@ class DiagnosticListener(logging.handlers.QueueListener):
         try:
             self.sink.write_record(payload)
             return True
-        except RotationUnavailable:
+        except RotationUnavailable as exc:
             with self.admission.lock:
-                self.admission.counts["rotation_failures"] += 1
-                self.admission.counts["writer_failures"] += 1
+                # Count failed rename attempts, not each output dropped (or
+                # control marker retried) while the rollover backs off.
+                if not isinstance(exc, RotationDeferred):
+                    self.admission.counts["rotation_failures"] += 1
+                    self.admission.counts["writer_failures"] += 1
                 self._unwritten(payload)
             return False
         except OSError:

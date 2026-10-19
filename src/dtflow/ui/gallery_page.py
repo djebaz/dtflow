@@ -489,7 +489,7 @@ class GalleryPage(QObject):
         self._adjacent_failed_offset: int | None = None
         self._suppress_batch_scroll = False
         self._drag_scroll_positions: dict[str, int] = {}
-        self._pending_refresh: tuple[bool, bool] | None = None
+        self._pending_refresh: tuple[bool, bool, str] | None = None
         self._auto_signature: tuple | None = None
         self._auto_checking = False
         self._auto_last_full = 0.0
@@ -1336,7 +1336,7 @@ class GalleryPage(QObject):
                 self.selection.anchor = None
             self._hidden_query = None
             self._after_selection_edit()
-        self.refresh(preserve=True)
+        self.refresh(preserve=True, trigger="removal")
 
     def _restore_preferences(self) -> None:
         document = load_viewer(self.state_dir)
@@ -1389,7 +1389,7 @@ class GalleryPage(QObject):
         self._sync_snapshot_warning()
         self._sync_auto_refresh()
         if first_activation:
-            self.refresh(preserve=True)
+            self.refresh(preserve=True, trigger="activation")
         elif active:
             self._queue_neighbor_prefetch()
         if active and self._pending_page_jump is not None:
@@ -1618,6 +1618,9 @@ class GalleryPage(QObject):
             if self._pending_refresh is not None:
                 reset = reset or self._pending_refresh[0]
                 preserve = preserve and self._pending_refresh[1]
+                if trigger == "auto":
+                    # Polling never relabels an explicit deferred request.
+                    trigger = self._pending_refresh[2]
             self._pending_refresh = (reset, preserve, trigger)
             return
         self._capture_scroll()
@@ -2316,10 +2319,10 @@ class GalleryPage(QObject):
             or (direction < 0 and query.offset + len(page.items) != self.offset)
         ):
             # Never splice records from different snapshots or shifted sorts.
-            self.refresh(preserve=True)
+            self.refresh(preserve=True, trigger="snapshot_mismatch")
             return
         if {item.identity for item in page.items} & {item.identity for item in self.items}:
-            self.refresh(preserve=True)
+            self.refresh(preserve=True, trigger="snapshot_mismatch")
             return
         anchor = self._browsing_anchor()
         mode = self.mode

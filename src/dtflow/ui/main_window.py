@@ -1103,7 +1103,7 @@ class MainWindow:
                 )
             return
         if outcome and any(outcome):
-            self.gallery.refresh(preserve=True)
+            self.gallery.refresh(preserve=True, trigger="removal_reconcile")
         if outcome is not None and outcome.delete_uncertain:
             count = outcome.delete_uncertain
             InlineNotice.warning(

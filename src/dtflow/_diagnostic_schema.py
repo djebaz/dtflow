@@ -40,14 +40,22 @@ _PATTERNS = (
     ),
     (re.compile(r"(?i)\b(?:positive[_ ]?|negative[_ ]?)?prompt\s*[:=].*"), "prompt=[redacted]"),
     (re.compile(r"[A-Za-z0-9+/=_-]{200,}"), "[redacted-payload]"),
-    # Unquoted paths with spaces are ambiguous: redact the remainder of that
-    # clause conservatively, rather than leaking its trailing directory words.
-    # A slash inside MIME types, ratios or reviewed model IDs is not a path.
+    (re.compile(r"""(?i)\bfile:/+[^\s"'<>|;]*"""), "[redacted-path]"),
+    # Unquoted paths with spaces are ambiguous: a path ends at its last
+    # extension-bearing segment when no separator follows in the clause,
+    # otherwise the remainder of that clause is redacted conservatively rather
+    # than leaking trailing directory words. A slash inside MIME types, ratios,
+    # reviewed model IDs, URLs or spaced arithmetic is not a path.
     (
-        re.compile(r"""(?:[A-Za-z]:[\\/]|\\\\|(?<![\w:%])/(?!/)|(?<!\w)(?:~|\.{1,2})[\\/])[^\r\n"'<>|;]*"""),
+        re.compile(
+            r"""(?:(?<![A-Za-z])[A-Za-z]:[\\/]|\\\\|(?<![\w:%/])/(?![/\s])|(?<!\w)(?:~|\.{1,2})[\\/])"""
+            r"""(?:[^\r\n"'<>|;]*?\.[A-Za-z0-9]{1,8}(?=[\s,)\]]|$)(?![^\r\n"'<>|;]*[\\/])|[^\r\n"'<>|;]*)"""
+        ),
         "[redacted-path]",
     ),
 )
+# Identifiers, numbers and field names cannot match any pattern above.
+_PLAIN = re.compile(r"[A-Za-z0-9_.-]{0,64}")
 
 
 class CaptureRejected(ValueError):
@@ -66,6 +74,8 @@ def sanitize(text: str, environ=None) -> str:
         secret = environ.get(name, "").strip()
         if len(secret) >= 4:
             text = text.replace(secret, "[redacted]")
+    if _PLAIN.fullmatch(text):
+        return text
     if len(_HOME) > 1:
         text = text.replace(_HOME, "~")
     for pattern, replacement in _PATTERNS:
@@ -190,9 +200,12 @@ def capture(record: logging.LogRecord, *, reserve=None) -> tuple[dict, int]:
     template = budget.value(record.msg)
     if not isinstance(template, str):
         raise CaptureRejected("unsupported_value")
+    before_args = budget.bytes
     args = budget.value(record.args)
+    args_bytes = budget.bytes - before_args
     budget.sanitize_strings = True
     widths = 0
+    conversions_count = 0
     if args:
         conversions = re.finditer(
             r"%(?:\([^)]{1,200}\))?[-+0 #]*(\d+|\*)?(?:\.(\d+|\*))?[hlL]?[diouxXeEfFgGcrsa%]",
@@ -208,15 +221,17 @@ def capture(record: logging.LogRecord, *, reserve=None) -> tuple[dict, int]:
                 if part and (len(part) > 7 or int(part) > MAX_RECORD_BYTES):
                     raise CaptureRejected("capture_limit")
                 widths += int(part) if part else 0
+            conversions_count += match.group()[-1] != "%"
             end = match.end()
         if "%" in template[end:]:
             raise CaptureRejected("unsupported_value")
     try:
         if args:
-            # Reserve a conservative expansion budget before %-formatting can
-            # allocate padding or repeat argument representations. Snapshots
-            # contain only native primitives/containers, never arbitrary repr.
-            budget.charge(2 * budget.bytes * max(1, template.count("%")) + 4 * widths)
+            # Reserve the expansion before %-formatting can allocate it: each
+            # argument appears once (its snapshot charge already covers str and
+            # escaped repr), plus padding/precision and numeric digits per
+            # conversion. Snapshots hold only native primitives, never arbitrary repr.
+            budget.charge(4 * len(template) + args_bytes + 4 * widths + 512 * conversions_count)
         message = budget.value(template % (tuple(args) if isinstance(args, list) else args) if args else template)
     except CaptureRejected:
         raise

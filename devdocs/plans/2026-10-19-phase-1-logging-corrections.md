@@ -43,3 +43,15 @@ Plan recorded before code changes; F1–F8 source implemented on the existing PR
 | F8 | Architecture/catalogue, parent plan, desktop/development/tooling guides, AGENTS and unreleased notes | Phase 2 shared-reader population rules, unsupported historical benchmark input handling and explicit approval before correcting the formerly-null thumbnail report metric. |
 
 The owner-updated retention test at `843b36b` fabricates JSONL files without ownership metadata. Those inputs are now deliberately unknown owners and must not be pruned; its old unconditional retention assertion will need separately authorized reconciliation using ownership-aware fixtures. GUI harness stubs may likewise need the new optional mailbox/refresh-trigger arguments. No tests were edited or run here, and the previous green result does not certify this new head.
+
+## Second review follow-up
+
+Independent re-review of `67085f8` found residual gaps, corrected on the same branch (source and docs only; no tests edited or run here):
+
+- F6: the format-expansion charge (`2 × bytes × %-count`) rejected ordinary messages, e.g. two 30k-character `%s` arguments. It now reserves template + argument snapshot bytes + widths/precision + 512 bytes per conversion before formatting. Short identifier-shaped strings (`[A-Za-z0-9_.-]{0,64}`) skip the path/payload regexes after the secret replacement, which still runs for every string.
+- F4: drive-letter matching no longer fires inside URL schemes (`https://host/a/b` stays intact), spaced arithmetic (`5 / 10`) is not a path, `file:` URLs are redacted explicitly, and an unquoted path stops after its last extension-bearing segment when no separator follows in the clause.
+- F7: successful removal, removal-ledger reconciliation, first activation and snapshot-mismatch fallbacks now label `query_start.trigger`; an `auto` poll merged into a deferred refresh keeps the explicit pending trigger.
+- F1: `rotation_failures`/`writer_failures` count failed rename attempts; outputs skipped during backoff count only as `unwritten_records`.
+- F8: `tools/ui/README.md` no longer claims the benchmark runner reuses the removed gallery CSV.
+
+Unchanged by decision: the 1 MiB record vs 1,000,000-byte segment limit, `session.started` retention, and stable `.owner` files.
