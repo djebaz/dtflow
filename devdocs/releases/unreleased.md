@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 Grid speed follow-up: owner Windows `10190234.zip` revealed 11–12-second Grid seek legs, with `10:50` missing image #300 and #1 before timeout. Faster 15-ms inter-pulse pacing and up-to-12-notch coarse wheel bursts now target image #300 **within the actual displayed range**; actions retain measured input/probe time. Requires new Windows smoke; no production behavior changed.
+
 - PR #104 Grid matrix refinement: replace slow batch-count-dependent wheel steps with a fast, bounded, position-driven Grid journey to approximately image #300 and back to #1 across all `-ml/-mc` cases. Read the owner's recorded `Visible image range` UIA control with benchmark-only pager-log fallback; no sort changes or batch-completion waits. Evidence records actual displayed indices, pulsed inputs and timeouts. Native Windows smoke still pending.
 
 - PR #104 Grid scroll matrix: opt-in `--grid-matrix` benchmark varies CLI `-ml`/`-mc` (from 20:50 through 300:1000) across separate native Windows processes. Preserves true product whole-batch cap rounding, records requested/effective limits, scrolls Grid down/up in bounded resident-batch-based steps, physically clicks page 1 before and after, and never touches Sort. Existing tuning profiles still use 20/100. No Windows replay or provider execution yet.
