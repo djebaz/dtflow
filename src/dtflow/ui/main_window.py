@@ -49,6 +49,7 @@ from dtflow.ui.activity_strip import ActivityStrip
 from dtflow.ui.brand import connection_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
+from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
@@ -219,6 +220,15 @@ class MainWindow:
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
         self.shell.centerStack.addWidget(self.gallery_detail)
         self.shell.rightStack.addWidget(QWidget())
+        self.logs_marker = QWidget()
+        form.workspaceStack.addWidget(self.logs_marker)
+        self.logs_form = load_ui(FORMS_DIR / "logs_workspace.ui")
+        self.shell.leftStack.addWidget(QWidget())
+        self.shell.centerStack.addWidget(self.logs_form)
+        self.shell.rightStack.addWidget(QWidget())
+        self._logs_previous_page = form.connectionPage
+        self._logs_active = False
+        self.logs = LogsWorkspace(self.logs_form, self.state_dir.parent / "logs", self._close_logs)
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
         self.progress_strip = ActivityStrip(form)
@@ -311,6 +321,16 @@ class MainWindow:
         about_button.setAutoRaise(True)
         about_button.setAccessibleName("About DTFlow")
         form.statusBar().addPermanentWidget(about_button)
+        logs_button = QToolButton(form.statusBar())
+        logs_button.setObjectName("logsStatusButton")
+        logs_button.setText("≡")
+        logs_button.setFixedSize(20, 20)
+        logs_button.setCheckable(True)
+        logs_button.setToolTip("Open Logs workspace")
+        logs_button.setAccessibleName("Open Logs workspace")
+        logs_button.clicked.connect(self._toggle_logs)
+        form.statusBar().addPermanentWidget(logs_button)
+        self.logs_button = logs_button
         form.statusBar().setSizeGripEnabled(False)
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
@@ -422,10 +442,29 @@ class MainWindow:
         self.generation.sync_backend()
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
 
+    def _toggle_logs(self) -> None:
+        if self.form.workspaceStack.currentWidget() is self.logs_marker:
+            self._close_logs()
+        else:
+            self._logs_previous_page = self.form.workspaceStack.currentWidget()
+            self.form.workspaceStack.setCurrentWidget(self.logs_marker)
+
+    def _close_logs(self) -> None:
+        if self.form.workspaceStack.currentWidget() is self.logs_marker:
+            self.form.workspaceStack.setCurrentWidget(self._logs_previous_page)
+
     def _workspace_changed(self, index: int) -> None:
-        """Switch content and use the compact full-width chrome for Images only."""
-        self.gallery.recycle_scope_revision += 1
-        self.inline.dismiss()
+        """Switch mounted workspaces without resetting active operations."""
+        logs_active = self.form.workspaceStack.currentWidget() is self.logs_marker
+        if logs_active:
+            self.logs_button.setChecked(True)
+            self.logs.open()
+        else:
+            self.logs_button.setChecked(False)
+            self.logs.stop()
+        if not logs_active:
+            self.gallery.recycle_scope_revision += 1
+            self.inline.dismiss()
         if index == 0:
             self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
@@ -436,7 +475,8 @@ class MainWindow:
             self.form.queueNavigationButton,
             self.form.imagesNavigationButton,
         )
-        buttons[index].setChecked(True)
+        if index < len(buttons):
+            buttons[index].setChecked(True)
         self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)
         self._place_export_panel()
         self._responsive_workspace()
@@ -486,7 +526,22 @@ class MainWindow:
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
+        logs = self.form.workspaceStack.currentWidget() is self.logs_marker
         images = self.form.workspaceStack.currentWidget() is self.images_page
+        if self._logs_active != logs:
+            self._logs_active = logs
+            if logs:
+                self._logs_previous_sizes = shell.workspaceSplitter.sizes()
+                for slot, frame in ((self.logs_form.logsBrandSlot, shell.brandFrame),
+                                    (self.logs_form.logsNavigationSlot, shell.navigationFrame)):
+                    slot.setFixedSize(shell.leftRail.width(), frame.height())
+                    slot.layout().addWidget(frame) if slot.layout() else __import__("PySide6.QtWidgets", fromlist=["QHBoxLayout"]).QHBoxLayout(slot).addWidget(frame)
+            elif self._gallery_chrome_active is False:
+                shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+                shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+                shell.brandFrame.show()
+                shell.navigationFrame.show()
+                shell.workspaceSplitter.setSizes(self._logs_previous_sizes)
         if images != self._gallery_chrome_active:
             self._gallery_chrome_active = images
             shell.setProperty("galleryMode", images)
@@ -503,19 +558,19 @@ class MainWindow:
                 self.gallery_detail.galleryHeaderScroll.setFixedHeight(shell.brandFrame.height())
                 self.gallery_detail.galleryBrandSlotLayout.addWidget(shell.brandFrame)
                 self.gallery_detail.galleryNavigationSlotLayout.addWidget(shell.navigationFrame)
-            else:
+            elif not logs:
                 shell.leftRailLayout.insertWidget(0, shell.brandFrame)
                 shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
             shell.brandFrame.show()
             shell.navigationFrame.show()
             self.gallery_detail.galleryBrandSlot.setVisible(images)
             self.gallery_detail.galleryNavigationSlot.setVisible(images)
-            shell.leftRail.setVisible(not images)
+            shell.leftRail.setVisible(not images and not logs)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
         shell.runControl.setVisible(True)
         self._align_run_control()
-        shell.rightRail.setVisible(not images and not narrow)
+        shell.rightRail.setVisible(not images and not logs and not narrow)
 
     def _sync_activity_progress(self):
         if self.progress_strip.retired:
