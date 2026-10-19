@@ -38,7 +38,7 @@ class LogCellDelegate(QStyledItemDelegate):
         if index.row() >= len(model.previews):
             return (), 0
         preview = model.previews[index.row()]
-        return preview if isinstance(preview, tuple) and len(preview) == 2 else (), 0
+        return preview if isinstance(preview, tuple) and len(preview) == 2 else ((), 0)
 
     def _chips(self, painter, rect, metrics, pairs, overflow, *, draw):
         x, y = rect.x(), rect.y() + 5
