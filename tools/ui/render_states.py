@@ -2517,6 +2517,8 @@ def render_logs_states(shell, capture):
 
     shell.logs._set_pending(True, 2, incomplete=True, detail="Synthetic incomplete-evidence count")
     capture("logs-09-refresh-count-incomplete")
+    shell.logs._set_pending(True, 0, incomplete=True, detail="No matching arrivals; source evidence incomplete")
+    capture("logs-14-zero-arrivals-incomplete")
 
     shell.logs._set_pending(False)
     # Component sort from the left target of the split COMPONENT . EVENT header.
