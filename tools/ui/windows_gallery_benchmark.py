@@ -375,79 +375,63 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
     raise TimeoutError(f"Page 1 was clicked at {at} but did not become selected.")
 
 
-def _page_one_jump_events(directory: Path) -> int:
-    """Count applied (not merely queued) page-1 navigations in -x logs."""
-
-    count = 0
-    for path in directory.glob("dtflow-*.log*"):
-        if "-gallery" in path.name or not path.is_file():
-            continue
-        try:
-            with path.open(encoding="utf-8", errors="replace") as stream:
-                count += sum(
-                    "gallery_perf phase=page_jump page=1 " in line for line in stream
-                )
-        except OSError:
-            continue
-    return count
-
-
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *,
                             directory: Path, timeout: float) -> None:
-    """Require a *processed* page-1 click, not UIA dispatch or a stale range.
+    """Poll for the enabled page-1 chip, then click once and start from #1.
 
-    DTFlow queues page jumps during adjacent reads/mounts. Only the -x
-    page_jump event proves the queued action reached _jump_to_page.
+    No diagnostic log event is required. Only initial pager readiness is
+    gated; subsequent adjacent queries never pause the wheel sender.
     """
 
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
     attempts = 0
-    before = _page_one_jump_events(directory)
     observed = None
     clicked = False
-    applied = False
+    # Kept in the signature for existing callers. Readiness is UI-only.
+    del directory
     while time.monotonic() < deadline:
+        try:
+            chip = _button(
+                window, "Jump to image batch 1",
+                automation_id="galleryPagerPage1", timeout=0.01,
+            )
+        except (LookupError, RuntimeError, TimeoutError):
+            # The spinner may be visible and the numbered chips not yet
+            # committed. Retry at roughly five polls per second.
+            time.sleep(0.2)
+            continue
+
         if not clicked:
             try:
-                chip = _button(
-                    window, "Jump to image batch 1",
-                    automation_id="galleryPagerPage1", timeout=0.3,
-                )
                 chip.click_input()
-                clicked = True
                 attempts += 1
+                clicked = True
             except (LookupError, RuntimeError, TimeoutError):
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
-        # A visible range of 1 is insufficient: the click may still be queued.
-        applied = _page_one_jump_events(directory) > before
         observed = probe.read()
-        if applied and observed is not None and observed.first == 1:
-            # One more settled read reduces the chance of observing the
-            # previous layout immediately before the page jump reflows it.
-            time.sleep(0.12)
-            confirmed = probe.read()
-            if confirmed is not None and confirmed.first == 1:
-                actions.append({
-                    "action": "click-page-one-start",
-                    "verified": True, "applied": True, "visible_first": 1,
-                    "source": confirmed.source, "click_attempts": attempts,
-                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-                })
-                return
-        time.sleep(0.1)
+        if observed is not None and observed.first == 1:
+            actions.append({
+                "action": "click-page-one-start",
+                "verified": True, "visible_first": 1,
+                "source": observed.source, "click_attempts": attempts,
+                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
+            return
+        time.sleep(0.2)
+
     actions.append({
         "action": "click-page-one-start",
-        "verified": False, "applied": applied,
+        "verified": False,
         "visible_first": observed.first if observed else None,
         "click_attempts": attempts,
         "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
     })
     raise TimeoutError(
-        "Page-1 click was not applied and confirmed before the startup deadline "
-        f"({timeout:g}s; dispatched={clicked}, applied={applied}, "
-        f"first={observed.first if observed else 'unknown'})."
+        "Page-1 chip did not become clickable at image 1 before the startup deadline "
+        f"({timeout:g}s; clicked={clicked}, first="
+        f"{observed.first if observed else 'unknown'})."
     )
 
 
