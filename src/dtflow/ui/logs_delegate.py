@@ -119,9 +119,17 @@ class LogCellDelegate(QStyledItemDelegate):
             painter.setPen(self._color("color.secondary"))
             painter.drawText(rect.adjusted(2, 25, 0, 0), Qt.AlignmentFlag.AlignTop, timestamp[11:])
         elif col == 2:
+            # Component as a quiet first line, so the COMPONENT sort target orders something visible.
+            component = metrics.elidedText(record["component"], Qt.TextElideMode.ElideRight, max(10, rect.width() - 4))
+            painter.setPen(self._color("color.secondary"))
+            painter.drawText(
+                QRect(rect.x() + 2, rect.y(), rect.width() - 2, 16),
+                Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
+                component,
+            )
             full = record["event"]
             shortened = metrics.elidedText(full, Qt.TextElideMode.ElideRight, max(10, rect.width() - 18))
-            self._pill(painter, QRect(rect.x(), rect.y() + 9, rect.width(), 26), shortened, full)
+            self._pill(painter, QRect(rect.x(), rect.y() + 18, rect.width(), 24), shortened, full)
         elif col == 3:
             pairs, overflow = self._preview(index)
             message = self._message(index)

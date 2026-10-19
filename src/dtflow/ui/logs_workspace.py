@@ -441,7 +441,8 @@ class LogsWorkspace(QObject):
         session.setMinimumContentsLength(28)
         session.setMaximumWidth(320)
         session.currentIndexChanged.connect(lambda _index: self._session_tooltip())
-        chevron = icons / "chevron-right.svg"
+        # The pane collapses downward into the table split.
+        chevron = Path(__file__).parents[1] / "resources" / "images" / "controls" / "chevron-down.svg"
         self.form.logsDetailCollapse.setIcon(QIcon(str(chevron)))
         self.form.logsDetailCollapse.setText("")
         self.form.logsDetailCollapse.setToolTip("Collapse details")

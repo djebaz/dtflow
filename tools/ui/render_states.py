@@ -2438,6 +2438,9 @@ def render_logs_states(shell, capture):
 
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
+    # Earlier states leave timed outcome rows; clear them so they do not cover the Logs footer.
+    for key in tuple(shell.progress_strip.rows):
+        shell.progress_strip.finish(key)
     panel = shell.logs_form
     from dtflow.ui.logs_workspace import EMPTY_SESSION, ICON_GAP, NO_MATCHES
 
@@ -2515,7 +2518,9 @@ def render_logs_states(shell, capture):
 
     shell.logs._set_pending(False)
     # Component sort from the left target of the split COMPONENT . EVENT header.
-    shell.logs.model.replace(rows, [((("state", "fixture"),), 0)] * len(rows))
+    by_component = sorted(rows, key=lambda row: (row[0]["component"], row[0]["seq"]))
+    shell.logs.model.replace(by_component, [((("state", "fixture"),), 0)] * len(rows))
+    panel.logsOperationStatus.clear()
     shell.logs.model.set_sort_state("component", False)
     panel.logsSortNote.setText("Component · A → Z")
     panel.logsCounter.setText("5 of 5 matching records · complete · page 1 · showing 5")
