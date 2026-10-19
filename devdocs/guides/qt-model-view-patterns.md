@@ -4,7 +4,7 @@
 
 ## Recommended widgets
 
-Use **`QTableView` + a custom `QAbstractTableModel`**, consistent with DTFlow's PySide6 Widgets stack. Do not switch to QML solely for this feature. A `QTableWidget` materializes item objects and is convenient for small static lists, but is a weaker fit for a continually updated, bounded dataset whose backing source is a rotating log. `QStandardItemModel` is convenient for medium-sized generic lists but adds an unnecessary item layer for this specialized read-only projection. `QTreeView` is best reserved for an explicitly hierarchical UI, not six fixed log columns.
+Use **`QTableView` + a custom `QAbstractTableModel`**, consistent with DTFlow's PySide6 Widgets stack. Do not switch to QML solely for this feature. A `QTableWidget` materializes item objects and is convenient for small static lists, but is a weaker fit for a continually updated, bounded dataset whose backing source is a rotating log. `QStandardItemModel` is convenient for medium-sized generic lists but adds an unnecessary item layer for this specialized read-only projection. `QTreeView` is best reserved for an explicitly hierarchical UI, not the planned compact event/characteristic table.
 
 The table is a **presentation cache**. The full-session source of truth is the shared Qt-free reader. A details pane requests selected record content on demand, rather than holding complete JSON and exception tracebacks in each row.
 
@@ -29,7 +29,7 @@ Rotated JSONL -> shared validated reader -> cancellable worker search/sort/page
 
 ## Large-table geometry and memory
 
-- Prefer **single-line fixed-height rows**, no word wrapping or per-row widget editors. Elide lengthy summaries and put full context/tracebacks in a separate selectable details pane.
+- Prefer **fixed-height rows**, no content-driven expansion or per-row widget editors. Logs permits up to two painted characteristic lines within that fixed height, while its event pill stays single-line. Put full context/tracebacks in a separate selectable details pane.
 - For the [PR #105 Logs presentation](../design-system/logs-workspace.md), use a narrow severity-indicator column, fixed Date/Time, fixed **Event** and flexible **Characteristics** column. Draw one single-line muted pill for the complete dotted event (no prefix/suffix split or underline); paint up to two visual lines of multiple semantically ordered key/value chips, with stable deterministic colors for metric-name keys and neutral values, and a `+N more` overflow marker. **No full Level, Source, Summary or Value column**. Keep severity accessible via row semantics, tooltips, filters and inspector. Do not use per-cell widgets, dynamic-height rows, `ResizeToContents`/full-model scans or global QSS changes; preserve selected-row blue focus. INFO is neutral and recorded DEBUG remains DEBUG.
 - Budget **bytes, not only row count**. The PR plan proposes 500-row pages, <=10,000 resident projections, a shared 1 MiB physical record limit, a 32 MiB display-projection budget and a 16 MiB worker budget (G3/G4); these are **design constraints, not measured memory usage**. Don't cache full 1 MiB payloads for every row.
 - Sort order must remain deterministic under equal values, e.g. tie-break on `(session_id, seq)`. Entire-session query results need bounded working memory and explicit interrupted/incomplete states when rotated segments disappear during a scan.

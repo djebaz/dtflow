@@ -116,23 +116,18 @@
     },
     {
       "if": {
-        "properties": {
-          "kind": {
-            "enum": [
-              "event",
-              "measurement"
-            ]
-          }
-        },
         "required": [
-          "kind"
+          "agg"
         ]
       },
       "then": {
-        "not": {
-          "required": [
-            "agg"
-          ]
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "const": "aggregate"
+          }
         }
       }
     },

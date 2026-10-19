@@ -15,7 +15,7 @@ The event name is on **exactly one line** and stays aligned vertically across ro
 
 ### Stable semantic key order — not input JSON order
 
-The **same key always retains its relative order** against other keys within all records, irrespective of field insertion order, other visible metrics, sorting or session filters. Use a versioned **display-only** ranking applied in the shared projection path for compact rows, inspector and human-oriented CSV projections (raw JSONL exports/copy remain byte-faithful). Within each category, the named sequence is explicit; unknown keys sort last by normalized lowercase key with raw-key tie-break.
+The **same key always retains its relative order** against other keys within all records, irrespective of field insertion order, other visible metrics, sorting or session filters. Use a versioned **display-only** ranking applied in the shared projection path for compact rows, inspector and human-oriented CSV projections (raw JSONL exports/copy retain recorded order and bytes unless shared privacy revalidation requires an explicitly labeled transformation). Within each category, the named sequence is explicit; unknown keys sort last by normalized lowercase key with raw-key tie-break.
 
 | Category | Preferred order (left to right) |
 | --- | --- |
@@ -39,6 +39,8 @@ Omit missing characteristics without reordering remaining ones. Show `false`, `0
 
 All controls apply to the **entire retained selected session** through the shared Qt-independent reader *before* 500-row page selection. No proxy-only search of currently loaded rows, and no UI regex parsing of `msg`. The offline HTML mockup demonstrates interaction semantics against just synthetic in-memory data; it does not prove reader throughput or disk identity handling.
 
+The [shared query semantics](../architecture/diagnostic-event-schema.md#shared-query-semantics--phase-2-contract) are authoritative for presence/null, numeric/string typing, case sensitivity, literal nested-key paths, collection handling, event-prefix boundaries and deterministic sort placement. This control table maps onto that contract; it does not introduce a second query language. All consumers reuse the same validated values and versioned projections; palette assignment never affects filtering or sort keys. Labels and units must have recorded or explicitly contracted provenance, not guessed magnitude, invented duration suffixes, nonexistent percentiles or promoted severity.
+
 | Control | Semantics |
 | --- | --- |
 | **Session** | Current/newest by default; select a retained session. Missing/incomplete status is explicit. |
@@ -61,6 +63,8 @@ Visible controls may live in a compact primary toolbar plus an expandable **More
 Selecting a record opens a **read-only details pane**, showing actual level text, full UTC time/timezone, exact full event/component, `seq`/verified session, sanitized `msg`, *all* semantic-order characteristics, nested JSON, `ctx`, `error`/traceback and `agg` where genuinely present. JSON/raw copy retains record identity; raw JSONL copy is not reordered to match presentation. A `+N more` marker is never an indication of lost diagnostics.
 
 Retain Refresh, Back, Follow, Copy selected / visible / raw JSONL, Export matching CSV / JSONL, Open raw file and Open folder. Exports apply matching filters to the whole retained snapshot, are bounded/cancellable, preserve shared privacy rules, and never silently claim complete evidence. No delete-log control.
+
+JSONL exports follow the [derived excerpt/manifest contract](../architecture/diagnostic-event-schema.md#canonical-sessions-versus-derived-jsonl-excerpts), not canonical session discovery. Describe source evidence status separately from export completion; preserve original sequence numbers without treating intentional selection gaps as lost source records. Raw clipboard excerpts are not independently certified sessions.
 
 The real `tools/ui/render_states.py` must define synthetic **empty**, **mixed-severity/populated**, **selected error/details**, and **incomplete/reader error** states when Phase 3 builds the native Designer UI. The HTML mockup has matching preview states but is neither a Qt render nor a substitute for Windows/DPI smoke checks. Follow [DESIGN.md](../../DESIGN.md), [design system](README.md), [Qt model/view guide](../guides/qt-model-view-patterns.md), [schema documentation](../architecture/diagnostic-event-schema.md), and the [binding PR plan/G1–G6](../plans/2026-10-19-structured-log-viewer.md).
 

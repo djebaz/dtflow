@@ -57,7 +57,9 @@ This is **logical centralization**, not a demand for one giant source file. Poss
 
 ## Events, evidence and privacy
 
-The format aims to remain near current text logs in total bytes at equivalent verbosity, **not** to minimize every field at the expense of filtering or benchmark trust. Store session build/runtime metadata once in `session.started`; use only a handful of stable top-level search characteristics per record, keep typed descriptive names inside `data`, and rely on the shared Qt-free reader for full-retained-session field comparisons and hierarchical event-prefix filters. Rotation gaps/startup loss make evidence incomplete rather than triggering invented metadata. Storage parity remains unmeasured until owner replay.
+The format aims for reasonable measured storage overhead, **not** byte parity or an arbitrary percentage target at the expense of filtering or benchmark trust. Store session build/runtime metadata once in `session.started`; use only a handful of stable top-level search characteristics per record, keep typed descriptive names inside `data`, and rely on the shared Qt-free reader for full-retained-session field comparisons and hierarchical event-prefix filters. Rotation gaps/startup loss make evidence incomplete rather than triggering invented metadata. Storage overhead, retained evidence and native UI impact remain unmeasured until owner replay.
+
+The catalogue owns the [core typed-query rules](diagnostic-event-schema.md#shared-query-semantics--phase-2-contract) and [derived JSONL excerpt/manifest boundary](diagnostic-event-schema.md#canonical-sessions-versus-derived-jsonl-excerpts). Export manifests carry bounded provenance without changing ordinary v1 records or manufacturing session seals; excerpts never enter automatic canonical session discovery. The workspace specification owns versioned display ordering/palette rules, reused through one projection path rather than reinterpreted by each consumer.
 
 
 The [plan's schema and G1–G5](../plans/2026-10-19-structured-log-viewer.md#accepted-owner-review-guards) are authoritative. The guiding invariants are:
