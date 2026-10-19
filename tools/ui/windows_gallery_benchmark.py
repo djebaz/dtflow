@@ -419,19 +419,24 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
 
 
 def _grid_batch_button(window, number: int):
-    """Resolve a fresh pager button by its exact, stable accessible name.
+    """Locate the enabled pager button by observed accessible batch name.
 
-    Qt assigns objectName galleryPagerPage<N>, but Windows UIA qualifies
-    AutomationId with its parent hierarchy. Do not guess that full path or
-    enumerate every descendant on each lookup.
+    Until a Windows capture confirms the actual AutomationId, preserve the
+    previously successful descendant lookup rather than guessing a UIA selector.
+    The pager can rebuild its buttons, so never reuse stale wrappers.
     """
-    button = window.child_window(
-        title=f"Jump to image batch {number}",
-        control_type="Button",
-    )
-    if not button.exists(timeout=0) or not button.is_visible() or not button.is_enabled():
-        raise LookupError(f"Page {number} button is not currently ready")
-    return button.wrapper_object()
+    pattern = re.compile(rf"\\bbatch\\s+{number}\\b", re.IGNORECASE)
+    matches = [
+        widget for widget in window.descendants()
+        if widget.element_info.control_type in {"Button", "CheckBox", "RadioButton"}
+        and pattern.search(widget.element_info.name or "")
+        and widget.is_visible() and widget.is_enabled()
+    ]
+    if len(matches) > 1:
+        raise RuntimeError(f"Ambiguous enabled pager button containing batch {number}")
+    if not matches:
+        raise LookupError(f"No enabled pager button containing batch {number}")
+    return matches[0]
 
 
 def _activate_grid_batch_chip(chip):
