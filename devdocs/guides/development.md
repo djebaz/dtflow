@@ -199,3 +199,13 @@ Owner evidence shows baseline and workers-3 navigating Images, switching Grid/Li
 ### Extended owner-requested gallery benchmark actions (2026-10-19)
 
 The PR #104 smoke now uses 192 wheel notches for each up/down sweep in Grid and List, configurable via `--scroll-notches 12..240`; moves the thumbnail slider toward 55% and 210% and attempts to restore its starting value; and toggles fullscreen **from Grid**, not from Detail. Detail is still exercised as a separate view change. Retain the same wheel count, DPI, viewport and gallery image set when comparing tuning profiles. Missing UIA actions remain recoverable warnings, not automatic proof of a Qt freeze. A fresh native Windows smoke is still necessary to accept this revised sequence.
+
+### Native Grid `-ml`/`-mc` matrix (2026-10-19)
+
+PR #104 adds a separate `--grid-matrix` mode to the Windows pywinauto benchmark. It launches the real Qt GUI for each requested `-ml:-mc` pair and uses DTFlow's existing limit resolver, so `20:50` effectively buffers 40 cards while `300:1000` buffers 900. Test only Grid: select Images, **click page 1** (even if checked), scroll down then back up for a number of steps computed from resident batch count, and **click page 1** again. No Sort dropdown changes or other view switches. Every case has a fresh process/log directory and saves requested/effective limits and action evidence. For example:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --runs 1 --cycles 1 --ack-user-state
+```
+
+Large limits are not meaningfully tested when the saved-output catalogue is too small; first-query shortfall is a recorded warning. Scroll dispatch is not proof of physical image movement. No new product settings, dependencies or billable services are involved. Windows acceptance is pending.
