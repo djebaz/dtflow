@@ -82,13 +82,15 @@ UNCLASSIFIED_FAMILY = "__unclassified__"  # base-model combo data for checkpoint
 log = logging.getLogger(__name__)
 
 
-def failure_reason(failure: BaseException) -> str:
-    """Short log text for a failure: the backend's own code and category when it has them, else the type name."""
+def failure_fields(failure: BaseException) -> dict:
+    """Safe diagnostic fields for a failure: the type name, plus the backend's own code and category when it has them."""
+    fields = {"reason": type(failure).__name__}
     detail = getattr(failure, "failure", None)
     code, category = getattr(detail, "code", None), getattr(detail, "category", None)
     if code:
-        return f"{type(failure).__name__} code={code} category={getattr(category, 'value', category)}"
-    return type(failure).__name__
+        fields["code"] = str(code)
+        fields["category"] = str(getattr(category, "value", category))
+    return fields
 
 
 PREVIEW_MIN_HEIGHT = 180
@@ -972,9 +974,7 @@ class GenerationPage:
                 log,
                 "generation.failed",
                 level=logging.WARNING,
-                data={
-                    "reason": type(failure).__name__,
-                },
+                data=failure_fields(failure),
             )
             presentation = present_generation_failure(failure)
             self._status(presentation)
@@ -1399,9 +1399,7 @@ class GenerationPage:
                 log,
                 "generation.inventory_refresh_failed",
                 level=logging.WARNING,
-                data={
-                    "reason": type(failure).__name__,
-                },
+                data=failure_fields(failure),
             )
             self._inventory_notice = (
                 "Refresh failed · showing previous inventory"
