@@ -419,24 +419,19 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
 
 
 def _grid_batch_button(window, number: int):
-    """Locate the enabled pager button by observed accessible batch name.
+    """Resolve a pager chip from its Qt-generated UIA AutomationId, never title.
 
-    Until a Windows capture confirms the actual AutomationId, preserve the
-    previously successful descendant lookup rather than guessing a UIA selector.
-    The pager can rebuild its buttons, so never reuse stale wrappers.
+    DTFlow's Qt accessibility bridge qualifies objectName with the ancestor
+    path on Windows. The suffix is stable even when that path changes.
     """
-    pattern = re.compile(rf"\\bbatch\\s+{number}\\b", re.IGNORECASE)
-    matches = [
-        widget for widget in window.descendants()
-        if widget.element_info.control_type in {"Button", "CheckBox", "RadioButton"}
-        and pattern.search(widget.element_info.name or "")
-        and widget.is_visible() and widget.is_enabled()
-    ]
-    if len(matches) > 1:
-        raise RuntimeError(f"Ambiguous enabled pager button containing batch {number}")
-    if not matches:
-        raise LookupError(f"No enabled pager button containing batch {number}")
-    return matches[0]
+    suffix = f"galleryPagerPage{number}"
+    button = window.child_window(
+        control_type="Button",
+        predicate_func=lambda info: (info.automation_id or "").split(".")[-1] == suffix,
+    )
+    if not button.exists(timeout=0) or not button.is_visible() or not button.is_enabled():
+        raise LookupError(f"Page {number} button is not currently ready")
+    return button.wrapper_object()
 
 
 def _activate_grid_batch_chip(chip):
