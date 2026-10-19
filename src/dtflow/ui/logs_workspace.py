@@ -13,7 +13,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QRunnable,
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu
 
-from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail
+from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, snapshot
 from dtflow._diagnostic_export import export_matching
 from dtflow.diagnostic_projection import characteristics
 from dtflow.ui.theme import load_tokens
@@ -150,6 +150,7 @@ class LogsWorkspace(QObject):
         self._last = ()
         self._page = []
         self._pending = 0
+        self._file_snapshot = None
         self._timer = QTimer(form)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._poll)
@@ -235,6 +236,7 @@ class LogsWorkspace(QObject):
             self.refresh()
 
     def refresh(self, *_):
+        self.form.logsRefreshButton.setText("Refresh")
         if not self.active:
             return
         sid = self.form.logsSessionCombo.currentText()
@@ -282,6 +284,8 @@ class LogsWorkspace(QObject):
         self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
         self._last = tuple((r.seq for _, r in page))
         self._pending = 0
+        self._file_snapshot = tuple((p.path.name, p.device, p.inode, p.size)
+                                    for p in status.segments)
         self._populate_filter_values(page)
         if self.form.logsFollowButton.isChecked():
             self.form.logsTable.scrollToTop()
@@ -309,8 +313,25 @@ class LogsWorkspace(QObject):
             combo.blockSignals(False)
 
     def _poll(self):
-        if self.active and self.form.logsFollowButton.isChecked():
+        if not self.active:
+            return
+        sid = self.form.logsSessionCombo.currentText()
+        if not sid:
+            if discover(self.directory):
+                self.open()
+            return
+        try:
+            changed = tuple((p.path.name, p.device, p.inode, p.size)
+                            for p in snapshot(self.directory, sid))
+        except (OSError, ValueError):
+            changed = ()
+        if changed == self._file_snapshot:
+            return
+        if self.form.logsFollowButton.isChecked():
             self.refresh()
+        else:
+            self._pending = max(1, self._pending)
+            self.form.logsRefreshButton.setText("Refresh (new records)")
 
     def _row_clicked(self, index):
         # Selection alone never opens details; actions use the painted delegate.
