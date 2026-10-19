@@ -1273,13 +1273,15 @@ def test_grid_progress_reads_status_input_value_pattern(tmp_path):
     state = {"first": 1}
 
     class Control:
-        @property
-        def iface_value(self):
-            return SimpleNamespace(CurrentValue=f"{state['first']}/1000")
+        def get_value(self):
+            return f"{state['first']}/1000"
 
         def exists(self, *, timeout):
             assert timeout == 0
             return True
+
+        def wrapper_object(self):
+            return self
 
     class Window:
         def __init__(self):
