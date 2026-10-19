@@ -6,7 +6,7 @@ The Qt model stores bounded projections, never complete JSONL payloads.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
@@ -208,7 +208,7 @@ class LogsWorkspace(QObject):
                 dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
                 if dt.tzinfo is None:
                     raise ValueError("Time range must specify a timezone")
-                filters[field] = dt.astimezone(__import__("datetime").timezone.utc).isoformat(
+                filters[field] = dt.astimezone(timezone.utc).isoformat(
                     timespec="milliseconds").replace("+00:00", "Z")
         characteristic = self.form.logsField.text().strip()
         if characteristic:
@@ -278,6 +278,7 @@ class LogsWorkspace(QObject):
         status, count, page, _next, projections = result
         self._page = page
         self.model.replace(page, projections)
+        self.form.logsTable.resizeRowsToContents()  # only the bounded visible page; no full-session scan
         self.form.logsStatus.setText(f"{count} matching · {status.state} · displaying {len(page)}")
         self.form.logsNotice.setVisible(status.state not in ("complete", "pending"))
         self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
