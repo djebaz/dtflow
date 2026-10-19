@@ -109,6 +109,8 @@ Status: implemented in source at the Phase 1 checkpoint of this PR; unvalidated 
 
 ## Phase 2 — Readers, exports and benchmark migration
 
+**Source-freeze checkpoint (2026-10-19, candidate only):** Reader API `discover`/`snapshot`/`scan`/`match`/`query`/`read_detail` and the optional small `iter_records` convenience path now have documented state, identity and bounded access behavior. Source review fixes include duplicate sequence/closed-seal checks, active versus historical partial-tail classification, strict bounded on-disk JSON decoding, bounded convenience materialization and race-aware lazy hydration. `_diagnostic_export.export_matching` and both benchmark consumers use the shared reader. **This is a source/interface freeze candidate, NOT an acceptance or performance freeze:** P2.1–P2.8, G6, Windows fault/replay scenarios, actual export/query pagination and exact-head CI remain unchecked. Do not run or edit tests before owner-authorized deferred reconciliation. Further reader changes should address a concrete reviewed defect and update this checkpoint, not silently reshape the interface.
+
 Phase 1 review follow-up: [corrective subplan F1–F9](2026-10-19-phase-1-logging-corrections.md) owns the writer/privacy/retention/notification corrections and remaining acceptance. It narrows terminal write failure versus retryable rotation collisions, adds ownership-protected best-effort pruning and incremental pre-allocation capture accounting. These source changes do not satisfy final acceptance gates.
 
 Status: pending.
