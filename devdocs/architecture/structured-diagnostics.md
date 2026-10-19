@@ -2,6 +2,8 @@
 
 **Status:** design target for draft [PR #105](../../devdocs/plans/2026-10-19-structured-log-viewer.md), **not implemented** as of its plan-only head (2026-10-19). The legacy implementation facts below were inspected in the repository; neither JSONL behavior nor its throughput/Windows performance has been verified. The [implementation plan](../plans/2026-10-19-structured-log-viewer.md) owns the binding requirements and accepted G1–G6 guards. This reference explains the rationale and subsystem boundaries, not a second specification.
 
+The [proposed diagnostic event catalogue and legacy migration inventory](diagnostic-event-schema.md) and [record JSON Schema v1](../schemas/diagnostic-record-v1.schema.json) complement this ownership guide. They are preparatory design proposals, not shipped behavior; the implementation plan's G1–G6 rules take precedence. The inventory is sourced from code rather than retained user log samples, and its unfinalized families must be reconciled in Phase 1.
+
 ## Existing foundation: retain it
 
 `src/dtflow/logging_setup.py` already owns `configure_logging`, a standard-library `QueueHandler`/`QueueListener`, sanitization, rotated per-session text files, session pruning, and listener-side gallery performance aggregation/CSV fanout. `AGENTS.md` already requires a shared logger. This is meaningful existing centralization; a competing logging engine is unnecessary.
