@@ -21,7 +21,7 @@ from dtflow._diagnostic_schema import MAX_RECORD_BYTES, CaptureRejected, validat
 _SEGMENT = re.compile(r"^dtflow-([A-Za-z0-9_-]{1,128})\.jsonl(?:\.([1-3]))?$")
 _LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 PAGE_SIZE = 500
-# Ordered references kept by `select`; bodies are never retained, so this bounds a small per-record cost.
+# Maximum selected records is independent from the conservative memory admission budget below.
 SELECT_LIMIT = 250_000
 MAX_WORKER_BYTES = 16 * 1024 * 1024
 MAX_DISPLAY_BYTES = 32 * 1024 * 1024
@@ -575,17 +575,34 @@ def select(
         raise ValueError("Numeric metric key required")
     filters = filters or {}
     items = []
+    estimated_bytes = 0
+
+    def reset():
+        nonlocal estimated_bytes
+        items.clear()
+        estimated_bytes = 0
 
     def selected(record, ref):
+        nonlocal estimated_bytes
         if accept is not None and not accept(ref):
             return
         if not match(record, **filters):
             return
         if len(items) >= limit:
             raise EvidenceError("consumer_record_limit")
-        items.append(_Candidate(_sort_primary(record, sort, tuple(metric)), record["seq"], ref, None, descending))
+        primary = _sort_primary(record, sort, tuple(metric))
+        # Budget the candidate, referenced identity/offsets, container slots, sorting
+        # workspace and UTF-8/Unicode sort keys. This is intentionally conservative:
+        # the final tuple of references coexists with the sorted candidates.
+        keys = primary if isinstance(primary, tuple) else (primary,)
+        key_chars = sum(len(value) for value in keys if isinstance(value, str))
+        charge = 512 + 4 * (key_chars + len(ref.basename) + len(ref.session_id))
+        if estimated_bytes + charge > MAX_WORKER_BYTES // 2:
+            raise EvidenceError("consumer_memory_limit")
+        estimated_bytes += charge
+        items.append(_Candidate(primary, record["seq"], ref, None, descending))
 
-    status = scan(directory, session_id, cancelled=cancelled, on_record=selected, on_reset=items.clear)
+    status = scan(directory, session_id, cancelled=cancelled, on_record=selected, on_reset=reset)
     items.sort(reverse=True)
     return status, tuple(item.ref for item in items)
 
