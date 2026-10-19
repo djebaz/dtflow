@@ -979,7 +979,7 @@ def render_gallery_composition_states(shell, state, out):
         snap("images-87-pager-empty-load-failed")
         with patch.object(gallery, "refresh") as retry:
             gallery.canvas_loading.retry.click()
-            retry.assert_called_once_with(preserve=True)
+            retry.assert_called_once_with(preserve=True, trigger="retry")
         gallery.canvas_loading.clear()
         assert not gallery.canvas_loading.form.isVisible()
         assert not gallery.canvas_loading.ring.timer.isActive()
