@@ -443,18 +443,11 @@ def _grid_batch_button(window, number: int):
 
 
 def _activate_grid_batch_chip(chip):
-    """Invoke the named Qt pager control without stale mouse coordinates.
+    """Physically click the freshly resolved pager button using the mouse.
 
-    A UIA InvokePattern activation follows the control identity even when
-    the selected chip shifts position. Only fall back to physical input
-    when the installed UIA wrapper does not expose InvokePattern.
+    Do not use UIA Invoke: the Windows Grid benchmark needs the real mouse
+    interaction, while the separate footer probe verifies the visible index.
     """
-    try:
-        if chip.iface_invoke is not None:
-            chip.invoke()
-            return "uia-invoke"
-    except (AttributeError, LookupError, RuntimeError, ValueError):
-        pass
     chip.click_input()
     return "mouse-click"
 
