@@ -8,22 +8,22 @@ Startup heartbeat gaps and partially completed journeys cannot win.
 from __future__ import annotations
 
 import json
-import re
 import statistics
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-_GUI_GAP = re.compile(
-    r"gallery_perf phase=gui_gap\b[^\n]*\belapsed_ms=([\d.]+)\b"
-    r"[^\n]*\bmode=Grid\b[^\n]*\bmounted=(\d+)\b"
-)
+from dtflow._diagnostic_reader import EvidenceError, discover, scan
+
 _THRESHOLD_MS = 100
+ATTRIBUTION_POLICY = "jsonl-v1-source-millisecond-exact-window"
 
 
 def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
-    """Count only logged >=100ms Grid GUI gaps during the actual wheel journeys."""
+    """Source-ms GUI outliers in actually dispatched Grid wheel intervals only.
 
+    No per-aggregate approximation or old whole-second timestamp widening.
+    """
     intervals = []
     for item in actions:
         if item.get("action") not in ("grid-seek-down", "grid-seek-up"):
@@ -33,47 +33,39 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
             end = datetime.fromisoformat(item["finished_at"])
         except (ValueError, KeyError, TypeError):
             continue
-        if start.tzinfo is not None and end >= start:
+        if start.tzinfo is not None and end.tzinfo is not None and end >= start:
             intervals.append((start, end))
     total_ms = sum(
-        float(action["duration_ms"])
-        for action in actions
+        float(action["duration_ms"]) for action in actions
         if action.get("action") in ("grid-seek-down", "grid-seek-up")
-        and isinstance(action.get("duration_ms"), (int, float))
+        and type(action.get("duration_ms")) in (int, float)
     )
+    sessions = discover(logs)
     gaps = []
-    files = sorted(logs.glob("dtflow-*.log*"))
-    files = [path for path in files if path.is_file() and "-gallery" not in path.name]
-    instrumented = False
-    for path in files:
-        try:
-            with path.open(encoding="utf-8", errors="replace") as stream:
-                for line in stream:
-                    if "gallery_perf phase=" in line:
-                        instrumented = True
-                    match = _GUI_GAP.search(line)
-                    if not match or int(match.group(2)) <= 0 or float(match.group(1)) < _THRESHOLD_MS:
-                        continue
-                    try:
-                        timestamp = datetime.fromisoformat(line.split(" ", 1)[0])
-                    except (ValueError, IndexError):
-                        continue
-                    if timestamp.tzinfo is None:
-                        continue
-                    # DTFlow text logs have whole-second timestamps; the
-                    # benchmark actions retain milliseconds. Include the two
-                    # boundary seconds rather than silently losing an event.
-                    if any(
-                        start.replace(microsecond=0) <= timestamp and timestamp <= end.replace(microsecond=0)
-                        for start, end in intervals
-                    ):
-                        gaps.append(float(match.group(1)))
-        except OSError:
-            continue
+    states = []
+    for sid in sessions:
+        def reset():
+            gaps.clear()
+        def collect(record, _ref):
+            if record["event"] != "gallery.gui_gap" or record.get("kind") != "measurement":
+                return
+            data = record["data"]
+            if (str(data["mode"]).lower() != "grid" or data["mounted"] <= 0
+                    or data["elapsed_ms"] < _THRESHOLD_MS):
+                return
+            timestamp = datetime.fromisoformat(record["ts"].replace("Z", "+00:00"))
+            if any(start <= timestamp <= end for start, end in intervals):
+                gaps.append(float(data["elapsed_ms"]))
+        status = scan(logs, sid, on_record=collect, on_reset=reset)
+        states.append(status)
+    complete = len(states) == 1 and states[0].complete
     return {
-        "diagnostics_available": instrumented and bool(intervals),
-        "grid_stalls_100ms": len(gaps),
-        "grid_stall_max_ms": round(max(gaps, default=0), 2),
+        "diagnostics_available": complete and bool(intervals),
+        "evidence_status": states[0].state if len(states) == 1 else "incomplete",
+        "evidence_reasons": list(states[0].reasons) if len(states) == 1 else ["expected_one_session"],
+        "timestamp_attribution_policy": ATTRIBUTION_POLICY,
+        "grid_stalls_100ms": len(gaps) if complete else None,
+        "grid_stall_max_ms": round(max(gaps, default=0), 2) if complete else None,
         "round_trip_ms": round(total_ms, 2),
         "observed_browsing_legs": len(intervals),
         "threshold_ms": _THRESHOLD_MS,
