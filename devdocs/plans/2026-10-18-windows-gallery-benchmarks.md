@@ -180,3 +180,7 @@ uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_bench
 ```
 
 No new dependency, source-image mutation, training/inference or provider call. Native-Windows replay is still required.
+
+### Verified Grid matrix startup (2026-10-19)
+
+Earlier Windows evidence showed a Grid matrix run starting at visible cards 281–295 because page-1 click dispatch was not the same as page-1 verification. Grid-only trials now require the real UIA/pager visible-image range to report first=1 before scrolling down. If the first click was ignored while the initial batch was busy, the driver retries page 1 for at most three seconds. When starting position cannot be confirmed, the journey is skipped and marked warning, excluded from console ranking. This does not add waits between subsequent batch queries and it does not modify production behavior. Native Windows replay pending.
