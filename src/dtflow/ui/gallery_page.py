@@ -2120,6 +2120,10 @@ class GalleryPage(QObject):
     def _sync_pager(self, *, loading: bool = False) -> None:
         """Use the viewport's first visible image, not the fetched window offset."""
         first, last = self._visible_range()
+        # Dedicated bottom-bar UIA signal for fast native Grid benchmarking.
+        label = self._widget("galleryGridFirstVisibleIndex", QLabel)
+        label.setText(f"First visible: {first}")
+        label.setAccessibleName(f"DTFlow grid first visible index: {first}")
         self.pager.present(
             total=self.total,
             visible_start=first,
