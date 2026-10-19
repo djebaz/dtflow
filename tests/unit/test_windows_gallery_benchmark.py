@@ -991,6 +991,32 @@ def test_grid_progress_parses_actual_visible_range(value, result):
     assert ((observed.first, observed.last, observed.total) if observed else None) == result
 
 
+@pytest.mark.parametrize(
+    "label",
+    [
+        "200 buffered",
+        "Loading 200 more…",
+        "200",
+        "1–20 of 200  ·  200 buffered",
+        "200 buffered 1–20 of 200",
+        "Showing 1–20 of 200; 200 buffered.",
+    ],
+)
+def test_grid_position_rejects_total_or_buffered_status(label):
+    from tools.ui.grid_scroll_probe import parse_visible_range
+
+    assert parse_visible_range(label) is None
+
+
+def test_grid_target_not_reached_when_only_total_and_buffer_equal_target():
+    from tools.ui.grid_scroll_probe import parse_visible_range
+
+    position = parse_visible_range("1–20 of 200")
+    assert position is not None
+    assert position.total == 200
+    assert not (position.first <= 200 <= position.last)
+
+
 def test_grid_progress_uses_recorded_uia_text_and_log_fallback(tmp_path):
     from tools.ui.grid_scroll_probe import GridProgressProbe
 
