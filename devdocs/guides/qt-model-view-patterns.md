@@ -48,7 +48,9 @@ These are **patterns to study**, not new runtime dependencies or a blanket licen
 | [qt-logging](https://github.com/beatreichenbach/qt-logging) | Python logging-connected LogViewer/LogCache composition and interaction ideas | Own handler/cache; **do not install a competing logging path** |
 | [Qt Log Analyzer](https://github.com/BaseMax/qt-log-analyzer) | JSON-lines parsing, severity/search/export UX; inspected source uses PyQt5 `QTableWidget` and accumulates entries | Not a direct large-file bounded-memory model |
 | [cutelog](https://github.com/busimus/cutelog) | Live log filtering and inspector UX | Primarily socket-stream-oriented; different source and lifetime model |
-| [klogg](https://github.com/CrackerCat/klogg) | Large-file search/indexing architecture | C++/Qt application, not a drop-in PySide6 component |
+| [klogg](https://github.com/variar/klogg) | Large-file search/indexing architecture | Canonical upstream C++/Qt application, not a drop-in PySide6 component |
+
+**CAN example caution:** study its model-notification pattern, not its implementation as copy-ready code. Bound the pending accumulator and incoming batch as well as retained rows, using row and byte budgets. After evicting rows, recompute insertion ranges from the current model row count and the actual retained incoming count; never reuse a pre-eviction row count or emit an insertion range for an empty batch. Keep all exposed model mutations and notifications on the GUI thread.
 
 **Recommendation:** reuse the official Qt model-update pattern and learn from other viewers' UX. Keep DTFlow's single diagnostics pipeline and design its own small Qt model over the shared reader. Import no new viewer package without a separate compatibility/licensing/maintenance evaluation.
 
