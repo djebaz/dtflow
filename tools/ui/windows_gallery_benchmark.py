@@ -589,6 +589,7 @@ def _seek_grid_card(
     action = {
         "action": "grid-seek-down" if direction < 0 else "grid-seek-up",
         "requested_card": target,
+        "requested_first_card": target,
         "first_before": start.first,
         "last_before": start.last,
         "first_after": current.first,
