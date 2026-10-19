@@ -444,9 +444,26 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
             time.sleep(0.2)
             continue
 
+        # The selected pager chip is checkable, not a navigation receipt.
+        # If the viewport already starts at image 1, clicking it is redundant.
+        observed = probe.read()
+        if observed is not None and observed.first == 1:
+            actions.append(
+                {
+                    "action": "click-page-one-start",
+                    "verified": True,
+                    "visible_first": 1,
+                    "source": observed.source,
+                    "click_attempts": attempts,
+                    "already_at_page_one": attempts == 0,
+                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+                }
+            )
+            return
+
         try:
-            # Retry even after a successful return: the mouse can move to the
-            # target without Qt receiving or processing a page transition.
+            # Dispatch alone is not evidence; retry until the independent
+            # visible-position probe confirms the navigation.
             attempts += 1
             chip.click_input()
             clicked = True
