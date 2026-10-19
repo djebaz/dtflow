@@ -92,6 +92,10 @@ def export_matching(
 
     try:
         with os.fdopen(fd, "wb") as out:
+            if fmt == "csv":
+                # A zero-match filtered export is still a valid CSV document.
+                # Write its schema once, even when no data row is selected.
+                write((",".join(_CSV_COLUMNS) + "\r\n").encode("utf-8"), out)
             cursor = None
             while True:
                 result, _total, page, next_cursor = query(
@@ -133,8 +137,6 @@ def export_matching(
 
                         buf = io.StringIO(newline="")
                         writer = csv.DictWriter(buf, fieldnames=_CSV_COLUMNS)
-                        if count == 0:
-                            writer.writeheader()
                         writer.writerow(
                             {
                                 key: (
