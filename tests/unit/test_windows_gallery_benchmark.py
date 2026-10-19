@@ -872,7 +872,7 @@ def test_grid_matrix_path_never_opens_sort_or_other_views(monkeypatch, tmp_path)
     ) == 1000
     assert record["warnings"] == []
     assert record["grid_sweep"]["requested_card"] == 300
-    assert record["grid_sweep"]["pulse_notches"] == 6
+    assert record["grid_sweep"]["pulse_notches"] == 12
     assert record["grid_sweep"]["position_verified"] is True
     assert trace.count(("seek", -1, 300)) == 1
     assert trace.count(("seek", 1, 1)) == 1
@@ -1025,6 +1025,8 @@ def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
         )
         assert result["first_after"] == 295
         assert result["target_reached"]
+        assert result["first_after"] <= 300 <= result["last_after"]
+        assert "wheel_input_ms" in result and "position_probe_ms" in result
         assert result["wheel_pulses"] == 5
         back = benchmark._seek_grid_card(
             object(), up, actions, target=1, direction=1, timeout=2,
@@ -1073,3 +1075,65 @@ def test_grid_seek_rejects_undersized_catalogue_without_scrolling(monkeypatch):
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=object()))
     with pytest.raises(ValueError, match="Only 250"):
         benchmark._seek_grid_card(object(), Probe(), [], target=300, direction=-1)
+
+
+def test_grid_seek_requires_target_card_in_visible_range(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    calls = []
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            calls.append(wheel_dist)
+
+    class Probe:
+        def __init__(self):
+            self.positions = iter([(1, 15), (278, 290), (295, 309)])
+
+        def read(self):
+            first, last = next(self.positions, (295, 309))
+            return GridPosition(first, last, 833, "pager-log")
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_: ((600, 400), "grid"))
+    monkeypatch.setattr(benchmark.time, "sleep", lambda _: None)
+    result = benchmark._seek_grid_card(
+        object(), Probe(), [], direction=-1, target=300, timeout=2,
+    )
+    assert result["target_reached"]
+    assert result["wheel_pulses"] == 2
+    assert result["first_after"] == 295
+    assert result["last_after"] == 309
+    assert calls == [-12, -2]
+
+
+def test_grid_seek_overshoot_corrects_direction(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    movements = []
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            movements.append(wheel_dist)
+
+    class Probe:
+        def __init__(self):
+            self.values = iter([1, 330, 295])
+
+        def read(self):
+            first = next(self.values, 295)
+            return GridPosition(first, first + 15, 833, "uia")
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
+    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_: ((600, 400), "grid"))
+    monkeypatch.setattr(benchmark.time, "sleep", lambda _: None)
+    result = benchmark._seek_grid_card(
+        object(), Probe(), [], direction=-1, target=300, timeout=2,
+    )
+    assert result["target_reached"]
+    assert movements == [-12, 1]
+
