@@ -1276,7 +1276,7 @@ def test_grid_progress_reads_status_bar_by_stable_id(tmp_path):
         @property
         def element_info(self):
             return SimpleNamespace(
-                name=f"DTFlow status grid first visible index: {state['first']} / total: 1000"
+                name=f"{state['first']}/1000"
             )
 
         def exists(self, *, timeout):
