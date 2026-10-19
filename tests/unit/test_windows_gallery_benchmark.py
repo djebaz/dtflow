@@ -873,7 +873,7 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
     monkeypatch.setattr(benchmark, "_click_grid_page_one",
                         lambda window, actions, *, at: trace.append("page-one-" + at))
     monkeypatch.setattr(benchmark, "_verify_grid_start_at_one",
-                        lambda window, probe, actions: trace.append("verified-start"))
+                        lambda window, probe, actions: (trace.append("verified-start") or True))
     monkeypatch.setattr(benchmark, "_seek_grid_card",
                         lambda window, probe, actions, *, target, direction, **kwargs:
                             trace.append(("seek", direction, target, kwargs["wheel_point"])))
