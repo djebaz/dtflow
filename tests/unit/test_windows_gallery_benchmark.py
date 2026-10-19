@@ -1220,18 +1220,30 @@ def test_grid_home_corrects_stale_first_card_by_scrolling_up(monkeypatch):
 
 
 
-def test_grid_start_verification_never_accepts_image_281(monkeypatch):
+def test_grid_home_does_not_accept_stale_position_281(monkeypatch):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
+
+    inputs = []
+
+    class Mouse:
+        @staticmethod
+        def scroll(*, coords, wheel_dist):
+            inputs.append(wheel_dist)
 
     class Probe:
         def read(self):
             return GridPosition(281, 295, 833, "pager-log")
 
-    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: SimpleNamespace(click_input=lambda: None))
-    monkeypatch.setattr(benchmark.time, "sleep", lambda _value: None)
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(mouse=Mouse))
     actions = []
-    with pytest.raises(TimeoutError, match="not confirmed at image 1"):
-        benchmark._verify_grid_start_at_one(object(), Probe(), actions, timeout=0.005)
-    assert actions[-1]["verified"] is False
-    assert actions[-1]["first"] == 281
+    with pytest.raises(TimeoutError, match="did not reach card 1"):
+        benchmark._seek_grid_card(
+            object(), Probe(), actions, target=1, direction=1,
+            timeout=0.1, wheel_point=((600, 400), "grid"),
+            action_name="grid-home-start",
+        )
+    assert actions[-1]["target_reached"] is False
+    assert actions[-1]["first_after"] == 281
+    assert inputs and all(delta > 0 for delta in inputs)
+
