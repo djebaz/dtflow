@@ -11,10 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _VISIBLE_RANGE = re.compile(r"(?<!\d)([\d,]+)\s*[-–—]\s*([\d,]+)\s+of\s+([\d,]+)(?!\d)")
-_LOG_VIEW = re.compile(
-    r"gallery_perf phase=benchmark_view\b[^\n]*\bfirst=(\d+)\b[^\n]*"
-    r"\blast=(\d+)\b[^\n]*\btotal=(\d+)\b"
-)
 
 
 @dataclass(frozen=True)
@@ -41,15 +37,6 @@ def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | Non
     return position if position.valid() else None
 
 
-def parse_benchmark_view(text: str) -> GridPosition | None:
-    """Read the most recent position published by the benchmark-only pager."""
-
-    matches = list(_LOG_VIEW.finditer(text))
-    if not matches:
-        return None
-    latest = matches[-1]
-    position = GridPosition(*(int(value) for value in latest.groups()), "pager-log")
-    return position if position.valid() else None
 
 
 class GridProgressProbe:
@@ -62,7 +49,7 @@ class GridProgressProbe:
 
     def __init__(self, window, logs: Path):
         self.window = window
-        self.logs = logs  # signature retained for the benchmark callers
+        del logs  # signature retained for benchmark callers; no text-log fallback
         self.last: GridPosition | None = None
 
     def read(self) -> GridPosition | None:
