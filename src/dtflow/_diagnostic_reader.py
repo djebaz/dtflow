@@ -373,7 +373,8 @@ def iter_records(directory: Path, session_id: str, *, cancelled=None,
         nonlocal buffer_bytes
         # Convenience materialization is deliberately byte-bounded as well
         # as count-bounded: 10k records may each be close to 1 MiB.
-        charge = ref.length + 512
+        # Parsed Python dict/list/string objects may exceed encoded JSON bytes.
+        charge = 4 * ref.length + 1024
         if len(buffer) >= 10000:
             raise EvidenceError("consumer_record_limit")
         if buffer_bytes + charge > MAX_WORKER_BYTES:
