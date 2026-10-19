@@ -523,7 +523,13 @@ class MainWindow:
             self.form.queueNavigationButton,
             self.form.imagesNavigationButton,
         )
-        if index < len(buttons):
+        if logs_active:
+            # Logs covers the workspace; no header tab stays selected underneath it.
+            for button in buttons:
+                button.setAutoExclusive(False)
+                button.setChecked(False)
+                button.setAutoExclusive(True)
+        elif index < len(buttons):
             buttons[index].setChecked(True)
         images_active = self.form.workspaceStack.currentWidget() is self.images_page
         self.grid_index_group.setVisible(images_active)

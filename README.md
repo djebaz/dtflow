@@ -51,7 +51,7 @@ parameters you intend to compare.
 
 ### Searchable application diagnostics
 
-Open **Logs** beside Help to browse application and gallery events in the desktop. Search and filter retained sessions, page through matching records, inspect details, copy evidence or explicitly export CSV/JSONL. New sessions use one structured JSONL stream; historical text/CSV files stay untouched. See the [Logs guide](devdocs/guides/desktop.md#logs).
+Open **Logs** beside Help to browse application and gallery events in the desktop. Search and filter retained sessions, page through matching records, inspect details, copy evidence or explicitly export CSV/JSONL with progress and Cancel. Follow can be paused for a counted Refresh, and the detail pane closes when clicking elsewhere in Logs. New sessions use one structured JSONL stream; historical text/CSV files stay untouched. See the [Logs guide](devdocs/guides/desktop.md#logs).
 
 ### Explicit cloud assets and offline exploration
 
@@ -124,7 +124,7 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Testing](devdocs/guides/testing.md), [development tools](devdocs/guides/development.md) and [Windows builds](devdocs/guides/building.md).
 - [Image-operation preparation](devdocs/architecture/image-operations.md) — developer-only permit-gated single-shot path; no default image capability or accepted editor/checkpoint support.
 - [Architecture](devdocs/architecture/), [runtime layout](devdocs/architecture/runtime-layout.md) and the [design system reference](devdocs/design-system/README.md).
-- [Structured diagnostics architecture](devdocs/architecture/structured-diagnostics.md) — shared JSONL logging, Qt-free reader/export and native Logs workspace in PR #105 (source present; not shipped or runtime-accepted). See the [desktop guide](devdocs/guides/desktop.md#logs).
+- [Structured diagnostics architecture](devdocs/architecture/structured-diagnostics.md) — shared JSONL logging, Qt-free reader/export and native Logs workspace introduced by PR #105 and refined in PR #111 (source present; packaged Windows acceptance not established). See the [desktop guide](devdocs/guides/desktop.md#logs).
 - [Diagnostic event catalogue and migration inventory](devdocs/architecture/diagnostic-event-schema.md) with [JSON Schema v1](devdocs/schemas/diagnostic-record-v1.schema.json) — machine-readable record fields and source-based event mappings (PR #105, not yet shipped).
 - [Efficient Qt model/view patterns](devdocs/guides/qt-model-view-patterns.md) — bounded table updates, worker/search integration and external reference implementations.
 - [Compact Logs workspace UI specification](devdocs/design-system/logs-workspace.md), [standalone interaction study](devdocs/mockups/dtflow_logs_workspace.html) and [app-shell study](devdocs/mockups/dtflow_app_shell_with_logs.html) — PR #105 severity-stripe table, row actions and inspector (synthetic HTML design references; the native Qt workspace follows them but is not yet accepted).

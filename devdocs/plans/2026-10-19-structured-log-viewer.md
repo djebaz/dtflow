@@ -4,7 +4,7 @@
 
 The owner requested a reviewable squash delivery and moved unfinished work into two follow-up issues. **This disposition supersedes the original all-gates-before-merge schedule below without claiming those gates passed.** Phases 1–3 are implemented in source. The table below distinguishes implementation from evidence.
 
-- [#106](https://github.com/djebaz/dtflow/issues/106): end-to-end worker/display byte budgets, diagnostic export cancellation and low-priority evaluation of lazy Logs creation.
+- [#106](https://github.com/djebaz/dtflow/issues/106): end-to-end worker/display byte budgets (including selection and batch hydration), and low-priority evaluation of lazy Logs creation. PR #111 implements export cancellation and adds a conservative, explicit over-budget failure for selected export candidates; actual end-to-end peak-byte guarantees remain outstanding.
 - [#107](https://github.com/djebaz/dtflow/issues/107): F9/G6/R0–R4 fault/native/schema/projection/benchmark/storage/policy acceptance, plus strict lint/format gating.
 - Ordinary CI must execute successfully on the final PR head. The existing non-blocking Ruff policy is disclosed; changing that policy is in #107. A skipped render is not evidence of rendering.
 - Owner feedback confirms the Windows render command works after `b2fdf1d`; it does not certify a complete batch, native interaction/DPI, performance or a packaged release.
@@ -26,12 +26,18 @@ The PR also carries the #104 benchmark follow-ups: real UIA selectors, page-1/vi
 | --- | --- | --- |
 | Logging authority | `logging_setup.configure_logging`; owned `_diagnostic_schema`, `_diagnostic_writer`, `_diagnostic_ownership`, `_diagnostic_notifications`; typed `diagnostics` producers | Nonblocking bounded admission; one JSONL stream; rotation/loss/rejection/close accounting. Fault and policy evidence in #107. |
 | Reader and evidence status | `_diagnostic_reader.discover/snapshot/scan/query/read_detail` | Whole retained-session filtering/sorting, bounded 500-candidate keyset pages, stable identity, partial/incompatible/incomplete status. Complete 16/32 MiB pipeline budgets remain #106. |
-| Derived exports | `_diagnostic_export.export_matching` | CSV/JSONL and adjacent provenance manifest, bounded pages and revalidated source. No UI cancel control yet (#106); Windows race/publication acceptance in #107. |
+| Derived exports | `_diagnostic_export.export_matching` | PR #105 introduced CSV/JSONL with adjacent provenance manifest; PR #111 adds start-snapshot-bounded export of growing sessions, rotation-aware record hydration, one active export with shared-overlay progress/Cancel, and conservative candidate-byte refusal. Full 16/32 MiB budgets stay #106; Windows rotation/cancellation/publication acceptance stays #107. |
 | Benchmark migration | `tools/ui/windows_gallery_benchmark.py`, `grid_benchmark_report.py`, `grid_scroll_probe.py` | Shared JSONL reader; source-time Grid gaps; actual first-visible journeys and warning/incomplete exclusions. Repeated native replay/precision parity in #107. |
 | Native Logs | `ui/forms/logs_workspace.ui`, `ui/logs_workspace.py`, `ui/logs_delegate.py`, `ui/main_window.py` | One resident 500-row page with Previous/Next; active log-directory override; separate action deliveries; batched Follow insert/remove; surviving selection/current/top-row identity. Form is eagerly created (#106). |
-| Controls and appearance | Shared Designer form, QSS/tokens; `diagnostic_projection.py` | Session-wide bounded choices; search, severity/component/event-family/time/data filters; header/metric sorting; details/raw copy/selected/visible copy; explicit raw-file/folder opening; Follow pause and Escape precedence. Native visual/keyboard acceptance in #107. |
+| Controls and appearance | Shared Designer form, QSS/tokens; `diagnostic_projection.py` | Search, severity/component/event-family/time/data filters; PR #111's split COMPONENT/EVENT header sort targets, filtered counted Refresh and explicit incomplete status, dedicated no-record/no-match panel, outside-click dismissal, icons and tighter session labels. Native visual/keyboard acceptance stays #107. |
 | Whole-ms display | `diagnostic_projection.characteristics`, projection v2 | Finite numeric `*_ms` timing chips display rounded whole milliseconds in table and readable inspector. Raw JSONL/JSON inspector/copy/exports and numeric query/sort retain source precision. |
-| Previews and Windows startup | `tools/ui/render_states.py`, `tools/ui/offscreen-screen.json` | Offline Logs states plus paging/selection/whole-ms definitions; drive-colon-free config path and Windows font setup. Definitions are not proof that all screenshots passed. |
+| Previews and Windows startup | `tools/ui/render_states.py`, `tools/ui/offscreen-screen.json` | PR #111 adds Logs states through `logs-14-zero-arrivals-incomplete`; the `af96fc7` UI-render workflow passed with 260 generated states. This is offscreen presentation evidence only, not native Windows mouse/keyboard/DPI or packaged acceptance. |
+
+## Follow-up PR #111 evidence and remaining gates — 2026-10-19
+
+PR [#111](https://github.com/djebaz/dtflow/pull/111) implements [#108](https://github.com/djebaz/dtflow/issues/108) and also adds bounded start-snapshot exports of growing sessions with shared-overlay progress/Cancel. Source now keeps explicit `Refresh (0 new · incomplete)` when zero arrivals match an incomplete scan. The new `select` candidate admission estimate refuses excess work with `consumer_memory_limit` and does not claim a fully bounded export pipeline. Five focused deterministic regression tests cover the zero-count display, filtered arrivals, candidate over-budget refusal, scan-retry reset and no published pair on selection failure. They do not replace native Windows fault/cancel acceptance.
+
+At code head `af96fc7`, [CI 39270285726](https://github.com/djebaz/dtflow/actions/runs/39270285726) executed **617 passed / 3 skipped**, with `FORMAT_RC=0` and `LINT_RC=0`. [UI renders 39270285389](https://github.com/djebaz/dtflow/actions/runs/39270285389) passed. These runs belong to that code head: later documentation commits require their own exact-head checks before a squash merge. The broader #106/#107 acceptance and any packaged Windows smoke are not completed by this work.
 
 ## Evidence reviewed for this delivery
 
@@ -58,7 +64,7 @@ The PR also carries the #104 benchmark follow-ups: real UIA selectors, page-1/vi
 | P2.2 rotation/recovery | `snapshot/_opened/_read_lines/scan/read_detail` | Native rename/partial/prune faults: #107 |
 | P2.3 budgets | Physical line/node/depth limits, bounded heap/page and `iter_records` byte cap | **Partial implementation**: full 16/32 MiB/pending-work limits #106; measurement #107 |
 | P2.4 whole-session queries | `match/_sort_primary/_Candidate/query`, forward/back keysets | Equal keys/null/missing/page boundaries: #106/#107 |
-| P2.5 details/exports | `RecordRef/read_detail`; `export_matching` and manifest | UI cancel #106; changing-source/Windows publication #107 |
+| P2.5 details/exports | `RecordRef/read_detail`; PR #111's progress/Cancel and pinned-snapshot `export_matching` | Full pipeline budgets #106; native cancel/rotation/publication evidence #107 |
 | P2.6 readiness/journeys | `_completed_queries/_await_query/_drive`; `GridProgressProbe` | Real first-visible down/back replay: #107 |
 | P2.7 populations | Writer listener batches, gallery source summaries, benchmark adapter | Aggregation/population/flush parity: #107 |
 | P2.8 scoring | `analyze_grid_trial/rank_grid_matrix/write_grid_report` | Precision/ranking/native replay: #107 |
@@ -66,7 +72,7 @@ The PR also carries the #104 benchmark follow-ups: real UIA selectors, page-1/vi
 | P3.2 model updates | `_LogModel.reconcile`, queued jobs, `_show_results` | Byte/pending budgets #106; model/native stress #107 |
 | P3.3 inspection/lifetime | Separate action tokens, reader cancellation, `stop/_poll`, selection/scroll handling | Rapid changes/shutdown/rotation inspection: #107 |
 | P3.4 appearance | Canonical Designer/QSS/tokens, delegate, shared characteristic projection | Native Windows/DPI/keyboard review: #107 |
-| P3.5 actions/states | Session-wide choices, page controls, details/copy/export/open actions and render definitions | Export cancel #106; native/error-state acceptance #107 |
+| P3.5 actions/states | PR #111's split header, count/empty/details UX, progress/Cancel and additional Logs render states | Native keyboard/interaction, error and export-cancel acceptance #107 |
 | P3.6 documentation | This plan; architecture/catalogue; README, AGENTS, runtime/desktop/development guides, release notes | Future evidence updates tracked in #106/#107 |
 | R0 recorded-value fidelity | One display projection; whole-ms formatting is an explicit display-only exception | Cross-view/raw/export/type evidence: #107 |
 | R1 traceable audit/policy | This disposition and source audit replace stale pending entries | Capacity/loss/retention sign-off: #107 |

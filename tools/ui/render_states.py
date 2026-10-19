@@ -2438,10 +2438,20 @@ def render_logs_states(shell, capture):
 
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
+    # Earlier states leave timed outcome rows; clear them so they do not cover the Logs footer.
+    for key in tuple(shell.progress_strip.rows):
+        shell.progress_strip.finish(key)
     panel = shell.logs_form
-    panel.logsCounter.setText("No records yet in this session.")
+    from dtflow.ui.logs_workspace import EMPTY_SESSION, ICON_GAP, NO_MATCHES
+
     shell.logs.model.replace([])
+    shell.logs._set_empty(EMPTY_SESSION)
+    panel.logsCounter.setText("0 records · pending")
     capture("logs-01-empty")
+    shell.logs._set_empty(NO_MATCHES)
+    panel.logsCounter.setText("0 of 5 matching records · complete")
+    capture("logs-08-no-matches")
+    shell.logs._set_empty("")
 
     def record(seq, level, event, component):
         return {
@@ -2495,17 +2505,53 @@ def render_logs_states(shell, capture):
     panel.logsPreviousButton.setEnabled(True)
     panel.logsNextButton.setEnabled(True)
     panel.logsCounter.setText("1204 of 1204 matching records · pending · page 2 · showing 500")
-    panel.logsRefreshButton.setText("Refresh (new)")
-    shell.logs._set_pending(True)
+    shell.logs._set_pending(True, 3, detail="3 new records match the current filters")
     panel.logsFollowButton.blockSignals(True)
     panel.logsFollowButton.setChecked(False)
+    panel.logsFollowButton.setText(ICON_GAP + "Follow: Off")
     panel.logsFollowButton.blockSignals(False)
-    panel.logsOperationStatus.setText("Exported diagnostic-excerpt.csv (synthetic presentation)")
+    panel.logsOperationStatus.setText(
+        "Logs exported: diagnostic-excerpt.csv · 1204 records · source pending (synthetic presentation)"
+    )
     capture("logs-05-paging")
 
-    panel.logsRefreshButton.setText("Refresh")
+    shell.logs._set_pending(True, 2, incomplete=True, detail="Synthetic incomplete-evidence count")
+    capture("logs-09-refresh-count-incomplete")
+    shell.logs._set_pending(True, 0, incomplete=True, detail="No matching arrivals; source evidence incomplete")
+    capture("logs-14-zero-arrivals-incomplete")
+
     shell.logs._set_pending(False)
-    shell.logs.model.replace(rows, [((("state", "fixture"),), 0)] * len(rows))
+    # Component sort from the left target of the split COMPONENT . EVENT header.
+    by_component = sorted(rows, key=lambda row: (row[0]["component"], row[0]["seq"]))
+    shell.logs.model.replace(by_component, [((("state", "fixture"),), 0)] * len(rows))
+    panel.logsOperationStatus.clear()
+    shell.logs.model.set_sort_state("component", False)
+    panel.logsSortNote.setText("Component · A → Z")
+    panel.logsCounter.setText("5 of 5 matching records · complete · page 1 · showing 5")
+    panel.logsPreviousButton.setEnabled(False)
+    panel.logsNextButton.setEnabled(False)
+    capture("logs-10-component-sort")
+    # One spinner frame of the Refresh icon during a page read; no reader runs offline.
+    shell.logs.active, shell.logs._query_busy, shell.logs._spin_angle = True, True, 15
+    shell.logs._spin()
+    capture("logs-11-refreshing")
+    # Export of the live session: progress with Cancel, then a disclosed incomplete-source outcome.
+    strip = shell.progress_strip
+    strip.start("logs-export", "Exporting diagnostic-excerpt.jsonl", lambda: None, stop_text="Cancel export")
+    strip.update("logs-export", 640, 1204, detail="640 of 1204 records written (synthetic presentation)")
+    capture("logs-12-export-progress")
+    strip.complete(
+        "logs-export",
+        "Logs exported",
+        "diagnostic-excerpt.jsonl · 1204 records · source incomplete (seal_missing) (synthetic presentation)",
+        "warning",
+    )
+    capture("logs-13-export-incomplete-source")
+    strip.finish("logs-export")
+    shell.logs.active, shell.logs._query_busy = False, False
+    shell.logs._spin()
+    shell.logs.model.set_sort_state("ts", True)
+    panel.logsSortNote.setText("Datetime · newest first")
     panel.logsTable.selectRow(1)
     added = (record(6, "INFO", "gallery.query_done", "gallery"), RecordRef("fixture", 6, 0, 0, 0, 0, "fixture.jsonl"))
     previews = list(shell.logs.model.previews)

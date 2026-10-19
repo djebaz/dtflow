@@ -1859,4 +1859,5 @@ QPushButton#galleryLoadingRetryButton:focus {
 #logsFollowButton:checked:hover { background-color: ${color.accentHover}; }
 #logsRefreshButton[pending="true"] { border-color: ${color.accent}; }
 #logsCounter { color: ${color.text}; }
+#logsEmpty { background: ${color.surface}; color: ${color.secondary}; border: 1px solid ${color.sectionBorder}; border-radius: ${size.radius}; padding: 24px; }
 #logsDetailTitle { font-weight: ${type.weightEmphasis}; }
