@@ -1604,105 +1604,101 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["last_after"] == 200
 
 
-def test_grid_start_polls_until_numbered_chip_is_enabled(monkeypatch, tmp_path):
+def test_grid_start_selects_newest_once_and_waits_for_visible_image(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    lookups, clicks = [], []
-    first = [1]
+    state = {"sort": "Oldest first", "first": 21, "clicks": 0}
 
-    class Chip:
-        def __init__(self, page):
-            self.page = page
-            self.element_info = SimpleNamespace(automation_id=f"galleryPagerPage{page}")
-
-        def rectangle(self):
-            return SimpleNamespace(width=lambda: 24, height=lambda: 24)
+    class Option:
+        def wait(self, *_args, **_kwargs):
+            return None
 
         def click_input(self):
-            clicks.append(self.page)
-            first[0] = 21 if self.page == 2 else 1
+            state["sort"] = "Newest first"
+            state["first"] = 1
 
-    def lookup(*args, **kwargs):
-        lookups.append(f"galleryPagerPage{args[1]}")
-        if len(lookups) < 3:
-            raise LookupError("Still showing loading spinner")
-        return Chip(args[1])
+    class Combo:
+        def wait(self, *_args, **_kwargs):
+            return None
+
+        def selected_text(self):
+            return state["sort"]
+
+        def click_input(self):
+            state["clicks"] += 1
+
+        def child_window(self, **_kwargs):
+            return Option()
+
+    class Window:
+        def child_window(self, **_kwargs):
+            return Combo()
 
     class Probe:
         def read(self):
-            return GridPosition(first[0], first[0] + 19, 833, "uia")
+            return GridPosition(state["first"], state["first"] + 19, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_grid_batch_button", lookup)
     actions = []
-    benchmark._wait_for_grid_page_one(
-        object(), Probe(), actions, directory=tmp_path, timeout=3,
-    )
-    assert lookups[:3] == ["galleryPagerPage2"] * 3
-    assert clicks == [2, 1]
-    assert actions[-2]["visible_first"] == 21
+    benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=1)
+    assert state["clicks"] == 1
     assert actions[-1]["verified"] is True
-    assert actions[-1]["page_two_verified"] is True
+    assert actions[-1]["sort_changed"] is True
+    assert actions[-1]["visible_first"] == 1
 
 
-def test_grid_start_does_not_wait_for_page_jump_log(monkeypatch, tmp_path):
+def test_grid_start_already_newest_does_not_toggle_sort(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    clicks, first = [], [1]
+    class Combo:
+        def wait(self, *_args, **_kwargs):
+            return None
 
-    class Chip:
-        def __init__(self, page):
-            self.page = page
-            self.element_info = SimpleNamespace(automation_id=f"galleryPagerPage{page}")
-
-        def rectangle(self):
-            return SimpleNamespace(width=lambda: 24, height=lambda: 24)
+        def selected_text(self):
+            return "Newest first"
 
         def click_input(self):
-            clicks.append(self.page)
-            first[0] = 21 if self.page == 2 else 1
+            pytest.fail("Newest is already selected; do not open the popup")
 
-    class Probe:
-        def read(self):
-            return GridPosition(first[0], first[0] + 19, 833, "uia")
-
-    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda _window, page: Chip(page))
-    actions = []
-    benchmark._wait_for_grid_page_one(
-        object(), Probe(), actions, directory=tmp_path, timeout=1,
-    )
-    assert clicks == [2, 1]
-    assert actions[-1]["verified"] is True
-    assert actions[-1]["click_attempts"] == 1
-
-
-def test_grid_start_rejects_unverified_visible_position(monkeypatch, tmp_path):
-    from tools.ui import windows_gallery_benchmark as benchmark
-    from tools.ui.grid_scroll_probe import GridPosition
-
-    clicks = []
-
-    class Chip:
-        element_info = SimpleNamespace(automation_id="galleryPagerPage2")
-
-        def rectangle(self):
-            return SimpleNamespace(width=lambda: 24, height=lambda: 24)
-
-        def click_input(self):
-            clicks.append("clicked")
+    class Window:
+        def child_window(self, **_kwargs):
+            return Combo()
 
     class Probe:
         def read(self):
             return GridPosition(1, 20, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda *a, **kw: Chip())
     actions = []
-    with pytest.raises(TimeoutError, match="could not verify page 2 then page 1"):
-        benchmark._wait_for_grid_page_one(
-            object(), Probe(), actions, directory=tmp_path, timeout=0.12,
-        )
-    assert clicks == ["clicked"]
+    benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=1)
+    assert actions[-1]["verified"] is True
+    assert actions[-1]["sort_changed"] is False
+
+
+def test_grid_start_rejects_newest_when_visible_position_is_not_one(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    class Combo:
+        def wait(self, *_args, **_kwargs):
+            return None
+
+        def selected_text(self):
+            return "Newest first"
+
+        def click_input(self):
+            pytest.fail("Do not toggle sort to fake a reset")
+
+    class Window:
+        def child_window(self, **_kwargs):
+            return Combo()
+
+    class Probe:
+        def read(self):
+            return GridPosition(281, 295, 833, "uia")
+
+    actions = []
+    with pytest.raises(TimeoutError, match="did not reach first visible image 1"):
+        benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=0.12)
     assert actions[-1]["verified"] is False
-    assert actions[-1]["phase"] == "page-2"
-    assert actions[-1]["visible_first"] == 1
+    assert actions[-1]["visible_first"] == 281
