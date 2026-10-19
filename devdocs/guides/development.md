@@ -1,3 +1,17 @@
+## PR #104 handoff — current Grid benchmark and next optimization (2026-10-19)
+
+**Current behavior overrides earlier interim descriptions in this guide.** The interactive Windows Grid matrix polls an enabled numbered page-1 chip roughly every 200 ms after the spinner, clicks once, verifies first visible image **#1**, and then drives a time-bounded, continuous down/up wheel journey independent of subsequent batch queries. Position acceptance uses the **first visible saved-image index**, not `total`, `buffered`, or an oversized initial `last` index. The final physical page-1 click remains. The matrix never changes Sort. The separate eight-profile multi-view benchmark still exists.
+
+Console and saved JSON/text reports identify the *provisional* best `-ml/-mc` combination from clean completed journeys, prioritized by Grid GUI heartbeat gaps **≥100 ms** during actual scrolling, worst gap and median round-trip time; startup is measured separately. In owner Windows `10190342.zip`, `100/300` completed in 7.45 s with one >=100 ms stall (worst 111 ms), and `200/600` completed in 6.93 s with one (worst 385 ms). Initial page-1 readiness was 3.23 s versus 10.70 s. These are one-run owner observations, not a definitive production default or a statistically verified winner.
+
+The **next PR** should isolate startup readiness/first usable page, particularly the query/preparation/Grid-mount path at higher `-ml`, without changing the completed PR #104 benchmark protocol or prematurely tuning production defaults. Require repeated native Windows measurements, stable real navigation and continuous scrolling across batch boundaries.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --runs 3 --cycles 1 --ack-user-state
+```
+
+---
+
 # Development tools and conventions
 
 See [AGENTS.md](../../AGENTS.md) for repository rules, [current development status](../current_dev_status.md) for implementation orientation, and [testing](testing.md) for validation commands, and [version bump and release](releasing.md) for the uv recipe and owner build handoff.
