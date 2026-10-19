@@ -122,6 +122,7 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 - [Structured diagnostics architecture](devdocs/architecture/structured-diagnostics.md) — current centralized logging foundation and the proposed JSONL ownership/evidence boundaries (PR #105, not yet shipped).
 - [Diagnostic event catalogue and migration inventory](devdocs/architecture/diagnostic-event-schema.md) with [proposed JSON Schema v1](devdocs/schemas/diagnostic-record-v1.schema.json) — machine-readable record fields and source-based event mappings (PR #105, not yet shipped).
 - [Efficient Qt model/view patterns](devdocs/guides/qt-model-view-patterns.md) — bounded table updates, worker/search integration and external reference implementations.
+- [Compact Logs workspace UI specification](devdocs/design-system/logs-workspace.md) and [offline interaction concept](devdocs/mockups/dtflow_logs_workspace.html) — proposed PR #105 severity-stripe layout and selected-record inspector (not yet native Qt).
 
 - [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
 - [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
