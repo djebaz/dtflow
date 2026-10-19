@@ -441,6 +441,24 @@ def _grid_batch_button(window, number: int):
     return matches[0]
 
 
+
+def _activate_grid_batch_chip(chip):
+    """Invoke the named Qt pager control without stale mouse coordinates.
+
+    A UIA InvokePattern activation follows the control identity even when
+    the selected chip shifts position. Only fall back to physical input
+    when the installed UIA wrapper does not expose InvokePattern.
+    """
+    try:
+        if chip.iface_invoke is not None:
+            chip.invoke()
+            return "uia-invoke"
+    except (AttributeError, LookupError, RuntimeError, ValueError):
+        pass
+    chip.click_input()
+    return "mouse-click"
+
+
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
     """Verify page 2 -> page 1 using fresh UIA targets after pager reflow.
 
@@ -489,7 +507,13 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
             # The wrapper was resolved AFTER the previous transition; Qt may
             # have moved page one to the left of the selected page-two chip.
             attempts[phase] += 1
-            chip.click_input()
+            activation = _activate_grid_batch_chip(chip)
+            actions.append({
+                "action": f"page-{phase}-activation-attempt",
+                "attempt": attempts[phase],
+                "method": activation,
+                "target_name": chip.element_info.name,
+            })
         except (LookupError, RuntimeError, TimeoutError):
             time.sleep(0.2)
             continue
