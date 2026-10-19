@@ -8,6 +8,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from dtflow._diagnostic_notifications import DiagnosticNotice
 from dtflow.build import display_identity, identity
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import LoggingSetupError, configure_logging
@@ -58,19 +59,20 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
         return 0
 
     session = None
+    notices = DiagnosticNotice()
     try:
         try:
             session = configure_logging(
                 directory=args.logs,
                 dev=args.dev,
                 build=identity(),
-                report_error=lambda message: report(message, error=True),
+                report_error=notices.post,
             )
         except LoggingSetupError:
-            report("Diagnostic logs are unavailable. Continuing without a log file.", error=True)
+            notices.post("Diagnostic logs are unavailable. Continuing without a log file.")
         from dtflow.ui.app import run_gui
 
-        return run_gui(no_cache=args.no_cache)
+        return run_gui(no_cache=args.no_cache, diagnostic_notices=notices)
     except KeyboardInterrupt:
         diagnostic_event(
             log,

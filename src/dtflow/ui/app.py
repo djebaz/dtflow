@@ -14,6 +14,7 @@ from dtflow.diagnostics import measurement
 from dtflow.persistence import thumbnail_cache
 from dtflow.persistence.gallery_snapshot import configure, finish_at_close
 from dtflow.ui.brand import app_icon
+from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver
 from dtflow.ui.main_window import MainWindow
 from dtflow.ui.theme import apply_theme
 
@@ -24,6 +25,7 @@ def run_gui(
     no_cache: bool = False,
     gallery_limits: tuple[int, int] | None = None,
     thumbnail_format: str = "jpg",
+    diagnostic_notices=None,
 ) -> int:
     configure(no_cache=no_cache)
     thumbnail_cache.configure(no_cache=no_cache, thumbnail_format=thumbnail_format)
@@ -36,6 +38,8 @@ def run_gui(
     application.setWindowIcon(app_icon())
     startup.mark("application and theme")
     window = MainWindow(no_cache=no_cache)
+    if diagnostic_notices is not None:
+        window._diagnostic_notice = DiagnosticNoticeReceiver(window, diagnostic_notices)
     startup.mark("main window built")
     # The session is remembered before the runner stops, so the last form values survive a normal quit.
     application.aboutToQuit.connect(lambda: window.remember(background=False))

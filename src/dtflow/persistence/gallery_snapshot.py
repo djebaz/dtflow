@@ -190,8 +190,8 @@ def _close_summary(state, result, before=None, checked_stamp=None):
                 "updated_before_close": bool(stats.publications if before is None else before),
                 "updated_on_close": result == "saved",
                 "session_publications": stats.publications,
-                "images_added_this_session": stats.added if stats.added is not None else "unknown",
-                "images_removed_this_session": stats.removed if stats.removed is not None else "unknown",
+                "images_added_this_session": stats.added,
+                "images_removed_this_session": stats.removed,
                 "last_updated": checked_stamp or stats.last_updated or "unavailable",
                 "timestamp_source": "checked_snapshot"
                 if checked_stamp
@@ -371,8 +371,8 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
             level=logging.INFO,
             data={
                 "trigger": reason,
-                "images_added": added if added is not None else "unknown",
-                "images_removed": removed if removed is not None else "unknown",
+                "images_added": added,
+                "images_removed": removed,
                 "images_total": images,
                 "committed_attempts_total": count,
                 "last_updated": published_utc,
@@ -426,7 +426,7 @@ def schedule_publish(state: Path, *, reason="generation_session_end"):
         except RuntimeError:
             diagnostic_event(
                 log,
-                "gallery.snapshot.publication_worker_unavailable_during",
+                "gallery.snapshot.publication_worker_unavailable_at_shutdown",
                 level=logging.WARNING,
                 data={},
             )

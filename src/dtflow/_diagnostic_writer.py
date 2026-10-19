@@ -19,7 +19,7 @@ from dtflow._diagnostic_schema import (
     validate_record,
 )
 
-_AGGREGATED = frozenset({"thumbnail_worker", "thumbnail_end_to_end", "scroll_intent", "prepare_slice", "gui_gap"})
+_AGGREGATED = frozenset({"scroll_intent", "gui_gap"})
 _METRICS = frozenset({"elapsed_ms", "wall_ms", "cpu_ms", "items", "count", "samples", "mounted", "offset"})
 _DIMENSIONS = ("direction", "source", "mode", "success")
 
@@ -43,6 +43,8 @@ class Admission:
             capture_rejected=0,
             processed_records=0,
             source_summary_samples=0,
+            rotation_failures=0,
+            unwritten_records=0,
         )
         self.losses = Counter()
         self.capture_rejections = {}
@@ -90,17 +92,33 @@ class CaptureHandler(logging.handlers.QueueHandler):
             if not state.accepting:
                 return
             state.counts["observed"] += 1
-            if state.pending_bytes + state.capture_bytes + MAX_RECORD_BYTES + 1024 > QUEUE_BYTES:
+            if state.inflight + state.queue.qsize() >= QUEUE_RECORDS:
+                state.loss("queue_records", level, measured)
+                return
+            if state.pending_bytes + state.capture_bytes + 1024 > QUEUE_BYTES:
                 state.loss("queue_bytes", level, measured)
                 return
-            state.capture_bytes += MAX_RECORD_BYTES + 1024
+            state.capture_bytes += 1024
             state.inflight += 1
+        reserved = 1024
+
+        def reserve(size):
+            nonlocal reserved
+            with state.lock:
+                if state.pending_bytes + state.capture_bytes + size > QUEUE_BYTES:
+                    raise CaptureRejected("queue_bytes")
+                state.capture_bytes += size
+                reserved += size
+
         try:
             payload = None
-            payload, size = capture(record)
+            payload, size = capture(record, reserve=reserve)
         except Exception as exc:
             reason = exc.reason if isinstance(exc, CaptureRejected) else "unsupported_value"
             with state.lock:
+                if reason == "queue_bytes":
+                    state.loss("queue_bytes", level, measured)
+                    return
                 state.loss(reason, level, measured, rejected=True)
                 state.counts["capture_rejected"] += 1
                 name = getattr(record, "dtflow_event", "logging.message")
@@ -115,11 +133,11 @@ class CaptureHandler(logging.handlers.QueueHandler):
             # Rejection has no payload; success decrements after admission.
             if payload is None:
                 with state.lock:
-                    state.capture_bytes -= MAX_RECORD_BYTES + 1024
+                    state.capture_bytes -= reserved
                     state.inflight -= 1
         try:
             with state.lock:
-                state.capture_bytes -= MAX_RECORD_BYTES + 1024
+                state.capture_bytes -= reserved
                 if state.pending_bytes + state.capture_bytes + size > QUEUE_BYTES:
                     state.loss("queue_bytes", level, measured)
                 else:
@@ -135,6 +153,10 @@ class CaptureHandler(logging.handlers.QueueHandler):
                 state.inflight -= 1
 
 
+class RotationUnavailable(OSError):
+    """No record was written; retry rotation later without growing the file."""
+
+
 class JsonlHandler(logging.handlers.RotatingFileHandler):
     """Single binary UTF-8/LF sink, using existing stdlib rotation machinery."""
 
@@ -146,6 +168,8 @@ class JsonlHandler(logging.handlers.RotatingFileHandler):
         self._report_lock = threading.Lock()
         self.seq = 0
         self.close_deadline = None
+        self.rotation_retry_at = 0.0
+        self.rotation_failures = 0
 
     def _open(self):
         return open(self.baseFilename, "ab")
@@ -168,8 +192,17 @@ class JsonlHandler(logging.handlers.RotatingFileHandler):
             pass
 
     def write_record(self, payload: dict) -> None:
+        # logging.shutdown() uses the same handler lock to close the stream.
+        with self.lock:
+            self._write_record(payload)
+
+    def _write_record(self, payload: dict) -> None:
         if self.failed:
             raise OSError("diagnostic sink disabled")
+        if self._closed:
+            self.failed = True
+            self.warn()
+            raise OSError("diagnostic sink closed")
         record = {"v": 1, "seq": self.seq + 1, **payload}
         validate_record(record)
         line = (json.dumps(record, ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n").encode("utf-8")
@@ -182,7 +215,17 @@ class JsonlHandler(logging.handlers.RotatingFileHandler):
             if self.stream is None:
                 self.stream = self._open()
             if self.stream.tell() and self.stream.tell() + len(line) > self.maxBytes:
-                self.doRollover()
+                if monotonic() < self.rotation_retry_at:
+                    raise RotationUnavailable("diagnostic rotation deferred")
+                try:
+                    self.doRollover()
+                except OSError as exc:
+                    self.rotation_failures = min(self.rotation_failures + 1, 6)
+                    self.rotation_retry_at = monotonic() + min(0.05 * 2 ** self.rotation_failures, 2.0)
+                    self.warn()
+                    raise RotationUnavailable("diagnostic rotation unavailable") from exc
+                self.rotation_failures = 0
+                self.rotation_retry_at = 0.0
             if self.stream is None:
                 self.stream = self._open()
             if self.stream.write(line) != len(line):
@@ -196,10 +239,12 @@ class JsonlHandler(logging.handlers.RotatingFileHandler):
                 self.stream.flush()
                 raise OSError("diagnostic close deadline")
             self.seq += 1
-        except OSError:
+        except RotationUnavailable:
+            raise
+        except (OSError, ValueError, AttributeError) as exc:
             self.failed = True
             self.warn()
-            raise
+            raise OSError("diagnostic sink write failed") from exc
 
 
 class DiagnosticListener(logging.handlers.QueueListener):
@@ -215,14 +260,23 @@ class DiagnosticListener(logging.handlers.QueueListener):
         self.last_capture_rejections = {}
         self._deadline = None
         self.failure = False
+        self.ownership = None
 
-    def _write(self, payload: dict) -> None:
+    def _write(self, payload: dict) -> bool:
         try:
             self.sink.write_record(payload)
+            return True
+        except RotationUnavailable:
+            with self.admission.lock:
+                self.admission.counts["rotation_failures"] += 1
+                self.admission.counts["writer_failures"] += 1
+                self._unwritten(payload)
+            return False
         except OSError:
-            if not self.failure:
-                with self.admission.lock:
+            with self.admission.lock:
+                if not self.failure:
                     self.admission.counts["writer_failures"] += 1
+                self._unwritten(payload)
             self.failure = True
         except Exception as exc:
             reason = exc.reason if isinstance(exc, CaptureRejected) else "serialization_error"
@@ -253,9 +307,17 @@ class DiagnosticListener(logging.handlers.QueueListener):
                 self.sink.write_record(marker)
             except Exception:
                 self.failure = True
+        return False
+
+    def _unwritten(self, payload):
+        # Write losses are a subset of admitted work, not admission drops.
+        if payload["event"] not in {"session.started", "session.closed", "diagnostics.loss", "diagnostics.record_rejected"}:
+            self.admission.counts["unwritten_records"] += 1
+            key = ("writer_error", payload["level"], payload.get("kind") in ("measurement", "aggregate"))
+            self.admission.losses[key] += 1
 
     def _control(self, name, data, *, level="INFO"):
-        self._write(
+        return self._write(
             {"ts": utc_timestamp(), "level": level, "component": "dtflow.diagnostics", "event": name, "data": data}
         )
 
@@ -277,19 +339,20 @@ class DiagnosticListener(logging.handlers.QueueListener):
             }
             if estimate is not None:
                 marker["estimated_bytes"] = estimate
-            self._control("diagnostics.record_rejected", marker, level="WARNING")
-            self.last_capture_rejections[key] = count
+            if self._control("diagnostics.record_rejected", marker, level="WARNING"):
+                self.last_capture_rejections[key] = count
         for key, count in losses.items():
             delta = count - self.last_losses.get(key, 0)
             if not delta:
                 continue
             reason, level, measurement = key
-            self._control(
+            written = self._control(
                 "diagnostics.loss",
                 {"reason": reason, "count": delta, "level": level, "affects_measurements": measurement},
                 level="WARNING",
             )
-            self.last_losses[key] = count
+            if written:
+                self.last_losses[key] = count
             self.sink.warn()
 
     def _flush_batch(self, key):
@@ -372,12 +435,14 @@ class DiagnosticListener(logging.handlers.QueueListener):
                 "first_mono": payload["mono_ns"],
                 "last_mono": payload["mono_ns"],
                 "metrics": {},
+                "expires_at": payload["mono_ns"] / 1_000_000_000 + 10.0,
             },
         )
         batch["samples"] += 1
         batch["first"] = min(batch["first"], payload["ts"])
         batch["last"] = max(batch["last"], payload["ts"])
         batch["first_mono"] = min(batch["first_mono"], payload["mono_ns"])
+        batch["expires_at"] = batch["first_mono"] / 1_000_000_000 + 10.0
         batch["last_mono"] = max(batch["last_mono"], payload["mono_ns"])
         with self.admission.lock:
             self.admission.counts["aggregate_source_samples"] += 1
@@ -418,6 +483,9 @@ class DiagnosticListener(logging.handlers.QueueListener):
                         self.admission.counts["processed_records"] += 1
                     self.queue.task_done()
                 self._flush_losses()
+                for key, batch in tuple(self.batches.items()):
+                    if monotonic() >= batch["expires_at"]:
+                        self._flush_batch(key)
             for key in tuple(self.batches):
                 self._flush_batch(key)
             self._flush_losses()
@@ -444,6 +512,9 @@ class DiagnosticListener(logging.handlers.QueueListener):
                     self.admission.counts["writer_failures"] += 1
                 self.sink.failed = True
                 self.sink.warn()
+            finally:
+                if self.ownership is not None:
+                    self.ownership.close()
 
     def stop(self, timeout=2.0):
         self._deadline = monotonic() + timeout

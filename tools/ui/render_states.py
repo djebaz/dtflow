@@ -40,6 +40,7 @@ from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow import gallery_limits  # noqa: E402
+from dtflow._diagnostic_notifications import DiagnosticNotice  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
@@ -63,6 +64,7 @@ from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui import lora_panel as lora_ui  # noqa: E402
 from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
+from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
 from dtflow.ui.generation_page import GenerationPage  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
@@ -2184,6 +2186,12 @@ def render_shell_states(shell, capture):
 
     shell.about()
     capture("shell-01-about")
+    clear()
+    mailbox = DiagnosticNotice()
+    mailbox.post("Offline fixture: diagnostic evidence is incomplete; logging failed or records were rejected.")
+    receiver = DiagnosticNoticeReceiver(shell, mailbox)
+    receiver.deliver()
+    capture("shell-21-diagnostic-warning")
     clear()
     with patch.object(type(shell.queue), "dispatching_here", new_callable=PropertyMock, return_value=True):
         shell._confirm_close()

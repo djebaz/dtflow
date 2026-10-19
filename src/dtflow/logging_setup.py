@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from dtflow._diagnostic_ownership import ownership
 from dtflow._diagnostic_schema import (
     AGGREGATION_POLICY,
     INSTRUMENTATION_VERSION,
@@ -82,11 +83,18 @@ class LogSession:
 
 def _prune(directory: Path, keep: str) -> None:
     groups = {}
-    for path in directory.iterdir():
+    try:
+        candidates = list(directory.iterdir())
+    except OSError:
+        return
+    for path in candidates:
         match = _SEGMENT.fullmatch(path.name)
         if match is None or match[1] == keep:
             continue
-        info = path.lstat()
+        try:
+            info = path.lstat()
+        except OSError:
+            continue
         if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
             continue
         group = groups.setdefault(match[1], {"time": 0, "paths": []})
@@ -94,8 +102,25 @@ def _prune(directory: Path, keep: str) -> None:
         group["paths"].append(path)
     sessions = sorted(groups.values(), key=lambda group: group["time"], reverse=True)
     for stale in sessions[RETAINED_SESSIONS - 1 :]:
-        for path in stale["paths"]:
-            path.unlink(missing_ok=True)
+        base = stale["paths"][0].name.split(".jsonl", 1)[0]
+        try:
+            lease = ownership(directory / f"{base}.owner")
+        except OSError:
+            # An active/unknown owner is never made stale by its mtime.
+            continue
+        try:
+            for path in stale["paths"]:
+                try:
+                    info = path.lstat()
+                    if stat.S_ISREG(info.st_mode) and not getattr(info, "st_file_attributes", 0) & 0x400:
+                        path.unlink()
+                except OSError:
+                    continue
+        finally:
+            try:
+                lease.close()
+            except OSError:
+                pass
 
 
 def configure_logging(
@@ -126,6 +151,7 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
     if type(session) is not str or not SESSION_NAME.fullmatch(session):
         raise LoggingSetupError("Invalid diagnostic session identity.")
     directory = Path(directory) if directory is not None else default_directory()
+    lease = None
     try:
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"dtflow-{session}.jsonl"
@@ -136,11 +162,18 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
                 continue
             raise FileExistsError("Diagnostic session already exists.")
         # Never append a fresh seq=1 to an existing session or redirected file.
+        owner_path = directory / f"dtflow-{session}.owner"
+        try:
+            lease = ownership(owner_path, create=True)
+        except FileExistsError:
+            lease = ownership(owner_path)
         with path.open("xb"):
             pass
         _prune(directory, session)
         sink = JsonlHandler(path, max_bytes=MAX_BYTES, backups=BACKUPS, report_error=report_error)
     except OSError as exc:
+        if lease is not None:
+            lease.close()
         raise LoggingSetupError("Log destination could not be prepared.") from exc
     build = build or {}
     status = build.get("source_status", "unknown")
@@ -164,6 +197,8 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
         "aggregation_window_s": 10,
         "capture_max_depth": 16,
         "capture_max_nodes": 4096,
+        "capture_reservation_policy": "incremental-preallocation-v1",
+        "retention_ownership_policy": "os-session-lock-v1",
         "numeric_policy": "native-observations-legacy1dp-listener-statistics-v1",
     }
     if "source_modified" in build:
@@ -174,6 +209,7 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
     capture_handler = CaptureHandler(admission)
     capture_handler._dtflow_session = session
     listener = DiagnosticListener(admission, sink, startup)
+    listener.ownership = lease
     logger.setLevel(logging.DEBUG if dev else logging.INFO)
     logger.propagate = False
     logger.addHandler(capture_handler)
@@ -182,6 +218,7 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
     except Exception as exc:
         logger.removeHandler(capture_handler)
         sink.close()
+        lease.close()
         raise LoggingSetupError("Diagnostic listener could not be started.") from exc
     return LogSession(session, path, listener, sink, capture_handler)
 

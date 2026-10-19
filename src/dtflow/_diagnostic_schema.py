@@ -24,6 +24,8 @@ AGGREGATION_POLICY = "source-64-or-10s-bounded64-legacy1dp-v1"
 SECRET_ENVIRONMENT = ("DRAWTHINGS_API_KEY", "DRAWTHINGS_SHARED_SECRET")
 EVENT_NAME = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 SESSION_NAME = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_HOME = str(Path.home())
+_SOURCE_ROOT = str(Path(__file__).parent.parent).replace("\\", "/") + "/"
 _PRIVATE_KEY = re.compile(
     r"(?i)(authorization|credential|password|secret|token|api[_-]?key|"
     r"prompt|base64|payload|prepared_asset|cloud_reference|(?:^|_)(?:path|directory)(?:$|_))"
@@ -38,8 +40,13 @@ _PATTERNS = (
     ),
     (re.compile(r"(?i)\b(?:positive[_ ]?|negative[_ ]?)?prompt\s*[:=].*"), "prompt=[redacted]"),
     (re.compile(r"[A-Za-z0-9+/=_-]{200,}"), "[redacted-payload]"),
-    (re.compile(r"""(?:[A-Za-z]:[\\/]|\\\\)[^\s"'<>]+|(?<![\w:])/(?:[^\s/"'<>]+/)+[^\s"'<>]*"""), "[redacted-path]"),
-    (re.compile(r"""(?<!\w)(?:[^\s"'<>:\\/]+[\\/])+[^\s"'<>:]+"""), "[redacted-path]"),
+    # Unquoted paths with spaces are ambiguous: redact the remainder of that
+    # clause conservatively, rather than leaking its trailing directory words.
+    # A slash inside MIME types, ratios or reviewed model IDs is not a path.
+    (
+        re.compile(r"""(?:[A-Za-z]:[\\/]|\\\\|(?<![\w:%])/(?!/)|(?<!\w)(?:~|\.{1,2})[\\/])[^\r\n"'<>|;]*"""),
+        "[redacted-path]",
+    ),
 )
 
 
@@ -59,9 +66,8 @@ def sanitize(text: str, environ=None) -> str:
         secret = environ.get(name, "").strip()
         if len(secret) >= 4:
             text = text.replace(secret, "[redacted]")
-    home = str(Path.home())
-    if len(home) > 1:
-        text = text.replace(home, "~")
+    if len(_HOME) > 1:
+        text = text.replace(_HOME, "~")
     for pattern, replacement in _PATTERNS:
         text = pattern.sub(replacement, text)
     return text
@@ -73,14 +79,20 @@ def utc_timestamp(seconds: float | None = None) -> str:
 
 
 class _Snapshot:
-    def __init__(self):
+    def __init__(self, reserve=None):
         self.nodes = 0
         self.bytes = 0
+        self.sanitize_strings = True
+        # Refresh per observation, never cache credentials across auth changes.
+        self.environ = {name: os.environ.get(name, "") for name in SECRET_ENVIRONMENT}
+        self.reserve = reserve
 
     def charge(self, size: int) -> None:
+        if self.bytes + size > MAX_RECORD_BYTES:
+            raise CaptureRejected("capture_limit", self.bytes + size)
+        if self.reserve is not None:
+            self.reserve(size)
         self.bytes += size
-        if self.bytes > MAX_RECORD_BYTES:
-            raise CaptureRejected("capture_limit", self.bytes)
 
     def value(self, value, depth: int = 0):
         self.nodes += 1
@@ -93,7 +105,8 @@ class _Snapshot:
             # Four bytes/character plus the Python string is a conservative
             # admission estimate. It may reject before final UTF-8 encoding.
             self.charge(4 * len(value))
-            return sanitize(str.__str__(value))
+            text = str.__str__(value)
+            return sanitize(text, self.environ) if self.sanitize_strings else text
         if type(value) is int:
             if value.bit_length() > 128:
                 raise CaptureRejected("capture_limit")
@@ -146,7 +159,14 @@ def _exception(error: BaseException, budget: _Snapshot, depth: int = 0) -> dict:
         if count > MAX_NODES:
             raise CaptureRejected("capture_limit")
         code = frame.tb_frame.f_code
-        parts.append(budget.value(f'  File "{code.co_filename}", line {frame.tb_lineno}, in {code.co_name}\n'))
+        filename = code.co_filename.replace("\\", "/")
+        if filename.startswith(_SOURCE_ROOT):
+            location = filename[len(_SOURCE_ROOT) :]
+        elif "/site-packages/" in filename:
+            location = "site-packages/" + filename.split("/site-packages/", 1)[1]
+        else:
+            location = "<external>"
+        parts.append(budget.value(f'  File "{location}", line {frame.tb_lineno}, in {code.co_name}\n'))
         frame = frame.tb_next
     parts.append(f"{name}: {message}\n")
     trace = "".join(parts)
@@ -154,8 +174,8 @@ def _exception(error: BaseException, budget: _Snapshot, depth: int = 0) -> dict:
     return {"type": name, "message": message, "traceback": trace}
 
 
-def capture(record: logging.LogRecord) -> tuple[dict, int]:
-    budget = _Snapshot()
+def capture(record: logging.LogRecord, *, reserve=None) -> tuple[dict, int]:
+    budget = _Snapshot(reserve)
     name = getattr(record, "dtflow_event", "logging.message")
     if type(name) is not str or len(name) > 180 or not EVENT_NAME.fullmatch(name):
         raise CaptureRejected("unsupported_value")
@@ -166,17 +186,40 @@ def capture(record: logging.LogRecord) -> tuple[dict, int]:
     if type(kind) is not str or kind not in ("event", "measurement", "aggregate"):
         raise CaptureRejected("unsupported_value")
     # Never call getMessage()/repr on arbitrary arguments or object graphs.
+    budget.sanitize_strings = False
     template = budget.value(record.msg)
     if not isinstance(template, str):
         raise CaptureRejected("unsupported_value")
     args = budget.value(record.args)
-    if re.search(r"%[-+0 #]*\*|%[-+0 #]*\d*\.\*", template):
-        raise CaptureRejected("unsupported_value")
-    for match in re.finditer(r"%[-+0 #]*(\d+)?(?:\.(\d+))?", template):
-        if any(part and (len(part) > 7 or int(part) > MAX_RECORD_BYTES) for part in match.groups()):
-            raise CaptureRejected("capture_limit")
+    budget.sanitize_strings = True
+    widths = 0
+    if args:
+        conversions = re.finditer(
+            r"%(?:\([^)]{1,200}\))?[-+0 #]*(\d+|\*)?(?:\.(\d+|\*))?[hlL]?[diouxXeEfFgGcrsa%]",
+            template,
+        )
+        end = 0
+        for match in conversions:
+            if "%" in template[end : match.start()]:
+                raise CaptureRejected("unsupported_value")
+            for part in match.groups():
+                if part == "*":
+                    raise CaptureRejected("unsupported_value")
+                if part and (len(part) > 7 or int(part) > MAX_RECORD_BYTES):
+                    raise CaptureRejected("capture_limit")
+                widths += int(part) if part else 0
+            end = match.end()
+        if "%" in template[end:]:
+            raise CaptureRejected("unsupported_value")
     try:
+        if args:
+            # Reserve a conservative expansion budget before %-formatting can
+            # allocate padding or repeat argument representations. Snapshots
+            # contain only native primitives/containers, never arbitrary repr.
+            budget.charge(2 * budget.bytes * max(1, template.count("%")) + 4 * widths)
         message = budget.value(template % (tuple(args) if isinstance(args, list) else args) if args else template)
+    except CaptureRejected:
+        raise
     except (TypeError, ValueError, OverflowError) as exc:
         raise CaptureRejected("unsupported_value") from exc
     result = {

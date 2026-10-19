@@ -160,6 +160,23 @@ def _image(
         )
 
     def decode(source: str | QIODevice) -> tuple[QImage | None, str]:
+        if stats is None or not dev_enabled():
+            return decode_image(source)
+        started, cpu_started = monotonic(), thread_time()
+        success = False
+        try:
+            value, issue = decode_image(source)
+            success = value is not None
+            return value, issue
+        finally:
+            stats.observe(
+                "thumbnail_decode",
+                (monotonic() - started) * 1000,
+                cpu_ms=(thread_time() - cpu_started) * 1000,
+                success=success,
+            )
+
+    def decode_image(source: str | QIODevice) -> tuple[QImage | None, str]:
         reader = QImageReader(source)
         reader.setAutoTransform(True)
         if max_side:
@@ -556,7 +573,9 @@ class GalleryPage(QObject):
         self._widget("galleryFixtureOverlay").hide()
 
         self.stack = self._widget("galleryContentStack")
-        self.canvas_loading = GalleryCanvasLoading(self.stack, on_retry=lambda: self.refresh(preserve=True))
+        self.canvas_loading = GalleryCanvasLoading(
+            self.stack, on_retry=lambda: self.refresh(preserve=True, trigger="retry")
+        )
         self.grid_scroll = self._widget("galleryGridScroll")
         self.grid_cards = self._widget("galleryGridCards")
         self.cards_layout = self.grid_cards.layout()
@@ -786,7 +805,7 @@ class GalleryPage(QObject):
         self.auto_button = self._widget("galleryAutoRefreshButton", QPushButton)
         self.refresh_button.setEnabled(True)
         self.refresh_button.setToolTip("Refresh saved outputs while keeping the current browsing anchor when possible.")
-        self.refresh_button.clicked.connect(lambda: self.refresh(preserve=True))
+        self.refresh_button.clicked.connect(lambda: self.refresh(preserve=True, trigger="manual"))
         self.auto_button.setEnabled(True)
         self.auto_button.setCheckable(True)
         self.auto_button.installEventFilter(KeyboardFocusGuard(self.auto_button))
@@ -1434,7 +1453,7 @@ class GalleryPage(QObject):
                 measurement(
                     log,
                     "gallery.auto_refresh",
-                    reasons=",".join(reasons),
+                    reasons=reasons,
                     mounted=len(self.items),
                     action="skipped",
                 )
@@ -1442,8 +1461,10 @@ class GalleryPage(QObject):
         # A snapshot/failure episode needs every live retry and its existing
         # two-success recovery semantics; a file-stat hint cannot gate recovery.
         if self._snapshot_at or self._snapshot_warning_episode or self._refresh_failing:
+            if dev_enabled():
+                measurement(log, "gallery.auto_refresh", action="started", reason="live_recovery", mounted=len(self.items))
             self._auto_last_full = monotonic()
-            self.refresh(preserve=True)
+            self.refresh(preserve=True, trigger="live_recovery")
             return
         self._auto_checking = True
         self.runner.submit(gallery_file_signature(self.state_dir), self._auto_signature_done)
@@ -1451,6 +1472,8 @@ class GalleryPage(QObject):
     def _auto_signature_done(self, signature, error) -> None:
         """Use inexpensive file metadata as a hint, with a bounded full-read fallback."""
         self._auto_checking = False
+        if error is not None and not self.runner.closed and dev_enabled():
+            measurement(log, "gallery.auto_refresh", action="signature_error", reason=type(error).__name__)
         if (
             self.runner.closed
             or not self._active
@@ -1462,6 +1485,22 @@ class GalleryPage(QObject):
             or self._pending_page_jump is not None
             or self.filter_timer.isActive()
         ):
+            if not self.runner.closed and dev_enabled():
+                reasons = [
+                    name
+                    for name, active in (
+                        ("inactive", not self._active),
+                        ("disabled", not self.auto_button.isChecked()),
+                        ("query", self._loading),
+                        ("adjacent", self._adjacent_loading),
+                        ("preparation", self.preparation.active),
+                        ("mount", self._grid_mount_keys is not None),
+                        ("page_jump", self._pending_page_jump is not None),
+                        ("filter_debounce", self.filter_timer.isActive()),
+                    )
+                    if active
+                ]
+                measurement(log, "gallery.auto_refresh", action="late_skipped", reasons=reasons, mounted=len(self.items))
             return
         now = monotonic()
         due = now - self._auto_last_full >= AUTO_REFRESH_FULL_INTERVAL_S
@@ -1496,7 +1535,7 @@ class GalleryPage(QObject):
         self._auto_unchanged_polls = 0
         self._auto_signature = signature if error is None else None
         self._auto_last_full = now
-        self.refresh(preserve=True)
+        self.refresh(preserve=True, trigger="auto")
 
     def _auto_refresh_changed(self, _checked: bool) -> None:
         self._sync_auto_refresh()
@@ -1519,7 +1558,7 @@ class GalleryPage(QObject):
     def _apply_filter_change(self) -> None:
         """A filter/sort change starts over: spinner, then the top of page 1."""
         self._clear_on_refresh = True
-        self.refresh(reset=True, preserve=False)
+        self.refresh(reset=True, preserve=False, trigger="filter")
 
     def _clear_results_for_reload(self) -> None:
         # Detail keeps its viewer; the reset read reselects within page 1.
@@ -1570,12 +1609,12 @@ class GalleryPage(QObject):
             limit=_read_limit(),
         )
 
-    def refresh(self, *, reset: bool = False, preserve: bool = True) -> None:
+    def refresh(self, *, reset: bool = False, preserve: bool = True, trigger: str = "refresh") -> None:
         if self._loading or self._adjacent_loading:
             if self._pending_refresh is not None:
                 reset = reset or self._pending_refresh[0]
                 preserve = preserve and self._pending_refresh[1]
-            self._pending_refresh = (reset, preserve)
+            self._pending_refresh = (reset, preserve, trigger)
             return
         self._capture_scroll()
         self._prefetch_zone_hint = None
@@ -1600,9 +1639,16 @@ class GalleryPage(QObject):
         target_count = min(MAX_MOUNTED_IMAGES, len(self.items)) if preserve and not reset and self.items else PAGE_SIZE
         if target_count > query.limit:
             query = replace(query, limit=min(MAX_QUERY_ITEMS, target_count))
-        self._submit_query(query, anchor=anchor, target_count=target_count)
+        self._submit_query(query, anchor=anchor, target_count=target_count, trigger=trigger)
 
-    def _submit_query(self, query: GalleryQuery, *, anchor: str | None, target_count: int | None = None) -> None:
+    def _submit_query(
+        self,
+        query: GalleryQuery,
+        *,
+        anchor: str | None,
+        target_count: int | None = None,
+        trigger: str = "navigation",
+    ) -> None:
         target_count = min(MAX_MOUNTED_IMAGES, target_count if target_count is not None else query.limit)
         self._query_generation += 1
         generation = self._query_generation
@@ -1616,6 +1662,7 @@ class GalleryPage(QObject):
             measurement(
                 log,
                 "gallery.query_start",
+                trigger=trigger,
                 offset=query.offset,
                 limit=query.limit,
                 target_count=target_count,
@@ -1760,7 +1807,7 @@ class GalleryPage(QObject):
         if self._pending_refresh is not None:
             pending = self._pending_refresh
             self._pending_refresh = None
-            self.refresh(reset=pending[0], preserve=pending[1])
+            self.refresh(reset=pending[0], preserve=pending[1], trigger=pending[2])
             return
         if error is not None:
             # Auto-refresh retries every few seconds; report a failure streak once.
@@ -2227,7 +2274,7 @@ class GalleryPage(QObject):
         if self._pending_refresh is not None:
             pending = self._pending_refresh
             self._pending_refresh = None
-            self.refresh(reset=pending[0], preserve=pending[1])
+            self.refresh(reset=pending[0], preserve=pending[1], trigger=pending[2])
             return
         try:
             current_query = self._query(offset=query.offset)

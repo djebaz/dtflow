@@ -325,7 +325,7 @@ class ImageRecyclePanel(QObject):
         self.gallery.set_recycle_busy(False)
         if error is not None:
             self._finish_with_error(error)
-            self.gallery.refresh(preserve=True)
+            self.gallery.refresh(preserve=True, trigger="removal")
             return
         self._phase = "idle"
         self.gallery.recycle_completed(result.recycled + result.deleted + result.absent)

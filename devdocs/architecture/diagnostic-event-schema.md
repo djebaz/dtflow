@@ -110,6 +110,16 @@ The repository search also locates logging in `persistence/last_session.py`, `pe
 
 ## Source and review links
 
+### Phase 1 corrective handoff
+
+The [corrective subplan](../plans/2026-10-19-phase-1-logging-corrections.md) adds optional startup policy identifiers `capture_reservation_policy=incremental-preallocation-v1` and `retention_ownership_policy=os-session-lock-v1`. Close counters `rotation_failures` and `unwritten_records` supplement existing counters: failed/deferred rotation writes also increment `writer_failures`; unavailable data/aggregate output writes are not admission drops or unique sample counts. A recovered sink can close with nonzero failures but never provide clean benchmark evidence. Terminal writes/timeouts remain unsealed. Ownership files are coordination metadata, not canonical segments.
+
+Safe lease observations carry the fixed `data.lease` name (`original_images` or `image_recycle_operation`). Snapshot added/removed counters use integer or null (not the string `unknown`). The shutdown publication event is `gallery.snapshot.publication_worker_unavailable_at_shutdown`; ordinary names remain extensible, with no exhaustive registry requirement. Auto-refresh action/reason/trigger definitions and the new source-summary `phase=thumbnail_decode` population are described in the [development guide](../guides/development.md); build wall time includes filesystem availability work and must not be relabeled pure CPU time.
+
+Phase 2 must distinguish individual `gallery.gui_gap` outliers (>=100 ms), the source `gui_gaps` population (>=50 ms) and listener aggregates of the individual outliers. Wheel receipts similarly remain individual plus listener summaries. These overlapping representations must not be summed as distinct observations. Source summaries are never reaggregated; separate decode-attempt, worker and end-to-end timings overlap and must not be added as disjoint spans. Listener idle expiry adds no synthetic samples or percentiles.
+
+The existing benchmark's `thumbnail_median_recorded_ms` lookup previously referenced a source-summary field that was not emitted. Phase 2 must record that baseline defect explicitly: choosing a measured `thumbnail_end_to_end` source statistic is a separately labeled report correction requiring owner approval, not an implicit claim of old/new parity. No benchmark code or scoring change is part of this correction.
+
 - [PR #105 implementation plan](../plans/2026-10-19-structured-log-viewer.md), especially G1–G6 and G5's exact benchmark parity table.
 - [Existing centralized logger](../../src/dtflow/logging_setup.py), [gallery producer](../../src/dtflow/ui/gallery_page.py), [gallery service](../../src/dtflow/services/gallery.py), [generation service](../../src/dtflow/services/generation.py), [backend producer](../../src/dtflow/backends/drawthings/backend.py).
 - [Windows benchmark consumer](../../tools/ui/windows_gallery_benchmark.py), [Grid benchmark report](../../tools/ui/grid_benchmark_report.py).

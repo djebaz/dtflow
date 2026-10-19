@@ -88,6 +88,7 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                         "originals.lease_refused",
                         level=logging.DEBUG,
                         data={
+                            "lease": filename.removesuffix(".lock"),
                             "reason": type(exc).__name__,
                             "waited_ms": (time.monotonic() - started) * 1000,
                             "boundary": "windows",
@@ -126,6 +127,7 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                         "originals.lease_timed_out",
                         level=logging.DEBUG,
                         data={
+                            "lease": filename.removesuffix(".lock"),
                             "waited_ms": (time.monotonic() - started) * 1000,
                             "boundary": "native",
                         },
@@ -153,6 +155,7 @@ def _log_wait(filename: str, boundary: str, started: float) -> None:
             "originals.lease_contended",
             level=logging.DEBUG,
             data={
+                "lease": filename.removesuffix(".lock"),
                 "boundary": boundary,
                 "waited_ms": waited * 1000,
             },
