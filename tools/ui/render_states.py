@@ -2422,33 +2422,35 @@ def render_logs_states(shell, capture):
 
     def record(seq, level, event, component):
         return {
-            "v": 1, "seq": seq, "ts": f"2026-10-19T09:12:{seq:02d}.000Z",
-            "level": level, "component": component, "event": event,
+            "v": 1,
+            "seq": seq,
+            "ts": f"2026-10-19T09:12:{seq:02d}.000Z",
+            "level": level,
+            "component": component,
+            "event": event,
         }
 
     rows = [
-        (record(1, "INFO", "app.window_ready", "app"),
-         RecordRef("fixture", 1, 0, 0, 0, 0, "fixture.jsonl")),
-        (record(2, "DEBUG", "gallery.gui_gap", "gallery"),
-         RecordRef("fixture", 2, 0, 0, 0, 0, "fixture.jsonl")),
-        (record(3, "WARNING", "diagnostics.loss", "diagnostics"),
-         RecordRef("fixture", 3, 0, 0, 0, 0, "fixture.jsonl")),
-        (record(4, "ERROR", "generation.failed", "generation"),
-         RecordRef("fixture", 4, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(1, "INFO", "app.window_ready", "app"), RecordRef("fixture", 1, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(2, "DEBUG", "gallery.gui_gap", "gallery"), RecordRef("fixture", 2, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(3, "WARNING", "diagnostics.loss", "diagnostics"), RecordRef("fixture", 3, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(4, "ERROR", "generation.failed", "generation"), RecordRef("fixture", 4, 0, 0, 0, 0, "fixture.jsonl")),
     ]
-    shell.logs.model.replace(rows, [
-        "state: ready",
-        "elapsed_ms: 117.4   mounted: 100   mode: grid",
-        "reason: queue_bytes   count: 1",
-        "category: backend   retryable: false",
-    ])
+    shell.logs.model.replace(
+        rows,
+        [
+            "state: ready",
+            "elapsed_ms: 117.4   mounted: 100   mode: grid",
+            "reason: queue_bytes   count: 1",
+            "category: backend   retryable: false",
+        ],
+    )
     panel.logsStatus.setText("4 matching · illustrative fixture")
     capture("logs-02-mixed-severity")
 
     panel.logsDetailTitle.setText("generation.failed")
     panel.logsDetailText.setPlainText(
-        '{"v":1,"seq":4,"level":"ERROR","event":"generation.failed",'
-        '"data":{"category":"backend","retryable":false}}'
+        '{"v":1,"seq":4,"level":"ERROR","event":"generation.failed","data":{"category":"backend","retryable":false}}'
     )
     panel.logsDetail.show()
     capture("logs-03-details")

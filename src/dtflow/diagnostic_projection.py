@@ -3,17 +3,39 @@
 Pure functions shared by the Logs row/detail presentation. Raw record bytes,
 numeric types and semantic event/severity meanings are never modified.
 """
+
 from __future__ import annotations
 
 import json
 
 PROJECTION_VERSION = 1
 _ORDER = (
-    "wall_elapsed_ms", "elapsed_ms", "wall_total_ms", "build_wall_ms", "sql_wall_ms",
-    "sql_cpu_ms", "cpu_total_ms", "mean_ms", "p95_ms", "max_ms", "max_slice_ms",
-    "samples", "elements", "returned", "mounted", "added", "removed", "outputs",
-    "mode", "scale", "source", "direction", "offset",
-    "query_busy", "preparation_busy", "retryable",
+    "wall_elapsed_ms",
+    "elapsed_ms",
+    "wall_total_ms",
+    "build_wall_ms",
+    "sql_wall_ms",
+    "sql_cpu_ms",
+    "cpu_total_ms",
+    "mean_ms",
+    "p95_ms",
+    "max_ms",
+    "max_slice_ms",
+    "samples",
+    "elements",
+    "returned",
+    "mounted",
+    "added",
+    "removed",
+    "outputs",
+    "mode",
+    "scale",
+    "source",
+    "direction",
+    "offset",
+    "query_busy",
+    "preparation_busy",
+    "retryable",
 )
 
 

@@ -1,9 +1,10 @@
 """Painted, token-driven Logs cells without per-row widgets."""
+
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter
-from PySide6.QtWidgets import QStyledItemDelegate, QStyle
+from PySide6.QtWidgets import QStyle, QStyledItemDelegate
 
 from dtflow.diagnostic_projection import stable_color_index
 from dtflow.ui.theme import load_tokens
@@ -29,8 +30,7 @@ class LogCellDelegate(QStyledItemDelegate):
         painter.setBrush(bg)
         painter.drawRoundedRect(rect, 6, 6)
         painter.setPen(fg)
-        painter.drawText(rect.adjusted(7, 0, -7, 0),
-                         Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine, text)
+        painter.drawText(rect.adjusted(7, 0, -7, 0), Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine, text)
 
     @staticmethod
     def _preview(index):
@@ -57,9 +57,11 @@ class LogCellDelegate(QStyledItemDelegate):
                 self._pill(painter, chip, key_text, str(key))
                 painter.setPen(self._color("color.text"))
                 available = max(0, rect.right() - chip.right() - 7)
-                painter.drawText(QRect(chip.right() + 5, y, available, line_height),
-                                 Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
-                                 value_text)
+                painter.drawText(
+                    QRect(chip.right() + 5, y, available, line_height),
+                    Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
+                    value_text,
+                )
             x += item_width + 10
         if overflow:
             more = f"+{overflow} more"
@@ -86,12 +88,17 @@ class LogCellDelegate(QStyledItemDelegate):
         painter.setFont(option.font)
         metrics = QFontMetrics(option.font)
         if col == 0:
-            levels = {"DEBUG": "color.disabled", "INFO": "color.logInfo",
-                      "WARNING": "color.warning", "ERROR": "color.error",
-                      "CRITICAL": "color.error"}
-            painter.fillRect(QRect(option.rect.x() + 3, option.rect.y() + 4, 4,
-                                   max(0, option.rect.height() - 8)),
-                             self._color(levels.get(record["level"], "color.secondary")))
+            levels = {
+                "DEBUG": "color.disabled",
+                "INFO": "color.logInfo",
+                "WARNING": "color.warning",
+                "ERROR": "color.error",
+                "CRITICAL": "color.error",
+            }
+            painter.fillRect(
+                QRect(option.rect.x() + 3, option.rect.y() + 4, 4, max(0, option.rect.height() - 8)),
+                self._color(levels.get(record["level"], "color.secondary")),
+            )
         elif col == 1:
             timestamp = record["ts"]
             painter.setPen(self._color("color.text"))
@@ -108,10 +115,16 @@ class LogCellDelegate(QStyledItemDelegate):
         elif col == 4:
             mid = option.rect.x() + option.rect.width() // 2
             painter.setPen(self._color("color.secondary"))
-            painter.drawText(QRect(option.rect.x(), option.rect.y(), mid - option.rect.x(),
-                                   option.rect.height()), Qt.AlignmentFlag.AlignCenter, "Details")
-            painter.drawText(QRect(mid, option.rect.y(), option.rect.right() + 1 - mid,
-                                   option.rect.height()), Qt.AlignmentFlag.AlignCenter, "Copy")
+            painter.drawText(
+                QRect(option.rect.x(), option.rect.y(), mid - option.rect.x(), option.rect.height()),
+                Qt.AlignmentFlag.AlignCenter,
+                "Details",
+            )
+            painter.drawText(
+                QRect(mid, option.rect.y(), option.rect.right() + 1 - mid, option.rect.height()),
+                Qt.AlignmentFlag.AlignCenter,
+                "Copy",
+            )
         painter.restore()
 
     def sizeHint(self, option, index):

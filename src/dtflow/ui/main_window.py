@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
-    QLineEdit,
     QHBoxLayout,
+    QLineEdit,
     QMainWindow,
     QPlainTextEdit,
     QToolButton,
@@ -50,12 +50,12 @@ from dtflow.ui.activity_strip import ActivityStrip
 from dtflow.ui.brand import connection_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
-from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
+from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
@@ -533,8 +533,10 @@ class MainWindow:
             self._logs_active = logs
             if logs:
                 self._logs_previous_sizes = shell.workspaceSplitter.sizes()
-                for slot, frame in ((self.logs_form.logsBrandSlot, shell.brandFrame),
-                                    (self.logs_form.logsNavigationSlot, shell.navigationFrame)):
+                for slot, frame in (
+                    (self.logs_form.logsBrandSlot, shell.brandFrame),
+                    (self.logs_form.logsNavigationSlot, shell.navigationFrame),
+                ):
                     slot.setFixedSize(shell.leftRail.width(), frame.height())
                     slot.layout().addWidget(frame) if slot.layout() else QHBoxLayout(slot).addWidget(frame)
             elif self._gallery_chrome_active is False:

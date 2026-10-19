@@ -3,6 +3,7 @@
 Queries, detail hydration and exports execute outside the GUI thread.
 The Qt model stores bounded projections, never complete JSONL payloads.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,11 +14,11 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QRunnable,
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
 
-from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, snapshot
 from dtflow._diagnostic_export import export_matching
+from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, snapshot
 from dtflow.diagnostic_projection import characteristics
-from dtflow.ui.theme import load_tokens
 from dtflow.ui.logs_delegate import LogCellDelegate
+from dtflow.ui.theme import load_tokens
 
 
 class _Signals(QObject):
@@ -86,9 +87,13 @@ class _LogModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole:
             return f"{record['level']} · {record['component']} · {record['event']} · seq {record['seq']}"
         if role == Qt.ItemDataRole.BackgroundRole and column == 0:
-            key = {"DEBUG": "color.disabled", "INFO": "color.secondary",
-                   "WARNING": "color.warning", "ERROR": "color.error",
-                   "CRITICAL": "color.error"}.get(record["level"], "color.secondary")
+            key = {
+                "DEBUG": "color.disabled",
+                "INFO": "color.secondary",
+                "WARNING": "color.warning",
+                "ERROR": "color.error",
+                "CRITICAL": "color.error",
+            }.get(record["level"], "color.secondary")
             return QColor(self.palette[key])
         if role == Qt.ItemDataRole.TextAlignmentRole and column == 4:
             return Qt.AlignmentFlag.AlignCenter
@@ -130,16 +135,24 @@ class LogsWorkspace(QObject):
         self.form.logsComponentCombo.addItem("All components")
         self.form.logsEventCombo.addItem("All events")
         self.form.logsOperator.addItems(("=", "!=", ">", ">=", "<", "<=", "contains"))
-        for label in ("Datetime · newest first", "Datetime · oldest first", "Event · A to Z",
-                      "Event · Z to A", "Component · A to Z", "Component · Z to A",
-                      "Severity · most severe first", "Severity · least severe first"):
+        for label in (
+            "Datetime · newest first",
+            "Datetime · oldest first",
+            "Event · A to Z",
+            "Event · Z to A",
+            "Component · A to Z",
+            "Component · Z to A",
+            "Severity · most severe first",
+            "Severity · least severe first",
+        ):
             self.form.logsSortCombo.addItem(label)
         self.form.logsFollowButton.setCheckable(True)
         self.form.logsFollowButton.setChecked(True)
         self.form.logsCloseButton.clicked.connect(on_close)
         self.form.logsRefreshButton.clicked.connect(self.refresh)
         self.form.logsMoreFiltersButton.clicked.connect(
-            lambda: self.form.logsAdvanced.setVisible(not self.form.logsAdvanced.isVisible()))
+            lambda: self.form.logsAdvanced.setVisible(not self.form.logsAdvanced.isVisible())
+        )
         self.form.logsFollowButton.toggled.connect(self._toggle_follow)
         self.form.logsDetailCollapse.clicked.connect(self.form.logsDetail.hide)
         self.form.logsResetFilters.clicked.connect(self.clear_filters)
@@ -147,11 +160,21 @@ class LogsWorkspace(QObject):
         self.form.logsSaveMenu.clicked.connect(self._save_menu)
         self.form.logsTable.clicked.connect(self._row_clicked)
         self.form.logsSessionCombo.currentIndexChanged.connect(self.refresh)
-        for control in (self.form.logsSearch, self.form.logsFrom, self.form.logsTo,
-                        self.form.logsField, self.form.logsValue):
+        for control in (
+            self.form.logsSearch,
+            self.form.logsFrom,
+            self.form.logsTo,
+            self.form.logsField,
+            self.form.logsValue,
+        ):
             control.editingFinished.connect(self._filtered)
-        for control in (self.form.logsLevelCombo, self.form.logsComponentCombo,
-                        self.form.logsEventCombo, self.form.logsSortCombo, self.form.logsOperator):
+        for control in (
+            self.form.logsLevelCombo,
+            self.form.logsComponentCombo,
+            self.form.logsEventCombo,
+            self.form.logsSortCombo,
+            self.form.logsOperator,
+        ):
             control.currentIndexChanged.connect(self._filtered)
         self.token = 0
         self.active = False
@@ -169,11 +192,13 @@ class LogsWorkspace(QObject):
         self.token += 1
         token = self.token
         signals = _Signals(self.form)
+
         def arrived(received, value, error):
             if received == self.token and self.active:
                 callback(value, error)
             if signals in self._jobs:
                 self._jobs.remove(signals)
+
         signals.ready.connect(arrived, Qt.ConnectionType.QueuedConnection)
         self._jobs.append(signals)
         self.pool.start(_Job(token, func, signals))
@@ -197,9 +222,11 @@ class LogsWorkspace(QObject):
         self._timer.stop()
 
     def _filters(self):
-        filters = {"search": self.form.logsSearch.text().strip(),
-                   "level": self.form.logsLevelCombo.currentText(),
-                   "component": self.form.logsComponentCombo.currentText()}
+        filters = {
+            "search": self.form.logsSearch.text().strip(),
+            "level": self.form.logsLevelCombo.currentText(),
+            "component": self.form.logsComponentCombo.currentText(),
+        }
         if filters["level"] == "All levels":
             filters["level"] = ""
         if filters["component"] == "All components":
@@ -215,8 +242,7 @@ class LogsWorkspace(QObject):
                 dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
                 if dt.tzinfo is None:
                     raise ValueError("Time range must specify a timezone")
-                filters[field] = dt.astimezone(timezone.utc).isoformat(
-                    timespec="milliseconds").replace("+00:00", "Z")
+                filters[field] = dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         characteristic = self.form.logsField.text().strip()
         if characteristic:
             if not characteristic.startswith("data."):
@@ -231,8 +257,16 @@ class LogsWorkspace(QObject):
         return filters
 
     def _sort(self):
-        values = (("ts", True), ("ts", False), ("event", False), ("event", True),
-                  ("component", False), ("component", True), ("level", True), ("level", False))
+        values = (
+            ("ts", True),
+            ("ts", False),
+            ("event", False),
+            ("event", True),
+            ("component", False),
+            ("component", True),
+            ("level", True),
+            ("level", False),
+        )
         return values[self.form.logsSortCombo.currentIndex()]
 
     def _filtered(self, *_):
@@ -260,9 +294,9 @@ class LogsWorkspace(QObject):
             self.form.logsNotice.show()
             return
         self.form.logsStatus.setText("Loading session…")
+
         def load():
-            status, count, page, cursor = query(
-                self.directory, sid, filters=filters, sort=sort, descending=desc)
+            status, count, page, cursor = query(self.directory, sid, filters=filters, sort=sort, descending=desc)
             projections = []
             # Page-only bounded previews, never complete records in the model.
             for _tiny, ref in page:
@@ -299,18 +333,25 @@ class LogsWorkspace(QObject):
         self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
         self._last = tuple((r.seq for _, r in page))
         self._pending = 0
-        self._file_snapshot = tuple((p.path.name, p.device, p.inode, p.size)
-                                    for p in status.segments)
+        self._file_snapshot = tuple((p.path.name, p.device, p.inode, p.size) for p in status.segments)
         self._populate_filter_values(page)
         if self.form.logsFollowButton.isChecked():
             self.form.logsTable.scrollToTop()
 
     def _populate_filter_values(self, page):
         for combo, current, options, initial in (
-            (self.form.logsComponentCombo, self.form.logsComponentCombo.currentText(),
-             sorted({row["component"] for row, _ in page}), "All components"),
-            (self.form.logsEventCombo, self.form.logsEventCombo.currentData(),
-             sorted({row["event"] for row, _ in page}), "All events"),
+            (
+                self.form.logsComponentCombo,
+                self.form.logsComponentCombo.currentText(),
+                sorted({row["component"] for row, _ in page}),
+                "All components",
+            ),
+            (
+                self.form.logsEventCombo,
+                self.form.logsEventCombo.currentData(),
+                sorted({row["event"] for row, _ in page}),
+                "All events",
+            ),
         ):
             combo.blockSignals(True)
             combo.clear()
@@ -336,8 +377,7 @@ class LogsWorkspace(QObject):
                 self.open()
             return
         try:
-            changed = tuple((p.path.name, p.device, p.inode, p.size)
-                            for p in snapshot(self.directory, sid))
+            changed = tuple((p.path.name, p.device, p.inode, p.size) for p in snapshot(self.directory, sid))
         except (OSError, ValueError):
             changed = ()
         if changed == self._file_snapshot:
@@ -383,8 +423,7 @@ class LogsWorkspace(QObject):
         if error:
             self.form.logsStatus.setText("Raw record unavailable: " + error)
         else:
-            QApplication.clipboard().setText(json.dumps(record, ensure_ascii=False,
-                                                       separators=(",", ":")))
+            QApplication.clipboard().setText(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
 
     def copy_visible(self):
         """Copy complete selected-page evidence, never the small table projections."""
@@ -394,8 +433,7 @@ class LogsWorkspace(QObject):
 
         def collect():
             return "\n".join(
-                json.dumps(read_detail(self.directory, ref), ensure_ascii=False, separators=(",", ":"))
-                for ref in refs
+                json.dumps(read_detail(self.directory, ref), ensure_ascii=False, separators=(",", ":")) for ref in refs
             )
 
         def delivered(value, error):
@@ -409,22 +447,29 @@ class LogsWorkspace(QObject):
 
     def _save_menu(self):
         menu = QMenu(self.form.logsSaveMenu)
-        actions = {menu.addAction(label): fmt for label, fmt in (
-            ("Export matching CSV", "csv"), ("Export matching JSONL", "jsonl"))}
+        actions = {
+            menu.addAction(label): fmt
+            for label, fmt in (("Export matching CSV", "csv"), ("Export matching JSONL", "jsonl"))
+        }
         choice = menu.exec(self.form.logsSaveMenu.mapToGlobal(self.form.logsSaveMenu.rect().bottomLeft()))
         if choice not in actions:
             return
         fmt = actions[choice]
-        target, _ = QFileDialog.getSaveFileName(self.form, f"Export matching {fmt.upper()}",
-                                                 f"diagnostic-excerpt.{fmt}", f"*.{fmt}")
+        target, _ = QFileDialog.getSaveFileName(
+            self.form, f"Export matching {fmt.upper()}", f"diagnostic-excerpt.{fmt}", f"*.{fmt}"
+        )
         if not target:
             return
         sid = self.form.logsSessionCombo.currentText()
         filters, (sort, desc) = self._filters(), self._sort()
-        self._run(lambda: export_matching(self.directory, sid, Path(target),
-                                          fmt=fmt, filters=filters, sort=sort, descending=desc),
-                  lambda value, error: self.form.logsStatus.setText(
-                      "Export failed: " + error if error else f"Exported {value}"))
+        self._run(
+            lambda: export_matching(
+                self.directory, sid, Path(target), fmt=fmt, filters=filters, sort=sort, descending=desc
+            ),
+            lambda value, error: self.form.logsStatus.setText(
+                "Export failed: " + error if error else f"Exported {value}"
+            ),
+        )
 
     def clear_filters(self):
         self.form.logsSearch.clear()
@@ -432,8 +477,12 @@ class LogsWorkspace(QObject):
         self.form.logsValue.clear()
         self.form.logsFrom.clear()
         self.form.logsTo.clear()
-        for combo in (self.form.logsLevelCombo, self.form.logsComponentCombo,
-                      self.form.logsEventCombo, self.form.logsSortCombo):
+        for combo in (
+            self.form.logsLevelCombo,
+            self.form.logsComponentCombo,
+            self.form.logsEventCombo,
+            self.form.logsSortCombo,
+        ):
             combo.blockSignals(True)
             combo.setCurrentIndex(0)
             combo.blockSignals(False)
