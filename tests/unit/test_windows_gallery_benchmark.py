@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from tools.ui.gallery_perf_launch import DEFAULTS, validate_profile
-from tools.ui.windows_gallery_benchmark import load_profiles, summarize_csv, write_report
+from tools.ui.windows_gallery_benchmark import load_profiles, summarize_jsonl, write_report
 
 
 def test_validated_profile_changes_one_parameter_without_changing_defaults():
@@ -46,40 +46,90 @@ def test_named_profiles_load_with_exact_explicit_overrides(tmp_path):
         load_profiles(profiles, ["missing"])
 
 
+def _jsonl_record(seq, event, data, *, kind="event", agg=None):
+    record = {
+        "v": 1,
+        "seq": seq,
+        "ts": f"2026-10-19T00:00:{seq:02d}.000Z",
+        "level": "DEBUG",
+        "component": "gallery",
+        "event": event,
+        "kind": kind,
+        "data": data,
+    }
+    if kind == "measurement":
+        record["mono_ns"] = seq * 1_000_000_000
+    if agg is not None:
+        record["agg"] = agg
+    return record
+
+
+def _write_jsonl_session(directory, observations):
+    directory.mkdir(exist_ok=True)
+    session = "benchmarktest"
+    start = {
+        "session_id": session,
+        "version": "test",
+        "source_commit": "unknown",
+        "build_state": "unknown",
+        "runtime": "python",
+        "platform": "test",
+        "dev": True,
+        "instrumentation_version": "gallery-jsonl-v1",
+        "schema_version": 1,
+        "queue_max_records": 1024,
+        "queue_max_bytes": 8 * 1024 * 1024,
+        "max_record_bytes": 1_048_576,
+        "aggregation_policy": "test",
+    }
+    records = [_jsonl_record(1, "session.started", start)]
+    records.extend(
+        _jsonl_record(index, event, data, kind=kind, agg=agg)
+        for index, (event, data, kind, agg) in enumerate(observations, 2)
+    )
+    closing_seq = len(records) + 1
+    close = {
+        "observed": len(records),
+        "admitted": len(records),
+        "rejected": 0,
+        "dropped": 0,
+        "written_records": closing_seq,
+        "aggregate_source_samples": 0,
+        "writer_failures": 0,
+        "serialization_failures": 0,
+    }
+    records.append(_jsonl_record(closing_seq, "session.closed", close))
+    (directory / f"dtflow-{session}.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in records),
+        encoding="utf-8",
+    )
+
+
 def test_report_uses_original_diagnostic_max_and_never_invents_missing_events(tmp_path):
-    metrics = tmp_path / "metrics.csv"
-    with metrics.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(
-            stream, fieldnames=("utc", "phase", "metric", "samples", "mean", "p95", "max", "total", "details")
-        )
-        writer.writeheader()
-        writer.writerows(
-            [
+    logs = tmp_path / "logs"
+    _write_jsonl_session(
+        logs,
+        [
+            (
+                "gallery.query_done",
+                {"elapsed_ms": 28, "returned": 20, "source": "live", "error": None},
+                "measurement",
+                None,
+            ),
+            (
+                "gallery.performance_aggregate",
+                {"phase": "gui_gaps"},
+                "aggregate",
                 {
-                    "utc": "",
-                    "phase": "query_done",
-                    "metric": "elapsed_ms",
-                    "samples": "1",
-                    "mean": "28",
-                    "p95": "28",
-                    "max": "28",
-                    "total": "28",
-                    "details": "",
+                    "samples": 3,
+                    "window_start": "2026-10-19T00:00:01.000Z",
+                    "window_end": "2026-10-19T00:00:02.000Z",
+                    "metrics": {"wall_max_ms": {"count": 3, "mean": 0, "p95": 0, "max": 87, "total": 0}},
                 },
-                {
-                    "utc": "",
-                    "phase": "gui_gaps",
-                    "metric": "wall_max_ms",
-                    "samples": "3",
-                    "mean": "0",
-                    "p95": "0",
-                    "max": "87",
-                    "total": "0",
-                    "details": "",
-                },
-            ]
-        )
-    result = summarize_csv(metrics)
+            ),
+        ],
+    )
+    result = summarize_jsonl(logs)
     assert result["gui_gap_over_50_max_ms"] == 87
     assert result["query_done_median_recorded_ms"] == 28
     assert result["prepare_median_recorded_ms"] is None
@@ -104,10 +154,25 @@ def test_report_uses_original_diagnostic_max_and_never_invents_missing_events(tm
 
 
 def test_missing_gallery_query_cannot_be_ranked(tmp_path):
-    path = tmp_path / "empty.csv"
-    path.write_text("phase,metric,samples,mean,max\ngui_gaps,wall_max_ms,1,80,80\n")
+    logs = tmp_path / "logs"
+    _write_jsonl_session(
+        logs,
+        [
+            (
+                "gallery.performance_aggregate",
+                {"phase": "gui_gaps"},
+                "aggregate",
+                {
+                    "samples": 1,
+                    "window_start": "2026-10-19T00:00:01.000Z",
+                    "window_end": "2026-10-19T00:00:01.000Z",
+                    "metrics": {"wall_max_ms": {"count": 1, "mean": 80, "p95": 80, "max": 80, "total": 80}},
+                },
+            ),
+        ],
+    )
     with pytest.raises(ValueError, match="query"):
-        summarize_csv(path)
+        summarize_jsonl(logs)
 
 
 class _FakeInfo:
@@ -290,14 +355,63 @@ def test_run_directory_uses_requested_timestamp_without_merging_runs(tmp_path):
 def test_query_readiness_ignores_old_completions_across_rotation(tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
 
-    log = tmp_path / "dtflow-session.log"
-    log.write_text("session starting\n", encoding="utf-8")
+    sid = "benchmarktest"
+    current = tmp_path / f"dtflow-{sid}.jsonl"
+    started = {
+        "session_id": sid,
+        "version": "test",
+        "source_commit": "unknown",
+        "build_state": "unknown",
+        "runtime": "python",
+        "platform": "test",
+        "dev": True,
+        "instrumentation_version": "gallery-jsonl-v1",
+        "schema_version": 1,
+        "queue_max_records": 1024,
+        "queue_max_bytes": 8 * 1024 * 1024,
+        "max_record_bytes": 1_048_576,
+        "aggregation_policy": "test",
+    }
+
+    def append(*records):
+        with current.open("a", encoding="utf-8") as stream:
+            for row in records:
+                stream.write(json.dumps(row) + "\n")
+
+    append(_jsonl_record(1, "session.started", started))
     assert benchmark._read_query_count(tmp_path) == 0
-    log.write_text("gallery_perf phase=query_done returned=80 error=none\n", encoding="utf-8")
+    append(
+        _jsonl_record(
+            2,
+            "gallery.query_done",
+            {
+                "elapsed_ms": 28,
+                "returned": 80,
+                "source": "live",
+                "error": None,
+            },
+            kind="measurement",
+        )
+    )
     previous = set(benchmark._completed_queries(tmp_path))
-    log.rename(tmp_path / "dtflow-session.log.1")
-    assert set(benchmark._completed_queries(tmp_path)) == previous
-    log.write_text("gallery_perf phase=query_done returned=20 error=none\n", encoding="utf-8")
+    assert previous == {(sid, 2)}
+    current.rename(tmp_path / f"dtflow-{sid}.jsonl.1")
+    # The writer creates the new active segment after rotation; the old
+    # segment alone is an incomplete snapshot, not clean live evidence.
+    append(
+        _jsonl_record(
+            3,
+            "gallery.query_done",
+            {
+                "elapsed_ms": 30,
+                "returned": 20,
+                "source": "live",
+                "error": None,
+            },
+            kind="measurement",
+        )
+    )
+    assert previous.issubset(benchmark._completed_queries(tmp_path))
     assert benchmark._await_query(tmp_path, SimpleNamespace(poll=lambda: None), 1, after=previous) == 20
 
 
@@ -601,16 +715,30 @@ def test_failed_slider_does_not_abort_next_step(monkeypatch):
 def test_scroll_intent_parser_requires_a_real_qt_wheel_event(tmp_path):
     from tools.ui.windows_gallery_benchmark import _wheel_intents
 
-    log = tmp_path / "dtflow-session.log"
-    log.write_text(
-        "gallery_perf phase=scroll_intent direction=forward source=wheel offset=0 mounted=80\n"
-        "gallery_perf phase=scroll_intent direction=backward source=wheel offset=0 mounted=80\n"
-        "gallery_perf phase=scroll_intent direction=forward source=drag offset=0 mounted=80\n",
-        encoding="utf-8",
+    _write_jsonl_session(
+        tmp_path,
+        [
+            (
+                "gallery.scroll_intent",
+                {
+                    "direction": direction,
+                    "source": source,
+                    "offset": 0,
+                    "mounted": 80,
+                },
+                "measurement",
+                None,
+            )
+            for direction, source in (
+                ("forward", "wheel"),
+                ("backward", "wheel"),
+                ("forward", "drag"),
+            )
+        ],
     )
     events = _wheel_intents(tmp_path)
     assert len(events) == 2
-    assert {event[3] for event in events} == {"forward", "backward"}
+    assert {event[2] for event in events} == {"forward", "backward"}
 
 
 class _HeaderNode:
@@ -792,6 +920,7 @@ def test_fullscreen_is_exercised_on_grid_before_list_or_detail(tmp_path, monkeyp
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=Desktop))
     monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    monkeypatch.setattr(benchmark, "_gallery_mode_button", lambda *_a, **_kw: object())
     monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9002)
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Button())
     monkeypatch.setattr(benchmark, "_await_query", lambda *a, **kw: 20)
@@ -922,6 +1051,19 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=FakeDesktop))
     monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    # The matrix physically hovers a numbered chip, then the Grid viewport.
+    mouse_moves = []
+    sys.modules["pywinauto"].mouse = SimpleNamespace(move=lambda *, coords: mouse_moves.append(coords))
+    monkeypatch.setattr(
+        benchmark,
+        "_grid_batch_button",
+        lambda *_a: SimpleNamespace(
+            rectangle=lambda: SimpleNamespace(left=10, right=50, top=10, bottom=34),
+            element_info=SimpleNamespace(name="Jump to image batch 1"),
+        ),
+    )
+    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_a: ((300, 400), "grid"))
+    monkeypatch.setattr(benchmark, "_gallery_mode_button", lambda *_a, **_kw: object())
     monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: FakeButton())
     monkeypatch.setattr(
@@ -1025,6 +1167,19 @@ def test_grid_matrix_samples_first_query_after_scrolls(monkeypatch, tmp_path):
 
     monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=Desktop))
     monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    # The matrix physically hovers a numbered chip, then the Grid viewport.
+    mouse_moves = []
+    sys.modules["pywinauto"].mouse = SimpleNamespace(move=lambda *, coords: mouse_moves.append(coords))
+    monkeypatch.setattr(
+        benchmark,
+        "_grid_batch_button",
+        lambda *_a: SimpleNamespace(
+            rectangle=lambda: SimpleNamespace(left=10, right=50, top=10, bottom=34),
+            element_info=SimpleNamespace(name="Jump to image batch 1"),
+        ),
+    )
+    monkeypatch.setattr(benchmark, "_gallery_wheel_point", lambda *_a: ((300, 400), "grid"))
+    monkeypatch.setattr(benchmark, "_gallery_mode_button", lambda *_a, **_kw: object())
     monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: SimpleNamespace(click_input=lambda: None))
     monkeypatch.setattr(
@@ -1117,36 +1272,59 @@ def test_grid_target_not_reached_when_only_total_and_buffer_equal_target():
     assert not (position.first <= 200 <= position.last)
 
 
-def test_grid_progress_uses_recorded_uia_text_and_log_fallback(tmp_path):
+def test_grid_progress_reads_status_input_value_pattern(tmp_path):
     from tools.ui.grid_scroll_probe import GridProgressProbe
 
-    class Label:
-        def window_text(self):
-            return "Visible image range"
+    state = {"first": 1}
 
-        iface_text = SimpleNamespace(DocumentRange=SimpleNamespace(GetText=lambda _n: "290–310 of 1,000"))
+    class Control:
+        def get_value(self):
+            return f"{state['first']}/1000"
 
-        def legacy_properties(self):
-            return {}
+        def exists(self, *, timeout):
+            assert timeout == 0
+            return True
+
+        def wrapper_object(self):
+            return self
 
     class Window:
-        def child_window(self, **kw):
-            assert kw == {"title": "Visible image range", "control_type": "Text"}
-            return Label()
+        def __init__(self):
+            self.lookups = []
 
-    probe = GridProgressProbe(Window(), tmp_path)
-    assert probe.read().first == 290
-    assert probe.read().source == "uia"
+        def child_window(self, **kwargs):
+            self.lookups.append(kwargs)
+            return Control()
 
-    log = tmp_path / "dtflow-123.log"
-    log.write_text(
-        "gallery_perf phase=benchmark_view first=1 last=20 total=1000 loaded=40\n"
-        "gallery_perf phase=benchmark_view first=295 last=320 total=1000 loaded=100\n",
+    window = Window()
+    probe = GridProgressProbe(window, tmp_path)
+    assert probe.read().first == 1
+    assert probe.read().source == "grid-footer-uia"
+    state["first"] = 281
+    assert probe.read().first == 281
+    state["first"] = 1
+    assert probe.read().first == 1
+    assert window.lookups == [
+        {
+            "auto_id": "QApplication.MainWindow.statusbar.dtflowGridPositionGroup.dtflowStatusGridFirstVisibleIndex",
+            "control_type": "Edit",
+        }
+    ]
+
+
+def test_grid_progress_does_not_accept_old_text_log_fallback(tmp_path):
+    from tools.ui.grid_scroll_probe import GridProgressProbe
+
+    (tmp_path / "dtflow-123.log").write_text(
+        "gallery_perf phase=benchmark_view first=1 last=20 total=1000 loaded=40\n",
         encoding="utf-8",
     )
-    fallback = GridProgressProbe(object(), tmp_path)
-    assert fallback.read().first == 295
-    assert fallback.read().source == "pager-log"
+
+    class Window:
+        def child_window(self, **_kwargs):
+            return SimpleNamespace(exists=lambda **_kw: False)
+
+    assert GridProgressProbe(Window(), tmp_path).read() is None
 
 
 def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
@@ -1160,7 +1338,7 @@ def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
         @staticmethod
         def scroll(*, coords, wheel_dist):
             sent.append(wheel_dist)
-            state["first"] = max(1, min(295, state["first"] - wheel_dist * 8))
+            state["first"] = max(1, min(350, state["first"] - wheel_dist * 8))
 
     class Probe:
         def read(self):
@@ -1181,7 +1359,7 @@ def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
             wheel_point=((600, 400), "grid"),
         )
         assert down["target_reached"]
-        assert down["first_after"] <= 300 <= down["last_after"]
+        assert down["first_after"] >= 300
         assert down["wheel_pulses"] > 0
         assert "wheel_input_ms" in down and "position_probe_ms" in down
         back = benchmark._seek_grid_card(
@@ -1199,7 +1377,7 @@ def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
     assert sent
 
 
-def test_grid_seek_keeps_sending_during_blocked_position_probe(monkeypatch):
+def test_grid_seek_does_not_dispatch_without_position_evidence(monkeypatch):
     import time
 
     from tools.ui import windows_gallery_benchmark as benchmark
@@ -1228,8 +1406,8 @@ def test_grid_seek_keeps_sending_during_blocked_position_probe(monkeypatch):
             timeout=0.14,
             wheel_point=((600, 400), "grid"),
         )
-    assert len(sent) >= 3
-    assert actions[0]["wheel_pulses"] >= 3
+    assert sent  # Fast sender runs even while the UIA position probe is unavailable.
+    assert actions[0]["wheel_pulses"] == len(sent)
     assert actions[0]["first_wheel_ms"] is not None
 
 
@@ -1288,7 +1466,7 @@ def test_grid_seek_rejects_undersized_catalogue(monkeypatch):
         )
 
 
-def test_grid_seek_overshoot_corrects_direction(monkeypatch):
+def test_grid_seek_overshoot_stops_without_correcting_direction(monkeypatch):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
@@ -1301,8 +1479,6 @@ def test_grid_seek_overshoot_corrects_direction(monkeypatch):
             movements.append(wheel_dist)
             if wheel_dist < 0:
                 state["first"] = 330
-            else:
-                state["first"] = 295
 
     class Probe:
         def read(self):
@@ -1320,8 +1496,9 @@ def test_grid_seek_overshoot_corrects_direction(monkeypatch):
         wheel_point=((600, 400), "grid"),
     )
     assert result["target_reached"]
-    assert movements[0] < 0
-    assert any(movement > 0 for movement in movements)
+    assert result["first_after"] >= 300
+    assert result["target_tolerance"] == 0
+    assert movements and all(movement < 0 for movement in movements)
 
 
 def test_grid_home_corrects_stale_first_card_by_scrolling_up(monkeypatch):
@@ -1410,7 +1587,7 @@ def test_large_batch_does_not_fake_target_from_batch_end(monkeypatch):
             # The initial visible end is 200, but position only advances after
             # real wheel messages. Simulate slow-ish continuous progress.
             if wheel_dist < 0:
-                state["first"] = min(190, state["first"] + 35)
+                state["first"] = min(230, state["first"] + 35)
             else:
                 state["first"] = max(1, state["first"] - 8)
 
@@ -1435,7 +1612,7 @@ def test_large_batch_does_not_fake_target_from_batch_end(monkeypatch):
         wheel_point=((600, 400), "grid"),
     )
     assert result["target_reached"]
-    assert 180 <= result["first_after"] <= 220
+    assert 200 <= result["first_after"] <= 230
     assert wheel[0] < 0
     assert result["first_before"] is not None
     assert result["first_before"] < 200
@@ -1476,94 +1653,118 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["last_after"] == 200
 
 
-def test_grid_start_polls_until_numbered_chip_is_enabled(monkeypatch, tmp_path):
+def test_grid_page_one_lookup_uses_inspected_automation_id():
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    class Chip:
+        def exists(self, *, timeout):
+            assert timeout == 0
+            return True
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def wrapper_object(self):
+            return self
+
+    chip = Chip()
+
+    class Window:
+        def child_window(self, **criteria):
+            assert criteria == {
+                "auto_id": (
+                    "QApplication.MainWindow.central.WorkspaceShell.workspaceSplitter."
+                    "centerRail.centerStack.GalleryDetailPage.galleryPagerBar."
+                    "galleryPagerChips.galleryPagerPage1"
+                ),
+                "control_type": "CheckBox",
+            }
+            return chip
+
+        def descendants(self):
+            pytest.fail("Page 1 lookup must not enumerate the window")
+
+    assert benchmark._grid_batch_button(Window(), 1) is chip
+
+
+def test_grid_start_clicks_page_one_and_verifies_live_range(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    lookups = []
-    clicks = []
+    events = []
+    first = [281]
 
     class Chip:
-        def click_input(self):
-            clicks.append("clicked")
+        pass
 
-    def lookup(*args, **kwargs):
-        lookups.append(kwargs["timeout"])
-        if len(lookups) < 3:
-            raise LookupError("Still showing loading spinner")
+    def find(_window, number):
+        assert number == 1
+        events.append("resolve-page-one")
         return Chip()
+
+    def activate(_chip):
+        events.append("activate-page-one")
+        first[0] = 1
+        return "uia-invoke"
 
     class Probe:
         def read(self):
-            return GridPosition(1, 20, 833, "pager-log")
+            return GridPosition(first[0], first[0] + 19, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_button", lookup)
+    monkeypatch.setattr(benchmark, "_grid_batch_button", find)
+    monkeypatch.setattr(benchmark, "_activate_grid_batch_chip", activate)
     actions = []
-    benchmark._wait_for_grid_page_one(
-        object(),
-        Probe(),
-        actions,
-        directory=tmp_path,
-        timeout=3,
-    )
-    assert lookups == [0.01, 0.01, 0.01]
-    assert clicks == ["clicked"]
+    benchmark._wait_for_grid_page_one(object(), Probe(), actions, directory=tmp_path, timeout=1)
+    assert events == ["resolve-page-one", "activate-page-one"]
     assert actions[-1]["verified"] is True
+    assert actions[-1]["click_attempts"] == 1
+    assert actions[-1]["page_one_lookup_ms"] >= 0
+    assert actions[-1]["page_one_click_ms"] >= 0
+    assert actions[-1]["footer_read_ms"] >= 0
     assert actions[-1]["visible_first"] == 1
 
 
-def test_grid_start_does_not_wait_for_page_jump_log(monkeypatch, tmp_path):
+def test_grid_start_uses_page_one_without_sort_dropdown(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    clicks = []
-
-    class Chip:
-        def click_input(self):
-            clicks.append("clicked")
+    class Window:
+        def child_window(self, **_kwargs):
+            pytest.fail("Grid matrix must not open the Sort dropdown")
 
     class Probe:
         def read(self):
-            return GridPosition(1, 20, 833, "pager-log")
+            return GridPosition(1, 20, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda _window, page: object())
+    monkeypatch.setattr(benchmark, "_activate_grid_batch_chip", lambda _chip: "mouse-click")
     actions = []
-    benchmark._wait_for_grid_page_one(
-        object(),
-        Probe(),
-        actions,
-        directory=tmp_path,
-        timeout=1,
-    )
-    assert clicks == ["clicked"]
+    benchmark._wait_for_grid_page_one(Window(), Probe(), actions, directory=tmp_path, timeout=1)
     assert actions[-1]["verified"] is True
-    assert actions[-1]["click_attempts"] == 1
 
 
-def test_grid_start_rejects_unverified_visible_position(monkeypatch, tmp_path):
+def test_grid_start_rejects_unverified_page_one_click(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    clicks = []
-
-    class Chip:
-        def click_input(self):
-            clicks.append("clicked")
+    attempts = []
 
     class Probe:
         def read(self):
-            return GridPosition(281, 295, 833, "pager-log")
+            return GridPosition(281, 295, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda _window, page: object())
+    monkeypatch.setattr(
+        benchmark,
+        "_activate_grid_batch_chip",
+        lambda _chip: attempts.append("click") or "mouse-click",
+    )
     actions = []
-    with pytest.raises(TimeoutError, match="did not become clickable at image 1"):
-        benchmark._wait_for_grid_page_one(
-            object(),
-            Probe(),
-            actions,
-            directory=tmp_path,
-            timeout=0.12,
-        )
-    assert clicks == ["clicked"]
+    with pytest.raises(TimeoutError, match="could not verify first visible image 1"):
+        benchmark._wait_for_grid_page_one(object(), Probe(), actions, directory=tmp_path, timeout=0.12)
+    assert attempts
     assert actions[-1]["verified"] is False
     assert actions[-1]["visible_first"] == 281

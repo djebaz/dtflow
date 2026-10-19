@@ -18,6 +18,8 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
+from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 
 WSLPATH_TIMEOUT = 5
@@ -56,7 +58,14 @@ def _validate_target(path: str, *, directory: bool) -> str | None:
     except PermissionError:
         return f"the {kind} is inaccessible (permission denied)."
     except OSError as exc:
-        log.warning("desktop open target unavailable reason=%s", type(exc).__name__)
+        diagnostic_event(
+            log,
+            "app.desktop_open.target_unavailable",
+            level=logging.WARNING,
+            data={
+                "reason": type(exc).__name__,
+            },
+        )
         return f"the {kind} could not be accessed."
     return None
 
@@ -72,10 +81,24 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
     else:
         launcher = shutil.which("powershell.exe") or shutil.which("pwsh.exe")
     if wslpath is None:
-        log.warning("desktop open unavailable reason=no-wslpath")
+        diagnostic_event(
+            log,
+            "app.desktop_open.unavailable",
+            level=logging.WARNING,
+            data={
+                "reason": "no-wslpath",
+            },
+        )
         return "wslpath is unavailable in this WSL session."
     if launcher is None:
-        log.warning("desktop open unavailable reason=%s", "no-explorer" if directory else "no-powershell")
+        diagnostic_event(
+            log,
+            "app.desktop_open.unavailable",
+            level=logging.WARNING,
+            data={
+                "reason": "no-explorer" if directory else "no-powershell",
+            },
+        )
         name = "Windows Explorer" if directory else "PowerShell (powershell.exe or pwsh.exe)"
         return f"{name} is unavailable through Windows interop; check this WSL session's PATH."
     try:
@@ -88,7 +111,14 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
             check=True,
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
-        log.warning("desktop open path translation failed reason=%s", type(exc).__name__)
+        diagnostic_event(
+            log,
+            "app.desktop_open.path_translation_failed",
+            level=logging.WARNING,
+            data={
+                "reason": type(exc).__name__,
+            },
+        )
         return "its location could not be translated to a Windows path."
     if not converted or "\n" in converted:
         return "its location could not be translated to a Windows path."
@@ -114,10 +144,24 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
                 start_new_session=True,
             )
         except subprocess.TimeoutExpired:
-            log.warning("desktop open association hand-off unconfirmed reason=timeout")
+            diagnostic_event(
+                log,
+                "app.desktop_open.association_unconfirmed",
+                level=logging.WARNING,
+                data={
+                    "reason": "timeout",
+                },
+            )
             return "the Windows viewer hand-off could not be confirmed."
         except (OSError, subprocess.SubprocessError) as exc:
-            log.warning("desktop open association failed reason=%s", type(exc).__name__)
+            diagnostic_event(
+                log,
+                "app.desktop_open.association_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
             return "Windows could not open the file with its associated application; check its default viewer."
         return None  # Shell accepted the request, not proof that a viewer window appeared.
     try:
@@ -130,7 +174,14 @@ def _open_on_worker(path: str, *, directory: bool) -> str | None:
             start_new_session=True,
         )
     except OSError as exc:
-        log.warning("desktop open launch failed reason=%s", type(exc).__name__)
+        diagnostic_event(
+            log,
+            "app.desktop_open.launch_failed",
+            level=logging.WARNING,
+            data={
+                "reason": type(exc).__name__,
+            },
+        )
         return "Windows Explorer could not be started."
     return None
 
@@ -145,7 +196,14 @@ def open_local_path(path: str, *, runner, directory: bool, on_error) -> None:
 
     def done(reason, error):
         if error is not None:
-            log.warning("desktop open preparation failed reason=%s", type(error).__name__)
+            diagnostic_event(
+                log,
+                "app.desktop_open.preparation_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(error).__name__,
+                },
+            )
             reason = "the desktop request could not be prepared."
         elif reason is None and not _wsl():
             if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):

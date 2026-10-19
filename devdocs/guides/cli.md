@@ -100,7 +100,7 @@ Only `assets prepare -f/--file FILE` may upload bytes. `-n/--name` selects an id
 
 ## Logging and local files
 
-One shared logging setup writes rotating UTF-8 `dtflow-<session>.log` files under repository `logs/` (or `%LOCALAPPDATA%\DTFlow\logs\` outside a checkout), with session/attempt correlation and bounded retention. Prompts, credentials, headers and payloads are not logged; a log failure is reported once and never changes the command.
+One shared logging setup now writes rotating UTF-8/LF `dtflow-<session>.jsonl` files under repository `logs/` (or `%LOCALAPPDATA%\DTFlow\logs\` outside a checkout), with startup/session identity, typed fields and optional attempt correlation. `-q/--logs` overrides that directory. Admission is bounded/nonblocking and loss is explicit; a missing close seal or nonzero loss/failure counters is incomplete evidence, not zero stalls or proof of successful generation. No automatic text/gallery CSV is produced; historical files remain untouched. The shared reader, native Logs workspace and benchmark JSONL migration are implemented; full fault/native/policy acceptance remains [#107](https://github.com/djebaz/dtflow/issues/107). The Logs workspace honors the same directory override. Prompts, credentials, private paths, headers and payloads are excluded; failures never change generation or retry behavior.
 
 State is stored in `.dtflow/attempts.sqlite3` and outputs under `.dtflow/outputs/<attempt-id>/`. Use a local filesystem and the patched SQLite runtime required by the [backend contract](../architecture/backend-contract.md#durable-state-and-layer-enforcement). See the [runtime layout](../architecture/runtime-layout.md) for ownership and cache paths.
 

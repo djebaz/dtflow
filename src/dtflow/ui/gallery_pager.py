@@ -60,6 +60,9 @@ class GalleryPager:
             self.range.setText("0–0 of 0")
         else:
             self.range.setText(f"{visible_start:,}–{visible_end:,} of {total:,}")
+        # Publish the actual visible range through UIA, including on Qt builds
+        # that expose accessibleName instead of the changing QLabel text.
+        self.range.setAccessibleName(f"Visible image range: {self.range.text()}")
         self.status.setText(f"Loading {batch_size} more…" if loading else f"{loaded:,} buffered")
         pages = self._chip_pages(active_page, page_count)
         if pages != self._rendered_pages:

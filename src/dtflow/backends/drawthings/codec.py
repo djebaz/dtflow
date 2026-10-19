@@ -16,6 +16,7 @@ from drawthings_py.image.image_buffer import ImageBuffer
 
 from dtflow.core.models import Designation, ImageArtifact, ResolvedGenerationRequest, ResourceLimits
 from dtflow.core.png import encode_png
+from dtflow.diagnostics import event as diagnostic_event
 
 log = logging.getLogger(__name__)
 HEADER_BYTES = 68
@@ -77,7 +78,14 @@ def decode_final(tensor: bytes, width: int, height: int, channels: int, index: i
         if (buffer.width, buffer.height, buffer.channels) != (width, height, channels):
             raise TensorRejected("tensor_dimensions_mismatch")
         if log.isEnabledFor(logging.DEBUG):
-            log.debug("final tensor %s", pixel_stats(buffer.data, width, height, channels))
+            diagnostic_event(
+                log,
+                "backend.tensor_statistics",
+                level=logging.DEBUG,
+                data={
+                    "statistics": pixel_stats(buffer.data, width, height, channels),
+                },
+            )
         encoded = encode_png(buffer.data, width, height, channels)
     except TensorRejected:
         raise

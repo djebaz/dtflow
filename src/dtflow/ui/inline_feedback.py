@@ -48,6 +48,8 @@ class InlineFeedback(QObject):
         window.installEventFilter(self)
         self.escape = QShortcut(QKeySequence("Escape"), self.form)
         self.escape.activated.connect(self.dismiss)
+        # Logs registers its own Escape; Qt then delivers ambiguous presses to one shortcut in rotation.
+        self.escape.activatedAmbiguously.connect(self.dismiss)
         self.escape.setEnabled(False)
         QApplication.instance().focusChanged.connect(self._keep_editor_focus)
 
@@ -72,10 +74,14 @@ class InlineFeedback(QObject):
                 self.dismiss()
             return False
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-            if self._armed or self._editor or self.form.isVisible():
+            if self.active():
                 self.dismiss()
                 return True
         return False
+
+    def active(self) -> bool:
+        """True while a pending consent, editor or notice owns Escape."""
+        return bool(self._armed or self._editor or self.form.isVisible())
 
     def reset(self):
         self._watch_outside(False)

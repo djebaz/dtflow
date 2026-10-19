@@ -14,6 +14,8 @@ import time
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
+from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 # Only report waits worth noticing; an uncontended lease is per-image routine.
 _SLOW_LEASE_SECONDS = 0.5
@@ -39,9 +41,13 @@ def windows_originals_bridge(state: Path):
     try:
         return bridge(Path(state))
     except (OSError, UnicodeError, ValueError) as exc:
-        log.debug(
-            "original-image readiness refused reason=%s",
-            exc.reason if isinstance(exc, WindowsBridgeError) else type(exc).__name__,
+        diagnostic_event(
+            log,
+            "originals.readiness_refused",
+            level=logging.DEBUG,
+            data={
+                "reason": exc.reason if isinstance(exc, WindowsBridgeError) else type(exc).__name__,
+            },
         )
         if isinstance(exc, WindowsBridgeError):
             reason = {
@@ -77,11 +83,16 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                 try:
                     stack.enter_context(shared_lock(command, native_state, filename, timeout))
                 except (OSError, UnicodeError, ValueError) as exc:
-                    log.debug(
-                        "original-file lease refused lease=%s boundary=windows reason=%s waited_ms=%d",
-                        filename.removesuffix(".lock"),
-                        type(exc).__name__,
-                        (time.monotonic() - started) * 1000,
+                    diagnostic_event(
+                        log,
+                        "originals.lease_refused",
+                        level=logging.DEBUG,
+                        data={
+                            "lease": filename.removesuffix(".lock"),
+                            "reason": type(exc).__name__,
+                            "waited_ms": (time.monotonic() - started) * 1000,
+                            "boundary": "windows",
+                        },
                     )
                     raise OriginalImagesBusyError("Shared Windows original-file lease could not be acquired.") from exc
                 _log_wait(filename, "windows", started)
@@ -111,10 +122,15 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                 break
             except OSError as exc:
                 if time.monotonic() >= deadline:
-                    log.debug(
-                        "original-file lease timed out lease=%s boundary=native waited_ms=%d",
-                        filename.removesuffix(".lock"),
-                        (time.monotonic() - started) * 1000,
+                    diagnostic_event(
+                        log,
+                        "originals.lease_timed_out",
+                        level=logging.DEBUG,
+                        data={
+                            "lease": filename.removesuffix(".lock"),
+                            "waited_ms": (time.monotonic() - started) * 1000,
+                            "boundary": "native",
+                        },
                     )
                     raise OriginalImagesBusyError(
                         "Original images are busy; wait for active export to finish."
@@ -134,11 +150,15 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
 def _log_wait(filename: str, boundary: str, started: float) -> None:
     waited = time.monotonic() - started
     if waited >= (_SLOW_WINDOWS_LEASE_SECONDS if boundary == "windows" else _SLOW_LEASE_SECONDS):
-        log.debug(
-            "original-file lease contended lease=%s boundary=%s waited_ms=%d",
-            filename.removesuffix(".lock"),
-            boundary,
-            waited * 1000,
+        diagnostic_event(
+            log,
+            "originals.lease_contended",
+            level=logging.DEBUG,
+            data={
+                "lease": filename.removesuffix(".lock"),
+                "boundary": boundary,
+                "waited_ms": waited * 1000,
+            },
         )
 
 

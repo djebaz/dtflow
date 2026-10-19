@@ -8,6 +8,8 @@ import logging
 import threading
 import time
 
+from dtflow.diagnostics import event as diagnostic_event
+
 STARTED = time.perf_counter()
 log = logging.getLogger("dtflow.startup")
 _marks: list[tuple[str, float]] = []
@@ -26,8 +28,17 @@ def report(title: str) -> None:
     with _lock:
         marks = list(_marks)
     previous = STARTED
-    parts = []
+    phase_timings = []
     for name, moment in marks:
-        parts.append(f"{name}={(moment - previous) * 1000:.0f}ms")
+        phase_timings.append({"phase": name, "elapsed_ms": (moment - previous) * 1000})
         previous = moment
-    log.debug("%s: %s total=%.0fms", title, " ".join(parts), (previous - STARTED) * 1000)
+    diagnostic_event(
+        log,
+        "app.startup_timings",
+        level=logging.DEBUG,
+        data={
+            "title": title,
+            "phases": phase_timings,
+            "elapsed_ms": (previous - STARTED) * 1000,
+        },
+    )

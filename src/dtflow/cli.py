@@ -24,6 +24,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.gallery_limits import add_arguments as add_gallery_limit_arguments
 from dtflow.gallery_limits import resolve as resolve_gallery_limits
 from dtflow.logging_setup import LoggingSetupError, configure_logging
@@ -632,7 +633,15 @@ async def run(args: argparse.Namespace) -> int:
             await store.aclose()
     selection = selection_for(args.backend, args.endpoint, args.state, scenario=getattr(args, "scenario", "success"))
     async with open_session(selection, args.state, output=getattr(args, "out", None), timeouts=policy) as service:
-        log.info("command=%s backend=%s", args.command, args.backend)
+        diagnostic_event(
+            log,
+            "cli.command",
+            level=logging.INFO,
+            data={
+                "command": args.command,
+                "backend": args.backend,
+            },
+        )
         if args.command == "check":
             print(json.dumps(asdict(await service.check_connection()), indent=2))
         elif args.command == "models":
@@ -697,16 +706,35 @@ def main(argv: list[str] | None = None) -> int:
             return run_tests(args)
         return asyncio.run(run(args))
     except (KeyboardInterrupt, asyncio.CancelledError):
-        log.warning("interrupted locally")
+        diagnostic_event(
+            log,
+            "cli.interrupted_locally",
+            level=logging.WARNING,
+            data={},
+        )
         print("Local waiting interrupted. Inspect durable attempts; do not replay unknown outcomes.", file=sys.stderr)
         return EXIT_INTERRUPTED
     except ValidationError as exc:
-        log.error("invalid request")
+        diagnostic_event(
+            log,
+            "cli.invalid_request",
+            level=logging.ERROR,
+            data={},
+        )
         print(f"Invalid request: {exc}", file=sys.stderr)
         return EXIT_INVALID
     except BackendError as exc:
         failure = exc.failure
-        log.error("backend failure code=%s category=%s", failure.code, failure.category, exc_info=args.dev)
+        diagnostic_event(
+            log,
+            "cli.backend_failure",
+            level=logging.ERROR,
+            data={
+                "code": failure.code,
+                "category": failure.category,
+            },
+            exc_info=args.dev,
+        )
         print(
             json.dumps(
                 {
@@ -725,7 +753,15 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_INVALID
         return EXIT_FAILED
     except (PersistenceError, OSError, TimeoutError) as exc:
-        log.error("local failure %s", type(exc).__name__, exc_info=args.dev)
+        diagnostic_event(
+            log,
+            "cli.local_failure",
+            level=logging.ERROR,
+            data={
+                "reason": type(exc).__name__,
+            },
+            exc_info=args.dev,
+        )
         print(
             "Local state, output or connectivity operation failed. Inspect attempts before further action.",
             file=sys.stderr,

@@ -1838,3 +1838,25 @@ QPushButton#galleryLoadingRetryButton:hover {
 QPushButton#galleryLoadingRetryButton:focus {
   border-color: ${color.focus};
 }
+
+
+/* Logs workspace: one shared stylesheet; no per-widget Qt stylesheets. */
+#LogsWorkspace { background: ${color.background}; color: ${color.text}; }
+/* Logs actions are standard bordered buttons, matching the workspace mockup and QPushButton tokens. */
+#LogsWorkspace QToolButton { font-weight: ${type.weightLabel}; background-color: ${color.button}; border: 1px solid ${color.buttonBorder}; border-radius: ${size.radius}; color: ${color.buttonText}; min-height: 22px; padding: ${size.radius} 10px; }
+#LogsWorkspace QToolButton:hover { background-color: ${color.buttonHover}; border-color: ${color.buttonBorderHover}; }
+#LogsWorkspace QToolButton:pressed { background-color: ${color.buttonPressed}; }
+#logsNotice { background: ${color.logNoticeSurface}; color: ${color.warning}; border: 1px solid ${color.statusWarningBorder}; border-radius: ${size.radius}; padding: 6px; }
+#logsTable { background: ${color.surface}; alternate-background-color: ${color.itemSurface}; border: 1px solid ${color.sectionBorder}; gridline-color: ${color.sectionBorder}; selection-background-color: ${color.selection}; selection-color: ${color.selectionText}; }
+#logsTable::item:hover { background: ${color.logRowHover}; }
+#logsTable QHeaderView::section { background: ${color.sectionHeader}; color: ${color.text}; padding: 5px; border: 0px; border-right: 1px solid ${color.sectionBorder}; }
+#logsDetail { background: ${color.surface}; border-top: 1px solid ${color.sectionBorder}; }
+#logsDetailText { background: ${color.logCodeSurface}; color: ${color.text}; font-family: "${type.monoFamily}"; }
+#logsCloseButton { color: ${color.dangerText}; background-color: ${color.dangerSurface}; border-color: ${color.dangerBorder}; font-size: 18px; padding: 0px; min-width: 32px; max-width: 32px; }
+#logsCloseButton:hover { background-color: ${color.dangerSurface}; border-color: ${color.error}; }
+#logsStatusButton:checked { background: ${color.selection}; border: 1px solid ${color.selectionBorder}; border-radius: 3px; }
+#logsFollowButton:checked { background-color: ${color.accent}; border-color: ${color.accentEdge}; color: ${color.onAccent}; }
+#logsFollowButton:checked:hover { background-color: ${color.accentHover}; }
+#logsRefreshButton[pending="true"] { border-color: ${color.accent}; }
+#logsCounter { color: ${color.text}; }
+#logsDetailTitle { font-weight: ${type.weightEmphasis}; }

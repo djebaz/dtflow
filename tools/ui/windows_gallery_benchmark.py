@@ -19,6 +19,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from dtflow._diagnostic_reader import EvidenceError, discover, scan
 from tools.ui.gallery_perf_launch import validate_profile
 
 # Each trial differs from production defaults in just one family.
@@ -38,11 +39,6 @@ DEFAULT_GRID_MATRIX = ((20, 50), (20, 100), (50, 150), (100, 300), (200, 600), (
 # Keep the product's actual batch-rounding semantics for each case.
 GRID_MAX_LOAD = 300
 GRID_MAX_CARDS = 1000
-
-SCROLL_INTENT = re.compile(
-    r"gallery_perf phase=scroll_intent\b[^\n]*\bdirection=(forward|backward)\b[^\n]*\bsource=wheel\b"
-)
-QUERY_DONE = re.compile(r"gallery_perf phase=query_done\b[^\n]*\breturned=(\d+)\b[^\n]*\berror=none\b")
 
 
 def load_profiles(path: Path | None, names: list[str] | None) -> dict[str, dict]:
@@ -111,40 +107,61 @@ def _number(value: str) -> float | None:
         return None
 
 
-def summarize_csv(path: Path) -> dict:
-    """Read the application's existing sanitized listener-side gallery CSV.
-
-    These are aggregated diagnostic samples. Their P95 cannot be reconstructed
-    as a global percentile, so only directly observed maxima and medians of
-    recorded per-event means are reported.
-    """
-
+def summarize_jsonl(directory: Path) -> dict:
+    """Preserve recorded per-metric maxima/medians, not global raw-sample percentiles."""
+    sessions = discover(directory)
+    if len(sessions) != 1:
+        raise EvidenceError("expected_one_jsonl_session")
     metrics: dict[tuple[str, str], list[float]] = {}
     events: dict[str, int] = {}
-    with path.open(newline="", encoding="utf-8") as stream:
-        reader = csv.DictReader(stream)
-        required = {"phase", "metric", "samples", "mean", "max"}
-        if not required.issubset(reader.fieldnames or []):
-            raise ValueError("DTFlow gallery CSV schema is missing required fields.")
-        for row in reader:
-            phase = row["phase"]
-            metric = row["metric"]
-            count = int(row["samples"] or 1)
-            events[phase] = events.get(phase, 0) + count
-            number = _number(row["max"])
-            if number is not None and metric:
-                metrics.setdefault((phase, metric), []).append(number)
+    aggregated = set()
+    raw = []
 
-    def maximum(*keys: tuple[str, str]) -> float | None:
-        found = [number for key in keys for number in metrics.get(key, [])]
-        return max(found) if found else None
+    def reset():
+        metrics.clear()
+        events.clear()
+        aggregated.clear()
+        raw.clear()
 
-    def median(phase: str, metric: str) -> float | None:
-        values = metrics.get((phase, metric), [])
+    def add(phase, name, count, maximum):
+        events[phase] = events.get(phase, 0) + count
+        metrics.setdefault((phase, name), []).append(round(float(maximum), 1))
+
+    def collect(record, _ref):
+        name = record["event"]
+        if name == "gallery.performance_aggregate":
+            phase = record["data"]["phase"]
+            aggregated.add(phase)
+            for key, stat in record["agg"]["metrics"].items():
+                add(phase, key, int(stat["count"]), stat["max"])
+        elif name == "gallery.source_summary":
+            data = record["data"]
+            phase, count = data["phase"], data["samples"]
+            for key in ("wall_total_ms", "wall_avg_ms", "wall_max_ms", "cpu_total_ms"):
+                add(phase, key, count, data[key])
+        elif name.startswith("gallery.") and record.get("kind") == "measurement":
+            raw.append((name.removeprefix("gallery."), record.get("data", {})))
+
+    status = scan(directory, sessions[0], on_record=collect, on_reset=reset)
+    if not status.complete:
+        raise EvidenceError("benchmark_" + status.state + ":" + ",".join(status.reasons))
+    for phase, data in raw:
+        if phase in aggregated:
+            continue
+        for key, value in data.items():
+            if type(value) in (int, float):
+                add(phase, key, 1, value)
+
+    def maximum(*keys):
+        values = [n for key in keys for n in metrics.get(key, ())]
+        return max(values) if values else None
+
+    def median(phase, name):
+        values = metrics.get((phase, name), ())
         return round(statistics.median(values), 2) if values else None
 
     if not any(name in events for name in ("query_done", "adjacent_read")):
-        raise ValueError("No successful gallery query diagnostics were recorded.")
+        raise EvidenceError("missing_successful_gallery_query")
     return {
         "query_events": events.get("query_done", 0),
         "adjacent_events": events.get("adjacent_read", 0),
@@ -154,31 +171,39 @@ def summarize_csv(path: Path) -> dict:
         "grid_mount_median_recorded_ms": median("grid_mount_complete", "elapsed_ms"),
         "thumbnail_median_recorded_ms": median("thumbnail_end_to_end_summary", "elapsed_ms"),
         "phase_counts": events,
+        "diagnostic_contract": "jsonl-v1-source-ms-legacy-per-metric-1dp-maxima",
+        "evidence_status": status.state,
     }
 
 
 def _completed_queries(directory: Path) -> dict[tuple, int]:
-    """Read successful completion records with identities stable across rotation."""
-
+    """Fresh query identity uses session and persisted sequence, not path offsets."""
     records = {}
-    for path in directory.glob("dtflow-*.log*"):
-        if "-gallery" in path.name:
-            continue
-        try:
-            with path.open(encoding="utf-8", errors="replace") as stream:
-                identity = os.fstat(stream.fileno())
-                data = stream.read()
-        except OSError:
-            continue
-        for match in QUERY_DONE.finditer(data):
-            key = (identity.st_dev, identity.st_ino, match.start(), match.group(0))
-            records[key] = int(match.group(1))
+    for sid in discover(directory):
+
+        def reset(*, sid=sid):
+            for key in tuple(records):
+                if key[0] == sid:
+                    del records[key]
+
+        def collect(record, _loc, *, sid=sid):
+            data = record.get("data", {})
+            if (
+                record["event"] == "gallery.query_done"
+                and record.get("kind") == "measurement"
+                and type(data.get("returned")) is int
+                and data["returned"] > 0
+                and data.get("error") is None
+            ):
+                records[(sid, record["seq"])] = data["returned"]
+
+        status = scan(directory, sid, on_record=collect, on_reset=reset)
+        if status.state not in ("pending", "complete"):
+            raise EvidenceError("query_evidence_" + status.state)
     return records
 
 
 def _read_query_count(directory: Path) -> int:
-    """Read live query completion records from the rotating text log."""
-
     return max(_completed_queries(directory).values(), default=0)
 
 
@@ -254,6 +279,19 @@ def _gallery_mode_button(window, mode: str, *, timeout: float = 6):
 
     if mode not in {"Grid", "List", "Detail"}:
         raise ValueError(f"Unknown gallery mode: {mode}")
+    if mode == "Grid":
+        control = window.child_window(
+            auto_id=(
+                "QApplication.MainWindow.central.WorkspaceShell.workspaceSplitter."
+                "centerRail.centerStack.GalleryDetailPage.galleryBrandRow."
+                "galleryHeaderScroll.qt_scrollarea_viewport."
+                "galleryHeaderScrollContents.galleryGridButton"
+            ),
+            control_type="CheckBox",
+        )
+        if not control.exists(timeout=timeout):
+            raise LookupError("Windows-observed Grid CheckBox was not found")
+        return control.wrapper_object()
     automation_id = f"gallery{mode}Button"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -393,43 +431,63 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
     raise TimeoutError(f"Page 1 was clicked at {at} but did not become selected.")
 
 
-def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
-    """Poll for the enabled page-1 chip, then click once and start from #1.
+def _grid_batch_button(window, number: int):
+    """Resolve the Windows-observed pager AutomationId, not mutable text.
 
-    No diagnostic log event is required. Only initial pager readiness is
-    gated; subsequent adjacent queries never pause the wheel sender.
+    Accessibility Insights exposes checkable Qt QPushButton pager chips as
+    UIA CheckBox controls. The complete path below was observed for Page 1.
     """
+    if number != 1:
+        raise ValueError("Only Page 1 has a verified Windows AutomationId")
+    chip = window.child_window(
+        auto_id=(
+            "QApplication.MainWindow.central.WorkspaceShell.workspaceSplitter."
+            "centerRail.centerStack.GalleryDetailPage.galleryPagerBar."
+            "galleryPagerChips.galleryPagerPage1"
+        ),
+        control_type="CheckBox",
+    )
+    if not chip.exists(timeout=0) or not chip.is_visible() or not chip.is_enabled():
+        raise LookupError("Verified Page 1 UIA control is not ready")
+    return chip.wrapper_object()
 
+
+def _activate_grid_batch_chip(chip):
+    """Physically click the freshly resolved pager button using the mouse.
+
+    Do not use UIA Invoke: the Windows Grid benchmark needs the real mouse
+    interaction, while the separate footer probe verifies the visible index.
+    """
+    chip.click_input()
+    return "mouse-click"
+
+
+def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
+    """Click the named Page 1 chip and verify the live visible-image range.
+
+    The pager may move or recreate chips. Resolve it by accessible batch name
+    for every attempt; a dispatched click alone is not navigation evidence.
+    """
+    del directory
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
     attempts = 0
     observed = None
-    clicked = False
-    # Kept in the signature for existing callers. Readiness is UI-only.
-    del directory
     while time.monotonic() < deadline:
         try:
-            chip = _button(
-                window,
-                "Jump to image batch 1",
-                automation_id="galleryPagerPage1",
-                timeout=0.01,
-            )
+            lookup_started = time.perf_counter()
+            chip = _grid_batch_button(window, 1)
+            lookup_ms = round((time.perf_counter() - lookup_started) * 1000, 2)
+            attempts += 1
+            click_started = time.perf_counter()
+            method = _activate_grid_batch_chip(chip)
+            click_ms = round((time.perf_counter() - click_started) * 1000, 2)
         except (LookupError, RuntimeError, TimeoutError):
-            # The spinner may be visible and the numbered chips not yet
-            # committed. Retry at roughly five polls per second.
             time.sleep(0.2)
             continue
-
-        if not clicked:
-            try:
-                chip.click_input()
-                attempts += 1
-                clicked = True
-            except (LookupError, RuntimeError, TimeoutError):
-                time.sleep(0.2)
-                continue
+        read_started = time.perf_counter()
         observed = probe.read()
+        footer_read_ms = round((time.perf_counter() - read_started) * 1000, 2)
         if observed is not None and observed.first == 1:
             actions.append(
                 {
@@ -438,6 +496,10 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
                     "visible_first": 1,
                     "source": observed.source,
                     "click_attempts": attempts,
+                    "activation_method": method,
+                    "page_one_lookup_ms": lookup_ms,
+                    "page_one_click_ms": click_ms,
+                    "footer_read_ms": footer_read_ms,
                     "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
                 }
             )
@@ -448,33 +510,40 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
         {
             "action": "click-page-one-start",
             "verified": False,
-            "visible_first": observed.first if observed else None,
+            "visible_first": observed.first if observed is not None else None,
             "click_attempts": attempts,
             "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+            "probe_diagnostics": probe.diagnose() if callable(getattr(probe, "diagnose", None)) else None,
         }
     )
     raise TimeoutError(
-        "Page-1 chip did not become clickable at image 1 before the startup deadline "
-        f"({timeout:g}s; clicked={clicked}, first="
-        f"{observed.first if observed else 'unknown'})."
+        "Grid startup could not verify first visible image 1 after clicking Page 1 "
+        f"({timeout:g}s; attempts={attempts}; "
+        f"first={observed.first if observed is not None else 'unknown'})."
     )
 
 
 def _wheel_intents(directory: Path) -> set[tuple]:
-    """Use existing -x events to verify that the gallery received a wheel."""
-
+    """Only individual wheel receipts, identified by session and sequence."""
     found = set()
-    for path in directory.glob("dtflow-*.log*"):
-        if "-gallery" in path.name:
-            continue
-        try:
-            with path.open(encoding="utf-8", errors="replace") as stream:
-                identity = os.fstat(stream.fileno())
-                data = stream.read()
-        except OSError:
-            continue
-        for match in SCROLL_INTENT.finditer(data):
-            found.add((identity.st_dev, identity.st_ino, match.start(), match.group(1)))
+    for sid in discover(directory):
+
+        def reset(*, sid=sid):
+            found.difference_update({x for x in found if x[0] == sid})
+
+        def collect(record, _loc, *, sid=sid):
+            data = record.get("data", {})
+            if (
+                record["event"] == "gallery.scroll_intent"
+                and record.get("kind") == "measurement"
+                and data.get("source") == "wheel"
+                and data.get("direction") in ("forward", "backward")
+            ):
+                found.add((sid, record["seq"], data["direction"]))
+
+        status = scan(directory, sid, on_record=collect, on_reset=reset)
+        if status.state not in ("pending", "complete"):
+            raise EvidenceError("wheel_evidence_" + status.state)
     return found
 
 
@@ -629,19 +698,14 @@ def _seek_grid_card(
     probe_ms = 0.0
     insufficient_catalogue = False
 
-    # The Grid pager can temporarily report first=1,last=PAGE_SIZE
-    # before its geometry has settled. A large -ml (e.g. 200) therefore
-    # cannot use last >= target as proof of scrolling to card 200.
-    tolerance = min(25, max(10, target // 10))
-
     def at_target(position) -> bool:
         if position is None:
             return False
         if direction > 0:
             return position.first == 1
-        # Compare only the *first visible index*, not total, buffered, or
-        # the potentially stale end of the initially mounted batch.
-        return target - tolerance <= position.first <= target + tolerance
+        # Stop at the first observed image index >= target, including any
+        # overshoot. Do not reverse just to settle within a tolerance band.
+        return position.first >= target
 
     def send_wheel() -> None:
         try:
@@ -649,24 +713,21 @@ def _seek_grid_card(
                 position = state["position"]
                 if at_target(position):
                     break
-                if direction < 0 and position is not None and position.first > target + tolerance:
-                    wheel_direction, notches = 1, 1
-                else:
-                    wheel_direction = direction
-                    distance = (
-                        max(0, target - position.first)
-                        if direction < 0 and position is not None
-                        else max(0, position.first - 1)
-                        if position is not None
-                        else target
-                    )
-                    notches = (
-                        pulse_notches
-                        if distance > 100
-                        else min(pulse_notches, 6)
-                        if distance > 30
-                        else min(pulse_notches, 2)
-                    )
+                wheel_direction = direction
+                distance = (
+                    max(0, target - position.first)
+                    if direction < 0 and position is not None
+                    else max(0, position.first - 1)
+                    if position is not None
+                    else target
+                )
+                notches = (
+                    pulse_notches
+                    if distance > 100
+                    else min(pulse_notches, 6)
+                    if distance > 30
+                    else min(pulse_notches, 2)
+                )
                 sent_at = time.perf_counter()
                 mouse.scroll(coords=coords, wheel_dist=wheel_direction * notches)
                 stats["input_ms"] += (time.perf_counter() - sent_at) * 1000
@@ -689,7 +750,6 @@ def _seek_grid_card(
             observed = probe.read()
             probe_ms += (time.perf_counter() - read_at) * 1000
             if observed is not None:
-                state["position"]
                 state["position"] = observed
                 if furthest is None:
                     furthest = observed.first
@@ -746,9 +806,12 @@ def _seek_grid_card(
         "started_at": started_at,
         "finished_at": ended_at,
         "target_reached": reached,
-        "target_tolerance": tolerance if direction < 0 else 0,
+        "target_tolerance": 0,
         "position_history": history,
+        "position_probe_error": getattr(probe, "last_error", None),
     }
+    if not reached and callable(getattr(probe, "diagnose", None)):
+        action["position_probe_diagnostics"] = probe.diagnose()
     actions.append(action)
     if send_errors:
         raise RuntimeError(f"Grid wheel sender failed: {type(send_errors[0]).__name__}")
@@ -1011,7 +1074,7 @@ def _drive(
     nav.click_input()
     actions.append({"action": "Show saved Images", "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
     record["step"] = "verify-images-workspace"
-    _button(window, "Grid", automation_id="galleryGridButton", timeout=timeout)
+    _gallery_mode_button(window, "Grid", timeout=timeout)
     # The ordinary full-view smoke retains its query-readiness barrier.
     # Grid-matrix runs must begin immediately while the initial query runs.
     if grid_limits is None:
@@ -1027,18 +1090,16 @@ def _drive(
         lambda: _click_gallery_mode(window, "Grid", record.setdefault("setup_actions", [])),
     )
     if grid_limits is not None:
-        # The dedicated limit sweep never opens or modifies the Sort dropdown.
-        # Page 1 is physically clicked both before and after scrolling.
+        # Click the named Page 1 chip, then verify the actual viewport.
         ml, effective_mc = grid_limits
         from tools.ui.grid_scroll_probe import GridProgressProbe
 
         probe = GridProgressProbe(window, directory)
-        # The startup spinner has no numbered chips. Do not start wheel input
-        # until an enabled page-1 chip exists, was clicked, and the viewport
-        # reports first=1. Only this initial readiness gate may wait.
+        # Start only after Page 1 navigation and verified visible image 1.
+        # No Sort dropdown and no diagnostic-query wait on the input path.
         start_ok = _attempt(
             record,
-            "grid-wait-numbered-pages",
+            "grid-click-page-one",
             lambda: _wait_for_grid_page_one(
                 window,
                 probe,
@@ -1059,11 +1120,27 @@ def _drive(
             window.close()
             record["step"] = "wait-for-shutdown"
             return _read_query_count(directory)
-        # Subsequent reads/preparation never pause the scrolling sender.
-        rect = window.rectangle()
-        wheel_point = (
-            (int(rect.left + rect.width() * 0.56), int(rect.top + rect.height() * 0.72)),
-            "window-grid-fast",
+        # First bring the pointer into the numbered gallery navigation;
+        # only then move into the real Grid scroll viewport for wheel input.
+        # Do not aim at an arbitrary percentage of the entire app window.
+        from pywinauto import mouse
+
+        pager_chip = _grid_batch_button(window, 1)
+        pager_rect = pager_chip.rectangle()
+        mouse.move(
+            coords=(
+                int((pager_rect.left + pager_rect.right) / 2),
+                int((pager_rect.top + pager_rect.bottom) / 2),
+            )
+        )
+        wheel_point = _gallery_wheel_point(window, "grid")
+        mouse.move(coords=wheel_point[0])
+        actions.append(
+            {
+                "action": "grid-wheel-pointer-position",
+                "pager_name": pager_chip.element_info.name,
+                "wheel_target": wheel_point[1],
+            }
         )
         pulse_notches = min(12, max(2, scroll_notches // 16))
         # The same saved-image index is targeted for every -ml/-mc case.
@@ -1286,10 +1363,7 @@ def run_trial(
                 grid_seek_timeout=grid_seek_timeout,
             )
             process.wait(timeout=timeout)
-            csvs = sorted(logs.glob("dtflow-*-gallery.csv"))
-            if len(csvs) != 1:
-                raise ValueError("Expected exactly one session gallery CSV.")
-            record["metrics"] = summarize_csv(csvs[0])
+            record["metrics"] = summarize_jsonl(logs)
             if grid_limits is not None:
                 from tools.ui.grid_benchmark_report import analyze_grid_trial
 

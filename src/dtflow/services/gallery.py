@@ -12,6 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
+from dtflow.diagnostics import measurement
 from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as storage
 from dtflow.persistence import gallery_snapshot
@@ -153,14 +154,14 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
             tuple(item_from_record(x, paths, state=state) for x in records), total, query.offset, query.limit
         )
         if dev_enabled():
-            log.debug(
-                "gallery_perf phase=query_worker sql_wall_ms=%.1f sql_cpu_ms=%.1f "
-                "build_wall_ms=%.1f build_cpu_ms=%.1f rows=%d",
-                sql_wall_ms,
-                sql_cpu_ms,
-                (monotonic() - build_started) * 1000,
-                (thread_time() - build_cpu_started) * 1000,
-                len(records),
+            measurement(
+                log,
+                "gallery.query_worker",
+                sql_wall_ms=sql_wall_ms,
+                sql_cpu_ms=sql_cpu_ms,
+                build_wall_ms=(monotonic() - build_started) * 1000,
+                build_cpu_ms=(thread_time() - build_cpu_started) * 1000,
+                rows=len(records),
             )
         return page
 

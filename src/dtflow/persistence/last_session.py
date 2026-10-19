@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from dtflow.diagnostics import event as diagnostic_event
+
 SCHEMA_VERSION = 1
 FILENAME = "last_session.json"
 
@@ -27,10 +29,24 @@ def load_last_session(state: Path) -> dict | None:
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        log.warning("last session ignored reason=unreadable")
+        diagnostic_event(
+            log,
+            "app.session.ignored",
+            level=logging.WARNING,
+            data={
+                "reason": "unreadable",
+            },
+        )
         return None
     if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
-        log.warning("last session ignored reason=schema")
+        diagnostic_event(
+            log,
+            "app.session.ignored",
+            level=logging.WARNING,
+            data={
+                "reason": "schema",
+            },
+        )
         return None
     return document
 

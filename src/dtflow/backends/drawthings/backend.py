@@ -29,7 +29,7 @@ from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
-from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, fallback_spec, model_key
+from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, fallback_spec
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -53,6 +53,7 @@ from dtflow.core.models import (
     eligible_model_ids,
 )
 from dtflow.core.tasks import settle
+from dtflow.diagnostics import event as diagnostic_event
 
 log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
@@ -403,19 +404,26 @@ class DrawThingsBackend:
                         )
                     )
                 if spec:
-                    log.debug(
-                        "model spec sent for %s advertised=%s keys=%s",
-                        request.model_id,
-                        request.model_id in self._model_specs,
-                        sorted(spec),
+                    diagnostic_event(
+                        log,
+                        "backend.model_description_selected",
+                        level=logging.DEBUG,
+                        data={
+                            "model_id": request.model_id,
+                            "advertised": request.model_id in self._model_specs,
+                            "field_count": len(spec),
+                        },
                     )
                 if request.loras:
-                    log.debug(
-                        "loras sent=%s override=%s base_version=%s prepared=%d",
-                        dict(wire.effective_configuration).get("loras"),
-                        wire.message.override.loras.decode() or "none",
-                        base_version,
-                        len(request.prepared_assets),
+                    diagnostic_event(
+                        log,
+                        "backend.loras_selected",
+                        level=logging.DEBUG,
+                        data={
+                            "lora_count": len(request.loras),
+                            "base_version": base_version,
+                            "prepared_count": len(request.prepared_assets),
+                        },
                     )
                 emit("preparing", stage="wire_validated")
                 async with self._lane:
@@ -471,8 +479,12 @@ class DrawThingsBackend:
                         for label in ("initial_metadata", "trailing_metadata"):
                             items = getattr(stream, label, None)
                             if items:
-                                shown = {k: v for k, v in dict(items).items() if "auth" not in k.lower()}
-                                log.debug("grpc %s %s", label, shown)
+                                diagnostic_event(
+                                    log,
+                                    "backend.grpc_metadata_observed",
+                                    level=logging.DEBUG,
+                                    data={"stage": label, "observed": True},
+                                )
                     stage = SubmissionStage.TERMINAL_OBSERVED
                     if len(finals) != expected:
                         code = "no_final_output" if not finals else "incomplete_final_output"
@@ -512,11 +524,11 @@ class DrawThingsBackend:
             return
         seen = {}
         if response.tags:
-            seen["tags"] = list(response.tags)
+            seen["tag_count"] = len(response.tags)
         if response.download_size:
             seen["download_size"] = response.download_size
         if response.remote_download is not None:
-            seen["remote_download"] = str(response.remote_download)[:300]
+            seen["remote_download_present"] = True
         if response.scale_factor:
             seen["scale_factor"] = response.scale_factor
         if response.signposts:
@@ -529,7 +541,7 @@ class DrawThingsBackend:
             seen["images"] = len(response.generated_images)
             seen["image_bytes"] = [len(item) for item in response.generated_images]
         if seen:
-            log.debug("server response %s", seen)
+            diagnostic_event(log, "backend.response_observed", level=logging.DEBUG, data=seen)
 
     @staticmethod
     def _partials(finals: list[ImageArtifact]) -> tuple[ImageArtifact, ...]:
@@ -631,11 +643,12 @@ class DrawThingsBackend:
         self._model_specs = {
             item["file"]: item for item in items if isinstance(item, dict) and isinstance(item.get("file"), str)
         }
-        log.debug("echo model specs=%d files=%s", len(self._model_specs), sorted(self._model_specs))
-        # Model metadata only (no prompts or credentials): shows how the server itself describes newer checkpoints.
-        for file, item in self._model_specs.items():
-            if model_key(file).startswith(("flux_1_dev", "flux_2", "krea_2")):
-                log.debug("server model spec %s: %s", file, json.dumps(item, sort_keys=True))
+        diagnostic_event(
+            log,
+            "backend.model_descriptions_observed",
+            level=logging.DEBUG,
+            data={"model_count": len(self._model_specs)},
+        )
 
     async def _model_spec(self, model_id: str) -> dict | None:
         """The model's description for DT+ cloud, so the server runs it with its full specification.

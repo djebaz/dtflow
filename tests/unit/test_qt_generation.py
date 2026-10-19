@@ -376,11 +376,14 @@ def test_gui_logs_actions_and_results_without_prompts_or_inventory(window, qtbot
     qtbot.waitUntil(settled(window), timeout=5000)
     logs.close()
     text = logs.path.read_text(encoding="utf-8")
-    assert "inventory refresh ok backend=fake" in text and "generate submitted backend=fake" in text
-    assert "generate saved backend=fake" in text
+    rows = [json.loads(line) for line in text.splitlines()]
+    backends = {row["event"]: row.get("data", {}).get("backend") for row in rows}
+    assert backends["inventory.refresh_ok"] == backends["generation.submitted"] == "fake"
+    assert backends["generation.outputs_saved"] == "fake"
     assert "PROMPT-SENTINEL" not in text and "Offline fixture swatch" not in text
-    assert ("generate request model=" in text) is dev
-    assert max(len(line) for line in text.splitlines()) < 300
+    assert ("generation.request_validated" in backends) is dev
+    # Bounded semantic fields, never an inventory or request dump.
+    assert max(len(line) for line in text.splitlines()) < 2000
 
 
 def test_a_failed_generation_logs_the_backend_code_not_just_the_exception_type(window, qtbot, tmp_path, fake):
@@ -391,8 +394,9 @@ def test_a_failed_generation_logs_the_backend_code_not_just_the_exception_type(w
     page.generateButton.click()
     qtbot.waitUntil(settled(window), timeout=5000)
     logs.close()
-    line = next(x for x in logs.path.read_text(encoding="utf-8").splitlines() if "generate failed" in x)
-    assert "BackendError code=" in line and "category=" in line
+    rows = [json.loads(line) for line in logs.path.read_text(encoding="utf-8").splitlines()]
+    failed = next(row["data"] for row in rows if row["event"] == "generation.failed")
+    assert failed["reason"] == "BackendError" and failed["code"] and failed["category"]
 
 
 def test_a_size_that_is_not_a_multiple_of_64_is_adjusted_and_shown(window, qtbot, fake):

@@ -6,6 +6,8 @@ from time import monotonic
 
 from PySide6.QtCore import QObject, QTimer
 
+from dtflow.diagnostics import event as diagnostic_event
+
 log = logging.getLogger(__name__)
 
 
@@ -90,7 +92,14 @@ class GalleryPreparation(QObject):
             # staged widgets. Let the controller report the construction error.
             done = self._done
             self.cancel()
-            log.warning("gallery preparation failed reason=%s", type(exc).__name__)
+            diagnostic_event(
+                log,
+                "gallery.preparation_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
             done(None)
             return
         if self.observe is not None:
