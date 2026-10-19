@@ -549,12 +549,13 @@ def _scroll(
     mean the user's wheel did not scroll the gallery.
     """
 
-    from pywinauto import mouse
-
     if direction not in (-1, 1):
         raise ValueError("Scroll direction must be -1 or 1.")
     if not 12 <= notches <= 240:
         raise ValueError("Scroll notches must be in 12..240.")
+
+    from pywinauto import mouse
+
     coords, source = _gallery_wheel_point(window, mode)
     before = _wheel_intents(directory)
     started = time.perf_counter()
