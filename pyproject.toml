@@ -66,6 +66,10 @@ line-ending = "lf"
 skip-magic-trailing-comma = false
 
 [tool.pytest.ini_options]
+# The Windows benchmark lives in the source-only root tools/ namespace,
+# outside the installed src/dtflow wheel. Keep it importable when the CI
+# executes the pytest console script rather than python -m pytest.
+pythonpath = ["."]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
