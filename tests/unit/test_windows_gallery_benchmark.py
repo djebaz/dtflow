@@ -1328,46 +1328,80 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
 
 
 
-def test_grid_start_does_not_accept_queued_page_one_click(monkeypatch, tmp_path):
+def test_grid_start_polls_until_numbered_chip_is_enabled(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    calls = []
+    lookups = []
+    clicks = []
+
     class Chip:
         def click_input(self):
-            calls.append("clicked")
+            clicks.append("clicked")
+
+    def lookup(*args, **kwargs):
+        lookups.append(kwargs["timeout"])
+        if len(lookups) < 3:
+            raise LookupError("Still showing loading spinner")
+        return Chip()
+
     class Probe:
         def read(self):
             return GridPosition(1, 20, 833, "pager-log")
-    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
-    monkeypatch.setattr(benchmark, "_page_one_jump_events", lambda folder: 0)
+
+    monkeypatch.setattr(benchmark, "_button", lookup)
     actions = []
-    with pytest.raises(TimeoutError, match="not applied"):
-        benchmark._wait_for_grid_page_one(
-            object(), Probe(), actions, directory=tmp_path, timeout=0.1,
-        )
-    assert calls == ["clicked"]
-    assert actions[-1]["verified"] is False
-    assert actions[-1]["applied"] is False
+    benchmark._wait_for_grid_page_one(
+        object(), Probe(), actions, directory=tmp_path, timeout=3,
+    )
+    assert lookups == [0.01, 0.01, 0.01]
+    assert clicks == ["clicked"]
+    assert actions[-1]["verified"] is True
+    assert actions[-1]["visible_first"] == 1
 
 
-def test_grid_start_requires_actual_page_jump_after_click(monkeypatch, tmp_path):
+def test_grid_start_does_not_wait_for_page_jump_log(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    state = {"events": 0}
+    clicks = []
     class Chip:
         def click_input(self):
-            state["events"] = 1
+            clicks.append("clicked")
+
     class Probe:
         def read(self):
             return GridPosition(1, 20, 833, "pager-log")
+
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
-    monkeypatch.setattr(benchmark, "_page_one_jump_events", lambda folder: state["events"])
     actions = []
     benchmark._wait_for_grid_page_one(
         object(), Probe(), actions, directory=tmp_path, timeout=1,
     )
+    assert clicks == ["clicked"]
     assert actions[-1]["verified"] is True
-    assert actions[-1]["applied"] is True
-    assert actions[-1]["visible_first"] == 1
+    assert actions[-1]["click_attempts"] == 1
+
+
+def test_grid_start_rejects_unverified_visible_position(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    clicks = []
+    class Chip:
+        def click_input(self):
+            clicks.append("clicked")
+
+    class Probe:
+        def read(self):
+            return GridPosition(281, 295, 833, "pager-log")
+
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    actions = []
+    with pytest.raises(TimeoutError, match="did not become clickable at image 1"):
+        benchmark._wait_for_grid_page_one(
+            object(), Probe(), actions, directory=tmp_path, timeout=0.12,
+        )
+    assert clicks == ["clicked"]
+    assert actions[-1]["verified"] is False
+    assert actions[-1]["visible_first"] == 281
