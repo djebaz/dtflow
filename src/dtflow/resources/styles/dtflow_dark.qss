@@ -1838,3 +1838,18 @@ QPushButton#galleryLoadingRetryButton:hover {
 QPushButton#galleryLoadingRetryButton:focus {
   border-color: ${color.focus};
 }
+
+
+/* Logs workspace: one shared stylesheet; no per-widget Qt stylesheets. */
+#LogsWorkspace { background: ${color.background}; color: ${color.text}; }
+#LogsWorkspace QToolButton { min-height: 22px; }
+#logsTitle { font-size: ${type.section}; font-weight: ${type.weightEmphasis}; }
+#logsNotice { background: ${color.logNoticeSurface}; color: ${color.warning}; border: 1px solid ${color.statusWarningBorder}; border-radius: ${size.radius}; padding: 6px; }
+#logsTable { background: ${color.surface}; alternate-background-color: ${color.itemSurface}; border: 1px solid ${color.sectionBorder}; gridline-color: ${color.sectionBorder}; selection-background-color: ${color.selection}; selection-color: ${color.selectionText}; }
+#logsTable::item:hover { background: ${color.logRowHover}; }
+#logsTable QHeaderView::section { background: ${color.sectionHeader}; color: ${color.text}; padding: 5px; border: 0px; border-right: 1px solid ${color.sectionBorder}; }
+#logsDetail { background: ${color.surface}; border-top: 1px solid ${color.sectionBorder}; }
+#logsDetailText { background: ${color.logCodeSurface}; color: ${color.text}; font-family: "${type.monoFamily}"; }
+#logsCloseButton { color: ${color.error}; }
+#logsStatusButton:checked { background: ${color.selection}; border: 1px solid ${color.selectionBorder}; border-radius: 3px; }
+#logsFollowButton:checked { background: ${color.accent}; color: ${color.onAccent}; }
