@@ -1432,7 +1432,7 @@ def test_grid_seek_rejects_undersized_catalogue(monkeypatch):
         )
 
 
-def test_grid_seek_overshoot_corrects_direction(monkeypatch):
+def test_grid_seek_overshoot_stops_without_correcting_direction(monkeypatch):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
@@ -1445,8 +1445,6 @@ def test_grid_seek_overshoot_corrects_direction(monkeypatch):
             movements.append(wheel_dist)
             if wheel_dist < 0:
                 state["first"] = 330
-            else:
-                state["first"] = 295
 
     class Probe:
         def read(self):
@@ -1464,8 +1462,9 @@ def test_grid_seek_overshoot_corrects_direction(monkeypatch):
         wheel_point=((600, 400), "grid"),
     )
     assert result["target_reached"]
-    assert movements[0] < 0
-    assert any(movement > 0 for movement in movements)
+    assert result["first_after"] >= 300
+    assert result["target_tolerance"] == 0
+    assert movements and all(movement < 0 for movement in movements)
 
 
 def test_grid_home_corrects_stale_first_card_by_scrolling_up(monkeypatch):
