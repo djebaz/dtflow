@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
-from PySide6.QtGui import QColor, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
 
 from dtflow._diagnostic_export import export_matching
@@ -156,6 +156,11 @@ class LogsWorkspace(QObject):
             lambda: self.form.logsAdvanced.setVisible(not self.form.logsAdvanced.isVisible())
         )
         self.form.logsFollowButton.toggled.connect(self._toggle_follow)
+        chevron = Path(__file__).parents[1] / "resources" / "images" / "gallery" / "chevron-right.svg"
+        self.form.logsDetailCollapse.setIcon(QIcon(str(chevron)))
+        self.form.logsDetailCollapse.setText("")
+        self.form.logsDetailCollapse.setToolTip("Close event details")
+        self.form.logsDetailCollapse.setAccessibleName("Close event details")
         self.form.logsDetailCollapse.clicked.connect(self.form.logsDetail.hide)
         self.form.logsResetFilters.clicked.connect(self.clear_filters)
         self.form.logsCopyVisible.clicked.connect(self.copy_visible)
