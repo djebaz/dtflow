@@ -906,6 +906,17 @@ def render_gallery_composition_states(shell, state, out):
         gallery.pager.present(total=342, visible_start=101, visible_end=124, loaded=200, active_page=2)
         assert gallery.pager.buttons[2].isChecked()
         assert gallery._widget("galleryPagerBar").isVisible()
+        # Global status-bar index is intentionally understated and Images-only.
+        shell._sync_grid_index_status(101, 342)
+        assert shell.grid_index_group.isVisible()
+        assert shell.grid_index_label.text() == "101/342"
+        assert not shell.grid_index_label.hasFrame()
+        snap("images-65a-status-position-subtle")
+        form.generationNavigationButton.click()
+        assert not shell.grid_index_group.isVisible()
+        snap("generation-65b-status-position-hidden")
+        form.imagesNavigationButton.click()
+        assert shell.grid_index_group.isVisible()
         snap("images-65-pager-grid-normal")
         gallery._widget("galleryFocusButton", QPushButton).click()
         try:
