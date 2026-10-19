@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 Grid matrix start validation: Windows 10190307 run targeting image #200 exposed unverified first scroll at image #281 for 80/200 (effective -mc 160). Add independent continuous wheel-up homing to actual visible image #1 before measured down/up journey; record setup time separately, and exclude runs that cannot establish a comparable first-card starting point. Windows rerun pending.
+
 - PR #104 Grid harness follow-up: remove the initial `query_done` and disabled page-1 wait from the Grid matrix, send wheel input concurrently with all initial/adjacent reads and UIA range checks, and print/save direct provisional/verified `-ml/-mc` leaderboard excluding startup GUI stalls and incomplete image-1→target→image-1 journeys. Production gallery defaults unchanged; Windows replay pending.
 
 - PR #104 Grid speed follow-up: owner Windows `10190234.zip` revealed 11–12-second Grid seek legs, with `10:50` missing image #300 and #1 before timeout. Faster 15-ms inter-pulse pacing and up-to-12-notch coarse wheel bursts now target image #300 **within the actual displayed range**; actions retain measured input/probe time. Requires new Windows smoke; no production behavior changed.
