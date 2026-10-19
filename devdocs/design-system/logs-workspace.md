@@ -1,69 +1,67 @@
-# Logs workspace — compact table and inspection design
+# Logs workspace — compact event and characteristic explorer
 
-**Status:** approved design direction for [draft PR #105](../plans/2026-10-19-structured-log-viewer.md), **not yet a native Qt implementation**. [Open the standalone offline concept](../mockups/dtflow_logs_workspace.html). The HTML is review material, not a replacement for the canonical Qt Designer form or `tools/ui/render_states.py`. The [compact JSONL v1 contract](../architecture/diagnostic-event-schema.md) remains storage authority; this document defines only **presentation**.
+**Status:** reviewed design direction for [draft PR #105](../plans/2026-10-19-structured-log-viewer.md), not yet a PySide6 workspace. [Open the standalone offline HTML mockup](../mockups/dtflow_logs_workspace.html). The HTML is a **synthetic interaction study**, never a substitute for Qt Designer or the canonical `tools/ui/render_states.py` previews. The [compact JSONL schema](../architecture/diagnostic-event-schema.md) is storage authority; this is only a view/query contract.
 
-## Design goal
+## Final compact row geometry
 
-Make log browsing **dense, readable and useful for diagnostics**. The compact JSONL shape is intentionally not a table schema: each row displays the most useful projection and the selected record retains full sanitized evidence.
+**Severity stripe | Date / Time | Event | Characteristics**. Three content columns, plus a very narrow non-sortable severity strip. No separate Source, Level, Value or Summary columns.
 
-- One `QTableView` with a custom `QAbstractTableModel`, no per-row widgets or HTML inside Qt. Fixed-height, single-line rows; long text is elided rather than enlarging rows. A persistent selection/detail region may expand independently of row height.
-- **Visual columns:** narrow severity indicator | **Time** | **Source** | **Event / Details** | **Value**. The level indicator is **not** a full text column. `Event / Details` is one flexible Qt table cell with a prominent shortened event name and, where available, a one-line subdued summary; implement with efficient painting/delegate or an equivalent model role, not child widgets.
-- Use the existing design tokens and global table styles. No new theme, global stylesheet overrides, hardcoded palette in Qt code or ornamental colored rows. Selection stays the normal muted-blue selection treatment.
+- **Severity:** 3–4 px indicator showing the **recorded** level only. DEBUG muted gray, INFO quiet neutral, WARNING amber, ERROR/CRITICAL red. Do not make INFO green or promote a DEBUG stall to WARNING. Tooltips, accessible row names, details and severity filter spell out the level; color is never the sole encoding.
+- **Date / Time:** independent fixed-width column, date on first line, source time `HH:mm:ss.SSS` on second, tabular digits. Show full UTC `ts` and selected display timezone on hover/details. Date may be compressed by a day separator only if the full date stays accessible and exact source-time sorting is preserved.
+- **Event:** separate fixed-width column, **one muted colored pill for the entire dotted event identifier** (`gallery.query_summary`, `gallery.gui_gap`, etc.). No split prefix/suffix, underline, wrapping, or per-segment styling. Truncate only visually with ellipsis and full-name tooltip/details; clicks/filters always use the original identifier.
+- **Characteristics:** all remaining width for **multiple** compact colored metric-name chips followed by neutral, unit-bearing values. Semantically order keys, allow no more than two visual lines in each row, and show `+N more` for undisplayed characteristics; expose all in the selectable details inspector. Example names `wall_elapsed_ms`, `sql_wall_ms`, `sql_cpu_ms`, `wall_total_ms`, `mounted`, `mode`, `query_busy`. Do not synthesize unmeasured p95 or choose a single privileged metric. Sanitized `msg` may appear in details, as tooltip, or as a labeled characteristic only when there is room and it is not duplicated.
 
-### Column mapping
+The event name is on **exactly one line** and stays aligned vertically across rows. Use fixed-height compact rows (roughly 46–54 logical px, final Qt sizing through Designer/QSS), no arbitrary content-driven expansion, per-cell widgets or HTML-in-Qt. A simple painted delegate or model presentation role can draw the strip, full-event pill and key chips efficiently. Keep selected row under DTFlow's existing muted-blue selection colors without losing chip contrast.
 
-| Column | Compact display | Full meaning / edge cases |
-| --- | --- | --- |
-| Severity edge | 3–4 logical-pixel colored stripe inside a narrow indicator column | DEBUG neutral muted, INFO neutral/low-emphasis, WARNING amber, ERROR/CRITICAL red. INFO **must not** imply success/green. Severity level remains accessible via tooltip, model accessibility/accessible description and the Details pane; color alone cannot carry status. No badge is required per row. |
-| Time | `HH:mm:ss.SSS`, tabular digits | From source `ts` (UTC, displayed in chosen session/view timezone consistently); date, timezone and complete original UTC source timestamp accessible in details/tooltip. Header sorting uses full timestamp and stable `(session_id,seq)` tie-break, not display string. |
-| Source | Short, readable `component`, e.g. `gallery`, `backend` | The short label must be an unambiguous projection of the stored component, not an invented provider or event category. Expose full original component if abbreviated; keep component filtering independent of event. |
-| Event / Details | Last `event` segment emphasized, plus one ellipsized summary underneath if meaningful | Tooltip/details show complete dotted event. Summary prefers sanitized `msg`; if absent, derive a concise display-only explanation from a **small, explicitly safe projection** of `data`. Never parse old log strings or reinterpret the data contract. For unknown events with no `msg`, display the event identifier alone; never pretend an unknown field is a successful outcome. |
-| Value | Right-aligned primary metric with unit, e.g. `117.4 ms`, `24 items` | Only from typed numeric `data` or `agg` fields using a **reviewed small projection for known events**; unknown event -> em dash (—), not an arbitrary number. Display `0` only if explicitly recorded; never invent a metric or aggregate percentiles. Full measurements remain in Details. |
+### Stable semantic key order — not input JSON order
 
-**Responsive behavior:** optimize for a Windows desktop workspace, not a mobile table. Summary/Details receives remaining width; Source, Time and Value remain readable. At narrower supported widths, reduce flexible summary truncation before discarding the event identity or horizontal metric unit. Avoid a secondary full Level column merely for accessibility.
+The **same key always retains its relative order** against other keys within all records, irrespective of field insertion order, other visible metrics, sorting or session filters. Use a versioned **display-only** ranking applied in the shared projection path for compact rows, inspector and human-oriented CSV projections (raw JSONL exports/copy remain byte-faithful). Within each category, the named sequence is explicit; unknown keys sort last by normalized lowercase key with raw-key tie-break.
 
-## Search and filters
-
-The compact chrome contains current/newest **Session**, search, severity and component/event category filters, follow state, a small match count, and commands within the existing window. The initial UI need not expose a full query-language editor.
-
-- Search matches sanitized messages and safe structured values; filters act across the **whole retained session**, before paging. Underlying reader supports typed predicates (`data.elapsed_ms >= 100`, `data.mode = grid`), event-prefix matching (`gallery.*`), source `ts` ranges and severity; these are reader contracts, not necessarily all visible controls on day one.
-- A concise count is a **snapshot match count**, not a claim that every record is in Qt memory. Distinguish no session, empty session, no matches, loading, pending live session, incomplete/corrupt/rotated session and failed reader.
-- Level/status counts may be shown with tiny colored markers **and text numbers**, but must not become a second column or make ordinary INFO rows look like successes.
-- Default order newest first. Sorting header/query changes pause Follow; so does selecting and inspecting an older row or manual scrolling. Explicit Follow resumes newest. Do not steal selection/scroll position with incoming records.
-
-## Details inspector and commands
-
-Selecting a row opens or updates a **read-only expandable details pane** inside the Logs workspace, not a modal window. Show complete `event`, severity **as text**, full source timestamp/timezone, `component`, `seq`/session, sanitized `msg`, typed `data`, optional `ctx`, error traceback and `agg` metadata. Use selectable monospaced formatting for JSON/traceback. Retain full safe error content only if the accepted JSONL record contains it; show missing/oversized/rotated evidence explicitly.
-
-Keep Refresh, Back, Follow, Copy selected, Copy visible, Copy raw JSONL, Export matching CSV/JSONL, Open raw file and Open folder in the available action chrome/menu; do not remove documented capabilities just to reduce table width. Raw file opening is an explicit local action; clipboard/export uses the shared sanitizer. No delete/clear-log command.
-
-## Offline review states (canonical Phase 3 render definitions)
-
-The eventual real PySide6 Designer workspace must add the following synthetic scenarios to `tools/ui/render_states.py` in the same implementation phase:
-
-1. **Empty session:** complete header/filter chrome and informative empty state.
-2. **Populated mixed severity:** ordinary INFO, DEBUG, WARNING and ERROR, short and long event names, missing `msg`, varied metrics, selected/hover/focus.
-3. **Selected exception:** details expanded, long sanitized traceback and nested typed data, Copy actions; no per-row expansion.
-4. **Reader error/incomplete:** missing startup or segment, malformed/unsupported/oversized record, visible nonmodal incomplete banner; readable rows remain browsable if possible.
-
-A standalone browser mockup may switch among states for conceptual review; these are **not actual native renders**. Per PR owner instructions, Phase 3 defines but does not execute render states. Owner/native Windows screenshots, interaction testing, DPI and large-log responsiveness remain G6 acceptance gates.
-
-## Example mapping
-
-| Stored example | Row projection |
+| Category | Preferred order (left to right) |
 | --- | --- |
-| `{"level":"DEBUG","component":"gallery","event":"gallery.query_done","data":{"elapsed_ms":38.2,"returned":20,"source":"live","error":null}}` | Muted indicator / gallery / **query_done** / “20 images returned · live” / **38.2 ms** |
-| `{"level":"DEBUG","component":"gallery","event":"gallery.gui_gap","data":{"elapsed_ms":117.4,"mounted":100,"mode":"grid"}}` | Muted DEBUG indicator, **not automatic WARNING** / gallery / **gui_gap** / “Grid · 100 mounted” / **117.4 ms** |
-| `{"level":"ERROR","component":"backend","event":"backend.connection_failed","msg":"Connection unavailable"}` | Red edge / backend / **connection_failed** / “Connection unavailable” / — |
-| New `gallery.thumbnail.some_new_sub_event` without known metric | Appropriate level edge / gallery / **some_new_sub_event** / safe `msg` if supplied / — |
+| Primary wall | `wall_elapsed_ms`, `elapsed_ms`, `wall_total_ms`, `build_wall_ms`, `sql_wall_ms` |
+| CPU | `sql_cpu_ms`, `cpu_total_ms`, then other `*_cpu_ms` |
+| Other durations/statistics | `mean_ms`, `p95_ms`, `max_ms`, `max_slice_ms`, then other `*_ms` |
+| Volume | `samples`, `elements`, `returned`, `mounted`, `added`, `removed`, `outputs`, then other counts |
+| Execution context | `mode`, `scale`, `source`, `direction`, `offset`, then other known safe dimensions |
+| Activity / flags | `query_busy`, `preparation_busy`, `retryable`, then other booleans |
+| Extensions | Other safe scalar keys in stable alphabetical order; nested objects/arrays represented conservatively and fully inspected in details |
 
-**Important:** the earlier conceptual mockup used WARNING for a 117 ms `gallery.gui_gap`. The real observed producer logs GUI-gap outliers at DEBUG; presentation must preserve the **recorded severity** rather than promote it for aesthetics. Threshold-specific interest belongs in filters/metrics, not rewritten stored levels.
+Omit missing characteristics without reordering remaining ones. Show `false`, `0` and `null` honestly rather than dropping them as falsey. For aggregates show **real** source-window sample counts and real recorded metrics; source `_PerfBatchStats` has no p95. Unknown ordinary events require **no new registry entry or JSON Schema modification**.
 
-## Relationship to existing authority
+### Three independent visual channels
 
-- [Root DESIGN.md](../../DESIGN.md) and [design system](../design-system/README.md): canonical typography, QSS/tokens, state colors, and Qt workspace layout.
-- [Qt model/view guide](../guides/qt-model-view-patterns.md): background queries, bounded projections, safe row notifications, selection identity and cancellation.
-- [Structured diagnostics architecture](../architecture/structured-diagnostics.md): writer/reader ownership, privacy, incomplete evidence semantics.
-- [PR #105 implementation plan](../plans/2026-10-19-structured-log-viewer.md): remaining features, phase boundaries, exact acceptance gates.
+1. **Severity stripe:** stable semantic level tokens from `tokens.json`; not used to indicate measured duration.
+2. **Full event pill:** deterministic palette index from normalized **complete** dotted event name (e.g. stable BLAKE2 digest modulo a small ordered theme-derived muted palette). Do not depend on list position, filtering, session, Python's salted `hash()`, or alphabetical index of present names. Collisions are allowed: color aids recognition, never unique identity.
+3. **Characteristic-name chips:** same algorithm but keyed by canonical metric name; neutral numeric/text values. No metric-color mapping by position in the row. Normalize names/units consistently and cache bounded unique lookups when implemented. Reuse shared DTFlow design tokens and scoped Qt styling, not a separate runtime stylesheet.
 
-**Verification status:** document and offline concept only; no Python/Qt implementation, rendered Qt screenshots, native smoke tests, schema validator run, or performance benchmarks.
+## Search, filtering and ordering
+
+All controls apply to the **entire retained selected session** through the shared Qt-independent reader *before* 500-row page selection. No proxy-only search of currently loaded rows, and no UI regex parsing of `msg`. The offline HTML mockup demonstrates interaction semantics against just synthetic in-memory data; it does not prove reader throughput or disk identity handling.
+
+| Control | Semantics |
+| --- | --- |
+| **Session** | Current/newest by default; select a retained session. Missing/incomplete status is explicit. |
+| **Search** | Case-insensitive text over safe `msg`, full dotted `event`, `component`, and permitted structured scalar values/keys; combined with all other filters by AND. |
+| **Severity** | All / DEBUG / INFO / WARNING / ERROR / CRITICAL, based on stored level, not metric threshold. |
+| **Component / category** | Exact `component` and optional application/gallery category. Event family is the first dotted segment, a separate prefix predicate. |
+| **Event family** | All or discovered first-segment prefix, e.g. `gallery.*`; never a hardcoded registry. |
+| **Event type** | All or exact full `event`; options are discovered from the selected session and constrained by family. Event pill context action may offer Filter exact event / Filter family / Copy full name. |
+| **Time range** | Inclusive source `ts` bounds with explicit timezone; empty means unbounded. Never compare formatted display strings. |
+| **Structured characteristic** | Choose discovered safe `data.*` key, operator `=`, `!=`, `<`, `<=`, `>`, `>=` (and `contains` for strings), typed value. Require key presence; typed comparisons only; incompatible types do not match, rather than coercing a string into a number. Optionally allow additional predicates later. |
+| **Sort** | Source time (newest/oldest), Event, Component, Severity, and chosen numeric metric when available; ascending/descending toggle. Missing metric last with deterministic `(session_id, seq)` tie-break. Sorting affects full-session results, not just the current page. |
+| **Clear** | Reset query/predicates/sort to newest-first defaults. |
+
+Visible controls may live in a compact primary toolbar plus an expandable **More filters** row rather than all competing with the table at once. Clearly indicate active filters and the **snapshot** match count; differentiate empty session, no matches and partial evidence. Preserve the full `event` in filter values even if the pill is visually truncated.
+
+**Follow:** defaults on for current session, polls only while visible. Selecting/inspecting older evidence, changing filters or using a nondefault sort pauses viewport jumping. Explicit Follow restores newest-first behavior; never steal selection, and never claim new messages exist in the static demo.
+
+## Inspector, actions and states
+
+Selecting a record opens a **read-only details pane**, showing actual level text, full UTC time/timezone, exact full event/component, `seq`/verified session, sanitized `msg`, *all* semantic-order characteristics, nested JSON, `ctx`, `error`/traceback and `agg` where genuinely present. JSON/raw copy retains record identity; raw JSONL copy is not reordered to match presentation. A `+N more` marker is never an indication of lost diagnostics.
+
+Retain Refresh, Back, Follow, Copy selected / visible / raw JSONL, Export matching CSV / JSONL, Open raw file and Open folder. Exports apply matching filters to the whole retained snapshot, are bounded/cancellable, preserve shared privacy rules, and never silently claim complete evidence. No delete-log control.
+
+The real `tools/ui/render_states.py` must define synthetic **empty**, **mixed-severity/populated**, **selected error/details**, and **incomplete/reader error** states when Phase 3 builds the native Designer UI. The HTML mockup has matching preview states but is neither a Qt render nor a substitute for Windows/DPI smoke checks. Follow [DESIGN.md](../../DESIGN.md), [design system](README.md), [Qt model/view guide](../guides/qt-model-view-patterns.md), [schema documentation](../architecture/diagnostic-event-schema.md), and the [binding PR plan/G1–G6](../plans/2026-10-19-structured-log-viewer.md).
+
+**Verification:** UX/documentation proposal only. No native PySide6 implementation, Qt screenshot, benchmark, storage-size comparison, or live session validation.
