@@ -460,9 +460,9 @@ def _activate_grid_batch_chip(chip):
 
 
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
-    """Select Newest once if necessary and verify the actual Grid start.
+    """Select Newest exactly once and verify the actual Grid start.
 
-    Do not toggle Oldest/Newest, retry an already-selected chip, or treat
+    Do not toggle Oldest/Newest, retry pager chips, or treat
     a successful UIA click/checked state as evidence that image 1 is visible.
     """
     del directory  # No query-log barrier on the Grid input path.
@@ -470,13 +470,23 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Pa
     deadline = time.monotonic() + timeout
     combo = window.child_window(title="Sort saved outputs", control_type="ComboBox")
     combo.wait("exists visible enabled", timeout=timeout)
-    sort_changed = False
-    if combo.selected_text() != "Newest first":
-        combo.click_input()
-        option = combo.child_window(title="Newest first", control_type="ListItem")
-        option.wait("exists visible enabled", timeout=timeout)
-        option.click_input()
-        sort_changed = True
+    # Always perform the requested single Newest selection. The default
+    # already says "Newest first", so skipping it produced no popup action.
+    # A same-value selection may not reset the gallery; the independent
+    # viewport check below still decides whether startup succeeded.
+    previous_sort = combo.selected_text()
+    combo.click_input()
+    option = combo.child_window(title="Newest first", control_type="ListItem")
+    option.wait("exists visible enabled", timeout=timeout)
+    option.click_input()
+    sort_changed = previous_sort != "Newest first"
+    actions.append({
+        "action": "grid-select-newest",
+        "previous_sort": previous_sort,
+        "selected": "Newest first",
+        "selection_attempted": True,
+        "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
+    })
 
     observed = None
     while time.monotonic() < deadline:
