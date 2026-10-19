@@ -115,6 +115,44 @@ def apply_profile(profile: dict) -> None:
     gallery_page.GalleryPage.__init__ = benchmark_init
 
 
+
+def enable_grid_progress_logging() -> None:
+    """Expose visible image indices in development logs for the Grid matrix only.
+
+    GalleryPager.present already receives the calculated visible range.
+    Observing its arguments avoids an extra Qt layout traversal on each wheel
+    event and does not affect non-matrix or production sessions.
+    """
+
+    import logging
+    from time import monotonic
+
+    from dtflow.ui.gallery_pager import GalleryPager
+
+    original = GalleryPager.present
+    logger = logging.getLogger("dtflow.ui.gallery_page")
+    sampled = {"first": None, "time": 0.0}
+
+    def observed(self, *, total, visible_start, visible_end, loaded, **kwargs):
+        result = original(
+            self, total=total, visible_start=visible_start,
+            visible_end=visible_end, loaded=loaded, **kwargs,
+        )
+        now = monotonic()
+        if (
+            visible_start != sampled["first"]
+            and (now - sampled["time"] >= 0.07 or visible_start <= 1)
+        ):
+            sampled["first"], sampled["time"] = visible_start, now
+            logger.debug(
+                "gallery_perf phase=benchmark_view first=%d last=%d total=%d loaded=%d",
+                visible_start, visible_end, total, loaded,
+            )
+        return result
+
+    GalleryPager.present = observed
+
+
 def main(argv: list[str] | None = None) -> int:
     """Launch native DTFlow with one benchmark profile and existing -x logs."""
 
@@ -127,6 +165,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="Gallery batch size passed as DTFlow -ml (default: 20).")
     parser.add_argument("--mc", type=int, default=100,
                         help="Gallery mounted-card cap passed as DTFlow -mc (default: 100).")
+    parser.add_argument(
+        "--grid-progress", action="store_true",
+        help="Emit Grid matrix visible-index telemetry from pager updates.",
+    )
     args = parser.parse_args(argv)
     from dtflow.gallery_limits import resolve as resolve_gallery_limits
 
@@ -142,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         temporary.write_text(json.dumps({"pid": os.getpid()}) + "\n", encoding="utf-8", newline="\n")
         temporary.replace(args.pid_file)
     apply_profile(profile)
+    if args.grid_progress:
+        enable_grid_progress_logging()
     from dtflow.cli import main as dtflow_main
 
     cli = ["-x", "-q", str(args.logs), "gui", "-ml", str(ml), "-mc", str(mc), "-format", "jpg"]
