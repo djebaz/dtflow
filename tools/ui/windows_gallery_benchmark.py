@@ -419,89 +419,72 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
 
 
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
-    """Verify a real page 2 -> page 1 navigation before the Grid sweep.
+    """Verify page 2 -> page 1 using fresh UIA targets after pager reflow.
 
-    A selected page-one chip may do nothing on click. Never infer that a
-    click_input() return value or the chip's checked state proves navigation.
+    The pager can recreate/reposition its chips after each page transition.
+    Click only a newly resolved, enabled chip with the requested automation ID;
+    independently verify the first visible image, never the pointer position.
     """
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
     attempts = {2: 0, 1: 0}
     observed = None
     phase = 2
-    # The startup gate is based on visible images, not log-flush timing.
-    del directory
+    del directory  # Readiness depends on the actual viewport, not log delivery.
 
     while time.monotonic() < deadline:
         try:
             chip = _button(
-                window,
-                f"Jump to image batch {phase}",
-                automation_id=f"galleryPagerPage{phase}",
-                timeout=0.01,
+                window, f"Jump to image batch {phase}",
+                automation_id=f"galleryPagerPage{phase}", timeout=0.01,
             )
+            # Avoid accidentally clicking a repositioned neighbour: the
+            # requested control must still carry the expected UIA identity.
+            info = chip.element_info
+            expected = f"galleryPagerPage{phase}"
+            if getattr(info, "automation_id", "") != expected and (
+                getattr(info, "name", "") != f"Jump to image batch {phase}"
+            ):
+                raise LookupError("pager_identity_changed")
+            rect = chip.rectangle()
+            if rect.width() <= 0 or rect.height() <= 0:
+                raise LookupError("pager_geometry_unavailable")
         except (LookupError, RuntimeError, TimeoutError):
             time.sleep(0.2)
             continue
 
-        # Do not treat page-one's initial position as successful navigation:
-        # we deliberately require a verified departure to page two first.
         observed = probe.read()
-        if phase == 2 and observed is not None and observed.first > 1:
+        if phase == 2 and observed is not None and observed.first >= 21:
             actions.append({
                 "action": "click-page-two-start",
-                "verified": True,
-                "visible_first": observed.first,
-                "source": observed.source,
-                "click_attempts": attempts[2],
+                "verified": True, "visible_first": observed.first,
+                "source": observed.source, "click_attempts": attempts[2],
             })
             phase = 1
+            # Reacquire the newly positioned page-one chip in the next loop.
             continue
         if phase == 1 and observed is not None and observed.first == 1:
             actions.append({
                 "action": "click-page-one-start",
-                "verified": True,
-                "visible_first": 1,
-                "source": observed.source,
-                "click_attempts": attempts[1],
+                "verified": True, "visible_first": 1,
+                "source": observed.source, "click_attempts": attempts[1],
                 "page_two_verified": True,
                 "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
             })
             return
 
         try:
+            # The wrapper was resolved AFTER the previous transition; Qt may
+            # have moved page one to the left of the selected page-two chip.
             attempts[phase] += 1
             chip.click_input()
         except (LookupError, RuntimeError, TimeoutError):
             time.sleep(0.2)
             continue
-
-        observed = probe.read()
-        if phase == 2 and observed is not None and observed.first > 1:
-            actions.append({
-                "action": "click-page-two-start",
-                "verified": True,
-                "visible_first": observed.first,
-                "source": observed.source,
-                "click_attempts": attempts[2],
-            })
-            phase = 1
-        elif phase == 1 and observed is not None and observed.first == 1:
-            actions.append({
-                "action": "click-page-one-start",
-                "verified": True,
-                "visible_first": 1,
-                "source": observed.source,
-                "click_attempts": attempts[1],
-                "page_two_verified": True,
-                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-            })
-            return
         time.sleep(0.2)
 
     actions.append({
-        "action": "click-page-one-start",
-        "verified": False,
+        "action": "click-page-one-start", "verified": False,
         "phase": f"page-{phase}",
         "visible_first": observed.first if observed else None,
         "page_two_click_attempts": attempts[2],
