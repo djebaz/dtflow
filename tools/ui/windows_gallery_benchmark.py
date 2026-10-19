@@ -460,61 +460,48 @@ def _activate_grid_batch_chip(chip):
 
 
 def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
-    """Select Newest exactly once and verify the actual Grid start.
+    """Click the named Page 1 chip and verify the live visible-image range.
 
-    Do not toggle Oldest/Newest, retry pager chips, or treat
-    a successful UIA click/checked state as evidence that image 1 is visible.
+    The pager may move or recreate chips. Resolve it by accessible batch name
+    for every attempt; a dispatched click alone is not navigation evidence.
     """
-    del directory  # No query-log barrier on the Grid input path.
+    del directory
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
-    combo = window.child_window(title="Sort saved outputs", control_type="ComboBox")
-    combo.wait("exists visible enabled", timeout=timeout)
-    # Always perform the requested single Newest selection. The default
-    # already says "Newest first", so skipping it produced no popup action.
-    # A same-value selection may not reset the gallery; the independent
-    # viewport check below still decides whether startup succeeded.
-    previous_sort = combo.selected_text()
-    combo.click_input()
-    option = combo.child_window(title="Newest first", control_type="ListItem")
-    option.wait("exists visible enabled", timeout=timeout)
-    option.click_input()
-    sort_changed = previous_sort != "Newest first"
-    actions.append({
-        "action": "grid-select-newest",
-        "previous_sort": previous_sort,
-        "selected": "Newest first",
-        "selection_attempted": True,
-        "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
-    })
-
+    attempts = 0
     observed = None
     while time.monotonic() < deadline:
-        if combo.selected_text() == "Newest first":
-            observed = probe.read()
-            if observed is not None and observed.first == 1:
-                actions.append({
-                    "action": "grid-start-newest",
-                    "verified": True,
-                    "sort_changed": sort_changed,
-                    "visible_first": 1,
-                    "source": observed.source,
-                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-                })
-                return
+        try:
+            chip = _grid_batch_button(window, 1)
+            attempts += 1
+            method = _activate_grid_batch_chip(chip)
+        except (LookupError, RuntimeError, TimeoutError):
+            time.sleep(0.2)
+            continue
+        observed = probe.read()
+        if observed is not None and observed.first == 1:
+            actions.append({
+                "action": "click-page-one-start",
+                "verified": True,
+                "visible_first": 1,
+                "source": observed.source,
+                "click_attempts": attempts,
+                "activation_method": method,
+                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+            })
+            return
         time.sleep(0.2)
 
     actions.append({
-        "action": "grid-start-newest",
+        "action": "click-page-one-start",
         "verified": False,
-        "sort_changed": sort_changed,
-        "selected_sort": combo.selected_text(),
         "visible_first": observed.first if observed is not None else None,
+        "click_attempts": attempts,
         "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
     })
     raise TimeoutError(
-        "Grid startup did not reach first visible image 1 with Newest first "
-        f"({timeout:g}s; sort_changed={sort_changed}; "
+        "Grid startup could not verify first visible image 1 after clicking Page 1 "
+        f"({timeout:g}s; attempts={attempts}; "
         f"first={observed.first if observed is not None else 'unknown'})."
     )
 
@@ -1092,16 +1079,16 @@ def _drive(
         lambda: _click_gallery_mode(window, "Grid", record.setdefault("setup_actions", [])),
     )
     if grid_limits is not None:
-        # Set Newest once for the dedicated sweep, then verify the actual viewport.
+        # Click the named Page 1 chip, then verify the actual viewport.
         ml, effective_mc = grid_limits
         from tools.ui.grid_scroll_probe import GridProgressProbe
 
         probe = GridProgressProbe(window, directory)
-        # Start only after Newest is selected and the viewport reports image 1.
-        # No sort round trip and no diagnostic-query wait on the input path.
+        # Start only after Page 1 navigation and verified visible image 1.
+        # No Sort dropdown and no diagnostic-query wait on the input path.
         start_ok = _attempt(
             record,
-            "grid-start-newest",
+            "grid-click-page-one",
             lambda: _wait_for_grid_page_one(
                 window,
                 probe,
