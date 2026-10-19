@@ -1,8 +1,26 @@
 # DTFlow Initial Development Plan
 
-**Status:** Planning — backend and CLI-first sequence  
+**Status:** Active master plan — reconciled for 5.0.0 preparation on 2026-10-19  
 **Product:** DTFlow (DTF)  
 **Repository:** `djebaz/dtflow`
+
+## Current delivery map — 2026-10-19
+
+This remains the engineering master plan. The original sequence and scenario IDs below define scope and testing ownership; future-tense requirements are not a statement that implemented work is absent. This reconciliation uses merged main `d846f7c` after PR #105 and the [5.0.0 release preparation](2026-10-19-release-5.0.0.md). Published 4.0.0 and proposed 5.0.0 are application releases, not phase-completion numbers.
+
+| Phase / area | Implemented scope | Remaining scope or evidence |
+| --- | --- | --- |
+| 1–3 — Connectivity, backends and CLI | Bounded feasibility proof; fake/local/direct-cloud adapters; shared CLI/services, durable attempts, rolling queues and separate cloud-asset receipts/actions. | Advertise only evidenced backend/model combinations. Remote cancellation, reattachment, billing and broad compatibility are not inferred from source or probe success. See [backend plan](phase-2-backends.md) and [CLI plan](phase-3-cli.md). |
+| 4–5 — Qt workspace | Connection, Generate and Queues are wired to shared services; credential storage, identity, inventory, configuration/LoRA/asset actions, progress and queue controls are implemented. | Historical offline/owner evidence stays scoped to its head and environment. Final clean 5.0.0 Windows artifact acceptance is separate. |
+| 6 — Planning | Seed, Pair and Cross expansion, bounds/dry runs and CLI/Qt queue composition are implemented. PR #66 adds Qt staged-edit strength planning. | Generic CLI generation/configuration/plan-file paths remain txt2img-only; staged edits cannot vary image size. See [queue planning](2026-10-04-phase-6-queue-planning.md) and [edit queues](2026-10-10-inpaint-queues.md). |
+| 7 — Advanced scheduling | Existing rolling dispatch belongs to Phase 3B. | Priorities, fairness and adaptive scheduling remain later capability-driven work; no completion is declared here. |
+| 8A–8D — Daily-use Images and presets | Grid/List/Detail browsing, presets, reuse/regeneration, cache management and JPEG export. Gallery follow-ups deliver 20/100 defaults, bounded reads, incremental preparation/mounting and thumbnail caching. | Native preset round trips and packaged/DPI/performance evidence retain their recorded limits. Cache byte budgets, cleanup races and larger-window startup stalls remain in the [gallery audit](2026-10-17-images-hybrid-pagination.md). |
+| 8E — Selection and removal | Multi-selection/filter-wide scope, Trash/Delete, durable outcomes, missing-original handling, snapshots and guarded Windows/WSL1 access are implemented, including PR #76. | Verified recovery/reintroduction and other organisation features are later work. WSL2 shared-original locking is [#77](https://github.com/djebaz/dtflow/issues/77); concurrent cross-OS state writers remain unsupported. |
+| 9 — Image operations | PR #64 delivers shared preparation, request v2/DB v3 migration, permit-scoped image dispatch, raw/final saving, an Inpaint editor and local smart selection. PR #66 delivers paused staged-edit queues. | Owner confirmed older-CPU ONNX selection compatibility; this does not complete all 9A–9C scenarios or establish arbitrary checkpoint/control/reference support. Exact 5.0.0 packaged acceptance remains separate. |
+| 10–11 — Workflows and broader cloud | Existing narrow direct-cloud foundations belong to Phases 2–3; the image-operation slices above extend them. | Workflow files/visual authoring, broader media/control support, PAYG and further cloud hardening remain later scope. |
+| Diagnostics and UI evidence | PR #105 delivers structured JSONL, shared reader/exports, benchmark consumers and native Logs, including whole-millisecond display and offline state definitions. | [#106](https://github.com/djebaz/dtflow/issues/106): full memory budgets/export cancellation; [#107](https://github.com/djebaz/dtflow/issues/107): faults/native benchmarks/storage/policy and strict CI gating; [#108](https://github.com/djebaz/dtflow/issues/108): remaining Logs UI differences. [#88](https://github.com/djebaz/dtflow/issues/88) retains remaining render-fixture/stall/native-review work. |
+
+Source delivery, recorded owner acceptance and final executable acceptance are different evidence. This documentation update runs no tests, renders, builds, model inference or provider calls. Use the linked plans for scenario-specific evidence and the [release guide](../guides/releasing.md) for final commit/artifact identity, owner smoke and publication sequencing. Open issues above are not completed by preparing 5.0.0.
 
 ## 1. Product vision
 
@@ -10,7 +28,7 @@ DTFlow is a Windows desktop application for workflows, generation, and automatio
 
 Direct DT+ Cloud Compute is the primary expected production backend. Local Draw Things gRPC remains a supported runtime backend and the frequent development and smoke-test path. The application should provide a durable desktop layer for connections, generation jobs, queues, presets, galleries, and eventually multi-step workflows without coupling the user interface to Draw Things protocol details.
 
-Phase 2 will introduce Draw Things gRPC, a narrow direct DT+ Cloud Compute backend, and an explicitly selected fake backend behind one application contract. Broader cloud features remain later work.
+Phase 2 introduced Draw Things gRPC, a narrow direct DT+ Cloud Compute backend, and an explicitly selected fake backend behind one application contract. Broader cloud features remain later work.
 
 ## 2. Engineering principles
 
@@ -182,8 +200,8 @@ Existing or future Draw Things helper scripts belong under tooling rather than t
 - `pyproject.toml` is the canonical Python project/dependency configuration and `uv.lock` is tracked for reproducible development and builds.
 - Use `uv sync` for environment setup/synchronization and `uv run` for project commands and tools.
 - Do not maintain a parallel hand-edited `requirements.txt`; add an exported compatibility file only if a concrete external integration requires it.
-- Development application state and backend-neutral outputs live under ignored `.dtflow/`. Retained live-test evidence uses ignored `test-runs/<run-id>/`; offline tests use temporary directories. Follow [the runtime layout](../architecture/runtime-layout.md), including flat inventory names and an independent integer cache format version. Use `local_inventory.json`, `cloud_inventory.json` and `lora_inventory.json` without endpoint hashes in filenames; record connection observations inside JSON. The derived LoRA cache writer exists; raw application inventory disk caching remains planned. No old-tree migration or fallback is required.
-- Development diagnostic logs live under repository-root `logs/`, already ignored; `tmp/` remains disposable scratch. Packaged Windows logs default to `%LOCALAPPDATA%\DTFlow\logs\`, with an explicit location override when implemented.
+- Development application state and backend-neutral outputs live under ignored `.dtflow/`. Retained live-test evidence uses ignored `test-runs/<run-id>/`; offline tests use temporary directories. Follow [the runtime layout](../architecture/runtime-layout.md), including flat inventory names and an independent integer cache format version. Use `local_inventory.json`, `cloud_inventory.json` and `lora_inventory.json` without endpoint hashes in filenames; record connection observations inside JSON. Derived LoRA and raw local/cloud inventory disk caching are implemented; cached display observations never replace live generation preflight. No old-tree migration or fallback is required.
+- Development diagnostic logs live under repository-root `logs/`, already ignored; `tmp/` remains disposable scratch. Packaged Windows logs default to `%LOCALAPPDATA%\DTFlow\logs\`, with the implemented `-q` / `--logs` override honored by the native Logs reader.
 - Packaged Windows builds use the platform-local application data location by default rather than writing beside the executable; an explicit DTFlow home override may be added for development/portable use.
 - Cache is disposable and must remain separate from durable application state. Cache storage should be split into type-specific subdirectories so categories can be measured and purged independently.
 - Cache size visibility and manual/automatic cleanup should be implemented early because generated images and derived assets can become large.
@@ -234,7 +252,7 @@ Investigate portable Windows packaging and dependency distribution in the parall
 
 Deliver a usable source-run command-line application before introducing Qt. Packaging initially targets the Qt application; a separate packaged CLI is outside scope. Follow [the Phase 3 CLI plan](phase-3-cli.md).
 
-Introduce shared logging with rotating UTF-8 files, normal and explicit development detail levels, build/session/job correlation and secret sanitization. Development logs use repository-root `logs/`; packaged Windows builds use per-user application data. Logging is independent of cache bypass and durable execution records.
+Shared logging is implemented, extended by PR #105 to one rotating UTF-8 JSONL diagnostic stream with normal/development detail, build/session/job correlation, secret sanitization, a shared Qt-free reader and explicit exports. Development logs use repository-root `logs/`; packaged Windows builds use per-user application data. Historical text/CSV remains untouched; automatic gallery CSV is superseded. The native Logs workspace browses retained evidence without becoming durable execution authority. Logging is independent of cache bypass and durable execution records. Full pipeline budgets, cancellation, native/fault/policy acceptance and UI deltas remain #106–#108; see the [delivery audit](2026-10-19-structured-log-viewer.md).
 
 Expose the `dtflow` entry point for backend selection, non-generative connectivity checks, model inventory with explicit refresh and backend provenance, and complete text-to-image generation through fake, Draw Things gRPC and direct DT+ adapters.
 
@@ -280,9 +298,9 @@ After restart, restore the queue paused with unresolved reservations intact. Ord
 
 ### Phase 4 — Minimal Qt shell and connection management
 
-**Implementation status:** the shell, background execution boundary, connection presentation, credential entry wiring, identity display and headless separation (4-O1 to 4-O6) are implemented and offline-validated on Linux (`dtflow gui`). Not yet verified: the real Windows Credential Manager boundary, a Windows launch, and PyInstaller packaging of the Qt shell. Defaults chosen: `keyring` with a Windows-vault-only backend check; the GUI never stores the local shared secret (environment only); no generation, queue or LoRA controls (Phase 5).
+**Implementation status (2026-10-19):** shell, background execution, connection presentation, credential entry/storage wiring, identity and headless separation are implemented. The original Linux offline shell evidence covered 4-O1 to 4-O6; later Generate/Queues/LoRA controls are implemented in Phase 5. Credential storage uses `keyring` with a Windows-vault-only backend check; the local shared secret remains environment-only. Do not interpret the early shell checkpoint as current feature absence or as acceptance of the final 5.0.0 Windows executable.
 
-The desktop presentation contract is tracked separately in [the Qt UX design plan](2026-10-04-qt-ux-design.md), with shell composition tracked in [the workspace navigation plan](2026-10-04-qt-workspace-navigation.md). Canonical forms live under `src/dtflow/ui/forms/` and share one application stylesheet under `src/dtflow/resources/styles/`. The shell can display the generation and queue forms as explicitly disabled previews. They define Phase 5 layout, object names and custom-widget/model seams only; preview visibility does not claim that Phase 5 workflows are wired or usable.
+The desktop presentation contract is tracked separately in [the Qt UX design plan](2026-10-04-qt-ux-design.md), with shell composition tracked in [the workspace navigation plan](2026-10-04-qt-workspace-navigation.md). Canonical forms live under `src/dtflow/ui/forms/` and share one application stylesheet under `src/dtflow/resources/styles/`. Generate and Queues now use those canonical forms with shared-service wiring. The original disabled previews were an earlier layout checkpoint, not the current implementation status.
 
 Create the PySide6 application shell and canonical Qt Designer sources after both Phase 3A and Phase 3B CLI/service acceptance gates pass.
 
@@ -358,6 +376,8 @@ These live workflows prove desktop composition, not backend protocol correctness
 
 ### Phase 6 — Queue planning and batch expansion
 
+**Implementation status (2026-10-19):** bounded Seed/Pair/Cross planning and dry-run inspection are implemented through the shared planner and CLI/Qt queue paths. The later [PR #66 staged-edit path](2026-10-10-inpaint-queues.md) adds per-item consent, durable inputs and strength planning only for the dedicated Qt edit flow; it does not enable image operations in generic CLI plans/configuration.
+
 The detailed, PR-sequenced plan is [Phase 6 queue planning](2026-10-04-phase-6-queue-planning.md); it delivers a pure planner (seed, pair and cross modes with arithmetic bounds and a dry run) reused by the CLI and the Queues page.
 
 Extend the Phase 3B durable queue with bounded pair/cross-product planning, dry-run inspection and resolved request expansion. Reuse the existing scheduler and reconciliation; basic queue execution is already required before Qt.
@@ -381,7 +401,9 @@ Testing is capability-driven rather than an upfront exhaustive matrix. Each adva
 
 ### Phase 8 — Gallery and presets
 
-Add output browsing, generation metadata inspection, reusable presets, and regeneration/reuse flows.
+**Implementation status (2026-10-19):** 8A–8D browsing, metadata, presets, reuse/regeneration and disposable-cache management are implemented. JPEG export and shared export controls are implemented. Subsequent gallery work adds 20 images per batch / at most 100 mounted cards by default, incremental preparation/mounting, bounded reads and 600 px JPEG/WebP thumbnail caching. Source options retain whole-batch cap rounding. See the [gallery delivery and limits](2026-10-17-images-hybrid-pagination.md) and [current release scope](../releases/v5.0.0.md); entry-count eviction is not a byte-budget guarantee.
+
+The original scope is output browsing, generation metadata inspection, reusable presets, and regeneration/reuse flows.
 
 The [JPEG export follow-up](2026-10-09-jpeg-image-export.md) adds a copy-only export
 hub in Connection's middle panel. Normal JPGs live at the selected folder root, with
@@ -408,10 +430,17 @@ No live generation is required solely for gallery or preset acceptance.
 
 The [Qt system Trash follow-up](2026-10-09-qt-system-trash.md) provides a source-level portable adapter without changing Phase 8E durable/recovery acceptance gates; Debian/macOS app certification remains separate.
 
-Planned separately from the implemented 8A–8D scope: add multi-image selection in Images and bulk deletion of selected saved originals or all images matching the current gallery filter across all pages. Require confirmation showing the affected count, preserve exported copies/unrelated outputs and execution audit history, reconcile artifact availability and report partial failures without regeneration or attempt replay. See the [8E image-management plan](2026-10-09-phase-8e-image-management.md); deletion/recovery policy and selection lifetime must be settled before implementation. Other organisation candidates are not implicitly approved.
+**Implementation status (2026-10-19):** multi-image selection and selected/filter-wide removal are implemented. PR #76 adds explicit Trash/permanent Delete, fresh consent, separate per-file durable outcomes, missing-original handling, raw/final disposal and guarded Windows/WSL1 original access. Read-only snapshot fallback never authorizes removal/export. Owner source-smoke acceptance is recorded in the [removal plan](2026-10-17-image-removal-modes.md); final 5.0.0 packaged acceptance remains separate.
+
+Preserve exported copies, unrelated outputs, metadata and execution history; report partial/uncertain outcomes without regeneration or replay. Verified recovery/reintroduction, favourites/tags/collections and other organisation candidates remain later scope. WSL2 is #77 and concurrent Windows/WSL state writers remain unsupported. The [8E image-management plan](2026-10-09-phase-8e-image-management.md) retains the original scope and scenario ownership.
+
 ### Phase 9 — Advanced image operations
 
-Draft PR #64 starts a [backend-first 9A/9B/9C integration](2026-10-10-smart-mask-inpainting.md), not a declaration that earlier image-operation slices are implemented. Headless preparation/compositing, durable input snapshot/restore and provider-local tensor-encoding building blocks are source-present only; request v2 and backed-up DB v3 migration are also source-present with explicit queue/plan/config refusals. Permit-gated single-shot session/wire dispatch and raw/final saving are source-present, including worker file preparation; no permits ship and no checkpoint acceptance is established. Owner checkpoint acceptance and editor/analysis remain pending. No tests or inference under fast-implement. See [image-operation architecture](../architecture/image-operations.md).
+**Implementation status (2026-10-19):** merged PR #64 implements shared source/mask preparation and compositing, immutable durable inputs, request/attempt metadata v2, backed-up execution DB v3 migration, provider-local tensor encoding, permit-scoped dispatch and raw/final saving. The inline Inpaint editor is wired with Source/Mask/Result, manual masks, undo/redo, Grow/Feather/Strength/Keep-outside, result-as-source and local owner-selected ONNX person/part models. No weights are bundled or automatically downloaded.
+
+The owner passed the first bounded bridge/direct-cloud image-operation gate, recorded in [the 2026-10-10 acceptance note](../research/image-operation-owner-acceptance-2026-10-10.md), and confirmed older-CPU ONNX selection compatibility on 2026-10-19. These observations do not certify arbitrary checkpoints/models, every 9A–9C scenario, or the final clean 5.0.0 EXE. Preserve normalization/fit/compositing and supplied-model quality limits.
+
+Merged PR #66 adds paused Qt edit queues with hash-verified staged inputs and per-item owner-probe consent; strength may vary, image size may not. Generic CLI generation/configuration and plan files still refuse image operations; the dedicated `dtflow edit` probe remains explicit. Cloud edits can upload source/mask and consume credits. Controls/references, a general compatibility catalogue and unrecorded acceptance remain later work. See [image-operation contracts](../architecture/image-operations.md), [smart-mask implementation history](2026-10-10-smart-mask-inpainting.md) and [edit-queue scope](2026-10-10-inpaint-queues.md).
 
 
 Deliver bounded slices: 9A verified image-to-image, 9B inpainting with existing mask files, and 9C interactive mask painting plus selected controls/reference combinations. Release useful slices independently; do not wait for every model/control combination.
@@ -442,6 +471,8 @@ Qt drawing tests own stroke/edit/clear and coordinate/scale correctness only; th
 
 ### Phase 10 — Workflows
 
+**Status (2026-10-19):** later scope; the 5.0.0 feature delivery does not claim a workflow-file engine or visual workflow editor. Existing queues and Pair/Cross plans are not Phase 10 completion.
+
 Build multi-step workflow composition/execution on top of the durable job and backend layers. Phase 10A delivers versioned workflow-file validation, plan inspection and execution for a bounded supported step set. Phase 10B adds visual authoring and richer verified semantics incrementally.
 
 Workflow execution should remain resumable and inspectable within documented remote recovery limits. File-based execution does not wait for the full visual editor.
@@ -465,6 +496,8 @@ Compiler/preflight owns versioned schema parsing, unsupported-instruction diagno
 The visual editor tests only authoring/presentation: construct/modify a graph, serialize to the authoritative workflow contract, load/display an existing workflow, and map compiler/preflight diagnostics to the correct visual item. It must not maintain an independent execution-semantics suite.
 
 ### Phase 11 — Broader DT+ capabilities and hardening
+
+**Status (2026-10-19):** broader media, PAYG and additional cloud capabilities remain later scope. Narrow direct-cloud adapters/assets and scoped image-operation probes are already implemented in earlier phases; they do not establish the wider contracts below.
 
 Phase 1 diagnostic work has already established that a direct Python DT+ implementation is viable. The live-tested probe has exercised the API-key short-term-token flow, per-generation authentication, direct TLS gRPC generation against DT+ Cloud Compute, image-result decoding, and concurrent submissions without requiring MediaGenerationKit as a runtime component.
 
@@ -550,6 +583,8 @@ Apply the Windows packaging requirement during Phase 2/3 investigation. Phase 3B
 Illustrative naming only (not an existing release): `dtflow-0.1.0-gabcdef1-windows-x64.exe`. Use the actual target architecture and source revision; an eventual installer follows the same identity convention.
 
 ### Remaining engineering investigations
+
+The original questions below remain an investigation index, not a list of wholly unimplemented foundations. The locked SDK/protobuf dependency choice, SQLite durable stores/migrations, credential resolution, narrow direct-cloud adapter and asset receipt services are implemented. Follow the linked contracts for their exact scope; remaining work concerns unsupported capabilities, wider compatibility/retention evidence, production limits and final artifact acceptance.
 
 Source-inspected answers and remaining evidence requirements are recorded in [research Section 10](../research/dtflow-ecosystem-research-report.md#10-follow-up-findings-on-the-eight-backend-questions). See the [Phase 2 plan](phase-2-backends.md) for implementation gates.
 
