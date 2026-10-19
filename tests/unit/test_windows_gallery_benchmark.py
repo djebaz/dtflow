@@ -1645,27 +1645,42 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["last_after"] == 200
 
 
-def test_grid_page_one_lookup_finds_named_button_after_reflow():
+def test_grid_page_one_lookup_uses_automation_id_suffix():
     from tools.ui import windows_gallery_benchmark as benchmark
 
-    def chip(name, enabled=True):
-        return SimpleNamespace(
-            element_info=SimpleNamespace(control_type="Button", name=name),
-            is_visible=lambda: True,
-            is_enabled=lambda: enabled,
-        )
+    class Chip:
+        def exists(self, *, timeout):
+            assert timeout == 0
+            return True
+
+        def is_visible(self):
+            return True
+
+        def is_enabled(self):
+            return True
+
+        def wrapper_object(self):
+            return self
+
+    chip = Chip()
 
     class Window:
-        def descendants(self):
-            return [
-                chip("Jump to image batch 10"),
-                chip("Jump to image batch 1", enabled=False),
-                chip("Jump to image batch 1"),
-            ]
+        def child_window(self, **criteria):
+            assert criteria["control_type"] == "Button"
+            assert "title" not in criteria
+            predicate = criteria["predicate_func"]
+            assert predicate(SimpleNamespace(automation_id=(
+                "QApplication.MainWindow.galleryPagerPage1"
+            )))
+            assert not predicate(SimpleNamespace(automation_id=(
+                "QApplication.MainWindow.galleryPagerPage10"
+            )))
+            return chip
 
-    result = benchmark._grid_batch_button(Window(), 1)
-    assert result.element_info.name == "Jump to image batch 1"
-    assert result.is_enabled()
+        def descendants(self):
+            pytest.fail("Page 1 lookup must not request full-tree descendants")
+
+    assert benchmark._grid_batch_button(Window(), 1) is chip
 
 
 
