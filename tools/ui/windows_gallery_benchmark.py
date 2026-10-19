@@ -784,6 +784,7 @@ def _seek_grid_card(
         "target_reached": reached,
         "target_tolerance": 0,
         "position_history": history,
+        "position_probe_error": getattr(probe, "last_error", None),
     }
     actions.append(action)
     if send_errors:
