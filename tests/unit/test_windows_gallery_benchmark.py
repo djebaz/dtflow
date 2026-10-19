@@ -1608,62 +1608,71 @@ def test_grid_start_polls_until_numbered_chip_is_enabled(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    lookups = []
-    clicks = []
+    lookups, clicks = [], []
+    first = [1]
 
     class Chip:
+        def __init__(self, page):
+            self.page = page
+            self.element_info = SimpleNamespace(automation_id=f"galleryPagerPage{page}")
+
+        def rectangle(self):
+            return SimpleNamespace(width=lambda: 24, height=lambda: 24)
+
         def click_input(self):
-            clicks.append("clicked")
+            clicks.append(self.page)
+            first[0] = 21 if self.page == 2 else 1
 
     def lookup(*args, **kwargs):
-        lookups.append(kwargs["timeout"])
+        lookups.append(kwargs["automation_id"])
         if len(lookups) < 3:
             raise LookupError("Still showing loading spinner")
-        return Chip()
+        return Chip(int(kwargs["automation_id"][-1]))
 
     class Probe:
         def read(self):
-            return GridPosition(1, 20, 833, "pager-log")
+            return GridPosition(first[0], first[0] + 19, 833, "uia")
 
     monkeypatch.setattr(benchmark, "_button", lookup)
     actions = []
     benchmark._wait_for_grid_page_one(
-        object(),
-        Probe(),
-        actions,
-        directory=tmp_path,
-        timeout=3,
+        object(), Probe(), actions, directory=tmp_path, timeout=3,
     )
-    assert lookups == [0.01, 0.01, 0.01]
-    assert clicks == ["clicked"]
+    assert lookups[:3] == ["galleryPagerPage2"] * 3
+    assert clicks == [2, 1]
+    assert actions[-2]["visible_first"] == 21
     assert actions[-1]["verified"] is True
-    assert actions[-1]["visible_first"] == 1
+    assert actions[-1]["page_two_verified"] is True
 
 
 def test_grid_start_does_not_wait_for_page_jump_log(monkeypatch, tmp_path):
     from tools.ui import windows_gallery_benchmark as benchmark
     from tools.ui.grid_scroll_probe import GridPosition
 
-    clicks = []
+    clicks, first = [], [1]
 
     class Chip:
+        def __init__(self, page):
+            self.page = page
+            self.element_info = SimpleNamespace(automation_id=f"galleryPagerPage{page}")
+
+        def rectangle(self):
+            return SimpleNamespace(width=lambda: 24, height=lambda: 24)
+
         def click_input(self):
-            clicks.append("clicked")
+            clicks.append(self.page)
+            first[0] = 21 if self.page == 2 else 1
 
     class Probe:
         def read(self):
-            return GridPosition(1, 20, 833, "pager-log")
+            return GridPosition(first[0], first[0] + 19, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip(int(kw["automation_id"][-1])))
     actions = []
     benchmark._wait_for_grid_page_one(
-        object(),
-        Probe(),
-        actions,
-        directory=tmp_path,
-        timeout=1,
+        object(), Probe(), actions, directory=tmp_path, timeout=1,
     )
-    assert clicks == ["clicked"]
+    assert clicks == [2, 1]
     assert actions[-1]["verified"] is True
     assert actions[-1]["click_attempts"] == 1
 
@@ -1675,23 +1684,25 @@ def test_grid_start_rejects_unverified_visible_position(monkeypatch, tmp_path):
     clicks = []
 
     class Chip:
+        element_info = SimpleNamespace(automation_id="galleryPagerPage2")
+
+        def rectangle(self):
+            return SimpleNamespace(width=lambda: 24, height=lambda: 24)
+
         def click_input(self):
             clicks.append("clicked")
 
     class Probe:
         def read(self):
-            return GridPosition(281, 295, 833, "pager-log")
+            return GridPosition(1, 20, 833, "uia")
 
     monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
     actions = []
-    with pytest.raises(TimeoutError, match="did not become clickable at image 1"):
+    with pytest.raises(TimeoutError, match="could not verify page 2 then page 1"):
         benchmark._wait_for_grid_page_one(
-            object(),
-            Probe(),
-            actions,
-            directory=tmp_path,
-            timeout=0.12,
+            object(), Probe(), actions, directory=tmp_path, timeout=0.12,
         )
     assert clicks == ["clicked"]
     assert actions[-1]["verified"] is False
-    assert actions[-1]["visible_first"] == 281
+    assert actions[-1]["phase"] == "page-2"
+    assert actions[-1]["visible_first"] == 1
