@@ -1283,6 +1283,9 @@ def test_grid_progress_reads_status_bar_by_stable_id(tmp_path):
             assert timeout == 0
             return True
 
+        def window_text(self):
+            return self.element_info.name
+
     class Window:
         def __init__(self):
             self.lookups = []
@@ -1300,7 +1303,7 @@ def test_grid_progress_reads_status_bar_by_stable_id(tmp_path):
     state["first"] = 1
     assert probe.read().first == 1
     assert window.lookups == [
-        {"auto_id": "dtflowStatusGridFirstVisibleIndex", "control_type": "Text"}
+        {"title_re": r"^[0-9]+/[0-9]+$", "control_type": "Text"}
     ]
 
 
