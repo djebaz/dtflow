@@ -27,7 +27,7 @@ def _trial(ml, mc, *, seconds, stalls=0, worst=0, ok=True, target=300):
         ],
         "grid_responsiveness": {
             "diagnostics_available": True,
-            "grid_stalls_250ms": stalls,
+            "grid_stalls_100ms": stalls,
             "grid_stall_max_ms": worst,
             "round_trip_ms": seconds * 1000,
         },
@@ -39,7 +39,7 @@ def test_browsing_gui_gap_counter_excludes_startup_and_after_scroll(tmp_path):
     logs.mkdir()
     (logs / "dtflow-example.log").write_text(
         "2026-10-19T02:00:01+0200 DEBUG app gallery_perf phase=gui_gap elapsed_ms=1700 mode=Grid mounted=0 query_busy=False\n"
-        "2026-10-19T02:00:12+0200 DEBUG app gallery_perf phase=gui_gap elapsed_ms=312 mode=Grid mounted=100 query_busy=True\n"
+        "2026-10-19T02:00:12+0200 DEBUG app gallery_perf phase=gui_gap elapsed_ms=112 mode=Grid mounted=100 query_busy=True\n"
         "2026-10-19T02:00:15+0200 DEBUG app gallery_perf phase=gui_gap elapsed_ms=900 mode=List mounted=100 query_busy=False\n"
         "2026-10-19T02:00:35+0200 DEBUG app gallery_perf phase=gui_gap elapsed_ms=1200 mode=Grid mounted=100 query_busy=False\n",
         encoding="utf-8",
@@ -57,8 +57,8 @@ def test_browsing_gui_gap_counter_excludes_startup_and_after_scroll(tmp_path):
     }]
     observed = analyze_grid_trial(logs, actions)
     assert observed["diagnostics_available"]
-    assert observed["grid_stalls_250ms"] == 1
-    assert observed["grid_stall_max_ms"] == 312
+    assert observed["grid_stalls_100ms"] == 1
+    assert observed["grid_stall_max_ms"] == 112
     assert observed["round_trip_ms"] == 3579
     assert observed["observed_browsing_legs"] == 2
 
