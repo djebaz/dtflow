@@ -1245,36 +1245,52 @@ def test_grid_target_not_reached_when_only_total_and_buffer_equal_target():
     assert not (position.first <= 200 <= position.last)
 
 
-def test_grid_progress_uses_recorded_uia_text_and_log_fallback(tmp_path):
+def test_grid_progress_reads_live_accessible_range_after_reflow(tmp_path):
     from tools.ui.grid_scroll_probe import GridProgressProbe
 
+    state = {"range": "1–20 of 1,000"}
+
     class Label:
+        @property
+        def element_info(self):
+            return SimpleNamespace(
+                control_type="Text",
+                name="Visible image range: " + state["range"],
+            )
+
         def window_text(self):
             return "Visible image range"
 
-        iface_text = SimpleNamespace(DocumentRange=SimpleNamespace(GetText=lambda _n: "290–310 of 1,000"))
-
-        def legacy_properties(self):
-            return {}
-
     class Window:
-        def child_window(self, **kw):
-            assert kw == {"title": "Visible image range", "control_type": "Text"}
-            return Label()
+        def descendants(self):
+            # The pager may rebuild the Qt accessibility node after reflow.
+            return [Label(), SimpleNamespace(element_info=SimpleNamespace(
+                control_type="Text", name="200 buffered",
+            ))]
 
     probe = GridProgressProbe(Window(), tmp_path)
-    assert probe.read().first == 290
+    assert probe.read().first == 1
     assert probe.read().source == "uia"
 
-    log = tmp_path / "dtflow-123.log"
-    log.write_text(
-        "gallery_perf phase=benchmark_view first=1 last=20 total=1000 loaded=40\n"
-        "gallery_perf phase=benchmark_view first=295 last=320 total=1000 loaded=100\n",
+    state["range"] = "281–300 of 1,000"
+    assert probe.read().first == 281
+    state["range"] = "1–20 of 1,000"
+    assert probe.read().first == 1
+
+
+def test_grid_progress_does_not_accept_old_text_log_fallback(tmp_path):
+    from tools.ui.grid_scroll_probe import GridProgressProbe
+
+    (tmp_path / "dtflow-123.log").write_text(
+        "gallery_perf phase=benchmark_view first=1 last=20 total=1000 loaded=40\n",
         encoding="utf-8",
     )
-    fallback = GridProgressProbe(object(), tmp_path)
-    assert fallback.read().first == 295
-    assert fallback.read().source == "pager-log"
+
+    class Window:
+        def descendants(self):
+            return []
+
+    assert GridProgressProbe(Window(), tmp_path).read() is None
 
 
 def test_grid_seek_reaches_same_card_independently_of_batch(monkeypatch):
