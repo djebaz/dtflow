@@ -655,12 +655,9 @@ def _seek_grid_card(
 ) -> dict:
     """Keep wheel messages flowing while the gallery loads and UIA is busy.
 
-    One background sender issues wheel input independently of the query,
-    preparation, mount and position-probe thread. Only the observed pager
-    range can establish arrival; wheel dispatch alone never counts.
+    Dispatch one wheel notch per observed viewport change. This prevents
+    runaway input when UIA reads or Qt gallery preparation lag behind.
     """
-
-    from threading import Event, Thread
 
     from pywinauto import mouse
 
@@ -670,8 +667,6 @@ def _seek_grid_card(
     started_at = datetime.now().astimezone().isoformat(timespec="milliseconds")
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
-    stop = Event()
-    state = {"position": None}
     stats = {"pulses": 0, "notches": 0, "input_ms": 0.0, "first_wheel_ms": None}
     send_errors: list[Exception] = []
     furthest: int | None = None
@@ -680,93 +675,70 @@ def _seek_grid_card(
     max_without_progress_ms = 0.0
     probe_ms = 0.0
     insufficient_catalogue = False
+    current = None
+    awaiting_progress = False
+    pulse_position = None
 
     def at_target(position) -> bool:
         if position is None:
             return False
-        if direction > 0:
-            return position.first == 1
-        # Stop at the first observed image index >= target, including any
-        # overshoot. Do not reverse just to settle within a tolerance band.
-        return position.first >= target
+        return position.first == 1 if direction > 0 else position.first >= target
 
-    def send_wheel() -> None:
+    # Each pulse is gated by an observed viewport change. Never enqueue a
+    # second pulse against the same stale UIA position: that created hundreds
+    # of cards of overshoot when Qt was busy laying out its gallery.
+    while time.monotonic() < deadline:
+        read_at = time.perf_counter()
+        observed = probe.read()
+        probe_ms += (time.perf_counter() - read_at) * 1000
+        if observed is None:
+            time.sleep(0.05)
+            continue
+        current = observed
+        if furthest is None:
+            furthest = observed.first
+        elif direction < 0:
+            furthest = max(furthest, observed.first)
+        else:
+            furthest = min(furthest, observed.first)
+        if not history or observed.first != history[-1]["first"]:
+            now = time.perf_counter()
+            max_without_progress_ms = max(max_without_progress_ms, (now - last_progress) * 1000)
+            last_progress = now
+            history.append({"first": observed.first, "last": observed.last, "source": observed.source})
+
+        if direction < 0 and observed.total < target:
+            insufficient_catalogue = True
+            break
+        if at_target(observed):
+            break
+        if awaiting_progress:
+            if observed.first == pulse_position:
+                # Qt may still be preparing the next page. Do not add to the
+                # pending wheel queue while its previous pulse is unresolved.
+                time.sleep(0.05)
+                continue
+            awaiting_progress = False
+
+        distance = target - observed.first if direction < 0 else observed.first - 1
+        # One notch at a time bounds the overshoot incurred between observations.
+        # The caller's pulse_notches limit is intentionally not used as a burst.
+        notches = 1
+        sent_at = time.perf_counter()
         try:
-            while not stop.is_set() and time.monotonic() < deadline:
-                position = state["position"]
-                if at_target(position):
-                    break
-                wheel_direction = direction
-                distance = (
-                    max(0, target - position.first)
-                    if direction < 0 and position is not None
-                    else max(0, position.first - 1)
-                    if position is not None
-                    else target
-                )
-                notches = (
-                    pulse_notches
-                    if distance > 100
-                    else min(pulse_notches, 6)
-                    if distance > 30
-                    else min(pulse_notches, 2)
-                )
-                sent_at = time.perf_counter()
-                mouse.scroll(coords=coords, wheel_dist=wheel_direction * notches)
-                stats["input_ms"] += (time.perf_counter() - sent_at) * 1000
-                if stats["first_wheel_ms"] is None:
-                    stats["first_wheel_ms"] = round((sent_at - started) * 1000, 2)
-                stats["pulses"] += 1
-                stats["notches"] += notches
-                # Do not wait for the query, thumbnails, mount, pager or UIA.
-                # Event.wait also stops promptly when the destination is seen.
-                stop.wait(0.015)
+            mouse.scroll(coords=coords, wheel_dist=direction * notches)
         except Exception as exc:
             send_errors.append(exc)
-            stop.set()
-
-    sender = Thread(target=send_wheel, name="dtflow-grid-wheel", daemon=True)
-    sender.start()
-    try:
-        while time.monotonic() < deadline:
-            read_at = time.perf_counter()
-            observed = probe.read()
-            probe_ms += (time.perf_counter() - read_at) * 1000
-            if observed is not None:
-                state["position"] = observed
-                if furthest is None:
-                    furthest = observed.first
-                elif direction < 0:
-                    furthest = max(furthest, observed.first)
-                else:
-                    furthest = min(furthest, observed.first)
-                if not history or observed.first != history[-1]["first"]:
-                    now = time.perf_counter()
-                    max_without_progress_ms = max(max_without_progress_ms, (now - last_progress) * 1000)
-                    last_progress = now
-                    history.append(
-                        {
-                            "first": observed.first,
-                            "last": observed.last,
-                            "source": observed.source,
-                        }
-                    )
-                if direction < 0 and observed.total < target:
-                    insufficient_catalogue = True
-                    break
-                if at_target(observed):
-                    break
-            if send_errors:
-                break
-            # Position checks never pace the independent wheel sender.
-            time.sleep(0.05)
-    finally:
-        stop.set()
-        sender.join(timeout=2.0)
-    if sender.is_alive():
-        raise RuntimeError("Grid wheel sender could not stop promptly.")
+            break
+        stats["input_ms"] += (time.perf_counter() - sent_at) * 1000
+        if stats["first_wheel_ms"] is None:
+            stats["first_wheel_ms"] = round((sent_at - started) * 1000, 2)
+        stats["pulses"] += 1
+        stats["notches"] += notches
+        pulse_position = observed.first
+        awaiting_progress = True
+        time.sleep(0.05)
     ended_at = datetime.now().astimezone().isoformat(timespec="milliseconds")
-    current = state["position"]
     reached = at_target(current) and not send_errors and not insufficient_catalogue
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     action = {
