@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 benchmark closeout (owner Windows observations, 2026-10-19): native pywinauto gallery profile smoke and independent Grid `-ml/-mc` matrix; position-driven continuous wheel journeys, page-1 button readiness polling, explicit visible-first-index targets (not `buffered` or `total`), 100 ms browsing-only GUI-stall threshold and provisional best-combination console/JSON report. Latest owner `10190342.zip`: both `100/300` and `200/600` journeys completed without automation warnings; round trips 7.45 s vs 6.93 s, worst counted browsing stall 111 ms vs 385 ms, page-1 readiness 3.23 s vs 10.70 s. Single-run evidence; no production limit or tuning default changed. Longer first usable page readiness at high `-ml` is deferred to a separate optimization PR, not silently accepted as resolved. Exact current-head CI/packaged acceptance must be checked separately.
+
 - PR #104 Grid matrix start validation: Windows 10190307 run targeting image #200 exposed unverified first scroll at image #281 for 80/200 (effective -mc 160). Add independent continuous wheel-up homing to actual visible image #1 before measured down/up journey; record setup time separately, and exclude runs that cannot establish a comparable first-card starting point. Windows rerun pending.
 
 - PR #104 Grid harness follow-up: remove the initial `query_done` and disabled page-1 wait from the Grid matrix, send wheel input concurrently with all initial/adjacent reads and UIA range checks, and print/save direct provisional/verified `-ml/-mc` leaderboard excluding startup GUI stalls and incomplete image-1→target→image-1 journeys. Production gallery defaults unchanged; Windows replay pending.
