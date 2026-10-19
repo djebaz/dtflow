@@ -1267,37 +1267,41 @@ def test_grid_target_not_reached_when_only_total_and_buffer_equal_target():
     assert not (position.first <= 200 <= position.last)
 
 
-def test_grid_progress_reads_live_accessible_range_after_reflow(tmp_path):
+def test_grid_progress_reads_status_bar_by_stable_id(tmp_path):
     from tools.ui.grid_scroll_probe import GridProgressProbe
 
-    state = {"range": "1–20 of 1,000"}
+    state = {"first": 1}
 
-    class Label:
+    class Control:
         @property
         def element_info(self):
             return SimpleNamespace(
-                control_type="Text",
-                name="Visible image range: " + state["range"],
+                name=f"DTFlow status grid first visible index: {state['first']} / total: 1000"
             )
 
-        def window_text(self):
-            return "Visible image range"
+        def exists(self, *, timeout):
+            assert timeout == 0
+            return True
 
     class Window:
-        def descendants(self):
-            # The pager may rebuild the Qt accessibility node after reflow.
-            return [Label(), SimpleNamespace(element_info=SimpleNamespace(
-                control_type="Text", name="200 buffered",
-            ))]
+        def __init__(self):
+            self.lookups = []
 
-    probe = GridProgressProbe(Window(), tmp_path)
+        def child_window(self, **kwargs):
+            self.lookups.append(kwargs)
+            return Control()
+
+    window = Window()
+    probe = GridProgressProbe(window, tmp_path)
     assert probe.read().first == 1
-    assert probe.read().source == "uia"
-
-    state["range"] = "281–300 of 1,000"
+    assert probe.read().source == "grid-footer-uia"
+    state["first"] = 281
     assert probe.read().first == 281
-    state["range"] = "1–20 of 1,000"
+    state["first"] = 1
     assert probe.read().first == 1
+    assert window.lookups == [
+        {"auto_id": "dtflowStatusGridFirstVisibleIndex", "control_type": "Text"}
+    ]
 
 
 def test_grid_progress_does_not_accept_old_text_log_fallback(tmp_path):
@@ -1309,8 +1313,8 @@ def test_grid_progress_does_not_accept_old_text_log_fallback(tmp_path):
     )
 
     class Window:
-        def descendants(self):
-            return []
+        def child_window(self, **_kwargs):
+            return SimpleNamespace(exists=lambda **_kw: False)
 
     assert GridProgressProbe(Window(), tmp_path).read() is None
 
