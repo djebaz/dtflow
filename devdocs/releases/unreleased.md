@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 Grid harness follow-up: remove the initial `query_done` and disabled page-1 wait from the Grid matrix, send wheel input concurrently with all initial/adjacent reads and UIA range checks, and print/save direct provisional/verified `-ml/-mc` leaderboard excluding startup GUI stalls and incomplete image-1→target→image-1 journeys. Production gallery defaults unchanged; Windows replay pending.
+
 - PR #104 Grid speed follow-up: owner Windows `10190234.zip` revealed 11–12-second Grid seek legs, with `10:50` missing image #300 and #1 before timeout. Faster 15-ms inter-pulse pacing and up-to-12-notch coarse wheel bursts now target image #300 **within the actual displayed range**; actions retain measured input/probe time. Requires new Windows smoke; no production behavior changed.
 
 - PR #104 Grid matrix refinement: replace slow batch-count-dependent wheel steps with a fast, bounded, position-driven Grid journey to approximately image #300 and back to #1 across all `-ml/-mc` cases. Read the owner's recorded `Visible image range` UIA control with benchmark-only pager-log fallback; no sort changes or batch-completion waits. Evidence records actual displayed indices, pulsed inputs and timeouts. Native Windows smoke still pending.
