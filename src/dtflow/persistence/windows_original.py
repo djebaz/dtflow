@@ -63,7 +63,8 @@ def bridge(state: Path):
     """Return a source-only Windows command/state mapping, or None on native FS."""
     if os.name == "nt":
         return None
-    from dtflow.services.artifact_paths import ArtifactReadPaths
+    from dtflow.diagnostics import event as diagnostic_event
+from dtflow.services.artifact_paths import ArtifactReadPaths
 
     paths = ArtifactReadPaths.discover()
     state = Path(state).absolute()
@@ -88,7 +89,13 @@ def bridge(state: Path):
                         if state.is_relative_to(mount):
                             candidates.append((len(mount.parts), filesystem[0]))
                 if not candidates or max(candidates)[1] not in ("rootfs", "wslfs", "ext4"):
-                    log.debug("windows bridge filesystem=%s", max(candidates)[1] if candidates else "unknown")
+                    diagnostic_event(
+                        log, "originals.windows.bridge",
+                        level=logging.DEBUG,
+                        data={
+                            "filesystem": max(candidates)[1] if candidates else 'unknown',
+                        },
+                    )
                     raise WindowsBridgeError("mount")
             except WindowsBridgeError:
                 raise
@@ -252,11 +259,13 @@ class _LeaseHelper:
                     if acquired - started >= 0.5:
                         # Separate waiting behind this process's own threads from
                         # waiting for another process (or helper startup).
-                        log.debug(
-                            "windows lease wait lease=%s in_process_ms=%d helper_ms=%d",
-                            filename.removesuffix(".lock"),
-                            (queued - started) * 1000,
-                            (acquired - queued) * 1000,
+                        diagnostic_event(
+                            log, "originals.windows.lease_wait",
+                            level=logging.DEBUG,
+                            data={
+                                "in_process_ms": (queued - started) * 1000,
+                                "helper_ms": (acquired - queued) * 1000,
+                            },
                         )
                     break
                 if response.get("error") or time.monotonic() >= deadline:
@@ -270,7 +279,12 @@ class _LeaseHelper:
                 if lost:
                     # Windows released this lock when its helper was discarded, so other
                     # processes could have entered while this thread still worked.
-                    log.warning("windows original-file lease lost lease=%s", filename.removesuffix(".lock"))
+                    diagnostic_event(
+                        log, "originals.windows.original_file_lease_lost",
+                        level=logging.WARNING,
+                        data={
+                        },
+                    )
                 else:
                     try:
                         released = self._call(dict(op="release", filename=filename))["ok"]
@@ -371,12 +385,14 @@ def delete_managed(state: Path, target) -> None:
         _reply(process, 30, allow_refusal=True)
     except OSError as exc:
         # Successful deletes stay quiet; the phase decides whether this is retryable or uncertain.
-        log.debug(
-            "windows delete helper identity=%s kind=%s phase=%s elapsed_ms=%d",
-            target.identity,
-            target.kind,
-            "pre" if isinstance(exc, RefusedBeforeMutation) else "unconfirmed",
-            (time.monotonic() - started) * 1000,
+        diagnostic_event(
+            log, "originals.windows.delete_helper",
+            level=logging.DEBUG,
+            data={
+                "kind": target.kind,
+                "phase": 'pre' if isinstance(exc, RefusedBeforeMutation) else 'unconfirmed',
+                "elapsed_ms": (time.monotonic() - started) * 1000,
+            },
         )
         raise
     finally:

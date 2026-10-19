@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QActionGroup, QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QMenu, QPushButton, QWidget
 
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence.image_removal_preferences import load_mode, save_mode
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError
@@ -401,7 +402,14 @@ class ImageRecyclePanel(QObject):
         self._phase = "idle"
         self._running = False
         self.gallery.set_recycle_busy(False)
-        log.warning("image recycling failed phase=%s reason=%s", phase, type(error).__name__)
+        diagnostic_event(
+            log, "images.recycle.failed",
+            level=logging.WARNING,
+            data={
+                "phase": phase,
+                "reason": type(error).__name__,
+            },
+        )
         if phase == "preflight":
             reason = (
                 str(error)

@@ -759,12 +759,12 @@
           "type": "object",
           "minProperties": 1,
           "patternProperties": {
-            "^[a-z][a-z0-9_]*(?:_ms|_bytes|_count)$": {
+            "^[a-z][a-z0-9_]*$": {
               "$ref": "#/$defs/metric"
             }
           },
           "additionalProperties": false,
-          "description": "Per-metric source sample count and statistics. p95 is optional where true source samples are unavailable (such as _PerfBatchStats summaries)."
+          "description": "Per-metric source sample count and statistics, preserving recorded source keys (including mounted/offset counts) without invented suffixes. Units follow the event contract, never magnitude. p95 is optional where true source samples are unavailable (such as _PerfBatchStats summaries)."
         }
       }
     }

@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 from typing import Protocol
 
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.models import (
     AssetBackend,
     AssetContent,
@@ -106,7 +107,14 @@ class AssetService:
             negotiation = await backend.negotiate_asset(content)
             if negotiation.status == "exists":
                 receipt = await self.registry.confirm(asset_id, operation, negotiation.reference, "already_exists")
-                log.info("asset prepared receipt=%s source=already_exists", receipt.receipt_id)
+                diagnostic_event(
+                    log, "assets.prepared",
+                    level=logging.INFO,
+                    data={
+                        "receipt": receipt.receipt_id,
+                        "source": 'already_exists',
+                    },
+                )
                 return receipt
             await self.registry.mark(asset_id, operation, "transferring", "transfer_started")
             transferred = True
@@ -160,14 +168,26 @@ class AssetService:
             try:
                 await settle(self._settle_unknown(asset_id, operation, "receipt_write_failed", True))
             except Exception:
-                log.error("asset receipt and unknown marker could not be written; the next writer will sweep it")
+                diagnostic_event(
+                    log, "assets.receipt_write_failed",
+                    level=logging.ERROR,
+                    data={
+                    },
+                )
             raise _failure(
                 ErrorCategory.PERSISTENCE,
                 "asset_receipt_unwritten",
                 "The file was uploaded but its receipt could not be saved; run `assets reconcile`. No retry was made.",
                 RemoteOutcome.SUCCEEDED,
             ) from None
-        log.info("asset prepared receipt=%s source=transfer", receipt.receipt_id)
+        diagnostic_event(
+            log, "assets.prepared",
+            level=logging.INFO,
+            data={
+                "receipt": receipt.receipt_id,
+                "source": 'transfer',
+            },
+        )
         return receipt
 
     async def _settle_unknown(self, asset_id: str, operation: str, evidence: str, transferred: bool) -> None:

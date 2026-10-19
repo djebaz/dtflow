@@ -12,6 +12,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -98,7 +99,14 @@ class QueueDispatcher:
         try:
             await self.store.record_queue_event(queue_id, kind, detail, at_utc=at_utc)
         except Exception as exc:
-            log.warning("queue event evidence not recorded kind=%s reason=%s", kind, type(exc).__name__)
+            diagnostic_event(
+                log, "queue.event_evidence_not_recorded",
+                level=logging.WARNING,
+                data={
+                    "kind": kind,
+                    "reason": type(exc).__name__,
+                },
+            )
 
     async def _event_writer(
         self,
@@ -177,7 +185,13 @@ class QueueDispatcher:
                 }
             except PersistenceError:
                 # The state store itself failed: leave the durable reservation for the next owner's reconciliation.
-                log.error("queue item %s could not be settled; reconciliation will classify it", item_id)
+                diagnostic_event(
+                    log, "queue.settlement_unavailable",
+                    level=logging.ERROR,
+                    data={
+                        "item_id": item_id,
+                    },
+                )
                 raise
             except Exception as exc:
                 failure = {"code": "unexpected", "category": type(exc).__name__}
@@ -191,7 +205,14 @@ class QueueDispatcher:
             evidence.put_nowait(("item_settled", detail, None))
             if self.on_settle is not None:
                 self.on_settle(item_id, state)
-            log.info("queue item %s settled state=%s", item_id, state)
+            diagnostic_event(
+                log, "queue.item_settled",
+                level=logging.INFO,
+                data={
+                    "item_id": item_id,
+                    "state": state,
+                },
+            )
         finally:
             evidence.put_nowait(None)
             await settle(writer)

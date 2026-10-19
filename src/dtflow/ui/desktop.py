@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from dtflow.build import display_identity, identity
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 
 log = logging.getLogger("dtflow.desktop")
@@ -71,11 +72,22 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
 
         return run_gui(no_cache=args.no_cache)
     except KeyboardInterrupt:
-        log.warning("desktop interrupted locally")
+        diagnostic_event(
+            log, "app.desktop_interrupted_locally",
+            level=logging.WARNING,
+            data={
+            },
+        )
         return 130
     except Exception as exc:
         # Keep exception contents (potentially credentials or request data) out of dialogs.
-        log.error("desktop startup/runtime failed type=%s", type(exc).__name__)
+        diagnostic_event(
+            log, "app.desktop_failed",
+            level=logging.ERROR,
+            data={
+                "type": type(exc).__name__,
+            },
+        )
         report("DTFlow could not start or continue. Check its diagnostic logs; no work will be retried.", error=True)
         return 5
     finally:

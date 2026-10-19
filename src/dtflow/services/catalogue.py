@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.model_profiles import community_model_ids
 from dtflow.core.models import InventorySnapshot
 
@@ -103,10 +104,22 @@ def _records(path: Path) -> list[dict]:
     except FileNotFoundError:
         return []
     except (OSError, ValueError) as exc:
-        log.warning("catalogue ignored file=%s reason=%s", path.name, type(exc).__name__)
+        diagnostic_event(
+            log, "catalogue.ignored",
+            level=logging.WARNING,
+            data={
+                "reason": type(exc).__name__,
+            },
+        )
         return []
     if not isinstance(document, list):
-        log.warning("catalogue ignored file=%s reason=shape", path.name)
+        diagnostic_event(
+            log, "catalogue.ignored",
+            level=logging.WARNING,
+            data={
+                "reason": 'shape',
+            },
+        )
         return []
     return [item for item in document if isinstance(item, dict)]
 

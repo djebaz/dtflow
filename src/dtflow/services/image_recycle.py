@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.gallery import GalleryQuery
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
@@ -450,7 +451,14 @@ def prepare_recycle(
     paths = ArtifactReadPaths.discover() if permanent else ArtifactReadPaths()
     if permanent:
         if Path(state).absolute() != Path(state).resolve():
-            log.debug("image-removal preflight refused action=%s stage=state_redirected", action)
+            diagnostic_event(
+                log, "images.recycle.preflight_refused",
+                level=logging.DEBUG,
+                data={
+                    "action": action,
+                    "stage": 'state_redirected',
+                },
+            )
             raise RecycleUnavailable("Redirected application state is ineligible.", stage="state_redirected")
     started = time.monotonic()
     unique = tuple(dict.fromkeys(identities))
@@ -522,18 +530,20 @@ def prepare_recycle(
     plan = RecyclePlan(
         tuple(eligible), missing, ineligible, min(hidden, len(unique)), len(unique), action, tuple(absent_targets)
     )
-    log.debug(
-        "image-removal preflight action=%s requested=%d eligible=%d raw=%d absent=%d missing=%d ineligible=%d "
-        "hidden=%d elapsed_ms=%d",
-        action,
-        plan.requested,
-        len(plan.targets),
-        plan.raw_count,
-        len(plan.absent_targets),
-        plan.missing,
-        plan.ineligible,
-        plan.hidden,
-        (time.monotonic() - started) * 1000,
+    diagnostic_event(
+        log, "images.recycle.preflight",
+        level=logging.DEBUG,
+        data={
+            "action": action,
+            "requested": plan.requested,
+            "eligible": len(plan.targets),
+            "raw": plan.raw_count,
+            "absent": len(plan.absent_targets),
+            "missing": plan.missing,
+            "ineligible": plan.ineligible,
+            "hidden": plan.hidden,
+            "elapsed_ms": (time.monotonic() - started) * 1000,
+        },
     )
     return plan
 
@@ -581,7 +591,13 @@ def _permanent_remove(state: Path, target: RecycleTarget) -> None:
 
 def _refused(identity: str, stage: str) -> None:
     """A confirmed image refused by its fresh execution checks; nothing was changed."""
-    log.debug("image-removal item refused identity=%s stage=%s", identity, stage)
+    diagnostic_event(
+        log, "images.recycle.item_refused",
+        level=logging.DEBUG,
+        data={
+            "stage": stage,
+        },
+    )
 
 
 def _unchanged(source: RecycleTarget) -> bool:
@@ -638,8 +654,14 @@ def _dispose(
             detail = f"os_error_{windows_code}" if isinstance(windows_code, int) else "os_error"
         # Stable output identities and sanitized adapter stages
         # are safe; do not log full paths or raw OS exceptions.
-        log.warning(
-            "image recycle outcome=%s identity=%s kind=%s reason=%s", state_value, target.identity, target.kind, detail
+        diagnostic_event(
+            log, "images.recycle.image_recycle",
+            level=logging.WARNING,
+            data={
+                "outcome": state_value,
+                "kind": target.kind,
+                "reason": detail,
+            },
         )
         if len(failure_details) < 100:
             failure_details.append((target.identity, detail if target.kind == "final" else f"raw_{detail}"))
@@ -682,12 +704,15 @@ def recycle_outputs(
     with recycle_batch_lock(state):
         # Requested counts are physical files, matching the per-file outcomes that complete them.
         ledger.start_operation(state, operation_id, len(targets) + plan.raw_count)
-        log.debug(
-            "image-removal started operation=%s images=%d raw=%d absent=%d",
-            operation_id,
-            len(plan.targets),
-            plan.raw_count,
-            len(plan.absent_targets),
+        diagnostic_event(
+            log, "images.recycle.started",
+            level=logging.DEBUG,
+            data={
+                "operation": operation_id,
+                "images": len(plan.targets),
+                "raw": plan.raw_count,
+                "absent": len(plan.absent_targets),
+            },
         )
         for target in targets:
             if stop.is_set():
@@ -776,22 +801,30 @@ def recycle_outputs(
         ledger.finish_operation(state, operation_id, "canceled" if canceled else "complete")
     # Cached previews of removed (or possibly removed) outputs go with them; best effort.
     forgotten = thumbnail_cache.forget(state, (*recycled, *deleted, *uncertain, *absent))
-    log.debug("image-removal thumbnail cache entries removed=%d", forgotten)
+    diagnostic_event(
+        log, "images.recycle.thumbnail_entries_removed",
+        level=logging.DEBUG,
+        data={
+            "removed": forgotten,
+        },
+    )
     # One line per operation in normal mode; per-item detail stays in warnings and -x.
-    log.info(
-        "image-removal finished operation=%s outcome=%s removed=%d raw=%d absent=%d failed=%d uncertain=%d "
-        "missing=%d ineligible=%d unprocessed=%d elapsed_ms=%d",
-        operation_id,
-        "canceled" if canceled else "complete",
-        len(recycled) + len(deleted),
-        len(raw_disposed),
-        len(absent),
-        len(failed),
-        len(uncertain),
-        missing,
-        ineligible,
-        len(targets) - processed,
-        (time.monotonic() - started) * 1000,
+    diagnostic_event(
+        log, "images.recycle.finished",
+        level=logging.INFO,
+        data={
+            "operation": operation_id,
+            "outcome": 'canceled' if canceled else 'complete',
+            "removed": len(recycled) + len(deleted),
+            "raw": len(raw_disposed),
+            "absent": len(absent),
+            "failed": len(failed),
+            "uncertain": len(uncertain),
+            "missing": missing,
+            "ineligible": ineligible,
+            "unprocessed": len(targets) - processed,
+            "elapsed_ms": (time.monotonic() - started) * 1000,
+        },
     )
     return RecycleResult(
         tuple(recycled),

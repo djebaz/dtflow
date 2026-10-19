@@ -1,16 +1,16 @@
 # Structured diagnostics architecture
 
-**Status:** design target for draft [PR #105](../plans/2026-10-19-structured-log-viewer.md), **not implemented** (2026-10-19). The legacy implementation facts below were inspected in the repository; neither JSONL behavior nor its throughput/Windows performance has been verified. The [implementation plan](../plans/2026-10-19-structured-log-viewer.md) owns the binding requirements and accepted G1–G6 guards. This reference explains the rationale and subsystem boundaries, not a second specification.
+**Status:** Phase 1 JSONL writer/typed-producer source is implemented on draft [PR #105](../plans/2026-10-19-structured-log-viewer.md) (2026-10-19); readers, exports, benchmark migration and native Logs UI remain pending. No syntax/import checks, tests or runtime/Windows acceptance were executed. The pre-Phase-1 facts below explain the retained foundation, not the current file format. The [implementation plan](../plans/2026-10-19-structured-log-viewer.md) owns G1–G6; this reference explains boundaries, not a second specification.
 
 The [proposed compact, searchable event contract and legacy migration inventory](diagnostic-event-schema.md) and [record JSON Schema v1](../schemas/diagnostic-record-v1.schema.json) complement this ownership guide. The current design uses a strict small searchable envelope and flexible safe typed payloads: **new ordinary event/sub-event names do not require schema registration**, while benchmark/integrity fields remain selectively enforced. They are preparatory design proposals, not shipped behavior; the implementation plan's G1–G6 rules take precedence. The inventory is sourced from code rather than retained user log samples, and its unfinalized families must be reconciled in Phase 1.
 
-## Existing foundation: retain it
+## Pre-Phase-1 foundation: retained ownership
 
 `src/dtflow/logging_setup.py` already owns `configure_logging`, a standard-library `QueueHandler`/`QueueListener`, sanitization, rotated per-session text files, session pruning, and listener-side gallery performance aggregation/CSV fanout. `AGENTS.md` already requires a shared logger. This is meaningful existing centralization; a competing logging engine is unnecessary.
 
 What is *not* centralized yet is the **machine-readable meaning** of diagnostics. For example, `src/dtflow/ui/gallery_page.py` emits `gallery_perf phase=gui_gap elapsed_ms=... mode=... mounted=...` using formatting; `logging_setup.py` interprets such messages for aggregation/CSV, while `tools/ui/windows_gallery_benchmark.py` and `tools/ui/grid_benchmark_report.py` interpret text files through their own regex/readers. That string contract is fragile even though all producers share the primary file-writing pipeline.
 
-Current (simplified, observed):
+Legacy baseline (inspected before Phase 1):
 
 ```text
 CLI / Qt / services / backends
@@ -22,7 +22,7 @@ logging_setup.py: QueueHandler -> QueueListener -> sanitization/aggregation
 Separate benchmark tools -> text/CSV regex parsing
 ```
 
-Target design (planned, not shipped):
+Target design (writer/producers present in Phase 1 source; reader and consumers still pending, not shipped):
 
 ```text
 Ordinary logging.getLogger(...)    DTFlow typed event/measurement helper
@@ -41,6 +41,16 @@ Ordinary logging.getLogger(...)    DTFlow typed event/measurement helper
 ```
 
 ## Ownership and dependency boundaries
+
+Phase 1 keeps configuration/session lifecycle and JSONL-only retention in `logging_setup.py`; `diagnostics.py` is the producer API (`event`, `measurement`, `source_summary`, `ATTEMPT`). `_diagnostic_schema.py` owns bounded capture, recursive sanitization, exception extraction and record/critical-field policy; `_diagnostic_writer.py` owns `QueueHandler`/`QueueListener` subclasses, admission accounting, listener aggregation, UTF-8/LF rotation and close seals. UI/services/backends import producer APIs only. Phase 2 must reuse schema/privacy/validation rather than restoring regexes or adding a second parser; no reader/export implementation is claimed here.
+
+The queue budget includes conservative reservations for concurrent capture, not just queued records (1,024 pending records / 8 MiB; depth 16 / 4,096 nodes). A source observation is never retained as a mutable `LogRecord`, traceback or provider graph on the queue. The listener keeps at most 64 aggregate groups, each with at most 64 samples and a fixed small metric set; reaching group capacity flushes the oldest batch early without discarding observations. Known dimensions/attempt IDs are length-bounded for batching; extensions outside this policy remain individual records. All individual wheel receipts and >=100 ms GUI outliers remain observable. Original numeric metric keys such as `mounted`/`offset` are preserved rather than receiving invented suffixes; the documentary schema permits those source keys.
+
+`session.started` declares instrumentation, capacities, `source-64-or-10s-bounded64-legacy1dp-v1` and numeric policy. Typed individual observations/source-summary data retain native finite values; listener batch inputs preserve the old one-decimal population before computing statistics. Phase 2's legacy report adapter must apply the former one-decimal rendering precision to individual/source-summary/statistic values where the old text/CSV did so, explicitly in report metadata, without changing raw JSONL or silently correcting report conventions. Source timestamp attribution is the separately versioned intentional precision change under G5.
+
+`session.closed` counts distinguish `observed`, `admitted`, `capture_rejected`, `dropped`, `processed_records`, serialization rejections/failures and persisted `written_records` (including controls/seal). On a drained close, observed = admitted + capture_rejected + dropped, and processed_records = admitted; timeout is unsealed. `aggregate_source_samples` counts listener inputs, while `source_summary_samples` counts upstream summarized populations; neither is a persisted-record count and overlapping populations must not be added as unique measurements. A seal with any nonzero loss/failure is not clean evidence. Capture rejections coalesce in fixed reason/severity/measurement buckets: markers explicitly identify their last representative event and count, not a complete list of lost identities. The close deadline is two seconds; a timed-out or failed sink cannot certify closure and no fallback file is written.
+
+Accepted exception traces retain all captured frames and causal/context chains without locals or source-code snippets, with recursive sanitization. Unsupported groups, deep/oversized traces or unsupported generic objects are rejected explicitly, never formatted through arbitrary repr or silently truncated. Read/copy/export privacy reuse and evidence-status enforcement are Phase 2 work; their runtime presence is not implied by this writer checkpoint.
 
 | Responsibility | Only owner / allowed caller | Not allowed |
 | --- | --- | --- |
@@ -67,7 +77,7 @@ The [plan's schema and G1–G5](../plans/2026-10-19-structured-log-viewer.md#acc
 - Source `ts` and relevant monotonic `mono_ns` observation time are captured at the event origin; persisted `seq` identifies listener-written order and **must not** be used as a substitute for source time. Aggregates retain their source window and sample population.
 - Top-level searchable `ts`, `level`, `component`, and dotted `event`, with optional `kind`, flexible typed `data`, `ctx`, `error` and `agg`, carry diagnostics independently of human `msg` formatting. Generic Python log records use a clearly defined fallback; do not infer field types from a message's words.
 - The same recursive privacy/sanitization rules apply before persistence and at read/export/copy boundaries. No prompts, authorization headers, secret environment values, raw images, cloud payloads or exception locals. Sanitization must not be delegated independently to each Qt view or report.
-- The current unbounded `queue.SimpleQueue` is an **identified design risk** for the target: G2 proposes bounded nonblocking admission, explicit loss/rejection accounting, and a close seal. Those sizes are *proposed safety defaults*, not measured throughput.
+- The legacy unbounded `queue.SimpleQueue` has been replaced in Phase 1 source by bounded nonblocking admission, explicit loss/rejection accounting and close sealing. Those sizes remain *proposed safety defaults*, not measured throughput or owner acceptance.
 - A missing seal, missing required segment/sequence, loss marker, unsupported schema, malformed record, failed write or truncated evidence must be visible as incomplete/incompatible—not silently accepted as clean. A live active session is pending, not certified complete.
 - The shared physical record/traceback policy is specified in G3 (1 MiB maximum accepted line, explicit rejection rather than silent truncation). Rotation, incomplete final lines, deduplication, cancellation and whole-session bounded queries are specified in G4. Avoid inventing alternate limits here.
 

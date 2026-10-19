@@ -26,6 +26,7 @@ from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, CredentialProvider, ValidationError
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
@@ -365,7 +366,13 @@ class MainWindow:
                 _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
             )
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
-        log.info("window ready state=%s", "default" if state_dir is None else "custom")
+        diagnostic_event(
+            log, "app.window_ready",
+            level=logging.INFO,
+            data={
+                "state": 'default' if state_dir is None else 'custom',
+            },
+        )
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
         self.refresh_credentials()
@@ -379,7 +386,13 @@ class MainWindow:
 
     def _originals_ready_checked(self, _result, error) -> None:
         if error is not None:
-            log.warning("original-image readiness unavailable reason=%s", type(error).__name__)
+            diagnostic_event(
+                log, "app.original_image_readiness_unavailable",
+                level=logging.WARNING,
+                data={
+                    "reason": type(error).__name__,
+                },
+            )
             InlineNotice.warning(
                 self.form,
                 "Original images unavailable",
@@ -540,7 +553,13 @@ class MainWindow:
             self.form.endpointEdit.setText(endpoint)
         self.generation.restore(document.get("form"), document.get("forms"))
         self.generation.inpaint.restore(document.get("edit"))
-        log.info("last session restored provider=%s", provider if provider in BACKENDS else "-")
+        diagnostic_event(
+            log, "app.last_session_restored",
+            level=logging.INFO,
+            data={
+                "provider": provider if provider in BACKENDS else '-',
+            },
+        )
 
     def _session_document(self) -> dict:
         return {
@@ -569,15 +588,38 @@ class MainWindow:
     def _write_session(self, document: dict) -> None:
         try:
             save_last_session(self.state_dir, document)
-            log.info("last session saved")
+            diagnostic_event(
+                log, "app.last_session_saved",
+                level=logging.INFO,
+                data={
+                },
+            )
         except OSError as exc:
-            log.warning("last session not saved reason=%s", type(exc).__name__)
+            diagnostic_event(
+                log, "app.last_session_not_saved",
+                level=logging.WARNING,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
 
     def _endpoint_entered(self) -> None:
-        log.info("endpoint changed backend=%s", self.form.backendCombo.currentText())
+        diagnostic_event(
+            log, "app.endpoint_changed",
+            level=logging.INFO,
+            data={
+                "backend": self.form.backendCombo.currentText(),
+            },
+        )
 
     def _backend_changed(self, name: str) -> None:
-        log.info("provider changed backend=%s", name)
+        diagnostic_event(
+            log, "app.provider_changed",
+            level=logging.INFO,
+            data={
+                "backend": name,
+            },
+        )
         self.form.endpointEdit.setEnabled(name == "local")
         self.form.credentialBox.setEnabled(name == "cloud")
         self._selection_changed()
@@ -702,7 +744,13 @@ class MainWindow:
 
     def _cache_measured(self, usage, failure) -> None:
         if failure is not None:
-            log.warning("cache measurement failed reason=%s", type(failure).__name__)
+            diagnostic_event(
+                log, "app.cache_measurement_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(failure).__name__,
+                },
+            )
             self.form.cacheStatusLabel.setText(
                 str(failure)
                 if isinstance(failure, (CacheBusyError, CacheCleanupError, CacheSafetyError))
@@ -754,7 +802,13 @@ class MainWindow:
     def _cache_cleared(self, names: str, failure) -> None:
         self.progress_strip.finish("cache")
         if failure is not None:
-            log.warning("cache cleanup failed reason=%s", type(failure).__name__)
+            diagnostic_event(
+                log, "app.cache_cleanup_failed",
+                level=logging.WARNING,
+                data={
+                    "reason": type(failure).__name__,
+                },
+            )
             self.progress_strip.complete(
                 "cache",
                 "Cache not cleared",
@@ -861,7 +915,13 @@ class MainWindow:
         self._busy = True
         self.form.checkButton.setEnabled(False)
         self._present(Presentation("warning", "Checking", ""))
-        log.info("connection check started backend=%s", selection.name)
+        diagnostic_event(
+            log, "app.connection_check_started",
+            level=logging.INFO,
+            data={
+                "backend": selection.name,
+            },
+        )
         saved: CredentialProvider | None = self._saved if self._saved.available() else None
         revision = self._selection_revision
         self.runner.submit(
@@ -877,7 +937,13 @@ class MainWindow:
         if revision is not None and revision != self._selection_revision:
             return  # The provider/endpoint changed while the old check was running.
         shown = present_failure(failure) if failure else present_status(status)
-        log.info("connection check result level=%s headline=%s", shown.level, shown.headline)
+        diagnostic_event(
+            log, "app.connection_check_result",
+            level=logging.INFO,
+            data={
+                "level": shown.level,
+            },
+        )
         self._present(shown)
         if failure is None and shown.level == "ok":
             self.remember()
@@ -887,11 +953,22 @@ class MainWindow:
             self._saved.save(self.form.keyEdit.text())
         except (BackendError, ValidationError, SecureStorageUnavailable) as exc:
             code = exc.failure.code if isinstance(exc, BackendError) else str(exc)
-            log.warning("api key not saved reason=%s", type(exc).__name__)
+            diagnostic_event(
+                log, "app.api_key_not_saved",
+                level=logging.WARNING,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
             self.form.credentialStatusLabel.setText(f"Key not saved: {code}")
             self.form.keyEdit.clear()
             return
-        log.info("api key saved")
+        diagnostic_event(
+            log, "app.api_key_saved",
+            level=logging.INFO,
+            data={
+            },
+        )
         self.refresh_credentials()
         self.generation.credentials_changed()
 
@@ -903,10 +980,21 @@ class MainWindow:
             try:
                 self._saved.remove()
             except BackendError as exc:
-                log.warning("api key not removed code=%s", exc.failure.code)
+                diagnostic_event(
+                    log, "app.api_key_not_removed",
+                    level=logging.WARNING,
+                    data={
+                        "code": exc.failure.code,
+                    },
+                )
                 self.form.credentialStatusLabel.setText(f"Key not removed: {exc.failure.code}")
                 return
-            log.info("api key removed")
+            diagnostic_event(
+                log, "app.api_key_removed",
+                level=logging.INFO,
+                data={
+                },
+            )
             self.refresh_credentials()
             self.generation.credentials_changed()
 
@@ -979,7 +1067,13 @@ class MainWindow:
 
     def _images_reconciled(self, outcome, error) -> None:
         if error is not None:
-            log.warning("image-recycle reconciliation skipped reason=%s", type(error).__name__)
+            diagnostic_event(
+                log, "app.image_recycle_reconciliation_skipped",
+                level=logging.WARNING,
+                data={
+                    "reason": type(error).__name__,
+                },
+            )
             if isinstance(error, (OriginalImagesUnavailableError, OriginalImagesBusyError)):
                 message = (
                     "Interrupted removal intents could not be reconciled because original-file access "
@@ -1082,5 +1176,10 @@ class MainWindow:
         self.image_export.cancel()
         self.image_recycle.cancel()
         self.gallery.save_now()
-        log.info("window closed")
+        diagnostic_event(
+            log, "app.window_closed",
+            level=logging.INFO,
+            data={
+            },
+        )
         self.runner.shutdown()

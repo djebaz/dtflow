@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.cache_coordination import cache_access, category_path, check_path
 from dtflow.persistence.original_io import recycle_batch_lock
 from dtflow.persistence.store import PersistenceError
@@ -180,22 +181,19 @@ def _validate_previous(db, deadline):
 def _close_summary(state, result, before=None, checked_stamp=None):
     with _stats_lock:
         stats = _session_stats.get(state, _PublicationStats())
-        log.info(
-            "gallery snapshot app close result=%s updated_before_close=%s updated_on_close=%s "
-            "session_publications=%d images_added_this_session=%s images_removed_this_session=%s "
-            "last_updated=%s timestamp_source=%s",
-            result,
-            bool(stats.publications if before is None else before),
-            result == "saved",
-            stats.publications,
-            stats.added if stats.added is not None else "unknown",
-            stats.removed if stats.removed is not None else "unknown",
-            checked_stamp or stats.last_updated or "unavailable",
-            "checked_snapshot"
-            if checked_stamp
-            else "last_known_session_publication"
-            if stats.last_updated
-            else "unavailable",
+        diagnostic_event(
+            log, "gallery.snapshot.app_close",
+            level=logging.INFO,
+            data={
+                "result": result,
+                "updated_before_close": bool(stats.publications if before is None else before),
+                "updated_on_close": result == 'saved',
+                "session_publications": stats.publications,
+                "images_added_this_session": stats.added if stats.added is not None else 'unknown',
+                "images_removed_this_session": stats.removed if stats.removed is not None else 'unknown',
+                "last_updated": checked_stamp or stats.last_updated or 'unavailable',
+                "timestamp_source": 'checked_snapshot' if checked_stamp else 'last_known_session_publication' if stats.last_updated else 'unavailable',
+            },
         )
 
 
@@ -255,12 +253,17 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                     checked_stamp = stamp.isoformat()
                     if info[1] == signature:
                         result = "unchanged"
-                        log.info(
-                            "gallery snapshot publication skipped trigger=%s reason=unchanged "
-                            "images_added=0 images_removed=0 last_updated=%s elapsed_ms=%d",
-                            reason,
-                            checked_stamp,
-                            (time.monotonic() - started) * 1000,
+                        diagnostic_event(
+                            log, "gallery.snapshot.publication_skipped",
+                            level=logging.INFO,
+                            data={
+                                "trigger": reason,
+                                "last_updated": checked_stamp,
+                                "elapsed_ms": (time.monotonic() - started) * 1000,
+                                "reason": 'unchanged',
+                                "images_added": 0,
+                                "images_removed": 0,
+                            },
                         )
                         return False
             except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
@@ -269,7 +272,13 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                     previous = None
                 checked_stamp = None
                 baseline_known = False  # Rebuild, but do not invent deltas against an unreadable baseline.
-                log.info("gallery snapshot baseline unavailable; rebuilding reason=%s", type(exc).__name__)
+                diagnostic_event(
+                    log, "gallery.snapshot.baseline_unavailable_rebuilding",
+                    level=logging.INFO,
+                    data={
+                        "reason": type(exc).__name__,
+                    },
+                )
             stage = "projection"
             with temporary.open("xb"):
                 pass
@@ -307,7 +316,13 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
                     previous = None
                     baseline_known = False
                     checked_stamp = None
-                    log.info("gallery snapshot baseline comparison unavailable reason=%s", type(exc).__name__)
+                    diagnostic_event(
+                        log, "gallery.snapshot.baseline_comparison_unavailable",
+                        level=logging.INFO,
+                        data={
+                            "reason": type(exc).__name__,
+                        },
+                    )
                     added, removed, images = _image_changes(output, None, deadline)
                 if not baseline_known:
                     added = removed = None
@@ -342,28 +357,33 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
             stats.added = stats.added + added if stats.added is not None and added is not None else None
             stats.removed = stats.removed + removed if stats.removed is not None and removed is not None else None
             stats.last_updated = published_utc
-        log.info(
-            "gallery snapshot saved trigger=%s images_added=%s images_removed=%s images_total=%d "
-            "committed_attempts_total=%d last_updated=%s elapsed_ms=%d",
-            reason,
-            added if added is not None else "unknown",
-            removed if removed is not None else "unknown",
-            images,
-            count,
-            published_utc,
-            (time.monotonic() - started) * 1000,
+        diagnostic_event(
+            log, "gallery.snapshot.saved",
+            level=logging.INFO,
+            data={
+                "trigger": reason,
+                "images_added": added if added is not None else 'unknown',
+                "images_removed": removed if removed is not None else 'unknown',
+                "images_total": images,
+                "committed_attempts_total": count,
+                "last_updated": published_utc,
+                "elapsed_ms": (time.monotonic() - started) * 1000,
+            },
         )
         return True
     except Exception as exc:
         # Publication is advisory and must not change successful generation,
         # invoke retries, expose private paths or delete the previous snapshot.
-        log.warning(
-            "gallery snapshot not published trigger=%s stage=%s reason=%s errno=%s winerror=%s",
-            reason,
-            stage,
-            type(exc).__name__,
-            getattr(exc, "errno", None),
-            getattr(exc, "winerror", None),
+        diagnostic_event(
+            log, "gallery.snapshot.not_published",
+            level=logging.WARNING,
+            data={
+                "trigger": reason,
+                "stage": stage,
+                "reason": type(exc).__name__,
+                "errno": getattr(exc, 'errno', None),
+                "winerror": getattr(exc, 'winerror', None),
+            },
         )
         return False
     finally:
@@ -375,7 +395,12 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
         except OSError:
-            log.debug("gallery snapshot scratch cleanup unavailable")
+            diagnostic_event(
+                log, "gallery.snapshot.scratch_cleanup_unavailable",
+                level=logging.DEBUG,
+                data={
+                },
+            )
 
 
 def schedule_publish(state: Path, *, reason="generation_session_end"):
@@ -389,7 +414,12 @@ def schedule_publish(state: Path, *, reason="generation_session_end"):
         try:
             return _pool.submit(publish_if_changed, Path(state), reason=reason)
         except RuntimeError:
-            log.warning("gallery publication worker unavailable during shutdown")
+            diagnostic_event(
+                log, "gallery.snapshot.publication_worker_unavailable_during",
+                level=logging.WARNING,
+                data={
+                },
+            )
             return None
 
 
@@ -400,6 +430,12 @@ def finish_at_close(state: Path) -> None:
         try:
             future.result()
         except Exception as exc:
-            log.warning("gallery close publication unavailable reason=%s", type(exc).__name__)
+            diagnostic_event(
+                log, "gallery.snapshot.close_publication_unavailable",
+                level=logging.WARNING,
+                data={
+                    "reason": type(exc).__name__,
+                },
+            )
     else:
         _close_summary(Path(state).absolute(), "cache_bypassed" if not _enabled else "worker_unavailable")
