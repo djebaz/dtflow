@@ -872,6 +872,9 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
                         lambda window, mode, actions: trace.append("view-" + mode))
     monkeypatch.setattr(benchmark, "_click_grid_page_one",
                         lambda window, actions, *, at: trace.append("page-one-" + at))
+    monkeypatch.setattr(benchmark, "_wait_for_grid_page_one",
+                        lambda window, probe, actions, *, directory, timeout:
+                            trace.append("page-one-applied"))
     monkeypatch.setattr(benchmark, "_seek_grid_card",
                         lambda window, probe, actions, *, target, direction, **kwargs:
                             trace.append((
@@ -885,18 +888,19 @@ def test_grid_matrix_does_not_wait_for_query_or_open_other_views(monkeypatch, tm
         cycles=1, timeout=2, scroll_notches=192, grid_limits=(300, 900),
     ) == 1000
     assert record["warnings"] == []
-    assert record["grid_start_page_one_dispatched"] is True
+    assert record["grid_start_verified"] is True
     assert record["grid_sweep"]["requested_card"] == 300
     assert record["grid_sweep"]["pulse_notches"] == 12
     assert record["grid_sweep"]["position_verified"] is True
     assert [step[1:3] for step in trace if isinstance(step, tuple)] == [
-        (1, 1), (-1, 300), (1, 1),
+        (-1, 300), (1, 1),
     ]
-    assert next(step for step in trace if isinstance(step, tuple))[4] == "grid-home-start"
-    assert trace.index("view-Grid") < trace.index("images-or-page", 1)
+    assert "page-one-applied" in trace
+    assert trace.index("page-one-applied") < next(
+        i for i, step in enumerate(trace) if isinstance(step, tuple) and step[1] == -1
+    )
     seek_events = [step for step in trace if isinstance(step, tuple)]
-    assert seek_events[0][1:3] == (1, 1)
-    assert seek_events[1][1:3] == (-1, 300)
+    assert seek_events[0][1:3] == (-1, 300)
     assert record["grid_start_verified"] is True
     assert trace[-2:] == ["page-one-end", "close"]
     assert set(value for value in trace if isinstance(value, str) and value.startswith("view-")) == {"view-Grid"}
@@ -1338,3 +1342,49 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["target_reached"] is False
     assert actions[-1]["first_after"] == 1
     assert actions[-1]["last_after"] == 200
+
+
+
+def test_grid_start_does_not_accept_queued_page_one_click(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    calls = []
+    class Chip:
+        def click_input(self):
+            calls.append("clicked")
+    class Probe:
+        def read(self):
+            return GridPosition(1, 20, 833, "pager-log")
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    monkeypatch.setattr(benchmark, "_page_one_jump_events", lambda folder: 0)
+    actions = []
+    with pytest.raises(TimeoutError, match="not applied"):
+        benchmark._wait_for_grid_page_one(
+            object(), Probe(), actions, directory=tmp_path, timeout=0.1,
+        )
+    assert calls == ["clicked"]
+    assert actions[-1]["verified"] is False
+    assert actions[-1]["applied"] is False
+
+
+def test_grid_start_requires_actual_page_jump_after_click(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+    from tools.ui.grid_scroll_probe import GridPosition
+
+    state = {"events": 0}
+    class Chip:
+        def click_input(self):
+            state["events"] = 1
+    class Probe:
+        def read(self):
+            return GridPosition(1, 20, 833, "pager-log")
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    monkeypatch.setattr(benchmark, "_page_one_jump_events", lambda folder: state["events"])
+    actions = []
+    benchmark._wait_for_grid_page_one(
+        object(), Probe(), actions, directory=tmp_path, timeout=1,
+    )
+    assert actions[-1]["verified"] is True
+    assert actions[-1]["applied"] is True
+    assert actions[-1]["visible_first"] == 1
