@@ -765,3 +765,183 @@ def test_fullscreen_is_exercised_on_grid_before_list_or_detail(tmp_path, monkeyp
     assert sequence.index("slider") < sequence.index("fullscreen-on-grid") < sequence.index("List")
     assert sequence.index("fullscreen-on-grid") < sequence.index("Detail")
     assert sequence[-1] == "closed"
+
+@pytest.mark.parametrize(
+    ("ml", "mc", "effective"),
+    [(20, 50, 40), (20, 100, 100), (50, 150, 150),
+     (100, 300, 300), (200, 600, 600), (300, 1000, 900)],
+)
+def test_grid_matrix_resolves_actual_batch_rounding(ml, mc, effective):
+    from tools.ui.windows_gallery_benchmark import parse_grid_matrix
+
+    assert parse_grid_matrix([f"{ml}:{mc}"]) == [(ml, mc, effective)]
+
+
+def test_grid_matrix_default_cases_are_bounded_and_distinct():
+    from tools.ui.windows_gallery_benchmark import DEFAULT_GRID_MATRIX, parse_grid_matrix
+
+    default = parse_grid_matrix([])
+    assert [(ml, mc) for ml, mc, _effective in default] == list(DEFAULT_GRID_MATRIX)
+    assert len(default) == len(set(default))
+    assert default[0] == (20, 50, 40)
+    assert default[-1] == (300, 1000, 900)
+
+
+@pytest.mark.parametrize(
+    "specs",
+    [["20"], ["20/50"], ["0:50"], ["20:0"], ["301:1000"], ["300:1001"],
+     ["40:20"], ["20:50", "20:50"], ["20:50"] * 17],
+)
+def test_grid_matrix_rejects_invalid_or_unsafe_cases(specs):
+    from tools.ui.windows_gallery_benchmark import parse_grid_matrix
+
+    with pytest.raises(ValueError):
+        parse_grid_matrix(specs)
+
+
+def test_grid_sweep_depth_scales_with_resident_batch_count():
+    from tools.ui.windows_gallery_benchmark import _grid_sweep_steps
+
+    assert _grid_sweep_steps(20, 40) == 4
+    assert _grid_sweep_steps(20, 100) == 7
+    assert _grid_sweep_steps(300, 900) == 5
+    assert _grid_sweep_steps(1, 1000) == 12
+
+
+def test_page_one_is_physically_clicked_even_if_checked(monkeypatch):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    calls = []
+
+    class Page:
+        def get_toggle_state(self):
+            return 1
+
+        def click_input(self):
+            calls.append("clicked")
+
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **k: Page())
+    actions = []
+    benchmark._click_grid_page_one(object(), actions, at="start")
+    benchmark._click_grid_page_one(object(), actions, at="end")
+    assert calls == ["clicked", "clicked"]
+    assert [item["action"] for item in actions] == ["click-page-one-start", "click-page-one-end"]
+    assert all(item["verified"] for item in actions)
+
+
+def test_grid_matrix_path_never_opens_sort_or_other_views(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    trace = []
+    class FakeWindow:
+        def wait(self, state, *, timeout):
+            assert state == "exists visible enabled"
+
+        def set_focus(self):
+            pass
+
+        def close(self):
+            trace.append("close")
+
+    class FakeDesktop:
+        def __init__(self, *, backend):
+            assert backend == "uia"
+
+        def window(self, **kw):
+            assert kw["process"] == 9876
+            return FakeWindow()
+
+    class FakeButton:
+        def click_input(self):
+            trace.append("images")
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=FakeDesktop))
+    monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
+    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: FakeButton())
+    monkeypatch.setattr(benchmark, "_await_query", lambda *a, **kw: 1000)
+    monkeypatch.setattr(benchmark, "_reset_gallery_sort", lambda *a, **kw: pytest.fail("Sort must not open"))
+    monkeypatch.setattr(benchmark, "_click_page", lambda *a, **kw: pytest.fail("Only page 1 is allowed"))
+    monkeypatch.setattr(benchmark, "_toggle_fullscreen", lambda *a: pytest.fail("No fullscreen"))
+    monkeypatch.setattr(benchmark, "_move_thumbnail_slider", lambda *a: pytest.fail("No slider"))
+    monkeypatch.setattr(benchmark, "_click_gallery_mode",
+                        lambda window, mode, actions: trace.append("view-" + mode))
+    monkeypatch.setattr(benchmark, "_click_grid_page_one",
+                        lambda window, actions, *, at: trace.append("page-one-" + at))
+    monkeypatch.setattr(benchmark, "_scroll",
+                        lambda window, direction, actions, directory, **kwargs:
+                            trace.append(("scroll", kwargs["mode"], direction, kwargs["notches"])))
+    monkeypatch.setattr(benchmark.time, "sleep", lambda secs: None)
+    record = {"actions": [], "warnings": []}
+    assert benchmark._drive(
+        SimpleNamespace(pid=7890, poll=lambda: None), tmp_path, record,
+        cycles=1, timeout=2, scroll_notches=192, grid_limits=(300, 900),
+    ) == 1000
+    assert record["warnings"] == []
+    assert record["grid_sweep"]["steps_per_direction"] == 5
+    assert record["grid_sweep"]["notches_per_step"] == 64
+    assert trace.count(("scroll", "grid", -1, 64)) == 5
+    assert trace.count(("scroll", "grid", 1, 64)) == 5
+    assert trace.index("page-one-start") < trace.index(("scroll", "grid", -1, 64))
+    assert trace.index("page-one-end") > trace.index(("scroll", "grid", 1, 64))
+    assert trace[-1] == "close"
+    assert set(value for value in trace if isinstance(value, str) and value.startswith("view-")) == {"view-Grid"}
+
+
+def test_grid_matrix_records_insufficient_first_batch_as_warning(monkeypatch, tmp_path):
+    from tools.ui import windows_gallery_benchmark as benchmark
+
+    trace = []
+    class FakeWindow:
+        def wait(self, state, *, timeout):
+            pass
+
+        def set_focus(self):
+            pass
+
+        def close(self):
+            trace.append("close")
+
+    class FakeDesktop:
+        def __init__(self, *, backend):
+            pass
+
+        def window(self, **kw):
+            return FakeWindow()
+
+    monkeypatch.setitem(sys.modules, "pywinauto", SimpleNamespace(Desktop=FakeDesktop))
+    monkeypatch.setitem(sys.modules, "pywinauto.timings", SimpleNamespace(TimeoutError=TimeoutError))
+    monkeypatch.setattr(benchmark, "_await_app_pid", lambda *a: 9876)
+    monkeypatch.setattr(benchmark, "_button",
+                        lambda *a, **kw: SimpleNamespace(click_input=lambda: None))
+    monkeypatch.setattr(benchmark, "_await_query", lambda *a, **kw: 100)
+    monkeypatch.setattr(benchmark, "_click_gallery_mode", lambda *a: None)
+    monkeypatch.setattr(benchmark, "_click_grid_page_one", lambda *a, **kw: None)
+    monkeypatch.setattr(benchmark, "_scroll", lambda *a, **kw: None)
+    monkeypatch.setattr(benchmark.time, "sleep", lambda secs: None)
+    record = {"actions": [], "warnings": []}
+    assert benchmark._drive(
+        SimpleNamespace(pid=7890, poll=lambda: None), tmp_path, record,
+        cycles=1, timeout=2, grid_limits=(300, 900),
+    ) == 100
+    assert [w["step"] for w in record["warnings"]] == ["insufficient-images-for-full-batch"]
+    assert trace == ["close"]
+
+
+def test_launcher_passes_requested_batch_and_resolved_card_limit(tmp_path, monkeypatch):
+    import dtflow.cli
+    from tools.ui import gallery_perf_launch as launcher
+
+    profile = tmp_path / "profile.json"
+    profile.write_text("{}", encoding="utf-8")
+    invocations = []
+    monkeypatch.setattr(launcher, "apply_profile", lambda profile: None)
+    monkeypatch.setattr(dtflow.cli, "main", lambda argv: invocations.append(argv) or 0)
+
+    assert launcher.main(["--profile", str(profile), "--logs", str(tmp_path),
+                          "--ml", "300", "--mc", "1000"]) == 0
+    command = invocations[0]
+    assert command[command.index("-ml") + 1] == "300"
+    assert command[command.index("-mc") + 1] == "900"
+    assert command[command.index("-format") + 1] == "jpg"
+
