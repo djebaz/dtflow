@@ -2430,7 +2430,7 @@ def render_logs_states(shell, capture):
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
     panel = shell.logs_form
-    panel.logsStatus.setText("No diagnostic sessions")
+    panel.logsCounter.setText("No records yet in this session.")
     shell.logs.model.replace([])
     capture("logs-01-empty")
 
@@ -2449,6 +2449,7 @@ def render_logs_states(shell, capture):
         (record(2, "DEBUG", "gallery.gui_gap", "gallery"), RecordRef("fixture", 2, 0, 0, 0, 0, "fixture.jsonl")),
         (record(3, "WARNING", "diagnostics.loss", "diagnostics"), RecordRef("fixture", 3, 0, 0, 0, 0, "fixture.jsonl")),
         (record(4, "ERROR", "generation.failed", "generation"), RecordRef("fixture", 4, 0, 0, 0, 0, "fixture.jsonl")),
+        (record(5, "INFO", "logging.message", "backend"), RecordRef("fixture", 5, 0, 0, 0, 0, "fixture.jsonl")),
     ]
     shell.logs.model.replace(
         rows,
@@ -2457,9 +2458,10 @@ def render_logs_states(shell, capture):
             ((("elapsed_ms", "117.4"), ("mounted", "100"), ("mode", "grid")), 0),
             ((("reason", "queue_bytes"), ("count", "1")), 0),
             ((("category", "backend"), ("retryable", "false")), 0),
+            ((), 0, "Generic library message without characteristics (fixture)"),
         ],
     )
-    panel.logsStatus.setText("4 matching · illustrative fixture")
+    panel.logsCounter.setText("5 of 5 matching records · complete · page 1 · showing 5")
     panel.logsSessionCombo.blockSignals(True)
     panel.logsSessionCombo.clear()
     for number, sid, written, current in (
@@ -2477,33 +2479,47 @@ def render_logs_states(shell, capture):
     shell.logs.model.replace(paging_rows, [((("returned", "20"),), 0)] * len(paging_rows))
     panel.logsPreviousButton.setEnabled(True)
     panel.logsNextButton.setEnabled(True)
-    panel.logsStatus.setText("1204 matching · pending · page 2 · displaying 500")
+    panel.logsCounter.setText("1204 of 1204 matching records · pending · page 2 · showing 500")
+    panel.logsRefreshButton.setText("Refresh (new)")
+    shell.logs._set_pending(True)
     panel.logsFollowButton.blockSignals(True)
     panel.logsFollowButton.setChecked(False)
     panel.logsFollowButton.blockSignals(False)
     panel.logsOperationStatus.setText("Exported diagnostic-excerpt.csv (synthetic presentation)")
     capture("logs-05-paging")
 
+    panel.logsRefreshButton.setText("Refresh")
+    shell.logs._set_pending(False)
     shell.logs.model.replace(rows, [((("state", "fixture"),), 0)] * len(rows))
     panel.logsTable.selectRow(1)
-    added = (record(5, "INFO", "gallery.query_done", "gallery"), RecordRef("fixture", 5, 0, 0, 0, 0, "fixture.jsonl"))
+    added = (record(6, "INFO", "gallery.query_done", "gallery"), RecordRef("fixture", 6, 0, 0, 0, 0, "fixture.jsonl"))
     previews = list(shell.logs.model.previews)
     shell.logs.model.reconcile([added, *rows], [((("returned", "20"),), 0), *previews])
     panel.logsPreviousButton.setEnabled(False)
     panel.logsNextButton.setEnabled(False)
-    panel.logsStatus.setText("5 matching · pending · page 1 · displaying 5")
+    panel.logsCounter.setText("6 of 6 matching records · pending · page 1 · showing 6")
     capture("logs-06-follow-selection")
     panel.logsOperationStatus.clear()
 
-    panel.logsDetailTitle.setText("generation.failed")
-    panel.logsDetailText.setPlainText(
-        '{"v":1,"seq":4,"level":"ERROR","event":"generation.failed","data":{"category":"backend","retryable":false}}'
+    shell.logs._show_detail(
+        {
+            "v": 1,
+            "seq": 4,
+            "ts": "2026-10-19T09:12:04.000Z",
+            "level": "ERROR",
+            "component": "generation",
+            "event": "generation.failed",
+            "msg": "Backend rejected the request (fixture)",
+            "data": {"category": "backend", "retryable": False},
+        },
+        None,
     )
-    panel.logsDetail.show()
     capture("logs-03-details")
 
     panel.logsDetail.hide()
-    panel.logsNotice.setText("Incomplete evidence · source segment missing")
+    from dtflow.ui.logs_workspace import INCOMPLETE_NOTICE
+
+    panel.logsNotice.setText(INCOMPLETE_NOTICE.format(reasons="missing_segment"))
     panel.logsNotice.show()
     capture("logs-04-reader-error")
     panel.logsNotice.hide()

@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
+from PySide6.QtWidgets import QApplication, QCompleter, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
 
 from dtflow._diagnostic_export import export_matching
 from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, scan, snapshot
@@ -37,22 +37,31 @@ from dtflow.ui.theme import load_tokens
 # Distinct filter choices kept per session; a pathological session cannot grow the combo lists without bound.
 FACET_LIMIT = 1000
 
-# Sort combo entries: label, reader sort key, descending.
+# Sort combo entries in the workspace specification's order: label, reader sort key, descending.
 SORTS = (
     ("Datetime · newest first", "ts", True),
     ("Datetime · oldest first", "ts", False),
-    ("Event · A to Z", "event", False),
-    ("Event · Z to A", "event", True),
-    ("Component · A to Z", "component", False),
-    ("Component · Z to A", "component", True),
     ("Severity · most severe first", "level", True),
     ("Severity · least severe first", "level", False),
-    ("Characteristic · highest first", "metric", True),
-    ("Characteristic · lowest first", "metric", False),
+    ("Event · A → Z", "event", False),
+    ("Event · Z → A", "event", True),
+    ("Component · A → Z", "component", False),
+    ("Component · Z → A", "component", True),
+    ("Selected metric · highest first", "metric", True),
+    ("Selected metric · lowest first", "metric", False),
 )
+METRIC_SORTS = (8, 9)
 
-# Clicking a column header toggles between the two sort entries of that column.
-HEADER_SORTS = {0: (6, 7), 1: (0, 1), 2: (2, 3), 3: (8, 9)}
+# Clicking a sortable header toggles between the two sort entries of that column; the severity strip is not sortable.
+HEADER_SORTS = {1: (0, 1), 2: (4, 5)}
+
+# Operator labels shown to people, with the shared query operator as item data.
+OPERATORS = (("=", "="), ("≠", "!="), (">", ">"), ("≥", ">="), ("<", "<"), ("≤", "<="), ("contains", "contains"))
+
+INCOMPLETE_NOTICE = (
+    "Incomplete session evidence: available records remain inspectable, "
+    "but benchmark completeness cannot be certified ({reasons})."
+)
 
 
 def session_label(number: int, session_id: str, last_write: datetime | None, *, current: bool) -> str:
@@ -66,22 +75,43 @@ def session_label(number: int, session_id: str, last_write: datetime | None, *, 
     return " · ".join(parts)
 
 
-def session_facets(directory: Path, session_id: str, *, cancelled=None) -> tuple[list[str], list[str]]:
-    """Session-wide component and event names through the shared reader, bounded per list."""
-    components, events = set(), set()
+def session_facets(directory: Path, session_id: str, *, cancelled=None):
+    """Session-wide components, events, data keys and numeric data keys through the shared reader, bounded per list."""
+    components, events, keys, numeric = set(), set(), set(), set()
 
     def collect(record, _ref):
         if len(components) < FACET_LIMIT:
             components.add(record["component"])
         if len(events) < FACET_LIMIT:
             events.add(record["event"])
+        data = record.get("data")
+        if type(data) is dict:
+            for key, value in data.items():
+                if len(keys) < FACET_LIMIT:
+                    keys.add(key)
+                if type(value) in (int, float) and len(numeric) < FACET_LIMIT:
+                    numeric.add(key)
 
     def reset():
-        components.clear()
-        events.clear()
+        for collected in (components, events, keys, numeric):
+            collected.clear()
 
     scan(directory, session_id, on_record=collect, on_reset=reset, cancelled=cancelled)
-    return sorted(components), sorted(events)
+    return sorted(components), sorted(events), sorted(keys), sorted(numeric)
+
+
+def row_preview(record: dict):
+    """Table projection: up to six characteristics, or the sanitized message when a record has no data."""
+    pairs, more = characteristics(record, limit=6, preview_bytes=64)
+    message = record.get("msg")
+    if not pairs and type(message) is str and message:
+        encoded = message.encode("utf-8")
+        return pairs, more, encoded[:160].decode("utf-8", "ignore") + ("…" if len(encoded) > 160 else "")
+    return pairs, more
+
+
+def characteristic_label(key: str) -> str:
+    return key.replace("_", " ")
 
 
 class _Signals(QObject):
@@ -106,7 +136,7 @@ class _Job(QRunnable):
 
 
 class _LogModel(QAbstractTableModel):
-    HEADERS = ("", "Date / Time", "Event", "Characteristics", "Actions")
+    HEADERS = ("", "DATE / TIME", "EVENT", "CHARACTERISTICS", "")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -114,6 +144,13 @@ class _LogModel(QAbstractTableModel):
         self.refs = []
         self.palette = load_tokens()
         self.previews = []
+        # (column, descending, characteristic label) of the active sort; drives the header arrows.
+        self.sort_state = (1, True, "")
+
+    def set_sort_state(self, column, descending, metric=""):
+        if self.sort_state != (column, descending, metric):
+            self.sort_state = (column, descending, metric)
+            self.headerDataChanged.emit(Qt.Orientation.Horizontal, 1, 3)
 
     def rowCount(self, parent=None):
         return 0 if parent is not None and parent.isValid() else len(self.rows)
@@ -122,10 +159,25 @@ class _LogModel(QAbstractTableModel):
         return len(self.HEADERS)
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return self.HEADERS[section]
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.ToolTipRole and section == 0:
-            return "Severity: click to sort"
+        if orientation != Qt.Orientation.Horizontal:
+            return None
+        if role == Qt.ItemDataRole.DisplayRole:
+            text = self.HEADERS[section]
+            if section not in (1, 2, 3):
+                return text
+            column, descending, metric = self.sort_state
+            if section == 3 and column == 3 and metric:
+                text += f" · {metric}"
+            # Inactive sortable headers show ↕; the active one shows its direction.
+            return f"{text} {('↓' if descending else '↑') if section == column else '↕'}"
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return {
+                0: "Recorded severity",
+                1: "Sort by source time",
+                2: "Sort by event name",
+                3: "Sort by a numeric characteristic",
+                4: "Row actions: Details and Copy raw",
+            }[section]
         return None
 
     def replace(self, page, previews=None):
@@ -244,11 +296,13 @@ class LogsWorkspace(QObject):
         self.form.logsTable.setSelectionMode(self.form.logsTable.SelectionMode.ExtendedSelection)
         header = self.form.logsTable.horizontalHeader()
         header.setSectionsClickable(True)
-        header.setSortIndicatorShown(True)
+        # Header text carries ↕/↑/↓ as in the workspace specification; no second native indicator.
+        header.setSortIndicatorShown(False)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         header.sectionClicked.connect(self._header_sort)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        for col, width in enumerate((10, 150, 245, 220, 100)):
+        for col, width in enumerate((12, 122, 250, 220, 80)):
             if col != 3:
                 self.form.logsTable.setColumnWidth(col, width)
         self.form.logsTable.setWordWrap(True)
@@ -258,10 +312,17 @@ class LogsWorkspace(QObject):
         self.form.logsDetail.hide()
         self.form.logsAdvanced.hide()
         self.form.logsNotice.hide()
-        self.form.logsLevelCombo.addItems(("All levels", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"))
-        self.form.logsComponentCombo.addItem("All components")
-        self.form.logsEventCombo.addItem("All events")
-        self.form.logsOperator.addItems(("=", "!=", ">", ">=", "<", "<=", "contains"))
+        self.form.logsLevelCombo.addItem("All", "")
+        for level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+            self.form.logsLevelCombo.addItem(level, level)
+        self.form.logsComponentCombo.addItem("All", "")
+        self.form.logsEventCombo.addItem("All events", "")
+        for label, operator in OPERATORS:
+            self.form.logsOperator.addItem(label, operator)
+        self._key_completer = QCompleter([], self.form.logsField)
+        self._key_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._key_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.form.logsField.setCompleter(self._key_completer)
         for label, _sort, _descending in SORTS:
             self.form.logsSortCombo.addItem(label)
         self.form.logsFollowButton.setCheckable(True)
@@ -271,15 +332,17 @@ class LogsWorkspace(QObject):
         self.form.logsPreviousButton.clicked.connect(lambda: self._navigate_page(before=True))
         self.form.logsNextButton.clicked.connect(lambda: self._navigate_page(before=False))
         self.form.logsMoreFiltersButton.clicked.connect(
-            lambda: self.form.logsAdvanced.setVisible(not self.form.logsAdvanced.isVisible())
+            lambda: self._show_advanced(not self.form.logsAdvanced.isVisible())
         )
         self.form.logsFollowButton.toggled.connect(self._toggle_follow)
         chevron = Path(__file__).parents[1] / "resources" / "images" / "gallery" / "chevron-right.svg"
         self.form.logsDetailCollapse.setIcon(QIcon(str(chevron)))
         self.form.logsDetailCollapse.setText("")
-        self.form.logsDetailCollapse.setToolTip("Close event details")
-        self.form.logsDetailCollapse.setAccessibleName("Close event details")
+        self.form.logsDetailCollapse.setToolTip("Collapse details")
+        self.form.logsDetailCollapse.setAccessibleName("Collapse details")
         self.form.logsDetailCollapse.clicked.connect(self.form.logsDetail.hide)
+        self.form.logsDetailCopyRaw.clicked.connect(self._copy_detail)
+        self._detail_record = None
         self.form.logsResetFilters.clicked.connect(self.clear_filters)
         self.form.logsCopyVisible.clicked.connect(self.copy_visible)
         self.form.logsSaveMenu.clicked.connect(self._save_menu)
@@ -319,7 +382,7 @@ class LogsWorkspace(QObject):
         self._page = []
         self._pending = 0
         self._file_snapshot = None
-        self._facets = (None, [], [])
+        self._facets = (None, [], [], [], [])
         self._programmatic = False
         self._timer = QTimer(form)
         self._timer.setInterval(1000)
@@ -409,9 +472,13 @@ class LogsWorkspace(QObject):
         if self.form.logsDetail.isVisible():
             self.form.logsDetail.hide()
         elif self.form.logsAdvanced.isVisible():
-            self.form.logsAdvanced.hide()
+            self._show_advanced(False)
         else:
             self.on_close()
+
+    def _show_advanced(self, visible):
+        self.form.logsAdvanced.setVisible(visible)
+        self.form.logsMoreFiltersButton.setText("More filters ▴" if visible else "More filters ▾")
 
     def _query_arguments(self):
         try:
@@ -426,11 +493,9 @@ class LogsWorkspace(QObject):
     def _filters(self):
         filters = {
             "search": self.form.logsSearch.text().strip(),
-            "level": self.form.logsLevelCombo.currentText(),
+            "level": self.form.logsLevelCombo.currentData() or "",
             "component": self.form.logsComponentCombo.currentData() or "",
         }
-        if filters["level"] == "All levels":
-            filters["level"] = ""
         event = self.form.logsEventCombo.currentData()
         if isinstance(event, str) and event.endswith(".*"):
             filters["family"] = event[:-2]
@@ -446,7 +511,7 @@ class LogsWorkspace(QObject):
         characteristic = self._characteristic()
         if characteristic and self.form.logsValue.text().strip():
             filters["field"] = characteristic
-            filters["op"] = self.form.logsOperator.currentText()
+            filters["op"] = self.form.logsOperator.currentData() or "="
             raw = self.form.logsValue.text().strip()
             try:
                 filters["value"] = json.loads(raw)
@@ -467,7 +532,7 @@ class LogsWorkspace(QObject):
         _label, sort, descending = SORTS[max(0, self.form.logsSortCombo.currentIndex())]
         metric = self._characteristic() if sort == "metric" else ()
         if sort == "metric" and not metric:
-            raise ValueError("Enter a data.* characteristic under More filters to sort by it")
+            raise ValueError("Choose a characteristic to sort by")
         return sort, descending, metric
 
     def _session_changed(self, *_):
@@ -503,28 +568,53 @@ class LogsWorkspace(QObject):
             self.form.logsFollowButton.setChecked(False)
 
     def _header_sort(self, column):
+        if column == 3:
+            self._characteristic_menu()
+            return
         pair = HEADER_SORTS.get(column)
         if pair is None:
-            return
-        if column == 3 and not self.form.logsField.text().strip():
-            # A characteristic sort needs a data.* key; ask for it rather than switching to a failing sort.
-            self.form.logsAdvanced.show()
-            self.form.logsField.setFocus(Qt.FocusReason.OtherFocusReason)
-            self.form.logsStatus.setText("Enter a data.* characteristic to sort by it")
             return
         combo = self.form.logsSortCombo
         combo.setCurrentIndex(pair[1] if combo.currentIndex() == pair[0] else pair[0])
 
-    def _show_sort_indicator(self):
+    def _characteristic_menu(self):
+        """CHARACTERISTICS opens the numeric keys present in the session; picking the active one reverses it."""
+        numeric = self._facets[4] if self._facets[0] == self._session() else []
+        if not numeric:
+            self.form.logsStatus.setText("No numeric characteristics in this session")
+            return
         header = self.form.logsTable.horizontalHeader()
-        current = self.form.logsSortCombo.currentIndex()
+        menu = QMenu(header)
+        actions = {menu.addAction(characteristic_label(key)): key for key in numeric}
+        point = header.mapToGlobal(header.rect().bottomLeft())
+        point.setX(point.x() + header.sectionViewportPosition(3))
+        choice = menu.exec(point)
+        if choice not in actions:
+            return
+        field = "data." + actions[choice]
+        combo = self.form.logsSortCombo
+        same = self.form.logsField.text().strip() == field
+        target = METRIC_SORTS[1] if same and combo.currentIndex() == METRIC_SORTS[0] else METRIC_SORTS[0]
+        self.form.logsField.setText(field)
+        if combo.currentIndex() == target:
+            self._filtered()
+        else:
+            combo.setCurrentIndex(target)
+
+    def _show_sort_indicator(self):
+        current = max(0, self.form.logsSortCombo.currentIndex())
+        label, sort, descending = SORTS[current]
+        self.form.logsSortNote.setText(label)
+        if sort == "metric":
+            key = self.form.logsField.text().strip().removeprefix("data.")
+            self.model.set_sort_state(3, descending, characteristic_label(key))
+            self.form.logsSortNote.setText(f"{characteristic_label(key)} · {label.split(' · ')[1]}")
+            return
         for column, pair in HEADER_SORTS.items():
             if current in pair:
-                descending = SORTS[current][2]
-                order = Qt.SortOrder.DescendingOrder if descending else Qt.SortOrder.AscendingOrder
-                header.setSortIndicator(column, order)
+                self.model.set_sort_state(column, descending)
                 return
-        header.setSortIndicator(-1, Qt.SortOrder.DescendingOrder)
+        self.model.set_sort_state(-1, descending)
 
     def refresh(self, *_, facets=False):
         self._request_page(facets=facets)
@@ -542,8 +632,17 @@ class LogsWorkspace(QObject):
         self.form.logsPreviousButton.setEnabled(not self._query_busy and self._page_number > 0)
         self.form.logsNextButton.setEnabled(not self._query_busy and self._next_cursor is not None)
 
+    def _set_pending(self, pending):
+        # Accent border while held-back records are waiting, as in the workspace specification.
+        button = self.form.logsRefreshButton
+        if button.property("pending") != pending:
+            button.setProperty("pending", pending)
+            button.style().unpolish(button)
+            button.style().polish(button)
+
     def _request_page(self, *, facets=False, navigation=None):
         self.form.logsRefreshButton.setText("Refresh")
+        self._set_pending(False)
         if not self.active:
             return
         sid = self._session()
@@ -559,7 +658,7 @@ class LogsWorkspace(QObject):
             self.model.replace([])
             self._page = []
             self._page_controls()
-            self.form.logsStatus.setText("No diagnostic sessions")
+            self.form.logsCounter.setText("No diagnostic sessions")
             return
         try:
             filters, (sort, desc, metric) = self._query_arguments()
@@ -589,12 +688,12 @@ class LogsWorkspace(QObject):
         self._show_sort_indicator()
         self._query_busy = True
         self._page_controls()
-        self.form.logsStatus.setText("Loading session…")
+        self.form.logsCounter.setText("Loading session…")
         # Filter, sort and Follow refreshes reuse the session-wide choices and merge newly shown
         # values; only an explicit Refresh, session change or reopen rescans them.
         cached = self._facets if self._facets[0] == sid and not facets else None
         cancel = Event()
-        fallback = self._facets if self._facets[0] == sid else (sid, [], [])
+        fallback = self._facets if self._facets[0] == sid else (sid, [], [], [], [])
 
         def load():
             status, count, page, cursor = query(
@@ -607,7 +706,7 @@ class LogsWorkspace(QObject):
                 cursor=request_cursor,
                 before=before,
                 cancelled=cancel.is_set,
-                project=lambda record: characteristics(record, limit=6, preview_bytes=64),
+                project=row_preview,
             )
             choices = cached
             if choices is None:
@@ -634,7 +733,7 @@ class LogsWorkspace(QObject):
         if error:
             self.form.logsNotice.setText(f"Diagnostic reader unavailable: {error}")
             self.form.logsNotice.show()
-            self.form.logsStatus.setText("Read failed")
+            self.form.logsCounter.setText("Read failed")
             return
         status, count, page, _next, projections, choices = result
         self._page = page
@@ -686,35 +785,53 @@ class LogsWorkspace(QObject):
                 self.form.logsTable.scrollToTop()
         finally:
             self._programmatic = False
-        self.form.logsStatus.setText(
-            f"{count} matching · {status.state} · page {self._page_number + 1} · displaying {len(page)}"
-        )
+        if status.records == 0:
+            self.form.logsCounter.setText("No records yet in this session.")
+        elif count == 0:
+            self.form.logsCounter.setText("No matching records. Adjust filters or reset.")
+        else:
+            self.form.logsCounter.setText(
+                f"{count} of {status.records} matching records · {status.state} · "
+                f"page {self._page_number + 1} · showing {len(page)}"
+            )
         self.form.logsNotice.setVisible(status.state not in ("complete", "pending"))
-        self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
+        self.form.logsNotice.setText(INCOMPLETE_NOTICE.format(reasons=", ".join(status.reasons)))
         self._last = tuple((r.seq for _, r in page))
         self._pending = 0
         self._file_snapshot = tuple((p.path.name, p.device, p.inode, p.size) for p in status.segments)
         self._populate_filter_values(page, choices)
 
     def _populate_filter_values(self, page, choices):
-        sid, components, events = choices
+        sid, components, events, keys, numeric = choices
         # Rows shown by Follow may introduce names after the last session-wide scan.
         components = sorted(set(components) | {row["component"] for row, _ in page})[:FACET_LIMIT]
         events = sorted(set(events) | {row["event"] for row, _ in page})[:FACET_LIMIT]
-        self._facets = (sid, components, events)
+        self._facets = (sid, components, events, keys, numeric)
+        self._key_completer.model().setStringList(["data." + key for key in keys])
         for combo, options, initial in (
-            (self.form.logsComponentCombo, components, "All components"),
+            (self.form.logsComponentCombo, components, "All"),
             (self.form.logsEventCombo, events, "All events"),
         ):
             current = combo.currentData()
             combo.blockSignals(True)
             combo.clear()
             combo.addItem(initial, "")
-            for choice in options:
-                combo.addItem(choice, choice)
             if combo is self.form.logsEventCombo:
-                for family in sorted({name.split(".")[0] for name in options}):
-                    combo.addItem(f"{family}.*", f"{family}.*")
+                # One dropdown: event families first, then exact events, each under a disabled group heading.
+                families = sorted({name.split(".")[0] for name in options})
+                for heading, entries in (
+                    ("Event families", [(f"{family}.* (all)", f"{family}.*") for family in families]),
+                    ("Exact events", [(name, name) for name in options]),
+                ):
+                    if not entries:
+                        continue
+                    combo.addItem(heading, None)
+                    combo.model().item(combo.count() - 1).setEnabled(False)
+                    for text, value in entries:
+                        combo.addItem("    " + text, value)
+            else:
+                for choice in options:
+                    combo.addItem(choice, choice)
             if current and combo.findData(current) < 0:
                 # Keep an active filter visible even when its name is not (or no longer) listed.
                 combo.addItem(f"{current} (not listed)", current)
@@ -739,7 +856,8 @@ class LogsWorkspace(QObject):
             self.refresh(facets=False)
         else:
             self._pending = max(1, self._pending)
-            self.form.logsRefreshButton.setText("Refresh (new records)")
+            self.form.logsRefreshButton.setText("Refresh (new)")
+            self._set_pending(True)
 
     def _row_clicked(self, index):
         # Selection alone never opens details; actions use the painted delegate.
@@ -762,21 +880,38 @@ class LogsWorkspace(QObject):
             self._run(lambda: read_detail(self.directory, ref), self._copy_record, kind="copy")
 
     def _show_detail(self, record, error):
+        self._detail_record = None if error else record
+        self.form.logsDetailCopyRaw.setEnabled(not error)
         if error:
+            self.form.logsDetailTitle.setText("Selected record")
+            self.form.logsDetailMeta.setText("")
+            self.form.logsDetailMetrics.setText("")
+            self.form.logsDetailMessage.setText("")
             self.form.logsDetailText.setPlainText("Details unavailable: " + error)
         else:
-            self.form.logsDetailTitle.setText(
-                f"{record['event']}  ·  {record['level']}  ·  {record['component']}  ·  "
-                f"seq {record['seq']}  ·  {record['ts']}"
+            self.form.logsDetailTitle.setText(record["event"])
+            self.form.logsDetailMeta.setText(
+                f"{record['level']} · {record['component']} · seq {record['seq']} · UTC {record['ts']}"
             )
+            pairs, _more = characteristics(record, limit=None, preview_bytes=256)
+            self.form.logsDetailMetrics.setText("   ".join(f"{characteristic_label(k)}: {v}" for k, v in pairs))
+            self.form.logsDetailMetrics.setVisible(bool(pairs))
+            message = record.get("msg") if type(record.get("msg")) is str else ""
+            self.form.logsDetailMessage.setText(message)
+            self.form.logsDetailMessage.setVisible(bool(message))
             self.form.logsDetailText.setPlainText(json.dumps(record, indent=2, ensure_ascii=False))
         self.form.logsDetail.show()
+
+    def _copy_detail(self):
+        if self._detail_record is not None:
+            self._copy_record(self._detail_record, None)
 
     def _copy_record(self, record, error):
         if error:
             self.form.logsStatus.setText("Raw record unavailable: " + error)
         else:
             QApplication.clipboard().setText(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+            self.form.logsStatus.setText(f"Copied raw record seq {record['seq']}")
 
     def copy_visible(self):
         """Copy complete displayed-page evidence, never the small table projections."""
@@ -814,6 +949,8 @@ class LogsWorkspace(QObject):
         menu = QMenu(self.form.logsSaveMenu)
         copy_selected = menu.addAction("Copy selected rows")
         copy_selected.setEnabled(self.form.logsTable.selectionModel().hasSelection())
+        copy_raw = menu.addAction("Copy raw JSONL record")
+        copy_raw.setEnabled(self.form.logsTable.currentIndex().isValid())
         menu.addSeparator()
         exports = {
             menu.addAction(label): fmt
@@ -823,9 +960,9 @@ class LogsWorkspace(QObject):
             action.setEnabled(bool(self._session()))
         menu.addSeparator()
         current_segment = self.directory / f"dtflow-{self._session()}.jsonl"
-        open_raw = menu.addAction("Open current log segment")
+        open_raw = menu.addAction("Open raw file")
         open_raw.setEnabled(bool(self._session()) and current_segment.is_file())
-        open_folder = menu.addAction("Open log folder")
+        open_folder = menu.addAction("Open folder")
         # The menu runs a nested event loop; a Follow refresh meanwhile would clear the selection it acts on.
         self._timer.stop()
         try:
@@ -835,6 +972,8 @@ class LogsWorkspace(QObject):
                 self._timer.start()
         if choice is copy_selected:
             self.copy_selected()
+        elif choice is copy_raw:
+            self._selected_action("copy")
         elif choice is open_raw:
             # Explicit user action: the active segment opens in the system's default viewer.
             self._open(current_segment, directory=False)

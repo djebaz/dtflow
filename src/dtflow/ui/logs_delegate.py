@@ -42,7 +42,16 @@ class LogCellDelegate(QStyledItemDelegate):
         if index.row() >= len(model.previews):
             return (), 0
         preview = model.previews[index.row()]
-        return preview if isinstance(preview, tuple) and len(preview) == 2 else ((), 0)
+        # (pairs, overflow) or (pairs, overflow, message) when a record has no characteristics.
+        return preview[:2] if isinstance(preview, tuple) and len(preview) in (2, 3) else ((), 0)
+
+    @staticmethod
+    def _message(index):
+        model = index.model()
+        if index.row() >= len(model.previews):
+            return ""
+        preview = model.previews[index.row()]
+        return preview[2] if isinstance(preview, tuple) and len(preview) == 3 else ""
 
     def _chips(self, painter, rect, metrics, pairs, overflow, *, draw):
         x, y = rect.x(), rect.y() + 5
@@ -115,8 +124,18 @@ class LogCellDelegate(QStyledItemDelegate):
             self._pill(painter, QRect(rect.x(), rect.y() + 9, rect.width(), 26), shortened, full)
         elif col == 3:
             pairs, overflow = self._preview(index)
-            self._chips(painter, rect, metrics, pairs[:6], overflow, draw=True)
+            message = self._message(index)
+            if message and not pairs:
+                painter.setPen(self._color("color.secondary"))
+                painter.drawText(
+                    rect.adjusted(0, 5, 0, 0), Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, message
+                )
+            else:
+                self._chips(painter, rect, metrics, pairs[:6], overflow, draw=True)
         elif col == 4:
+            # Quiet at rest, full brightness on row hover or selection.
+            hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+            painter.setOpacity(1.0 if selected or hovered else 0.55)
             mid = option.rect.x() + option.rect.width() // 2
             for icon, cell in zip(
                 self.action_icons,
@@ -142,6 +161,10 @@ class LogCellDelegate(QStyledItemDelegate):
         pairs, overflow = self._preview(index)
         metrics = QFontMetrics(option.font)
         rect = QRect(0, 0, max(1, option.rect.width() - 10), 53)
+        message = self._message(index)
+        if message and not pairs:
+            bounds = metrics.boundingRect(rect, Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap, message)
+            return QSize(rect.width(), max(53, bounds.height() + 16))
         height = self._chips(None, rect, metrics, pairs[:6], overflow, draw=False)
         return QSize(rect.width(), max(53, height + 6))
 
