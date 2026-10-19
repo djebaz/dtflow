@@ -32,8 +32,8 @@ Omit missing characteristics without reordering remaining ones. Show `false`, `0
 ### Three independent visual channels
 
 1. **Severity stripe:** stable semantic level tokens from `tokens.json`; not used to indicate measured duration.
-2. **Full event pill:** deterministic palette index from normalized **complete** dotted event name (e.g. stable BLAKE2 digest modulo a small ordered theme-derived muted palette). Do not depend on list position, filtering, session, Python's salted `hash()`, or alphabetical index of present names. Collisions are allowed: color aids recognition, never unique identity.
-3. **Characteristic-name chips:** same algorithm but keyed by canonical metric name; neutral numeric/text values. No metric-color mapping by position in the row. Normalize names/units consistently and cache bounded unique lookups when implemented. Reuse shared DTFlow design tokens and scoped Qt styling, not a separate runtime stylesheet.
+2. **Full event pill:** deterministic palette index from normalized **complete** dotted event name (for example a stable specified FNV-1a 32-bit UTF-8 hash modulo a small ordered theme-derived muted palette). Do not depend on list position, filtering, session, Python's salted `hash()`, or alphabetical index of present names. Collisions are allowed: color aids recognition, never unique identity.
+3. **Characteristic-name chips:** same stable specified algorithm but keyed by canonical metric name; neutral numeric/text values. No metric-color mapping by position in the row. Normalize names/units consistently and cache bounded unique lookups when implemented. Reuse shared DTFlow design tokens and scoped Qt styling, not a separate runtime stylesheet.
 
 ## Search, filtering and ordering
 
