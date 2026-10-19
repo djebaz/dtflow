@@ -2439,9 +2439,16 @@ def render_logs_states(shell, capture):
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
     panel = shell.logs_form
-    panel.logsCounter.setText("No records yet in this session.")
+    from dtflow.ui.logs_workspace import EMPTY_SESSION, NO_MATCHES
+
     shell.logs.model.replace([])
+    shell.logs._set_empty(EMPTY_SESSION)
+    panel.logsCounter.setText("0 records · pending")
     capture("logs-01-empty")
+    shell.logs._set_empty(NO_MATCHES)
+    panel.logsCounter.setText("0 of 5 matching records · complete")
+    capture("logs-08-no-matches")
+    shell.logs._set_empty("")
 
     def record(seq, level, event, component):
         return {
@@ -2495,17 +2502,24 @@ def render_logs_states(shell, capture):
     panel.logsPreviousButton.setEnabled(True)
     panel.logsNextButton.setEnabled(True)
     panel.logsCounter.setText("1204 of 1204 matching records · pending · page 2 · showing 500")
-    panel.logsRefreshButton.setText("Refresh (new)")
-    shell.logs._set_pending(True)
+    shell.logs._set_pending(True, 3, detail="3 new records match the current filters")
     panel.logsFollowButton.blockSignals(True)
     panel.logsFollowButton.setChecked(False)
     panel.logsFollowButton.blockSignals(False)
     panel.logsOperationStatus.setText("Exported diagnostic-excerpt.csv (synthetic presentation)")
     capture("logs-05-paging")
 
-    panel.logsRefreshButton.setText("Refresh")
+    shell.logs._set_pending(True, 2, incomplete=True, detail="Synthetic incomplete-evidence count")
+    capture("logs-09-refresh-count-incomplete")
+
     shell.logs._set_pending(False)
+    # Component sort from the left target of the split COMPONENT . EVENT header.
     shell.logs.model.replace(rows, [((("state", "fixture"),), 0)] * len(rows))
+    shell.logs.model.set_sort_state("component", False)
+    panel.logsSortNote.setText("Component · A → Z")
+    capture("logs-10-component-sort")
+    shell.logs.model.set_sort_state("ts", True)
+    panel.logsSortNote.setText("Datetime · newest first")
     panel.logsTable.selectRow(1)
     added = (record(6, "INFO", "gallery.query_done", "gallery"), RecordRef("fixture", 6, 0, 0, 0, 0, "fixture.jsonl"))
     previews = list(shell.logs.model.previews)

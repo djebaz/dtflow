@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
 
 from PySide6.QtCore import (
     QAbstractTableModel,
+    QEvent,
     QItemSelectionModel,
     QModelIndex,
     QObject,
@@ -24,14 +26,24 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QCompleter, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
+from PySide6.QtWidgets import (
+    QApplication,
+    QCompleter,
+    QFileDialog,
+    QHeaderView,
+    QMenu,
+    QScrollBar,
+    QSplitterHandle,
+    QStyleOptionViewItem,
+    QWidget,
+)
 
 from dtflow._diagnostic_export import export_matching
-from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, scan, snapshot
+from dtflow._diagnostic_reader import PAGE_SIZE, discover, match, query, read_detail, scan, snapshot
 from dtflow.diagnostic_projection import characteristics
 from dtflow.logging_setup import LOGGER
 from dtflow.ui.desktop_open import open_local_path
-from dtflow.ui.logs_delegate import LogCellDelegate
+from dtflow.ui.logs_delegate import LogCellDelegate, LogHeaderView
 from dtflow.ui.theme import load_tokens
 
 # Distinct filter choices kept per session; a pathological session cannot grow the combo lists without bound.
@@ -52,11 +64,19 @@ SORTS = (
 )
 METRIC_SORTS = (8, 9)
 
-# Clicking a sortable header toggles between the two sort entries of that column; the severity strip is not sortable.
-HEADER_SORTS = {1: (0, 1), 2: (4, 5)}
+# Clicking a sortable header target toggles between its two sort entries; the severity strip is not sortable.
+HEADER_SORTS = {"ts": (0, 1), "component": (6, 7), "event": (4, 5)}
+# Header sections and their sort targets; the event column header holds two independent targets.
+SECTION_SORTS = {1: ("ts",), 2: ("component", "event")}
 
 # Operator labels shown to people, with the shared query operator as item data.
 OPERATORS = (("=", "="), ("≠", "!="), (">", ">"), ("≥", ">="), ("<", "<"), ("≤", "<="), ("contains", "contains"))
+
+EMPTY_SESSION = "No records yet in this session."
+NO_MATCHES = "No matching records. Adjust filters or reset."
+
+# Minimum seconds between pending-arrival counts while Follow is off and the session keeps growing.
+PENDING_COUNT_INTERVAL = 3.0
 
 INCOMPLETE_NOTICE = (
     "Incomplete session evidence: available records remain inspectable, "
@@ -135,8 +155,40 @@ class _Job(QRunnable):
             pass
 
 
+def count_arrivals(directory: Path, session_id: str, boundary, filters, *, cancelled=None):
+    """Matching records not wholly inside the shown snapshot, through the shared reader.
+
+    `boundary` maps each (device, inode) of the shown snapshot to its size; rotation renames
+    keep the inode, so a record is new when it lies beyond that size or in a new file. Only a
+    count is retained, never the arriving records.
+    """
+    total = 0
+
+    def collect(record, ref):
+        nonlocal total
+        shown = boundary.get((ref.device, ref.inode))
+        if (shown is None or ref.offset + ref.length > shown) and match(record, **filters):
+            total += 1
+
+    def reset():
+        nonlocal total
+        total = 0
+
+    status = scan(directory, session_id, on_record=collect, on_reset=reset, cancelled=cancelled)
+    return total, status
+
+
+def refresh_label(count, *, incomplete=False):
+    """Refresh text for held-back matching arrivals; None means a change whose count is unknown."""
+    if count is None:
+        return "Refresh (new)"
+    if not count:
+        return "Refresh"
+    return f"Refresh ({count} new{' · incomplete' if incomplete else ''})"
+
+
 class _LogModel(QAbstractTableModel):
-    HEADERS = ("", "DATE / TIME", "EVENT", "CHARACTERISTICS", "")
+    HEADERS = ("", "DATE / TIME", "COMPONENT . EVENT", "CHARACTERISTICS", "")
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -144,13 +196,18 @@ class _LogModel(QAbstractTableModel):
         self.refs = []
         self.palette = load_tokens()
         self.previews = []
-        # (column, descending, characteristic label) of the active sort; drives the header arrows.
-        self.sort_state = (1, True, "")
+        # (sort target, descending, characteristic label) of the active sort; drives the header arrows.
+        self.sort_state = ("ts", True, "")
 
-    def set_sort_state(self, column, descending, metric=""):
-        if self.sort_state != (column, descending, metric):
-            self.sort_state = (column, descending, metric)
+    def set_sort_state(self, target, descending, metric=""):
+        if self.sort_state != (target, descending, metric):
+            self.sort_state = (target, descending, metric)
             self.headerDataChanged.emit(Qt.Orientation.Horizontal, 1, 3)
+
+    def active_header_part(self):
+        """Which part of the split COMPONENT . EVENT header is sorted, or None."""
+        targets = SECTION_SORTS[2]
+        return targets.index(self.sort_state[0]) if self.sort_state[0] in targets else None
 
     def rowCount(self, parent=None):
         return 0 if parent is not None and parent.isValid() else len(self.rows)
@@ -165,16 +222,21 @@ class _LogModel(QAbstractTableModel):
             text = self.HEADERS[section]
             if section not in (1, 2, 3):
                 return text
-            column, descending, metric = self.sort_state
-            if section == 3 and column == 3 and metric:
+            target, descending, metric = self.sort_state
+            if section == 3 and target == "metric" and metric:
                 text += f" · {metric}"
-            # Inactive sortable headers show ↕; the active one shows its direction.
-            return f"{text} {('↓' if descending else '↑') if section == column else '↕'}"
+            targets = SECTION_SORTS.get(section, ("metric",))
+            labels = text.split(LogHeaderView.SPLIT_SEPARATOR) if len(targets) > 1 else [text]
+            # Inactive sort targets show ↕; the active one shows its direction.
+            return LogHeaderView.SPLIT_SEPARATOR.join(
+                f"{label} {('↓' if descending else '↑') if name == target else '↕'}"
+                for label, name in zip(labels, targets, strict=True)
+            )
         if role == Qt.ItemDataRole.ToolTipRole:
             return {
                 0: "Recorded severity",
                 1: "Sort by source time",
-                2: "Sort by event name",
+                2: "Sort by component (left) or by event name (right)",
                 3: "Sort by a numeric characteristic",
                 4: "Row actions: Details and Copy raw",
             }[section]
@@ -274,6 +336,8 @@ class LogsWorkspace(QObject):
         self.runner, self.escape_owner = runner, escape_owner
         self.pool = QThreadPool.globalInstance()
         self.model = _LogModel(form.logsTable)
+        # Painted split header: COMPONENT and EVENT are two sort targets in one section, not two columns.
+        self.form.logsTable.setHorizontalHeader(LogHeaderView(2, self.model.active_header_part, self.form.logsTable))
         self.form.logsTable.setModel(self.model)
         self.delegate = LogCellDelegate(self.form.logsTable)
         self.form.logsTable.setItemDelegate(self.delegate)
@@ -382,12 +446,18 @@ class LogsWorkspace(QObject):
         self._page = []
         self._pending = 0
         self._file_snapshot = None
+        # Snapshot last counted for the Refresh label, and when; counts never retain arriving records.
+        self._counted_snapshot = None
+        self._counted_at = 0.0
+        self._outside_watch = False
         self._facets = (None, [], [], [], [])
         self._programmatic = False
         self._timer = QTimer(form)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._poll)
         self.form.destroyed.connect(self.stop)
+        # Outside-click dismissal is watched only while the details pane is shown.
+        self.form.logsDetail.installEventFilter(self)
 
     def _run(self, func, callback, *, kind, cancel=None):
         old = self._cancellations.get(kind)
@@ -415,6 +485,12 @@ class LogsWorkspace(QObject):
         signals.ready.connect(arrived, Qt.ConnectionType.QueuedConnection)
         self._jobs.append(signals)
         self.pool.start(_Job(token, func, signals))
+
+    def _cancel(self, kind):
+        old = self._cancellations.pop(kind, None)
+        if old is not None:
+            old.set()
+        self._tokens.pop(kind, None)
 
     def _session(self) -> str:
         return self.form.logsSessionCombo.currentData() or ""
@@ -458,6 +534,7 @@ class LogsWorkspace(QObject):
 
     def stop(self):
         self.active = False
+        self._watch_outside(False)
         self._tokens.clear()
         for cancel in self._cancellations.values():
             cancel.set()
@@ -571,9 +648,12 @@ class LogsWorkspace(QObject):
         if column == 3:
             self._characteristic_menu()
             return
-        pair = HEADER_SORTS.get(column)
-        if pair is None:
+        targets = SECTION_SORTS.get(column)
+        if targets is None:
             return
+        header = self.form.logsTable.horizontalHeader()
+        part = getattr(header, "clicked_part", 0) if len(targets) > 1 else 0
+        pair = HEADER_SORTS[targets[part]]
         combo = self.form.logsSortCombo
         combo.setCurrentIndex(pair[1] if combo.currentIndex() == pair[0] else pair[0])
 
@@ -607,14 +687,14 @@ class LogsWorkspace(QObject):
         self.form.logsSortNote.setText(label)
         if sort == "metric":
             key = self.form.logsField.text().strip().removeprefix("data.")
-            self.model.set_sort_state(3, descending, characteristic_label(key))
+            self.model.set_sort_state("metric", descending, characteristic_label(key))
             self.form.logsSortNote.setText(f"{characteristic_label(key)} · {label.split(' · ')[1]}")
             return
-        for column, pair in HEADER_SORTS.items():
+        for target, pair in HEADER_SORTS.items():
             if current in pair:
-                self.model.set_sort_state(column, descending)
+                self.model.set_sort_state(target, descending)
                 return
-        self.model.set_sort_state(-1, descending)
+        self.model.set_sort_state("", descending)
 
     def refresh(self, *_, facets=False):
         self._request_page(facets=facets)
@@ -632,17 +712,20 @@ class LogsWorkspace(QObject):
         self.form.logsPreviousButton.setEnabled(not self._query_busy and self._page_number > 0)
         self.form.logsNextButton.setEnabled(not self._query_busy and self._next_cursor is not None)
 
-    def _set_pending(self, pending):
-        # Accent border while held-back records are waiting, as in the workspace specification.
+    def _set_pending(self, pending, count=None, *, incomplete=False, detail=""):
+        """Refresh label and accent border for held-back matching records (count None: unknown)."""
         button = self.form.logsRefreshButton
+        pending = bool(pending and (count is None or count > 0))
+        button.setText(refresh_label(count, incomplete=incomplete) if pending else "Refresh")
+        button.setToolTip(detail or "Reload the selected session")
         if button.property("pending") != pending:
             button.setProperty("pending", pending)
             button.style().unpolish(button)
             button.style().polish(button)
 
     def _request_page(self, *, facets=False, navigation=None):
-        self.form.logsRefreshButton.setText("Refresh")
         self._set_pending(False)
+        self._cancel("pending")
         if not self.active:
             return
         sid = self._session()
@@ -658,6 +741,7 @@ class LogsWorkspace(QObject):
             self.model.replace([])
             self._page = []
             self._page_controls()
+            self._set_empty("No diagnostic sessions yet.")
             self.form.logsCounter.setText("No diagnostic sessions")
             return
         try:
@@ -786,10 +870,13 @@ class LogsWorkspace(QObject):
         finally:
             self._programmatic = False
         if status.records == 0:
-            self.form.logsCounter.setText("No records yet in this session.")
+            self._set_empty(EMPTY_SESSION)
+            self.form.logsCounter.setText(f"0 records · {status.state}")
         elif count == 0:
-            self.form.logsCounter.setText("No matching records. Adjust filters or reset.")
+            self._set_empty(NO_MATCHES)
+            self.form.logsCounter.setText(f"0 of {status.records} matching records · {status.state}")
         else:
+            self._set_empty("")
             self.form.logsCounter.setText(
                 f"{count} of {status.records} matching records · {status.state} · "
                 f"page {self._page_number + 1} · showing {len(page)}"
@@ -799,7 +886,13 @@ class LogsWorkspace(QObject):
         self._last = tuple((r.seq for _, r in page))
         self._pending = 0
         self._file_snapshot = tuple((p.path.name, p.device, p.inode, p.size) for p in status.segments)
+        self._counted_snapshot = self._file_snapshot
         self._populate_filter_values(page, choices)
+
+    def _set_empty(self, message):
+        """Replace the table with the empty-state panel while `message` is set."""
+        self.form.logsEmpty.setText(message)
+        self.form.logsTableStack.setCurrentWidget(self.form.logsEmpty if message else self.form.logsTable)
 
     def _populate_filter_values(self, page, choices):
         sid, components, events, keys, numeric = choices
@@ -855,9 +948,85 @@ class LogsWorkspace(QObject):
         if self.form.logsFollowButton.isChecked():
             self.refresh(facets=False)
         else:
-            self._pending = max(1, self._pending)
-            self.form.logsRefreshButton.setText("Refresh (new)")
-            self._set_pending(True)
+            self._count_pending(changed)
+
+    def _count_pending(self, changed):
+        """Count matching arrivals since the shown snapshot in the background, one count at a time."""
+        if (
+            "pending" in self._tokens
+            or changed == self._counted_snapshot
+            or time.monotonic() - self._counted_at < PENDING_COUNT_INTERVAL
+        ):
+            return
+        if self._query_key is None or self._file_snapshot is None:
+            self._set_pending(True, None, detail="The session changed since this page was read")
+            return
+        sid, filters = self._query_key[0], self._query_key[1]
+        boundary = {(device, inode): size for _name, device, inode, size in self._file_snapshot}
+        cancel = Event()
+        self._counted_at = time.monotonic()
+
+        def delivered(result, error):
+            self._counted_at = time.monotonic()
+            if error:
+                # The change is real even when the count is not available.
+                self._counted_snapshot = None
+                self._set_pending(True, None, detail=f"Matching new records could not be counted: {error}")
+                return
+            count, status = result
+            self._counted_snapshot = tuple((p.path.name, p.device, p.inode, p.size) for p in status.segments)
+            self._pending = count
+            incomplete = status.state not in ("complete", "pending")
+            detail = f"{count} new records match the current filters"
+            if incomplete:
+                detail += "; session evidence is incomplete (" + ", ".join(status.reasons) + "), so it may be inexact"
+            self._set_pending(True, count, incomplete=incomplete, detail=detail)
+
+        self._run(
+            lambda: count_arrivals(self.directory, sid, boundary, filters, cancelled=cancel.is_set),
+            delivered,
+            kind="pending",
+            cancel=cancel,
+        )
+
+    def _watch_outside(self, enabled):
+        app = QApplication.instance()
+        if app is None or enabled == self._outside_watch:
+            return
+        self._outside_watch = enabled
+        if enabled:
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        kind = event.type()
+        if watched is self.form.logsDetail:
+            if kind in (QEvent.Type.Show, QEvent.Type.Hide):
+                self._watch_outside(kind == QEvent.Type.Show and self.active)
+            return False
+        if kind == QEvent.Type.MouseButtonPress and self._outside_watch and self._outside_press(watched, event):
+            self.form.logsDetail.hide()
+        # Never consume the press: selection, copy and row gestures continue normally.
+        return False
+
+    def _outside_press(self, watched, event):
+        """A primary press inside Logs but outside details that is not a splitter, scroll or row-action gesture."""
+        if event.button() != Qt.MouseButton.LeftButton or not isinstance(watched, QWidget):
+            return False
+        if not self.form.logsDetail.isVisible() or not (watched is self.form or self.form.isAncestorOf(watched)):
+            return False
+        if isinstance(watched, (QSplitterHandle, QScrollBar)):
+            return False
+        point = event.globalPosition().toPoint()
+        detail = self.form.logsDetail
+        if detail.rect().contains(detail.mapFromGlobal(point)):
+            return False
+        viewport = self.form.logsTable.viewport()
+        if watched is viewport and self.form.logsTable.indexAt(viewport.mapFromGlobal(point)).column() == 4:
+            # Details / Copy raw on another row switch or copy without a collapse in between.
+            return False
+        return True
 
     def _row_clicked(self, index):
         # Selection alone never opens details; actions use the painted delegate.

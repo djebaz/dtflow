@@ -36,7 +36,7 @@
 | 11 — Broader DT+ | Additional independently verified cloud capabilities/hardening; existing auth, secret safety and ambiguous-outcome protection are already implemented, not deferred work. |
 | Logs memory/export | [#106](https://github.com/djebaz/dtflow/issues/106): end-to-end byte budgets, export cancellation and lazy-workspace evaluation. |
 | Diagnostics acceptance | [#107](https://github.com/djebaz/dtflow/issues/107): fault/native replay, schema/projection/benchmark/storage/policy evidence and strict lint/format gating. Original all-gates-before-merge scheduling was superseded by explicit follow-ups, not by claiming those checks passed. |
-| Logs presentation | [#108](https://github.com/djebaz/dtflow/issues/108): independent component/event header sort targets, exact matching-arrival count, separate empty-state panel and outside-click inspector dismissal. Component sort remains available under More filters. |
+| Logs presentation | [#108](https://github.com/djebaz/dtflow/issues/108): source now paints independent COMPONENT/EVENT header sort targets, counts matching arrivals for Refresh with incomplete evidence disclosed, shows a separate empty-state panel and collapses details on an outside click. Native Windows rendering and interaction acceptance remain open. |
 | Native platform and previews | [#77](https://github.com/djebaz/dtflow/issues/77): safe WSL2 Windows-drive original access. [#88](https://github.com/djebaz/dtflow/issues/88): remaining offline preview coverage/Detail stall investigation. |
 
 ## Evidence and operational limits
