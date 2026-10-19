@@ -115,7 +115,6 @@ def apply_profile(profile: dict) -> None:
     gallery_page.GalleryPage.__init__ = benchmark_init
 
 
-
 def enable_grid_progress_logging() -> None:
     """Expose visible image indices in development logs for the Grid matrix only.
 
@@ -135,18 +134,22 @@ def enable_grid_progress_logging() -> None:
 
     def observed(self, *, total, visible_start, visible_end, loaded, **kwargs):
         result = original(
-            self, total=total, visible_start=visible_start,
-            visible_end=visible_end, loaded=loaded, **kwargs,
+            self,
+            total=total,
+            visible_start=visible_start,
+            visible_end=visible_end,
+            loaded=loaded,
+            **kwargs,
         )
         now = monotonic()
-        if (
-            visible_start != sampled["first"]
-            and (now - sampled["time"] >= 0.07 or visible_start <= 1)
-        ):
+        if visible_start != sampled["first"] and (now - sampled["time"] >= 0.07 or visible_start <= 1):
             sampled["first"], sampled["time"] = visible_start, now
             logger.debug(
                 "gallery_perf phase=benchmark_view first=%d last=%d total=%d loaded=%d",
-                visible_start, visible_end, total, loaded,
+                visible_start,
+                visible_end,
+                total,
+                loaded,
             )
         return result
 
@@ -161,12 +164,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--logs", type=Path, required=True, help="Fresh trial diagnostic folder.")
     parser.add_argument("--pid-file", type=Path, help="Internal trial file for the actual GUI interpreter PID.")
     parser.add_argument("--no-cache", action="store_true", help="Do not read or write disposable thumbnail cache.")
-    parser.add_argument("--ml", type=int, default=20,
-                        help="Gallery batch size passed as DTFlow -ml (default: 20).")
-    parser.add_argument("--mc", type=int, default=100,
-                        help="Gallery mounted-card cap passed as DTFlow -mc (default: 100).")
+    parser.add_argument("--ml", type=int, default=20, help="Gallery batch size passed as DTFlow -ml (default: 20).")
     parser.add_argument(
-        "--grid-progress", action="store_true",
+        "--mc", type=int, default=100, help="Gallery mounted-card cap passed as DTFlow -mc (default: 100)."
+    )
+    parser.add_argument(
+        "--grid-progress",
+        action="store_true",
         help="Emit Grid matrix visible-index telemetry from pager updates.",
     )
     args = parser.parse_args(argv)

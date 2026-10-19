@@ -39,7 +39,9 @@ DEFAULT_GRID_MATRIX = ((20, 50), (20, 100), (50, 150), (100, 300), (200, 600), (
 GRID_MAX_LOAD = 300
 GRID_MAX_CARDS = 1000
 
-SCROLL_INTENT = re.compile(r"gallery_perf phase=scroll_intent\b[^\n]*\bdirection=(forward|backward)\b[^\n]*\bsource=wheel\b")
+SCROLL_INTENT = re.compile(
+    r"gallery_perf phase=scroll_intent\b[^\n]*\bdirection=(forward|backward)\b[^\n]*\bsource=wheel\b"
+)
 QUERY_DONE = re.compile(r"gallery_perf phase=query_done\b[^\n]*\breturned=(\d+)\b[^\n]*\berror=none\b")
 
 
@@ -82,9 +84,7 @@ def parse_grid_matrix(specs: list[str]) -> list[tuple[int, int, int]]:
             raise ValueError(f"Invalid Grid limit pair {spec!r}; expected ML:MC.")
         ml, mc = (int(part) for part in parts)
         if not 1 <= ml <= GRID_MAX_LOAD or not 1 <= mc <= GRID_MAX_CARDS:
-            raise ValueError(
-                f"Grid limit pair must have -ml 1..{GRID_MAX_LOAD} and -mc 1..{GRID_MAX_CARDS}."
-            )
+            raise ValueError(f"Grid limit pair must have -ml 1..{GRID_MAX_LOAD} and -mc 1..{GRID_MAX_CARDS}.")
         if ml > mc:
             raise ValueError("Grid -mc must be at least -ml for a meaningful cap comparison.")
         if (ml, mc) in seen:
@@ -100,8 +100,7 @@ def _require_complete_first_batch(returned: int, ml: int) -> None:
 
     if returned < ml:
         raise ValueError(
-            f"Only {returned} first-query images for -ml {ml}; "
-            "this case cannot exercise a complete initial batch."
+            f"Only {returned} first-query images for -ml {ml}; this case cannot exercise a complete initial batch."
         )
 
 
@@ -188,9 +187,13 @@ def _await_query(directory: Path, proc: subprocess.Popen, seconds: float, *, aft
     while time.monotonic() < end:
         if proc.poll() is not None:
             raise RuntimeError("DTFlow exited before the Images query completed.")
-        returned = _read_query_count(directory) if after is None else max(
-            (count for key, count in _completed_queries(directory).items() if after is None or key not in after),
-            default=0,
+        returned = (
+            _read_query_count(directory)
+            if after is None
+            else max(
+                (count for key, count in _completed_queries(directory).items() if after is None or key not in after),
+                default=0,
+            )
         )
         if returned:
             return returned
@@ -198,8 +201,9 @@ def _await_query(directory: Path, proc: subprocess.Popen, seconds: float, *, aft
     raise TimeoutError("No successful Images query appeared in the DTFlow development log.")
 
 
-def _button(window, name: str, *, alternatives: tuple[str, ...] = (),
-            automation_id: str | None = None, timeout: float = 12):
+def _button(
+    window, name: str, *, alternatives: tuple[str, ...] = (), automation_id: str | None = None, timeout: float = 12
+):
     """Resolve a unique visible Qt button by UIA name or automation ID.
 
     Qt may expose the QPushButton visual label instead of accessibleName.
@@ -232,8 +236,9 @@ def _button(window, name: str, *, alternatives: tuple[str, ...] = (),
     )
 
 
-def _click(window, name: str, actions: list[dict], *,
-           alternatives: tuple[str, ...] = (), automation_id: str | None = None) -> None:
+def _click(
+    window, name: str, actions: list[dict], *, alternatives: tuple[str, ...] = (), automation_id: str | None = None
+) -> None:
     started = time.perf_counter()
     _button(window, name, alternatives=alternatives, automation_id=automation_id).click_input()
     actions.append({"action": name, "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
@@ -254,7 +259,8 @@ def _gallery_mode_button(window, mode: str, *, timeout: float = 6):
     while time.monotonic() < deadline:
         all_controls = window.descendants()
         headers = [
-            item for item in all_controls
+            item
+            for item in all_controls
             if item.element_info.name == "HeaderScrollContents"
             and item.element_info.control_type == "Group"
             and item.is_visible()
@@ -276,10 +282,12 @@ def _gallery_mode_button(window, mode: str, *, timeout: float = 6):
         # Some Qt/PySide6 builds omit the accessible parent group. In that
         # case use only the unique Qt object ID, never the ambiguous name.
         by_id = [
-            item for item in all_controls
+            item
+            for item in all_controls
             if item.element_info.automation_id == automation_id
             and item.element_info.control_type in {"CheckBox", "Button", "RadioButton"}
-            and item.is_visible() and item.is_enabled()
+            and item.is_visible()
+            and item.is_enabled()
         ]
         if len(by_id) == 1:
             return by_id[0]
@@ -295,11 +303,13 @@ def _click_gallery_mode(window, mode: str, actions: list[dict]) -> None:
     control = _gallery_mode_button(window, mode)
     started = time.perf_counter()
     control.click_input()
-    actions.append({
-        "action": mode,
-        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-        "uia_target": "HeaderScrollContents/" + mode + "/CheckBox",
-    })
+    actions.append(
+        {
+            "action": mode,
+            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+            "uia_target": "HeaderScrollContents/" + mode + "/CheckBox",
+        }
+    )
 
 
 def _attempt(record: dict, step: str, action) -> bool:
@@ -320,7 +330,8 @@ def _attempt(record: dict, step: str, action) -> bool:
         record.setdefault("warnings", []).append(failure)
         print(
             f"WARNING {step}: {failure['error_type']}: {failure['message']}",
-            file=sys.stderr, flush=True,
+            file=sys.stderr,
+            flush=True,
         )
         return False
 
@@ -343,10 +354,13 @@ def _click_page(window, number: int, actions: list[dict]) -> None:
         except (LookupError, RuntimeError):
             selected = False
         if selected:
-            actions.append({
-                "action": name, "verified": True,
-                "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-            })
+            actions.append(
+                {
+                    "action": name,
+                    "verified": True,
+                    "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+                }
+            )
             return
         time.sleep(0.1)
     raise TimeoutError(f"Page {number} did not become selected after the click.")
@@ -365,11 +379,13 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
         try:
             selected = _button(window, name, automation_id="galleryPagerPage1", timeout=1)
             if selected.get_toggle_state() == 1:
-                actions.append({
-                    "action": "click-page-one-" + at,
-                    "verified": True,
-                    "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-                })
+                actions.append(
+                    {
+                        "action": "click-page-one-" + at,
+                        "verified": True,
+                        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+                    }
+                )
                 return
         except (LookupError, RuntimeError):
             pass
@@ -377,8 +393,7 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
     raise TimeoutError(f"Page 1 was clicked at {at} but did not become selected.")
 
 
-def _wait_for_grid_page_one(window, probe, actions: list[dict], *,
-                            directory: Path, timeout: float) -> None:
+def _wait_for_grid_page_one(window, probe, actions: list[dict], *, directory: Path, timeout: float) -> None:
     """Poll for the enabled page-1 chip, then click once and start from #1.
 
     No diagnostic log event is required. Only initial pager readiness is
@@ -395,8 +410,10 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *,
     while time.monotonic() < deadline:
         try:
             chip = _button(
-                window, "Jump to image batch 1",
-                automation_id="galleryPagerPage1", timeout=0.01,
+                window,
+                "Jump to image batch 1",
+                automation_id="galleryPagerPage1",
+                timeout=0.01,
             )
         except (LookupError, RuntimeError, TimeoutError):
             # The spinner may be visible and the numbered chips not yet
@@ -414,22 +431,28 @@ def _wait_for_grid_page_one(window, probe, actions: list[dict], *,
                 continue
         observed = probe.read()
         if observed is not None and observed.first == 1:
-            actions.append({
-                "action": "click-page-one-start",
-                "verified": True, "visible_first": 1,
-                "source": observed.source, "click_attempts": attempts,
-                "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-            })
+            actions.append(
+                {
+                    "action": "click-page-one-start",
+                    "verified": True,
+                    "visible_first": 1,
+                    "source": observed.source,
+                    "click_attempts": attempts,
+                    "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+                }
+            )
             return
         time.sleep(0.2)
 
-    actions.append({
-        "action": "click-page-one-start",
-        "verified": False,
-        "visible_first": observed.first if observed else None,
-        "click_attempts": attempts,
-        "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
-    })
+    actions.append(
+        {
+            "action": "click-page-one-start",
+            "verified": False,
+            "visible_first": observed.first if observed else None,
+            "click_attempts": attempts,
+            "readiness_ms": round((time.perf_counter() - started) * 1000, 2),
+        }
+    )
     raise TimeoutError(
         "Page-1 chip did not become clickable at image 1 before the startup deadline "
         f"({timeout:g}s; clicked={clicked}, first="
@@ -487,7 +510,8 @@ def _gallery_wheel_point(window, mode: str) -> tuple[tuple[int, int], str]:
         # Use the visible GalleryDetailPage group instead of the complete
         # DTFlow window; its lower center is within the browsing surface.
         panels = [
-            item.rectangle() for item in window.descendants()
+            item.rectangle()
+            for item in window.descendants()
             if item.element_info.name == "GalleryDetailPage"
             and item.element_info.control_type in {"Group", "Pane"}
             and item.is_visible()
@@ -509,8 +533,13 @@ def _gallery_wheel_point(window, mode: str) -> tuple[tuple[int, int], str]:
 
 
 def _scroll(
-    window, direction: int, actions: list[dict], directory: Path,
-    *, mode: str, notches: int = 192,
+    window,
+    direction: int,
+    actions: list[dict],
+    directory: Path,
+    *,
+    mode: str,
+    notches: int = 192,
 ) -> None:
     """Send enough real Windows wheel input to traverse multiple gallery rows.
 
@@ -545,22 +574,29 @@ def _scroll(
     # not an acceptance gate: Qt may scroll via child widgets / scrollbars.
     time.sleep(0.25)
     observed = any(item[3] == wanted for item in _wheel_intents(directory) - before)
-    actions.append({
-        "action": "scroll-up" if direction > 0 else "scroll-down",
-        "mode": mode,
-        "notches": notches,
-        "bursts": bursts,
-        "wheel_target": source,
-        "wheel_intent_observed": observed,
-        "scroll_distance_verified": False,
-        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-    })
-
+    actions.append(
+        {
+            "action": "scroll-up" if direction > 0 else "scroll-down",
+            "mode": mode,
+            "notches": notches,
+            "bursts": bursts,
+            "wheel_target": source,
+            "wheel_intent_observed": observed,
+            "scroll_distance_verified": False,
+            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        }
+    )
 
 
 def _seek_grid_card(
-    window, probe, actions: list[dict], *, target: int, direction: int,
-    pulse_notches: int = 12, timeout: float = 12.0,
+    window,
+    probe,
+    actions: list[dict],
+    *,
+    target: int,
+    direction: int,
+    pulse_notches: int = 12,
+    timeout: float = 12.0,
     wheel_point: tuple[tuple[int, int], str] | None = None,
     action_name: str | None = None,
 ) -> dict:
@@ -620,11 +656,14 @@ def _seek_grid_card(
                         max(0, target - position.first)
                         if direction < 0 and position is not None
                         else max(0, position.first - 1)
-                        if position is not None else target
+                        if position is not None
+                        else target
                     )
                     notches = (
-                        pulse_notches if distance > 100
-                        else min(pulse_notches, 6) if distance > 30
+                        pulse_notches
+                        if distance > 100
+                        else min(pulse_notches, 6)
+                        if distance > 30
                         else min(pulse_notches, 2)
                     )
                 sent_at = time.perf_counter()
@@ -649,7 +688,7 @@ def _seek_grid_card(
             observed = probe.read()
             probe_ms += (time.perf_counter() - read_at) * 1000
             if observed is not None:
-                previous = state["position"]
+                state["position"]
                 state["position"] = observed
                 if furthest is None:
                     furthest = observed.first
@@ -661,9 +700,13 @@ def _seek_grid_card(
                     now = time.perf_counter()
                     max_without_progress_ms = max(max_without_progress_ms, (now - last_progress) * 1000)
                     last_progress = now
-                    history.append({
-                        "first": observed.first, "last": observed.last, "source": observed.source,
-                    })
+                    history.append(
+                        {
+                            "first": observed.first,
+                            "last": observed.last,
+                            "source": observed.source,
+                        }
+                    )
                 if direction < 0 and observed.total < target:
                     insufficient_catalogue = True
                     break
@@ -725,24 +768,30 @@ def _toggle_fullscreen(window, actions: list[dict]) -> None:
     """Enter via the actual Qt checkbox; Escape restores the normal window."""
 
     button = _button(
-        window, "Full screen image view",
-        automation_id="galleryFocusButton", timeout=5,
+        window,
+        "Full screen image view",
+        automation_id="galleryFocusButton",
+        timeout=5,
     )
     started = time.perf_counter()
     button.click_input()
-    actions.append({
-        "action": "fullscreen-enter",
-        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-    })
+    actions.append(
+        {
+            "action": "fullscreen-enter",
+            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        }
+    )
     time.sleep(0.5)
     # The fullscreen layout hides the header containing its original toggle,
     # so do not try to click that now-hidden control a second time.
     started = time.perf_counter()
     window.type_keys("{ESC}")
-    actions.append({
-        "action": "fullscreen-exit-esc",
-        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-    })
+    actions.append(
+        {
+            "action": "fullscreen-exit-esc",
+            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        }
+    )
     time.sleep(0.5)
 
 
@@ -756,11 +805,15 @@ def _move_thumbnail_slider(window, actions: list[dict]) -> None:
     from pywinauto import mouse
 
     candidates = [
-        control for control in window.descendants()
+        control
+        for control in window.descendants()
         if control.element_info.control_type == "Slider"
-        and (control.element_info.name == "ThumbnailSizeSlider"
-             or control.element_info.automation_id == "galleryThumbnailSizeSlider")
-        and control.is_visible() and control.is_enabled()
+        and (
+            control.element_info.name == "ThumbnailSizeSlider"
+            or control.element_info.automation_id == "galleryThumbnailSizeSlider"
+        )
+        and control.is_visible()
+        and control.is_enabled()
     ]
     if len(candidates) != 1:
         raise LookupError(f"Expected one visible ThumbnailSizeSlider, found {len(candidates)}.")
@@ -801,14 +854,16 @@ def _move_thumbnail_slider(window, actions: list[dict]) -> None:
                 raise RuntimeError(
                     f"Thumbnail slider failed to move meaningfully (started={before:g}, after={after:g})."
                 )
-            actions.append({
-                "action": "thumbnail-slider-drag",
-                "before": before,
-                "target": target,
-                "after": after,
-                "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
-                "verified": True,
-            })
+            actions.append(
+                {
+                    "action": "thumbnail-slider-drag",
+                    "before": before,
+                    "target": target,
+                    "after": after,
+                    "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+                    "verified": True,
+                }
+            )
             time.sleep(0.8)
     finally:
         current = float(interface.CurrentValue)
@@ -819,7 +874,6 @@ def _move_thumbnail_slider(window, actions: list[dict]) -> None:
             raise RuntimeError(
                 f"Thumbnail slider could not restore its initial value (started={original:g}, restored={restored:g})."
             )
-
 
 
 def _reset_gallery_sort(window, directory: Path, proc: subprocess.Popen, record: dict, *, timeout: float) -> None:
@@ -849,8 +903,9 @@ def _reset_gallery_sort(window, directory: Path, proc: subprocess.Popen, record:
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"Sort popup selection did not reach {label!r}.")
             time.sleep(0.1)
-        setup.append({"action": "sort", "value": label,
-                      "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
+        setup.append(
+            {"action": "sort", "value": label, "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)}
+        )
         record["step"] = f"await-sort-query-{label}"
         _await_query(directory, proc, timeout, after=previous)
         if combo.selected_text() != label:
@@ -893,7 +948,9 @@ def _stop_trial_process(proc: subprocess.Popen) -> None:
     if sys.platform == "win32":
         result = subprocess.run(
             ["taskkill.exe", "/PID", str(proc.pid), "/T", "/F"],
-            capture_output=True, timeout=10, check=False,
+            capture_output=True,
+            timeout=10,
+            check=False,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if result.returncode != 0:
@@ -912,10 +969,16 @@ def _stop_trial_process(proc: subprocess.Popen) -> None:
 
 
 def _drive(
-    proc: subprocess.Popen, directory: Path, record: dict, *,
-    cycles: int, timeout: float, scroll_notches: int = 192,
+    proc: subprocess.Popen,
+    directory: Path,
+    record: dict,
+    *,
+    cycles: int,
+    timeout: float,
+    scroll_notches: int = 192,
     grid_limits: tuple[int, int] | None = None,
-    grid_target_card: int = 300, grid_seek_timeout: float = 12.0,
+    grid_target_card: int = 300,
+    grid_seek_timeout: float = 12.0,
 ) -> int:
     """Attach only to the launched child and track the failing UI step."""
 
@@ -932,14 +995,14 @@ def _drive(
     try:
         window.wait("exists visible enabled", timeout=timeout)
     except (TimeoutError, UIATimeoutError) as exc:
-        raise TimeoutError(
-            f"DTFlow UIA window not ready (launcher_pid={proc.pid}, app_pid={app_pid})."
-        ) from exc
+        raise TimeoutError(f"DTFlow UIA window not ready (launcher_pid={proc.pid}, app_pid={app_pid}).") from exc
     record["step"] = "focus-dtflow-window"
     window.set_focus()
     record["step"] = "find-images-navigation"
     nav = _button(
-        window, "Show saved Images", alternatives=("Images",),
+        window,
+        "Show saved Images",
+        alternatives=("Images",),
         automation_id="imagesNavigationButton",
     )
     record["step"] = "click-images-navigation"
@@ -958,7 +1021,8 @@ def _drive(
         initial_count = 0
         record["step"] = "grid-without-query-barrier"
     _attempt(
-        record, "setup-grid",
+        record,
+        "setup-grid",
         lambda: _click_gallery_mode(window, "Grid", record.setdefault("setup_actions", [])),
     )
     if grid_limits is not None:
@@ -972,16 +1036,22 @@ def _drive(
         # until an enabled page-1 chip exists, was clicked, and the viewport
         # reports first=1. Only this initial readiness gate may wait.
         start_ok = _attempt(
-            record, "grid-wait-numbered-pages",
+            record,
+            "grid-wait-numbered-pages",
             lambda: _wait_for_grid_page_one(
-                window, probe, actions, directory=directory, timeout=timeout,
+                window,
+                probe,
+                actions,
+                directory=directory,
+                timeout=timeout,
             ),
         )
         record["grid_start_verified"] = start_ok
         if not start_ok:
             record["grid_sweep"] = {
                 "requested_card": grid_target_card,
-                "cycles": cycles, "position_verified": False,
+                "cycles": cycles,
+                "position_verified": False,
                 "skipped_reason": "numbered-pager-not-ready",
             }
             record["step"] = "close-dtflow-window"
@@ -1011,24 +1081,36 @@ def _drive(
                 if proc.poll() is not None:
                     raise RuntimeError("DTFlow exited during the Grid limit matrix sweep.")
                 succeeded = _attempt(
-                    record, f"{prefix}-grid-seek-{label}",
+                    record,
+                    f"{prefix}-grid-seek-{label}",
                     lambda d=direction, c=card: _seek_grid_card(
-                        window, probe, actions, target=c, direction=d,
-                        pulse_notches=pulse_notches, timeout=grid_seek_timeout,
+                        window,
+                        probe,
+                        actions,
+                        target=c,
+                        direction=d,
+                        pulse_notches=pulse_notches,
+                        timeout=grid_seek_timeout,
                         wheel_point=wheel_point,
                     ),
                 )
                 if label == "down":
-                    record["grid_sweep"][f"cycle_{cycle+1}_down_reached"] = succeeded
+                    record["grid_sweep"][f"cycle_{cycle + 1}_down_reached"] = succeeded
                 else:
-                    record["grid_sweep"][f"cycle_{cycle+1}_up_reached"] = succeeded
+                    record["grid_sweep"][f"cycle_{cycle + 1}_up_reached"] = succeeded
         record["grid_sweep"]["position_verified"] = not any(
             failure["step"].startswith("cycle-") and "grid-seek-" in failure["step"]
             for failure in record.get("warnings", [])
         )
-        _attempt(record, "grid-page-one-end", lambda: _click_grid_page_one(
-            window, actions, at="end",
-        ))
+        _attempt(
+            record,
+            "grid-page-one-end",
+            lambda: _click_grid_page_one(
+                window,
+                actions,
+                at="end",
+            ),
+        )
         # Sample the initial query count for diagnostics only, after the
         # continuous journey. Never await query_done on the input path.
         initial_count = _read_query_count(directory)
@@ -1036,7 +1118,8 @@ def _drive(
         record["initial_batch_complete"] = initial_count >= ml
         if initial_count < ml:
             _attempt(
-                record, "insufficient-images-for-full-batch",
+                record,
+                "insufficient-images-for-full-batch",
                 lambda: _require_complete_first_batch(initial_count, ml),
             )
         record["step"] = "close-dtflow-window"
@@ -1044,23 +1127,43 @@ def _drive(
         record["step"] = "wait-for-shutdown"
         return initial_count
     _attempt(
-        record, "setup-sort",
+        record,
+        "setup-sort",
         lambda: _reset_gallery_sort(window, directory, proc, record, timeout=timeout),
     )
     _attempt(
-        record, "verify-page-two",
+        record,
+        "verify-page-two",
         lambda: _button(window, "Jump to image batch 2", automation_id="galleryPagerPage2", timeout=4),
     )
     for cycle in range(cycles):
         prefix = f"cycle-{cycle + 1}"
         _attempt(record, f"{prefix}-grid", lambda: _click_gallery_mode(window, "Grid", actions))
-        _attempt(record, f"{prefix}-grid-scroll-down", lambda: _scroll(
-            window, -1, actions, directory, mode="grid", notches=scroll_notches,
-        ))
+        _attempt(
+            record,
+            f"{prefix}-grid-scroll-down",
+            lambda: _scroll(
+                window,
+                -1,
+                actions,
+                directory,
+                mode="grid",
+                notches=scroll_notches,
+            ),
+        )
         time.sleep(0.8)
-        _attempt(record, f"{prefix}-grid-scroll-up", lambda: _scroll(
-            window, 1, actions, directory, mode="grid", notches=scroll_notches,
-        ))
+        _attempt(
+            record,
+            f"{prefix}-grid-scroll-up",
+            lambda: _scroll(
+                window,
+                1,
+                actions,
+                directory,
+                mode="grid",
+                notches=scroll_notches,
+            ),
+        )
         time.sleep(0.8)
         _attempt(record, f"{prefix}-page-two", lambda: _click_page(window, 2, actions))
         time.sleep(0.8)
@@ -1072,13 +1175,31 @@ def _drive(
         _attempt(record, f"{prefix}-grid-fullscreen", lambda: _toggle_fullscreen(window, actions))
         time.sleep(0.5)
         _attempt(record, f"{prefix}-list", lambda: _click_gallery_mode(window, "List", actions))
-        _attempt(record, f"{prefix}-list-scroll-down", lambda: _scroll(
-            window, -1, actions, directory, mode="list", notches=scroll_notches,
-        ))
+        _attempt(
+            record,
+            f"{prefix}-list-scroll-down",
+            lambda: _scroll(
+                window,
+                -1,
+                actions,
+                directory,
+                mode="list",
+                notches=scroll_notches,
+            ),
+        )
         time.sleep(0.8)
-        _attempt(record, f"{prefix}-list-scroll-up", lambda: _scroll(
-            window, 1, actions, directory, mode="list", notches=scroll_notches,
-        ))
+        _attempt(
+            record,
+            f"{prefix}-list-scroll-up",
+            lambda: _scroll(
+                window,
+                1,
+                actions,
+                directory,
+                mode="list",
+                notches=scroll_notches,
+            ),
+        )
         time.sleep(0.8)
         _attempt(record, f"{prefix}-detail", lambda: _click_gallery_mode(window, "Detail", actions))
         time.sleep(0.5)
@@ -1090,10 +1211,20 @@ def _drive(
     return initial_count
 
 
-def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: int,
-              timeout: float, no_cache: bool, scroll_notches: int = 192,
-              grid_limits: tuple[int, int, int] | None = None,
-              grid_target_card: int = 300, grid_seek_timeout: float = 12.0) -> dict:
+def run_trial(
+    name: str,
+    profile: dict,
+    *,
+    trial: int,
+    directory: Path,
+    cycles: int,
+    timeout: float,
+    no_cache: bool,
+    scroll_notches: int = 192,
+    grid_limits: tuple[int, int, int] | None = None,
+    grid_target_card: int = 300,
+    grid_seek_timeout: float = 12.0,
+) -> dict:
     """Launch one source GUI process and retain evidence even if automation fails."""
 
     directory.mkdir(parents=True, exist_ok=False)
@@ -1102,17 +1233,30 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
     profile_path = directory / "profile.json"
     profile_path.write_text(json.dumps(profile, indent=2), encoding="utf-8")
     args = [
-        sys.executable, "-m", "tools.ui.gallery_perf_launch",
-        "--profile", str(profile_path), "--logs", str(logs),
-        "--pid-file", str(directory / "app-process.json"),
+        sys.executable,
+        "-m",
+        "tools.ui.gallery_perf_launch",
+        "--profile",
+        str(profile_path),
+        "--logs",
+        str(logs),
+        "--pid-file",
+        str(directory / "app-process.json"),
     ]
     if grid_limits is not None:
         args.extend(["--ml", str(grid_limits[0]), "--mc", str(grid_limits[1]), "--grid-progress"])
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "windows"
     record: dict = {
-        "profile_name": name, "profile": profile, "trial": trial, "no_cache": no_cache,
-        "status": "failed", "actions": [], "warnings": [], "error_type": None, "error_message": None,
+        "profile_name": name,
+        "profile": profile,
+        "trial": trial,
+        "no_cache": no_cache,
+        "status": "failed",
+        "actions": [],
+        "warnings": [],
+        "error_type": None,
+        "error_message": None,
         "step": "not-started",
         "initial_query_records": None,
         "benchmark_mode": "grid-matrix" if grid_limits is not None else "profiles",
@@ -1126,13 +1270,19 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
     with stderr.open("w", encoding="utf-8") as output:
         try:
             record["step"] = "launch-child-process"
-            process = subprocess.Popen(args, cwd=Path(__file__).resolve().parents[2],
-                                       env=env, stdout=subprocess.DEVNULL, stderr=output)
+            process = subprocess.Popen(
+                args, cwd=Path(__file__).resolve().parents[2], env=env, stdout=subprocess.DEVNULL, stderr=output
+            )
             record["initial_query_records"] = _drive(
-                process, logs, record, cycles=cycles, timeout=timeout,
+                process,
+                logs,
+                record,
+                cycles=cycles,
+                timeout=timeout,
                 scroll_notches=scroll_notches,
                 grid_limits=(grid_limits[0], grid_limits[2]) if grid_limits else None,
-                grid_target_card=grid_target_card, grid_seek_timeout=grid_seek_timeout,
+                grid_target_card=grid_target_card,
+                grid_seek_timeout=grid_seek_timeout,
             )
             process.wait(timeout=timeout)
             csvs = sorted(logs.glob("dtflow-*-gallery.csv"))
@@ -1150,8 +1300,9 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
             record["error_type"] = type(exc).__name__
             record["error_message"] = sanitize(str(exc))[:240]
             print(
-                f"{name} trial={trial} failed at {record['step']}: "
-                f"{record['error_type']}: {record['error_message']}", file=sys.stderr, flush=True,
+                f"{name} trial={trial} failed at {record['step']}: {record['error_type']}: {record['error_message']}",
+                file=sys.stderr,
+                flush=True,
             )
         finally:
             if process is not None:
@@ -1160,8 +1311,11 @@ def run_trial(name: str, profile: dict, *, trial: int, directory: Path, cycles: 
                 except Exception as exc:
                     record["status"] = "failed"
                     record["cleanup_error_type"] = type(exc).__name__
-                    print(f"{name} trial={trial} process cleanup failed: {type(exc).__name__}",
-                          file=sys.stderr, flush=True)
+                    print(
+                        f"{name} trial={trial} process cleanup failed: {type(exc).__name__}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
             (directory / "trial.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     return record
 
@@ -1170,11 +1324,23 @@ def write_report(records: list[dict], out: Path) -> None:
     """Emit inspectable raw trials and a comparison that never ranks missing data."""
 
     columns = (
-        "case", "trial", "status", "step", "warning_count", "benchmark_mode",
-        "requested_ml", "requested_mc", "effective_mc",
-        "initial_batch_complete", "initial_query_records", "gui_gap_over_50_max_ms",
-        "query_done_median_recorded_ms", "prepare_median_recorded_ms",
-        "grid_mount_median_recorded_ms", "adjacent_events", "error_type",
+        "case",
+        "trial",
+        "status",
+        "step",
+        "warning_count",
+        "benchmark_mode",
+        "requested_ml",
+        "requested_mc",
+        "effective_mc",
+        "initial_batch_complete",
+        "initial_query_records",
+        "gui_gap_over_50_max_ms",
+        "query_done_median_recorded_ms",
+        "prepare_median_recorded_ms",
+        "grid_mount_median_recorded_ms",
+        "adjacent_events",
+        "error_type",
     )
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
@@ -1183,26 +1349,27 @@ def write_report(records: list[dict], out: Path) -> None:
         writer.writeheader()
         for record in records:
             metrics = record.get("metrics", {})
-            writer.writerow({
-                "case": record["profile_name"],
-                "trial": record["trial"],
-                "status": record["status"],
-                "step": record.get("step"),
-                "warning_count": len(record.get("warnings", [])),
-                "benchmark_mode": record.get("benchmark_mode", "profiles"),
-                "requested_ml": record.get("requested_ml", 20),
-                "requested_mc": record.get("requested_mc", 100),
-                "effective_mc": record.get("effective_mc", 100),
-                "initial_batch_complete": record.get("initial_batch_complete"),
-                "initial_query_records": record.get("initial_query_records"),
-                "gui_gap_over_50_max_ms": metrics.get("gui_gap_over_50_max_ms"),
-                "query_done_median_recorded_ms": metrics.get("query_done_median_recorded_ms"),
-                "prepare_median_recorded_ms": metrics.get("prepare_median_recorded_ms"),
-                "grid_mount_median_recorded_ms": metrics.get("grid_mount_median_recorded_ms"),
-                "adjacent_events": metrics.get("adjacent_events"),
-                "error_type": record.get("error_type"),
-            })
-
+            writer.writerow(
+                {
+                    "case": record["profile_name"],
+                    "trial": record["trial"],
+                    "status": record["status"],
+                    "step": record.get("step"),
+                    "warning_count": len(record.get("warnings", [])),
+                    "benchmark_mode": record.get("benchmark_mode", "profiles"),
+                    "requested_ml": record.get("requested_ml", 20),
+                    "requested_mc": record.get("requested_mc", 100),
+                    "effective_mc": record.get("effective_mc", 100),
+                    "initial_batch_complete": record.get("initial_batch_complete"),
+                    "initial_query_records": record.get("initial_query_records"),
+                    "gui_gap_over_50_max_ms": metrics.get("gui_gap_over_50_max_ms"),
+                    "query_done_median_recorded_ms": metrics.get("query_done_median_recorded_ms"),
+                    "prepare_median_recorded_ms": metrics.get("prepare_median_recorded_ms"),
+                    "grid_mount_median_recorded_ms": metrics.get("grid_mount_median_recorded_ms"),
+                    "adjacent_events": metrics.get("adjacent_events"),
+                    "error_type": record.get("error_type"),
+                }
+            )
 
     # Cross-trial comparison: keep missing >50 ms heartbeat gaps as unknown
     # observations rather than inventing a zero-millisecond latency.
@@ -1210,10 +1377,17 @@ def write_report(records: list[dict], out: Path) -> None:
     for record in records:
         grouped.setdefault(record["profile_name"], []).append(record)
     with (out / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=(
-            "profile", "trials", "successful", "observed_gap_max_ms",
-            "median_recorded_query_ms", "notes",
-        ))
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=(
+                "profile",
+                "trials",
+                "successful",
+                "observed_gap_max_ms",
+                "median_recorded_query_ms",
+                "notes",
+            ),
+        )
         writer.writeheader()
         for name, trials in grouped.items():
             good = [trial for trial in trials if trial["status"] == "ok"]
@@ -1227,17 +1401,22 @@ def write_report(records: list[dict], out: Path) -> None:
                 for trial in good
                 if trial["metrics"].get("query_done_median_recorded_ms") is not None
             ]
-            writer.writerow({
-                "profile": name,
-                "trials": len(trials),
-                "successful": len(good),
-                "observed_gap_max_ms": max(gaps) if gaps else "",
-                "median_recorded_query_ms": round(statistics.median(queries), 2) if queries else "",
-                "notes": (
-                    "incomplete trials" if len(good) != len(trials)
-                    else "no >=50ms gap samples" if not gaps else "observed threshold-crossing gaps"
-                ),
-            })
+            writer.writerow(
+                {
+                    "profile": name,
+                    "trials": len(trials),
+                    "successful": len(good),
+                    "observed_gap_max_ms": max(gaps) if gaps else "",
+                    "median_recorded_query_ms": round(statistics.median(queries), 2) if queries else "",
+                    "notes": (
+                        "incomplete trials"
+                        if len(good) != len(trials)
+                        else "no >=50ms gap samples"
+                        if not gaps
+                        else "observed threshold-crossing gaps"
+                    ),
+                }
+            )
 
     # Keep an updated console-friendly leaderboard on disk after each trial.
     # Grid ranking explicitly excludes startup GUI gaps and failed journeys.
@@ -1259,29 +1438,57 @@ def main(argv: list[str] | None = None) -> int:
     """Drive named performance profiles on an interactive Windows desktop."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=Path("tmp"),
-                        help="Output root (default: tmp); creates gallery_bench_smoke/MMddHHmm below it.")
-    parser.add_argument("--profiles-file", type=Path,
-                        help="JSON mapping profile names to overrides; otherwise use built-in one-factor profiles.")
-    parser.add_argument("--profiles", nargs="+", metavar="NAME",
-                        help="Only selected profiles from the file or built-in set (default: all).")
     parser.add_argument(
-        "--grid-matrix", nargs="*", metavar="ML:MC",
+        "--out",
+        type=Path,
+        default=Path("tmp"),
+        help="Output root (default: tmp); creates gallery_bench_smoke/MMddHHmm below it.",
+    )
+    parser.add_argument(
+        "--profiles-file",
+        type=Path,
+        help="JSON mapping profile names to overrides; otherwise use built-in one-factor profiles.",
+    )
+    parser.add_argument(
+        "--profiles",
+        nargs="+",
+        metavar="NAME",
+        help="Only selected profiles from the file or built-in set (default: all).",
+    )
+    parser.add_argument(
+        "--grid-matrix",
+        nargs="*",
+        metavar="ML:MC",
         help="Grid-only scroll matrix. With no pairs uses 20:50 20:100 50:150 "
-             "100:300 200:600 300:1000. Does not change Sort.",
+        "100:300 200:600 300:1000. Does not change Sort.",
     )
     parser.add_argument("--runs", type=int, default=2, help="Trials per profile (1–10).")
     parser.add_argument("--cycles", type=int, default=2, help="Repeated UI action sequences (1–10).")
-    parser.add_argument("--scroll-notches", type=int, default=192,
-                        help="Windows wheel notches per scroll direction, 12–240 (default: 192).")
-    parser.add_argument("--grid-target-card", type=int, default=300,
-                        help="Grid matrix: seek the first visible image near this card (default: 300).")
-    parser.add_argument("--grid-seek-timeout", type=float, default=12,
-                        help="Grid matrix: timeout for each scroll direction in seconds (default: 12).")
+    parser.add_argument(
+        "--scroll-notches",
+        type=int,
+        default=192,
+        help="Windows wheel notches per scroll direction, 12–240 (default: 192).",
+    )
+    parser.add_argument(
+        "--grid-target-card",
+        type=int,
+        default=300,
+        help="Grid matrix: seek the first visible image near this card (default: 300).",
+    )
+    parser.add_argument(
+        "--grid-seek-timeout",
+        type=float,
+        default=12,
+        help="Grid matrix: timeout for each scroll direction in seconds (default: 12).",
+    )
     parser.add_argument("--timeout", type=float, default=30, help="Seconds for GUI/process readiness.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass disposable thumbnail cache.")
-    parser.add_argument("--ack-user-state", action="store_true",
-                        help="Allow reading saved outputs and updating preferences/disposable cache.")
+    parser.add_argument(
+        "--ack-user-state",
+        action="store_true",
+        help="Allow reading saved outputs and updating preferences/disposable cache.",
+    )
     args = parser.parse_args(argv)
     if sys.platform != "win32":
         parser.error("Native Windows is required; Linux/offscreen cannot establish UI acceptance.")
@@ -1308,8 +1515,7 @@ def main(argv: list[str] | None = None) -> int:
             }
         else:
             profiles = {
-                name: (profile, None)
-                for name, profile in load_profiles(args.profiles_file, args.profiles).items()
+                name: (profile, None) for name, profile in load_profiles(args.profiles_file, args.profiles).items()
             }
     except (ValueError, OSError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
@@ -1322,7 +1528,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         output = _create_run_directory(args.out)
     except FileExistsError:
-        parser.error("Timestamped run directory already exists; wait until the next minute or choose another --out root.")
+        parser.error(
+            "Timestamped run directory already exists; wait until the next minute or choose another --out root."
+        )
     except OSError as exc:
         parser.error(f"Could not create benchmark run directory ({type(exc).__name__}).")
     print(f"Benchmark output: {output}", flush=True)
@@ -1331,11 +1539,19 @@ def main(argv: list[str] | None = None) -> int:
         for name, (profile, grid_limits) in profiles.items():
             for trial in range(1, args.runs + 1):
                 directory = output / f"{name}-r{trial:02}"
-                record = run_trial(name, profile, trial=trial, directory=directory,
-                                   cycles=args.cycles, timeout=args.timeout, no_cache=args.no_cache,
-                                   scroll_notches=args.scroll_notches, grid_limits=grid_limits,
-                                   grid_target_card=args.grid_target_card,
-                                   grid_seek_timeout=args.grid_seek_timeout)
+                record = run_trial(
+                    name,
+                    profile,
+                    trial=trial,
+                    directory=directory,
+                    cycles=args.cycles,
+                    timeout=args.timeout,
+                    no_cache=args.no_cache,
+                    scroll_notches=args.scroll_notches,
+                    grid_limits=grid_limits,
+                    grid_target_card=args.grid_target_card,
+                    grid_seek_timeout=args.grid_seek_timeout,
+                )
                 records.append(record)
                 write_report(records, output)
                 print(f"{name} trial={trial} status={record['status']}", flush=True)

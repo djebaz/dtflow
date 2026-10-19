@@ -36,7 +36,8 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
         if start.tzinfo is not None and end >= start:
             intervals.append((start, end))
     total_ms = sum(
-        float(action["duration_ms"]) for action in actions
+        float(action["duration_ms"])
+        for action in actions
         if action.get("action") in ("grid-seek-down", "grid-seek-up")
         and isinstance(action.get("duration_ms"), (int, float))
     )
@@ -63,8 +64,7 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
                     # benchmark actions retain milliseconds. Include the two
                     # boundary seconds rather than silently losing an event.
                     if any(
-                        start.replace(microsecond=0) <= timestamp
-                        and timestamp <= end.replace(microsecond=0)
+                        start.replace(microsecond=0) <= timestamp and timestamp <= end.replace(microsecond=0)
                         for start, end in intervals
                     ):
                         gaps.append(float(match.group(1)))
@@ -115,8 +115,11 @@ def rank_grid_matrix(records: list[dict]) -> dict:
             stalls = [r["grid_stalls_100ms"] for r in responsiveness]
             max_gap = max(r["grid_stall_max_ms"] for r in responsiveness)
             candidate = {
-                "ml": ml, "mc": mc, "effective_mc": effective_mc,
-                "trials": len(trials), "clean_trials": len(clean),
+                "ml": ml,
+                "mc": mc,
+                "effective_mc": effective_mc,
+                "trials": len(trials),
+                "clean_trials": len(clean),
                 "median_round_trip_ms": round(statistics.median(round_trips), 2),
                 "total_grid_stalls_100ms": sum(stalls),
                 "worst_grid_stall_ms": max_gap,
@@ -124,8 +127,11 @@ def rank_grid_matrix(records: list[dict]) -> dict:
             }
         else:
             candidate = {
-                "ml": ml, "mc": mc, "effective_mc": effective_mc,
-                "trials": len(trials), "clean_trials": len(clean),
+                "ml": ml,
+                "mc": mc,
+                "effective_mc": effective_mc,
+                "trials": len(trials),
+                "clean_trials": len(clean),
                 "median_round_trip_ms": None,
                 "total_grid_stalls_100ms": None,
                 "worst_grid_stall_ms": None,
@@ -133,20 +139,20 @@ def rank_grid_matrix(records: list[dict]) -> dict:
             }
         ranking.append(candidate)
     complete = [r for r in ranking if r["eligible"]]
-    complete.sort(key=lambda r: (
-        r["total_grid_stalls_100ms"] / r["trials"],
-        r["worst_grid_stall_ms"],
-        r["median_round_trip_ms"],
-        r["ml"], r["mc"],
-    ))
+    complete.sort(
+        key=lambda r: (
+            r["total_grid_stalls_100ms"] / r["trials"],
+            r["worst_grid_stall_ms"],
+            r["median_round_trip_ms"],
+            r["ml"],
+            r["mc"],
+        )
+    )
     incomplete = sorted((r for r in ranking if not r["eligible"]), key=lambda r: (r["ml"], r["mc"]))
     ranking = complete + incomplete
     comparable = len(targets) == 1 and None not in targets
     winner = complete[0] if complete and comparable else None
-    stable = bool(
-        winner and not incomplete
-        and all(r["clean_trials"] >= 3 for r in complete)
-    )
+    stable = bool(winner and not incomplete and all(r["clean_trials"] >= 3 for r in complete))
     return {
         "status": "best" if stable else "provisional" if winner else "insufficient-evidence",
         "target_card": next(iter(targets)) if comparable else None,
@@ -154,8 +160,7 @@ def rank_grid_matrix(records: list[dict]) -> dict:
         "winner": winner,
         "exclusions": len(incomplete),
         "warning": (
-            "At least three clean trials per combination are required for a repeatable winner."
-            if not stable else None
+            "At least three clean trials per combination are required for a repeatable winner." if not stable else None
         ),
         "ranking_rule": (
             "Fewest observed >=100ms Grid-thread gaps per trial, then lowest worst gap, "
@@ -176,7 +181,7 @@ def grid_console_report(report: dict) -> str:
         if case["eligible"]:
             gaps = f"{case['total_grid_stalls_100ms']:>6}"
             worst = f"{case['worst_grid_stall_ms']:>7.1f} ms"
-            trip = f"{case['median_round_trip_ms']/1000:>7.2f} s"
+            trip = f"{case['median_round_trip_ms'] / 1000:>7.2f} s"
         else:
             gaps, worst, trip = "     —", "       —", "       —"
         lines.append(
@@ -187,10 +192,7 @@ def grid_console_report(report: dict) -> str:
     winner = report["winner"]
     if winner:
         heading = "BEST COMBINATION" if report["status"] == "best" else "PROVISIONAL BEST"
-        lines.append(
-            f"{heading}: -ml {winner['ml']} -mc {winner['mc']} "
-            f"(effective -mc {winner['effective_mc']})"
-        )
+        lines.append(f"{heading}: -ml {winner['ml']} -mc {winner['mc']} (effective -mc {winner['effective_mc']})")
     else:
         lines.append("NO RELIABLE BEST COMBINATION: insufficient comparable complete journeys.")
     lines.append("Priority: no long Grid GUI gaps; journey speed breaks ties. Startup excluded.")

@@ -44,17 +44,20 @@ def test_browsing_gui_gap_counter_excludes_startup_and_after_scroll(tmp_path):
         "2026-10-19T02:00:35+0200 DEBUG app gallery_perf phase=gui_gap elapsed_ms=1200 mode=Grid mounted=100 query_busy=False\n",
         encoding="utf-8",
     )
-    actions = [{
-        "action": "grid-seek-down",
-        "duration_ms": 1234,
-        "started_at": "2026-10-19T02:00:10+02:00",
-        "finished_at": "2026-10-19T02:00:20+02:00",
-    }, {
-        "action": "grid-seek-up",
-        "duration_ms": 2345,
-        "started_at": "2026-10-19T02:00:21+02:00",
-        "finished_at": "2026-10-19T02:00:31+02:00",
-    }]
+    actions = [
+        {
+            "action": "grid-seek-down",
+            "duration_ms": 1234,
+            "started_at": "2026-10-19T02:00:10+02:00",
+            "finished_at": "2026-10-19T02:00:20+02:00",
+        },
+        {
+            "action": "grid-seek-up",
+            "duration_ms": 2345,
+            "started_at": "2026-10-19T02:00:21+02:00",
+            "finished_at": "2026-10-19T02:00:31+02:00",
+        },
+    ]
     observed = analyze_grid_trial(logs, actions)
     assert observed["diagnostics_available"]
     assert observed["grid_stalls_100ms"] == 1
