@@ -2422,7 +2422,10 @@ def render_inpaint_states(shell, state, capture):
 
 def render_logs_states(shell, capture):
     """Four real Qt Logs presentations using synthetic schema-shaped records only."""
+    from datetime import datetime
+
     from dtflow._diagnostic_reader import RecordRef
+    from dtflow.ui.logs_workspace import session_label
 
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
@@ -2457,6 +2460,14 @@ def render_logs_states(shell, capture):
         ],
     )
     panel.logsStatus.setText("4 matching · illustrative fixture")
+    panel.logsSessionCombo.blockSignals(True)
+    panel.logsSessionCombo.clear()
+    for number, sid, written, current in (
+        (1, "3f2a9c1e-fixture", datetime(2026, 10, 19, 9, 12), True),
+        (2, "81bd04aa-fixture", datetime(2026, 10, 18, 22, 40), False),
+    ):
+        panel.logsSessionCombo.addItem(session_label(number, sid, written, current=current), sid)
+    panel.logsSessionCombo.blockSignals(False)
     capture("logs-02-mixed-severity")
 
     panel.logsDetailTitle.setText("generation.failed")

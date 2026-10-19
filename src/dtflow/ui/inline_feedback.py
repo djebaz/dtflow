@@ -72,10 +72,14 @@ class InlineFeedback(QObject):
                 self.dismiss()
             return False
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-            if self._armed or self._editor or self.form.isVisible():
+            if self.active():
                 self.dismiss()
                 return True
         return False
+
+    def active(self) -> bool:
+        """True while a pending consent, editor or notice owns Escape."""
+        return bool(self._armed or self._editor or self.form.isVisible())
 
     def reset(self):
         self._watch_outside(False)

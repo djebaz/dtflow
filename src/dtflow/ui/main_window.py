@@ -229,7 +229,13 @@ class MainWindow:
         self.shell.rightStack.addWidget(QWidget())
         self._logs_previous_page = form.connectionPage
         self._logs_active = False
-        self.logs = LogsWorkspace(self.logs_form, default_directory(), self._close_logs)
+        self.logs = LogsWorkspace(
+            self.logs_form,
+            default_directory(),
+            self._close_logs,
+            runner=self.runner,
+            escape_owner=self._inline_consumes_escape,
+        )
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
         self.progress_strip = ActivityStrip(form)
@@ -478,6 +484,13 @@ class MainWindow:
         else:
             self._logs_previous_page = self.form.workspaceStack.currentWidget()
             self.form.workspaceStack.setCurrentWidget(self.logs_marker)
+
+    def _inline_consumes_escape(self) -> bool:
+        """An active shared confirmation, editor or notice takes Escape before the Logs workspace."""
+        if self.inline.active():
+            self.inline.dismiss()
+            return True
+        return False
 
     def _close_logs(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.logs_marker:
