@@ -1624,16 +1624,16 @@ def test_grid_start_polls_until_numbered_chip_is_enabled(monkeypatch, tmp_path):
             first[0] = 21 if self.page == 2 else 1
 
     def lookup(*args, **kwargs):
-        lookups.append(kwargs["automation_id"])
+        lookups.append(f"galleryPagerPage{args[1]}")
         if len(lookups) < 3:
             raise LookupError("Still showing loading spinner")
-        return Chip(int(kwargs["automation_id"][-1]))
+        return Chip(args[1])
 
     class Probe:
         def read(self):
             return GridPosition(first[0], first[0] + 19, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_button", lookup)
+    monkeypatch.setattr(benchmark, "_grid_batch_button", lookup)
     actions = []
     benchmark._wait_for_grid_page_one(
         object(), Probe(), actions, directory=tmp_path, timeout=3,
@@ -1667,7 +1667,7 @@ def test_grid_start_does_not_wait_for_page_jump_log(monkeypatch, tmp_path):
         def read(self):
             return GridPosition(first[0], first[0] + 19, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip(int(kw["automation_id"][-1])))
+    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda _window, page: Chip(page))
     actions = []
     benchmark._wait_for_grid_page_one(
         object(), Probe(), actions, directory=tmp_path, timeout=1,
@@ -1696,7 +1696,7 @@ def test_grid_start_rejects_unverified_visible_position(monkeypatch, tmp_path):
         def read(self):
             return GridPosition(1, 20, 833, "uia")
 
-    monkeypatch.setattr(benchmark, "_button", lambda *a, **kw: Chip())
+    monkeypatch.setattr(benchmark, "_grid_batch_button", lambda *a, **kw: Chip())
     actions = []
     with pytest.raises(TimeoutError, match="could not verify page 2 then page 1"):
         benchmark._wait_for_grid_page_one(
