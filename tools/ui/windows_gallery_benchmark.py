@@ -498,14 +498,14 @@ def _scroll(
 
 def _seek_grid_card(
     window, probe, actions: list[dict], *, target: int, direction: int,
-    pulse_notches: int = 6, timeout: float = 12.0,
+    pulse_notches: int = 12, timeout: float = 12.0,
 ) -> dict:
-    """Fast continuous wheel scroll driven by actual visible card positions.
+    """Wheel through Grid to a *visible card*, not a batch or wheel count.
 
-    Every configuration has the same visible-index destination, independent
-    of batch or mounted-card limits. This is not a batch-completion wait.
-    Stop on a confirmed position or report an incomplete journey; no
-    inferred success from how many wheel messages were dispatched.
+    Fast coarse pulses cross already buffered images while the app prefetches;
+    smaller pulses near the target reduce overshoot. No batch-load barrier.
+    A verified destination contains target #300 in the visible range; the
+    homeward leg must observe the first visible image as #1.
     """
 
     from pywinauto import mouse
@@ -524,63 +524,73 @@ def _seek_grid_card(
     coords, source = _gallery_wheel_point(window, "grid")
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
-    furthest = start.first
     current = start
+    furthest = start.first
     pulses = 0
     total_notches = 0
+    input_ms = 0.0
+    probe_ms = 0.0
     history = [{"first": start.first, "last": start.last, "source": start.source}]
-    reached = False
+
+    def at_target(position) -> bool:
+        return (
+            position.first <= target <= position.last
+            if direction < 0 else position.first == 1
+        )
 
     while time.monotonic() < deadline and pulses < 150:
-        # The position is the first *visible* saved image, not the batch
-        # number or scrollbar pixel offset. A small neighborhood of card
-        # #300 is comparable across all -ml/-mc settings.
-        if direction < 0:
-            reached = target - 15 <= current.first <= target + 25
-        else:
-            reached = current.first == 1
-        if reached:
+        if at_target(current):
             break
-
-        if direction < 0 and current.first > target + 25:
-            # Overshot #300: correct with small upward wheel pulses instead
-            # of pretending a larger index is the requested destination.
-            wheel_direction = 1
-            notch_count = 1
+        if direction < 0 and current.first > target:
+            # Correct a fast overshoot instead of accepting a different card.
+            wheel_direction, notch_count = 1, 1
         else:
             wheel_direction = direction
-            distance = abs(target - current.first) if direction < 0 else current.first - 1
-            notch_count = (
-                min(pulse_notches, 6) if distance > 65
-                else min(pulse_notches, 3) if distance > 25
-                else 1
+            distance = (
+                max(0, target - current.last) if direction < 0 else current.first - 1
             )
+            notch_count = (
+                pulse_notches if distance > 100
+                else min(pulse_notches, 6) if distance > 30
+                else min(pulse_notches, 2)
+            )
+
+        sent_at = time.perf_counter()
         mouse.scroll(coords=coords, wheel_dist=wheel_direction * notch_count)
+        input_ms += (time.perf_counter() - sent_at) * 1000
         pulses += 1
         total_notches += notch_count
-        time.sleep(0.055)
+        # Only 15 ms between wheel inputs. The old 55 ms delay contributed
+        # several seconds per direction in the owner's Windows trace.
+        time.sleep(0.015)
+        read_at = time.perf_counter()
         observed = probe.read()
+        probe_ms += (time.perf_counter() - read_at) * 1000
         if observed is not None:
             current = observed
-            furthest = max(furthest, observed.first) if direction < 0 else min(furthest, observed.first)
-            if (not history or observed.first != history[-1]["first"]):
+            if direction < 0:
+                furthest = max(furthest, observed.first)
+            else:
+                furthest = min(furthest, observed.first)
+            if observed.first != history[-1]["first"]:
                 history.append({
                     "first": observed.first, "last": observed.last,
                     "source": observed.source,
                 })
-        # No additional fixed batch-load delay; Qt prefetches while the
-        # automation continues sending real wheel input.
 
-    # A final UIA/log sample may land exactly as the timeout elapses.
-    reached = (
-        target - 15 <= current.first <= target + 25
-        if direction < 0 else current.first == 1
-    )
+    # A final pager sample can arrive with the final wheel event.
+    read_at = time.perf_counter()
+    last_observed = probe.read()
+    probe_ms += (time.perf_counter() - read_at) * 1000
+    if last_observed is not None:
+        current = last_observed
+    reached = at_target(current)
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     action = {
         "action": "grid-seek-down" if direction < 0 else "grid-seek-up",
-        "requested_first_card": target if direction < 0 else 1,
+        "requested_card": target,
         "first_before": start.first,
+        "last_before": start.last,
         "first_after": current.first,
         "last_after": current.last,
         "furthest_first": furthest,
@@ -589,15 +599,17 @@ def _seek_grid_card(
         "wheel_pulses": pulses,
         "wheel_notches_dispatched": total_notches,
         "duration_ms": duration_ms,
+        "wheel_input_ms": round(input_ms, 2),
+        "position_probe_ms": round(probe_ms, 2),
         "target_reached": reached,
         "position_history": history,
     }
     actions.append(action)
     if not reached:
         raise TimeoutError(
-            f"Grid {'down' if direction < 0 else 'up'} seek did not reach "
-            f"visible image {'~' + str(target) if direction < 0 else '1'} "
-            f"(last first={current.first}, pulses={pulses}, elapsed={duration_ms:g} ms)."
+            f"Grid {'down' if direction < 0 else 'up'} did not reach "
+            f"card {target} (visible={current.first}-{current.last}, "
+            f"pulses={pulses}, elapsed={duration_ms:g} ms)."
         )
     return action
 
@@ -855,7 +867,7 @@ def _drive(
         # The same saved-image index is targeted for every -ml/-mc case.
         # Pulse size and pause are identical; total pulses vary to actually
         # reach that index, instead of sweeping a fixed, incomparable offset.
-        pulse_notches = min(8, max(2, scroll_notches // 32))
+        pulse_notches = min(12, max(2, scroll_notches // 16))
         record["grid_sweep"] = {
             "requested_card": grid_target_card,
             "pulse_notches": pulse_notches,
