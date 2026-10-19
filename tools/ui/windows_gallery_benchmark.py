@@ -405,54 +405,6 @@ def _click_grid_page_one_early(window, actions: list[dict]) -> bool:
     return True
 
 
-def _verify_grid_start_at_one(window, probe, actions: list[dict], *,
-                              timeout: float = 3.0) -> bool:
-    """Confirm the viewport starts at image 1 before benchmarking any scroll.
-
-    Retry a page-1 click only when the chip becomes available. This bounded
-    setup phase is not a wait for all thumbnails or adjacent batches.
-    """
-
-    started = time.perf_counter()
-    deadline = time.monotonic() + timeout
-    attempts = 0
-    observed = None
-    while time.monotonic() < deadline:
-        observed = probe.read()
-        if observed is not None and observed.first == 1:
-            actions.append({
-                "action": "verify-grid-start",
-                "verified": True, "first": 1,
-                "source": observed.source, "click_attempts": attempts,
-                "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
-            })
-            return True
-        # A dispatched click before the first query may be ignored or queued.
-        # An early page-1 chip can be disabled until the initial commit.
-        try:
-            button = _button(
-                window, "Jump to image batch 1",
-                automation_id="galleryPagerPage1", timeout=0.2,
-            )
-            button.click_input()
-            attempts += 1
-        except (LookupError, RuntimeError, TimeoutError):
-            pass
-        time.sleep(0.12)
-    actions.append({
-        "action": "verify-grid-start", "verified": False,
-        "first": observed.first if observed is not None else None,
-        "source": observed.source if observed is not None else None,
-        "click_attempts": attempts,
-        "elapsed_ms": round((time.perf_counter() - started) * 1000, 2),
-    })
-    raise TimeoutError(
-        "Grid starting position was not confirmed at image 1 "
-        f"within {timeout:g}s; last first="
-        f"{observed.first if observed is not None else 'unknown'}."
-    )
-
-
 def _wheel_intents(directory: Path) -> set[tuple]:
     """Use existing -x events to verify that the gallery received a wheel."""
 
@@ -578,6 +530,7 @@ def _seek_grid_card(
     window, probe, actions: list[dict], *, target: int, direction: int,
     pulse_notches: int = 12, timeout: float = 12.0,
     wheel_point: tuple[tuple[int, int], str] | None = None,
+    action_name: str | None = None,
 ) -> dict:
     """Keep wheel messages flowing while the gallery loads and UIA is busy.
 
@@ -692,7 +645,7 @@ def _seek_grid_card(
     reached = at_target(current) and not send_errors and not insufficient_catalogue
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     action = {
-        "action": "grid-seek-down" if direction < 0 else "grid-seek-up",
+        "action": action_name or ("grid-seek-down" if direction < 0 else "grid-seek-up"),
         "requested_card": target,
         "first_before": history[0]["first"] if history else None,
         "last_before": history[0]["last"] if history else None,
@@ -977,14 +930,33 @@ def _drive(
         from tools.ui.grid_scroll_probe import GridProgressProbe
 
         probe = GridProgressProbe(window, directory)
+        # Normalize every case to image #1 *using real wheel input*, not a
+        # query_done or batch-preparation wait. The last Windows run showed
+        # -ml80/-mc200 already at visible #281 when its down leg started.
+        # This homing leg is recorded separately and EXCLUDED from round-trip
+        # ranking; scroll wheels continue while Qt is querying/loading.
+        rect = window.rectangle()
+        wheel_point = (
+            (int(rect.left + rect.width() * 0.56), int(rect.top + rect.height() * 0.72)),
+            "window-grid-fast",
+        )
+        pulse_notches = min(12, max(2, scroll_notches // 16))
         start_ok = _attempt(
-            record, "grid-verify-start-at-one",
-            lambda: _verify_grid_start_at_one(window, probe, actions),
+            record, "grid-home-before-measured-scroll",
+            lambda: _seek_grid_card(
+                window, probe, actions, target=1, direction=1,
+                pulse_notches=pulse_notches, timeout=grid_seek_timeout,
+                wheel_point=wheel_point, action_name="grid-home-start",
+            ),
         )
         record["grid_start_verified"] = start_ok
+        record["grid_start_home_ms"] = next(
+            (a["duration_ms"] for a in reversed(actions)
+             if a.get("action") == "grid-home-start"), None,
+        )
         if not start_ok:
-            # Fail closed: a round trip from an unknown card cannot enter the
-            # comparable matrix or be repaired by clicking page 1 at the end.
+            # No misleading score if an initial query left the viewport at an
+            # unknown card: never measure an incomparable downward journey.
             record["grid_sweep"] = {
                 "requested_card": grid_target_card,
                 "cycles": cycles, "position_verified": False,
@@ -994,17 +966,9 @@ def _drive(
             window.close()
             record["step"] = "wait-for-shutdown"
             return _read_query_count(directory)
-        # Avoid a costly scan of all accessible thumbnail descendants before
-        # first input. The established window-center fallback targets Grid.
-        rect = window.rectangle()
-        wheel_point = (
-            (int(rect.left + rect.width() * 0.56), int(rect.top + rect.height() * 0.72)),
-            "window-grid-fast",
-        )
         # The same saved-image index is targeted for every -ml/-mc case.
         # Pulse size and pause are identical; total pulses vary to actually
         # reach that index, instead of sweeping a fixed, incomparable offset.
-        pulse_notches = min(12, max(2, scroll_notches // 16))
         record["grid_sweep"] = {
             "requested_card": grid_target_card,
             "pulse_notches": pulse_notches,
