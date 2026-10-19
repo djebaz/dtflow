@@ -20,6 +20,7 @@ from PySide6.QtCore import (
     QModelIndex,
     QObject,
     QRunnable,
+    QSize,
     Qt,
     QThreadPool,
     QTimer,
@@ -28,6 +29,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QCompleter,
     QFileDialog,
     QHeaderView,
@@ -85,10 +87,13 @@ INCOMPLETE_NOTICE = (
 
 
 def session_label(number: int, session_id: str, last_write: datetime | None, *, current: bool) -> str:
-    """Selector text: newest-first position, local last-write time and a short session id."""
+    """Selector text: newest-first position, local last-write time and a short session id.
+
+    Kept short so the closed combo fits the filter row; the item tooltip carries the full id.
+    """
     parts = [f"#{number}"]
     if last_write is not None:
-        parts.append("last write " + last_write.strftime("%d %b %H:%M"))
+        parts.append(last_write.strftime("%d %b %H:%M"))
     if current:
         parts.append("this session")
     parts.append(session_id[:8])
@@ -408,7 +413,21 @@ class LogsWorkspace(QObject):
             lambda: self._show_advanced(not self.form.logsAdvanced.isVisible())
         )
         self.form.logsFollowButton.toggled.connect(self._toggle_follow)
-        chevron = Path(__file__).parents[1] / "resources" / "images" / "gallery" / "chevron-right.svg"
+        icons = Path(__file__).parents[1] / "resources" / "images" / "gallery"
+        for button, icon in (
+            (self.form.logsRefreshButton, "refresh.svg"),
+            (self.form.logsFollowButton, "arrow-up-to-line.svg"),
+        ):
+            button.setIcon(QIcon(str(icons / icon)))
+            button.setIconSize(QSize(16, 16))
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        # Session labels grow with their id and time; keep the filter row stable and show the full label on hover.
+        session = self.form.logsSessionCombo
+        session.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        session.setMinimumContentsLength(28)
+        session.setMaximumWidth(320)
+        session.currentIndexChanged.connect(lambda _index: self._session_tooltip())
+        chevron = icons / "chevron-right.svg"
         self.form.logsDetailCollapse.setIcon(QIcon(str(chevron)))
         self.form.logsDetailCollapse.setText("")
         self.form.logsDetailCollapse.setToolTip("Collapse details")
@@ -503,6 +522,11 @@ class LogsWorkspace(QObject):
             old.set()
         self._tokens.pop(kind, None)
 
+    def _session_tooltip(self):
+        combo = self.form.logsSessionCombo
+        sid = combo.currentData() or ""
+        combo.setToolTip(f"{combo.currentText()} (last write, local time)\nSession {sid}" if sid else "")
+
     def _session(self) -> str:
         return self.form.logsSessionCombo.currentData() or ""
 
@@ -539,6 +563,9 @@ class LogsWorkspace(QObject):
             combo.setItemData(combo.count() - 1, sid, Qt.ItemDataRole.ToolTipRole)
         index = combo.findData(chosen) if chosen in sessions else combo.findData(active) if active else 0
         combo.setCurrentIndex(max(0, index))
+        self._session_tooltip()
+        # The popup may be wider than the closed combo, so complete labels stay readable there.
+        combo.view().setMinimumWidth(combo.view().sizeHintForColumn(0) + 24)
         combo.blockSignals(False)
         self.refresh(facets=True)
         self._timer.start()
