@@ -2,6 +2,8 @@
 
 ## Highlights
 
+- PR #104 Grid matrix refinement: replace slow batch-count-dependent wheel steps with a fast, bounded, position-driven Grid journey to approximately image #300 and back to #1 across all `-ml/-mc` cases. Read the owner's recorded `Visible image range` UIA control with benchmark-only pager-log fallback; no sort changes or batch-completion waits. Evidence records actual displayed indices, pulsed inputs and timeouts. Native Windows smoke still pending.
+
 - PR #104 Grid scroll matrix: opt-in `--grid-matrix` benchmark varies CLI `-ml`/`-mc` (from 20:50 through 300:1000) across separate native Windows processes. Preserves true product whole-batch cap rounding, records requested/effective limits, scrolls Grid down/up in bounded resident-batch-based steps, physically clicks page 1 before and after, and never touches Sort. Existing tuning profiles still use 20/100. No Windows replay or provider execution yet.
 
 - PR #104 follow-up: double the default interactive wheel sweep from 96 to 192 notches per direction, exercise wider thumbnail slider changes (55% then 210%) with restoration, and toggle fullscreen from Grid rather than Detail. These are benchmark-only changes and require a new native Windows owner smoke; no provider actions or application defaults change.
