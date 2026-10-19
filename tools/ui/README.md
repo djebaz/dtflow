@@ -1,4 +1,79 @@
+## PR #104 current Windows Grid benchmark contract (supersedes interim notes below)
+
+This is the authoritative quick reference for the latest PR #104 Grid matrix. Earlier dated notes below document experiments and may describe abandoned startup checks or stop conditions.
+
+The benchmark waits for the numbered page-1 chip to become enabled after the spinner, polling about every **200 ms**. It clicks the chip **once**, then checks that the **first visible image is #1**; it no longer waits for a diagnostic `page_jump` event. Once the journey begins, wheel messages continue independently of later batch queries/thumbnail preparation. The first visible image index—not the total, buffered count or end of an initially oversized range—determines when the down leg is near the requested card (±20 at #200, ±25 at #300). The return must reach first-visible #1. Unverified trials are excluded from ranking.
+
+**Output:** inspect per-trial `trial.json` and the application `-x` logs, plus the end-of-run console ranking, `benchmark_report.txt` and `best_combination.json`. Grid stall threshold is **≥100 ms** only during measured scrolling; startup readiness is tracked separately. A single clean run per configuration is *provisional*; prefer at least three.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --runs 3 --cycles 1 --ack-user-state
+```
+
+**Native evidence / handoff:** owner observed clean runs in `10190342.zip` for `100/300` (page-1 readiness 3.23 s, round trip 7.45 s, one ≥100 ms Grid stall, worst 111 ms) and `200/600` (readiness 10.70 s, round trip 6.93 s, one ≥100 ms Grid stall, worst 385 ms). Faster scrolling for the large batch does not establish a better overall UX. The owner reports the initial spinner/page-1 readiness remains unnecessarily long. **Do not optimize it in PR #104**; use a separate follow-up PR to investigate first usable page/Qt preparation and mounting under large batch sizes, while preserving browsing correctness. No production `-ml/-mc` defaults change here.
+
+---
+
 # DTFlow UI screenshot scripts
+
+## Grid-only dynamic -ml/-mc scroll matrix (PR #104)
+
+Run the same **saved-image journey** for every `-ml/-mc` configuration, without opening Sort or changing the user's ordering: Images → Grid → **click page 1** → fast wheel scroll until **image #300 is inside the visible range** → fast wheel scroll back until **image #1** is first → **click page 1 again**. There are no sleeps waiting for whole batches to load, and no List/Detail/fullscreen/thumbnail-slider actions in this mode.
+
+**High-batch false-positive regression (10190324.zip):** the observed first pager update was `1–200 of 833` with 200 buffered, while the viewport had not scrolled. A previous stop rule accepted card #200 merely because `last=200`, completing the down leg after **one wheel pulse** and falsely ranking the trip as ~0.49 s. The down-leg stop now uses **only the first visible index**, requiring it to be within a bounded neighborhood of the requested target (±20 for #200, ±25 for #300). An oversized initial visible range cannot satisfy the destination. `target_tolerance` is recorded for audit; stuck positions time out rather than winning a ranking.
+
+**Position parsing invariant:** only the exact visible-range label (`first–last of total`) is accepted. Neither the trailing `of total` number nor the independent `N buffered` status is the scroll position. For example, `1–20 of 200` alongside `200 buffered` does **not** mean the user has reached card #200.
+
+The native Windows recorder identifies the actual position control as `Gallery batch navigation → Visible image range||Text`. The driver reads its numeric text when UIA exposes it. Some Qt/Windows combinations return only the static accessible name; a **benchmark-child-only** diagnostic of the exact `GalleryPager.present` values provides a fallback. Each action records its initial/final visible image index, observed progress, input count and duration. A failed or undersized journey is a warning, **not** a successful benchmark. The return to image #1 must be confirmed *before* the final page-1 click.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --runs 1 --cycles 1 --ack-user-state
+```
+
+Defaults: `--grid-target-card 300`, `--grid-seek-timeout 12` seconds **per direction**, 15 ms between short wheel pulses without extra between-batch waits. `--scroll-notches` (default 192) controls the maximum pulse size in Grid matrix mode through `min(12,max(2,notches//16))`; pulses reduce automatically near the destination to limit overshoot. You can choose a shorter test or a smaller matrix:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix 20:50 100:300 300:1000 --grid-target-card 300 --grid-seek-timeout 12 --runs 1 --cycles 1 --ack-user-state
+```
+
+The default cases are `20:50 20:100 50:150 100:300 200:600 300:1000`. Each launches a **separate DTFlow source process** using the real validated `-ml/-mc` flags. Since DTFlow rounds `-mc` down to whole batches, the effective mounted-card caps are 40, 100, 150, 300, 600, 900. Reports retain the requested/effective limits, position trace, end position, result and original sanitized `-x` metrics. The existing catalogue must contain **at least 300 matching images** to reach the default target; otherwise the trial records a warning and cannot be used for comparison. Source image files are never generated, edited or deleted; the normal viewer may still save browsing preferences/cache.
+
+This is intentionally a **fast, position-driven scrolling stress test**, not a wait-until-every-thumbnail-is-decoded test. Grid-card displacement and end points must be observed, rather than inferred from how many wheel events were sent. Treat mount duration and GUI heartbeat separately from input-to-paint latency. The changed test awaits a native Windows acceptance run.
+
+### Equal starting position despite a busy first batch
+
+The real Windows `10190307.zip` trace used `--grid-target-card 200`, but the `-ml 80 -mc 200` trial had already reached **visible images 281–295 before the measured down leg**; the automated user sent 555 wheel notches and hit the 12-second timeout while reversing the overshoot. Its maximum first-visible image was 301, even though the target was 200. The early page-1 click is dispatched without verifying the resulting viewport, so it cannot establish an equal starting position by itself.
+
+The Grid matrix now **homes upward with live wheel events until `Visible image range` confirms first image #1** before beginning the timed down-to-target-and-back journey. Homing uses the independent wheel sender, so it also sends input while the initial batch is querying/preparing and while UIA/log position reads are delayed. It is separately recorded as `grid-home-start` and excluded from the measured round-trip and browsing-only stall ranking. If image #1 cannot be confirmed within the configured `--grid-seek-timeout`, the run is warned and not ranked; it does not silently start at image #281 or pass by clicking page 1 afterward. This avoids mistaking `-mc` (a resident-card buffer cap) for a limit on how far a user may browse.
+
+### Continuous scrolling without a query barrier; direct console report
+
+The Grid-only matrix **does not call `_await_query` before the first page-1 attempt or first wheel input**. It tries the actual page-1 chip immediately after entering Grid. The chip is disabled until Qt commits an initial batch; if unavailable, the runner records `click-page-one-start: not-ready` and **starts wheel input anyway**, rather than blocking for a batch. The final page-1 click is still performed. An initial viewport with no mounted cards physically cannot scroll yet: wheel events are still sent and their first visible movement is independently observed after Qt makes cards available.
+
+The mouse-wheel sender runs in a dedicated short-lived Python thread, independent of the main thread that reads UI Automation / pager logs. It continues to send wheel events every 15 ms even when database reads, staged card construction, thumbnail decoding or cross-process UIA calls take longer. Each direction has a bounded timeout; the sender is stopped and joined on every exit. A missing destination is **never** reported as success. Each action includes timestamps, input/polling durations, pulses and observed image positions. This is a benchmark-only change, not a production scrolling behavior change. It must be accepted on real Windows before drawing performance conclusions.
+
+After the final case, the console prints a **Grid matrix performance table** and `PROVISIONAL BEST: -ml ... -mc ...` or `BEST COMBINATION`. The comparison excludes incomplete/missing-diagnostic trials and **ignores startup GUI gaps**; it first minimizes individually logged Grid GUI heartbeat gaps >=250 ms while wheel input was active, then the worst such gap, then the median verified round-trip duration. It writes `benchmark_report.txt` and `best_combination.json` alongside the CSVs, and keeps them updated after each case. With fewer than three clean trials per case, it explicitly labels a leader *provisional*.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --runs 1 --cycles 1 --ack-user-state
+```
+
+## Native Windows gallery performance benchmark (PR #104)
+
+The optional, Windows-only `pywinauto` driver launches a **real source DTFlow GUI** and exercises Images navigation, Grid/List/Detail, verified page-chip changes, 192-notch up/down wheel sweeps (configurable through `--scroll-notches`), **fullscreen while Grid is active**, and thumbnail-size sweeps toward **55% and 210%** with restoration of the initial value. Text search is intentionally out of scope. The experimental profiles vary the eight groups of performance constants recorded in the [benchmark protocol](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md); pagination stays **20 records / 100 mounted cards** for every run. The runner reuses `-x` event logs and the per-session gallery CSV rather than replacing Qt telemetry.
+
+From an interactive Windows desktop with a prepared `uv` environment:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
+The interactive smoke defaults to **192 wheel notches per direction** (16 small bursts rather than eight); use `--scroll-notches 240` for an even longer, controlled sweep (12–240 allowed). The slider sweeps small → large → original, preserving the user's starting size if UIA restoration succeeds. The fullscreen toggle now occurs in Grid rather than Detail. Both changes increase the workload; compare only runs with the same sequence and viewport dimensions.
+
+`--out` is an output root (default `tmp`), not the final run directory. The script prints and creates `<root>/gallery_bench_smoke/MMddHHmm/` using local time, for example `tmp/gallery_bench_smoke/10120040/` on October 12 at 00:40. Existing roots are allowed; an existing timestamped run is refused without overwriting evidence. Wait until the next minute or choose another root after a same-minute collision. Report files include `results.csv`, `summary.csv` and, inside each profile/trial directory, `trial.json` plus the real application logs. Missing UI clicks, wheels and slider drags now produce per-step `warnings` in `trial.json` and stderr, and the driver continues through the remaining actions. A run with warnings is marked `warning`, not `ok`, and excluded from clean performance comparisons. Core GUI startup or missing initial gallery data still fails the trial. A failed trial prints its `step` and sanitized exception message. Check those before treating automation failure as gallery slowness.
+
+**Native acceptance is still pending:** the owner's later baseline and workers-3 smoke both navigated Images, switched views, scrolled and changed page chips but timed out at the unrelated prompt-search field. The field has been dropped from the smoke. The owner's recorder confirms the actual UIA controls `Full screen image view||CheckBox` and `ThumbnailSizeSlider||Slider`; new interactions and warning behavior have not yet been replayed on Windows. Avoid ranking profiles until a complete warning-free owner smoke succeeds. The tool reads the live saved-output catalogue, and the app can update viewer preferences or disposable thumbnail cache; the `--ack-user-state` flag is required. It performs no inference or generation.
+
 
 Offscreen Qt renders of the real DTFlow forms under the real `dtflow_dark.qss`. Run from the repository root (or set `DTFLOW_ROOT`) with the locked environment:
 
@@ -21,6 +96,22 @@ uv run python tools/ui/preview_gallery_detail.py --capture out/gallery-detail-op
 ```
 
 `states.py` families: buttons, connection, gallery, inputs, checks, lists, tabs, labels, popups.
+
+## Interactive Windows gallery performance automation (PR #104, draft)
+
+This test is **not** an offscreen capture. `windows_gallery_benchmark.py` uses optional [pywinauto](https://github.com/pywinauto/pywinauto) to drive a separate, real DTFlow GUI process on an unlocked Windows desktop. It exercises Images Grid/List/Detail, pager chips, scrolling and positive-prompt filter editing and reads the existing `-x` gallery diagnostic logs. It does not generate images.
+
+The benchmark experiments vary the screenshot-listed **6 thumbnail workers, 3 screens of lookahead, 4 ms preparation/mount budgets, 600 px thumbnails, 256 pending cache writes, 20,000/16,000/500 cache-eviction values, 5 s/30 s refresh and 300/250/40 ms debounce settings**. Source-only `-ml 20 -mc 100` is fixed for every profile; it is **not** a tuned variable.
+
+From PowerShell in the PR #104 checkout (after `uv sync --frozen`):
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --profiles baseline workers-3 --runs 1 --cycles 1 --ack-user-state
+```
+
+Each invocation reserves a fresh timestamped folder under the output root as described above. `--ack-user-state` acknowledges that source DTFlow browses your **existing** saved-output state and may change preferences or disposable thumbnails; this tooling does not provide an isolated test catalogue. Avoid running it against valuable cache data without a backup and do not run another DTFlow instance concurrently. Pywinauto accessibility support, Windows latency, DPI and packaged execution have **not** been validated by Linux tests or static renders. Review per-run `trial.json`, the app's `-gallery.csv`, `results.csv` and `summary.csv`; an absent event-loop gap is not proof of a zero-millisecond freeze.
+
+See the [implementation plan and full matrix command](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md) and the [development performance guide](../../devdocs/guides/development.md#native-windows-images-performance-matrix-experimental-pr-104). The 100–200-image everyday benchmark cannot meaningfully tune cache eviction at 20,000 entries without a separate, safe stress dataset.
 
 ## Workflow-state filenames
 
@@ -104,3 +195,9 @@ In the gallery, choose Specimen for one matching component/state. This control i
 ### Icon coverage and image readiness
 
 The gallery state sheet uses canonical Qt-form buttons and the same icon initializer as the application. Buttons remain mounted in the canonical page while their own pixels are captured, preserving ancestor-scoped typography and layout constraints. It covers Grid/List/Detail, Additional details/Raw metadata JSON, Refresh/Fullscreen, both round-arrow directions and thumbnail states. Web recipes use the export's Icon component with its kit icon sizes and local asset paths; native size and disabled-state differences remain visible. Screens and states wait for all mounted images to load and decode after interactions, fail broken assets, and record decoded-image counts. Expanded Detail's metadata icons are therefore captured only once ready. Round buttons use a nonzero-height positioned wrapper, and component bounds must fit inside the screenshot host.
+
+**Startup correction (October 19):** the first page-1 click may be dispatched while the pager is not ready. The Grid-only benchmark therefore requires a measured `Visible image range` starting at image **#1** before its downward leg, retrying the page-1 control for at most 3 seconds. An unconfirmed position (such as #281) skips the journey and records a warning; it can never win the console ranking. This is a bounded *starting-position* prerequisite, not a wait for all image thumbnails or for subsequent batch queries. Once image #1 is verified, wheel input continues independently of batch loading.
+
+**Delayed page-1 click fix:** Qt can queue a numbered-chip click while a Grid mount or adjacent batch is in progress. An already-visible first card (#1) and a successful UIA `click_input()` are not proof the queued jump has run; it may execute later and pull the scroll back. Before timed scrolling, the runner now snapshots `-x` `gallery_perf phase=page_jump page=1` events, clicks the enabled chip once, and waits for a **new page_jump event** plus two successive first-visible-#1 checks. It fails the trial if the application does not process that click before the startup deadline. The independent wheel sender is unchanged once startup is verified.
+
+**Startup polling correction (2026-10-19):** the benchmark polls for the enabled numbered page-1 control roughly every 200 ms after the initial loading spinner; it clicks the control once as soon as available. It then checks first-visible image #1 and starts the timed wheel journey. The prior requirement for a new diagnostic `page_jump` log event was removed because it could block startup despite a usable UI. A retry is bounded by the existing startup `--timeout`. This is not a wait for every thumbnail or subsequent batch.

@@ -1374,7 +1374,7 @@ class GalleryPage(QObject):
         self._gui_heartbeat_at = now
         if gap_ms >= 50:
             self._perf_stats.observe("gui_gaps", gap_ms)
-        if gap_ms >= 250:
+        if gap_ms >= 100:
             log.debug(
                 "gallery_perf phase=gui_gap elapsed_ms=%.1f mode=%s mounted=%d query_busy=%s preparation_busy=%s",
                 gap_ms,
