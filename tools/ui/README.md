@@ -2,7 +2,7 @@
 
 ## Grid-only dynamic -ml/-mc scroll matrix (PR #104)
 
-Run the same **saved-image journey** for every `-ml/-mc` configuration, without opening Sort or changing the user's ordering: Images → Grid → **click page 1** → fast wheel scroll until the **first visible image is approximately #300** → fast wheel scroll back until **image #1** is first → **click page 1 again**. There are no sleeps waiting for whole batches to load, and no List/Detail/fullscreen/thumbnail-slider actions in this mode.
+Run the same **saved-image journey** for every `-ml/-mc` configuration, without opening Sort or changing the user's ordering: Images → Grid → **click page 1** → fast wheel scroll until **image #300 is inside the visible range** → fast wheel scroll back until **image #1** is first → **click page 1 again**. There are no sleeps waiting for whole batches to load, and no List/Detail/fullscreen/thumbnail-slider actions in this mode.
 
 The native Windows recorder identifies the actual position control as `Gallery batch navigation → Visible image range||Text`. The driver reads its numeric text when UIA exposes it. Some Qt/Windows combinations return only the static accessible name; a **benchmark-child-only** diagnostic of the exact `GalleryPager.present` values provides a fallback. Each action records its initial/final visible image index, observed progress, input count and duration. A failed or undersized journey is a warning, **not** a successful benchmark. The return to image #1 must be confirmed *before* the final page-1 click.
 
@@ -10,7 +10,7 @@ The native Windows recorder identifies the actual position control as `Gallery b
 uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --runs 1 --cycles 1 --ack-user-state
 ```
 
-Defaults: `--grid-target-card 300`, `--grid-seek-timeout 12` seconds **per direction**, 55 ms between short wheel pulses without extra between-batch waits. `--scroll-notches` (default 192) controls the maximum pulse size in Grid matrix mode through `min(8,max(2,notches//32))`; pulses reduce automatically near the destination to limit overshoot. You can choose a shorter test or a smaller matrix:
+Defaults: `--grid-target-card 300`, `--grid-seek-timeout 12` seconds **per direction**, 15 ms between short wheel pulses without extra between-batch waits. `--scroll-notches` (default 192) controls the maximum pulse size in Grid matrix mode through `min(12,max(2,notches//16))`; pulses reduce automatically near the destination to limit overshoot. You can choose a shorter test or a smaller matrix:
 
 ```powershell
 uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix 20:50 100:300 300:1000 --grid-target-card 300 --grid-seek-timeout 12 --runs 1 --cycles 1 --ack-user-state
