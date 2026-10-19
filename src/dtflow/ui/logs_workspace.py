@@ -373,10 +373,25 @@ class LogsWorkspace(QObject):
                                                        separators=(",", ":")))
 
     def copy_visible(self):
-        if not self._page:
+        """Copy complete selected-page evidence, never the small table projections."""
+        refs = tuple(ref for _tiny, ref in self._page)
+        if not refs:
             return
-        QApplication.clipboard().setText("\n".join(
-            json.dumps(record, ensure_ascii=False) for record, _ in self._page))
+
+        def collect():
+            return "\\n".join(
+                json.dumps(read_detail(self.directory, ref), ensure_ascii=False, separators=(",", ":"))
+                for ref in refs
+            )
+
+        def delivered(value, error):
+            if error:
+                self.form.logsStatus.setText("Copy unavailable: " + error)
+            else:
+                QApplication.clipboard().setText(value)
+                self.form.logsStatus.setText(f"Copied {len(refs)} visible records")
+
+        self._run(collect, delivered)
 
     def _save_menu(self):
         menu = QMenu(self.form.logsSaveMenu)
