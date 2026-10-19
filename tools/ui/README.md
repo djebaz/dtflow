@@ -20,6 +20,18 @@ The default cases are `20:50 20:100 50:150 100:300 200:600 300:1000`. Each launc
 
 This is intentionally a **fast, position-driven scrolling stress test**, not a wait-until-every-thumbnail-is-decoded test. Grid-card displacement and end points must be observed, rather than inferred from how many wheel events were sent. Treat mount duration and GUI heartbeat separately from input-to-paint latency. The changed test awaits a native Windows acceptance run.
 
+### Continuous scrolling without a query barrier; direct console report
+
+The Grid-only matrix **does not call `_await_query` before the first page-1 attempt or first wheel input**. It tries the actual page-1 chip immediately after entering Grid. The chip is disabled until Qt commits an initial batch; if unavailable, the runner records `click-page-one-start: not-ready` and **starts wheel input anyway**, rather than blocking for a batch. The final page-1 click is still performed. An initial viewport with no mounted cards physically cannot scroll yet: wheel events are still sent and their first visible movement is independently observed after Qt makes cards available.
+
+The mouse-wheel sender runs in a dedicated short-lived Python thread, independent of the main thread that reads UI Automation / pager logs. It continues to send wheel events every 15 ms even when database reads, staged card construction, thumbnail decoding or cross-process UIA calls take longer. Each direction has a bounded timeout; the sender is stopped and joined on every exit. A missing destination is **never** reported as success. Each action includes timestamps, input/polling durations, pulses and observed image positions. This is a benchmark-only change, not a production scrolling behavior change. It must be accepted on real Windows before drawing performance conclusions.
+
+After the final case, the console prints a **Grid matrix performance table** and `PROVISIONAL BEST: -ml ... -mc ...` or `BEST COMBINATION`. The comparison excludes incomplete/missing-diagnostic trials and **ignores startup GUI gaps**; it first minimizes individually logged Grid GUI heartbeat gaps >=250 ms while wheel input was active, then the worst such gap, then the median verified round-trip duration. It writes `benchmark_report.txt` and `best_combination.json` alongside the CSVs, and keeps them updated after each case. With fewer than three clean trials per case, it explicitly labels a leader *provisional*.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --runs 1 --cycles 1 --ack-user-state
+```
+
 ## Native Windows gallery performance benchmark (PR #104)
 
 The optional, Windows-only `pywinauto` driver launches a **real source DTFlow GUI** and exercises Images navigation, Grid/List/Detail, verified page-chip changes, 192-notch up/down wheel sweeps (configurable through `--scroll-notches`), **fullscreen while Grid is active**, and thumbnail-size sweeps toward **55% and 210%** with restoration of the initial value. Text search is intentionally out of scope. The experimental profiles vary the eight groups of performance constants recorded in the [benchmark protocol](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md); pagination stays **20 records / 100 mounted cards** for every run. The runner reuses `-x` event logs and the per-session gallery CSV rather than replacing Qt telemetry.
