@@ -1100,12 +1100,24 @@ def _drive(
             window.close()
             record["step"] = "wait-for-shutdown"
             return _read_query_count(directory)
-        # Subsequent reads/preparation never pause the scrolling sender.
-        rect = window.rectangle()
-        wheel_point = (
-            (int(rect.left + rect.width() * 0.56), int(rect.top + rect.height() * 0.72)),
-            "window-grid-fast",
-        )
+        # First bring the pointer into the numbered gallery navigation;
+        # only then move into the real Grid scroll viewport for wheel input.
+        # Do not aim at an arbitrary percentage of the entire app window.
+        from pywinauto import mouse
+
+        pager_chip = _grid_batch_button(window, 1)
+        pager_rect = pager_chip.rectangle()
+        mouse.move(coords=(
+            int((pager_rect.left + pager_rect.right) / 2),
+            int((pager_rect.top + pager_rect.bottom) / 2),
+        ))
+        wheel_point = _gallery_wheel_point(window, "grid")
+        mouse.move(coords=wheel_point[0])
+        actions.append({
+            "action": "grid-wheel-pointer-position",
+            "pager_name": pager_chip.element_info.name,
+            "wheel_target": wheel_point[1],
+        })
         pulse_notches = min(12, max(2, scroll_notches // 16))
         # The same saved-image index is targeted for every -ml/-mc case.
         # Pulse size and pause are identical; total pulses vary to actually
