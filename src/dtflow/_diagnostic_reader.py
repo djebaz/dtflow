@@ -5,20 +5,16 @@ writes, repairs, reinterprets, or deletes canonical log segments.
 """
 from __future__ import annotations
 
-import csv
-import hashlib
 import heapq
 import json
 import os
 import re
 import stat
-import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator
 
-from dtflow._diagnostic_schema import MAX_RECORD_BYTES, CaptureRejected, sanitize, validate_record
+from dtflow._diagnostic_schema import MAX_RECORD_BYTES, CaptureRejected, validate_record
 
 _SEGMENT = re.compile(r"^dtflow-([A-Za-z0-9_-]{1,128})\.jsonl(?:\.([1-3]))?$")
 _LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
@@ -106,7 +102,10 @@ def _opened(segment: Segment):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    fd = os.open(segment.path, flags)
+    try:
+        fd = os.open(segment.path, flags)
+    except OSError as exc:
+        raise EvidenceError("snapshot_changed") from exc
     try:
         st = os.fstat(fd)
         if (not stat.S_ISREG(st.st_mode) or (st.st_dev, st.st_ino) !=
@@ -167,30 +166,34 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
             on_reset()
         count, previous, startup, closed = 0, 0, False, False
         reasons = []
-        duplicate = {}
+        last_record = None
         try:
             for segment in segments:
                 for record, loc in _read_lines(segment, cancelled):
                     seq = record["seq"]
-                    identity = (loc.device, loc.inode, loc.offset, loc.length)
-                    old = duplicate.get(seq)
-                    if old is not None:
-                        if old != (record, identity) and old[0] != record:
-                            raise EvidenceError("conflicting_sequence")
-                        continue
-                    # O(1) per-seq memory is NOT safe for arbitrarily large sessions.
-                    # Consecutive overlap is enough for limited current 4-segment rotation.
-                    duplicate.clear()
-                    duplicate[seq] = (record, identity)
+                    if previous and seq <= previous:
+                        # Rotation copies may repeat the boundary record. Do not
+                        # keep an unbounded per-sequence dictionary: accept only
+                        # the adjacent identical record; older overlaps fail closed.
+                        if seq == previous and record == last_record:
+                            continue
+                        raise EvidenceError("conflicting_sequence")
+                    last_record = record
                     if previous and seq != previous + 1:
                         reasons.append("sequence_gap")
                     if count == 0 and seq != 1:
                         reasons.append("retained_prefix_missing")
                     if record["event"] == "session.started":
+                        if count != 0 or startup:
+                            reasons.append("duplicate_startup")
                         startup = record["data"].get("session_id") == session_id
                         if not startup:
                             reasons.append("session_identity_mismatch")
+                    if closed:
+                        reasons.append("records_after_seal")
                     if record["event"] == "session.closed":
+                        if closed:
+                            reasons.append("duplicate_seal")
                         closed = True
                         if record["data"].get("written_records") != seq:
                             reasons.append("seal_count_mismatch")
@@ -220,9 +223,11 @@ def scan(directory: Path, session_id: str, *, cancelled=None,
         if not closed:
             reasons.append("seal_missing")
         state = ("incompatible" if any(x in reasons for x in
-                 ("invalid_record", "session_identity_mismatch", "conflicting_sequence"))
+                 ("invalid_record", "session_identity_mismatch", "conflicting_sequence",
+                  "duplicate_startup", "duplicate_seal", "records_after_seal"))
                  else "incomplete" if reasons else "complete")
-        if reasons == ["seal_missing"] and segments[-1].age == 0:
+        if (segments[-1].age == 0 and not closed
+                and set(reasons) <= {"seal_missing", "partial_tail"}):
             state = "pending"
         return SessionStatus(session_id, state, tuple(dict.fromkeys(reasons)), count, segments)
     raise EvidenceError(last_reason)
