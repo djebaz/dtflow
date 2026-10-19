@@ -2,21 +2,23 @@
 
 ## Grid-only dynamic -ml/-mc scroll matrix (PR #104)
 
-Use this native-Windows-only mode to measure how the real Images Grid behaves with different batch/page sizes (`-ml`) and mounted-card limits (`-mc`). It uses the normal production UI, cached images, pywinauto and the existing sanitized `-x` diagnostics. It **never opens or changes Sort** and does not interact with search, List, Detail, fullscreen or the thumbnail-size slider.
+Run the same **saved-image journey** for every `-ml/-mc` configuration, without opening Sort or changing the user's ordering: Images → Grid → **click page 1** → fast wheel scroll until the **first visible image is approximately #300** → fast wheel scroll back until **image #1** is first → **click page 1 again**. There are no sleeps waiting for whole batches to load, and no List/Detail/fullscreen/thumbnail-slider actions in this mode.
+
+The native Windows recorder identifies the actual position control as `Gallery batch navigation → Visible image range||Text`. The driver reads its numeric text when UIA exposes it. Some Qt/Windows combinations return only the static accessible name; a **benchmark-child-only** diagnostic of the exact `GalleryPager.present` values provides a fallback. Each action records its initial/final visible image index, observed progress, input count and duration. A failed or undersized journey is a warning, **not** a successful benchmark. The return to image #1 must be confirmed *before* the final page-1 click.
 
 ```powershell
 uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --runs 1 --cycles 1 --ack-user-state
 ```
 
-Default requested pairs: `20:50 20:100 50:150 100:300 200:600 300:1000`. To choose specific limits:
+Defaults: `--grid-target-card 300`, `--grid-seek-timeout 12` seconds **per direction**, 55 ms between short wheel pulses without extra between-batch waits. `--scroll-notches` (default 192) controls the maximum pulse size in Grid matrix mode through `min(8,max(2,notches//32))`; pulses reduce automatically near the destination to limit overshoot. You can choose a shorter test or a smaller matrix:
 
 ```powershell
-uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix 20:50 50:150 100:300 200:600 300:1000 --runs 2 --cycles 2 --scroll-notches 192 --ack-user-state
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix 20:50 100:300 300:1000 --grid-target-card 300 --grid-seek-timeout 12 --runs 1 --cycles 1 --ack-user-state
 ```
 
-Each pair starts a **new DTFlow process** with its validated `-ml/-mc` flags. Qt rounds `-mc` to a whole number of batches: `20:50` becomes 20/40 and `300:1000` becomes 300/900. `trial.json` and `results.csv` preserve both requested and effective limits. A cycle clicks page 1, runs a bounded sequence of Grid wheel-scroll steps **down and up** (number of steps scales with the effective resident batches), and clicks page 1 again at the end. The default 192 notches are divided into 64-notch steps; individual wheel actions and -x evidence are saved. No visual scroll-distance claim is made from a dispatched wheel event alone.
+The default cases are `20:50 20:100 50:150 100:300 200:600 300:1000`. Each launches a **separate DTFlow source process** using the real validated `-ml/-mc` flags. Since DTFlow rounds `-mc` down to whole batches, the effective mounted-card caps are 40, 100, 150, 300, 600, 900. Reports retain the requested/effective limits, position trace, end position, result and original sanitized `-x` metrics. The existing catalogue must contain **at least 300 matching images** to reach the default target; otherwise the trial records a warning and cannot be used for comparison. Source image files are never generated, edited or deleted; the normal viewer may still save browsing preferences/cache.
 
-Use an existing catalogue large enough to exercise each requested batch size and card limit; **100 saved outputs cannot validate -ml 300/-mc 1000**. Insufficient first-query records produce a warning and invalidate that trial for clean profile comparison; it still continues with the remaining actions. No images are generated, changed or deleted. Reports are written incrementally, with fresh per-trial log directories. As with normal smoke tests, warnings do not block subsequent actions or cases; they prevent a falsely clean result. Hold image set, window size, cache state and wheel sequence constant when comparing combinations.
+This is intentionally a **fast, position-driven scrolling stress test**, not a wait-until-every-thumbnail-is-decoded test. Grid-card displacement and end points must be observed, rather than inferred from how many wheel events were sent. Treat mount duration and GUI heartbeat separately from input-to-paint latency. The changed test awaits a native Windows acceptance run.
 
 ## Native Windows gallery performance benchmark (PR #104)
 
