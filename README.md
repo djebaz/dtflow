@@ -118,6 +118,7 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 ## Documentation
 
 - [Desktop guide](devdocs/guides/desktop.md) — connections, generation, outputs and saved settings.
+- [5.0.0 release preparation](devdocs/releases/v5.0.0.md) — consolidated changes since 4.0.0, upgrade guidance and known limitations; not yet published.
 - [Queues and batch plans](devdocs/guides/queues.md) — queue controls, concurrency and parameter comparisons.
 - [CLI reference](devdocs/guides/cli.md) — automation and development interface.
 - [Testing](devdocs/guides/testing.md), [development tools](devdocs/guides/development.md) and [Windows builds](devdocs/guides/building.md).
