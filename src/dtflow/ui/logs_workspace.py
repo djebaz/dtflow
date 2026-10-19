@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu
+from PySide6.QtWidgets import QApplication, QFileDialog, QHeaderView, QMenu, QStyleOptionViewItem
 
 from dtflow._diagnostic_reader import PAGE_SIZE, discover, query, read_detail, snapshot
 from dtflow._diagnostic_export import export_matching
@@ -281,9 +281,8 @@ class LogsWorkspace(QObject):
         # Size only the bounded, resident page. Never scan the session for geometry.
         for row in range(len(page)):
             index = self.model.index(row, 3)
-            option = self.form.logsTable.viewOptions() if hasattr(self.form.logsTable, "viewOptions") else None
-            if option is None:
-                continue
+            option = QStyleOptionViewItem()
+            option.font = self.form.logsTable.font()
             option.rect = self.form.logsTable.visualRect(index)
             option.rect.setWidth(self.form.logsTable.columnWidth(3))
             height = self.delegate.sizeHint(option, index).height()
