@@ -109,6 +109,8 @@ class _LogModel(QAbstractTableModel):
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return self.HEADERS[section]
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.ToolTipRole and section == 0:
+            return "Severity: click to sort"
         return None
 
     def replace(self, page, previews=None):
@@ -207,7 +209,7 @@ class LogsWorkspace(QObject):
         self.form.logsFollowButton.setCheckable(True)
         self.form.logsFollowButton.setChecked(True)
         self.form.logsCloseButton.clicked.connect(on_close)
-        self.form.logsRefreshButton.clicked.connect(self.refresh)
+        self.form.logsRefreshButton.clicked.connect(lambda: self.refresh(facets=True))
         self.form.logsMoreFiltersButton.clicked.connect(
             lambda: self.form.logsAdvanced.setVisible(not self.form.logsAdvanced.isVisible())
         )
@@ -222,7 +224,7 @@ class LogsWorkspace(QObject):
         self.form.logsCopyVisible.clicked.connect(self.copy_visible)
         self.form.logsSaveMenu.clicked.connect(self._save_menu)
         self.form.logsTable.clicked.connect(self._row_clicked)
-        self.form.logsSessionCombo.currentIndexChanged.connect(self.refresh)
+        self.form.logsSessionCombo.currentIndexChanged.connect(self._session_changed)
         for control in (
             self.form.logsSearch,
             self.form.logsFrom,
@@ -240,6 +242,7 @@ class LogsWorkspace(QObject):
         ):
             control.currentIndexChanged.connect(self._filtered)
         self.form.logsTable.verticalScrollBar().valueChanged.connect(self._scrolled)
+        self.form.logsTable.selectionModel().selectionChanged.connect(self._selection_changed)
         self.token = 0
         self.active = False
         self._jobs = []
@@ -248,7 +251,7 @@ class LogsWorkspace(QObject):
         self._pending = 0
         self._file_snapshot = None
         self._facets = (None, [], [])
-        self._programmatic_scroll = False
+        self._programmatic = False
         self._timer = QTimer(form)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._poll)
@@ -306,7 +309,7 @@ class LogsWorkspace(QObject):
         index = combo.findData(chosen) if chosen in sessions else combo.findData(active) if active else 0
         combo.setCurrentIndex(max(0, index))
         combo.blockSignals(False)
-        self.refresh()
+        self.refresh(facets=True)
         self._timer.start()
 
     def stop(self):
@@ -324,6 +327,16 @@ class LogsWorkspace(QObject):
             self.form.logsAdvanced.hide()
         else:
             self.on_close()
+
+    def _query_arguments(self):
+        try:
+            filters = self._filters()
+        except ValueError as exc:
+            raise ValueError(f"Invalid filter: {exc}") from exc
+        try:
+            return filters, self._sort()
+        except ValueError as exc:
+            raise ValueError(f"Invalid sort: {exc}") from exc
 
     def _filters(self):
         filters = {
@@ -372,6 +385,14 @@ class LogsWorkspace(QObject):
             raise ValueError("Enter a data.* characteristic under More filters to sort by it")
         return sort, descending, metric
 
+    def _session_changed(self, *_):
+        # Component/event names belong to the previous session; never carry them over as a hidden filter.
+        for combo in (self.form.logsComponentCombo, self.form.logsEventCombo):
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+        self.refresh(facets=True)
+
     def _filtered(self, *_):
         # Filters keep Follow; only a nondefault sort pauses it.
         if self.form.logsSortCombo.currentIndex() != 0:
@@ -387,12 +408,23 @@ class LogsWorkspace(QObject):
 
     def _scrolled(self, value):
         # Scrolling away from the newest rows is inspection: pause Follow so new rows do not pull the view.
-        if value > 0 and not self._programmatic_scroll and self.form.logsFollowButton.isChecked():
+        if value > 0 and not self._programmatic and self.form.logsFollowButton.isChecked():
+            self.form.logsFollowButton.setChecked(False)
+
+    def _selection_changed(self, *_):
+        # Keyboard selection is inspection too; a Follow refresh would otherwise reset it.
+        if not self._programmatic and self.form.logsTable.selectionModel().hasSelection():
             self.form.logsFollowButton.setChecked(False)
 
     def _header_sort(self, column):
         pair = HEADER_SORTS.get(column)
         if pair is None:
+            return
+        if column == 3 and not self.form.logsField.text().strip():
+            # A characteristic sort needs a data.* key; ask for it rather than switching to a failing sort.
+            self.form.logsAdvanced.show()
+            self.form.logsField.setFocus(Qt.FocusReason.OtherFocusReason)
+            self.form.logsStatus.setText("Enter a data.* characteristic to sort by it")
             return
         combo = self.form.logsSortCombo
         combo.setCurrentIndex(pair[1] if combo.currentIndex() == pair[0] else pair[0])
@@ -408,9 +440,9 @@ class LogsWorkspace(QObject):
                 return
         header.setSortIndicator(-1, Qt.SortOrder.DescendingOrder)
 
-    def refresh(self, *_, facets=True):
+    def refresh(self, *_, facets=False):
+        """Query the selected session; `facets` rescans session-wide filter choices (explicit Refresh/session)."""
         self.form.logsRefreshButton.setText("Refresh")
-        self._show_sort_indicator()
         if not self.active:
             return
         sid = self._session()
@@ -419,15 +451,17 @@ class LogsWorkspace(QObject):
             self.form.logsStatus.setText("No diagnostic sessions")
             return
         try:
-            filters, (sort, desc, metric) = self._filters(), self._sort()
+            filters, (sort, desc, metric) = self._query_arguments()
         except ValueError as exc:
-            self.form.logsNotice.setText(f"Invalid filter: {exc}")
+            self.form.logsNotice.setText(str(exc))
             self.form.logsNotice.show()
             return
+        self._show_sort_indicator()
         self.form.logsStatus.setText("Loading session…")
-        # Follow polls reuse the session-wide choices and merge newly shown values;
-        # an explicit refresh or session change rescans them.
+        # Filter, sort and Follow refreshes reuse the session-wide choices and merge newly shown
+        # values; only an explicit Refresh, session change or reopen rescans them.
         cached = self._facets if self._facets[0] == sid and not facets else None
+        fallback = self._facets if self._facets[0] == sid else (sid, [], [])
 
         def load():
             status, count, page, cursor = query(
@@ -442,7 +476,13 @@ class LogsWorkspace(QObject):
                     projections.append((pairs, more))
                 except Exception:
                     projections.append(((("Details", "unavailable"),), 0))
-            choices = cached if cached is not None else (sid, *session_facets(self.directory, sid))
+            choices = cached
+            if choices is None:
+                try:
+                    choices = (sid, *session_facets(self.directory, sid))
+                except Exception:
+                    # Filter choices are a convenience; a failed rescan never fails the page.
+                    choices = fallback
             return status, count, page, cursor, projections, choices
 
         self._run(load, self._show_results)
@@ -455,7 +495,7 @@ class LogsWorkspace(QObject):
             return
         status, count, page, _next, projections, choices = result
         self._page = page
-        self._programmatic_scroll = True
+        self._programmatic = True
         try:
             self.model.replace(page, projections)
             # Size only the bounded, resident page. Never scan the session for geometry.
@@ -470,7 +510,7 @@ class LogsWorkspace(QObject):
             if self.form.logsFollowButton.isChecked():
                 self.form.logsTable.scrollToTop()
         finally:
-            self._programmatic_scroll = False
+            self._programmatic = False
         self.form.logsStatus.setText(f"{count} matching · {status.state} · displaying {len(page)}")
         self.form.logsNotice.setVisible(status.state not in ("complete", "pending"))
         self.form.logsNotice.setText("Incomplete diagnostic evidence: " + ", ".join(status.reasons))
@@ -498,6 +538,9 @@ class LogsWorkspace(QObject):
             if combo is self.form.logsEventCombo:
                 for family in sorted({name.split(".")[0] for name in options}):
                     combo.addItem(f"{family}.*", f"{family}.*")
+            if current and combo.findData(current) < 0:
+                # Keep an active filter visible even when its name is not (or no longer) listed.
+                combo.addItem(f"{current} (not listed)", current)
             combo.setCurrentIndex(max(0, combo.findData(current)))
             combo.blockSignals(False)
 
@@ -599,16 +642,25 @@ class LogsWorkspace(QObject):
             menu.addAction(label): fmt
             for label, fmt in (("Export matching CSV", "csv"), ("Export matching JSONL", "jsonl"))
         }
+        for action in exports:
+            action.setEnabled(bool(self._session()))
         menu.addSeparator()
-        open_raw = menu.addAction("Open raw log file")
-        open_raw.setEnabled(bool(self._session()))
+        current_segment = self.directory / f"dtflow-{self._session()}.jsonl"
+        open_raw = menu.addAction("Open current log segment")
+        open_raw.setEnabled(bool(self._session()) and current_segment.is_file())
         open_folder = menu.addAction("Open log folder")
-        choice = menu.exec(self.form.logsSaveMenu.mapToGlobal(self.form.logsSaveMenu.rect().bottomLeft()))
+        # The menu runs a nested event loop; a Follow refresh meanwhile would clear the selection it acts on.
+        self._timer.stop()
+        try:
+            choice = menu.exec(self.form.logsSaveMenu.mapToGlobal(self.form.logsSaveMenu.rect().bottomLeft()))
+        finally:
+            if self.active:
+                self._timer.start()
         if choice is copy_selected:
             self.copy_selected()
         elif choice is open_raw:
             # Explicit user action: the active segment opens in the system's default viewer.
-            self._open(self.directory / f"dtflow-{self._session()}.jsonl", directory=False)
+            self._open(current_segment, directory=False)
         elif choice is open_folder:
             self._open(self.directory, directory=True)
         elif choice in exports:
@@ -627,20 +679,33 @@ class LogsWorkspace(QObject):
 
     def _export(self, fmt):
         sid = self._session()
+        if not sid:
+            return
         try:
-            filters, (sort, desc, metric) = self._filters(), self._sort()
+            filters, (sort, desc, metric) = self._query_arguments()
         except ValueError as exc:
-            self.form.logsNotice.setText(f"Invalid filter: {exc}")
+            self.form.logsNotice.setText(str(exc))
             self.form.logsNotice.show()
             return
-        target, _ = QFileDialog.getSaveFileName(
-            self.form, f"Export matching {fmt.upper()}", f"diagnostic-excerpt.{fmt}", f"*.{fmt}"
+        # Exports never overwrite, so the native picker must not ask to replace a file.
+        chosen, _ = QFileDialog.getSaveFileName(
+            self.form,
+            f"Export matching {fmt.upper()}",
+            f"diagnostic-excerpt.{fmt}",
+            f"*.{fmt}",
+            options=QFileDialog.Option.DontConfirmOverwrite,
         )
-        if not target:
+        if not chosen:
+            return
+        target = Path(chosen)
+        if target.suffix.lower() != f".{fmt}":
+            target = target.with_name(target.name + f".{fmt}")
+        if target.exists():
+            self.form.logsStatus.setText(f"Export not started: {target.name} already exists; choose a new name")
             return
         self._run(
             lambda: export_matching(
-                self.directory, sid, Path(target), fmt=fmt, filters=filters, sort=sort, descending=desc, metric=metric
+                self.directory, sid, target, fmt=fmt, filters=filters, sort=sort, descending=desc, metric=metric
             ),
             lambda value, error: self.form.logsStatus.setText(
                 "Export failed: " + error if error else f"Exported {value}"
@@ -662,5 +727,7 @@ class LogsWorkspace(QObject):
             combo.blockSignals(True)
             combo.setCurrentIndex(0)
             combo.blockSignals(False)
-        self.form.logsFollowButton.setChecked(True)
-        self.refresh()
+        if self.form.logsFollowButton.isChecked():
+            self.refresh()
+        else:
+            self.form.logsFollowButton.setChecked(True)  # refreshes through _toggle_follow

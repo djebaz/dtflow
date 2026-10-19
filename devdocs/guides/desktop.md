@@ -267,6 +267,15 @@ Raw local/cloud inventory snapshots live under `.dtflow/cache/inventory/`. Cache
 
 The status bar displays `DTFlow <version> | revision <value> | source: <status>`. Source runs show `dev` with the newest package file modification time as revision; packaged builds use their stamped commit and clean/dirty status. Diagnostic logs do not substitute for durable results.
 
+## Logs
+
+The Logs button at the right of the status bar opens the Logs workspace in place of the current page; the same button, the close button or Escape returns to the previous page without stopping running work. Escape first dismisses an active inline notice or confirmation, then the details panel, then More filters, before closing Logs.
+
+- **Sessions.** The selector numbers diagnostic sessions newest first by last write (`#1` is the most recent), with the local last-write time, `this session` for the running app and a short id (full id in the tooltip). Numbers are positions in the current list, not permanent identities.
+- **Filters and sort.** Search, severity, component, event or event family (`gallery.*`), UTC time range and one typed `data.*` comparison under More filters. Component and event lists cover the whole selected session (bounded). Click the severity, Date / Time, Event or Characteristics header, or use the sort list; a characteristic sort uses the `data.*` key entered under More filters, with a value only when it should also filter.
+- **Follow.** On by default for the newest rows, checking once per second while Logs is visible. Selecting rows, scrolling to older rows or choosing a nondefault sort pauses it; Refresh shows when new records arrived. Turning Follow on restores newest-first order.
+- **Actions.** Details and Copy on each row (Return / Ctrl+Shift+C), Copy visible rows, and the Copy / export / open menu: Copy selected rows (Ctrl+C), Export matching CSV or JSONL (never overwrites an existing file), Open current log segment and Open log folder. Opening the live segment in a viewer that keeps it locked can block rotation on Windows.
+
 ## Offline simulation
 
 For fake, `fake-fixture` produces the bundled illustrative lighthouse at the requested aspect and size, while `fake-grid` produces a calibration grid. No model inference or network request occurs. The fake-only Simulation group selects outcome, duration and previews so progress and Stop waiting can be exercised; queues created from the form record those settings.

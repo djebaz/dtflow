@@ -48,6 +48,8 @@ class InlineFeedback(QObject):
         window.installEventFilter(self)
         self.escape = QShortcut(QKeySequence("Escape"), self.form)
         self.escape.activated.connect(self.dismiss)
+        # Logs registers its own Escape; Qt then delivers ambiguous presses to one shortcut in rotation.
+        self.escape.activatedAmbiguously.connect(self.dismiss)
         self.escape.setEnabled(False)
         QApplication.instance().focusChanged.connect(self._keep_editor_focus)
 
