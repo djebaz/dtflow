@@ -91,10 +91,11 @@ def bridge(state: Path):
                             candidates.append((len(mount.parts), filesystem[0]))
                 if not candidates or max(candidates)[1] not in ("rootfs", "wslfs", "ext4"):
                     diagnostic_event(
-                        log, "originals.windows.bridge",
+                        log,
+                        "originals.windows.bridge",
                         level=logging.DEBUG,
                         data={
-                            "filesystem": max(candidates)[1] if candidates else 'unknown',
+                            "filesystem": max(candidates)[1] if candidates else "unknown",
                         },
                     )
                     raise WindowsBridgeError("mount")
@@ -261,7 +262,8 @@ class _LeaseHelper:
                         # Separate waiting behind this process's own threads from
                         # waiting for another process (or helper startup).
                         diagnostic_event(
-                            log, "originals.windows.lease_wait",
+                            log,
+                            "originals.windows.lease_wait",
                             level=logging.DEBUG,
                             data={
                                 "in_process_ms": (queued - started) * 1000,
@@ -281,10 +283,10 @@ class _LeaseHelper:
                     # Windows released this lock when its helper was discarded, so other
                     # processes could have entered while this thread still worked.
                     diagnostic_event(
-                        log, "originals.windows.original_file_lease_lost",
+                        log,
+                        "originals.windows.original_file_lease_lost",
                         level=logging.WARNING,
-                        data={
-                        },
+                        data={},
                     )
                 else:
                     try:
@@ -387,11 +389,12 @@ def delete_managed(state: Path, target) -> None:
     except OSError as exc:
         # Successful deletes stay quiet; the phase decides whether this is retryable or uncertain.
         diagnostic_event(
-            log, "originals.windows.delete_helper",
+            log,
+            "originals.windows.delete_helper",
             level=logging.DEBUG,
             data={
                 "kind": target.kind,
-                "phase": 'pre' if isinstance(exc, RefusedBeforeMutation) else 'unconfirmed',
+                "phase": "pre" if isinstance(exc, RefusedBeforeMutation) else "unconfirmed",
                 "elapsed_ms": (time.monotonic() - started) * 1000,
             },
         )

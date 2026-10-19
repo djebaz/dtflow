@@ -42,7 +42,8 @@ def windows_originals_bridge(state: Path):
         return bridge(Path(state))
     except (OSError, UnicodeError, ValueError) as exc:
         diagnostic_event(
-            log, "originals.readiness_refused",
+            log,
+            "originals.readiness_refused",
             level=logging.DEBUG,
             data={
                 "reason": exc.reason if isinstance(exc, WindowsBridgeError) else type(exc).__name__,
@@ -83,12 +84,13 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
                     stack.enter_context(shared_lock(command, native_state, filename, timeout))
                 except (OSError, UnicodeError, ValueError) as exc:
                     diagnostic_event(
-                        log, "originals.lease_refused",
+                        log,
+                        "originals.lease_refused",
                         level=logging.DEBUG,
                         data={
                             "reason": type(exc).__name__,
                             "waited_ms": (time.monotonic() - started) * 1000,
-                            "boundary": 'windows',
+                            "boundary": "windows",
                         },
                     )
                     raise OriginalImagesBusyError("Shared Windows original-file lease could not be acquired.") from exc
@@ -120,11 +122,12 @@ def _file_lock(state: Path, filename: str, *, timeout: float):
             except OSError as exc:
                 if time.monotonic() >= deadline:
                     diagnostic_event(
-                        log, "originals.lease_timed_out",
+                        log,
+                        "originals.lease_timed_out",
                         level=logging.DEBUG,
                         data={
                             "waited_ms": (time.monotonic() - started) * 1000,
-                            "boundary": 'native',
+                            "boundary": "native",
                         },
                     )
                     raise OriginalImagesBusyError(
@@ -146,7 +149,8 @@ def _log_wait(filename: str, boundary: str, started: float) -> None:
     waited = time.monotonic() - started
     if waited >= (_SLOW_WINDOWS_LEASE_SECONDS if boundary == "windows" else _SLOW_LEASE_SECONDS):
         diagnostic_event(
-            log, "originals.lease_contended",
+            log,
+            "originals.lease_contended",
             level=logging.DEBUG,
             data={
                 "boundary": boundary,
