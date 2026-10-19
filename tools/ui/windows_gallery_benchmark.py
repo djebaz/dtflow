@@ -101,6 +101,16 @@ def _grid_sweep_steps(ml: int, effective_mc: int) -> int:
     return min(12, max(4, (effective_mc + ml - 1) // ml + 2))
 
 
+def _require_complete_first_batch(returned: int, ml: int) -> None:
+    """Prevent incomplete catalogue coverage from being ranked as clean."""
+
+    if returned < ml:
+        raise ValueError(
+            f"Only {returned} first-query images for -ml {ml}; "
+            "this case cannot exercise a complete initial batch."
+        )
+
+
 def _number(value: str) -> float | None:
     try:
         return float(value)
@@ -729,15 +739,11 @@ def _drive(
         # The dedicated limit sweep never opens or modifies the Sort dropdown.
         # Page 1 is physically clicked both before and after scrolling.
         ml, effective_mc = grid_limits
+        record["initial_batch_complete"] = initial_count >= ml
         if initial_count < ml:
             _attempt(
                 record, "insufficient-images-for-full-batch",
-                lambda: (_ for _ in ()).throw(
-                    ValueError(
-                        f"Only {initial_count} first-query images for -ml {ml}; "
-                        "this case cannot exercise a complete initial batch."
-                    )
-                ),
+                lambda: _require_complete_first_batch(initial_count, ml),
             )
         _attempt(record, "grid-page-one-start", lambda: _click_grid_page_one(
             window, actions, at="start",
@@ -896,7 +902,7 @@ def write_report(records: list[dict], out: Path) -> None:
     columns = (
         "case", "trial", "status", "step", "warning_count", "benchmark_mode",
         "requested_ml", "requested_mc", "effective_mc",
-        "initial_query_records", "gui_gap_over_50_max_ms",
+        "initial_batch_complete", "initial_query_records", "gui_gap_over_50_max_ms",
         "query_done_median_recorded_ms", "prepare_median_recorded_ms",
         "grid_mount_median_recorded_ms", "adjacent_events", "error_type",
     )
@@ -917,6 +923,7 @@ def write_report(records: list[dict], out: Path) -> None:
                 "requested_ml": record.get("requested_ml", 20),
                 "requested_mc": record.get("requested_mc", 100),
                 "effective_mc": record.get("effective_mc", 100),
+                "initial_batch_complete": record.get("initial_batch_complete"),
                 "initial_query_records": record.get("initial_query_records"),
                 "gui_gap_over_50_max_ms": metrics.get("gui_gap_over_50_max_ms"),
                 "query_done_median_recorded_ms": metrics.get("query_done_median_recorded_ms"),
