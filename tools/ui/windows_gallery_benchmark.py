@@ -375,6 +375,36 @@ def _click_grid_page_one(window, actions: list[dict], *, at: str) -> None:
     raise TimeoutError(f"Page 1 was clicked at {at} but did not become selected.")
 
 
+def _click_grid_page_one_early(window, actions: list[dict]) -> bool:
+    """Try page 1 once without waiting for initial batch preparation.
+
+    The pager is normally disabled before the first committed page. This
+    expected unavailability must not hold the first wheel event hostage.
+    """
+
+    started = time.perf_counter()
+    try:
+        button = _button(
+            window, "Jump to image batch 1",
+            automation_id="galleryPagerPage1", timeout=0.3,
+        )
+        button.click_input()
+    except (LookupError, RuntimeError, TimeoutError) as exc:
+        actions.append({
+            "action": "click-page-one-start",
+            "outcome": "not-ready",
+            "reason": type(exc).__name__,
+            "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+        })
+        return False
+    actions.append({
+        "action": "click-page-one-start",
+        "outcome": "dispatched",
+        "dispatch_ms": round((time.perf_counter() - started) * 1000, 2),
+    })
+    return True
+
+
 def _wheel_intents(directory: Path) -> set[tuple]:
     """Use existing -x events to verify that the gallery received a wheel."""
 
@@ -499,118 +529,154 @@ def _scroll(
 def _seek_grid_card(
     window, probe, actions: list[dict], *, target: int, direction: int,
     pulse_notches: int = 12, timeout: float = 12.0,
+    wheel_point: tuple[tuple[int, int], str] | None = None,
 ) -> dict:
-    """Wheel through Grid to a *visible card*, not a batch or wheel count.
+    """Keep wheel messages flowing while the gallery loads and UIA is busy.
 
-    Fast coarse pulses cross already buffered images while the app prefetches;
-    smaller pulses near the target reduce overshoot. No batch-load barrier.
-    A verified destination contains target #300 in the visible range; the
-    homeward leg must observe the first visible image as #1.
+    One background sender issues wheel input independently of the query,
+    preparation, mount and position-probe thread. Only the observed pager
+    range can establish arrival; wheel dispatch alone never counts.
     """
+
+    from threading import Event, Thread
 
     from pywinauto import mouse
 
-    if direction not in (-1, 1):
-        raise ValueError("Grid seek direction must be -1 or 1.")
-    if not 1 <= pulse_notches <= 12 or timeout <= 0:
-        raise ValueError("Grid wheel pulse or timeout is invalid.")
-    start = probe.read()
-    if start is None:
-        raise LookupError("No numeric Visible image range from UIA or benchmark pager logs.")
-    if direction < 0 and start.total < target:
-        raise ValueError(
-            f"Only {start.total} matching saved images; cannot scroll to card {target}."
-        )
-    coords, source = _gallery_wheel_point(window, "grid")
+    if direction not in (-1, 1) or not 1 <= pulse_notches <= 12 or timeout <= 0:
+        raise ValueError("Invalid Grid seek direction, pulse count or timeout.")
+    coords, source = wheel_point if wheel_point is not None else _gallery_wheel_point(window, "grid")
+    started_at = datetime.now().astimezone().isoformat(timespec="milliseconds")
     started = time.perf_counter()
     deadline = time.monotonic() + timeout
-    current = start
-    furthest = start.first
-    pulses = 0
-    total_notches = 0
-    input_ms = 0.0
+    stop = Event()
+    state = {"position": None}
+    stats = {"pulses": 0, "notches": 0, "input_ms": 0.0, "first_wheel_ms": None}
+    send_errors: list[Exception] = []
+    furthest: int | None = None
+    history: list[dict] = []
+    last_progress = started
+    max_without_progress_ms = 0.0
     probe_ms = 0.0
-    history = [{"first": start.first, "last": start.last, "source": start.source}]
+    insufficient_catalogue = False
 
     def at_target(position) -> bool:
+        if position is None:
+            return False
         return (
             position.first <= target <= position.last
             if direction < 0 else position.first == 1
         )
 
-    while time.monotonic() < deadline and pulses < 150:
-        if at_target(current):
-            break
-        if direction < 0 and current.first > target:
-            # Correct a fast overshoot instead of accepting a different card.
-            wheel_direction, notch_count = 1, 1
-        else:
-            wheel_direction = direction
-            distance = (
-                max(0, target - current.last) if direction < 0 else current.first - 1
-            )
-            notch_count = (
-                pulse_notches if distance > 100
-                else min(pulse_notches, 6) if distance > 30
-                else min(pulse_notches, 2)
-            )
+    def send_wheel() -> None:
+        try:
+            while not stop.is_set() and time.monotonic() < deadline:
+                position = state["position"]
+                if at_target(position):
+                    break
+                if direction < 0 and position is not None and position.first > target:
+                    wheel_direction, notches = 1, 1
+                else:
+                    wheel_direction = direction
+                    distance = (
+                        max(0, target - position.last)
+                        if direction < 0 and position is not None
+                        else max(0, position.first - 1)
+                        if position is not None else target
+                    )
+                    notches = (
+                        pulse_notches if distance > 100
+                        else min(pulse_notches, 6) if distance > 30
+                        else min(pulse_notches, 2)
+                    )
+                sent_at = time.perf_counter()
+                mouse.scroll(coords=coords, wheel_dist=wheel_direction * notches)
+                stats["input_ms"] += (time.perf_counter() - sent_at) * 1000
+                if stats["first_wheel_ms"] is None:
+                    stats["first_wheel_ms"] = round((sent_at - started) * 1000, 2)
+                stats["pulses"] += 1
+                stats["notches"] += notches
+                # Do not wait for the query, thumbnails, mount, pager or UIA.
+                # Event.wait also stops promptly when the destination is seen.
+                stop.wait(0.015)
+        except Exception as exc:
+            send_errors.append(exc)
+            stop.set()
 
-        sent_at = time.perf_counter()
-        mouse.scroll(coords=coords, wheel_dist=wheel_direction * notch_count)
-        input_ms += (time.perf_counter() - sent_at) * 1000
-        pulses += 1
-        total_notches += notch_count
-        # Only 15 ms between wheel inputs. The old 55 ms delay contributed
-        # several seconds per direction in the owner's Windows trace.
-        time.sleep(0.015)
-        read_at = time.perf_counter()
-        observed = probe.read()
-        probe_ms += (time.perf_counter() - read_at) * 1000
-        if observed is not None:
-            current = observed
-            if direction < 0:
-                furthest = max(furthest, observed.first)
-            else:
-                furthest = min(furthest, observed.first)
-            if observed.first != history[-1]["first"]:
-                history.append({
-                    "first": observed.first, "last": observed.last,
-                    "source": observed.source,
-                })
-
-    # A final pager sample can arrive with the final wheel event.
-    read_at = time.perf_counter()
-    last_observed = probe.read()
-    probe_ms += (time.perf_counter() - read_at) * 1000
-    if last_observed is not None:
-        current = last_observed
-    reached = at_target(current)
+    sender = Thread(target=send_wheel, name="dtflow-grid-wheel", daemon=True)
+    sender.start()
+    try:
+        while time.monotonic() < deadline:
+            read_at = time.perf_counter()
+            observed = probe.read()
+            probe_ms += (time.perf_counter() - read_at) * 1000
+            if observed is not None:
+                previous = state["position"]
+                state["position"] = observed
+                if furthest is None:
+                    furthest = observed.first
+                elif direction < 0:
+                    furthest = max(furthest, observed.first)
+                else:
+                    furthest = min(furthest, observed.first)
+                if not history or observed.first != history[-1]["first"]:
+                    now = time.perf_counter()
+                    max_without_progress_ms = max(max_without_progress_ms, (now - last_progress) * 1000)
+                    last_progress = now
+                    history.append({
+                        "first": observed.first, "last": observed.last, "source": observed.source,
+                    })
+                if direction < 0 and observed.total < target:
+                    insufficient_catalogue = True
+                    break
+                if at_target(observed):
+                    break
+            if send_errors:
+                break
+            # Position checks never pace the independent wheel sender.
+            time.sleep(0.05)
+    finally:
+        stop.set()
+        sender.join(timeout=2.0)
+    if sender.is_alive():
+        raise RuntimeError("Grid wheel sender could not stop promptly.")
+    ended_at = datetime.now().astimezone().isoformat(timespec="milliseconds")
+    current = state["position"]
+    reached = at_target(current) and not send_errors and not insufficient_catalogue
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
     action = {
         "action": "grid-seek-down" if direction < 0 else "grid-seek-up",
         "requested_card": target,
-        "requested_first_card": target,
-        "first_before": start.first,
-        "last_before": start.last,
-        "first_after": current.first,
-        "last_after": current.last,
+        "first_before": history[0]["first"] if history else None,
+        "last_before": history[0]["last"] if history else None,
+        "first_after": current.first if current else None,
+        "last_after": current.last if current else None,
         "furthest_first": furthest,
-        "source": current.source,
+        "source": current.source if current else None,
         "wheel_target": source,
-        "wheel_pulses": pulses,
-        "wheel_notches_dispatched": total_notches,
+        "wheel_pulses": stats["pulses"],
+        "wheel_notches_dispatched": stats["notches"],
         "duration_ms": duration_ms,
-        "wheel_input_ms": round(input_ms, 2),
+        "wheel_input_ms": round(stats["input_ms"], 2),
         "position_probe_ms": round(probe_ms, 2),
+        "first_wheel_ms": stats["first_wheel_ms"],
+        "max_observed_no_progress_ms": round(max_without_progress_ms, 2),
+        "started_at": started_at,
+        "finished_at": ended_at,
         "target_reached": reached,
         "position_history": history,
     }
     actions.append(action)
+    if send_errors:
+        raise RuntimeError(f"Grid wheel sender failed: {type(send_errors[0]).__name__}")
+    if insufficient_catalogue:
+        raise ValueError(f"Only {current.total} matching images; cannot reach card {target}.")
     if not reached:
+        if current is None:
+            raise TimeoutError("Grid never exposed a valid visible image range while wheel input continued.")
         raise TimeoutError(
-            f"Grid {'down' if direction < 0 else 'up'} did not reach "
-            f"card {target} (visible={current.first}-{current.last}, "
-            f"pulses={pulses}, elapsed={duration_ms:g} ms)."
+            f"Grid {'down' if direction < 0 else 'up'} did not reach card {target} "
+            f"(visible={current.first}-{current.last}, pulses={stats['pulses']}, "
+            f"elapsed={duration_ms:g} ms)."
         )
     return action
 
@@ -842,9 +908,15 @@ def _drive(
     actions.append({"action": "Show saved Images", "dispatch_ms": round((time.perf_counter() - started) * 1000, 2)})
     record["step"] = "verify-images-workspace"
     _button(window, "Grid", automation_id="galleryGridButton", timeout=timeout)
-    record["step"] = "await-first-images-query"
-    initial_count = _await_query(directory, proc, timeout)
-    record["initial_query_records"] = initial_count
+    # The ordinary full-view smoke retains its query-readiness barrier.
+    # Grid-matrix runs must begin immediately while the initial query runs.
+    if grid_limits is None:
+        record["step"] = "await-first-images-query"
+        initial_count = _await_query(directory, proc, timeout)
+        record["initial_query_records"] = initial_count
+    else:
+        initial_count = 0
+        record["step"] = "grid-without-query-barrier"
     _attempt(
         record, "setup-grid",
         lambda: _click_gallery_mode(window, "Grid", record.setdefault("setup_actions", [])),
@@ -853,18 +925,17 @@ def _drive(
         # The dedicated limit sweep never opens or modifies the Sort dropdown.
         # Page 1 is physically clicked both before and after scrolling.
         ml, effective_mc = grid_limits
-        record["initial_batch_complete"] = initial_count >= ml
-        if initial_count < ml:
-            _attempt(
-                record, "insufficient-images-for-full-batch",
-                lambda: _require_complete_first_batch(initial_count, ml),
-            )
-        _attempt(record, "grid-page-one-start", lambda: _click_grid_page_one(
-            window, actions, at="start",
-        ))
+        record["grid_start_page_one_dispatched"] = _click_grid_page_one_early(window, actions)
         from tools.ui.grid_scroll_probe import GridProgressProbe
 
         probe = GridProgressProbe(window, directory)
+        # Avoid a costly scan of all accessible thumbnail descendants before
+        # first input. The established window-center fallback targets Grid.
+        rect = window.rectangle()
+        wheel_point = (
+            (int(rect.left + rect.width() * 0.56), int(rect.top + rect.height() * 0.72)),
+            "window-grid-fast",
+        )
         # The same saved-image index is targeted for every -ml/-mc case.
         # Pulse size and pause are identical; total pulses vary to actually
         # reach that index, instead of sweeping a fixed, incomparable offset.
@@ -886,6 +957,7 @@ def _drive(
                     lambda d=direction, c=card: _seek_grid_card(
                         window, probe, actions, target=c, direction=d,
                         pulse_notches=pulse_notches, timeout=grid_seek_timeout,
+                        wheel_point=wheel_point,
                     ),
                 )
                 if label == "down":
@@ -899,6 +971,16 @@ def _drive(
         _attempt(record, "grid-page-one-end", lambda: _click_grid_page_one(
             window, actions, at="end",
         ))
+        # Sample the initial query count for diagnostics only, after the
+        # continuous journey. Never await query_done on the input path.
+        initial_count = _read_query_count(directory)
+        record["initial_query_records"] = initial_count
+        record["initial_batch_complete"] = initial_count >= ml
+        if initial_count < ml:
+            _attempt(
+                record, "insufficient-images-for-full-batch",
+                lambda: _require_complete_first_batch(initial_count, ml),
+            )
         record["step"] = "close-dtflow-window"
         window.close()
         record["step"] = "wait-for-shutdown"
