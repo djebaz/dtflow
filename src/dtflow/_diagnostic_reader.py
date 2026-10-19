@@ -482,6 +482,14 @@ def read_detail(directory: Path, ref: RecordRef) -> dict:
         raise EvidenceError("detail_unavailable") from exc
     if record["seq"] != ref.seq:
         raise EvidenceError("detail_unavailable")
-    if snapshot(directory, ref.session_id) != parts:
+    # Appends may increase the active segment size without changing the
+    # selected record. Require the same path identities and non-shrinking
+    # byte ranges; rotation/replacement is still unavailable.
+    current = snapshot(directory, ref.session_id)
+    if len(current) != len(parts) or any(
+        (old.path, old.device, old.inode) != (new.path, new.device, new.inode)
+        or new.size < old.size
+        for old, new in zip(parts, current)
+    ):
         raise EvidenceError("detail_unavailable")
     return record
