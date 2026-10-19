@@ -2,6 +2,8 @@
 
 DTFlow is a compact, image-first native desktop workspace for AI image generation and queue workflows. Built as a Qt Widgets application, it prioritizes efficient layouts, clear interaction states, and a restrained visual language where the generated image dominates the interface.
 
+For the planned [compact Logs workspace UX](logs-workspace.md), see its [offline HTML interaction concept](../mockups/dtflow_logs_workspace.html). This is a PR #105 design proposal, not a runtime Qt screenshot or a replacement for the canonical Designer/render-state workflow.
+
 ## Overview
 
 **Source materials:**
