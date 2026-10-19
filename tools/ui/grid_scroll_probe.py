@@ -42,7 +42,7 @@ def parse_visible_range(text: str, *, source: str = "uia") -> GridPosition | Non
 class GridProgressProbe:
     """Read the dedicated read-only status input through Windows UI Automation.
 
-    The Qt QLineEdit has the stable objectName dtflowStatusGridFirstVisibleIndex.
+    The observed Windows UIA AutomationId includes the complete Qt parent path.
     Use only its Edit control and ValuePattern; no text-label or log fallback.
     """
 
@@ -67,7 +67,7 @@ class GridProgressProbe:
         try:
             if self._control is None:
                 candidate = self.window.child_window(
-                    auto_id="dtflowStatusGridFirstVisibleIndex",
+                    auto_id="QApplication.MainWindow.statusbar.dtflowGridPositionGroup.dtflowStatusGridFirstVisibleIndex",
                     control_type="Edit",
                 )
                 if not candidate.exists(timeout=0):
