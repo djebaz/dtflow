@@ -327,7 +327,6 @@ class MainWindow:
         status_actions_layout.setContentsMargins(0, 0, 12, 0)
         status_actions_layout.setSpacing(6)
         about_button.setFixedSize(20, 20)
-        status_actions_layout.addWidget(about_button)
         logs_button = QToolButton(status_actions)
         logs_button.setObjectName("logsStatusButton")
         logs_button.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "list.svg")))
@@ -339,6 +338,7 @@ class MainWindow:
         logs_button.setAccessibleName("Open Logs workspace")
         logs_button.clicked.connect(self._toggle_logs)
         status_actions_layout.addWidget(logs_button)
+        status_actions_layout.addWidget(about_button)
         grid_status_group = QWidget(form.statusBar())
         grid_status_group.setObjectName("dtflowGridPositionGroup")
         grid_status_group.setAccessibleName("Grid position")
@@ -349,15 +349,18 @@ class MainWindow:
         grid_index.setObjectName("dtflowStatusGridFirstVisibleIndex")
         grid_index.setReadOnly(True)
         grid_index.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        grid_index.setFixedWidth(92)
+        grid_index.setFixedWidth(70)
         grid_index.setFrame(False)
+        grid_index.setStyleSheet("QLineEdit { background: transparent; border: none; color: #8a8a8a; padding: 0; }")
         grid_index.setAccessibleName("0/0")
         grid_index.setToolTip("First visible image position in the Grid workspace")
         grid_status_layout.addWidget(grid_index)
+        form.statusBar().addPermanentWidget(status_actions)
         form.statusBar().addPermanentWidget(grid_status_group)
+        self.grid_index_group = grid_status_group
+        grid_status_group.setVisible(form.workspaceStack.currentWidget() is self.images_page)
         self.grid_index_label = grid_index
         self.gallery.grid_position_changed.connect(self._sync_grid_index_status)
-        form.statusBar().addPermanentWidget(status_actions)
         self.logs_button = logs_button
         form.statusBar().setSizeGripEnabled(False)
         form.checkButton.clicked.connect(self.check)
@@ -510,7 +513,9 @@ class MainWindow:
         )
         if index < len(buttons):
             buttons[index].setChecked(True)
-        self.gallery.set_active(self.form.workspaceStack.currentWidget() is self.images_page)
+        images_active = self.form.workspaceStack.currentWidget() is self.images_page
+        self.grid_index_group.setVisible(images_active)
+        self.gallery.set_active(images_active)
         self._place_export_panel()
         self._responsive_workspace()
 
