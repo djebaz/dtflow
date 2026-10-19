@@ -1,3 +1,19 @@
+## PR #104 current Windows Grid benchmark contract (supersedes interim notes below)
+
+This is the authoritative quick reference for the latest PR #104 Grid matrix. Earlier dated notes below document experiments and may describe abandoned startup checks or stop conditions.
+
+The benchmark waits for the numbered page-1 chip to become enabled after the spinner, polling about every **200 ms**. It clicks the chip **once**, then checks that the **first visible image is #1**; it no longer waits for a diagnostic `page_jump` event. Once the journey begins, wheel messages continue independently of later batch queries/thumbnail preparation. The first visible image index—not the total, buffered count or end of an initially oversized range—determines when the down leg is near the requested card (±20 at #200, ±25 at #300). The return must reach first-visible #1. Unverified trials are excluded from ranking.
+
+**Output:** inspect per-trial `trial.json` and the application `-x` logs, plus the end-of-run console ranking, `benchmark_report.txt` and `best_combination.json`. Grid stall threshold is **≥100 ms** only during measured scrolling; startup readiness is tracked separately. A single clean run per configuration is *provisional*; prefer at least three.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --grid-target-card 300 --runs 3 --cycles 1 --ack-user-state
+```
+
+**Native evidence / handoff:** owner observed clean runs in `10190342.zip` for `100/300` (page-1 readiness 3.23 s, round trip 7.45 s, one ≥100 ms Grid stall, worst 111 ms) and `200/600` (readiness 10.70 s, round trip 6.93 s, one ≥100 ms Grid stall, worst 385 ms). Faster scrolling for the large batch does not establish a better overall UX. The owner reports the initial spinner/page-1 readiness remains unnecessarily long. **Do not optimize it in PR #104**; use a separate follow-up PR to investigate first usable page/Qt preparation and mounting under large batch sizes, while preserving browsing correctness. No production `-ml/-mc` defaults change here.
+
+---
+
 # DTFlow UI screenshot scripts
 
 ## Grid-only dynamic -ml/-mc scroll matrix (PR #104)
