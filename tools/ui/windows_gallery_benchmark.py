@@ -427,7 +427,7 @@ def _grid_batch_button(window, number: int):
     """
     import re
 
-    pattern = re.compile(rf"\\bbatch\\s+{number}\\b", re.IGNORECASE)
+    pattern = re.compile(rf"\bbatch\s+{number}\b", re.IGNORECASE)
     matches = [
         widget for widget in window.descendants()
         if widget.element_info.control_type in {"Button", "CheckBox", "RadioButton"}
