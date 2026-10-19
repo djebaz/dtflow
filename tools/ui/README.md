@@ -1,5 +1,23 @@
 # DTFlow UI screenshot scripts
 
+## Grid-only dynamic -ml/-mc scroll matrix (PR #104)
+
+Use this native-Windows-only mode to measure how the real Images Grid behaves with different batch/page sizes (`-ml`) and mounted-card limits (`-mc`). It uses the normal production UI, cached images, pywinauto and the existing sanitized `-x` diagnostics. It **never opens or changes Sort** and does not interact with search, List, Detail, fullscreen or the thumbnail-size slider.
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix --runs 1 --cycles 1 --ack-user-state
+```
+
+Default requested pairs: `20:50 20:100 50:150 100:300 200:600 300:1000`. To choose specific limits:
+
+```powershell
+uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_benchmark --out tmp --grid-matrix 20:50 50:150 100:300 200:600 300:1000 --runs 2 --cycles 2 --scroll-notches 192 --ack-user-state
+```
+
+Each pair starts a **new DTFlow process** with its validated `-ml/-mc` flags. Qt rounds `-mc` to a whole number of batches: `20:50` becomes 20/40 and `300:1000` becomes 300/900. `trial.json` and `results.csv` preserve both requested and effective limits. A cycle clicks page 1, runs a bounded sequence of Grid wheel-scroll steps **down and up** (number of steps scales with the effective resident batches), and clicks page 1 again at the end. The default 192 notches are divided into 64-notch steps; individual wheel actions and -x evidence are saved. No visual scroll-distance claim is made from a dispatched wheel event alone.
+
+Use an existing catalogue large enough to exercise each requested batch size and card limit; **100 saved outputs cannot validate -ml 300/-mc 1000**. Insufficient first-query records produce a warning and invalidate that trial for clean profile comparison; it still continues with the remaining actions. No images are generated, changed or deleted. Reports are written incrementally, with fresh per-trial log directories. As with normal smoke tests, warnings do not block subsequent actions or cases; they prevent a falsely clean result. Hold image set, window size, cache state and wheel sequence constant when comparing combinations.
+
 ## Native Windows gallery performance benchmark (PR #104)
 
 The optional, Windows-only `pywinauto` driver launches a **real source DTFlow GUI** and exercises Images navigation, Grid/List/Detail, verified page-chip changes, 192-notch up/down wheel sweeps (configurable through `--scroll-notches`), **fullscreen while Grid is active**, and thumbnail-size sweeps toward **55% and 210%** with restoration of the initial value. Text search is intentionally out of scope. The experimental profiles vary the eight groups of performance constants recorded in the [benchmark protocol](../../devdocs/plans/2026-10-18-windows-gallery-benchmarks.md); pagination stays **20 records / 100 mounted cards** for every run. The runner reuses `-x` event logs and the per-session gallery CSV rather than replacing Qt telemetry.
