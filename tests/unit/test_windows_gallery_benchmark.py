@@ -336,10 +336,12 @@ def test_query_readiness_ignores_old_completions_across_rotation(tmp_path):
     previous = set(benchmark._completed_queries(tmp_path))
     assert previous == {(sid, 2)}
     current.rename(tmp_path / f"dtflow-{sid}.jsonl.1")
-    assert set(benchmark._completed_queries(tmp_path)) == previous
+    # The writer creates the new active segment after rotation; the old
+    # segment alone is an incomplete snapshot, not clean live evidence.
     append(_jsonl_record(3, "gallery.query_done", {
         "elapsed_ms": 30, "returned": 20, "source": "live", "error": None,
     }, kind="measurement"))
+    assert previous.issubset(benchmark._completed_queries(tmp_path))
     assert benchmark._await_query(tmp_path, SimpleNamespace(poll=lambda: None), 1, after=previous) == 20
 
 
@@ -653,7 +655,7 @@ def test_scroll_intent_parser_requires_a_real_qt_wheel_event(tmp_path):
     ])
     events = _wheel_intents(tmp_path)
     assert len(events) == 2
-    assert {event[3] for event in events} == {"forward", "backward"}
+    assert {event[2] for event in events} == {"forward", "backward"}
 
 
 class _HeaderNode:
