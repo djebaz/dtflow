@@ -26,7 +26,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -73,6 +73,12 @@ SECTION_SORTS = {1: ("ts",), 2: ("component", "event")}
 
 # Operator labels shown to people, with the shared query operator as item data.
 OPERATORS = (("=", "="), ("≠", "!="), (">", ">"), ("≥", ">="), ("<", "<"), ("≤", "<="), ("contains", "contains"))
+
+# Text after an icon starts with an en space; the native tool-button gap reads as cramped.
+ICON_GAP = "\u2002"
+# Refresh spinner frame interval, and its minimum visible time so quick Follow reads do not flicker.
+SPIN_INTERVAL_MS = 50
+SPIN_MINIMUM = 0.6
 
 EMPTY_SESSION = "No records yet in this session."
 NO_MATCHES = "No matching records. Adjust filters or reset."
@@ -421,6 +427,14 @@ class LogsWorkspace(QObject):
             button.setIcon(QIcon(str(icons / icon)))
             button.setIconSize(QSize(16, 16))
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            button.setText(ICON_GAP + button.text().strip())
+        # The Refresh icon turns while a page read is running (Follow refreshes included).
+        self._refresh_icon = QIcon(str(icons / "refresh.svg"))
+        self._spin_angle = 0
+        self._spin_started = 0.0
+        self._spin_timer = QTimer(form)
+        self._spin_timer.setInterval(SPIN_INTERVAL_MS)
+        self._spin_timer.timeout.connect(self._spin)
         # Session labels grow with their id and time; keep the filter row stable and show the full label on hover.
         session = self.form.logsSessionCombo
         session.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -665,7 +679,7 @@ class LogsWorkspace(QObject):
         self.refresh()
 
     def _toggle_follow(self, enabled):
-        self.form.logsFollowButton.setText("Follow: On" if enabled else "Follow: Off")
+        self.form.logsFollowButton.setText(ICON_GAP + ("Follow: On" if enabled else "Follow: Off"))
         if enabled:
             self.form.logsSortCombo.blockSignals(True)
             self.form.logsSortCombo.setCurrentIndex(0)
@@ -750,11 +764,40 @@ class LogsWorkspace(QObject):
         self.form.logsPreviousButton.setEnabled(not self._query_busy and self._page_number > 0)
         self.form.logsNextButton.setEnabled(not self._query_busy and self._next_cursor is not None)
 
+    def _start_spin(self):
+        self._spin_started = time.monotonic()
+        if not self._spin_timer.isActive():
+            self._spin_timer.start()
+
+    def _spin(self):
+        """Rotate the Refresh icon while a page read runs; restore the still icon afterwards."""
+        button = self.form.logsRefreshButton
+        if not self.active or (not self._query_busy and time.monotonic() - self._spin_started >= SPIN_MINIMUM):
+            self._spin_timer.stop()
+            self._spin_angle = 0
+            button.setIcon(self._refresh_icon)
+            return
+        self._spin_angle = (self._spin_angle + 30) % 360
+        size = button.iconSize()
+        ratio = button.devicePixelRatioF()
+        source = self._refresh_icon.pixmap(size, ratio)
+        frame = QPixmap(source.size())
+        frame.setDevicePixelRatio(ratio)
+        frame.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(frame)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.translate(size.width() / 2, size.height() / 2)
+        painter.rotate(self._spin_angle)
+        painter.translate(-size.width() / 2, -size.height() / 2)
+        painter.drawPixmap(0, 0, source)
+        painter.end()
+        button.setIcon(QIcon(frame))
+
     def _set_pending(self, pending, count=None, *, incomplete=False, detail=""):
         """Refresh label and accent border for held-back matching records (count None: unknown)."""
         button = self.form.logsRefreshButton
         pending = bool(pending and (count is None or count > 0))
-        button.setText(refresh_label(count, incomplete=incomplete) if pending else "Refresh")
+        button.setText(ICON_GAP + (refresh_label(count, incomplete=incomplete) if pending else "Refresh"))
         button.setToolTip(detail or "Reload the selected session")
         if button.property("pending") != pending:
             button.setProperty("pending", pending)
@@ -809,6 +852,7 @@ class LogsWorkspace(QObject):
             self.form.logsDetail.hide()
         self._show_sort_indicator()
         self._query_busy = True
+        self._start_spin()
         self._page_controls()
         self.form.logsCounter.setText("Loading session…")
         # Filter, sort and Follow refreshes reuse the session-wide choices and merge newly shown

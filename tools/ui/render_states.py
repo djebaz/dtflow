@@ -2518,6 +2518,12 @@ def render_logs_states(shell, capture):
     shell.logs.model.set_sort_state("component", False)
     panel.logsSortNote.setText("Component · A → Z")
     capture("logs-10-component-sort")
+    # One spinner frame of the Refresh icon during a page read; no reader runs offline.
+    shell.logs.active, shell.logs._query_busy, shell.logs._spin_angle = True, True, 15
+    shell.logs._spin()
+    capture("logs-11-refreshing")
+    shell.logs.active, shell.logs._query_busy = False, False
+    shell.logs._spin()
     shell.logs.model.set_sort_state("ts", True)
     panel.logsSortNote.setText("Datetime · newest first")
     panel.logsTable.selectRow(1)
