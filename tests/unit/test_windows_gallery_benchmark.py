@@ -1645,7 +1645,7 @@ def test_large_batch_still_fails_if_visible_first_never_advances(monkeypatch):
     assert actions[-1]["last_after"] == 200
 
 
-def test_grid_page_one_lookup_uses_automation_id_suffix():
+def test_grid_page_one_lookup_uses_inspected_automation_id():
     from tools.ui import windows_gallery_benchmark as benchmark
 
     class Chip:
@@ -1666,19 +1666,18 @@ def test_grid_page_one_lookup_uses_automation_id_suffix():
 
     class Window:
         def child_window(self, **criteria):
-            assert criteria["control_type"] == "Button"
-            assert "title" not in criteria
-            predicate = criteria["predicate_func"]
-            assert predicate(SimpleNamespace(automation_id=(
-                "QApplication.MainWindow.galleryPagerPage1"
-            )))
-            assert not predicate(SimpleNamespace(automation_id=(
-                "QApplication.MainWindow.galleryPagerPage10"
-            )))
+            assert criteria == {
+                "auto_id": (
+                    "QApplication.MainWindow.central.WorkspaceShell.workspaceSplitter."
+                    "centerRail.centerStack.GalleryDetailPage.galleryPagerBar."
+                    "galleryPagerChips.galleryPagerPage1"
+                ),
+                "control_type": "CheckBox",
+            }
             return chip
 
         def descendants(self):
-            pytest.fail("Page 1 lookup must not request full-tree descendants")
+            pytest.fail("Page 1 lookup must not enumerate the window")
 
     assert benchmark._grid_batch_button(Window(), 1) is chip
 
