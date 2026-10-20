@@ -218,7 +218,7 @@ Windows font metrics and resulting line wraps still need target-machine review.
 
 All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. The splitter, rails and page content remain mounted across tab switches. Connection, Generate and Queues change context, primary workspace and evidence stacks. Images reparents the same branding/navigation widgets into its two header slots and hides both content rails; leaving Images restores their parents and splitter geometry. The shell owns the global segmented Run control and responsive right-rail state; page controllers retain their content references and service wiring.
 
-Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a responsive right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact 30×30 segmented Run control sits in the brand row with deliberate clearance from the logo. It shows queue readiness/activity or single-generation progress: Play starts a runnable selected queue, an owned running queue can be paused, an owned paused queue can be resumed, single generation shows reported step progress but remains status-only, and work owned by another process is never controlled implicitly from the header. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses durable queue selection/policy, items and dispatch in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
+Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a responsive right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact 30×30 segmented Run control sits in the brand row with deliberate clearance from the logo. It shows queue readiness/activity or single-generation progress: Play starts a runnable selected queue, an owned running queue can be paused, an owned paused queue can be resumed, single generation shows reported step progress but remains status-only, and work owned by another process is never controlled implicitly from the header. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses the grouped queue list and New queue on the left, the selected queue's header, plan and items in the center and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
 
 The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral drag gutter between panels, with a subtle border-colored hover affordance. Internal panel padding is unchanged.
 
@@ -280,7 +280,7 @@ One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/im
 | --- | --- |
 | Connection sections | Backend `server`, DT+ credentials `key-round`, Connection check `shield-check` |
 | Generate sections | Backend `server`, Parameters `detail`, Simulation `flask-conical`, Configuration `settings`, Cloud assets `cloud` |
-| Queues sections | Dispatch policy `send`, Plan batch `layers`, Selected item `list-checks`, Outcome `triangle-alert` (shown only for no-result and failed items) |
+| Queues sections | New queue `send`, Plan batch `layers`, Selected item `list-checks`, Outcome `triangle-alert` (shown only for no-result and failed items) |
 | Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, full-screen toggle `fullscreen` (every view), filter combo arrow `chevron`, fullscreen `fullscreen` |
 | Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
 | Prompt disclosure | Additional `document`, Raw `json` |
@@ -440,16 +440,35 @@ checkable `planBox`; the controller re-enables the custom header when unchecked
 and hides the entire contents wrapper. A passive label cannot replace a native
 group-box toggle. Parent activity disabling still applies.
 
-Queues keeps toolbar, action hint and collapsed Plan card at their natural
+Queues keeps the queue header and collapsed Plan card at their natural
 heights. The items table or empty-state region receives the flexible workspace
-height; empty-state title and guidance stay together in its center. Hide queue
-progress when no queue is selected rather than presenting “0 of 0” as work.
-The Plan header has a fixed vertical size policy, while expanded contents retain
-their natural layout. Avoid distributing spare height among action rows.
-In the left context rail, the Durable Queues list is capped at 120 logical pixels
-(approximately 30% of its previously expanded desktop height); it remains
-scrollable while a trailing spacer keeps Create/Refresh/Clear and Dispatch policy
-at their natural heights near the list.
+height; empty-state title and guidance stay together in its center. Hide the
+queue header (and its progress) when no queue is selected rather than presenting
+“0 of 0” as work. The Plan header has a fixed vertical size policy, while
+expanded contents retain their natural layout. Avoid distributing spare height
+among action rows.
+
+The queue header is the single status location for the selected queue: the
+prompt title (`section` text role, wrapping), a secondary line for model, plan,
+backend and time, one `statusChip` label (state-colored border and text; the
+neutral selection treatment for *Up next N*), then one action row and one
+progress row. The action row holds exactly one `role="primary"` button whose
+text follows the state (Start, Start next, Pause, Resume), neutral-red Cancel,
+Earlier/Later only for a waiting queue, the queue's own Max at once spin box and
+a neutral Remove whose consent uses the shared red inline confirmation. The
+progress row is a painted segmented bar (success, error, unknown, warning and
+accent runs over the bar track; pending is empty track), a settled count and
+`filterChip` count buttons in their state color that turn selection-blue when
+checked. Transient outcomes use the shared bottom overlay, never a sticky
+message line. Long titles and subtitles wrap or elide; at a 1000 px window the
+header must not clip.
+
+In the left context rail the queue list takes the flexible rail height under
+the QUEUES eyebrow, an icon-only Refresh and a filter field. Rows are painted
+two-line items (semibold title with a status chip, secondary subtitle, then a
+4 px segmented mini bar with a settled count) under eyebrow-style group headings
+(Running, Up next, Paused, History). Clear history and the New queue section
+card (items, Max at once, Create queue) stay at their natural heights below it.
 
 ### Inventory continuity and statistics
 

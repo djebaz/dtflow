@@ -627,6 +627,8 @@ def render_active_queue_states(shell, out):
     form, queue, page = shell.form, shell.queue, shell.queue_page
     queue_id = "offline-queue-0001"
     stamp = "2026-10-17T12:00:00+00:00"
+    PROMPT = "A lighthouse on a basalt cliff at dusk, long exposure, oil painting with heavy impasto"
+    strip = activity_strip(page)
 
     def snap(name):
         QTest.qWait(100)
@@ -676,6 +678,8 @@ def render_active_queue_states(shell, out):
             up_next=None,
             cap=2,
             summary=counts,
+            first=dict(prompt=PROMPT, model="flux_1_schnell_q8p.ckpt", operation="inpaint" if edit else "txt2img"),
+            varied={"steps": 2} if len(items) > 3 else {},
             items=items,
             pending_controls=[],
             events=events,
@@ -694,17 +698,19 @@ def render_active_queue_states(shell, out):
         form.queueNavigationButton.click()
         request = shell.generation.request_for_queue(preview=True)[0]
         present("running", ["succeeded", "running", "pending"], owned=True)
-        assert page.pauseQueueButton.isEnabled() and queue._activity.run_state.action == "pause"
+        # #121: one status chip and one state-dependent primary action in the queue header.
+        assert page.queuePrimaryButton.text() == "Pause" and queue._activity.run_state.action == "pause"
+        assert page.queueStateLabel.text() == "Running" and not page.removeQueueButton.isEnabled()
         assert page.createQueueButton.isEnabled()  # #133: a new queue can be prepared while one runs
         snap("queues-11-running")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
-        assert page.resumeQueueButton.isEnabled() and queue._activity.run_state.action == "resume"
+        assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "resume"
         snap("queues-12-paused-after-start")
         present("running", ["succeeded", "running", "pending"])
-        assert queue._activity.run_state.action is None
+        assert queue._activity.run_state.action is None and "another process" in page.queueStateLabel.toolTip()
         snap("queues-13-foreign-running")
         present("running", ["unknown", "running", "pending"], owned=True)
-        assert page.pauseQueueButton.isEnabled() and page.cancelQueueButton.isEnabled()  # unknown blocks nothing
+        assert page.queuePrimaryButton.isEnabled() and page.cancelQueueButton.isEnabled()  # unknown blocks nothing
         snap("queues-14-unknown-not-blocking")
         present("running", ["succeeded", "failed", "unknown", "save_failed", "cancelled", "running"], owned=True)
         snap("queues-16-item-states")
@@ -722,14 +728,63 @@ def render_active_queue_states(shell, out):
         queue._selected = paused["queue_id"]
         queue._read_done(([running, paused], paused, 2), None)
         queue._timer.stop()
-        assert page.startQueueButton.text() == "Start next" and page.startQueueButton.isEnabled()
+        assert page.queuePrimaryButton.text() == "Start next" and page.queuePrimaryButton.isEnabled()
         snap("queues-24-start-next")
         queued = dict(paused, status="queued", up_next=1)
         queue._read_done(([running, queued], queued, 2), None)
         queue._timer.stop()
-        assert page.earlierQueueButton.isEnabled() and page.pauseQueueButton.isEnabled()
-        assert "up next 1" in page.queueList.item(1).text() and "1 up next" in queue._activity.run_state.detail
+        assert page.earlierQueueButton.isVisible() and page.queuePrimaryButton.text() == "Pause"
+        assert page.queueStateLabel.text() == "Up next 1" and "1 up next" in queue._activity.run_state.detail
+        assert "up next 1" in queue.queue_items()[1].text()
         snap("queues-25-up-next")
+        # #122: a long, grouped list (Running, Up next, Paused, History), its filter, Remove and an item filter.
+        history = []
+        for number, (status, states, prompt) in enumerate(
+            (
+                ("finished", ["succeeded"] * 4, "Portrait of an old fisherman, rembrandt lighting"),
+                ("finished", ["succeeded", "failed", "unknown", "succeeded"], "Isometric tiny city block at night"),
+                ("cancelled", ["succeeded", "cancelled", "cancelled"], "Red fox in fresh snow, telephoto"),
+                ("finished", ["succeeded"] * 6, "Brutalist museum interior, soft daylight"),
+                ("paused", ["pending"] * 8, "Studio product shot of a ceramic teapot"),
+                ("finished", ["succeeded", "succeeded"], "Watercolor map of an imaginary archipelago"),
+                ("finished", ["save_failed", "succeeded", "succeeded"], "Macro photo of dew on a spider web"),
+            ),
+            3,
+        ):
+            view = present(status, states, started=status != "paused")
+            history.append(
+                dict(
+                    view,
+                    queue_id=f"offline-queue-{number:04d}",
+                    created_at_utc=f"2026-10-1{number % 7}T0{number}:15:00+00:00",
+                    first=dict(view["first"], prompt=prompt, model="sdxl_base_1.0_f16.ckpt"),
+                    varied={"prompt": 2, "steps": 2} if number % 2 else {},
+                )
+            )
+        everything = [running, queued, *history]
+        mixed = history[1]
+        queue._selected = mixed["queue_id"]
+        queue._read_done((everything, mixed, 2), None)
+        queue._timer.stop()
+        headings = [page.queueList.item(i).text() for i in range(page.queueList.count())]
+        assert [h for h in headings if h.isupper()] == ["RUNNING", "UP NEXT", "PAUSED", "HISTORY"]
+        assert page.failedFilterButton.text() == "✗ 1" and page.removeQueueButton.isEnabled()
+        snap("queues-26-list-groups")
+        page.queueFilterEdit.setText("fox")
+        assert len(queue.queue_items()) == 1
+        snap("queues-27-list-filter")
+        page.queueFilterEdit.setText("nothing like this")
+        assert not queue.queue_items()
+        snap("queues-28-list-filter-empty")
+        page.queueFilterEdit.clear()
+        page.failedFilterButton.setChecked(True)
+        assert [page.queueItemsView.isRowHidden(row) for row in range(4)] == [True, False, True, True]
+        snap("queues-29-item-filter")
+        page.failedFilterButton.setChecked(False)
+        page.removeQueueButton.click()  # arms the inline Remove confirmation; nothing is removed here
+        assert page.removeQueueButton.property("confirmationPending")
+        snap("queues-30-remove-confirmation")
+        shell.inline.dismiss()
         queue._selected = queue_id
         present("paused", ["pending", "pending"], started=False)
         page.planBox.setChecked(True)
@@ -758,18 +813,19 @@ def render_active_queue_states(shell, out):
         queue._syncing = True
         page.concurrencySpinBox.setValue(4)
         queue._syncing = False
-        queue._set_level(4)
+        queue._set_level(page.concurrencySpinBox, 4)
         # Defensive validator refusal: the bounded spin box normally prevents values outside 1..4.
         queue._cap_changed(5)
-        assert "Concurrency not changed" in page.queueMessageLabel.text()
+        assert strip.rows["queue-message"].activityLabel.text() == "Concurrency not changed"
         assert page.concurrencySpinBox.property("level") == "elevated"
         snap("queues-20-concurrency-refused")
-        queue._message(window_ui.Presentation("unknown", "Offline fixture", "No dispatch was performed."))
+        strip.finish("queue-message")
         present("finished", ["succeeded", "succeeded", "succeeded"])
-        assert not page.startQueueButton.isEnabled() and page.queueProgressBar.value() == 3
+        assert not page.queuePrimaryButton.isEnabled() and page.queueProgressBar.settled == 3
+        assert not page.concurrencySpinBox.isEnabled()  # a finished queue's maximum is fixed
         snap("queues-21-finished-table")
         present("cancelled", ["succeeded", "cancelled", "cancelled"])
-        assert not page.resumeQueueButton.isEnabled() and page.queueProgressBar.value() == 3
+        assert not page.queuePrimaryButton.isEnabled() and page.queueProgressBar.settled == 3
         snap("queues-22-cancelled-table")
         form.resize(1000, 900)
         shell._responsive_workspace()
@@ -2184,9 +2240,9 @@ def render_queue_states(shell, capture):
     page.planDryRunButton.click()
     capture("queues-03-plan-dry-run")
     page.planBox.setChecked(False)
-    # Cancel posts immediately without confirmation (#120), so only Clear has a confirmation state.
-    page.clearQueuesButton.click()
-    capture("queues-05-clear-confirmation")
+    # Cancel posts immediately without confirmation (#120); removing a queue record asks inline first (#122).
+    page.removeQueueButton.click()
+    capture("queues-05-remove-confirmation")
     shell.inline.dismiss()
     view = queue._view()
     counts = dict.fromkeys(view["summary"], 0)
@@ -2203,9 +2259,9 @@ def render_queue_states(shell, capture):
         capture(name)
         strip.finish("queue-result")
     # Leave no queue behind for the later Generate/Inpaint renders.
-    page.clearQueuesButton.click()
-    page.clearQueuesButton.click()
-    wait_for(lambda: queue._view() is None)
+    page.removeQueueButton.click()
+    page.removeQueueButton.click()
+    wait_for(lambda: not queue._views)
 
 
 def render_shell_states(shell, capture):
@@ -2264,14 +2320,14 @@ def render_shell_states(shell, capture):
     queue, page = shell.queue, shell.queue_page
     shell.form.queueNavigationButton.click()
     page.createQueueButton.click()
-    wait_for(lambda: queue._view() is not None and page.clearQueuesButton.isEnabled())
-    page.clearQueuesButton.click()  # arms the Clear confirmation
-    assert page.clearQueuesButton.property("confirmationPending")
+    wait_for(lambda: queue._view() is not None and page.removeQueueButton.isEnabled())
+    page.removeQueueButton.click()  # arms the Remove confirmation
+    assert page.removeQueueButton.property("confirmationPending")
     InlineNotice.warning(shell.form, "Original images unavailable", "Offline fixture notice during a confirmation.")
-    assert page.clearQueuesButton.property("confirmationPending")
+    assert page.removeQueueButton.property("confirmationPending")
     capture("shell-09-overlay-notice-during-confirmation")
-    page.clearQueuesButton.click()  # confirms, leaving no queue for later renders
-    wait_for(lambda: queue._view() is None)
+    page.removeQueueButton.click()  # confirms, leaving no queue for later renders
+    wait_for(lambda: not queue._views)
     clear()
     strip.complete("info-result", "Nothing to export", "All checked images already exist at the destination.", "info")
     capture("shell-10-overlay-info-result")

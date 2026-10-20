@@ -27,6 +27,7 @@ from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.queue import QueueDispatcher  # noqa: E402
 from dtflow.services.queue_session import create_queue, expand_items  # noqa: E402
 from dtflow.ui import queue_page as queue_ui  # noqa: E402
+from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.queue_model import QueueItemModel  # noqa: E402
 from dtflow.ui.queue_presenter import ItemRow  # noqa: E402
@@ -63,12 +64,21 @@ def state_text(window):
     return window.queue_page.queueStateLabel.text()
 
 
+def queues(window):
+    return window.queue.queue_items()  # list rows without the group headings
+
+
+def notices(window):
+    rows = activity_strip(window.queue_page).rows.values()
+    return " ".join(f"{row.activityLabel.text()} {row.activityDetail.text()}" for row in rows)
+
+
 def create(window, qtbot, count=3, cap=4):
     page = window.queue_page
     page.queueCountSpinBox.setValue(count)
-    page.concurrencySpinBox.setValue(cap)
+    page.newQueueCapSpinBox.setValue(cap)
     page.createQueueButton.click()
-    qtbot.waitUntil(lambda: page.queueList.count() == 1 and "paused" in page.queueList.item(0).text(), timeout=5000)
+    qtbot.waitUntil(lambda: len(queues(window)) == 1 and "paused" in queues(window)[0].text(), timeout=5000)
     qtbot.waitUntil(lambda: page.queueItemsView.model().rowCount() == count, timeout=5000)
 
 
@@ -107,15 +117,15 @@ def test_create_start_and_complete_a_queue_with_stable_rows_and_outputs(window, 
     assert page.emptyStateCard.isVisible() or not page.emptyStateCard.isHidden()
     create(window, qtbot, count=3)
     assert states(window) == ["pending"] * 3 and state_text(window).startswith("Paused")
-    page.startQueueButton.click()
-    assert window.queue.dispatching_here and page.ownershipBadgeLabel.text() == "THIS WINDOW DISPATCHES"
+    page.queuePrimaryButton.click()
+    assert window.queue.dispatching_here and "This window dispatches" in page.queueStateLabel.toolTip()
     assert window.generation_page.generateButton.isEnabled()  # Generate now queues behind the running queue
     qtbot.waitUntil(lambda: "running" in states(window), timeout=5000)
     qtbot.wait(50)  # the GUI thread keeps processing while dispatch runs
     gated(window)
     qtbot.waitUntil(lambda: states(window) == ["succeeded"] * 3 and not window.queue.dispatching_here, timeout=10000)
-    assert page.queueProgressBar.format() == "3 of 3 settled · 3 succeeded"
-    assert state_text(window).startswith("Finished") and page.ownershipBadgeLabel.text() == "NOT DISPATCHING"
+    assert page.queueProgressLabel.text() == "3 of 3 settled · 3 succeeded"
+    assert state_text(window).startswith("Finished") and "This window" not in page.queueStateLabel.toolTip()
     assert window.generation_page.generateButton.isEnabled()
     page.queueItemsView.selectRow(1)
     assert "metadata" in page.itemOutputsLabel.text() and "metadata.json" in page.itemOutputsLabel.toolTip()
@@ -126,15 +136,17 @@ def test_create_start_and_complete_a_queue_with_stable_rows_and_outputs(window, 
 def test_pause_resume_and_cancel_post_shared_controls_with_honest_wording(window, qtbot, gated):
     page = window.queue_page
     create(window, qtbot, count=3, cap=1)
-    page.startQueueButton.click()
+    page.queuePrimaryButton.click()
     qtbot.waitUntil(lambda: states(window)[:1] == ["running"], timeout=5000)
-    page.pauseQueueButton.click()
+    assert page.queuePrimaryButton.text() == "Pause"
+    page.queuePrimaryButton.click()
     qtbot.waitUntil(lambda: state_text(window).startswith("Paused"), timeout=8000)
     gated(window)
     qtbot.waitUntil(lambda: states(window)[0] == "succeeded", timeout=8000)
     qtbot.wait(400)  # several page and dispatcher polls: a refill, if any, would be visible by now
     assert states(window)[1:] == ["pending", "pending"]  # pause stopped refill; the active item completed
-    page.resumeQueueButton.click()
+    assert page.queuePrimaryButton.text() == "Resume"
+    page.queuePrimaryButton.click()
     qtbot.waitUntil(lambda: states(window) == ["succeeded"] * 3, timeout=10000)
 
     create_second(window, qtbot)
@@ -146,8 +158,8 @@ def create_second(window, qtbot):
     page = window.queue_page
     page.queueCountSpinBox.setValue(2)
     page.createQueueButton.click()
-    qtbot.waitUntil(lambda: page.queueList.count() == 2, timeout=5000)
-    page.queueList.setCurrentRow(1)
+    qtbot.waitUntil(lambda: len(queues(window)) == 2, timeout=5000)
+    page.queueList.setCurrentItem(queues(window)[0])  # the paused queue is listed before History
     qtbot.waitUntil(lambda: states(window) == ["pending", "pending"], timeout=5000)
 
 
@@ -159,7 +171,7 @@ def cancel_controls(window):
 def test_cancel_stops_waiting_locally_and_leaves_unknown_not_a_remote_claim(window, qtbot, gated):
     page = window.queue_page
     create(window, qtbot, count=3, cap=1)
-    page.startQueueButton.click()
+    page.queuePrimaryButton.click()
     qtbot.waitUntil(lambda: states(window)[:1] == ["running"], timeout=5000)
     page.cancelQueueButton.click()
     qtbot.waitUntil(
@@ -171,7 +183,7 @@ def test_cancel_stops_waiting_locally_and_leaves_unknown_not_a_remote_claim(wind
     assert states(window) == ["no result", "cancelled", "cancelled"]  # the active attempt may have reached the server
     page.queueItemsView.selectRow(0)
     assert page.uncertaintyLabel.text().startswith("No final result was received")
-    assert "cancelled on the server" not in page.queueMessageLabel.text().lower()
+    assert "cancelled on the server" not in notices(window).lower()
 
 
 def test_unknown_outcome_does_not_block_and_is_never_replayed(window, qtbot, tmp_path):
@@ -186,9 +198,9 @@ def test_unknown_outcome_does_not_block_and_is_never_replayed(window, qtbot, tmp
         lambda *_: None,
     )
     page = window.queue_page
-    qtbot.waitUntil(lambda: (page.refreshQueuesButton.click() or True) and page.queueList.count() == 1, timeout=5000)
-    page.queueList.setCurrentRow(0)
-    page.startQueueButton.click()
+    qtbot.waitUntil(lambda: (page.refreshQueuesButton.click() or True) and len(queues(window)) == 1, timeout=5000)
+    page.queueList.setCurrentItem(queues(window)[0])
+    page.queuePrimaryButton.click()
     qtbot.waitUntil(lambda: not window.queue.dispatching_here and states(window) == ["no result"] * 2, timeout=10000)
     assert state_text(window).startswith("Finished")
     page.queueItemsView.selectRow(0)
@@ -220,30 +232,30 @@ def test_restart_restores_a_reserved_item_as_pending_in_a_paused_queue(window, q
     qtbot.waitUntil(lambda: bool(done), timeout=5000)
     page = window.queue_page
     page.refreshQueuesButton.click()
-    qtbot.waitUntil(lambda: page.queueList.count() == 1, timeout=5000)
-    page.queueList.setCurrentRow(0)
+    qtbot.waitUntil(lambda: len(queues(window)) == 1, timeout=5000)
+    page.queueList.setCurrentItem(queues(window)[0])
     qtbot.waitUntil(lambda: states(window) == ["pending", "pending"], timeout=5000)
-    assert state_text(window).startswith("Paused") and page.startQueueButton.isEnabled()
+    assert state_text(window).startswith("Paused") and page.queuePrimaryButton.isEnabled()
 
 
 def test_concurrency_threshold_color_and_shared_setting(window, qtbot):
     page = window.queue_page
-    page.concurrencySpinBox.setValue(3)
-    assert page.concurrencySpinBox.property("level") == "elevated"
-    page.concurrencySpinBox.setValue(2)
-    assert page.concurrencySpinBox.property("level") == "normal"
+    page.newQueueCapSpinBox.setValue(3)
+    assert page.newQueueCapSpinBox.property("level") == "elevated"
+    page.newQueueCapSpinBox.setValue(2)
+    assert page.newQueueCapSpinBox.property("level") == "normal"
     assert not (window.state_dir / "settings.json").exists()  # fake/local never write the shared cloud maximum
     window.form.backendCombo.setCurrentText("cloud")
-    page.concurrencySpinBox.setValue(3)
+    page.newQueueCapSpinBox.setValue(3)
     qtbot.waitUntil(lambda: (window.state_dir / "settings.json").exists(), timeout=5000)
     assert load_cloud_concurrency(window.state_dir) == 3
-    assert "memory budget" in page.concurrencyHintLabel.text()
+    assert "memory budget" in page.concurrencySpinBox.toolTip()
 
 
 def test_closing_during_dispatch_asks_first_and_records_the_local_stop(window, qtbot, gated):
     page = window.queue_page
     create(window, qtbot, count=2, cap=1)
-    page.startQueueButton.click()
+    page.queuePrimaryButton.click()
     qtbot.waitUntil(lambda: states(window)[:1] == ["running"], timeout=5000)
     window.show()
     window.close()  # programmatic close must also wait for consent before shutting down
@@ -273,9 +285,9 @@ def test_a_busy_state_directory_reports_another_owner(window, qtbot, gated):
     opened = []
     window.runner.submit(owner.open(), lambda r, f: opened.append(f))
     qtbot.waitUntil(lambda: bool(opened), timeout=3000)
-    page.startQueueButton.click()
+    page.queuePrimaryButton.click()
     qtbot.waitUntil(lambda: not window.queue.dispatching_here, timeout=5000)
-    assert page.queueMessageLabel.text().startswith("Dispatch is owned by another process")
+    assert "Dispatch is owned by another process" in notices(window)
     assert states(window) == ["pending"]
     window.runner.submit(owner.aclose(), lambda *_: None)
     qtbot.wait(100)
@@ -296,10 +308,10 @@ def test_plan_area_dry_run_and_create_use_the_shared_planner(window, qtbot):
     page.planStepsEdit.setText("4; 500")
     page.createQueueButton.click()
     assert page.planStepsEdit.property("invalid") is True and page.planCountLabel.text().startswith("Item 2: steps")
-    assert page.queueList.count() == 0  # a rejected plan creates nothing
+    assert not queues(window)  # a rejected plan creates nothing
     page.planStepsEdit.setText("4; 8")
     page.createQueueButton.click()
-    qtbot.waitUntil(lambda: page.queueList.count() == 1 and page.queueItemsView.model().rowCount() == 4, timeout=5000)
+    qtbot.waitUntil(lambda: len(queues(window)) == 1 and page.queueItemsView.model().rowCount() == 4, timeout=5000)
     assert page.planStepsEdit.property("invalid") is False
     with sqlite3.connect(window.queue._state / "attempts.sqlite3") as db:
         stored = [json.loads(raw) for (raw,) in db.execute("SELECT request_json FROM queue_items ORDER BY position")]

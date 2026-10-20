@@ -9,7 +9,7 @@ from dtflow.ui.queue_presenter import (
     item_rows,
     outcome_note,
     outcome_text,
-    ownership_badge,
+    status_chip,
     summarize,
 )
 
@@ -72,10 +72,10 @@ def test_rows_separate_outputs_from_metadata_and_summary_counts_settled():
     assert (summary.settled, summary.total, summary.succeeded, summary.level) == (3, 5, 2, "ok")
 
 
-def test_badge_and_concurrency_threshold():
-    assert ownership_badge(view("running"), dispatching_here=True) == "THIS WINDOW DISPATCHES"
-    assert ownership_badge(view("running"), dispatching_here=False).startswith("RUNNING")
-    assert ownership_badge(view("paused"), dispatching_here=False) == "NOT DISPATCHING"
+def test_status_chip_and_concurrency_threshold():
+    assert status_chip(view("running"), []) == ("ok", "Running")
+    assert status_chip(view("queued"), ["q" * 32]) == ("secondary", "Up next 1")
+    assert status_chip(view("finished", succeeded=1, unknown=1), []) == ("warning", "Finished")
     assert [concurrency_level(v) for v in (1, 2, 3, 4)] == ["normal", "normal", "elevated", "elevated"]
 
 

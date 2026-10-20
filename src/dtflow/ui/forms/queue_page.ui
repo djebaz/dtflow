@@ -54,96 +54,104 @@
        <number>10</number>
       </property>
       <item>
-       <widget class="QLabel" name="queueContextEyebrow">
-        <property name="text">
-         <string>DURABLE QUEUES</string>
+       <layout class="QHBoxLayout" name="queueListHeaderLayout">
+        <property name="spacing">
+         <number>6</number>
         </property>
-        <property name="role" stdset="0">
-         <string>eyebrow</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QListWidget" name="queueList">
-        <property name="maximumSize">
-         <size>
-          <width>16777215</width>
-          <height>120</height>
-         </size>
-        </property>
-        <property name="accessibleName">
-         <string>Durable queues</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <layout class="QHBoxLayout" name="queueCountLayout">
         <item>
-         <widget class="QLabel" name="queueCountLabel">
+         <widget class="QLabel" name="queueContextEyebrow">
           <property name="text">
-           <string>Items</string>
+           <string>QUEUES</string>
           </property>
-          <property name="textRole" stdset="0">
-           <string>caption</string>
+          <property name="role" stdset="0">
+           <string>eyebrow</string>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QSpinBox" name="queueCountSpinBox">
-          <property name="minimum">
-           <number>1</number>
+         <spacer name="queueListHeaderSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
           </property>
-          <property name="maximum">
-           <number>1000</number>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
           </property>
-          <property name="value">
-           <number>1</number>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QToolButton" name="refreshQueuesButton">
+          <property name="text">
+           <string>Refresh</string>
           </property>
           <property name="toolTip">
-           <string>Item N uses the form's seed + N - 1.</string>
+           <string>Read the queue list again. It also refreshes by itself while this tab is open.</string>
           </property>
           <property name="accessibleName">
-           <string>Number of queue items</string>
+           <string>Refresh queues</string>
           </property>
          </widget>
         </item>
        </layout>
       </item>
       <item>
-       <widget class="QPushButton" name="createQueueButton">
-        <property name="text">
-         <string>Create queue</string>
+       <widget class="QLineEdit" name="queueFilterEdit">
+        <property name="placeholderText">
+         <string>Filter by prompt, model, backend or status</string>
         </property>
-        <property name="toolTip">
-         <string>Creates a paused queue from the Generate form, also while another queue runs. Contacts no backend and uploads nothing.</string>
+        <property name="clearButtonEnabled">
+         <bool>true</bool>
         </property>
         <property name="accessibleName">
-         <string>Create a durable queue</string>
+         <string>Filter queues</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="refreshQueuesButton">
-        <property name="text">
-         <string>Refresh</string>
+       <widget class="QListWidget" name="queueList">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>1</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>180</height>
+         </size>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::CustomContextMenu</enum>
+        </property>
+        <property name="horizontalScrollBarPolicy">
+         <enum>Qt::ScrollBarAlwaysOff</enum>
+        </property>
+        <property name="uniformItemSizes">
+         <bool>false</bool>
+        </property>
+        <property name="accessibleName">
+         <string>Queues</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="clearQueuesButton">
         <property name="text">
-         <string>Clear queues</string>
+         <string>Clear history</string>
         </property>
         <property name="toolTip">
-         <string>Removes finished, cancelled and paused queues from this list. Attempts and saved images are kept.</string>
+         <string>Removes finished and cancelled queues from this list. Paused queues, attempts and saved images are kept.</string>
         </property>
         <property name="accessibleName">
-         <string>Clear queues</string>
+         <string>Clear queue history</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QGroupBox" name="concurrencyBox">
+       <widget class="QGroupBox" name="newQueueBox">
         <property name="title">
          <string />
         </property>
@@ -151,9 +159,9 @@
          <string>sectionCard</string>
         </property>
         <property name="accessibleName">
-         <string>Dispatch policy</string>
+         <string>New queue</string>
         </property>
-        <layout class="QVBoxLayout" name="concurrencyBoxCardLayout">
+        <layout class="QVBoxLayout" name="newQueueBoxCardLayout">
          <property name="leftMargin">
           <number>0</number>
          </property>
@@ -170,11 +178,11 @@
           <number>0</number>
          </property>
          <item>
-          <widget class="QFrame" name="concurrencyBoxHeader">
+          <widget class="QFrame" name="newQueueBoxHeader">
            <property name="role" stdset="0">
             <string>sectionHeader</string>
            </property>
-           <layout class="QHBoxLayout" name="concurrencyBoxHeaderLayout" stretch="0,1">
+           <layout class="QHBoxLayout" name="newQueueBoxHeaderLayout" stretch="0,1">
             <property name="leftMargin">
              <number>10</number>
             </property>
@@ -191,7 +199,7 @@
              <number>8</number>
             </property>
             <item>
-             <widget class="QLabel" name="concurrencyBoxIcon">
+             <widget class="QLabel" name="newQueueBoxIcon">
               <property name="role" stdset="0">
                <string>sectionIcon</string>
               </property>
@@ -216,9 +224,9 @@
              </widget>
             </item>
             <item>
-             <widget class="QLabel" name="concurrencyBoxHeading">
+             <widget class="QLabel" name="newQueueBoxHeading">
               <property name="text">
-               <string>Dispatch policy</string>
+               <string>New queue</string>
               </property>
               <property name="textRole" stdset="0">
                <string>panelHeading</string>
@@ -229,47 +237,11 @@
           </widget>
          </item>
          <item>
-          <widget class="QWidget" name="concurrencyBoxContents">
+          <widget class="QWidget" name="newQueueBoxContents">
            <property name="role" stdset="0">
             <string>sectionContents</string>
            </property>
-           <layout class="QFormLayout" name="concurrencyForm">
-            <item row="0" column="0">
-             <widget class="QLabel" name="concurrencyLabel">
-              <property name="text">
-               <string>Cloud max</string>
-              </property>
-              <property name="textRole" stdset="0">
-               <string>caption</string>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="1">
-             <widget class="QSpinBox" name="concurrencySpinBox">
-              <property name="minimum">
-               <number>1</number>
-              </property>
-              <property name="maximum">
-               <number>4</number>
-              </property>
-              <property name="value">
-               <number>4</number>
-              </property>
-             </widget>
-            </item>
-            <item row="1" column="0" colspan="2">
-             <widget class="QLabel" name="concurrencyHintLabel">
-              <property name="text">
-               <string>Local Draw Things remains one effective lane.</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
+           <layout class="QFormLayout" name="newQueueForm">
             <property name="leftMargin">
              <number>10</number>
             </property>
@@ -282,50 +254,86 @@
             <property name="bottomMargin">
              <number>10</number>
             </property>
+            <item row="0" column="0">
+             <widget class="QLabel" name="queueCountLabel">
+              <property name="text">
+               <string>Items</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QSpinBox" name="queueCountSpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>1000</number>
+              </property>
+              <property name="value">
+               <number>1</number>
+              </property>
+              <property name="toolTip">
+               <string>Item N uses the form's seed + N - 1.</string>
+              </property>
+              <property name="accessibleName">
+               <string>Number of queue items</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="newQueueCapLabel">
+              <property name="text">
+               <string>Max at once</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QSpinBox" name="newQueueCapSpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>4</number>
+              </property>
+              <property name="value">
+               <number>4</number>
+              </property>
+              <property name="accessibleName">
+               <string>Maximum items a new queue runs at once</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0" colspan="2">
+             <widget class="QPushButton" name="createQueueButton">
+              <property name="text">
+               <string>Create queue</string>
+              </property>
+              <property name="toolTip">
+               <string>Creates a paused queue from the Generate form, also while another queue runs. Contacts no backend and uploads nothing.</string>
+              </property>
+              <property name="accessibleName">
+               <string>Create a durable queue</string>
+              </property>
+             </widget>
+            </item>
            </layout>
           </widget>
          </item>
         </layout>
        </widget>
       </item>
-      <item>
-       <spacer name="queueContextBottomSpacer">
-        <property name="orientation">
-         <enum>Qt::Vertical</enum>
-        </property>
-        <property name="sizeHint" stdset="0">
-         <size>
-          <width>20</width>
-          <height>20</height>
-         </size>
-        </property>
-       </spacer>
-      </item>
      </layout>
     </widget>
    </item>
    <item>
     <widget class="QFrame" name="queueWorkspace">
-     <layout class="QVBoxLayout" name="queueWorkspaceLayout" stretch="0,0,0,0,1,1,0">
-      <item>
-       <widget class="QLabel" name="ownershipBadgeLabel">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="alignment">
-         <set>Qt::AlignCenter</set>
-        </property>
-        <property name="text">
-         <string>NOT DISPATCHING</string>
-        </property>
-        <property name="role" stdset="0">
-         <string>badge</string>
-        </property>
-       </widget>
-      </item>
+     <layout class="QVBoxLayout" name="queueWorkspaceLayout" stretch="0,0,1,1">
       <property name="leftMargin">
        <number>14</number>
       </property>
@@ -342,103 +350,281 @@
        <number>10</number>
       </property>
       <item>
-       <layout class="QHBoxLayout" name="queueControlLayout">
-        <item>
-         <widget class="QPushButton" name="startQueueButton">
-          <property name="text">
-           <string>Start</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="pauseQueueButton">
-          <property name="text">
-           <string>Pause</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="resumeQueueButton">
-          <property name="text">
-           <string>Resume</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="cancelQueueButton">
-          <property name="text">
-           <string>Cancel</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="earlierQueueButton">
-          <property name="text">
-           <string>Earlier</string>
-          </property>
-          <property name="toolTip">
-           <string>Moves this up-next queue one place earlier.</string>
-          </property>
-          <property name="accessibleName">
-           <string>Move up next earlier</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="laterQueueButton">
-          <property name="text">
-           <string>Later</string>
-          </property>
-          <property name="toolTip">
-           <string>Moves this up-next queue one place later.</string>
-          </property>
-          <property name="accessibleName">
-           <string>Move up next later</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="controlSpacer">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeHint">
-           <size>
-            <width>40</width>
-            <height>20</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-        <item>
-         <widget class="QLabel" name="queueStateLabel">
-          <property name="text">
-           <string>Paused</string>
-          </property>
-          <property name="state" stdset="0">
-           <string>warning</string>
-          </property>
-          <property name="textRole" stdset="0">
-           <string>value</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-      <item>
-       <widget class="QLabel" name="queueMessageLabel">
-        <property name="text">
-         <string>Create a queue from the Generate form, then Start it here.</string>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="state" stdset="0">
-         <string>unknown</string>
-        </property>
+       <widget class="QFrame" name="queueHeader">
         <property name="accessibleName">
-         <string>Queue action status</string>
+         <string>Selected queue</string>
         </property>
+        <layout class="QVBoxLayout" name="queueHeaderLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <layout class="QHBoxLayout" name="queueTitleLayout" stretch="1,0">
+           <property name="spacing">
+            <number>10</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="queueTitleLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>—</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>section</string>
+             </property>
+             <property name="accessibleName">
+              <string>Queue prompt</string>
+             </property>
+            </widget>
+           </item>
+           <item alignment="Qt::AlignTop">
+            <widget class="QLabel" name="queueStateLabel">
+             <property name="text">
+              <string>Paused</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+             <property name="role" stdset="0">
+              <string>statusChip</string>
+             </property>
+             <property name="state" stdset="0">
+              <string>warning</string>
+             </property>
+             <property name="accessibleName">
+              <string>Queue status</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <widget class="QLabel" name="queueSubtitleLabel">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+             <horstretch>1</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="text">
+            <string />
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="role" stdset="0">
+            <string>secondary</string>
+           </property>
+           <property name="accessibleName">
+            <string>Queue model, plan, backend and creation time</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="queueControlLayout">
+           <property name="spacing">
+            <number>6</number>
+           </property>
+           <item>
+            <widget class="QPushButton" name="queuePrimaryButton">
+             <property name="text">
+              <string>Start</string>
+             </property>
+             <property name="role" stdset="0">
+              <string>primary</string>
+             </property>
+             <property name="accessibleName">
+              <string>Start, pause or resume the queue</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="cancelQueueButton">
+             <property name="text">
+              <string>Cancel</string>
+             </property>
+             <property name="toolTip">
+              <string>Cancels the pending items at once; running items are not sent again.</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="earlierQueueButton">
+             <property name="text">
+              <string>Earlier</string>
+             </property>
+             <property name="toolTip">
+              <string>Moves this up-next queue one place earlier.</string>
+             </property>
+             <property name="accessibleName">
+              <string>Move up next earlier</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="laterQueueButton">
+             <property name="text">
+              <string>Later</string>
+             </property>
+             <property name="toolTip">
+              <string>Moves this up-next queue one place later.</string>
+             </property>
+             <property name="accessibleName">
+              <string>Move up next later</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="controlSpacer">
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>0</width>
+               <height>0</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QLabel" name="concurrencyLabel">
+             <property name="text">
+              <string>Max at once</string>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>caption</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QSpinBox" name="concurrencySpinBox">
+             <property name="minimum">
+              <number>1</number>
+             </property>
+             <property name="maximum">
+              <number>4</number>
+             </property>
+             <property name="value">
+              <number>4</number>
+             </property>
+             <property name="accessibleName">
+              <string>Maximum items this queue runs at once</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="removeQueueButton">
+             <property name="text">
+              <string>Remove</string>
+             </property>
+             <property name="toolTip">
+              <string>Removes this queue from the list. Its attempts and saved images are kept.</string>
+             </property>
+             <property name="accessibleName">
+              <string>Remove queue</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="queueProgressLayout" stretch="1,0,0,0,0,0">
+           <property name="spacing">
+            <number>6</number>
+           </property>
+           <item>
+            <widget class="SegmentedBar" name="queueProgressBar">
+             <property name="accessibleName">
+              <string>Queue progress by outcome</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="queueProgressLabel">
+             <property name="text">
+              <string>0 of 0 settled</string>
+             </property>
+             <property name="role" stdset="0">
+              <string>secondary</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="succeededFilterButton">
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+             <property name="role" stdset="0">
+              <string>filterChip</string>
+             </property>
+             <property name="state" stdset="0">
+              <string>ok</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="failedFilterButton">
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+             <property name="role" stdset="0">
+              <string>filterChip</string>
+             </property>
+             <property name="state" stdset="0">
+              <string>error</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="unknownFilterButton">
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+             <property name="role" stdset="0">
+              <string>filterChip</string>
+             </property>
+             <property name="state" stdset="0">
+              <string>unknown</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="cancelledFilterButton">
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+             <property name="role" stdset="0">
+              <string>filterChip</string>
+             </property>
+             <property name="state" stdset="0">
+              <string>warning</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
        </widget>
       </item>
       <item>
@@ -1021,16 +1207,6 @@
         </layout>
        </widget>
       </item>
-      <item>
-       <widget class="QProgressBar" name="queueProgressBar">
-        <property name="value">
-         <number>0</number>
-        </property>
-        <property name="format">
-         <string>0 of 0 complete</string>
-        </property>
-       </widget>
-      </item>
      </layout>
     </widget>
    </item>
@@ -1413,6 +1589,13 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>SegmentedBar</class>
+   <extends>QWidget</extends>
+   <header>dtflow.ui.queue_widgets</header>
+  </customwidget>
+ </customwidgets>
  <resources />
  <connections />
 </ui>
