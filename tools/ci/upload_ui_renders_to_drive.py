@@ -160,6 +160,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True, help="Directory containing render PNGs")
     parser.add_argument("--archive", type=Path, help="Optional ZIP archive to upload beside the PNGs")
+    parser.add_argument(
+        "--preview-only",
+        action="store_true",
+        help="Upload only the first PNG as a visual preview, plus the optional archive.",
+    )
     parser.add_argument("--refresh-token", required=True)
     parser.add_argument("--client-id", required=True)
     parser.add_argument("--client-secret", required=True)
@@ -177,7 +182,8 @@ def main() -> None:
     run_id, run_url = find_or_create_folder(token, args.run_folder, root_id)
 
     uploaded: list[dict[str, str]] = []
-    for path in pngs:
+    upload_pngs = pngs[:1] if args.preview_only else pngs
+    for path in upload_pngs:
         relative = path.relative_to(args.source).as_posix()
         # Preserve the useful relative path in the Drive filename without creating
         # hundreds of nested API folders.
