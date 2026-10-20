@@ -15,6 +15,21 @@ on:
         required: false
         default: ""
         type: string
+      category:
+        description: "UI category to render"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - connection
+          - generate
+          - images
+          - image-navigation
+          - queues
+          - shell
+          - inpaint
+          - logs
   pull_request:
     types: [opened, synchronize, reopened, labeled]
 
@@ -98,7 +113,7 @@ jobs:
           mkdir -p tmp
           set -o pipefail
           status=0
-          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders \
+          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders --category "${{ inputs.category || 'all' }}" \
             2>&1 | tee tmp/render.log || status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 124 ] || [ "$status" -eq 134 ]; then
