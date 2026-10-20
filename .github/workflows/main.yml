@@ -25,6 +25,7 @@ on:
           - connection
           - generate
           - images
+          - image-navigation
           - queues
           - shell
           - inpaint

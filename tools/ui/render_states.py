@@ -84,16 +84,37 @@ from dtflow.ui.theme import apply_theme  # noqa: E402
 RENDERED = {}  # state name -> {"seconds", "blank"}, in render order
 STARTED = time.monotonic()
 SELECTED_CATEGORY = "all"
-RENDER_CATEGORIES = ("all", "connection", "generate", "images", "queues", "shell", "inpaint", "logs")
 
 
 def wants(category):
     """Return whether a render category should execute."""
     return SELECTED_CATEGORY in ("all", category)
+RENDER_CATEGORIES = ("all", "connection", "generate", "images", "image-navigation", "queues", "shell", "inpaint", "logs")
+
+
+def render_category(target):
+    """Return the review category for a screenshot path."""
+    path = Path(target)
+    if "image-navigation" in path.parts:
+        return "image-navigation"
+    return path.stem.split("-", 1)[0]
+
+
+def category_selected(target):
+    """Whether this screenshot belongs to the requested render category."""
+    category = render_category(target)
+    if SELECTED_CATEGORY == "all":
+        return True
+    if SELECTED_CATEGORY == "images":
+        return category in {"images", "image-navigation"}
+    return category == SELECTED_CATEGORY
 
 
 def report(target):
     """Print progress for one written state and remember it for the final summary."""
+    if not category_selected(target):
+        Path(target).unlink(missing_ok=True)
+        return
     image = QImage(str(target)).scaled(16, 16)
     colors = {image.pixel(x, y) for x in range(image.width()) for y in range(image.height())}
     name = Path(target).stem
