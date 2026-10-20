@@ -30,6 +30,14 @@ on:
           - shell
           - inpaint
           - logs
+      upload_mode:
+        description: "Google Drive upload format (images uploads every PNG with four workers)"
+        required: true
+        default: "zip"
+        type: choice
+        options:
+          - zip
+          - images
   pull_request:
     types: [opened, synchronize, reopened, labeled]
 
@@ -159,6 +167,7 @@ jobs:
           CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+          UPLOAD_MODE: ${{ inputs.upload_mode || 'zip' }}
         run: |
           if ! find tmp/ui-renders -type f -name '*.png' -print -quit 2>/dev/null | grep -q .; then
             echo "No render PNGs were produced; skipping Drive upload."
@@ -170,12 +179,19 @@ jobs:
           done
           label=${PR_NUMBER:+pr$PR_NUMBER-}
           run_folder="${label}$(date -u +%Y%m%dT%H%M%SZ)-${{ steps.target.outputs.short }}"
-          archive="tmp/ui-renders-${run_folder}.zip"
-          (cd tmp/ui-renders && zip -qr "../../$archive" .)
+          upload_args=(--mode "$UPLOAD_MODE")
+          case "$UPLOAD_MODE" in
+            zip)
+              archive="tmp/ui-renders-${run_folder}.zip"
+              (cd tmp/ui-renders && zip -qr "../../$archive" .)
+              upload_args+=(--archive "$archive")
+              ;;
+            images) ;;
+            *) echo "::error::Unsupported upload mode: $UPLOAD_MODE"; exit 1 ;;
+          esac
           uv run python tools/ci/upload_ui_renders_to_drive.py \
             --source tmp/ui-renders \
-            --archive "$archive" \
-            --preview-only \
+            "${upload_args[@]}" \
             --refresh-token "$REFRESH_TOKEN" \
             --client-id "$CLIENT_ID" \
             --client-secret "$CLIENT_SECRET" \
@@ -262,9 +278,15 @@ jobs:
               md.append(f"| Script result | {'; '.join(finals)} |")
           if drive.get("folder_url"):
               md.append(f"| Screenshots | [Google Drive folder]({drive['folder_url']}) |")
-          if drive.get("archive", {}).get("view_url"):
+          if (drive.get("archive") or {}).get("view_url"):
               md.append(f"| Archive | [Download ZIP]({drive['archive']['view_url']}) |")
+          if drive.get("mode"):
+              md.append(f"| Drive upload mode | {drive['mode']} |")
           md.append("")
+          if drive.get("failures"):
+              md += ["### Drive upload failures", ""]
+              md += [f"- {item['relative_path']}: {item['error']}" for item in drive["failures"]]
+              md.append("")
           if problems:
               md += ["### Problems", "", "```", *problems[-20:], "```", ""]
           if pngs:

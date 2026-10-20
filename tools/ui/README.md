@@ -77,6 +77,12 @@ The interactive smoke defaults to **192 wheel notches per direction** (16 small 
 
 Offscreen Qt renders of the real DTFlow forms under the real `dtflow_dark.qss`. Run from the repository root (or set `DTFLOW_ROOT`) with the locked environment:
 
+The **UI renders** Actions workflow uploads a ZIP to Google Drive by default, including automatic PR renders.
+For manual runs, choose `upload_mode: images` to upload every PNG individually with up to four concurrent
+file uploads instead of an archive. ZIP mode uploads no separate preview PNG. The run summary links the
+archive or individual image previews; the upload manifest retains successful files and any failures.
+Explicit Drive rate-limit responses use bounded exponential backoff; other errors fail clearly.
+
 ```powershell
 uv sync
 $env:QT_QPA_PLATFORM = "offscreen"   # scripts also set it by default

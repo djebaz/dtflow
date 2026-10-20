@@ -6,14 +6,41 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import random
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE_API = "https://www.googleapis.com/drive/v3"
 DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3"
+UPLOAD_WORKERS = 4
+
+
+def _request_bytes(request: urllib.request.Request, timeout: int) -> bytes:
+    """Retry explicit rate-limit rejections, without replaying ambiguous creates or permission failures."""
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            limited = exc.code == 429
+            if exc.code == 403:
+                try:
+                    reasons = json.loads(detail).get("error", {}).get("errors", [])
+                    limited = any(
+                        item.get("reason") in {"rateLimitExceeded", "userRateLimitExceeded"} for item in reasons
+                    )
+                except (ValueError, AttributeError, TypeError):
+                    limited = False
+            if not limited or attempt == 4:
+                raise RuntimeError(f"Google API request failed ({exc.code}): {detail}") from exc
+            time.sleep(2**attempt + random.random())
+    raise AssertionError("Unreachable request retry state")
 
 
 def _request_json(
@@ -25,12 +52,7 @@ def _request_json(
     timeout: int = 30,
 ) -> dict:
     request = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = response.read()
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Google API request failed ({exc.code}): {detail}") from exc
+    payload = _request_bytes(request, timeout)
     return json.loads(payload.decode("utf-8")) if payload else {}
 
 
@@ -128,12 +150,7 @@ def upload_file(access_token: str, path: Path, folder_id: str, remote_name: str)
         headers={**_auth(access_token), "Content-Type": mime_type},
         method="PATCH",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=300):
-            pass
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Google Drive upload failed for {remote_name} ({exc.code}): {detail}") from exc
+    _request_bytes(request, 300)
 
     # GitHub cannot display authenticated Drive images. Render files are deliberately
     # link-readable so their stable content URLs can be embedded in summaries/comments.
@@ -154,12 +171,8 @@ def upload_file(access_token: str, path: Path, folder_id: str, remote_name: str)
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True, help="Directory containing render PNGs")
-    parser.add_argument("--archive", type=Path, help="Optional ZIP archive to upload beside the PNGs")
-    parser.add_argument(
-        "--preview-only",
-        action="store_true",
-        help="Upload only the first PNG as a visual preview, plus the optional archive.",
-    )
+    parser.add_argument("--mode", choices=("zip", "images"), default="zip", help="Upload format (default: zip)")
+    parser.add_argument("--archive", type=Path, help="ZIP archive required in zip mode; unused in images mode")
     parser.add_argument("--refresh-token", required=True)
     parser.add_argument("--client-id", required=True)
     parser.add_argument("--client-secret", required=True)
@@ -169,39 +182,59 @@ def main() -> None:
     args = parser.parse_args()
 
     pngs = sorted(args.source.rglob("*.png")) if args.source.exists() else []
-    if not pngs and not (args.archive and args.archive.is_file()):
-        raise SystemExit("No render files were produced; nothing to upload.")
+    if args.mode == "zip" and not (args.archive and args.archive.is_file()):
+        parser.error("zip mode requires --archive pointing to an existing ZIP file")
+    if args.mode == "images" and not pngs:
+        parser.error("images mode requires at least one PNG under --source")
 
     token = get_access_token(args.refresh_token, args.client_id, args.client_secret)
     root_id, _ = find_or_create_folder(token, args.root_folder)
     run_id, run_url = find_or_create_folder(token, args.run_folder, root_id)
 
     uploaded: list[dict[str, str]] = []
-    upload_pngs = pngs[:1] if args.preview_only else pngs
-    for path in upload_pngs:
-        relative = path.relative_to(args.source).as_posix()
-        # Preserve the useful relative path in the Drive filename without creating
-        # hundreds of nested API folders.
-        remote_name = relative.replace("/", "__")
-        item = upload_file(token, path, run_id, remote_name)
-        item["relative_path"] = relative
-        uploaded.append(item)
-        print(f"Uploaded {relative}")
-
+    failures: list[dict[str, str]] = []
     archive_item = None
-    if args.archive and args.archive.is_file():
-        archive_item = upload_file(token, args.archive, run_id, args.archive.name)
-        print(f"Uploaded {args.archive.name}")
+    if args.mode == "images":
+        with ThreadPoolExecutor(max_workers=UPLOAD_WORKERS) as pool:
+            futures = {
+                pool.submit(
+                    upload_file, token, path, run_id, path.relative_to(args.source).as_posix().replace("/", "__")
+                ): path
+                for path in pngs
+            }
+            for future in as_completed(futures):
+                relative = futures[future].relative_to(args.source).as_posix()
+                try:
+                    item = future.result()
+                except Exception as exc:
+                    failures.append({"relative_path": relative, "error": str(exc)})
+                    print(f"Upload failed: {relative}: {exc}")
+                else:
+                    uploaded.append(dict(item, relative_path=relative))
+                    print(f"Uploaded {relative}")
+    else:
+        try:
+            archive_item = upload_file(token, args.archive, run_id, args.archive.name)
+            print(f"Uploaded {args.archive.name}")
+        except Exception as exc:
+            failures.append({"relative_path": args.archive.name, "error": str(exc)})
+            print(f"Upload failed: {args.archive.name}: {exc}")
 
     manifest = {
+        "mode": args.mode,
         "folder_id": run_id,
         "folder_url": run_url or f"https://drive.google.com/drive/folders/{run_id}",
-        "files": uploaded,
+        "files": sorted(uploaded, key=lambda item: item["relative_path"]),
         "archive": archive_item,
+        "failures": sorted(failures, key=lambda item: item["relative_path"]),
     }
     args.manifest.parent.mkdir(parents=True, exist_ok=True)
     args.manifest.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     print(f"Uploaded {len(uploaded)} render PNGs to Google Drive.")
+    if failures:
+        raise SystemExit(
+            f"{len(failures)} upload(s) failed; successful files and failures are recorded in {args.manifest}."
+        )
 
 
 if __name__ == "__main__":
