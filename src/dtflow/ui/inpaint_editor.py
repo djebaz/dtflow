@@ -939,7 +939,8 @@ class InpaintEditor(QObject):
     def show_result(self, encoded, path=None):
         self._result_path = str(path) if path else None
         self._controls()
-        if self._source is not self._run_source:
+        source, self._run_source = self._run_source, None
+        if source is None or self._source is not source:
             return  # the source changed while the edit ran: Use result still chains from it, the canvas keeps the new one
         pixmap = QPixmap()
         if pixmap.loadFromData(encoded):

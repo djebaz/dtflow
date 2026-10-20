@@ -495,7 +495,12 @@ async def run_queue(args: argparse.Namespace) -> int:
         print(f"[queue] item {item_id[:8]}: {state}", file=sys.stderr)
 
     final = await dispatch_queue(
-        args.state, args.queue, timeouts=TimeoutPolicy(total=args.timeout), out=args.out, on_settle=settled
+        args.state,
+        args.queue,
+        timeouts=TimeoutPolicy(total=args.timeout),
+        out=args.out,
+        on_settle=settled,
+        auto_play=False,  # the CLI runs exactly the queue it names; up next is a desktop feature
     )
     print(json.dumps({k: v for k, v in final.items() if k != "events"}, indent=2))
     return queue_exit_code(final)

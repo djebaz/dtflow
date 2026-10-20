@@ -232,6 +232,8 @@ class GenerationPage:
         self._metadata_path: Path | None = None
         self._saved_output_identities: dict[str, str] = {}
         self._submitted_backend: str | None = None
+        self._submitted_endpoint: str | None = None  # the running request's snapshot, not the form's current value
+        self._run_edit = False
         self._empty_hints = (
             EmptyListHint(page.loraList, "No LoRAs selected\nAdd an adapter to this request."),
             EmptyListHint(page.assetList, "No local receipts\nPrepare a cloud asset to begin."),
@@ -823,7 +825,7 @@ class GenerationPage:
         self._mark(None)
         note = self._snap_size()
         name, endpoint = self._backend()
-        self._submitted_backend = name
+        self._submitted_backend, self._submitted_endpoint = name, endpoint
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
             request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
@@ -853,6 +855,7 @@ class GenerationPage:
             return False
         self._reuse_source_identity = None
         self._request = request
+        self._run_edit = edit is not None
         diagnostic_event(
             log,
             "generation.submitted",
@@ -924,7 +927,7 @@ class GenerationPage:
         except FormError as exc:
             self._status(Presentation("error", "Invalid request", str(exc)))
             return
-        self._status(Presentation("ok", "Queued behind the running queue", "It starts by itself when that queue ends."))
+        self._status(Presentation("ok", "Queuing behind the running queue", "The Queues page reports the outcome."))
         self.queue_behind(request, name, endpoint, asset_ids, edit)
         self.queue_created()
 
@@ -1036,7 +1039,7 @@ class GenerationPage:
         self.page.attemptIdentityLabel.setText(f"Attempt {outcome.attempt_id[:8]} on {outcome.backend_id}.")
         self.page.attemptIdentityLabel.setToolTip(f"Attempt {outcome.attempt_id}")
         self.page.effectiveRequestBrowser.setPlainText(
-            describe_request(outcome.request, outcome.backend_id, self._backend()[1])
+            describe_request(outcome.request, outcome.backend_id, self._submitted_endpoint)
             + self._timing_text()
             + self._quality_text(outcome)
         )
@@ -1053,7 +1056,7 @@ class GenerationPage:
             self.page.detailsToggle.setChecked(True)  # the output chooser lives in the details
         if outcome.final_image:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
-            if self.inpaint.active:
+            if self._run_edit:  # only an edit's result belongs on the Inpaint canvas, whatever the mode is now
                 self.inpaint.show_result(outcome.final_image, outcome.output_paths[0] if outcome.output_paths else None)
 
     def _quality_text(self, outcome) -> str:
@@ -1090,7 +1093,7 @@ class GenerationPage:
 
     def _show_failure_details(self, failure: BaseException) -> None:
         """Development mode only: keep the request and the backend's failure evidence in the Attempt details box."""
-        backend, endpoint = self._backend()
+        backend, endpoint = self._submitted_backend, self._submitted_endpoint
         self.page.attemptIdentityLabel.setText("Attempt failed (development mode details below).")
         self.page.effectiveRequestBrowser.setPlainText(
             describe_request(self._request, backend, endpoint)

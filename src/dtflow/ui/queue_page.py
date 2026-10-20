@@ -171,7 +171,7 @@ class QueuePage:
         page.earlierQueueButton.clicked.connect(lambda: self._order("earlier"))
         page.laterQueueButton.clicked.connect(lambda: self._order("later"))
         page.resumeQueueButton.clicked.connect(lambda: self._post("resume"))
-        page.cancelQueueButton.clicked.connect(lambda: self._post("cancel"))
+        page.cancelQueueButton.clicked.connect(self.cancel)
         page.queueList.currentRowChanged.connect(self._select_row)
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
@@ -537,21 +537,37 @@ class QueuePage:
         self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan, job), self._created)
 
     def queue_behind(self, request, name, endpoint, asset_ids, job=None) -> None:
-        """Generate while this window dispatches: a one-item queue that waits up next and starts by itself."""
+        """Generate while this window dispatches: a one-item queue that waits up next and starts by itself.
+
+        If the running queue ended meanwhile, nothing would start it, so it is saved paused and the outcome says so.
+        """
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
-        activity_strip(self.page).complete(
-            "queue-behind", "Queued behind the running queue", "It starts by itself when that queue ends.", "success"
-        )
-        self._runner.submit(self._create(backend, request, asset_ids, 1, None, None, job, up_next=True), self._behind)
+
+        async def work():
+            queue_id, _ = await self._create(backend, request, asset_ids, 1, None, None, job, up_next=True)
+            return queue_id, (await read_queue_views(self._state, queue_id))[0]["status"]
+
+        self._runner.submit(work(), self._behind)
 
     def _behind(self, result, failure) -> None:
+        strip = activity_strip(self.page)
         if failure is not None:
             presentation = present_generation_failure(failure)
             self._message(presentation)
-            activity_strip(self.page).complete("queue-behind", presentation.headline, presentation.detail, "error")
+            strip.complete("queue-behind", presentation.headline, presentation.detail, "error")
             return
-        queue_id, _ = result
-        self._message(Presentation("ok", "Queued behind", f"{queue_id[:8]} waits up next and starts by itself."))
+        queue_id, status = result
+        if status == "queued":
+            presentation = Presentation("ok", "Queued behind", f"{queue_id[:8]} waits up next and starts by itself.")
+            strip.complete(
+                "queue-behind", "Queued behind the running queue", "It starts by itself when that queue ends."
+            )
+        else:
+            presentation = Presentation(
+                "warning", "Saved paused", f"The running queue had already ended, so {queue_id[:8]} waits for Start."
+            )
+            strip.complete("queue-behind", presentation.headline, presentation.detail, "partial")
+        self._message(presentation)
         self.refresh()
 
     async def _create(
@@ -776,6 +792,14 @@ class QueuePage:
         self._render()
         self.refresh()
 
+    def cancel(self) -> None:
+        """A waiting queue holds no reservation, so it is cancelled at once; any other queue gets a posted control."""
+        view = self._view()
+        if view is not None and view["status"] == "queued":
+            self._order("cancel")
+        else:
+            self._post("cancel")
+
     def pause(self) -> None:
         view = self._view()
         if view is not None and view["status"] == "queued":
@@ -797,6 +821,7 @@ class QueuePage:
             text = {
                 "enqueue": "Waits up next and starts by itself when the running queue ends.",
                 "dequeue": "Left the up-next order and stays paused until Start.",
+                "cancel": "Cancelled. It left the up-next order and nothing of it ran.",
                 "earlier": "Moved earlier in the up-next order.",
                 "later": "Moved later in the up-next order.",
             }[action]

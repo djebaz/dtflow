@@ -20,7 +20,9 @@ Every Generate, LoRA, Inpaint and Plan input stays editable during a generation 
 
 While this window dispatches, **Start** on another paused queue reads **Start next**: the queue waits *up next* and starts by itself, on the same dispatch ownership, when the running queue ends (#125). Up-next queues run in the order shown in the list (`up next 1`, `up next 2`, ...), each on its own recorded backend. **Earlier** and **Later** move a waiting queue; **Pause** takes it out of the order and leaves it paused. Pressing **Generate** while a queue runs adds the request behind it as a one-item up-next queue (an Inpaint edit is staged the same way as a queued edit). The header run control counts the waiting queues.
 
-Auto-play continues after a queue finishes or is cancelled. It stops when dispatch itself ends: a failure, a local stop or closing the window. Whenever the owner stops, and whenever a new owner opens the state (a restart included), every waiting queue returns to paused, so nothing starts without a live owner.
+**Cancel** on a waiting queue cancels it at once (it holds no reservation, so nothing of it ran); from the CLI, `queue pause` and `queue cancel` on a waiting queue likewise take it out of the order or cancel it immediately. The CLI cannot enqueue or reorder, and `queue start` runs only the queue it names.
+
+Auto-play continues after a queue finishes or is cancelled; a paused running queue holds the order until you Resume or Cancel it. Picking the next queue and starting it are one step, so a Pause, Cancel or reorder made just before is respected. Auto-play stops when dispatch itself ends: a failure, a local stop or closing the window. Whenever the owner stops, and whenever a new owner opens the state (a restart included), every waiting queue returns to paused, so nothing starts without a live owner. Joining the order needs a live owner: once the running queue has ended, **Start next** is refused and Generate saves its one-item queue paused, saying so.
 
 ## CLI examples
 

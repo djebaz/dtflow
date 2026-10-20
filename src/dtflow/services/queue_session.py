@@ -135,37 +135,44 @@ async def dispatch_queue(
     on_settle: Callable[[str, str], None] | None = None,
     on_event: Callable[[str, BackendEvent], None] | None = None,
     on_next: Callable[[dict[str, Any], str], None] | None = None,
+    auto_play: bool = True,
 ) -> dict[str, Any]:
     """Make this process the dispatch owner and run the queue until it finishes or is cancelled, then auto-play.
 
     A held ownership lock raises ``StateBusyError`` before anything is dispatched. Interrupting (cancelling) this
-    coroutine records honest local-stop evidence through the generation service. When a queue settles, the owner starts
-    the first queue waiting up next on the same ownership (``on_next`` receives the settled view and the next id) and
-    returns the last settled view. Whenever it stops, by failure or interruption included, every queue still waiting up
-    next is restored paused: nothing starts without a live owner.
+    coroutine records honest local-stop evidence through the generation service. With ``auto_play`` the owner accepts
+    queues up next while it runs; when a queue settles it atomically claims and starts the first one waiting
+    (``on_next`` receives the settled view and the next id) and returns the last settled view. Whenever it stops, by
+    failure or interruption included, every queue still waiting is restored paused: nothing starts without a live owner.
+    Without ``auto_play`` (the CLI's ``queue start``) it runs exactly the queue it names.
     """
     policy = timeouts or TimeoutPolicy()
     store = SQLiteAttempts(state)
-    owned, reason = False, "stopped"
+    owned, reason, claimed = False, "stopped", None
     try:
         await store.open()
         owned = True
+        if auto_play:
+            await store.open_up_next()
         while True:
             final = await _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, on_event)
-            following = await store.next_queued()
+            claimed = None
+            if not auto_play:
+                return final
+            schedule_publish(state, reason="queue_settled")
+            following = await store.claim_queued()  # an empty order also closes it to new arrivals
             if following is None:
                 reason = "drained"
                 return final
             diagnostic_event(log, "queue.auto_play", level=logging.INFO, data={"settled": final["status"]})
             if on_next is not None:
                 on_next(final, following)
-            queue_id = following
+            queue_id = claimed = following
     finally:
         try:
-            if owned:
-                # Also after draining: a queue enqueued while the owner was closing must not wait for nobody.
+            if owned and auto_play:
                 try:
-                    await store.release_queued(reason)
+                    await store.release_queued(reason, claimed)
                 except Exception as exc:
                     diagnostic_event(
                         log,

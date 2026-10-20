@@ -2761,7 +2761,7 @@ def main():
             behind = []
             controller.queue_behind = lambda *args: behind.append(args)
             page.generateButton.click()
-            assert behind and "Queued behind" in page.generationStatusLabel.text()
+            assert behind and "Queuing behind" in page.generationStatusLabel.text()
             capture("generate-42-queued-behind")
             controller.queue_behind = shell.queue.queue_behind
             shell.activity.set(dispatching=False)
