@@ -841,6 +841,18 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                     (row["queue_id"],),
                 )
             ] if queue["status"] == "running" else []
+            latest_timing = connection.execute(
+                "SELECT at_utc, detail_json FROM queue_events WHERE queue_id=? AND kind='timing_snapshot' ORDER BY event_id DESC LIMIT 1",
+                (row["queue_id"],),
+            ).fetchone()
+            if latest_timing:
+                try:
+                    queue["timing_snapshot"] = {
+                        "at_utc": latest_timing["at_utc"],
+                        **json.loads(latest_timing["detail_json"]),
+                    }
+                except (TypeError, ValueError):
+                    pass
             queue["successful_durations"] = []
             if queue["status"] == "running" and summary["succeeded"] >= 1:
                 for event in connection.execute(
