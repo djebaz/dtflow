@@ -56,19 +56,21 @@ class QueueCountdown:
         self.signature = self.deadline = None
 
     def remaining(self, view: dict, now: float) -> float | None:
+        snapshot = view.get("timing_snapshot")
+        if snapshot and type(snapshot.get("eta_seconds")) is int and snapshot["eta_seconds"] >= 0:
+            try:
+                recorded = datetime.fromisoformat(snapshot["at_utc"])
+                if recorded.tzinfo is not None:
+                    age = max(0.0, (datetime.now().astimezone() - recorded).total_seconds())
+                    self.signature = (view["queue_id"], snapshot["at_utc"])
+                    return max(0.0, snapshot["eta_seconds"] - age)
+            except (TypeError, ValueError, OverflowError):
+                pass
         estimate = estimate_remaining(view)
         if estimate is None:
             self.reset()
             return None
-        signature = (
-            view["queue_id"],
-            view.get("started_at_utc"),
-            view.get("resume_event_id", 0),
-            tuple(view["summary"].get(state, 0) for state in ("pending", "running", *SETTLED)),
-            _duration_samples(view),
-            tuple(view.get("running_started_at_utc") or ()),
-        )
-        self.signature, self.deadline = signature, now + estimate
+        self.signature = (view["queue_id"], "live")
         return estimate
 
 
