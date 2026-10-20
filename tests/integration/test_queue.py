@@ -23,7 +23,7 @@ from dtflow.core.models import (
     SubmissionStage,
 )
 from dtflow.persistence.queues import QueueError, post_control, read_queues
-from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, SQLiteAttempts
+from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, SQLiteAttempts, state_is_owned
 from dtflow.services.generation import GenerationService
 from dtflow.services.queue import QueueDispatcher
 
@@ -313,7 +313,9 @@ async def test_dispatch_ownership_and_non_owner_access(state):
     """3B-O5: one owner per state directory; non-owners only read and post controls; a closed owner cannot dispatch."""
     store = SQLiteAttempts(state)
     other = SQLiteAttempts(state)
+    assert not state_is_owned(state) and not (state / "owner.lock").exists()
     await store.open()
+    assert state_is_owned(state)
     queue_id = await store.create_queue(BACKEND, 1, [item(0)])
     try:
         with pytest.raises(PersistenceError, match="Another process"):
@@ -328,6 +330,9 @@ async def test_dispatch_ownership_and_non_owner_access(state):
     finally:
         await other.aclose()
         await store.aclose()
+    lock_bytes = (state / "owner.lock").read_bytes()
+    assert not state_is_owned(state)
+    assert (state / "owner.lock").read_bytes() == lock_bytes
     with pytest.raises(PersistenceError, match="closed"):
         await store.claim_next(queue_id, 4)  # an old owner cannot continue dispatch
 

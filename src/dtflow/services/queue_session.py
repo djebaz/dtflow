@@ -24,9 +24,17 @@ from dtflow.core.models import (
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.gallery_snapshot import schedule_publish
-from dtflow.persistence.queues import change_up_next, delete_idle_queues, insert_queue, post_control, read_queues
+from dtflow.persistence.queues import (
+    change_up_next,
+    delete_idle_queues,
+    delete_queue,
+    insert_queue,
+    post_control,
+    read_queue_summaries,
+    read_queues,
+)
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
-from dtflow.persistence.store import SQLiteAttempts, StateBusyError
+from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
@@ -250,6 +258,15 @@ async def read_queue_views(state: Path, queue_id: str | None = None) -> tuple[di
     return await asyncio.to_thread(read_queues, Path(state), queue_id)
 
 
+async def read_queue_list(state: Path, described: tuple[str, ...] = ()) -> tuple[dict[str, Any], ...]:
+    """Summary-only queue views (no items or events) for a list; ``described`` skips the item-variation scan."""
+    if not (Path(state) / "attempts.sqlite3").is_file():
+        return ()
+    views = await asyncio.to_thread(read_queue_summaries, Path(state), described=described)
+    owned = await asyncio.to_thread(state_is_owned, Path(state))
+    return tuple(view | {"owner_active": owned} for view in views)
+
+
 async def post_queue_control(state: Path, queue_id: str, action: str, payload: dict[str, Any] | None = None) -> None:
     """Append one control for the dispatch owner to apply (at its next poll, or at the next start)."""
     await asyncio.to_thread(post_control, Path(state), queue_id, action, payload)
@@ -261,10 +278,15 @@ async def change_queue_order(state: Path, queue_id: str, action: str) -> None:
 
 
 async def clear_queues(state: Path, keep: tuple[str, ...] = ()) -> int:
-    """Delete finished, cancelled and paused queue records (never attempts or outputs); return how many went."""
+    """Clear history: delete finished and cancelled queue records (never attempts or outputs); return how many went."""
     if not (Path(state) / "attempts.sqlite3").is_file():
         return 0
     return await asyncio.to_thread(delete_idle_queues, Path(state), keep)
+
+
+async def remove_queue(state: Path, queue_id: str, keep: tuple[str, ...] = ()) -> None:
+    """Delete one paused, finished or cancelled queue record (never attempts or outputs)."""
+    await asyncio.to_thread(delete_queue, Path(state), queue_id, keep)
 
 
 async def set_concurrency(state: Path, value: int, *, queue_id: str | None = None, save_shared: bool = False) -> int:

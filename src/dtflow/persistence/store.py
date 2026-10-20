@@ -43,6 +43,43 @@ def patched_sqlite(version: str) -> bool:
     return parts >= (3, 51, 3) or (3, 50, 7) <= parts < (3, 51, 0) or (3, 44, 6) <= parts < (3, 45, 0)
 
 
+def _acquire_owner_lock(lock, *, initialize: bool = True) -> None:
+    """Acquire the execution owner's existing nonblocking platform lock."""
+    lock.seek(0)
+    if os.name == "nt":
+        import msvcrt
+
+        if initialize and lock.read(1) == b"":
+            lock.write(b"0")
+            lock.flush()
+        lock.seek(0)
+        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def state_is_owned(directory: Path) -> bool:
+    """Advisory ownership observation, without creating files or opening/reconciling the database.
+
+    Missing locks are available; unreadable or indeterminate locks remain busy. A later owner must still acquire
+    the real lock before touching state, since another process can acquire it after this observation.
+    """
+    try:
+        lock = (Path(directory) / "owner.lock").open("r+b")
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    with lock:
+        try:
+            _acquire_owner_lock(lock, initialize=False)
+        except OSError:
+            return True
+    return False
+
+
 class SQLiteAttempts(QueueMixin):
     """Own one local state directory until close; queues never replay an attempt."""
 
@@ -75,19 +112,7 @@ class SQLiteAttempts(QueueMixin):
         self.directory.mkdir(parents=True, exist_ok=True)
         self._lock = (self.directory / "owner.lock").open("a+b")
         try:
-            self._lock.seek(0)
-            if os.name == "nt":
-                import msvcrt
-
-                if self._lock.read(1) == b"":
-                    self._lock.write(b"0")
-                    self._lock.flush()
-                self._lock.seek(0)
-                msvcrt.locking(self._lock.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(self._lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _acquire_owner_lock(self._lock)
         except OSError as exc:
             self._lock.close()
             self._lock = None

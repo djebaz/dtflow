@@ -357,6 +357,56 @@ QLabel[state="unknown"] {
   font-size: ${type.small};
   font-weight: ${type.weightBody};
 }
+/* Queues header: one status chip per selected queue, and count chips that filter the items table. */
+QLabel[role="statusChip"] {
+  background: transparent;
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.inputRadius};
+  color: ${color.secondary};
+  font-size: 8pt;
+  font-weight: ${type.weightStrong};
+  padding: 3px 9px;
+}
+QLabel[role="statusChip"][state="ok"] {
+  border-color: ${color.statusOkBorder};
+  color: ${color.success};
+}
+QLabel[role="statusChip"][state="warning"] {
+  border-color: ${color.statusWarningBorder};
+  color: ${color.warning};
+}
+QLabel[role="statusChip"][state="error"] {
+  border-color: ${color.statusErrorBorder};
+  color: ${color.error};
+}
+QLabel[role="statusChip"][state="secondary"] {
+  background-color: ${color.selection};
+  border-color: ${color.selectionBorder};
+  color: ${color.badgeText};
+}
+QPushButton[role="filterChip"] {
+  border-radius: ${size.inputRadius};
+  font-size: ${type.small};
+  font-weight: ${type.weightEmphasis};
+  min-height: 0;
+  padding: 2px 8px;
+}
+QPushButton[role="filterChip"][state="ok"] {
+  color: ${color.success};
+}
+QPushButton[role="filterChip"][state="error"] {
+  color: ${color.error};
+}
+QPushButton[role="filterChip"][state="warning"] {
+  color: ${color.warning};
+}
+QPushButton[role="filterChip"][state="unknown"] {
+  color: ${color.unknown};
+}
+QPushButton[role="filterChip"]:checked {
+  background-color: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
 QProgressBar {
   background-color: ${color.barTrack};
   border: 1px solid ${color.border};

@@ -5,6 +5,7 @@ display data. The vocabularies below are the only ones the Queues page uses, so 
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from dtflow.services.connection import local_time
@@ -27,9 +28,49 @@ STATUS_TEXT = {
     "finished": "Finished.",
     "cancelled": "Cancelled. Pending items were cancelled; active ones stopped waiting locally.",
 }
+STATUS_CHIP = {
+    "paused": "Paused",
+    "queued": "Up next",
+    "running": "Running",
+    "finished": "Finished",
+    "cancelled": "Cancelled",
+}
 CONCURRENCY_HINT = (
-    "Local Draw Things remains one effective lane. This is a client policy, not entitlement, and the memory budget "
-    "currently admits about two real generations at once whatever the maximum."
+    "Maximum items this queue runs at once (1 to 4). Local Draw Things remains one effective lane. This is a client "
+    "policy, not entitlement, and the memory budget currently admits about two real generations at once whatever the "
+    "maximum."
+)
+NEW_CAP_HINT = (
+    "Maximum items a new queue runs at once (1 to 4). With cloud chosen this is also the shared default for new cloud "
+    "queues. Local Draw Things remains one effective lane; this is a client policy, not entitlement."
+)
+GROUPS = (("running", "Running"), ("queued", "Up next"), ("paused", "Paused"), ("history", "History"))
+VARIED_LABELS = {
+    "prompt": "prompts",
+    "model": "models",
+    "seed": "seeds",
+    "steps": "step counts",
+    "guidance": "guidance values",
+    "sampler": "samplers",
+    "size": "sizes",
+    "strength": "strengths",
+    "loras": "LoRA sets",
+}
+# Item-count chips under the header progress bar; each one filters the items table to its states.
+FILTERS = (
+    ("succeeded", "✓", ("succeeded",), "Succeeded"),
+    ("failed", "✗", ("failed", "save_failed"), "Failed or not saved"),
+    ("unknown", "?", ("unknown",), "No result"),
+    ("cancelled", "–", ("cancelled",), "Cancelled"),
+)
+# Segment order and levels of the header and list progress bars: settled outcomes first, then live work.
+SEGMENTS = (
+    ("succeeded", "ok"),
+    ("failed", "error"),
+    ("save_failed", "error"),
+    ("unknown", "unknown"),
+    ("cancelled", "warning"),
+    ("running", "accent"),
 )
 UNKNOWN_TEXT = (
     "No final result was received, so this generation most likely failed. It is not sent again automatically, and it "
@@ -139,6 +180,171 @@ def progress_text(summary: QueueSummary) -> str:
     return f"{summary.settled} of {summary.total} settled · {summary.succeeded} succeeded"
 
 
+@dataclass(frozen=True, slots=True)
+class QueueEntry:
+    """One rich queue-list row: what the queue asks for, where it runs, and how far it got."""
+
+    queue_id: str
+    group: str
+    title: str
+    subtitle: str
+    chip: str
+    level: str
+    settled: int
+    total: int
+    segments: tuple[tuple[str, int], ...]
+
+    @property
+    def text(self) -> str:
+        """Plain text for accessibility, filtering and tests."""
+        return f"{self.title} · {self.subtitle} · {self.chip.lower()} · {self.settled}/{self.total}"
+
+
+@dataclass(frozen=True, slots=True)
+class PrimaryAction:
+    key: str  # start, enqueue, pause, dequeue or resume
+    text: str
+    tooltip: str = ""
+
+
+def _first_line(text: str, limit: int) -> str:
+    line = next((part.strip() for part in text.splitlines() if part.strip()), "")
+    return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
+
+
+def queue_title(view: dict) -> str:
+    """The prompt snippet that names a queue (edits say so); ids stay in tooltips."""
+    first = view.get("first") or {}
+    prompt = _first_line(first.get("prompt") or "", 80) or "(no prompt)"
+    operation = first.get("operation") or "txt2img"
+    if operation == "txt2img":
+        return prompt
+    return ("Inpaint" if operation == "inpaint" else "Image to image") + f" · {prompt}"
+
+
+def plan_text(view: dict) -> str:
+    """Item count plus what the items differ in, e.g. ``4 items · 2 prompts, 2 step counts``."""
+    total = sum(view["summary"].values())
+    text = f"{total} item{'s' if total != 1 else ''}"
+    varied = view.get("varied") or {}
+    parts = [f"{count} {VARIED_LABELS.get(name, name)}" for name, count in varied.items() if name != "seed"]
+    if parts:
+        text += " · " + ", ".join(parts)
+    return text
+
+
+def created_text(at_utc: str, now: datetime | None = None) -> str:
+    """Local creation time: the clock for today, the date and clock before that."""
+    try:
+        moment = datetime.fromisoformat(at_utc).astimezone()
+    except (TypeError, ValueError):
+        return str(at_utc)
+    now = now or datetime.now().astimezone()
+    return moment.strftime("%H:%M" if moment.date() == now.date() else "%b %d %H:%M")
+
+
+def queue_subtitle(view: dict, now: datetime | None = None) -> str:
+    model = (view.get("first") or {}).get("model")
+    parts = [model] if model else []
+    return " · ".join([*parts, plan_text(view), backend_label(view), created_text(view["created_at_utc"], now)])
+
+
+def group_of(view: dict) -> str:
+    status = view["status"]
+    return status if status in ("running", "queued", "paused") else "history"
+
+
+def segments(summary: dict) -> tuple[tuple[str, int], ...]:
+    """(level, count) runs for a segmented progress bar; pending items are the empty track."""
+    return tuple((level, summary.get(state, 0)) for state, level in SEGMENTS if summary.get(state, 0))
+
+
+def status_chip(view: dict, up_next: list[str]) -> tuple[str, str]:
+    """(level, text) of the single status chip: the queue's status, its up-next place, or finished with problems."""
+    status = view["status"]
+    if status == "queued" and view["queue_id"] in up_next:
+        return "secondary", f"Up next {up_next.index(view['queue_id']) + 1}"
+    if status == "finished":
+        counts = view["summary"]
+        problems = counts["failed"] + counts["save_failed"] + counts["unknown"]
+        return ("warning" if problems else "ok"), "Finished"
+    return STATUS_LEVELS.get(status, "unknown"), STATUS_CHIP.get(status, status.capitalize())
+
+
+def queue_entries(views, now: datetime | None = None) -> tuple[QueueEntry, ...]:
+    """Rows grouped Running, Up next (in start order), Paused, then History; newest first within a group."""
+    order = up_next_ids(views)
+    newest = sorted(views, key=lambda view: (view["created_at_utc"], view["queue_id"]), reverse=True)
+    rows = []
+    for group, _ in GROUPS:
+        members = [view for view in newest if group_of(view) == group]
+        if group == "queued":
+            members.sort(key=lambda view: order.index(view["queue_id"]) if view["queue_id"] in order else len(order))
+        for view in members:
+            summary = summarize(view)
+            level, chip = status_chip(view, order)
+            rows.append(
+                QueueEntry(
+                    view["queue_id"],
+                    group,
+                    queue_title(view),
+                    queue_subtitle(view, now),
+                    chip,
+                    level,
+                    summary.settled,
+                    summary.total,
+                    segments(view["summary"]),
+                )
+            )
+    return tuple(rows)
+
+
+def matches(entry: QueueEntry, query: str) -> bool:
+    """Every word of the filter appears in the row's text or id (case-insensitive)."""
+    haystack = f"{entry.text} {entry.queue_id}".casefold()
+    return all(word in haystack for word in query.casefold().split())
+
+
+def filter_counts(summary: dict) -> dict[str, int]:
+    return {key: sum(summary.get(state, 0) for state in states) for key, _, states, _ in FILTERS}
+
+
+def filter_states(keys) -> frozenset[str]:
+    """Item states the checked count chips show; no chip checked shows every item."""
+    keys = frozenset(keys)
+    return frozenset(state for key, _, states, _ in FILTERS if key in keys for state in states)
+
+
+def primary_action(view: dict | None, available: "Controls", *, started: bool, owned: bool) -> PrimaryAction | None:
+    """The one state-dependent header action: Start, Start next, Pause or Resume (None: nothing applies now)."""
+    if view is None:
+        return None
+    if needs_recovery(view) and not owned:
+        if available.start:
+            return PrimaryAction("start", "Resume", "Recovers interrupted dispatch and continues pending items only.")
+        return None
+    if available.pause:
+        if view["status"] == "queued":
+            return PrimaryAction("dequeue", "Pause", "Leaves the up-next order; the queue stays paused until Start.")
+        return PrimaryAction("pause", "Pause", "Stops starting new items; running items finish.")
+    if available.enqueue:
+        return PrimaryAction("enqueue", "Start next", "Waits up next and starts by itself when the running queue ends.")
+    if available.resume and owned:
+        return PrimaryAction("resume", "Resume", "Starts new items again.")
+    if available.start:
+        if started:
+            return PrimaryAction("start", "Resume", "Continues the pending items from this window.")
+        return PrimaryAction("start", "Start", "Dispatches this queue from this window.")
+    if available.resume:
+        return PrimaryAction("resume", "Resume", "Posted for the process that dispatches this queue.")
+    return None
+
+
+def needs_recovery(view: dict) -> bool:
+    """Durable running state with an observed absent owner needs an explicit ownership-acquiring resume."""
+    return view["status"] == "running" and view.get("owner_active") is False
+
+
 def has_started(detail: dict | None) -> bool:
     """Whether the queue's recorded events show it was ever started (a new queue has only ``created``)."""
     return any(event["kind"] == "started" for event in (detail or {}).get("events", ()))
@@ -176,14 +382,6 @@ def up_next_ids(views) -> list[str]:
     return [
         view["queue_id"] for view in sorted(queued, key=lambda view: (view.get("up_next") or 0, view["created_at_utc"]))
     ]
-
-
-def ownership_badge(view: dict | None, *, dispatching_here: bool) -> str:
-    if dispatching_here:
-        return "THIS WINDOW DISPATCHES"
-    if view is not None and view["status"] == "running":
-        return "RUNNING · NOT DISPATCHED HERE"
-    return "NOT DISPATCHING"
 
 
 def outcome_note(row: ItemRow | None) -> tuple[str, str] | None:

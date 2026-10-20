@@ -57,6 +57,7 @@ from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
 from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
+from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
@@ -93,6 +94,7 @@ def load_ui(path: Path) -> QWidget:
         loader.registerCustomWidget(ImagePreview)
         loader.registerCustomWidget(SearchableComboBox)
         loader.registerCustomWidget(RunControl)
+        loader.registerCustomWidget(SegmentedBar)
         widget = loader.load(file)
     finally:
         file.close()
