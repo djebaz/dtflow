@@ -135,6 +135,7 @@ def test_restart_restores_a_reserved_item_as_pending_in_a_paused_queue(window, q
 
 def test_concurrency_threshold_color_and_shared_setting(window, qtbot):
     page = window.queue_page
+    assert page.newQueueCapSpinBox.maximum() == page.concurrencySpinBox.maximum() == 10
     page.newQueueCapSpinBox.setValue(3)
     assert page.newQueueCapSpinBox.property("level") == "elevated"
     page.newQueueCapSpinBox.setValue(2)
@@ -144,6 +145,8 @@ def test_concurrency_threshold_color_and_shared_setting(window, qtbot):
     page.newQueueCapSpinBox.setValue(3)
     qtbot.waitUntil(lambda: (window.state_dir / "settings.json").exists(), timeout=5000)
     assert load_cloud_concurrency(window.state_dir) == 3
+    page.newQueueCapSpinBox.setValue(10)
+    qtbot.waitUntil(lambda: load_cloud_concurrency(window.state_dir) == 10, timeout=5000)
     assert "memory budget" in page.concurrencySpinBox.toolTip()
 
 

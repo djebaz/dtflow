@@ -58,7 +58,7 @@ async def test_create_read_dispatch_and_controls_round_trip(tmp_path):
 @pytest.mark.asyncio
 async def test_invalid_cap_and_local_without_endpoint_create_nothing(tmp_path):
     with pytest.raises(ValidationError):
-        await create_queue(tmp_path, BACKEND, expand_items(base(), 1), 9)
+        await create_queue(tmp_path, BACKEND, expand_items(base(), 1), 11)
     with pytest.raises(ValidationError, match="endpoint"):
         await create_queue(tmp_path, {"name": "local", "endpoint": None}, expand_items(base(), 1))
     assert not (tmp_path / "attempts.sqlite3").exists()
@@ -67,15 +67,18 @@ async def test_invalid_cap_and_local_without_endpoint_create_nothing(tmp_path):
 @pytest.mark.asyncio
 async def test_concurrency_is_validated_before_anything_is_saved_or_posted(tmp_path):
     queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1))
-    for bad in (0, 5, True):
+    for bad in (0, 11, True):
         with pytest.raises(SettingsError):
             await set_concurrency(tmp_path, bad, queue_id=queue_id, save_shared=True)
     assert not (tmp_path / "settings.json").exists()
     assert await set_concurrency(tmp_path, 3, queue_id=queue_id, save_shared=True) == 3
     assert load_cloud_concurrency(tmp_path) == 3
+    assert await set_concurrency(tmp_path, 10, queue_id=queue_id, save_shared=True) == 10
+    assert load_cloud_concurrency(tmp_path) == 10
     with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
         assert db.execute("SELECT action, payload_json FROM queue_controls").fetchall() == [
-            ("cap", json.dumps({"cap": 3}))
+            ("cap", json.dumps({"cap": 3})),
+            ("cap", json.dumps({"cap": 10})),
         ]
 
 
