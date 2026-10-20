@@ -87,6 +87,10 @@ class QueueCountdown:
         )
         if signature != self.signature:
             self.signature, self.deadline = signature, now + estimate
+        elif self.deadline is not None and now >= self.deadline:
+            # A prediction expiring is not evidence that the running job finished.
+            # Keep the display explicitly estimated instead of freezing at 0:00.
+            self.deadline = now + max(1.0, median(_duration_samples(view)))
         return max(0.0, self.deadline - now)
 
 
