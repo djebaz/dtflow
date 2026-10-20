@@ -68,6 +68,9 @@ def test_eta_counts_down_between_polls_and_rebases_on_settlement_or_resume():
     ended = ended | {"summary": dict(ended["summary"], succeeded=2, pending=0), "successful_durations": [30, 10]}
     assert clock.remaining(ended, 30) == 20
     assert clock.remaining(ended, 100) == 0  # expiry is not completion; real progress stays authoritative
+    resumed = ended | {"resume_event_id": 42}
+    assert clock.remaining(resumed, 101) == 20  # Pause and Resume happened between polls; counts did not change
+    assert clock.remaining(dict(resumed), 102) == 19
     assert clock.remaining(ended | {"status": "paused"}, 101) is None
     assert clock.remaining(ended, 110) == 20
 

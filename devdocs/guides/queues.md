@@ -34,6 +34,8 @@ The shared bottom progress row and the header Run control tooltip show elapsed w
 
 After the **first successful item with a usable recorded duration**, a labeled estimate appears: median successful `backend_elapsed_seconds` × remaining items (pending + running) ÷ items actually running. Failed, cancelled and unknown items do not contribute durations; the configured maximum is never substituted for observed concurrency. A separate presentation timer counts down once a second, even while a database read is pending. Unchanged polls do not restart it; each observed item settlement, timing-sample update or change in running concurrency rebases it. The display uses minutes:seconds (hours:minutes:seconds for longer runs), reaches zero without claiming completion, and disappears while paused, cancelled, finished, without an active owner or with no running items. Resume starts a fresh estimate. Plans varying model, size or steps say the estimate is rough.
 
+Resume rebasing uses the latest applied durable Resume event, so even Pause and Resume between two polls reset the estimate. This leaves elapsed time's dispatch-start timestamp unchanged.
+
 Durations include provider-side queueing and are not pure inference time. The blue bar continues to show real settled counts, never estimated progress.
 
 ## CLI examples

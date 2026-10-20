@@ -817,6 +817,7 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
             queue["summary"] = summary
             queue["status"] = _status(row["state"], summary)
             queue["started_at_utc"] = None
+            queue["resume_event_id"] = 0
             if queue["status"] in ("running", "paused"):
                 started = connection.execute(
                     "SELECT at_utc FROM queue_events WHERE queue_id=? AND kind='started' ORDER BY event_id DESC LIMIT 1",
@@ -824,6 +825,12 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 ).fetchone()
                 if started:
                     queue["started_at_utc"] = started["at_utc"]
+                resumed = connection.execute(
+                    "SELECT event_id FROM queue_events WHERE queue_id=? AND kind='resume' ORDER BY event_id DESC LIMIT 1",
+                    (row["queue_id"],),
+                ).fetchone()
+                if resumed:
+                    queue["resume_event_id"] = resumed["event_id"]
             queue["successful_durations"] = []
             if queue["status"] == "running" and summary["succeeded"] >= 1:
                 for event in connection.execute(
