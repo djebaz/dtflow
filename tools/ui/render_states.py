@@ -893,11 +893,19 @@ def render_active_queue_states(shell, out):
         queue._sync()
         shell.shell.leftScroll.verticalScrollBar().setValue(0)
         queue._syncing = True
+        page.concurrencySpinBox.setValue(10)
+        page.newQueueCapSpinBox.setValue(10)
+        queue._syncing = False
+        queue._set_level(page.concurrencySpinBox, 10)
+        assert page.concurrencySpinBox.value() == page.newQueueCapSpinBox.value() == 10
+        snap("queues-36-max-at-once-ten")
+        queue._syncing = True
         page.concurrencySpinBox.setValue(4)
+        page.newQueueCapSpinBox.setValue(4)
         queue._syncing = False
         queue._set_level(page.concurrencySpinBox, 4)
-        # Defensive validator refusal: the bounded spin box normally prevents values outside 1..4.
-        queue._cap_changed(5)
+        # Defensive validator refusal: the bounded spin box normally prevents values outside 1..10.
+        queue._cap_changed(11)
         assert strip.rows["queue-message"].activityLabel.text() == "Concurrency not changed"
         assert page.concurrencySpinBox.property("level") == "elevated"
         snap("queues-20-concurrency-refused")
