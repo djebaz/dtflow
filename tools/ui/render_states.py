@@ -82,10 +82,33 @@ from dtflow.ui.theme import apply_theme  # noqa: E402
 
 RENDERED = {}  # state name -> {"seconds", "blank"}, in render order
 STARTED = time.monotonic()
+SELECTED_CATEGORY = "all"
+RENDER_CATEGORIES = ("all", "connection", "generate", "images", "image-navigation", "queues", "shell", "inpaint", "logs")
+
+
+def render_category(target):
+    """Return the review category for a screenshot path."""
+    path = Path(target)
+    if "image-navigation" in path.parts:
+        return "image-navigation"
+    return path.stem.split("-", 1)[0]
+
+
+def category_selected(target):
+    """Whether this screenshot belongs to the requested render category."""
+    category = render_category(target)
+    if SELECTED_CATEGORY == "all":
+        return True
+    if SELECTED_CATEGORY == "images":
+        return category in {"images", "image-navigation"}
+    return category == SELECTED_CATEGORY
 
 
 def report(target):
     """Print progress for one written state and remember it for the final summary."""
+    if not category_selected(target):
+        Path(target).unlink(missing_ok=True)
+        return
     image = QImage(str(target)).scaled(16, 16)
     colors = {image.pixel(x, y) for x in range(image.width()) for y in range(image.height())}
     name = Path(target).stem
@@ -2683,7 +2706,15 @@ def render_logs_states(shell, capture):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "tmp" / "ui-renders", help="Screenshot directory")
+    parser.add_argument(
+        "--category",
+        choices=RENDER_CATEGORIES,
+        default="all",
+        help="Render only one review category (default: all). Images includes Image Navigation.",
+    )
     args = parser.parse_args()
+    global SELECTED_CATEGORY
+    SELECTED_CATEGORY = args.category
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication([])
     apply_theme(app)
