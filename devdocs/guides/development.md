@@ -16,6 +16,10 @@ uv run --frozen --with pywinauto==0.6.9 python -m tools.ui.windows_gallery_bench
 
 See [AGENTS.md](../../AGENTS.md) for repository rules, [current development status](../current_dev_status.md) for implementation orientation, and [testing](testing.md) for validation commands, and [version bump and release](releasing.md) for the uv recipe and owner build handoff.
 
+## Import conventions
+
+Group imports into standard-library, third-party, and local-project sections, separated by blank lines. Within each group, alphabetical sorting is optional: preserve deliberate import initialization order where it matters. Ruff does not enforce import sorting (`I001`); unused imports (`F401`) and the remaining lint rules stay enabled. The formatter and 120-character line-length target are unchanged.
+
 ## Design principles
 
 These are implementation requirements, not a claim that every feature exists today.
