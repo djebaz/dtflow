@@ -253,6 +253,19 @@ async def test_fake_concurrency_is_configurable_and_bounded():
         await backend.aclose()
 
 
+def test_cloud_text_to_image_budget_admits_ten_32_mib_requests():
+    """Cloud text-to-image admission is bounded at one 32 MiB artifact per request."""
+    from dtflow.core.models import Capabilities, ResourceLimits
+    from dtflow.services.generation import _buffer_reservation
+
+    limits = ResourceLimits()
+    caps = Capabilities("drawthings-cloud", max_concurrency=10, limits=limits)
+    sample = request("cloud-budget")
+    assert limits.buffer_budget == 320 * 1024 * 1024
+    assert 10 * _buffer_reservation(sample, caps, None) == limits.buffer_budget
+    assert _buffer_reservation(sample, Capabilities("drawthings-grpc", limits=limits), None) > 32 * 1024 * 1024
+
+
 @pytest.mark.asyncio
 async def test_memory_refusal_and_cancelled_admission_never_dispatch(state):
     from dtflow.services.budget import BufferBudget

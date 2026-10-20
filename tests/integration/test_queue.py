@@ -39,7 +39,7 @@ class ScriptedBackend:
 
     def __init__(self, max_concurrency: int = 4, *, open_all: bool = False, lose: tuple[int, ...] = ()):
         self.inner = FakeBackend()
-        # Small limits keep the shared buffer budget (default 256 MiB, about two real requests) out of the way.
+        # Small limits isolate scheduler behavior from memory admission.
         limits = ResourceLimits(
             artifact_bytes=2**20,
             final_bytes=2**22,
@@ -140,6 +140,20 @@ class Harness:
 @pytest.fixture
 def state(tmp_path):
     return tmp_path / "state"
+
+
+@pytest.mark.asyncio
+async def test_ten_items_ten_slots_start_before_completion(state):
+    """The queue dispatcher admits ten concurrent items when configured to ten."""
+    backend = ScriptedBackend(10)
+    async with Harness(state, backend) as h:
+        queue_id = await h.store.create_queue(BACKEND, 10, [item(n) for n in range(10)])
+        run = h.run(queue_id)
+        await watch(lambda: len(backend.started) == 10)
+        assert backend.started == list(range(10)) and backend.active == backend.peak == 10
+        backend.release(*range(10))
+        final = await asyncio.wait_for(run, SETTLE)
+    assert final["summary"]["succeeded"] == 10
 
 
 @pytest.mark.asyncio
