@@ -741,6 +741,11 @@ def render_active_queue_states(shell, out):
     with patch.object(shell.runner, "submit", side_effect=hold_worker):
         form.backendCombo.setCurrentText("local")
         form.queueNavigationButton.click()
+        # Category processes start with a fresh form; do not depend on the Generate fixtures running first.
+        shell.generation_page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+        shell.generation_page.promptEdit.setPlainText(PROMPT)
+        shell.generation_page.seedEdit.setText("123")
+        shell.generation.lora.set_loras(())
         request = shell.generation.request_for_queue(preview=True)[0]
         present("running", ["succeeded", "running", "pending"], owned=True)
         # #121: one status chip and one state-dependent primary action in the queue header.
