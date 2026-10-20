@@ -2162,13 +2162,10 @@ def render_queue_states(shell, capture):
     page.planDryRunButton.click()
     capture("queues-03-plan-dry-run")
     page.planBox.setChecked(False)
-    for button, name in (
-        (page.cancelQueueButton, "queues-04-cancel-confirmation"),
-        (page.clearQueuesButton, "queues-05-clear-confirmation"),
-    ):
-        button.click()
-        capture(name)
-        shell.inline.dismiss()
+    # Cancel posts immediately without confirmation (#120), so only Clear has a confirmation state.
+    page.clearQueuesButton.click()
+    capture("queues-05-clear-confirmation")
+    shell.inline.dismiss()
     view = queue._view()
     counts = dict.fromkeys(view["summary"], 0)
     strip = activity_strip(page)
