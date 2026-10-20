@@ -89,7 +89,19 @@ SELECTED_CATEGORY = "all"
 def wants(category):
     """Return whether a render category should execute."""
     return SELECTED_CATEGORY in ("all", category)
-RENDER_CATEGORIES = ("all", "connection", "generate", "images", "image-navigation", "queues", "shell", "inpaint", "logs")
+
+
+RENDER_CATEGORIES = (
+    "all",
+    "connection",
+    "generate",
+    "images",
+    "image-navigation",
+    "queues",
+    "shell",
+    "inpaint",
+    "logs",
+)
 
 
 def render_category(target):
