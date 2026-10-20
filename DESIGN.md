@@ -469,6 +469,10 @@ first successful item with a usable duration, append a labeled remaining-time
 estimate using median successful duration and observed running-item concurrency.
 Hide the estimate when paused, cancelled, finished or awaiting a new owner; mark
 mixed model/size/step plans as rough. Estimates never drive the blue progress bar.
+Count down visibly once a second with a separate page-parented presentation timer
+and a monotonic deadline. Unchanged database polls preserve that deadline; observed
+settlements, timing samples, concurrency changes and Resume rebase the estimate.
+An expired estimate stays at zero until fresh evidence arrives; it never completes work.
 
 In the left context rail the queue list takes the flexible rail height under
 the QUEUES eyebrow, an icon-only Refresh and a filter field. Rows are painted

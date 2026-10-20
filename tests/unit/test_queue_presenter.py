@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from dtflow.ui.queue_presenter import (
+    QueueCountdown,
     concurrency_level,
     controls,
     elapsed_text,
@@ -45,12 +46,30 @@ def test_eta_uses_valid_successful_samples_and_observed_parallelism(samples, run
 def test_elapsed_and_eta_wording_disclose_estimation_and_mixed_settings():
     current = view("running", succeeded=1, running=1, pending=1)
     current.update(successful_durations=[30], started_at_utc="2026-10-20T12:00:00+00:00")
-    assert eta_text(current) == "~1 min left (estimate)"
+    assert eta_text(current) == "~1:00 left (estimate)"
     assert "rough for mixed settings" in eta_text(current | {"varied": {"steps": 2}})
     now = datetime(2026, 10, 20, 12, 2, 15, tzinfo=UTC)
     assert elapsed_text(current, now) == "Elapsed 2:15"
     assert elapsed_text(current | {"started_at_utc": None}, now) == ""
     assert elapsed_text(current | {"started_at_utc": "2026-10-20T12:00:00"}, now) == ""
+
+
+def test_eta_counts_down_between_polls_and_rebases_on_settlement_or_resume():
+    current = view("running", succeeded=1, running=1, pending=2)
+    current["successful_durations"] = [30]
+    clock = QueueCountdown()
+    assert clock.remaining(current, 10) == 90
+    assert clock.remaining(dict(current), 11) == 89  # an unchanged poll does not restart the estimate
+    assert eta_text(current, remaining=clock.remaining(current, 12)) == "~1:28 left (estimate)"
+    # A failed completion still reduces remaining work and rebases, without adding a duration sample.
+    ended = current | {"summary": dict(current["summary"], failed=1, pending=1)}
+    assert clock.remaining(ended, 20) == 60
+    assert clock.remaining(ended, 21) == 59
+    ended = ended | {"summary": dict(ended["summary"], succeeded=2, pending=0), "successful_durations": [30, 10]}
+    assert clock.remaining(ended, 30) == 20
+    assert clock.remaining(ended, 100) == 0  # expiry is not completion; real progress stays authoritative
+    assert clock.remaining(ended | {"status": "paused"}, 101) is None
+    assert clock.remaining(ended, 110) == 20
 
 
 def view(status="paused", items=(), **counts):

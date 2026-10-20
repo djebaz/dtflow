@@ -6,7 +6,7 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Added
 
-- **Queue elapsed time and ETA (#131):** the shared progress overlay and Run tooltip show elapsed wall time since the latest dispatch start. After the first successful item with a usable recorded duration, an explicitly labeled estimate uses the median successful duration, remaining items and observed running-item count. Mixed model/size/step plans carry a rough-estimate caveat; the blue progress bar still shows real settled counts only.
+- **Queue elapsed time and ETA (#131):** the shared progress overlay and Run tooltip show elapsed wall time since the latest dispatch start. After the first successful item with a usable recorded duration, an explicitly labeled estimate uses the median successful duration, remaining items and observed running-item count. It counts down visibly every second and rebases on observed settlements or changed concurrency/timing evidence; unchanged polls preserve the countdown. Mixed model/size/step plans carry a rough-estimate caveat; the blue progress bar still shows real settled counts only.
 
 ## Changed
 

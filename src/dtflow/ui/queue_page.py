@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemModel
@@ -57,6 +58,7 @@ from dtflow.ui.queue_presenter import (
     GROUPS,
     NEW_CAP_HINT,
     STATUS_TEXT,
+    QueueCountdown,
     concurrency_level,
     controls,
     elapsed_text,
@@ -178,6 +180,7 @@ class QueuePage:
         self._list_key: tuple | None = None
         self._output_folder: Path | None = None
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
+        self._countdown = QueueCountdown()
         self._event_relay = EventRelay(self._queue_backend_event, page)
         self._advance_relay = EventRelay(self._advanced, page)
         self.model = QueueItemModel(page)
@@ -207,6 +210,9 @@ class QueuePage:
         self._timer = QTimer(page)
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self.refresh)
+        self._timing_timer = QTimer(page)
+        self._timing_timer.setInterval(1000)
+        self._timing_timer.timeout.connect(self._timing_tick)
         page.refreshQueuesButton.clicked.connect(self.refresh)
         page.clearQueuesButton.clicked.connect(self.clear_queues)
         page.removeQueueButton.clicked.connect(self.remove)
@@ -485,9 +491,13 @@ class QueuePage:
 
     def _publish_run_state(self) -> None:
         if self._activity.generating:
+            self._timing_timer.stop()
+            self._countdown.reset()
             return
         view = self._run_view()
         if view is None:
+            self._timing_timer.stop()
+            self._countdown.reset()
             self._activity.present_run(RunState())
             return
 
@@ -542,9 +552,17 @@ class QueuePage:
             detail = "No runnable queue selected."
 
         if phase in ("running", "paused"):
-            timing = " · ".join(part for part in (elapsed_text(view), eta_text(view)) if part)
+            remaining = self._countdown.remaining(view, monotonic())
+            timing = " · ".join(part for part in (elapsed_text(view), eta_text(view, remaining=remaining)) if part)
             if timing:
                 detail += " " + timing
+                if not self._timing_timer.isActive() and not self._runner.closed:
+                    self._timing_timer.start()
+            else:
+                self._timing_timer.stop()
+        else:
+            self._timing_timer.stop()
+            self._countdown.reset()
 
         self._activity.present_run(
             RunState(
@@ -557,6 +575,13 @@ class QueuePage:
                 detail=detail,
             )
         )
+
+    def _timing_tick(self) -> None:
+        """Update timing presentation once a second without waiting for or initiating a database read."""
+        if self._runner.closed:
+            self._timing_timer.stop()
+            return
+        self._publish_run_state()
 
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode."""

@@ -15,16 +15,7 @@ from dtflow.services.connection import local_time
 MIN_ETA_SAMPLES = 1
 
 
-def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> float | None:
-    """Estimate remaining wall time from succeeded item timings and observed parallel work, never the configured cap.
-
-    Backend durations may include provider queueing. This does not predict per-item progress or elapsed running time.
-    """
-    if view["status"] != "running" or view.get("owner_active") is False:
-        return None
-    counts = view["summary"]
-    running = counts.get("running", 0)
-    remaining = counts.get("pending", 0) + running
+def _duration_samples(view: dict) -> tuple[float, ...]:
     samples = []
     for value in view.get("successful_durations", ()):
         if type(value) not in (int, float):
@@ -35,24 +26,65 @@ def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> fl
             continue
         if math.isfinite(duration) and duration >= 0:
             samples.append(duration)
+    return tuple(samples)
+
+
+def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> float | None:
+    """Estimate remaining wall time from succeeded item timings and observed parallel work, never the configured cap.
+
+    Backend durations may include provider queueing. This does not predict per-item progress or elapsed running time.
+    """
+    if view["status"] != "running" or view.get("owner_active") is False:
+        return None
+    counts = view["summary"]
+    running = counts.get("running", 0)
+    remaining = counts.get("pending", 0) + running
+    samples = _duration_samples(view)
     if running <= 0 or remaining <= 0 or len(samples) < max(1, minimum_samples):
         return None
     seconds = median(samples) * remaining / running
     return seconds if math.isfinite(seconds) and seconds > 0 else None
 
 
-def eta_text(view: dict) -> str:
+@dataclass
+class QueueCountdown:
+    """A monotonic ETA deadline: unchanged polls keep ticking; settlements or changed live lanes rebase it."""
+
+    signature: tuple | None = None
+    deadline: float | None = None
+
+    def reset(self) -> None:
+        self.signature = self.deadline = None
+
+    def remaining(self, view: dict, now: float) -> float | None:
+        estimate = estimate_remaining(view)
+        if estimate is None:
+            self.reset()
+            return None
+        signature = (
+            view["queue_id"],
+            view.get("started_at_utc"),
+            tuple(view["summary"].get(state, 0) for state in ("pending", "running", *SETTLED)),
+            _duration_samples(view),
+        )
+        if signature != self.signature:
+            self.signature, self.deadline = signature, now + estimate
+        return max(0.0, self.deadline - now)
+
+
+def _clock(seconds: int) -> str:
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+
+def eta_text(view: dict, *, remaining: float | None = None) -> str:
     """Explicitly estimated remaining time, with a caveat when model, size or step count varies."""
-    seconds = estimate_remaining(view)
-    if seconds is None:
+    estimate = estimate_remaining(view)
+    if estimate is None:
         return ""
-    if seconds < 60:
-        duration = f"{math.ceil(seconds)} s"
-    elif seconds < 3600:
-        duration = f"{math.ceil(seconds / 60)} min"
-    else:
-        minutes = math.ceil(seconds / 60)
-        duration = f"{minutes // 60} h {minutes % 60} min"
+    seconds = estimate if remaining is None else remaining
+    duration = _clock(math.ceil(max(0, seconds)))
     varied = view.get("varied") or {}
     caveat = "; rough for mixed settings" if any(varied.get(key, 0) > 1 for key in ("model", "size", "steps")) else ""
     return f"~{duration} left (estimate{caveat})"
@@ -67,10 +99,7 @@ def elapsed_text(view: dict, now: datetime | None = None) -> str:
         seconds = max(0, int(((now or datetime.now().astimezone()) - started).total_seconds()))
     except (TypeError, ValueError, OverflowError):
         return ""
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    clock = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
-    return f"Elapsed {clock}"
+    return f"Elapsed {_clock(seconds)}"
 
 
 ITEM_LEVELS = {

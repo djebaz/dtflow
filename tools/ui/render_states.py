@@ -711,6 +711,11 @@ def render_active_queue_states(shell, out):
         assert "Elapsed" in queue._activity.run_state.detail and "estimate" in queue._activity.run_state.detail
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
         snap("queues-33-elapsed-eta")
+        with patch("dtflow.ui.queue_page.monotonic", return_value=queue._countdown.deadline - 89):
+            queue._timing_tick()
+        assert "~1:29 left" in queue._activity.run_state.detail
+        assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
+        snap("queues-34-eta-countdown")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
         assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "resume"
         snap("queues-12-paused-after-start")

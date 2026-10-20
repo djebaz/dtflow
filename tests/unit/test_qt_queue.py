@@ -172,6 +172,8 @@ def test_queue_timing_reaches_overlay_and_tooltip_without_changing_real_progress
     page.createQueueButton.click()
     qtbot.waitUntil(lambda: queue.model.rowCount() == 3, timeout=5000)
     monkeypatch.setattr(queue, "refresh", lambda: None)
+    tick = [10.0]
+    monkeypatch.setattr(queue_ui, "monotonic", lambda: tick[0])
     current = queue._view() | queue._detail
     current.update(
         status="running",
@@ -184,8 +186,15 @@ def test_queue_timing_reaches_overlay_and_tooltip_without_changing_real_progress
     window.activity.set(dispatching=True)
     queue._read_done(([current], current, 4), None)
     row = activity_strip(page).rows["run"]
-    assert "Elapsed" in row.activityDetail.text() and "~1 min left (estimate)" in row.activityDetail.text()
+    assert "Elapsed" in row.activityDetail.text() and "~1:00 left (estimate)" in row.activityDetail.text()
     assert "estimate" in window.shell.runControl.toolTip()
+    assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
+    assert queue._timing_timer.isActive() and queue._timing_timer.interval() == 1000
+    tick[0] += 1
+    queue._timing_tick()
+    assert "~0:59 left" in row.activityDetail.text()
+    queue._read_done(([current], current, 4), None)
+    assert "~0:59 left" in row.activityDetail.text()  # an unchanged database poll preserves the countdown
     assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
     paused = dict(current, status="paused")
     queue._read_done(([paused], paused, 4), None)
@@ -193,3 +202,4 @@ def test_queue_timing_reaches_overlay_and_tooltip_without_changing_real_progress
     queue._dispatching = None
     window.activity.set(dispatching=False)
     queue._timer.stop()
+    assert not queue._timing_timer.isActive()
