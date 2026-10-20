@@ -146,3 +146,18 @@ def test_concurrency_threshold_color_and_shared_setting(window, qtbot):
     assert "memory budget" in page.concurrencySpinBox.toolTip()
 
 
+def test_new_queue_selection_resets_filters_and_reads_items_without_idle_polling(window, qtbot):
+    """Selection after creation clears queue-scoped filters and loads detail even while the page is hidden."""
+    page = window.queue_page
+    page.createQueueButton.click()
+    qtbot.waitUntil(lambda: page.queueItemsView.model().rowCount() == 1, timeout=5000)
+    first = window.queue._selected
+    page.failedFilterButton.setChecked(True)
+    page.queueCountSpinBox.setValue(2)
+    page.createQueueButton.click()
+    qtbot.waitUntil(
+        lambda: window.queue._selected != first and page.queueItemsView.model().rowCount() == 2, timeout=5000
+    )
+    assert not page.failedFilterButton.isChecked()
+    assert not any(page.queueItemsView.isRowHidden(row) for row in range(2))
+    assert not window.queue._timer.isActive()

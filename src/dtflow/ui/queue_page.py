@@ -65,6 +65,7 @@ from dtflow.ui.queue_presenter import (
     has_started,
     item_rows,
     matches,
+    needs_recovery,
     outcome_note,
     outcome_text,
     primary_action,
@@ -319,15 +320,18 @@ class QueuePage:
             if active is not None and active["status"] == "running":
                 self._dispatch_started = True
         if self._select_after in self._views:
-            self._selected, self._select_after = self._select_after, None
+            self._set_selected(self._select_after)
+            self._select_after = None
         elif self._selected not in self._views:
-            self._selected = None
+            self._set_selected(None)
         self._render()
         busy = self.dispatching_here or any(view["status"] in ("running", "queued") for view in views)
         if busy or self.page.queueWorkspace.isVisible():
             self._timer.start(POLL_MS if busy else IDLE_POLL_MS)
         else:
             self._timer.stop()
+        if self._view() is not None and self._detail_for(self._view()) is None:
+            self.refresh()  # selection changed during this read: fetch its items even when idle polling is stopped
 
     # -- rendering -------------------------------------------------------------------------------------------------
     def _render(self) -> None:
@@ -402,6 +406,8 @@ class QueuePage:
         level, chip = status_chip(view, up_next_ids(self._views.values()))
         if self._dispatching == view["queue_id"]:
             owner = "This window dispatches it."
+        elif needs_recovery(view):
+            owner = "No dispatch owner is active. Resume recovers pending items without replaying uncertain attempts."
         elif view["status"] == "running":
             owner = "Dispatched by another process; its controls are posted to that process."
         else:
@@ -496,7 +502,7 @@ class QueuePage:
                 phase = "running"
                 if status == "running" and available.pause:
                     action = "pause"
-        elif status == "running":
+        elif status == "running" and not needs_recovery(view):
             # Another process owns this queue. Show activity, but keep the compact
             # control status-only so a header click never controls foreign work.
             phase = "running"
@@ -635,14 +641,21 @@ class QueuePage:
         queue_id = item.data(ITEM_ID_ROLE) if item is not None else None
         if queue_id is None or queue_id == self._selected:
             return  # a group heading, or the queue already shown
+        self._set_selected(queue_id)
+        self._render()
+        self.refresh()
+
+    def _set_selected(self, queue_id: str | None) -> None:
+        """Reset queue-scoped presentation for both user selection and selection after creation."""
+        if queue_id == self._selected:
+            return
         if feedback(self.page)._armed:
             feedback(self.page).dismiss()
         for name in FILTER_BUTTONS.values():
             getattr(self.page, name).setChecked(False)  # item filters belong to the queue they were set on
         self._selected = queue_id
-        self._detail = None
-        self._render()
-        self.refresh()
+        if self._detail is not None and self._detail["queue_id"] != queue_id:
+            self._detail = None
 
     def select_queue(self, queue_id: str) -> None:
         item = next((item for item in self.queue_items() if item.data(ITEM_ID_ROLE) == queue_id), None)
@@ -853,7 +866,9 @@ class QueuePage:
         available = self._controls_for(view)
         if view is None:
             return
-        if available.pause:
+        if needs_recovery(view) and available.start and view is self._view():
+            self.start()
+        elif available.pause:
             self._post("pause", view["queue_id"])
         elif available.resume:
             self._post("resume", view["queue_id"])

@@ -709,6 +709,13 @@ def render_active_queue_states(shell, out):
         present("running", ["succeeded", "running", "pending"])
         assert queue._activity.run_state.action is None and "another process" in page.queueStateLabel.toolTip()
         snap("queues-13-foreign-running")
+        stale = present("running", ["succeeded", "running", "pending"])
+        stale["owner_active"] = False
+        queue._read_done(([stale], stale, 2), None)
+        queue._timer.stop()
+        assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "start"
+        assert "No dispatch owner" in page.queueStateLabel.toolTip()
+        snap("queues-31-interrupted-dispatch")
         present("running", ["unknown", "running", "pending"], owned=True)
         assert page.queuePrimaryButton.isEnabled() and page.cancelQueueButton.isEnabled()  # unknown blocks nothing
         snap("queues-14-unknown-not-blocking")
@@ -785,6 +792,14 @@ def render_active_queue_states(shell, out):
         assert page.removeQueueButton.property("confirmationPending")
         snap("queues-30-remove-confirmation")
         shell.inline.dismiss()
+        page.failedFilterButton.setChecked(True)
+        fresh = dict(history[4], queue_id="offline-queue-new")
+        queue._select_after = fresh["queue_id"]
+        queue._read_done(([fresh], fresh, 2), None)
+        queue._timer.stop()
+        assert not page.failedFilterButton.isChecked()
+        assert not any(page.queueItemsView.isRowHidden(row) for row in range(len(fresh["items"])))
+        snap("queues-32-new-queue-filter-reset")
         queue._selected = queue_id
         present("paused", ["pending", "pending"], started=False)
         page.planBox.setChecked(True)

@@ -15,9 +15,12 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Fixed
 
+- **Queue recovery and selection:** interrupted running queues offer Resume after their dispatch owner stops; taking over still acquires the execution lock and preserves uncertain outcomes. Selecting a newly created queue clears the previous queue's outcome filters and immediately loads its items, including while idle polling is stopped.
+
 - **Logs export (#111):** exporting the current, still-growing session works: the export pins the session as it stood at start, follows rotation renames and leaves later appends out. Unsealed or incomplete sessions export with their evidence state and reasons disclosed instead of being refused. Exports show progress with Cancel in the shared bottom overlay, run one at a time, keep running and report their outcome after leaving Logs, and summarize the result as file name, record count and source state instead of a raw manifest. A reader pass no longer treats appends to the same files as a snapshot change, so busy live sessions no longer read as incomplete for that reason. Export selection now rejects a conservative candidate byte-budget overrun explicitly (no partial success); full pipeline memory budgets remain #106. Not yet accepted on Windows.
 
 ## Release audit
 
 - Pending PR: [#111](https://github.com/djebaz/dtflow/pull/111) (implements [issue #108](https://github.com/djebaz/dtflow/issues/108)); this is post-5.0.0-release-preparation source work, not part of the merged [#109](https://github.com/djebaz/dtflow/pull/109) version bump.
 - Acceptance still required: native Windows Logs/export/cancellation/fault checks (#107) and end-to-end worker/pending/display budgets (#106). No tag or publication is implied by this note.
+

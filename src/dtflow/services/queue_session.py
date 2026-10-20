@@ -34,7 +34,7 @@ from dtflow.persistence.queues import (
     read_queues,
 )
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
-from dtflow.persistence.store import SQLiteAttempts, StateBusyError
+from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
@@ -262,7 +262,9 @@ async def read_queue_list(state: Path, described: tuple[str, ...] = ()) -> tuple
     """Summary-only queue views (no items or events) for a list; ``described`` skips the item-variation scan."""
     if not (Path(state) / "attempts.sqlite3").is_file():
         return ()
-    return await asyncio.to_thread(read_queue_summaries, Path(state), described=described)
+    views = await asyncio.to_thread(read_queue_summaries, Path(state), described=described)
+    owned = await asyncio.to_thread(state_is_owned, Path(state))
+    return tuple(view | {"owner_active": owned} for view in views)
 
 
 async def post_queue_control(state: Path, queue_id: str, action: str, payload: dict[str, Any] | None = None) -> None:

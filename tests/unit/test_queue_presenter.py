@@ -9,6 +9,7 @@ from dtflow.ui.queue_presenter import (
     item_rows,
     outcome_note,
     outcome_text,
+    primary_action,
     status_chip,
     summarize,
 )
@@ -54,6 +55,16 @@ def test_control_matrix_by_status(status, start, pause, resume, cancel):
     assert not controls(view(status), dispatching_here=False, generating=True).start  # the lock is in use
     assert controls(None, dispatching_here=False) == controls(None, dispatching_here=True)
     assert controls(view(status), dispatching_here=False, started=True).resume == (status == "paused")
+    if status == "running":
+        for owner_active in (True, False):
+            current = view(status) | {"owner_active": owner_active}
+            action = primary_action(current, available, started=True, owned=False)
+            assert action.key == ("pause" if owner_active else "start")
+            assert action.text == ("Pause" if owner_active else "Resume")
+            local = controls(current, dispatching_here=True, started=True, owned=True)
+            assert primary_action(current, local, started=True, owned=True).key == "pause"
+        busy = controls(current, dispatching_here=False, generating=True)
+        assert primary_action(current, busy, started=True, owned=False) is None
 
 
 def test_unknown_is_a_warning_with_an_aborted_note_and_failed_stays_an_error():

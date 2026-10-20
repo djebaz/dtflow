@@ -319,6 +319,10 @@ def primary_action(view: dict | None, available: "Controls", *, started: bool, o
     """The one state-dependent header action: Start, Start next, Pause or Resume (None: nothing applies now)."""
     if view is None:
         return None
+    if needs_recovery(view) and not owned:
+        if available.start:
+            return PrimaryAction("start", "Resume", "Recovers interrupted dispatch and continues pending items only.")
+        return None
     if available.pause:
         if view["status"] == "queued":
             return PrimaryAction("dequeue", "Pause", "Leaves the up-next order; the queue stays paused until Start.")
@@ -334,6 +338,11 @@ def primary_action(view: dict | None, available: "Controls", *, started: bool, o
     if available.resume:
         return PrimaryAction("resume", "Resume", "Posted for the process that dispatches this queue.")
     return None
+
+
+def needs_recovery(view: dict) -> bool:
+    """Durable running state with an observed absent owner needs an explicit ownership-acquiring resume."""
+    return view["status"] == "running" and view.get("owner_active") is False
 
 
 def has_started(detail: dict | None) -> bool:
