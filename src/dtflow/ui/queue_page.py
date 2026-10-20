@@ -2,8 +2,8 @@
 
 Reads are read-only polls of the durable state; every control is posted through the same function ``dtflow queue``
 uses, so a window and a CLI process drive a queue identically. Only Start makes this window the dispatch owner, which
-holds the state ownership lock for the run (see ``Activity``). Wording after cancel or override comes from recorded
-evidence, and neither action claims remote cancellation or resolution.
+holds the state ownership lock for the run (see ``Activity``). Wording after cancel comes from recorded evidence,
+and cancel never claims remote cancellation.
 """
 
 import asyncio
@@ -47,19 +47,17 @@ from dtflow.ui.planning_presenter import (
 )
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
-    CANCEL_TEXT,
     CONCURRENCY_HINT,
-    OVERRIDE_TEXT,
     concurrency_level,
     controls,
     event_lines,
     has_started,
     item_rows,
+    outcome_note,
     outcome_text,
     ownership_badge,
     progress_text,
     summarize,
-    uncertainty_text,
 )
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -78,7 +76,6 @@ WIRED_CONTROLS = (
     "resumeQueueButton",
     "cancelQueueButton",
     "queueItemsView",
-    "overrideReservationButton",
     "planBox",
     "planDryRunButton",
     *PLAN_INPUTS,
@@ -157,8 +154,7 @@ class QueuePage:
         page.startQueueButton.clicked.connect(self.start)
         page.pauseQueueButton.clicked.connect(lambda: self._post("pause"))
         page.resumeQueueButton.clicked.connect(lambda: self._post("resume"))
-        page.cancelQueueButton.clicked.connect(self.cancel)
-        page.overrideReservationButton.clicked.connect(self.override)
+        page.cancelQueueButton.clicked.connect(lambda: self._post("cancel"))
         page.queueList.currentRowChanged.connect(self._select_row)
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
@@ -298,7 +294,7 @@ class QueuePage:
 
     @staticmethod
     def _editable(view: dict | None) -> bool:
-        return view is not None and view["status"] in ("paused", "running", "blocked")
+        return view is not None and view["status"] in ("paused", "running")
 
     def _show_cap(self, view: dict | None) -> None:
         """An editable queue shows its own maximum; with the cloud provider chosen and no editable queue the box edits
@@ -396,7 +392,7 @@ class QueuePage:
                     detail += f" Item #{running_items[0]['position']} step {step}/{steps}."
             elif running_items:
                 detail += f" {len(running_items)} items running."
-        elif status in ("finished", "cancelled", "blocked"):
+        elif status in ("finished", "cancelled"):
             # Settled/problem states stay on the Queues page. The global control
             # returns to its quiet idle presentation instead of becoming a
             # persistent completion/error badge for whichever queue is selected.
@@ -429,7 +425,6 @@ class QueuePage:
         page.pauseQueueButton.setEnabled(available.pause)
         page.resumeQueueButton.setEnabled(available.resume)
         page.cancelQueueButton.setEnabled(available.cancel)
-        page.overrideReservationButton.setEnabled(available.override)
         page.createQueueButton.setEnabled(not self.dispatching_here and not self._activity.generating)
         page.clearQueuesButton.setEnabled(
             any(
@@ -452,8 +447,10 @@ class QueuePage:
         page = self.page
         row = self.model.row_at(page.queueItemsView.currentIndex().row())
         view = self._view()
-        level, text = uncertainty_text(row)
-        self._show(page.uncertaintyLabel, level, text)
+        note = outcome_note(row)
+        page.uncertaintyBox.setVisible(note is not None)
+        if note is not None:
+            self._show(page.uncertaintyLabel, *note)
         if row is None:
             for name in ("itemIdLabel", "attemptIdLabel", "itemBackendLabel", "itemOutputsLabel"):
                 getattr(page, name).setText("—")
@@ -726,9 +723,6 @@ class QueuePage:
 
         return done
 
-    def cancel(self) -> None:
-        self._confirm_control(self.page.cancelQueueButton, "Cancel queue", CANCEL_TEXT, "cancel")
-
     def clear_queues(self) -> None:
         panel = feedback(self.page)
         if panel.commit(self.page.clearQueuesButton):
@@ -740,20 +734,6 @@ class QueuePage:
 
         confirm_action(self.page, self.page.clearQueuesButton, "Clear queues", CLEAR_TEXT, proceed, danger=True)
 
-    def _confirm_control(self, button, title, text, action):
-        panel = feedback(self.page)
-        if panel.commit(button):
-            return
-        if self._view() is None:
-            return
-        selected = self._selected
-
-        def proceed():
-            if selected == self._selected and self._view() is not None:
-                self._post(action)
-
-        confirm_action(self.page, button, title, text, proceed)
-
     def _cleared(self, removed, failure) -> None:
         if failure is not None:
             self._message(present_generation_failure(failure))
@@ -761,11 +741,6 @@ class QueuePage:
         text = f"{removed} queue(s) removed." if removed else "No queue could be removed."
         self._message(Presentation("ok", "Queues cleared", text))
         self.refresh()
-
-    def override(self) -> None:
-        self._confirm_control(
-            self.page.overrideReservationButton, "Acknowledge uncertain reservation", OVERRIDE_TEXT, "override"
-        )
 
     # -- concurrency -----------------------------------------------------------------------------------------------
     def _cap_changed(self, value: int) -> None:

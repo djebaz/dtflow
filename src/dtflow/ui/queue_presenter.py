@@ -14,16 +14,15 @@ ITEM_LEVELS = {
     "running": "warning",
     "succeeded": "ok",
     "failed": "error",
-    "unknown": "unknown",  # distinct from failed: the request may have reached the server
+    "unknown": "warning",  # no final result was received: most likely failed, but not proven, and never re-sent
     "save_failed": "error",
     "cancelled": "warning",
 }
 SETTLED = ("succeeded", "failed", "unknown", "save_failed", "cancelled")
-STATUS_LEVELS = {"paused": "warning", "running": "ok", "blocked": "unknown", "finished": "ok", "cancelled": "warning"}
+STATUS_LEVELS = {"paused": "warning", "running": "ok", "finished": "ok", "cancelled": "warning"}
 STATUS_TEXT = {
     "paused": "Paused. Nothing dispatches until Start.",
     "running": "Running.",
-    "blocked": "Blocked by an unresolved uncertain reservation. Resume cannot clear it.",
     "finished": "Finished.",
     "cancelled": "Cancelled. Pending items were cancelled; active ones stopped waiting locally.",
 }
@@ -31,17 +30,9 @@ CONCURRENCY_HINT = (
     "Local Draw Things remains one effective lane. This is a client policy, not entitlement, and the memory budget "
     "currently admits about two real generations at once whatever the maximum."
 )
-UNRESOLVED_UNKNOWN = (
-    "Outcome unknown: the request may have reached the server and may still complete. It is never replayed, and "
-    "Resume does not clear it. Override only acknowledges it for scheduling."
-)
-CANCEL_TEXT = (
-    "Pending items will be cancelled and active attempts will stop waiting locally. DTFlow does not confirm "
-    "cancellation on the server, so an active item may end as outcome unknown."
-)
-OVERRIDE_TEXT = (
-    "This acknowledges every unresolved uncertain reservation on this backend so other work may continue. It is "
-    "recorded, does not resolve or replay any attempt, and means remote concurrency is no longer guaranteed."
+UNKNOWN_TEXT = (
+    "No final result was received, so this generation most likely failed. It is not sent again automatically, and it "
+    "does not block other items or queues."
 )
 OWNERS = ("here", "none")
 
@@ -51,7 +42,6 @@ class ItemRow:
     item_id: str
     position: int
     state: str
-    overridden: bool
     attempt_id: str | None
     seed: int
     outputs: tuple[str, ...]
@@ -73,7 +63,7 @@ class ItemRow:
 
     @property
     def state_text(self) -> str:
-        return self.state.replace("_", " ") + (" (overridden)" if self.overridden else "")
+        return "no result" if self.state == "unknown" else self.state.replace("_", " ")
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +84,6 @@ class Controls:
     pause: bool
     resume: bool
     cancel: bool
-    override: bool
 
 
 def item_rows(view: dict) -> tuple[ItemRow, ...]:
@@ -108,7 +97,6 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item["item_id"],
                 item["position"],
                 item["state"],
-                item["overridden"],
                 item["attempt_id"],
                 item["seed"],
                 tuple(path for path in artifacts if path != metadata),
@@ -148,12 +136,6 @@ def progress_text(summary: QueueSummary) -> str:
     return f"{summary.settled} of {summary.total} settled · {summary.succeeded} succeeded"
 
 
-def has_unresolved_unknown(view: dict) -> bool:
-    return any(item["state"] == "unknown" and not item["overridden"] for item in view["items"]) or bool(
-        view["blocked_by_uncertainty"]
-    )
-
-
 def has_started(detail: dict | None) -> bool:
     """Whether the queue's recorded events show it was ever started (a new queue has only ``created``)."""
     return any(event["kind"] == "started" for event in (detail or {}).get("events", ()))
@@ -164,18 +146,13 @@ def controls(view: dict | None, *, dispatching_here: bool, generating: bool = Fa
     post controls for whichever process owns dispatch, or for the next start. Resume is offered only for a queue that
     has run before: a new queue is started, not resumed."""
     if view is None:
-        return Controls(False, False, False, False, False)
+        return Controls(False, False, False, False)
     status = view["status"]
     return Controls(
-        start=(
-            status in ("paused", "running") or (status == "blocked" and "override" in view.get("pending_controls", ()))
-        )
-        and not dispatching_here
-        and not generating,
+        start=status in ("paused", "running") and not dispatching_here and not generating,
         pause=status == "running",
         resume=status == "paused" and started,
-        cancel=status in ("paused", "running", "blocked"),
-        override=has_unresolved_unknown(view),
+        cancel=status in ("paused", "running"),
     )
 
 
@@ -187,15 +164,15 @@ def ownership_badge(view: dict | None, *, dispatching_here: bool) -> str:
     return "NOT DISPATCHING"
 
 
-def uncertainty_text(row: ItemRow | None) -> tuple[str, str]:
-    """(level, text) for the selected item's reservation."""
+def outcome_note(row: ItemRow | None) -> tuple[str, str] | None:
+    """(level, text) for the selected item when its outcome needs a sentence; None hides the Outcome card."""
     if row is None:
-        return "unknown", "No unresolved reservation selected."
+        return None
     if row.state == "unknown":
-        if row.overridden:
-            return "warning", "Acknowledged by override (recorded). The attempt stays unknown and is never replayed."
-        return "unknown", UNRESOLVED_UNKNOWN
-    return "ok", "No unresolved reservation for this item."
+        return "warning", UNKNOWN_TEXT
+    if row.state in ("failed", "save_failed") and row.failure_code:
+        return "error", f"{row.state_text.capitalize()}: {row.failure_code}"
+    return None
 
 
 def concurrency_level(value: int) -> str:
@@ -232,7 +209,8 @@ def event_lines(view: dict) -> str:
         elif kind == "backend_submission_possible":
             summary = f"{item_label(detail)} submitted"
         elif kind == "item_settled":
-            state = str(detail.get("state", "settled")).replace("_", " ")
+            state = str(detail.get("state", "settled"))
+            state = "no result" if state == "unknown" else state.replace("_", " ")
             if state == "succeeded":
                 summary = f"{item_label(detail)} completed"
             else:
@@ -264,10 +242,10 @@ def outcome_text(view: dict) -> tuple[str, str, str]:
     if status == "finished":
         problems = [
             f"{counts[state]} {label}"
-            for state, label in (("failed", "failed"), ("save_failed", "not saved"), ("unknown", "outcome unknown"))
+            for state, label in (("failed", "failed"), ("save_failed", "not saved"), ("unknown", "no result"))
             if counts[state]
         ]
-        level = "unknown" if counts["unknown"] else "error" if problems else "ok"
+        level = "error" if problems else "ok"
         return (
             level,
             "Finished",
@@ -275,6 +253,4 @@ def outcome_text(view: dict) -> tuple[str, str, str]:
         )
     if status == "cancelled":
         return "warning", "Cancelled", f"{counts['cancelled']} item(s) not run; {counts['succeeded']} succeeded."
-    if status == "blocked":
-        return "unknown", "Blocked", "An uncertain reservation holds this backend. Inspect the unknown item first."
     return "warning", "Stopped", f"{counts['pending']} item(s) still pending; press Start to continue."

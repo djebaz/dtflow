@@ -286,9 +286,11 @@ Completion order may differ from submission order. Keep outputs, errors and meta
 
 For normal cloud scheduling, active attempts plus unresolved reservations must not exceed the configured maximum. The tested local Draw Things/Bridge backend uses its separate one-generation policy, regardless of the cloud maximum. A disconnect or local cancellation with possible remote execution does not free a slot; apply the uncertainty rules below.
 
-Phase 3B fixture acceptance includes a ten-item/four-slot scenario with deliberately out-of-order completions: item 5 starts while other initial items remain active, rolling refill stays bounded, results retain item identity, and an uncertain attempt blocks replacement dispatch.
+Phase 3B fixture acceptance includes a ten-item/four-slot scenario with deliberately out-of-order completions: item 5 starts while other initial items remain active, rolling refill stays bounded, results retain item identity, and an uncertain attempt is never replayed (since #132 it no longer blocks replacement dispatch).
 
 #### Uncertain attempts and slot accounting
+
+**Superseded by #132 (owner decision, 2026-10-20):** an `unknown` outcome is treated as an aborted request. It releases its reservation, never blocks its backend, queue or other queues, and is still never replayed automatically; the override control is removed (`queue override` is a hidden no-op). The original design below is kept for history.
 
 If submission definitely never occurred, release the scheduler slot. If a disconnect, local cancellation or other failure leaves remote execution possible, retain a durable unresolved reservation and pause new dispatch for that backend; already-running requests may finish. Release a reservation only on evidence that remote execution is no longer possible or an explicit user override.
 
@@ -362,7 +364,7 @@ Phase 5 verifies that Qt calls and presents the Phase 3 services correctly. It d
 | 5B-O1 | Queue model presentation | Stable queue/item identity, order, status and completed outputs are rendered from shared queue state. |
 | 5B-O2 | Queue controls | Pause/Resume/Cancel invoke the shared operations and reflect resulting state; Phase 3 remains authoritative for scheduler semantics. |
 | 5B-O3 | Concurrency control | Positive values map to the shared setting, invalid input is rejected before dispatch, and values above two receive the specified subtle color treatment. |
-| 5B-O4 | Restart/uncertainty surface | Restored paused queues and unresolved reservations are shown distinctly; explicit override is reachable and cannot silently mark or replay the uncertain item. |
+| 5B-O4 | Restart/uncertainty surface | Restored paused queues are shown distinctly and unknown items read as *no result* without being replayed; since #132 there is no override and unknown items block nothing. |
 | 5B-O5 | Out-of-order updates | Controlled completion events update the correct rows/items without reordering or misattaching outputs. Do not rerun the full Phase 3 10/4 scheduler matrix through `pytest-qt`. |
 
 For the first desktop release, add small separately selected live desktop-composition workflows only where real inference proves something fixtures cannot:

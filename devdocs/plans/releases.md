@@ -43,7 +43,7 @@ Record the corresponding live workflow for every real backend advertised as usab
 
 ### 0.2.0 — Durable rolling queues
 
-Consume the [Phase 3B authoritative scenario groups](phase-3-cli.md#phase-3b-scenario-groups), including deterministic 10/4 rolling dispatch, controls, uncertainty/restart/override, actual dispatcher policies, ownership, asset preparation/receipts/reuse and applicable schema compatibility. No ambiguous attempt becomes eligible through Resume or an upgrade. Existing base attempt/backend evidence is reused only for the same implementation path.
+Consume the [Phase 3B authoritative scenario groups](phase-3-cli.md#phase-3b-scenario-groups), including deterministic 10/4 rolling dispatch, controls, uncertainty/restart (override removed by #132), actual dispatcher policies, ownership, asset preparation/receipts/reuse and applicable schema compatibility. No ambiguous attempt becomes eligible through Resume or an upgrade. Existing base attempt/backend evidence is reused only for the same implementation path.
 
 Record separately authorized 3-LG3 small cloud-queue composition and 3-LG4 supported custom LoRA preparation/reuse/use. Live evidence does not replace deterministic reservation, failure, ownership or migration tests. No usable remote list API is established; inspect known receipts without claiming complete account inventory. Conversion/editor and broader asset management remain outside this gate.
 

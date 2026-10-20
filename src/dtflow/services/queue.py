@@ -3,8 +3,8 @@
 One dispatcher owns the state directory (through the store's ownership lock), claims items one at a time in queue order,
 and starts the next eligible item the moment a reservation is released: there is no group barrier. Reservations are
 taken durably before an attempt exists. Nothing here replays an attempt; an item that reached the remote boundary and
-came back unknown stays reserved and blocks its backend until an explicit, recorded override. No database transaction is
-held while generating.
+came back unknown is settled as ``unknown`` (most likely no result will arrive), releases its reservation and does not
+block other work. No database transaction is held while generating.
 """
 
 import asyncio
@@ -44,7 +44,7 @@ class QueueDispatcher:
         self.store, self.service, self.poll, self.on_settle, self.on_event = store, service, poll, on_settle, on_event
 
     async def run(self, queue_id: str) -> dict[str, Any]:
-        """Dispatch until the queue is finished, cancelled, or blocked by uncertainty with nothing active.
+        """Dispatch until the queue is finished or cancelled.
 
         A paused queue with nothing active keeps polling so a posted Resume can continue it; interrupting the process
         (Ctrl-C) ends dispatch and records honest evidence for whatever was active.
@@ -79,8 +79,6 @@ class QueueDispatcher:
                     raise failure
                 state = await self.store.inspect_queue(queue_id)
                 if state["state"] == "cancelled" or not (state["summary"]["pending"] or state["summary"]["running"]):
-                    return state
-                if state["blocked_by_uncertainty"]:
                     return state
                 await asyncio.sleep(self.poll)
         finally:

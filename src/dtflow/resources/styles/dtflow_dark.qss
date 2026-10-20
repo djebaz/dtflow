@@ -1668,9 +1668,7 @@ QPushButton#galleryRegenerateButton[confirmationPending="true"]:enabled,
 QPushButton#clearCustomLorasButton[confirmationPending="true"]:enabled,
 QPushButton#removeKeyButton[confirmationPending="true"]:enabled,
 QPushButton#prepareAssetButton[confirmationPending="true"]:enabled,
-QPushButton#cancelQueueButton[confirmationPending="true"]:enabled,
 QPushButton#clearQueuesButton[confirmationPending="true"]:enabled,
-QPushButton#overrideReservationButton[confirmationPending="true"]:enabled,
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"]:enabled {
   background: ${color.connectionSurface};
   color: ${color.connectionGlyph};

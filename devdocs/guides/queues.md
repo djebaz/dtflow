@@ -1,16 +1,16 @@
 # Queues and batch plans
 
-Queues are available on the desktop Queues page and through the [CLI](cli.md). Creation persists paused items and does not generate. Start dispatches them; local/cloud dispatch submits real generation and may consume credits. Cancel interrupts local waiting, not confirmed remote execution. Unknown attempts are never silently replayed.
+Queues are available on the desktop Queues page and through the [CLI](cli.md). Creation persists paused items and does not generate. Start dispatches them; local/cloud dispatch submits real generation and may consume credits. Cancel interrupts local waiting, not confirmed remote execution. Unknown attempts are never silently replayed, and they never block other work.
 
 ## Desktop controls
 
 Create a queue of N items from the Generate form (seeds s, s+1, ...), or enable Plan batch for Pair or Cross comparisons. Plan batch accepts prompts one per line, other dimensions separated by semicolons, and LoRA weights per line. Inspect the live count and Dry run table before creating the batch; the same bounded planner serves the CLI.
 
-Queues and items stay in stable order. Start, Pause, Resume, Cancel and Override use the shared queue services. Cancel and Override require confirmation; neither resolves an uncertain remote attempt. The item panel summarizes outputs with Open folder; shortened attempt IDs expose full IDs in tooltips.
+Queues and items stay in stable order. Start, Pause, Resume and Cancel use the shared queue services. Cancel takes effect immediately, without confirmation, and does not confirm remote cancellation: an item interrupted after submission ends as *no result*. The item panel summarizes outputs with Open folder; shortened attempt IDs expose full IDs in tooltips.
 
 The right-side event evidence panel presents a compact activity stream keyed by queue position (for example, `#3 submitted` and `#3 completed - 12.34 s`). The durable queue evidence still records selected backend lifecycle events (preparing, submission boundary, received final artifacts and terminal response) plus item settlement; the UI hides redundant low-level lines and full request/item identifiers from the default view. Successful settlement includes the same client-observed backend duration saved with the image metadata. That duration runs from submission boundary to terminal response and may include provider-side queueing or serialization; DTFlow does not call it pure generation/inference time. Progress and preview events are intentionally not persisted into this diagnostic stream.
 
-One concurrency control sets the selected paused, running or blocked queue's cap. With cloud chosen and no such queue selected, it edits the shared cloud maximum instead; values above two are tinted. Backend and shared memory limits still apply.
+One concurrency control sets the selected paused or running queue's cap. With cloud chosen and no such queue selected, it edits the shared cloud maximum instead; values above two are tinted. Backend and shared memory limits still apply.
 
 Start holds the state ownership lock for the entire dispatch run, disabling desktop Generate. Other processes can read and post controls, but cannot own another generation or dispatch in that state directory. See [runtime ownership](../architecture/runtime-layout.md).
 
@@ -21,7 +21,7 @@ uv run dtflow queue add -b fake -p "Offline fixture" -k 10 -j 4   # persist a pa
 uv run dtflow queue add -b fake -p "Offline fixture" -r plan.json -u   # dry run: print the exact items of a plan, create nothing
 uv run dtflow queue add -b fake -p "Offline fixture" -r plan.json   # persist a paused queue of the planned items
 uv run dtflow queue start QUEUE                                   # become the dispatch owner and run it (Ctrl-C interrupts)
-uv run dtflow queue pause QUEUE                                   # from another terminal; also resume, cancel, override, cap -j N
+uv run dtflow queue pause QUEUE                                   # from another terminal; also resume, cancel, cap -j N
 uv run dtflow queue show QUEUE                                    # items in queue order with state, attempt and outputs
 ```
 
@@ -29,13 +29,15 @@ uv run dtflow queue show QUEUE                                    # items in que
 
 `queue add` persists independent, immutable resolved items (it contacts no backend and does not support `-r/--prefix`; put prefixes in the prompt) in a queue that starts paused. `queue start` makes that process the single dispatch owner of the state directory, resumes the queue and rolls: it admits the next item as soon as any reservation is released, never exceeding the queue maximum (`-j` on `add` or `queue cap`) or the backend's own limit (local gRPC is one lane).
 
-Another process can run `list`, `show`, `pause`, `resume`, `cancel`, `override` and `cap` while dispatch is running: controls are stored and polled, and `add` and `start` need the state directory to themselves.
+Another process can run `list`, `show`, `pause`, `resume`, `cancel` and `cap` while dispatch is running: controls are stored and polled, and `add` and `start` need the state directory to themselves.
 
 A paused, idle dispatcher keeps polling until resumed or interrupted. `cancel` stops pending items and interrupts local waiting on active ones; it never claims remote cancellation, so an item interrupted after submission is `unknown`.
 
-An `unknown` item keeps its reservation and blocks that backend (across queues): ordinary `resume` and restart cannot clear it, `queue start` exits `4`, and only `override` lets eligible items continue; the override is recorded, and the uncertain attempt is never resolved or replayed.
+An `unknown` item (shown as *no result* on the desktop) means the request may have reached the server but no final result arrived, so it most likely failed. It releases its reservation, never blocks the backend, other queues or the rest of its queue, and the attempt is never replayed automatically. `queue start` exits `3` when any item is unknown, failed, cancelled or pending. The former `queue override` command is a hidden, deprecated no-op kept for old scripts; it prints a note and records nothing.
 
-After a restart queues are restored paused, completed results are kept, and no item that reached the remote boundary becomes eligible again. `queue start` exits `0` when every item succeeded, `4` if any item is unknown, otherwise `3` if any failed, was cancelled or remains pending.
+Local Draw Things runs one request at a time and stopping local waiting does not confirm that it stopped rendering. After a *no result* item, the next item is dispatched right away and may wait on the server behind the abandoned job; its total deadline includes that wait. This is accepted: the server queues requests itself, and a local run costs no credits.
+
+After a restart queues are restored paused, completed results are kept, and no item that reached the remote boundary becomes eligible again. `queue start` exits `0` when every item succeeded, otherwise `3`.
 
 Note: the shared buffer budget (256 MiB, about 100 MiB reserved per request) currently admits only about two concurrent real generations, whatever the queue maximum.
 
