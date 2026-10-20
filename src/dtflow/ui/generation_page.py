@@ -95,6 +95,11 @@ def failure_fields(failure: BaseException) -> dict:
 
 PREVIEW_MIN_HEIGHT = 180
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
+DISPATCH_REASON = (
+    "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
+    "which starts by itself when the running queue ends."
+)
+SNAPSHOT_NOTE = "Running snapshot: later edits to the form apply only to the next request.\n\n"
 METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
     "textToImageModeButton",
@@ -209,6 +214,8 @@ class GenerationPage:
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         self._provider: str | None = None
         self._previewed_seed: int | None = None
+        # Set by the window: queue_behind(request, backend, endpoint, receipts, edit) adds a one-item up-next queue.
+        self.queue_behind: Callable | None = None
         self._activity.listen(self._sync_activity)
         page.destroyed.connect(self._unlisten_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
@@ -647,7 +654,7 @@ class GenerationPage:
 
     def regenerate_saved_request(self, document: dict, source_identity: str) -> bool:
         """Validate recorded settings before replacing the form, then submit them as a fresh request."""
-        if self._busy or self._activity.dispatching:
+        if self._busy or self._generating or self._activity.dispatching:
             return False
         values = self._saved_request_values(document)
         name, _ = self._backend()
@@ -687,6 +694,11 @@ class GenerationPage:
             widget.style().polish(widget)
 
     def _set_busy(self, busy: bool) -> None:
+        """A page service call (inventory refresh, LoRA check, Prepare or reconcile) is in flight; these share one slot.
+
+        A running generation never locks the form: its request is an immutable snapshot taken at Generate, so edits only
+        shape the next request (issue #133).
+        """
         if busy != self._busy:
             diagnostic_event(
                 log,
@@ -697,25 +709,31 @@ class GenerationPage:
                 },
             )
         self._busy = busy
-        self.page.generateButton.setEnabled(not busy and not self._activity.dispatching)
         self.page.refreshInventoryButton.setEnabled(not busy)
         self.lora.set_enabled(not busy)
+        self._sync_generate()
+
+    def _sync_generate(self) -> None:
+        """Only starting another run waits, for this generation or a page service call. While this window dispatches a
+        queue, Generate stays available and queues the request behind it (``queue_behind``)."""
+        dispatching = self._activity.dispatching
+        button = self.page.generateButton
+        blocked = self._busy or self._generating
+        button.setEnabled(not blocked)
         if hasattr(self, "inpaint"):
-            self.inpaint.set_busy(busy or self._activity.dispatching)
+            self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
+        if dispatching:
+            button.setToolTip(DISPATCH_REASON)
+        elif button.toolTip() == DISPATCH_REASON:
+            button.setToolTip("")
 
     def _unlisten_activity(self) -> None:
         """Detach before Qt destroys the page and its generation controls."""
         self._activity.unlisten(self._sync_activity)
 
     def _sync_activity(self) -> None:
-        """A queue dispatch holds the state lock, so single generation waits for it (and vice versa)."""
-        self.page.generateButton.setEnabled(not self._busy and not self._activity.dispatching)
-        if hasattr(self, "inpaint"):
-            self.inpaint.set_busy(self._busy or self._activity.dispatching)
-        if self._activity.dispatching:
-            self._status(
-                Presentation("warning", "Queue dispatch is running", "Single generation is unavailable until it stops.")
-            )
+        """A queue dispatch holds the state lock, so Generate queues behind it; every input stays editable."""
+        self._sync_generate()
 
     def queue_created(self) -> None:
         self._previewed_seed = None
@@ -787,21 +805,21 @@ class GenerationPage:
 
     # -- generation ------------------------------------------------------------------------------------------------
     def edit_saved_image(self, path: str) -> bool:
-        """Images handoff: open a saved output as the Inpaint source; nothing is submitted."""
-        if self._busy or self._activity.dispatching:
-            InlineNotice.warning(
-                self.page, "Generation is busy", "Stop the active generation or queue dispatch before editing."
-            )
-            return False
+        """Images handoff: open a saved output as the Inpaint source; nothing is submitted, so a running generation or
+        queue keeps its own snapshot and is never affected."""
         self.inpaint.edit_saved_image(path)
         return True
 
-    def generate(self, edit: EditJob | None = None) -> None:
+    def generate(self, edit: EditJob | None = None) -> bool:
+        """Start one single run; returns whether it started. Refused while another run or service call is active."""
         if self.inpaint.active and edit is None:
             self.inpaint.generate()
-            return
-        if self._busy:
-            return
+            return False
+        if self._busy or self._generating:
+            return False
+        if self._activity.dispatching:
+            self._queue_behind(edit)
+            return False
         self._mark(None)
         note = self._snap_size()
         name, endpoint = self._backend()
@@ -829,10 +847,10 @@ class GenerationPage:
                 },
             )
             self._status(Presentation("error", "Invalid request", str(exc)))
-            return
+            return False
         if edit is not None and request.batch_size * request.batch_count != 1:
             self._status(Presentation("error", "Invalid request", "Edit image runs one image at a time."))
-            return
+            return False
         self._reuse_source_identity = None
         self._request = request
         diagnostic_event(
@@ -858,7 +876,7 @@ class GenerationPage:
                 "lora_count": len(request.loras),
             },
         )
-        self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
+        self.page.effectiveRequestBrowser.setPlainText(SNAPSHOT_NOTE + describe_request(request, name, endpoint))
         self.page.resultList.clear()
         self._set_result_actions(False)
         self.page.attemptIdentityLabel.setText("No durable attempt yet.")
@@ -878,7 +896,7 @@ class GenerationPage:
                 detail="Preparing generation",
             ),
         )
-        self._set_busy(True)
+        self._sync_generate()
         run = self._generate_edit if edit is not None else self._generate
         extra = (edit,) if edit is not None else ()
         self._future = self._runner.submit(
@@ -894,6 +912,21 @@ class GenerationPage:
             ),
             self._generated,
         )
+        return True
+
+    def _queue_behind(self, edit: EditJob | None) -> None:
+        """The window's queue dispatch owns the state lock: hand the request to the Queues page as a one-item queue
+        that waits up next and starts by itself after the running queue (issue #125). Nothing is dispatched here."""
+        if self.queue_behind is None:
+            return
+        try:
+            request, name, endpoint, asset_ids = self.request_for_queue()
+        except FormError as exc:
+            self._status(Presentation("error", "Invalid request", str(exc)))
+            return
+        self._status(Presentation("ok", "Queued behind the running queue", "It starts by itself when that queue ends."))
+        self.queue_behind(request, name, endpoint, asset_ids, edit)
+        self.queue_created()
 
     def simulation(self) -> dict:
         """The fake provider's simulation settings from the form; empty for every other provider."""
@@ -941,7 +974,7 @@ class GenerationPage:
         )
 
     def _event(self, event: BackendEvent) -> None:
-        if not self._busy:
+        if not self._generating:
             return  # a late event after completion never changes the settled view
         label = event.stage if event.kind == "progress" else {"preview": "first preview"}.get(event.kind, event.kind)
         if label:
@@ -968,7 +1001,7 @@ class GenerationPage:
             return
         self._generating = False
         self._activity.set(generating=False, run_state=RunState())
-        self._set_busy(False)
+        self._sync_generate()
         if failure is not None:
             diagnostic_event(
                 log,
@@ -1125,7 +1158,7 @@ class GenerationPage:
     def _interrupted(self, evidence, failure) -> None:
         self._generating = False
         self._activity.set(generating=False, run_state=RunState())
-        self._set_busy(False)
+        self._sync_generate()
         presentation = present_generation_failure(failure) if failure else present_interruption(evidence)
         self._status(presentation)
         activity_strip(self.page).complete(

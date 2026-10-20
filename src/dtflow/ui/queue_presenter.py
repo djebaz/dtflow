@@ -19,9 +19,10 @@ ITEM_LEVELS = {
     "cancelled": "warning",
 }
 SETTLED = ("succeeded", "failed", "unknown", "save_failed", "cancelled")
-STATUS_LEVELS = {"paused": "warning", "running": "ok", "finished": "ok", "cancelled": "warning"}
+STATUS_LEVELS = {"paused": "warning", "queued": "secondary", "running": "ok", "finished": "ok", "cancelled": "warning"}
 STATUS_TEXT = {
     "paused": "Paused. Nothing dispatches until Start.",
+    "queued": "Up next. Starts by itself when the running queue ends.",
     "running": "Running.",
     "finished": "Finished.",
     "cancelled": "Cancelled. Pending items were cancelled; active ones stopped waiting locally.",
@@ -81,9 +82,11 @@ class QueueSummary:
 @dataclass(frozen=True, slots=True)
 class Controls:
     start: bool
-    pause: bool
+    pause: bool  # on an up-next queue: return it to paused
     resume: bool
     cancel: bool
+    enqueue: bool = False  # Start next: wait up next behind this window's running queue
+    reorder: bool = False
 
 
 def item_rows(view: dict) -> tuple[ItemRow, ...]:
@@ -141,19 +144,38 @@ def has_started(detail: dict | None) -> bool:
     return any(event["kind"] == "started" for event in (detail or {}).get("events", ()))
 
 
-def controls(view: dict | None, *, dispatching_here: bool, generating: bool = False, started: bool = False) -> Controls:
+def controls(
+    view: dict | None,
+    *,
+    dispatching_here: bool,
+    generating: bool = False,
+    started: bool = False,
+    owned: bool = False,
+) -> Controls:
     """Which actions make sense now. Start needs this window to own dispatch (nothing else generating); the rest only
     post controls for whichever process owns dispatch, or for the next start. Resume is offered only for a queue that
-    has run before: a new queue is started, not resumed."""
+    has run before: a new queue is started, not resumed. While this window dispatches, a paused queue can wait up next
+    instead (auto-play), and an up-next queue can be moved or returned to paused. ``owned``: this window dispatches
+    this very queue, so a paused one is resumed, not queued behind itself."""
     if view is None:
         return Controls(False, False, False, False)
     status = view["status"]
     return Controls(
         start=status in ("paused", "running") and not dispatching_here and not generating,
-        pause=status == "running",
-        resume=status == "paused" and started,
-        cancel=status in ("paused", "running"),
+        pause=status in ("running", "queued"),
+        resume=status == "paused" and started and (owned or not dispatching_here),
+        cancel=status in ("paused", "running", "queued"),
+        enqueue=status == "paused" and dispatching_here and not owned,
+        reorder=status == "queued",
     )
+
+
+def up_next_ids(views) -> list[str]:
+    """Queue ids waiting up next, in the order the dispatch owner starts them."""
+    queued = [view for view in views if view["status"] == "queued"]
+    return [
+        view["queue_id"] for view in sorted(queued, key=lambda view: (view.get("up_next") or 0, view["created_at_utc"]))
+    ]
 
 
 def ownership_badge(view: dict | None, *, dispatching_here: bool) -> str:

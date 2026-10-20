@@ -23,11 +23,11 @@ from dtflow.core.models import (
 )
 from dtflow.core.request_records import upgraded_request_record
 from dtflow.core.tasks import settle
-from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin
+from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_up_next
 
 # 1: attempts only. 2: queues. 3: explicit request v2/image-input references.
 # A supported older writer open backs up, then migrates/reconciles transactionally.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class PersistenceError(RuntimeError):
@@ -105,10 +105,10 @@ class SQLiteAttempts(QueueMixin):
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=2000")
-            if version in (1, 2):
+            if version in (1, 2, 3):
                 # A fresh consistent backup for each migration attempt; never rely
                 # on an old/partial backup left by a previously failed upgrade.
-                copy = self.directory / f"attempts.pre-v3-from-v{version}-{uuid4().hex}.sqlite3"
+                copy = self.directory / f"attempts.pre-v{SCHEMA_VERSION}-from-v{version}-{uuid4().hex}.sqlite3"
                 with copy.open("xb"):
                     pass
                 with closing(sqlite3.connect(copy)) as destination:
@@ -130,6 +130,7 @@ class SQLiteAttempts(QueueMixin):
                 )""")
                 for statement in QUEUE_SCHEMA:
                     connection.execute(statement)
+                add_up_next(connection)
                 if version in (1, 2):
                     self._migrate_requests(connection)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

@@ -314,6 +314,7 @@ class MainWindow:
             activity=self.activity,
         )
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
+        self.generation.queue_behind = self.queue.queue_behind
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
         startup.mark("pages wired, session restored")
@@ -1150,6 +1151,7 @@ class MainWindow:
         return bool(
             self.image_export.running
             or self.generation._busy
+            or self.activity.generating
             or self.queue.dispatching_here
             or self.activity.dispatching
         )
