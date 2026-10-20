@@ -36,7 +36,7 @@ After the **first successful item with a usable recorded duration**, a labeled e
 
 Resume rebasing uses the latest applied durable Resume event, so even Pause and Resume between two polls reset the estimate. This leaves elapsed time's dispatch-start timestamp unchanged.
 
-Durations include provider-side queueing and are not pure inference time. The blue bar continues to show real settled counts, never estimated progress.
+Durations include provider-side queueing and are not pure inference time. The blue bar continues to show real settled counts, never estimated progress. The Events pane shows a replaceable live **Timing snapshot** with elapsed wall time, remaining ETA and elapsed + ETA (projected total). Before a successful duration sample, ETA and projected total are unavailable. The line updates each second during an active run; it is neither persisted nor presented as measured completion time.
 
 ## CLI examples
 

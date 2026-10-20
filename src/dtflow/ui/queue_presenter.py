@@ -91,6 +91,24 @@ def eta_text(view: dict, *, remaining: float | None = None) -> str:
     return f"~{duration} left (estimate{caveat})"
 
 
+def timing_snapshot(view: dict, remaining: float | None, now: datetime | None = None) -> str:
+    """Live timing comparison; not a durable event or a measured final runtime."""
+    try:
+        started = datetime.fromisoformat(view.get("started_at_utc") or "")
+        if started.tzinfo is None:
+            return ""
+        elapsed = max(0, int(((now or datetime.now().astimezone()) - started).total_seconds()))
+    except (TypeError, ValueError, OverflowError):
+        return ""
+    if remaining is None:
+        return f"Timing snapshot - elapsed {_clock(elapsed)} | ETA unavailable | elapsed + ETA unavailable"
+    eta = max(0, math.ceil(remaining))
+    return (
+        f"Timing snapshot - elapsed {_clock(elapsed)} | ETA ~{_clock(eta)} "
+        f"| elapsed + ETA ~{_clock(elapsed + eta)} (estimate)"
+    )
+
+
 def elapsed_text(view: dict, now: datetime | None = None) -> str:
     """Observed wall time since the latest dispatch start, including pauses and provider waits."""
     try:

@@ -79,6 +79,7 @@ from dtflow.ui.queue_presenter import (
     queue_title,
     segments,
     status_chip,
+    timing_snapshot,
     summarize,
     up_next_ids,
 )
@@ -551,6 +552,7 @@ class QueuePage:
             # persistent completion/error badge for whichever queue is selected.
             detail = "No runnable queue selected."
 
+        remaining = None
         if phase in ("running", "paused"):
             remaining = self._countdown.remaining(view, monotonic())
             timing = " · ".join(part for part in (elapsed_text(view), eta_text(view, remaining=remaining)) if part)
@@ -563,6 +565,20 @@ class QueuePage:
         else:
             self._timing_timer.stop()
             self._countdown.reset()
+
+        # Show one replaceable timing snapshot below durable events; preserve scroll position.
+        selected_detail = self._detail_for(view)
+        if selected_detail is not None:
+            base = event_lines(selected_detail)
+            snapshot = timing_snapshot(view, remaining) if phase in ("running", "paused") else ""
+            shown = "\n".join(part for part in (base, snapshot) if part)
+            browser = self.page.queueEventBrowser
+            if browser.toPlainText() != shown:
+                scrollbar = browser.verticalScrollBar()
+                position = scrollbar.value()
+                at_bottom = position >= scrollbar.maximum() - 2
+                browser.setPlainText(shown)
+                scrollbar.setValue(scrollbar.maximum() if at_bottom else position)
 
         self._activity.present_run(
             RunState(
