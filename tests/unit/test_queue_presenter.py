@@ -9,7 +9,8 @@ from dtflow.ui.queue_presenter import (
     item_rows,
     outcome_note,
     outcome_text,
-    ownership_badge,
+    primary_action,
+    status_chip,
     summarize,
 )
 
@@ -54,6 +55,16 @@ def test_control_matrix_by_status(status, start, pause, resume, cancel):
     assert not controls(view(status), dispatching_here=False, generating=True).start  # the lock is in use
     assert controls(None, dispatching_here=False) == controls(None, dispatching_here=True)
     assert controls(view(status), dispatching_here=False, started=True).resume == (status == "paused")
+    if status == "running":
+        for owner_active in (True, False):
+            current = view(status) | {"owner_active": owner_active}
+            action = primary_action(current, available, started=True, owned=False)
+            assert action.key == ("pause" if owner_active else "start")
+            assert action.text == ("Pause" if owner_active else "Resume")
+            local = controls(current, dispatching_here=True, started=True, owned=True)
+            assert primary_action(current, local, started=True, owned=True).key == "pause"
+        busy = controls(current, dispatching_here=False, generating=True)
+        assert primary_action(current, busy, started=True, owned=False) is None
 
 
 def test_unknown_is_a_warning_with_an_aborted_note_and_failed_stays_an_error():
@@ -72,10 +83,10 @@ def test_rows_separate_outputs_from_metadata_and_summary_counts_settled():
     assert (summary.settled, summary.total, summary.succeeded, summary.level) == (3, 5, 2, "ok")
 
 
-def test_badge_and_concurrency_threshold():
-    assert ownership_badge(view("running"), dispatching_here=True) == "THIS WINDOW DISPATCHES"
-    assert ownership_badge(view("running"), dispatching_here=False).startswith("RUNNING")
-    assert ownership_badge(view("paused"), dispatching_here=False) == "NOT DISPATCHING"
+def test_status_chip_and_concurrency_threshold():
+    assert status_chip(view("running"), []) == ("ok", "Running")
+    assert status_chip(view("queued"), ["q" * 32]) == ("secondary", "Up next 1")
+    assert status_chip(view("finished", succeeded=1, unknown=1), []) == ("warning", "Finished")
     assert [concurrency_level(v) for v in (1, 2, 3, 4)] == ["normal", "normal", "elevated", "elevated"]
 
 

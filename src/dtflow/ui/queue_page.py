@@ -1,9 +1,11 @@
 """Queues page controller: widgets in, shared queue services out. Owns no scheduling, reservation or persistence rules.
 
-Reads are read-only polls of the durable state; every control is posted through the same function ``dtflow queue``
-uses, so a window and a CLI process drive a queue identically. Only Start makes this window the dispatch owner, which
-holds the state ownership lock for the run (see ``Activity``). Wording after cancel comes from recorded evidence,
-and cancel never claims remote cancellation.
+Reads are read-only polls of the durable state: the list reads queue summaries only, and items and events are read for
+the selected queue alone. Every control is posted through the same function ``dtflow queue`` uses, so a window and a
+CLI process drive a queue identically. Only Start makes this window the dispatch owner, which holds the state ownership
+lock for the run (see ``Activity``). The header shows one status chip and one state-dependent primary action;
+transient outcomes go to the shared bottom overlay. Wording after cancel comes from recorded evidence, and cancel never
+claims remote cancellation.
 """
 
 import asyncio
@@ -11,9 +13,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QListWidgetItem, QWidget
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemModel
+from PySide6.QtWidgets import QListWidgetItem, QMenu, QWidget
 
 from dtflow.core.models import BackendEvent, ValidationError
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
@@ -29,7 +31,9 @@ from dtflow.services.queue_session import (
     dispatch_queue,
     expand_items,
     post_queue_control,
+    read_queue_list,
     read_queue_views,
+    remove_queue,
     set_concurrency,
 )
 from dtflow.services.session import bind_prepared, selection_for
@@ -49,45 +53,64 @@ from dtflow.ui.planning_presenter import (
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
+    FILTERS,
+    GROUPS,
+    NEW_CAP_HINT,
+    STATUS_TEXT,
     concurrency_level,
     controls,
     event_lines,
+    filter_counts,
+    filter_states,
     has_started,
     item_rows,
+    matches,
+    needs_recovery,
     outcome_note,
     outcome_text,
-    ownership_badge,
+    primary_action,
     progress_text,
+    queue_entries,
+    queue_subtitle,
+    queue_title,
+    segments,
+    status_chip,
     summarize,
     up_next_ids,
 )
+from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
+IDLE_POLL_MS = 3000  # light summary polling while the tab is visible, so queues created elsewhere appear
 PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
 PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck")
+FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
 WIRED_CONTROLS = (
     "queueList",
+    "queueFilterEdit",
     "createQueueButton",
     "refreshQueuesButton",
     "clearQueuesButton",
+    "removeQueueButton",
     "queueCountSpinBox",
+    "newQueueCapSpinBox",
     "concurrencySpinBox",
-    "startQueueButton",
-    "pauseQueueButton",
-    "resumeQueueButton",
+    "queuePrimaryButton",
     "cancelQueueButton",
     "earlierQueueButton",
     "laterQueueButton",
+    *FILTER_BUTTONS.values(),
     "queueItemsView",
     "planBox",
     "planDryRunButton",
     *PLAN_INPUTS,
 )
 CLEAR_TEXT = (
-    "Finished, cancelled and paused queues will be removed from this list. Their attempts and saved images are kept. "
-    "Queues that are running or still hold an unresolved outcome are not removed."
+    "Finished and cancelled queues will be removed from this list. Their attempts and saved images are kept. "
+    "Paused, running and up-next queues stay."
 )
+REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
 
@@ -146,7 +169,11 @@ class QueuePage:
         self._reading = False
         self._syncing = False
         self._detail: dict | None = None
+        self._varied: dict[str, dict] = {}  # items never change after creation, so their variation is read once
         self._shared_cap: int | None = None
+        self._shared_epoch = 0  # bumped by each save, so a read that started before it cannot undo it
+        self._resume_fallback: str | None = None
+        self._list_key: tuple | None = None
         self._output_folder: Path | None = None
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
         self._event_relay = EventRelay(self._queue_backend_event, page)
@@ -159,23 +186,40 @@ class QueuePage:
             view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
-        page.concurrencyHintLabel.setText(CONCURRENCY_HINT)
+        page.concurrencySpinBox.setToolTip(CONCURRENCY_HINT)
+        page.concurrencyLabel.setToolTip(CONCURRENCY_HINT)
+        page.newQueueCapSpinBox.setToolTip(NEW_CAP_HINT)
+        page.newQueueCapLabel.setToolTip(NEW_CAP_HINT)
+        refresh_icon = Path(__file__).parents[1] / "resources" / "images" / "gallery" / "refresh.svg"
+        page.refreshQueuesButton.setIcon(QIcon(str(refresh_icon)))
+        page.refreshQueuesButton.setIconSize(QSize(16, 16))
+        page.refreshQueuesButton.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        page.queueList.setItemDelegate(QueueListDelegate(page.queueList))
+        page.queueList.setTextElideMode(Qt.TextElideMode.ElideRight)
+        for key, symbol, _, label in FILTERS:
+            button = getattr(page, FILTER_BUTTONS[key])
+            button.setToolTip(f"Show only {label.lower()} items; click again to show all")
+            button.setAccessibleName(f"{label} items filter")
+            button.setText(symbol)
+            button.toggled.connect(lambda *_: self._apply_item_filter())
         self._timer = QTimer(page)
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self.refresh)
         page.refreshQueuesButton.clicked.connect(self.refresh)
         page.clearQueuesButton.clicked.connect(self.clear_queues)
+        page.removeQueueButton.clicked.connect(self.remove)
         page.createQueueButton.clicked.connect(self.create)
-        page.startQueueButton.clicked.connect(self.start)
-        page.pauseQueueButton.clicked.connect(self.pause)
+        page.queuePrimaryButton.clicked.connect(self.primary)
         page.earlierQueueButton.clicked.connect(lambda: self._order("earlier"))
         page.laterQueueButton.clicked.connect(lambda: self._order("later"))
-        page.resumeQueueButton.clicked.connect(lambda: self._post("resume"))
         page.cancelQueueButton.clicked.connect(self.cancel)
         page.queueList.currentRowChanged.connect(self._select_row)
+        page.queueList.customContextMenuRequested.connect(self._list_menu)
+        page.queueFilterEdit.textChanged.connect(lambda *_: self._render_list())
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
         page.concurrencySpinBox.valueChanged.connect(self._cap_changed)
+        page.newQueueCapSpinBox.valueChanged.connect(self._new_cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
         page.planBoxToggle.toggled.connect(page.planBox.setChecked)
@@ -204,14 +248,20 @@ class QueuePage:
         label.setText(text)
 
     def _message(self, presentation: Presentation) -> None:
-        self._show(
-            self.page.queueMessageLabel,
-            presentation.level,
-            f"{presentation.headline}. {presentation.detail}".strip(),
-        )
+        """Transient outcomes go to the shared bottom overlay; the header only shows the queue's own status."""
+        strip = activity_strip(self.page)
+        if strip is not None:
+            state = {"ok": "success", "error": "error"}.get(presentation.level, "warning")
+            strip.complete("queue-message", presentation.headline, presentation.detail, state)
 
     def _view(self) -> dict | None:
         return self._views.get(self._selected or "")
+
+    def _detail_for(self, view: dict | None) -> dict | None:
+        """The selected queue's full read (items and events), when it belongs to ``view``."""
+        if view is not None and self._detail is not None and self._detail["queue_id"] == view["queue_id"]:
+            return self._detail
+        return None
 
     @property
     def dispatching_here(self) -> bool:
@@ -225,10 +275,11 @@ class QueuePage:
         if self._reading:
             return
         self._reading = True
-        self._runner.submit(self._read(self._selected), self._read_done)
+        epoch = self._shared_epoch
+        self._runner.submit(self._read(self._selected, tuple(self._varied)), lambda r, f: self._read_done(r, f, epoch))
 
-    async def _read(self, selected: str | None):
-        views = await read_queue_views(self._state)
+    async def _read(self, selected: str | None, described: tuple[str, ...] = ()):
+        views = await read_queue_list(self._state, described)
         detail = None
         if selected and any(view["queue_id"] == selected for view in views):
             detail = (await read_queue_views(self._state, selected))[0]
@@ -238,123 +289,189 @@ class QueuePage:
             shared = None  # an unreadable settings file leaves the box as it is; saving reports the reason
         return views, detail, shared
 
-    def _read_done(self, result, failure) -> None:
+    def _read_done(self, result, failure, epoch: int | None = None) -> None:
         self._reading = False
         if failure is not None:
             self._message(present_generation_failure(failure))
             return
-        views, self._detail, self._shared_cap = result
-        self._views = {view["queue_id"]: view for view in views}
-        running = {
-            (view["queue_id"], item["item_id"])
+        views, self._detail, shared = result
+        if epoch is None or epoch == self._shared_epoch:
+            self._shared_cap = shared
+        for view in views:
+            if view.get("varied") is not None:
+                self._varied[view["queue_id"]] = view["varied"]
+        self._views = {
+            view["queue_id"]: view | {"varied": self._varied.get(view["queue_id"], view.get("varied"))}
             for view in views
-            for item in view["items"]
-            if item["state"] == "running"
         }
-        self._run_progress = {key: value for key, value in self._run_progress.items() if key in running}
+        self._varied = {key: value for key, value in self._varied.items() if key in self._views}
+        detail_running = (
+            {item["item_id"] for item in self._detail["items"] if item["state"] == "running"} if self._detail else None
+        )
+        self._run_progress = {
+            (queue_id, item_id): value
+            for (queue_id, item_id), value in self._run_progress.items()
+            if queue_id in self._views
+            and self._views[queue_id]["summary"]["running"]
+            and (detail_running is None or self._detail["queue_id"] != queue_id or item_id in detail_running)
+        }
         if self._dispatching is not None:
             active = self._views.get(self._dispatching)
             if active is not None and active["status"] == "running":
                 self._dispatch_started = True
         if self._select_after in self._views:
-            self._selected, self._select_after = self._select_after, None
+            self._set_selected(self._select_after)
+            self._select_after = None
         elif self._selected not in self._views:
-            self._selected = None
+            self._set_selected(None)
         self._render()
         busy = self.dispatching_here or any(view["status"] in ("running", "queued") for view in views)
-        if busy:
-            self._timer.start()
+        if busy or self.page.queueWorkspace.isVisible():
+            self._timer.start(POLL_MS if busy else IDLE_POLL_MS)
         else:
             self._timer.stop()
+        if self._view() is not None and self._detail_for(self._view()) is None:
+            self.refresh()  # selection changed during this read: fetch its items even when idle polling is stopped
 
     # -- rendering -------------------------------------------------------------------------------------------------
     def _render(self) -> None:
         page = self.page
-        page.queueList.blockSignals(True)
-        page.queueList.clear()
-        order = up_next_ids(self._views.values())
-        for queue_id, view in self._views.items():
-            summary = summarize(view)
-            status = f"up next {order.index(queue_id) + 1}" if queue_id in order else summary.status
-            item = QListWidgetItem(f"{queue_id[:8]} · {summary.backend} · {status} · {summary.settled}/{summary.total}")
-            item.setData(ITEM_ID_ROLE, queue_id)
-            page.queueList.addItem(item)
-            if queue_id == self._selected:
-                page.queueList.setCurrentItem(item)
-        page.queueList.blockSignals(False)
+        self._render_list()
         view = self._view()
         page.emptyStateCard.setVisible(view is None)
         page.queueTableHost.setVisible(view is not None)
-        page.queueProgressBar.setVisible(view is not None)
+        page.queueHeader.setVisible(view is not None)
+        detail = self._detail_for(view)
         if view is None:
-            self._show_cap(None)
             self.model.apply(())
-            self._show(page.queueStateLabel, "unknown", "No queue selected")
-            page.queueProgressBar.setRange(0, 1)
-            page.queueProgressBar.setValue(0)
-            page.queueProgressBar.setFormat("0 of 0 settled")
             page.queueEventBrowser.clear()
         else:
-            summary = summarize(view)
-            self.model.apply(item_rows(view))
+            self._render_header(view)
+            self.model.apply(item_rows(detail) if detail is not None else ())
+            self._apply_item_filter()
             self._select_default_item()
-            self._show(page.queueStateLabel, summary.level, summary.headline)
-            page.queueProgressBar.setRange(0, max(summary.total, 1))
-            page.queueProgressBar.setValue(summary.settled)
-            page.queueProgressBar.setFormat(progress_text(summary))
-            events = event_lines(self._detail) if self._detail and self._detail["queue_id"] == view["queue_id"] else ""
-            page.queueEventBrowser.setPlainText(events)
-            self._show_cap(view)
-        page.ownershipBadgeLabel.setText(ownership_badge(view, dispatching_here=self.dispatching_here))
+            page.queueEventBrowser.setPlainText(event_lines(detail) if detail is not None else "")
+        self._show_cap(view)
+        self._show_new_cap()
         self._show_item()
         self._sync()
+
+    def _render_list(self) -> None:
+        """Grouped rich rows (Running, Up next, Paused, History) matching the filter; rebuilt only when they change."""
+        page = self.page
+        query = page.queueFilterEdit.text()
+        entries = tuple(entry for entry in queue_entries(self._views.values()) if matches(entry, query))
+        key = (entries, self._selected)
+        if key == self._list_key:
+            return
+        self._list_key = key
+        scroll = page.queueList.verticalScrollBar().value()
+        page.queueList.blockSignals(True)
+        page.queueList.clear()
+        titles = dict(GROUPS)
+        group = None
+        for entry in entries:
+            if entry.group != group:
+                group = entry.group
+                heading = QListWidgetItem(titles[group].upper())
+                heading.setData(HEADING_ROLE, titles[group].upper())
+                heading.setFlags(Qt.ItemFlag.NoItemFlags)
+                page.queueList.addItem(heading)
+            item = QListWidgetItem(entry.text)
+            item.setData(ITEM_ID_ROLE, entry.queue_id)
+            item.setData(ENTRY_ROLE, entry)
+            item.setToolTip(f"{entry.title}\n{entry.subtitle}\nQueue {entry.queue_id}")
+            page.queueList.addItem(item)
+            if entry.queue_id == self._selected:
+                page.queueList.setCurrentItem(item)
+        if not entries and self._views:
+            empty = QListWidgetItem("No queue matches the filter.")
+            empty.setFlags(Qt.ItemFlag.NoItemFlags)
+            page.queueList.addItem(empty)
+        page.queueList.blockSignals(False)
+        page.queueList.verticalScrollBar().setValue(scroll)
+
+    def queue_items(self) -> list[QListWidgetItem]:
+        """The list's queue rows, without group headings."""
+        items = (self.page.queueList.item(row) for row in range(self.page.queueList.count()))
+        return [item for item in items if item.data(ITEM_ID_ROLE)]
+
+    def _render_header(self, view: dict) -> None:
+        page = self.page
+        summary = summarize(view)
+        page.queueTitleLabel.setText(queue_title(view))
+        page.queueTitleLabel.setToolTip((view.get("first") or {}).get("prompt") or "")
+        page.queueSubtitleLabel.setText(queue_subtitle(view))
+        page.queueSubtitleLabel.setToolTip(f"Queue {view['queue_id']}")
+        level, chip = status_chip(view, up_next_ids(self._views.values()))
+        if self._dispatching == view["queue_id"]:
+            owner = "This window dispatches it."
+        elif needs_recovery(view):
+            owner = "No dispatch owner is active. Resume recovers pending items without replaying uncertain attempts."
+        elif view["status"] == "running":
+            owner = "Dispatched by another process; its controls are posted to that process."
+        else:
+            owner = ""
+        self._show(page.queueStateLabel, level, chip)
+        page.queueStateLabel.setToolTip(" ".join(part for part in (STATUS_TEXT.get(view["status"], ""), owner) if part))
+        page.queueProgressBar.set_counts(segments(view["summary"]), summary.settled, summary.total)
+        page.queueProgressLabel.setText(progress_text(summary))
+        counts = filter_counts(view["summary"])
+        for key, symbol, _, _ in FILTERS:
+            button = getattr(page, FILTER_BUTTONS[key])
+            button.setText(f"{symbol} {counts[key]}")
+            button.setVisible(bool(counts[key]) or button.isChecked())
+
+    def _apply_item_filter(self) -> None:
+        """The checked count chips narrow the items table to their states; none checked shows every item."""
+        shown = filter_states(key for key, name in FILTER_BUTTONS.items() if getattr(self.page, name).isChecked())
+        table = self.page.queueItemsView
+        for index in range(self.model.rowCount()):
+            row = self.model.row_at(index)
+            table.setRowHidden(index, bool(shown) and row.state not in shown)
 
     @staticmethod
     def _editable(view: dict | None) -> bool:
         return view is not None and view["status"] in ("paused", "queued", "running")
 
     def _show_cap(self, view: dict | None) -> None:
-        """An editable queue shows its own maximum; with the cloud provider chosen and no editable queue the box edits
-        the shared cloud default for new queues. Other providers never write that default."""
+        """The header box is this queue's own maximum; it is fixed once the queue has finished or was cancelled."""
         spin = self.page.concurrencySpinBox
-        cloud = self._backend()[0] == "cloud"
-        if self._editable(view):
-            value, tip = view["cap"], "Maximum for this queue and, on cloud, for new queues."
-        elif cloud:
-            value, tip = (
-                self._shared_cap,
-                "Default maximum for new cloud queues. A finished queue's own maximum is fixed.",
-            )
-        elif view is not None:
-            value, tip = (
-                view["cap"],
-                "This queue is finished, so its maximum is fixed. Choose cloud to edit the default.",
-            )
-        else:
-            value, tip = None, "Choose cloud to edit the default maximum for new cloud queues."
-        spin.setToolTip(tip)
-        if value is None:
+        spin.setEnabled(self._editable(view))
+        if view is None:
             return
         self._syncing = True
-        spin.setValue(value)
+        spin.setValue(view["cap"])
         self._syncing = False
-        self._set_level(value)
+        self._set_level(spin, view["cap"])
 
-    def _set_level(self, value: int) -> None:
-        spin = self.page.concurrencySpinBox
+    def _show_new_cap(self) -> None:
+        """With cloud chosen, the new-queue maximum shows the shared cloud default; other providers keep the box."""
+        if self._backend()[0] != "cloud" or self._shared_cap is None:
+            return
+        spin = self.page.newQueueCapSpinBox
+        self._syncing = True
+        spin.setValue(self._shared_cap)
+        self._syncing = False
+        self._set_level(spin, self._shared_cap)
+
+    @staticmethod
+    def _set_level(spin, value: int) -> None:
         spin.setProperty("level", concurrency_level(value))
         spin.style().unpolish(spin)
         spin.style().polish(spin)
 
-    def _controls_for(self, view: dict | None):
-        detail = self._detail if view and self._detail and self._detail["queue_id"] == view["queue_id"] else None
+    def _started(self, view: dict | None) -> bool:
         owns_view = bool(view and self._dispatching == view["queue_id"])
+        return owns_view or has_started(self._detail_for(view)) or bool(view and view["status"] == "running")
+
+    def _controls_for(self, view: dict | None):
         return controls(
             view,
             dispatching_here=self.dispatching_here,
             generating=self._activity.generating,
-            started=owns_view or has_started(detail) or bool(view and view["status"] == "running"),
-            owned=owns_view,
+            started=self._started(view),
+            owned=bool(view and self._dispatching == view["queue_id"]),
         )
 
     def _run_view(self) -> dict | None:
@@ -385,7 +502,7 @@ class QueuePage:
                 phase = "running"
                 if status == "running" and available.pause:
                     action = "pause"
-        elif status == "running":
+        elif status == "running" and not needs_recovery(view):
             # Another process owns this queue. Show activity, but keep the compact
             # control status-only so a header click never controls foreign work.
             phase = "running"
@@ -396,7 +513,9 @@ class QueuePage:
 
         summary = summarize(view)
         completed = total = None
-        running_items = [item for item in view["items"] if item["state"] == "running"]
+        running = view["summary"]["running"]
+        items = (self._detail_for(view) or {}).get("items", ())
+        running_items = [item for item in items if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
         waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
 
@@ -404,13 +523,14 @@ class QueuePage:
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
             detail += f" {summary.settled}/{summary.total} settled."
-            if len(running_items) == 1:
-                progress = self._run_progress.get((queue_id, running_items[0]["item_id"]))
-                if progress is not None:
-                    step, steps = progress
-                    detail += f" Item #{running_items[0]['position']} step {step}/{steps}."
-            elif running_items:
-                detail += f" {len(running_items)} items running."
+            progress = [value for (owner, _), value in self._run_progress.items() if owner == queue_id]
+            if running == 1 and len(progress) == 1:
+                step, steps = progress[0]
+                # The item number is known only for the selected queue, whose items are read.
+                position = f"Item #{running_items[0]['position']}" if len(running_items) == 1 else "Item"
+                detail += f" {position} step {step}/{steps}."
+            elif running:
+                detail += f" {running} items running."
             if waiting:
                 detail += f" {waiting} up next."
         elif status in ("finished", "cancelled"):
@@ -437,31 +557,38 @@ class QueuePage:
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
 
+    def _removable(self, view: dict | None) -> bool:
+        return (
+            view is not None
+            and view["status"] in ("paused", "finished", "cancelled")
+            and not view["summary"]["running"]
+            and view["queue_id"] != self._dispatching
+        )
+
     def _sync(self) -> None:
         page = self.page
         self.sync_edit_fields()
         view = self._view()
         available = self._controls_for(view)
-        page.startQueueButton.setEnabled(available.start or available.enqueue)
-        page.startQueueButton.setText("Start next" if available.enqueue else "Start")
-        page.startQueueButton.setToolTip(
-            "Waits up next and starts by itself when the running queue ends." if available.enqueue else ""
+        action = primary_action(
+            view, available, started=self._started(view), owned=bool(view and self._dispatching == view["queue_id"])
         )
-        page.pauseQueueButton.setEnabled(available.pause)
-        page.pauseQueueButton.setToolTip(
-            "Leaves the up-next order; the queue stays paused until Start."
-            if view is not None and view["status"] == "queued"
-            else ""
-        )
-        page.resumeQueueButton.setEnabled(available.resume)
+        page.queuePrimaryButton.setEnabled(action is not None)
+        page.queuePrimaryButton.setText(action.text if action else "Start")
+        page.queuePrimaryButton.setToolTip(action.tooltip if action else "Nothing to start: no item is pending.")
         page.cancelQueueButton.setEnabled(available.cancel)
-        page.earlierQueueButton.setEnabled(available.reorder)
-        page.laterQueueButton.setEnabled(available.reorder)
+        for button in (page.earlierQueueButton, page.laterQueueButton):
+            button.setVisible(available.reorder)
+            button.setEnabled(available.reorder)
+        removable = self._removable(view)
+        if not removable and feedback(page)._armed and feedback(page)._armed[0] is page.removeQueueButton:
+            feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
+        page.removeQueueButton.setEnabled(removable)
         # Creating only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
         page.clearQueuesButton.setEnabled(
             any(
-                v["status"] in ("finished", "cancelled", "paused") and v["queue_id"] != self._dispatching
+                v["status"] in ("finished", "cancelled") and v["queue_id"] != self._dispatching
                 for v in self._views.values()
             )
         )
@@ -510,13 +637,42 @@ class QueuePage:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._output_folder)))
 
     def _select_row(self, row: int) -> None:
-        if feedback(self.page)._armed:
-            feedback(self.page).dismiss()
         item = self.page.queueList.item(row) if row >= 0 else None
-        self._selected = item.data(ITEM_ID_ROLE) if item is not None else None
-        self._detail = None
+        queue_id = item.data(ITEM_ID_ROLE) if item is not None else None
+        if queue_id is None or queue_id == self._selected:
+            return  # a group heading, or the queue already shown
+        self._set_selected(queue_id)
         self._render()
         self.refresh()
+
+    def _set_selected(self, queue_id: str | None) -> None:
+        """Reset queue-scoped presentation for both user selection and selection after creation."""
+        if queue_id == self._selected:
+            return
+        if feedback(self.page)._armed:
+            feedback(self.page).dismiss()
+        for name in FILTER_BUTTONS.values():
+            getattr(self.page, name).setChecked(False)  # item filters belong to the queue they were set on
+        self._selected = queue_id
+        if self._detail is not None and self._detail["queue_id"] != queue_id:
+            self._detail = None
+
+    def select_queue(self, queue_id: str) -> None:
+        item = next((item for item in self.queue_items() if item.data(ITEM_ID_ROLE) == queue_id), None)
+        if item is not None:
+            self.page.queueList.setCurrentItem(item)
+
+    def _list_menu(self, position) -> None:
+        item = self.page.queueList.itemAt(position)
+        queue_id = item.data(ITEM_ID_ROLE) if item is not None else None
+        if queue_id is None:
+            return
+        menu = QMenu(self.page.queueList)
+        remove = menu.addAction("Remove queue…")
+        remove.setEnabled(self._removable(self._views.get(queue_id)))
+        if menu.exec(self.page.queueList.viewport().mapToGlobal(position)) is remove:
+            self.select_queue(queue_id)
+            self.remove()
 
     # -- creation --------------------------------------------------------------------------------------------------
     def create(self) -> None:
@@ -530,8 +686,7 @@ class QueuePage:
             plan = self._plan_for(request, "Queue not created")
             if plan is None:
                 return
-        count, cap = self.page.queueCountSpinBox.value(), self.page.concurrencySpinBox.value()
-        self._message(Presentation("warning", "Creating", "Persisting a paused queue; no backend is contacted."))
+        count, cap = self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         job = self._edit_source()
         self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan, job), self._created)
@@ -553,21 +708,20 @@ class QueuePage:
         strip = activity_strip(self.page)
         if failure is not None:
             presentation = present_generation_failure(failure)
-            self._message(presentation)
             strip.complete("queue-behind", presentation.headline, presentation.detail, "error")
             return
-        queue_id, status = result
+        _, status = result
         if status == "queued":
-            presentation = Presentation("ok", "Queued behind", f"{queue_id[:8]} waits up next and starts by itself.")
             strip.complete(
                 "queue-behind", "Queued behind the running queue", "It starts by itself when that queue ends."
             )
         else:
-            presentation = Presentation(
-                "warning", "Saved paused", f"The running queue had already ended, so {queue_id[:8]} waits for Start."
+            strip.complete(
+                "queue-behind",
+                "Saved paused",
+                "The running queue had already ended, so this queue waits for Start.",
+                "partial",
             )
-            strip.complete("queue-behind", presentation.headline, presentation.detail, "partial")
-        self._message(presentation)
         self.refresh()
 
     async def _create(
@@ -689,9 +843,7 @@ class QueuePage:
         queue_id, cap = result
         self._created_hook()
         self._select_after = queue_id
-        self._message(
-            Presentation("ok", "Queue created", f"{queue_id[:8]} is paused with a maximum of {cap}. Press Start.")
-        )
+        self._message(Presentation("ok", "Queue created", f"Paused with a maximum of {cap} at once. Press Start."))
         self.refresh()
 
     # -- dispatch and controls -------------------------------------------------------------------------------------
@@ -714,12 +866,29 @@ class QueuePage:
         available = self._controls_for(view)
         if view is None:
             return
-        if available.pause:
+        if needs_recovery(view) and available.start and view is self._view():
+            self.start()
+        elif available.pause:
             self._post("pause", view["queue_id"])
         elif available.resume:
             self._post("resume", view["queue_id"])
         elif available.start and view is self._view():
             self.start()
+
+    def primary(self) -> None:
+        """The header's one action, whichever of Start, Start next, Pause or Resume applies now."""
+        view = self._view()
+        available = self._controls_for(view)
+        owned = bool(view and self._dispatching == view["queue_id"])
+        action = primary_action(view, available, started=self._started(view), owned=owned)
+        if action is None:
+            return
+        if action.key == "start":
+            self.start()
+        elif action.key in ("enqueue", "dequeue"):
+            self._order(action.key)
+        else:
+            self._post(action.key)
 
     def start(self) -> None:
         view = self._view()
@@ -728,10 +897,11 @@ class QueuePage:
             return
         if view is None or self.dispatching_here or self._activity.generating:
             return
+        # A queue that ran before may still be owned by another process; if so, Resume is posted to it instead.
+        self._resume_fallback = view["queue_id"] if self._started(view) else None
         self._dispatching = view["queue_id"]
         self._dispatch_started = False
         self._activity.set(dispatching=True)
-        self._message(Presentation("ok", "Dispatching", "This window owns dispatch until the queue stops."))
         self._render()
         saved = self._saved()
         queue_id = view["queue_id"]
@@ -766,7 +936,15 @@ class QueuePage:
         self._dispatching, self._future = None, None
         self._dispatch_started = False
         self._activity.set(dispatching=False)
-        if isinstance(failure, StateBusyError):
+        fallback, self._resume_fallback = self._resume_fallback, None
+        if isinstance(failure, StateBusyError) and fallback is not None:
+            self._post("resume", fallback)
+            presentation = Presentation(
+                "warning",
+                "Dispatch is owned by another process",
+                "Resume was posted to it; nothing was dispatched from this window.",
+            )
+        elif isinstance(failure, StateBusyError):
             presentation = Presentation(
                 "warning",
                 "Dispatch is owned by another process",
@@ -776,7 +954,6 @@ class QueuePage:
             presentation = present_generation_failure(failure)
         else:
             presentation = Presentation(*outcome_text(final))
-        self._message(presentation)
         state = (
             "error"
             if failure
@@ -859,18 +1036,49 @@ class QueuePage:
             keep = (self._dispatching,) if self._dispatching else ()
             self._runner.submit(clear_queues(self._state, keep), self._cleared)
 
-        confirm_action(self.page, self.page.clearQueuesButton, "Clear queues", CLEAR_TEXT, proceed, danger=True)
+        confirm_action(self.page, self.page.clearQueuesButton, "Clear history", CLEAR_TEXT, proceed, danger=True)
 
     def _cleared(self, removed, failure) -> None:
         if failure is not None:
             self._message(present_generation_failure(failure))
             return
-        text = f"{removed} queue(s) removed." if removed else "No queue could be removed."
-        self._message(Presentation("ok", "Queues cleared", text))
+        text = f"{removed} queue(s) removed." if removed else "No finished or cancelled queue to remove."
+        self._message(Presentation("ok", "History cleared", text))
+        self.refresh()
+
+    def remove(self) -> None:
+        """Remove the selected queue record after inline consent; its attempts and outputs stay."""
+        panel = feedback(self.page)
+        if panel.commit(self.page.removeQueueButton):
+            return
+        view = self._view()
+        if not self._removable(view):
+            return
+        queue_id = view["queue_id"]
+
+        def proceed():
+            keep = (self._dispatching,) if self._dispatching else ()
+            self._runner.submit(remove_queue(self._state, queue_id, keep), self._removed)
+
+        confirm_action(
+            self.page,
+            self.page.removeQueueButton,
+            "Remove queue",
+            f"{queue_title(view)}: {REMOVE_TEXT}",
+            proceed,
+            danger=True,
+        )
+
+    def _removed(self, _, failure) -> None:
+        if failure is not None:
+            self._message(present_generation_failure(failure))
+            return
+        self._message(Presentation("ok", "Queue removed", "Its attempts and saved images are kept."))
         self.refresh()
 
     # -- concurrency -----------------------------------------------------------------------------------------------
     def _cap_changed(self, value: int) -> None:
+        """The header maximum posts a ``cap`` control for the selected queue only (active work is kept)."""
         if self._syncing:
             return
         try:
@@ -878,15 +1086,22 @@ class QueuePage:
         except ValidationError as exc:
             self._message(Presentation("error", "Concurrency not changed", str(exc)))
             return
-        self._set_level(value)
+        self._set_level(self.page.concurrencySpinBox, value)
         view = self._view()
-        backend = view["backend"]["name"] if view else self._backend()[0]
-        queue_id = view["queue_id"] if self._editable(view) else None
-        # Without an editable queue the box edits the shared cloud default, which only the cloud provider writes.
-        save_shared = (backend if queue_id is not None else self._backend()[0]) == "cloud"
-        self._runner.submit(
-            set_concurrency(self._state, value, queue_id=queue_id, save_shared=save_shared), self._cap_done
-        )
+        if not self._editable(view):
+            return
+        self._runner.submit(set_concurrency(self._state, value, queue_id=view["queue_id"]), self._cap_done)
+
+    def _new_cap_changed(self, value: int) -> None:
+        """The new-queue maximum; with cloud chosen it is also saved as the shared default for new cloud queues."""
+        if self._syncing:
+            return
+        self._set_level(self.page.newQueueCapSpinBox, value)
+        if self._backend()[0] != "cloud":
+            return
+        self._shared_epoch += 1
+        self._shared_cap = value
+        self._runner.submit(set_concurrency(self._state, value, save_shared=True), self._cap_done)
 
     def _cap_done(self, value, failure) -> None:
         if failure is not None:

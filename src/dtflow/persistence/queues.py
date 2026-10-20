@@ -3,8 +3,9 @@
 The dispatch owner is the process that holds the state directory's ``owner.lock`` through ``SQLiteAttempts``; every
 queue mutation that dispatches work runs on that owned connection in a short ``BEGIN IMMEDIATE`` transaction and is never
 held open while generating. Other processes never dispatch: they only append control requests with
-``post_control``, add a new paused queue with ``insert_queue`` or read with ``read_queues``, each over their own short
-connection, and the owner polls the controls. A new paused queue is a pure insert that no dispatcher reads until Start.
+``post_control``, add a new paused queue with ``insert_queue``, remove idle queue records or read with ``read_queues``
+and ``read_queue_summaries``, each over their own short connection, and the owner polls the controls. A new paused
+queue is a pure insert that no dispatcher reads until Start.
 
 *Up next* (schema 4): a ``queued`` queue waits, in ``up_next`` order, for the live dispatch owner to finish its current
 queue; the owner then claims and starts it on the same ownership (auto-play). The owner advertises itself with the
@@ -690,31 +691,47 @@ def _leave_up_next(db: sqlite3.Connection, queue_id: str, now: str, *, cancel: b
     )
 
 
-def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
-    """Delete finished, cancelled and paused queues with their items, controls and events; return how many went.
+def _removable(connection: sqlite3.Connection, where: str, params: Sequence[Any], keep: Sequence[str]) -> list[str]:
+    """Queues matching ``where`` that no dispatcher can be working on: not running or waiting up next with work left,
+    no running reservation, and not named in ``keep`` (the caller's own dispatch)."""
+    return [
+        row["queue_id"]
+        for row in connection.execute(
+            f"""SELECT q.queue_id FROM queues q
+            WHERE ({where})
+                AND (q.state IN ('paused','cancelled') OR NOT EXISTS (
+                    SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state IN ('pending','running')))
+                AND NOT EXISTS (SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state='running')""",
+            tuple(params),
+        )
+        if row["queue_id"] not in keep
+    ]
 
-    Attempts and saved outputs are never touched. A queue that is running or holds a running reservation is kept.
-    ``keep`` names queues the caller is dispatching (a paused queue can still be owned by a live
-    dispatcher).
+
+def _delete(connection: sqlite3.Connection, queue_ids: Sequence[str]) -> None:
+    for table in ("queue_controls", "queue_events", "queue_items", "queues"):
+        connection.executemany(f"DELETE FROM {table} WHERE queue_id=?", [(queue_id,) for queue_id in queue_ids])
+
+
+def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
+    """Clear history: delete finished and cancelled queues with their items, controls and events; return how many went.
+
+    Paused queues are kept (they still have work to start), and so is a queue that is running, waiting up next or
+    holds a running reservation. Attempts and saved outputs are never touched. ``keep`` names queues the caller is
+    dispatching.
     """
     connection = _shared_connection(directory)
     try:
         connection.execute("BEGIN IMMEDIATE")
         try:
-            queue_ids = [
-                row["queue_id"]
-                for row in connection.execute(
-                    """SELECT q.queue_id FROM queues q
-                    WHERE (q.state IN ('paused','cancelled') OR NOT EXISTS (
-                            SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state IN ('pending','running')))
-                        AND NOT EXISTS (
-                            SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id
-                                AND i.state='running')"""
-                )
-                if row["queue_id"] not in keep
-            ]
-            for table in ("queue_controls", "queue_events", "queue_items", "queues"):
-                connection.executemany(f"DELETE FROM {table} WHERE queue_id=?", [(queue_id,) for queue_id in queue_ids])
+            queue_ids = _removable(
+                connection,
+                "q.state='cancelled' OR NOT EXISTS (SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id "
+                "AND i.state IN ('pending','running'))",
+                (),
+                keep,
+            )
+            _delete(connection, queue_ids)
             connection.execute("COMMIT")
         except BaseException:
             connection.execute("ROLLBACK")
@@ -724,11 +741,107 @@ def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
     return len(queue_ids)
 
 
+def delete_queue(directory: Path, queue_id: str, keep: Sequence[str] = ()) -> None:
+    """Remove one queue record (a paused, finished or cancelled one) with its items, controls and events.
+
+    Attempts and saved outputs are never touched. A queue that is running, waiting up next, holds a running
+    reservation or is named in ``keep`` is refused, and nothing changes.
+    """
+    connection = _shared_connection(directory)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            if connection.execute("SELECT 1 FROM queues WHERE queue_id=?", (queue_id,)).fetchone() is None:
+                raise QueueError("Unknown queue.")
+            if not _removable(connection, "q.queue_id=? AND q.state != 'queued'", (queue_id,), keep):
+                raise QueueError("A running or up-next queue cannot be removed; cancel or pause it first.")
+            _delete(connection, (queue_id,))
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+
+
 def _summary(items: list[dict[str, Any]]) -> dict[str, int]:
     counts = {state: 0 for state in ITEM_STATES}
     for item in items:
         counts[item["state"]] += 1
     return counts
+
+
+def _status(state: str, summary: dict[str, int]) -> str:
+    if state == "cancelled":
+        return "cancelled"
+    if not (summary["pending"] or summary["running"]):
+        return "finished"
+    return state
+
+
+# What a queue's items can differ in, read straight from each stored request (``asdict`` field names).
+_VARIED = {
+    "prompt": "json_extract(request_json, '$.prompt')",
+    "model": "json_extract(request_json, '$.model_id')",
+    "seed": "json_extract(request_json, '$.seed')",
+    "steps": "json_extract(request_json, '$.steps')",
+    "guidance": "json_extract(request_json, '$.guidance')",
+    "sampler": "json_extract(request_json, '$.sampler_id')",
+    "size": "json_extract(request_json, '$.width_px') || 'x' || json_extract(request_json, '$.height_px')",
+    "strength": "json_extract(request_json, '$.strength')",
+    "loras": "json_extract(request_json, '$.loras')",
+}
+
+
+def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> tuple[dict[str, Any], ...]:
+    """List every queue without its items or events: status, item counts and what the first item asks for.
+
+    Counts come from the state index and the description from the first item only, so a poll stays light however
+    large the queues are. ``varied`` names what the items differ in (with how many distinct values); items never
+    change after creation, so queues in ``described`` skip that scan and report ``varied`` as None.
+    """
+    connection = _shared_connection(directory, readonly=True)
+    try:
+        counts: dict[str, dict[str, int]] = {}
+        for row in connection.execute(
+            "SELECT queue_id, state, COUNT(*) AS n FROM queue_items GROUP BY queue_id, state"
+        ):
+            counts.setdefault(row["queue_id"], {state: 0 for state in ITEM_STATES})[row["state"]] = row["n"]
+        queues = []
+        for row in connection.execute("SELECT * FROM queues ORDER BY created_at_utc, queue_id").fetchall():
+            queue = {key: row[key] for key in row.keys() if key not in ("backend_json",)}
+            queue["backend"] = json.loads(row["backend_json"])
+            queue.setdefault("up_next", None)  # a schema 2 or 3 database read without migrating
+            summary = counts.get(row["queue_id"], {state: 0 for state in ITEM_STATES})
+            queue["summary"] = summary
+            queue["status"] = _status(row["state"], summary)
+            first = connection.execute(
+                "SELECT request_json FROM queue_items WHERE queue_id=? ORDER BY position LIMIT 1", (row["queue_id"],)
+            ).fetchone()
+            try:
+                request = json.loads(first["request_json"]) if first else {}
+            except (TypeError, ValueError):
+                request = {}
+            request = request if isinstance(request, dict) else {}
+            queue["first"] = {
+                "prompt": request.get("prompt") if isinstance(request.get("prompt"), str) else "",
+                "model": request.get("model_id") if isinstance(request.get("model_id"), str) else "",
+                "operation": request.get("operation") or "txt2img",
+            }
+            queue["varied"] = None
+            if row["queue_id"] not in described:
+                columns = ", ".join(
+                    f"COUNT(DISTINCT CASE WHEN json_valid(request_json) THEN {expression} END) AS {name}"
+                    for name, expression in _VARIED.items()
+                )
+                distinct = connection.execute(
+                    f"SELECT {columns} FROM queue_items WHERE queue_id=?", (row["queue_id"],)
+                ).fetchone()
+                queue["varied"] = {name: distinct[name] for name in _VARIED if distinct[name] > 1}
+            queues.append(queue)
+        return tuple(queues)
+    finally:
+        connection.close()
 
 
 def read_queues(directory: Path, queue_id: str | None = None) -> tuple[dict[str, Any], ...]:
@@ -782,13 +895,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                 }
             )
         queue["summary"] = _summary(items)
-        summary = queue["summary"]
-        if row["state"] == "cancelled":
-            queue["status"] = "cancelled"
-        elif not (summary["pending"] or summary["running"]):
-            queue["status"] = "finished"
-        else:
-            queue["status"] = row["state"]
+        queue["status"] = _status(row["state"], queue["summary"])
         queue["items"] = items
         queue["pending_controls"] = [
             c["action"]
