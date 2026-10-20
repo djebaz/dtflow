@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from statistics import median
 
+from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import local_time
 
 MIN_ETA_SAMPLES = 1
@@ -42,25 +43,7 @@ def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> fl
     samples = _duration_samples(view)
     if running <= 0 or remaining <= 0 or len(samples) < max(1, minimum_samples):
         return None
-    typical = median(samples)
-    starts = view.get("running_started_at_utc")
-    if starts is not None and len(starts) == running:
-        now = datetime.now().astimezone()
-        ages = []
-        for stamp in starts:
-            try:
-                started = datetime.fromisoformat(stamp)
-                if started.tzinfo is None:
-                    break
-                ages.append(max(0.0, (now - started).total_seconds()))
-            except (TypeError, ValueError, OverflowError):
-                break
-        if len(ages) == running:
-            seconds = (typical * counts.get("pending", 0) + sum(max(0.0, typical - age) for age in ages)) / running
-            return max(0.0, seconds) if math.isfinite(seconds) else None
-    seconds = typical * remaining / running
-    return seconds if math.isfinite(seconds) and seconds > 0 else None
-
+    return estimate_queue_seconds(counts, samples, view.get("running_started_at_utc"))
 
 @dataclass
 class QueueCountdown:
@@ -85,13 +68,8 @@ class QueueCountdown:
             _duration_samples(view),
             tuple(view.get("running_started_at_utc") or ()),
         )
-        if signature != self.signature:
-            self.signature, self.deadline = signature, now + estimate
-        elif self.deadline is not None and now >= self.deadline:
-            # A prediction expiring is not evidence that the running job finished.
-            # Keep the display explicitly estimated instead of freezing at 0:00.
-            self.deadline = now + max(1.0, median(_duration_samples(view)))
-        return max(0.0, self.deadline - now)
+        self.signature, self.deadline = signature, now + estimate
+        return estimate
 
 
 def _clock(seconds: int) -> str:
