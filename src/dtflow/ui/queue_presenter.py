@@ -42,7 +42,23 @@ def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> fl
     samples = _duration_samples(view)
     if running <= 0 or remaining <= 0 or len(samples) < max(1, minimum_samples):
         return None
-    seconds = median(samples) * remaining / running
+    typical = median(samples)
+    starts = view.get("running_started_at_utc")
+    if starts is not None and len(starts) == running:
+        now = datetime.now().astimezone()
+        ages = []
+        for stamp in starts:
+            try:
+                started = datetime.fromisoformat(stamp)
+                if started.tzinfo is None:
+                    break
+                ages.append(max(0.0, (now - started).total_seconds()))
+            except (TypeError, ValueError, OverflowError):
+                break
+        if len(ages) == running:
+            seconds = (typical * counts.get("pending", 0) + sum(max(0.0, typical - age) for age in ages)) / running
+            return max(0.0, seconds) if math.isfinite(seconds) else None
+    seconds = typical * remaining / running
     return seconds if math.isfinite(seconds) and seconds > 0 else None
 
 
@@ -67,6 +83,7 @@ class QueueCountdown:
             view.get("resume_event_id", 0),
             tuple(view["summary"].get(state, 0) for state in ("pending", "running", *SETTLED)),
             _duration_samples(view),
+            tuple(view.get("running_started_at_utc") or ()),
         )
         if signature != self.signature:
             self.signature, self.deadline = signature, now + estimate
