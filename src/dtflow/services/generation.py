@@ -45,6 +45,27 @@ from dtflow.services.preflight import preflight_loras, raise_if_blocked
 log = logging.getLogger(__name__)
 
 
+def _buffer_reservation(request: ResolvedGenerationRequest, caps, prepared_inputs: PreparedImageInputs | None) -> int:
+    """Reserve one cloud text-to-image artifact; retain conservative image-edit buffers."""
+    raw_bytes = request.height_px * (1 + request.width_px * 4)
+    if caps.backend_id == "drawthings-cloud" and prepared_inputs is None:
+        # Cloud inference is remote and permits one output per request; do not reserve three artifacts.
+        return caps.limits.artifact_bytes
+    reservation = raw_bytes + 3 * caps.limits.artifact_bytes + caps.limits.preview_bytes
+    if prepared_inputs is not None:
+        # Edits retain prepared grids, encoded PNGs and SDK tensors; keep their larger allowance.
+        reservation += (
+            sum(
+                len(getattr(prepared_inputs, name).encoded)
+                for name in INPUT_NAMES
+                if getattr(prepared_inputs, name) is not None
+            )
+            + prepared_inputs.source.width * prepared_inputs.source.height * 16
+            + request.width_px * request.height_px * 24
+        )
+    return reservation
+
+
 class GenerationService:
     """Own orchestration only; adapters, persistence and presentation are injected."""
 
@@ -171,20 +192,7 @@ class GenerationService:
             # Confirmed incompatibility or absence must stop the request before any durable attempt exists.
             raise_if_blocked(request, await self.preflight(request))
         raw_bytes = request.height_px * (1 + request.width_px * 4)
-        reservation = raw_bytes + 3 * caps.limits.artifact_bytes + caps.limits.preview_bytes
-        if prepared_inputs is not None:
-            # Conservative allowance for retained PNGs, preparation/verification
-            # grids, SDK tensor temporaries and full protobuf serialization. This
-            # is admission policy, not measured peak-RSS/performance evidence.
-            reservation += (
-                sum(
-                    len(getattr(prepared_inputs, name).encoded)
-                    for name in INPUT_NAMES
-                    if getattr(prepared_inputs, name) is not None
-                )
-                + prepared_inputs.source.width * prepared_inputs.source.height * 16
-                + request.width_px * request.height_px * 24
-            )
+        reservation = _buffer_reservation(request, caps, prepared_inputs)
         if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
             raise BackendError(
                 BackendFailure(
