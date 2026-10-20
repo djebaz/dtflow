@@ -203,8 +203,8 @@ Sources: `queue_page.py`, `queue_model.py`, `queue_presenter.py`, `planning_pres
 | [x] | `queues-11-running` | Local-owned running queue, settled count, active items and Pause availability. |
 | [x] | `queues-12-paused-after-start` | Paused local dispatch with Resume available, distinct from never-started paused. |
 | [x] | `queues-13-foreign-running` | Queue/table owned elsewhere and status-only global run control. |
-| [x] | `queues-14-blocked-unknown` | Unknown item/reservation evidence and enabled Acknowledge/Override action. |
-| [x] | `queues-15-override-confirmation` | Existing fresh reservation acknowledgement consent; no service mutation. |
+| [x] | `queues-14-unknown-not-blocking` | Unknown item with a running queue: Pause and Cancel stay enabled; nothing is blocked. |
+| — | ~~`queues-15-override-confirmation`~~ | Removed with the Override control (#132). |
 | [x] | `queues-16-item-states` | Representative succeeded, failed, unknown, save_failed, cancelled and running row styling in one coherent fixture. |
 | [x] | `queues-17-item-inspection` | Selected unknown item's attempt identity, seed and uncertainty evidence available in the current Inspector. |
 | [x] | `queues-18-plan-invalid` | Real planner field marking/error rather than only a successful dry run. |

@@ -647,7 +647,6 @@ def render_active_queue_states(shell, out):
                     item_id=f"item-{position:04d}",
                     position=position,
                     state=state,
-                    overridden=False,
                     attempt_id=attempt,
                     request_id=f"request-{position:04d}",
                     seed=100 + position,
@@ -676,7 +675,6 @@ def render_active_queue_states(shell, out):
             cap=2,
             summary=counts,
             items=items,
-            blocked_by_uncertainty=counts["unknown"],
             pending_controls=[],
             events=events,
         )
@@ -702,17 +700,13 @@ def render_active_queue_states(shell, out):
         present("running", ["succeeded", "running", "pending"])
         assert queue._activity.run_state.action is None
         snap("queues-13-foreign-running")
-        present("blocked", ["unknown", "pending", "pending"])
-        assert page.overrideReservationButton.isEnabled() and not page.resumeQueueButton.isEnabled()
-        snap("queues-14-blocked-unknown")
-        page.overrideReservationButton.click()
-        assert shell.inline._armed and shell.inline._armed[0] is page.overrideReservationButton
-        snap("queues-15-override-confirmation")
-        shell.inline.dismiss()  # Never acknowledge or mutate a reservation.
-        present("blocked", ["succeeded", "failed", "unknown", "save_failed", "cancelled", "running"], owned=True)
+        present("running", ["unknown", "running", "pending"], owned=True)
+        assert page.pauseQueueButton.isEnabled() and page.cancelQueueButton.isEnabled()  # unknown blocks nothing
+        snap("queues-14-unknown-not-blocking")
+        present("running", ["succeeded", "failed", "unknown", "save_failed", "cancelled", "running"], owned=True)
         snap("queues-16-item-states")
         page.queueItemsView.setCurrentIndex(queue.model.index(2, 0))
-        assert "may have reached" in page.uncertaintyLabel.text()
+        assert "most likely failed" in page.uncertaintyLabel.text()
         assert page.attemptIdLabel.toolTip() == "attempt-0003"
         snap("queues-17-item-inspection")
         present("paused", ["pending", "pending"], started=False)
@@ -2168,13 +2162,10 @@ def render_queue_states(shell, capture):
     page.planDryRunButton.click()
     capture("queues-03-plan-dry-run")
     page.planBox.setChecked(False)
-    for button, name in (
-        (page.cancelQueueButton, "queues-04-cancel-confirmation"),
-        (page.clearQueuesButton, "queues-05-clear-confirmation"),
-    ):
-        button.click()
-        capture(name)
-        shell.inline.dismiss()
+    # Cancel posts immediately without confirmation (#120), so only Clear has a confirmation state.
+    page.clearQueuesButton.click()
+    capture("queues-05-clear-confirmation")
+    shell.inline.dismiss()
     view = queue._view()
     counts = dict.fromkeys(view["summary"], 0)
     strip = activity_strip(page)

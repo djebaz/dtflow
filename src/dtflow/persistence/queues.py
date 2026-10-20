@@ -6,8 +6,8 @@ held open while generating. Other processes never dispatch: they only append con
 ``post_control`` or read with ``read_queues``, both over their own short connection, and the owner polls the controls.
 
 An item is *reserved* the moment it is claimed (state ``running``), before its attempt exists or anything is
-submitted. A reservation ends only with a known outcome; ``unknown`` items stay reserved and block their backend until an
-explicit override, which is recorded and never resolves or replays the attempt.
+submitted. A reservation ends when the item settles. An ``unknown`` outcome is treated as an aborted request: its
+reservation is released, it never blocks other work, and the attempt is never replayed automatically.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from dtflow.core.request_records import request_from_record as decode_request
 
 QUEUE_STATES = ("paused", "running", "cancelled")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
-ACTIONS = ("pause", "resume", "cancel", "override", "cap")
+ACTIONS = ("pause", "resume", "cancel", "cap")
 MAX_ITEMS = MAX_QUEUE_ITEMS
 
 QUEUE_SCHEMA = (
@@ -109,7 +109,7 @@ def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
 
 
 def backend_key(backend: dict[str, Any]) -> str:
-    """Accounting identity of one backend: reservations and uncertainty are shared by every queue using it."""
+    """Accounting identity of one backend: reservations are shared by every queue using it."""
     return f"{backend['name']}:{backend.get('endpoint') or '-'}"
 
 
@@ -226,7 +226,11 @@ class QueueMixin:
                 elif action == "cap" and type(payload.get("cap")) is int and 1 <= payload["cap"] <= 4:
                     db.execute("UPDATE queues SET cap=? WHERE queue_id=?", (payload["cap"], queue_id))
                 elif action == "override":
-                    self._override(db, queue["backend_key"], queue_id, now)
+                    # A control posted by an older version: unknown outcomes no longer block, so consume it silently.
+                    db.execute(
+                        "UPDATE queue_controls SET applied_at_utc=? WHERE control_id=?", (now, control["control_id"])
+                    )
+                    continue
                 else:
                     self._event(db, queue_id, "control_ignored", now, {"action": action, "state": state})
                     db.execute(
@@ -241,24 +245,6 @@ class QueueMixin:
             if state != queue["state"]:
                 db.execute("UPDATE queues SET state=?, updated_at_utc=? WHERE queue_id=?", (state, now, queue_id))
         return tuple(applied)
-
-    @staticmethod
-    def _override(db: sqlite3.Connection, key: str, queue_id: str, now: str) -> None:
-        """Acknowledge unresolved unknown reservations on this backend; the attempts stay unknown and unreplayed."""
-        rows = db.execute(
-            """SELECT i.item_id, i.queue_id, i.attempt_id FROM queue_items i JOIN queues q USING (queue_id)
-            WHERE q.backend_key=? AND i.state='unknown' AND i.overridden=0""",
-            (key,),
-        ).fetchall()
-        for row in rows:
-            db.execute("UPDATE queue_items SET overridden=1, updated_at_utc=? WHERE item_id=?", (now, row["item_id"]))
-            QueueMixin._event(
-                db,
-                row["queue_id"],
-                "override_acknowledged",
-                now,
-                {"item_id": row["item_id"], "attempt_id": row["attempt_id"], "invoked_on": queue_id},
-            )
 
     # -- dispatch -------------------------------------------------------------------------------------------------
 
@@ -279,7 +265,7 @@ class QueueMixin:
                 raise QueueError("Unknown queue.")
 
     async def claim_next(self, queue_id: str, limit: int) -> tuple[str, ResolvedGenerationRequest] | None:
-        """Reserve the next eligible item, or None when paused, blocked, capped or exhausted."""
+        """Reserve the next eligible item, or None when paused, capped or exhausted."""
         return await self._run(self._claim_next, queue_id, limit)
 
     def _claim_next(self, queue_id: str, limit: int):
@@ -289,8 +275,7 @@ class QueueMixin:
                 raise QueueError("Unknown queue.")
             if queue["state"] != "running":
                 return None
-            blocked, reserved = self._accounting(db, queue["backend_key"])
-            if blocked or reserved >= min(queue["cap"], limit):
+            if self._reserved(db, queue["backend_key"]) >= min(queue["cap"], limit):
                 return None
             # Bound one claim transaction even if externally corrupted rows exceed
             # the normal queue creation limit. Never reserve an invalid request.
@@ -348,16 +333,15 @@ class QueueMixin:
             return None
 
     @staticmethod
-    def _accounting(db: sqlite3.Connection, key: str) -> tuple[bool, int]:
-        """(blocked by unacknowledged uncertainty, reservations in flight) across queues sharing a backend."""
+    def _reserved(db: sqlite3.Connection, key: str) -> int:
+        """Reservations in flight across queues sharing a backend. An ``unknown`` outcome holds none: it is treated as
+        an aborted request that is never re-sent, and never blocks other work."""
         row = db.execute(
-            """SELECT
-                COALESCE(SUM(i.state='unknown' AND i.overridden=0), 0) AS uncertain,
-                COALESCE(SUM(i.state='running'), 0) AS running
+            """SELECT COALESCE(SUM(i.state='running'), 0) AS running
             FROM queue_items i JOIN queues q USING (queue_id) WHERE q.backend_key=?""",
             (key,),
         ).fetchone()
-        return bool(row["uncertain"]), row["running"]
+        return row["running"]
 
     async def settle_item(self, item_id: str, failure: dict[str, Any] | None = None) -> str:
         """Record an item's end state from its attempt; without an attempt it was definitely never submitted."""
@@ -495,9 +479,8 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
 def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
     """Delete finished, cancelled and paused queues with their items, controls and events; return how many went.
 
-    Attempts and saved outputs are never touched. A queue that is running, holds a running reservation or has an
-    unacknowledged unknown outcome is kept: its uncertainty still blocks the backend until an explicit override, so its
-    record must stay. ``keep`` names queues the caller is dispatching (a paused queue can still be owned by a live
+    Attempts and saved outputs are never touched. A queue that is running or holds a running reservation is kept.
+    ``keep`` names queues the caller is dispatching (a paused queue can still be owned by a live
     dispatcher).
     """
     connection = _shared_connection(directory)
@@ -512,7 +495,7 @@ def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
                             SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state IN ('pending','running')))
                         AND NOT EXISTS (
                             SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id
-                                AND (i.state='running' OR (i.state='unknown' AND i.overridden=0)))"""
+                                AND i.state='running')"""
                 )
                 if row["queue_id"] not in keep
             ]
@@ -557,7 +540,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
         queue["backend"] = json.loads(row["backend_json"])
         items = []
         for item in connection.execute(
-            """SELECT i.item_id, i.position, i.state, i.overridden, i.attempt_id, i.failure_json, i.request_json,
+            """SELECT i.item_id, i.position, i.state, i.attempt_id, i.failure_json, i.request_json,
                 a.state AS attempt_state, a.artifacts_json
             FROM queue_items i LEFT JOIN attempts a ON a.attempt_id = i.attempt_id
             WHERE i.queue_id=? ORDER BY i.position""",
@@ -574,7 +557,6 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "position": item["position"],
                     "item_id": item["item_id"],
                     "state": item["state"],
-                    "overridden": bool(item["overridden"]),
                     "attempt_id": item["attempt_id"],
                     "request_id": request.get("request_id"),
                     "seed": request.get("seed"),
@@ -585,15 +567,11 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                 }
             )
         queue["summary"] = _summary(items)
-        # Uncertainty on any queue using the same backend blocks this one too.
-        queue["blocked_by_uncertainty"] = QueueMixin._accounting(connection, row["backend_key"])[0]
         summary = queue["summary"]
         if row["state"] == "cancelled":
             queue["status"] = "cancelled"
         elif not (summary["pending"] or summary["running"]):
             queue["status"] = "finished"
-        elif queue["blocked_by_uncertainty"]:
-            queue["status"] = "blocked"
         else:
             queue["status"] = row["state"]
         queue["items"] = items

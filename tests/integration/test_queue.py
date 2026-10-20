@@ -221,30 +221,16 @@ async def _failure(state, queue, index):
 
 
 @pytest.mark.asyncio
-async def test_uncertain_reservation_blocks_survives_restart_and_override_never_replays(state):
-    """3B-O3: unknown blocks replacement and restart, plain Resume cannot clear it, override is recorded only."""
+async def test_unknown_outcome_is_aborted_never_blocks_and_never_replays(state):
+    """3B-O3: an unknown item is settled as aborted, releases its reservation, never blocks or replays."""
     backend = ScriptedBackend(1, open_all=True, lose=(1,))
     async with Harness(state, backend) as h:
         queue_id = await h.store.create_queue(BACKEND, 1, [item(n) for n in range(4)])
-        blocked = await asyncio.wait_for(h.run(queue_id), SETTLE)
-        assert [x["state"] for x in blocked["items"]] == ["succeeded", "unknown", "pending", "pending"]
-        assert blocked["blocked_by_uncertainty"] and blocked["status"] == "blocked"
-        post_control(state, queue_id, "resume")
-        again = await asyncio.wait_for(h.run(queue_id), SETTLE)  # ordinary Resume / start: still blocked
-        assert [x["state"] for x in again["items"]][2:] == ["pending", "pending"]
-        assert backend.started == [0, 1]
-    backend = ScriptedBackend(1, open_all=True)
-    async with Harness(state, backend) as h:  # new owner: restored paused, uncertainty and results retained
-        restored = await h.store.inspect_queue(queue_id)
-        assert restored["state"] == "paused" and restored["items"][1]["state"] == "unknown"
-        assert (await asyncio.wait_for(h.run(queue_id), SETTLE))["blocked_by_uncertainty"] and backend.started == []
-        post_control(state, queue_id, "override")
         final = await asyncio.wait_for(h.run(queue_id), SETTLE)
     assert [x["state"] for x in final["items"]] == ["succeeded", "unknown", "succeeded", "succeeded"]
-    assert backend.started == [2, 3]  # the uncertain item was never replayed
-    assert final["items"][1]["overridden"] and final["items"][1]["attempt_id"]
-    recorded = [e for e in read_queues(state, queue_id)[0]["events"] if e["kind"] == "override_acknowledged"]
-    assert recorded[0]["detail"]["attempt_id"] == final["items"][1]["attempt_id"]
+    assert final["status"] == "finished" and "blocked_by_uncertainty" not in final
+    assert backend.started == [0, 1, 2, 3]  # the unknown item was dispatched once and never replayed
+    assert final["items"][1]["attempt_id"]
 
 
 @pytest.mark.asyncio
@@ -289,10 +275,8 @@ async def test_queue_crash_boundaries_reconcile_without_replay(state, boundary, 
         assert await store.claim_next(queue_id, 4) is None  # restored paused: nothing is eligible until start
         await store.set_running(queue_id)
         claim = await store.claim_next(queue_id, 4)
-        if item_state == "unknown":
-            assert claim is None  # the unresolved reservation blocks replacement
-        else:
-            assert claim is not None and claim[1].seed == (0 if item_state == "pending" else 1)
+        # The ambiguous item itself is never eligible again; an unknown outcome no longer blocks the next item.
+        assert claim is not None and claim[1].seed == (0 if item_state == "pending" else 1)
     finally:
         await store.aclose()
 
@@ -439,13 +423,13 @@ def test_queue_cli_add_start_controls_and_exit_codes(invoke):
     assert invoke("cancel", cancelled)[0] == 0
     code, out, _ = invoke("start", cancelled)
     assert code == 3 and json.loads(out)["summary"]["cancelled"] == 2
-    # An uncertain outcome blocks the backend: exit 4 with an explicit override hint, and no replay on restart.
+    # An unknown outcome is settled as aborted: it fails the run (exit 3), blocks nothing and is not replayed.
     lost = json.loads(invoke("add", "-b", "fake", "-p", "fixture", "-k", "2", "-j", "1", "-f", "lost")[1])["queue_id"]
     code, out, err = invoke("start", lost)
     summary = json.loads(out)["summary"]
-    assert code == 4 and "override" in err and (summary["unknown"], summary["pending"]) == (1, 1)
-    assert invoke("start", lost)[0] == 4
-    assert json.loads(invoke("show", lost)[1])["summary"]["unknown"] == 1
+    assert code == 3 and summary["unknown"] == 2 and summary["pending"] == 0
+    assert invoke("start", lost)[0] == 3
+    assert json.loads(invoke("show", lost)[1])["summary"]["unknown"] == 2
     # Invalid input never creates or controls anything.
     for bad in (("add", "-b", "fake", "-k", "0"), ("add", "-b", "local"), ("show", "missing"), ("pause", "missing")):
         assert invoke(*bad)[0] == 2

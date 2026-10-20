@@ -78,7 +78,7 @@ def states(window):
 
 
 def row(item_id, position, state, outputs=()):
-    return ItemRow(item_id, position, state, False, None, position, tuple(outputs), None, None)
+    return ItemRow(item_id, position, state, None, position, tuple(outputs), None, None)
 
 
 def test_model_keeps_order_and_updates_only_the_changed_row_out_of_order(qtbot):
@@ -138,16 +138,7 @@ def test_pause_resume_and_cancel_post_shared_controls_with_honest_wording(window
     qtbot.waitUntil(lambda: states(window) == ["succeeded"] * 3, timeout=10000)
 
     create_second(window, qtbot)
-    page.cancelQueueButton.click()
-    assert page.cancelQueueButton.property("confirmationPending") is True
-    assert "cancel" not in cancel_controls(window)
-    window.inline.form.inlineDismissButton.click()
-    assert not page.cancelQueueButton.property("confirmationPending")
-    qtbot.wait(300)
-    assert "cancel" not in cancel_controls(window)  # declined: nothing was posted
-    page.cancelQueueButton.click()  # review
-    assert "cancel" not in cancel_controls(window)
-    page.cancelQueueButton.click()  # explicit confirmation
+    page.cancelQueueButton.click()  # no confirmation: Cancel posts immediately
     qtbot.waitUntil(lambda: "cancel" in cancel_controls(window), timeout=5000)
 
 
@@ -171,22 +162,19 @@ def test_cancel_stops_waiting_locally_and_leaves_unknown_not_a_remote_claim(wind
     page.startQueueButton.click()
     qtbot.waitUntil(lambda: states(window)[:1] == ["running"], timeout=5000)
     page.cancelQueueButton.click()
-    assert page.cancelQueueButton.property("confirmationPending") is True
-    assert window.queue.dispatching_here and "cancel" not in cancel_controls(window)
-    page.cancelQueueButton.click()
     qtbot.waitUntil(
         lambda: state_text(window).startswith("Cancelled") and not window.queue.dispatching_here, timeout=10000
     )
     # The outcome text is set before the follow-up read lands (a poll already in flight can still show "running"),
     # so wait for the table to settle before asserting on it.
-    qtbot.waitUntil(lambda: states(window) == ["unknown", "cancelled", "cancelled"], timeout=10000)
-    assert states(window) == ["unknown", "cancelled", "cancelled"]  # the active attempt may have reached the server
+    qtbot.waitUntil(lambda: states(window) == ["no result", "cancelled", "cancelled"], timeout=10000)
+    assert states(window) == ["no result", "cancelled", "cancelled"]  # the active attempt may have reached the server
     page.queueItemsView.selectRow(0)
-    assert page.uncertaintyLabel.text().startswith("Outcome unknown")
+    assert page.uncertaintyLabel.text().startswith("No final result was received")
     assert "cancelled on the server" not in page.queueMessageLabel.text().lower()
 
 
-def test_unresolved_reservation_blocks_and_override_never_replays(window, qtbot, tmp_path):
+def test_unknown_outcome_does_not_block_and_is_never_replayed(window, qtbot, tmp_path):
     state = window.state_dir
     window.runner.submit(
         create_queue(
@@ -201,29 +189,10 @@ def test_unresolved_reservation_blocks_and_override_never_replays(window, qtbot,
     qtbot.waitUntil(lambda: (page.refreshQueuesButton.click() or True) and page.queueList.count() == 1, timeout=5000)
     page.queueList.setCurrentRow(0)
     page.startQueueButton.click()
-    qtbot.waitUntil(
-        lambda: state_text(window).startswith("Blocked") and not window.queue.dispatching_here, timeout=10000
-    )
-    assert states(window) == ["unknown", "pending"]
-    assert page.overrideReservationButton.isEnabled() and not page.resumeQueueButton.isEnabled()
-    assert not page.startQueueButton.isEnabled()  # blocked: Start/Resume cannot clear uncertainty
+    qtbot.waitUntil(lambda: not window.queue.dispatching_here and states(window) == ["no result"] * 2, timeout=10000)
+    assert state_text(window).startswith("Finished")
     page.queueItemsView.selectRow(0)
-    assert "Resume does not clear it" in page.uncertaintyLabel.text()
-
-    page.overrideReservationButton.click()
-    assert page.overrideReservationButton.property("confirmationPending") is True
-    assert "override" not in cancel_controls(window)
-    window.inline.form.inlineDismissButton.click()
-    qtbot.wait(200)
-    assert "override" not in cancel_controls(window)  # declined: nothing recorded
-    page.overrideReservationButton.click()
-    assert "override" not in cancel_controls(window)
-    page.overrideReservationButton.click()
-    qtbot.waitUntil(lambda: "override" in cancel_controls(window), timeout=5000)
-    qtbot.waitUntil(lambda: page.startQueueButton.isEnabled(), timeout=5000)
-    page.startQueueButton.click()  # the next start applies the override, then runs the pending item (also "lost")
-    qtbot.waitUntil(lambda: states(window)[1] == "unknown" and not window.queue.dispatching_here, timeout=10000)
-    assert states(window)[0] == "unknown (overridden)"
+    assert "most likely failed" in page.uncertaintyLabel.text()
     with sqlite3.connect(state / "attempts.sqlite3") as db:
         assert db.execute("SELECT COUNT(*) FROM attempts").fetchone()[0] == 2  # one attempt per item, none replayed
 
