@@ -539,6 +539,15 @@ def event_lines(view: dict) -> str:
             summary = "Queue started"
         elif kind == "backend_submission_possible":
             summary = f"{item_label(detail)} submitted"
+        elif kind == "timing_snapshot":
+            elapsed = detail.get("elapsed_seconds")
+            eta = detail.get("eta_seconds")
+            if type(elapsed) is not int or elapsed < 0:
+                continue
+            if type(eta) is int and eta >= 0:
+                summary = f"Timing snapshot - elapsed {_clock(elapsed)} | ETA ~{_clock(eta)} | elapsed + ETA ~{_clock(elapsed + eta)} (estimate)"
+            else:
+                summary = f"Timing snapshot - elapsed {_clock(elapsed)} | ETA unavailable | elapsed + ETA unavailable"
         elif kind == "item_settled":
             state = str(detail.get("state", "settled"))
             state = "no result" if state == "unknown" else state.replace("_", " ")
