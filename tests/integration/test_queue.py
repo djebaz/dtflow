@@ -149,7 +149,7 @@ async def test_ten_items_ten_slots_start_before_completion(state):
     async with Harness(state, backend) as h:
         queue_id = await h.store.create_queue(BACKEND, 10, [item(n) for n in range(10)])
         run = h.run(queue_id)
-        await watch(lambda: len(backend.started) == 10)
+        await until(lambda: len(backend.started) == 10)
         assert backend.started == list(range(10)) and backend.active == backend.peak == 10
         backend.release(*range(10))
         final = await asyncio.wait_for(run, SETTLE)
