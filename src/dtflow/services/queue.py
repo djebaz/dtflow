@@ -11,10 +11,10 @@ import asyncio
 import logging
 import math
 from datetime import datetime, timezone
-from statistics import median
 from collections.abc import Callable
 from typing import Any
 
+from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -140,14 +140,12 @@ class QueueDispatcher:
                 for event in view["events"]
                 if event["kind"] == "item_settled" and event["detail"].get("state") == "succeeded"
             ]
-            durations = [float(value) for value in durations if type(value) in (int, float) and math.isfinite(value) and value >= 0]
             counts = view["summary"]
-            remaining = counts["pending"] + counts["running"]
-            eta = (
-                math.ceil(median(durations) * remaining / counts["running"])
-                if durations and counts["running"] and remaining
-                else 0 if not remaining else None
-            )
+            running_starts = [
+                item["updated_at_utc"] for item in view["items"] if item["state"] == "running"
+            ]
+            estimate = estimate_queue_seconds(counts, durations, running_starts)
+            eta = math.ceil(estimate) if estimate is not None else (0 if not counts["pending"] and not counts["running"] else None)
             await self._record_event(queue_id, "timing_snapshot", {"elapsed_seconds": elapsed, "eta_seconds": eta})
         except Exception as exc:
             diagnostic_event(log, "queue.timing_snapshot_not_recorded", level=logging.WARNING, data={"reason": type(exc).__name__})
