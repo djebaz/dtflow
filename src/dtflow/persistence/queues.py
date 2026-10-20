@@ -3,7 +3,14 @@
 The dispatch owner is the process that holds the state directory's ``owner.lock`` through ``SQLiteAttempts``; every
 queue mutation that dispatches work runs on that owned connection in a short ``BEGIN IMMEDIATE`` transaction and is never
 held open while generating. Other processes never dispatch: they only append control requests with
-``post_control`` or read with ``read_queues``, both over their own short connection, and the owner polls the controls.
+``post_control``, add a new paused queue with ``insert_queue`` or read with ``read_queues``, each over their own short
+connection, and the owner polls the controls. A new paused queue is a pure insert that no dispatcher reads until Start.
+
+*Up next* (schema 4): a ``queued`` queue waits, in ``up_next`` order, for the live dispatch owner to finish its current
+queue; the owner then claims and starts it on the same ownership (auto-play). The owner advertises itself with the
+single ``queue_dispatch`` row; joining the order requires that row inside the same transaction, and the owner removes it
+in the transaction that finds the order empty or releases it. Whenever a new owner opens the state, and whenever an
+owner stops, every queued queue is restored paused, so nothing auto-starts after a restart or a failure.
 
 An item is *reserved* the moment it is claimed (state ``running``), before its attempt exists or anything is
 submitted. A reservation ends when the item settles. An ``unknown`` outcome is treated as an aborted request: its
@@ -17,6 +24,7 @@ import sqlite3
 from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -28,7 +36,8 @@ from dtflow.core.models import (
 )
 from dtflow.core.request_records import request_from_record as decode_request
 
-QUEUE_STATES = ("paused", "running", "cancelled")
+QUEUE_STATES = ("paused", "queued", "running", "cancelled")
+UP_NEXT_ACTIONS = ("enqueue", "dequeue", "cancel", "earlier", "later")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
 ACTIONS = ("pause", "resume", "cancel", "cap")
 MAX_ITEMS = MAX_QUEUE_ITEMS
@@ -41,7 +50,8 @@ QUEUE_SCHEMA = (
         state TEXT NOT NULL,
         cap INTEGER NOT NULL,
         created_at_utc TEXT NOT NULL,
-        updated_at_utc TEXT NOT NULL
+        updated_at_utc TEXT NOT NULL,
+        up_next INTEGER
     )""",
     """CREATE TABLE IF NOT EXISTS queue_items (
         item_id TEXT PRIMARY KEY,
@@ -64,6 +74,10 @@ QUEUE_SCHEMA = (
         created_at_utc TEXT NOT NULL,
         applied_at_utc TEXT
     )""",
+    """CREATE TABLE IF NOT EXISTS queue_dispatch (
+        owner INTEGER PRIMARY KEY CHECK (owner = 1),
+        started_at_utc TEXT NOT NULL
+    )""",
     """CREATE TABLE IF NOT EXISTS queue_events (
         event_id INTEGER PRIMARY KEY AUTOINCREMENT,
         queue_id TEXT NOT NULL,
@@ -82,6 +96,12 @@ ATTEMPT_TO_ITEM = {
     "failed": "failed",
     "interrupted_before_submission": "failed",
 }
+
+
+def add_up_next(db: sqlite3.Connection) -> None:
+    """Schema 4 migration step: the up-next order column on a queues table created by schema 2 or 3."""
+    if "up_next" not in {row[1] for row in db.execute("PRAGMA table_info(queues)")}:
+        db.execute("ALTER TABLE queues ADD COLUMN up_next INTEGER")
 
 
 def check_queueable(request: ResolvedGenerationRequest) -> None:
@@ -111,6 +131,53 @@ def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
 def backend_key(backend: dict[str, Any]) -> str:
     """Accounting identity of one backend: reservations are shared by every queue using it."""
     return f"{backend['name']}:{backend.get('endpoint') or '-'}"
+
+
+def _check_new_queue(requests: Sequence[ResolvedGenerationRequest]) -> None:
+    if not requests or len(requests) > MAX_ITEMS:
+        raise QueueError(f"A queue needs 1..{MAX_ITEMS} items.")
+    if len({request.request_id for request in requests}) != len(requests):
+        raise QueueError("Queue items need distinct request identities.")
+    try:
+        for request in requests:
+            check_queueable(request)
+    except ValidationError as exc:
+        raise QueueError(str(exc)) from exc
+
+
+def _insert_paused(db: sqlite3.Connection, backend, cap, requests, now: str, *, up_next: bool = False) -> str:
+    """Insert one paused (or, behind a live owner, queued) queue with pending items in the caller's transaction."""
+    queue_id = uuid4().hex
+    db.execute(
+        "INSERT INTO queues (queue_id, backend_key, backend_json, state, cap, created_at_utc, updated_at_utc, up_next)"
+        " VALUES (?,?,?,?,?,?,?,?)",
+        (
+            queue_id,
+            backend_key(backend),
+            json.dumps(backend),
+            "queued" if up_next else "paused",
+            cap,
+            now,
+            now,
+            _last_up_next(db) + 1 if up_next else None,
+        ),
+    )
+    db.executemany(
+        "INSERT INTO queue_items (item_id, queue_id, position, request_json, state, updated_at_utc)"
+        " VALUES (?,?,?,?,'pending',?)",
+        [
+            (uuid4().hex, queue_id, index, json.dumps(asdict(request), allow_nan=False), now)
+            for index, request in enumerate(requests, 1)
+        ],
+    )
+    QueueMixin._event(db, queue_id, "created", now, {"items": len(requests), "cap": cap})
+    if up_next:
+        QueueMixin._event(db, queue_id, "enqueued", now)
+    return queue_id
+
+
+def _last_up_next(db: sqlite3.Connection) -> int:
+    return db.execute("SELECT COALESCE(MAX(up_next), 0) FROM queues WHERE state='queued'").fetchone()[0]
 
 
 class QueueError(ValidationError):
@@ -168,31 +235,9 @@ class QueueMixin:
         return await self._run(self._create_queue, backend, cap, tuple(requests))
 
     def _create_queue(self, backend, cap, requests) -> str:
-        if not requests or len(requests) > MAX_ITEMS:
-            raise QueueError(f"A queue needs 1..{MAX_ITEMS} items.")
-        if len({request.request_id for request in requests}) != len(requests):
-            raise QueueError("Queue items need distinct request identities.")
-        try:
-            for request in requests:
-                check_queueable(request)
-        except ValidationError as exc:
-            raise QueueError(str(exc)) from exc
-        queue_id, now = uuid4().hex, self._now()
+        _check_new_queue(requests)
         with self._txn() as db:
-            db.execute(
-                "INSERT INTO queues VALUES (?,?,?,?,?,?,?)",
-                (queue_id, backend_key(backend), json.dumps(backend), "paused", cap, now, now),
-            )
-            db.executemany(
-                "INSERT INTO queue_items (item_id, queue_id, position, request_json, state, updated_at_utc)"
-                " VALUES (?,?,?,?,'pending',?)",
-                [
-                    (uuid4().hex, queue_id, index, json.dumps(asdict(request), allow_nan=False), now)
-                    for index, request in enumerate(requests, 1)
-                ],
-            )
-            self._event(db, queue_id, "created", now, {"items": len(requests), "cap": cap})
-        return queue_id
+            return _insert_paused(db, backend, cap, requests, self._now())
 
     # -- controls -------------------------------------------------------------------------------------------------
 
@@ -263,6 +308,53 @@ class QueueMixin:
                 self._event(db, queue_id, "started", now)
             elif db.execute("SELECT 1 FROM queues WHERE queue_id=?", (queue_id,)).fetchone() is None:
                 raise QueueError("Unknown queue.")
+
+    async def open_up_next(self) -> None:
+        """Advertise this owner as live, so other connections may queue behind it until it drains or stops."""
+        await self._run(self._open_up_next)
+
+    def _open_up_next(self) -> None:
+        with self._txn() as db:
+            db.execute("INSERT OR REPLACE INTO queue_dispatch (owner, started_at_utc) VALUES (1, ?)", (self._now(),))
+
+    async def claim_queued(self) -> str | None:
+        """Auto-play: atomically start the first up-next queue, or close the order when none waits.
+
+        Picking and starting happen in one transaction, so a Pause, Cancel or reorder made before it is respected, and
+        a queue can never join after the owner found the order empty.
+        """
+        return await self._run(self._claim_queued)
+
+    def _claim_queued(self) -> str | None:
+        with self._txn() as db:
+            row = db.execute(
+                "SELECT queue_id FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc LIMIT 1"
+            ).fetchone()
+            if row is None:
+                db.execute("DELETE FROM queue_dispatch")
+                return None
+            now = self._now()
+            db.execute(
+                "UPDATE queues SET state='running', up_next=NULL, updated_at_utc=? WHERE queue_id=?",
+                (now, row["queue_id"]),
+            )
+            self._event(db, row["queue_id"], "started", now, {"by": "up_next"})
+            return row["queue_id"]
+
+    async def release_queued(self, reason: str, current: str | None = None) -> int:
+        """An owner that stops restores every queued queue paused (and ``current``, an auto-played queue it had not
+        finished, when it is still running), so nothing starts without a live owner."""
+        return await self._run(self._release_queued, reason, current)
+
+    def _release_queued(self, reason: str, current: str | None) -> int:
+        with self._txn() as db:
+            now = self._now()
+            if current is not None:
+                db.execute(
+                    "UPDATE queues SET state='paused', updated_at_utc=? WHERE queue_id=? AND state='running'",
+                    (now, current),
+                )
+            return _release_queued(db, now, reason)
 
     async def claim_next(self, queue_id: str, limit: int) -> tuple[str, ResolvedGenerationRequest] | None:
         """Reserve the next eligible item, or None when paused, capped or exhausted."""
@@ -420,6 +512,16 @@ class QueueMixin:
                 )
             QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
         db.execute("UPDATE queues SET state='paused', updated_at_utc=? WHERE state='running'", (now,))
+        _release_queued(db, now, "restart")
+
+
+def _release_queued(db: sqlite3.Connection, now: str, reason: str) -> int:
+    db.execute("DELETE FROM queue_dispatch")
+    queue_ids = [row["queue_id"] for row in db.execute("SELECT queue_id FROM queues WHERE state='queued'")]
+    for queue_id in queue_ids:
+        db.execute("UPDATE queues SET state='paused', up_next=NULL, updated_at_utc=? WHERE queue_id=?", (now, queue_id))
+        QueueMixin._event(db, queue_id, "up_next_released", now, {"reason": reason})
+    return len(queue_ids)
 
 
 # -- access without ownership (control and read paths) ----------------------------------------------------------
@@ -440,7 +542,7 @@ def _shared_connection(directory: Path, *, readonly: bool = False) -> sqlite3.Co
     )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=2000")
-    supported = (2, SCHEMA_VERSION) if readonly else (SCHEMA_VERSION,)
+    supported = (2, 3, SCHEMA_VERSION) if readonly else (SCHEMA_VERSION,)
     if connection.execute("PRAGMA user_version").fetchone()[0] not in supported:
         connection.close()
         raise QueueError(
@@ -452,7 +554,10 @@ def _shared_connection(directory: Path, *, readonly: bool = False) -> sqlite3.Co
 
 
 def post_control(directory: Path, queue_id: str, action: str, payload: dict[str, Any] | None = None) -> None:
-    """Append one control request for the dispatcher to poll; safe while another process owns dispatch."""
+    """Append one control request for the dispatcher to poll; safe while another process owns dispatch.
+
+    A queue waiting up next holds no reservation, so Pause (leave the order) and Cancel apply to it at once instead.
+    """
     if action not in ACTIONS:
         raise QueueError("Unknown queue action.")
     payload = payload or {}
@@ -462,8 +567,13 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
     try:
         connection.execute("BEGIN IMMEDIATE")
         try:
-            if connection.execute("SELECT 1 FROM queues WHERE queue_id=?", (queue_id,)).fetchone() is None:
+            row = connection.execute("SELECT state FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+            if row is None:
                 raise QueueError("Unknown queue.")
+            if row["state"] == "queued" and action in ("pause", "cancel"):
+                _leave_up_next(connection, queue_id, datetime.now(UTC).isoformat(), cancel=action == "cancel")
+                connection.execute("COMMIT")
+                return
             connection.execute(
                 "INSERT INTO queue_controls (queue_id, action, payload_json, created_at_utc) VALUES (?,?,?,datetime('now'))",
                 (queue_id, action, json.dumps(payload)),
@@ -474,6 +584,110 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
             raise
     finally:
         connection.close()
+
+
+def insert_queue(
+    directory: Path,
+    backend: dict[str, Any],
+    cap: int,
+    requests: Sequence[ResolvedGenerationRequest],
+    *,
+    up_next: bool = False,
+) -> str:
+    """Add one queue while another owner holds the state (a running dispatch or generation).
+
+    It stays paused until an explicit Start; with ``up_next`` it is queued last behind a live dispatch owner, which
+    starts it after its current queue (and restores it paused if it stops first). Without a live owner it is saved
+    paused: read its status to tell the user which happened.
+    """
+    requests = tuple(requests)
+    _check_new_queue(requests)
+    connection = _shared_connection(directory)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            live = up_next and _dispatch_live(connection)
+            queue_id = _insert_paused(connection, backend, cap, requests, datetime.now(UTC).isoformat(), up_next=live)
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+    return queue_id
+
+
+def change_up_next(directory: Path, queue_id: str, action: str) -> None:
+    """Enqueue a paused queue last, return a queued one to paused, or move it one place earlier or later.
+
+    Safe beside a live dispatch owner: it only reorders queues that owner has not started yet.
+    """
+    if action not in UP_NEXT_ACTIONS:
+        raise QueueError("Unknown up-next action.")
+    connection = _shared_connection(directory)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = connection.execute("SELECT state, up_next FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+            if row is None:
+                raise QueueError("Unknown queue.")
+            now = datetime.now(UTC).isoformat()
+            if action == "enqueue":
+                pending = connection.execute(
+                    "SELECT 1 FROM queue_items WHERE queue_id=? AND state='pending' LIMIT 1", (queue_id,)
+                ).fetchone()
+                if row["state"] != "paused" or pending is None:
+                    raise QueueError("Only a paused queue with pending items can wait up next.")
+                if not _dispatch_live(connection):
+                    raise QueueError("No queue is dispatching any more, so nothing would start it. Press Start.")
+                connection.execute(
+                    "UPDATE queues SET state='queued', up_next=?, updated_at_utc=? WHERE queue_id=?",
+                    (_last_up_next(connection) + 1, now, queue_id),
+                )
+                QueueMixin._event(connection, queue_id, "enqueued", now)
+            elif row["state"] != "queued":
+                raise QueueError("This queue is not waiting up next.")
+            elif action in ("dequeue", "cancel"):
+                _leave_up_next(connection, queue_id, now, cancel=action == "cancel")
+            else:
+                earlier = action == "earlier"
+                neighbour = connection.execute(
+                    "SELECT queue_id, up_next FROM queues WHERE state='queued' AND up_next "
+                    + ("< ? ORDER BY up_next DESC" if earlier else "> ? ORDER BY up_next")
+                    + " LIMIT 1",
+                    (row["up_next"],),
+                ).fetchone()
+                if neighbour is not None:
+                    connection.execute("UPDATE queues SET up_next=? WHERE queue_id=?", (neighbour["up_next"], queue_id))
+                    connection.execute(
+                        "UPDATE queues SET up_next=? WHERE queue_id=?", (row["up_next"], neighbour["queue_id"])
+                    )
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+
+
+def _dispatch_live(db: sqlite3.Connection) -> bool:
+    return db.execute("SELECT 1 FROM queue_dispatch").fetchone() is not None
+
+
+def _leave_up_next(db: sqlite3.Connection, queue_id: str, now: str, *, cancel: bool) -> None:
+    """Take a waiting queue out of the order: paused, or cancelled with its pending items (it holds no reservation)."""
+    db.execute(
+        "UPDATE queues SET state=?, up_next=NULL, updated_at_utc=? WHERE queue_id=?",
+        ("cancelled" if cancel else "paused", now, queue_id),
+    )
+    if cancel:
+        db.execute(
+            "UPDATE queue_items SET state='cancelled', updated_at_utc=? WHERE queue_id=? AND state='pending'",
+            (now, queue_id),
+        )
+    QueueMixin._event(
+        db, queue_id, "cancel" if cancel else "up_next_released", now, {} if cancel else {"reason": "user"}
+    )
 
 
 def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
@@ -538,6 +752,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
     for row in rows:
         queue = {key: row[key] for key in row.keys() if key not in ("backend_json",)}
         queue["backend"] = json.loads(row["backend_json"])
+        queue.setdefault("up_next", None)  # a schema 2 or 3 database read without migrating
         items = []
         for item in connection.execute(
             """SELECT i.item_id, i.position, i.state, i.attempt_id, i.failure_json, i.request_json,

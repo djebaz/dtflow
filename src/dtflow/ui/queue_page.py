@@ -22,6 +22,7 @@ from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan
 from dtflow.services.queue_session import (
+    change_queue_order,
     clear_queues,
     create_edit_queue,
     create_queue,
@@ -58,6 +59,7 @@ from dtflow.ui.queue_presenter import (
     ownership_badge,
     progress_text,
     summarize,
+    up_next_ids,
 )
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -75,6 +77,8 @@ WIRED_CONTROLS = (
     "pauseQueueButton",
     "resumeQueueButton",
     "cancelQueueButton",
+    "earlierQueueButton",
+    "laterQueueButton",
     "queueItemsView",
     "planBox",
     "planDryRunButton",
@@ -85,6 +89,16 @@ CLEAR_TEXT = (
     "Queues that are running or still hold an unresolved outcome are not removed."
 )
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
+
+
+@dataclass(frozen=True, slots=True)
+class _QueueAdvance:
+    """Auto-play moved on: ``settled`` is the finished queue's view and ``following`` the queue now starting."""
+
+    settled: dict
+    following: str
+    kind: str = "queue_advanced"
+    sequence: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +150,7 @@ class QueuePage:
         self._output_folder: Path | None = None
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
         self._event_relay = EventRelay(self._queue_backend_event, page)
+        self._advance_relay = EventRelay(self._advanced, page)
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
         for view in (page.queueItemsView, page.planTableView):
@@ -152,9 +167,11 @@ class QueuePage:
         page.clearQueuesButton.clicked.connect(self.clear_queues)
         page.createQueueButton.clicked.connect(self.create)
         page.startQueueButton.clicked.connect(self.start)
-        page.pauseQueueButton.clicked.connect(lambda: self._post("pause"))
+        page.pauseQueueButton.clicked.connect(self.pause)
+        page.earlierQueueButton.clicked.connect(lambda: self._order("earlier"))
+        page.laterQueueButton.clicked.connect(lambda: self._order("later"))
         page.resumeQueueButton.clicked.connect(lambda: self._post("resume"))
-        page.cancelQueueButton.clicked.connect(lambda: self._post("cancel"))
+        page.cancelQueueButton.clicked.connect(self.cancel)
         page.queueList.currentRowChanged.connect(self._select_row)
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
@@ -244,7 +261,7 @@ class QueuePage:
         elif self._selected not in self._views:
             self._selected = None
         self._render()
-        busy = self.dispatching_here or any(view["status"] == "running" for view in views)
+        busy = self.dispatching_here or any(view["status"] in ("running", "queued") for view in views)
         if busy:
             self._timer.start()
         else:
@@ -255,11 +272,11 @@ class QueuePage:
         page = self.page
         page.queueList.blockSignals(True)
         page.queueList.clear()
+        order = up_next_ids(self._views.values())
         for queue_id, view in self._views.items():
             summary = summarize(view)
-            item = QListWidgetItem(
-                f"{queue_id[:8]} · {summary.backend} · {summary.status} · {summary.settled}/{summary.total}"
-            )
+            status = f"up next {order.index(queue_id) + 1}" if queue_id in order else summary.status
+            item = QListWidgetItem(f"{queue_id[:8]} · {summary.backend} · {status} · {summary.settled}/{summary.total}")
             item.setData(ITEM_ID_ROLE, queue_id)
             page.queueList.addItem(item)
             if queue_id == self._selected:
@@ -294,7 +311,7 @@ class QueuePage:
 
     @staticmethod
     def _editable(view: dict | None) -> bool:
-        return view is not None and view["status"] in ("paused", "running")
+        return view is not None and view["status"] in ("paused", "queued", "running")
 
     def _show_cap(self, view: dict | None) -> None:
         """An editable queue shows its own maximum; with the cloud provider chosen and no editable queue the box edits
@@ -337,6 +354,7 @@ class QueuePage:
             dispatching_here=self.dispatching_here,
             generating=self._activity.generating,
             started=owns_view or has_started(detail) or bool(view and view["status"] == "running"),
+            owned=owns_view,
         )
 
     def _run_view(self) -> dict | None:
@@ -380,6 +398,7 @@ class QueuePage:
         completed = total = None
         running_items = [item for item in view["items"] if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
+        waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
 
         if phase == "running":
             # The ring counts settled items, which is meaningful however many items run at once.
@@ -392,6 +411,8 @@ class QueuePage:
                     detail += f" Item #{running_items[0]['position']} step {step}/{steps}."
             elif running_items:
                 detail += f" {len(running_items)} items running."
+            if waiting:
+                detail += f" {waiting} up next."
         elif status in ("finished", "cancelled"):
             # Settled/problem states stay on the Queues page. The global control
             # returns to its quiet idle presentation instead of becoming a
@@ -421,11 +442,23 @@ class QueuePage:
         self.sync_edit_fields()
         view = self._view()
         available = self._controls_for(view)
-        page.startQueueButton.setEnabled(available.start)
+        page.startQueueButton.setEnabled(available.start or available.enqueue)
+        page.startQueueButton.setText("Start next" if available.enqueue else "Start")
+        page.startQueueButton.setToolTip(
+            "Waits up next and starts by itself when the running queue ends." if available.enqueue else ""
+        )
         page.pauseQueueButton.setEnabled(available.pause)
+        page.pauseQueueButton.setToolTip(
+            "Leaves the up-next order; the queue stays paused until Start."
+            if view is not None and view["status"] == "queued"
+            else ""
+        )
         page.resumeQueueButton.setEnabled(available.resume)
         page.cancelQueueButton.setEnabled(available.cancel)
-        page.createQueueButton.setEnabled(not self.dispatching_here and not self._activity.generating)
+        page.earlierQueueButton.setEnabled(available.reorder)
+        page.laterQueueButton.setEnabled(available.reorder)
+        # Creating only persists a paused queue (over a short shared connection while a run owns the state).
+        page.createQueueButton.setEnabled(True)
         page.clearQueuesButton.setEnabled(
             any(
                 v["status"] in ("finished", "cancelled", "paused") and v["queue_id"] != self._dispatching
@@ -503,7 +536,43 @@ class QueuePage:
         job = self._edit_source()
         self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan, job), self._created)
 
-    async def _create(self, backend, request, asset_ids, count, cap, plan: Plan | None = None, job=None):
+    def queue_behind(self, request, name, endpoint, asset_ids, job=None) -> None:
+        """Generate while this window dispatches: a one-item queue that waits up next and starts by itself.
+
+        If the running queue ended meanwhile, nothing would start it, so it is saved paused and the outcome says so.
+        """
+        backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
+
+        async def work():
+            queue_id, _ = await self._create(backend, request, asset_ids, 1, None, None, job, up_next=True)
+            return queue_id, (await read_queue_views(self._state, queue_id))[0]["status"]
+
+        self._runner.submit(work(), self._behind)
+
+    def _behind(self, result, failure) -> None:
+        strip = activity_strip(self.page)
+        if failure is not None:
+            presentation = present_generation_failure(failure)
+            self._message(presentation)
+            strip.complete("queue-behind", presentation.headline, presentation.detail, "error")
+            return
+        queue_id, status = result
+        if status == "queued":
+            presentation = Presentation("ok", "Queued behind", f"{queue_id[:8]} waits up next and starts by itself.")
+            strip.complete(
+                "queue-behind", "Queued behind the running queue", "It starts by itself when that queue ends."
+            )
+        else:
+            presentation = Presentation(
+                "warning", "Saved paused", f"The running queue had already ended, so {queue_id[:8]} waits for Start."
+            )
+            strip.complete("queue-behind", presentation.headline, presentation.detail, "partial")
+        self._message(presentation)
+        self.refresh()
+
+    async def _create(
+        self, backend, request, asset_ids, count, cap, plan: Plan | None = None, job=None, *, up_next: bool = False
+    ):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
@@ -530,9 +599,10 @@ class QueuePage:
                 plan=plan,
                 count=count,
                 cap=cap,
+                up_next=up_next,
             )
         items = expand_plan(request, plan) if plan is not None else expand_items(request, count)
-        return await create_queue(self._state, backend, items, cap)
+        return await create_queue(self._state, backend, items, cap, up_next=up_next)
 
     # -- planning --------------------------------------------------------------------------------------------------
     def _plan_form(self) -> PlanForm:
@@ -653,6 +723,9 @@ class QueuePage:
 
     def start(self) -> None:
         view = self._view()
+        if view is not None and self._controls_for(view).enqueue:
+            self._order("enqueue")
+            return
         if view is None or self.dispatching_here or self._activity.generating:
             return
         self._dispatching = view["queue_id"]
@@ -668,10 +741,26 @@ class QueuePage:
                 queue_id,
                 saved=saved,
                 on_event=lambda item_id, event: self._event_relay(_QueueBackendEvent(queue_id, item_id, event)),
+                on_next=lambda settled, following: self._advance_relay(_QueueAdvance(settled, following)),
             ),
             self._dispatched,
         )
         self._timer.start()
+
+    def _advanced(self, advance: _QueueAdvance) -> None:
+        """Auto-play: the settled queue reports like a finished dispatch, and this window now owns the next one."""
+        if self._dispatching is None:
+            return  # a late delivery after dispatch ended
+        presentation = Presentation(*outcome_text(advance.settled))
+        activity_strip(self.page).complete(
+            "queue-result",
+            "Queue · " + presentation.headline,
+            presentation.detail + f" Next: {advance.following[:8]}.",
+            "success" if presentation.level == "ok" else "partial",
+        )
+        self._dispatching, self._dispatch_started = advance.following, False
+        self._message(Presentation("ok", "Up next started", f"{advance.following[:8]} started by itself."))
+        self.refresh()
 
     def _dispatched(self, final, failure) -> None:
         self._dispatching, self._future = None, None
@@ -702,6 +791,44 @@ class QueuePage:
         )
         self._render()
         self.refresh()
+
+    def cancel(self) -> None:
+        """A waiting queue holds no reservation, so it is cancelled at once; any other queue gets a posted control."""
+        view = self._view()
+        if view is not None and view["status"] == "queued":
+            self._order("cancel")
+        else:
+            self._post("cancel")
+
+    def pause(self) -> None:
+        view = self._view()
+        if view is not None and view["status"] == "queued":
+            self._order("dequeue")
+        else:
+            self._post("pause")
+
+    def _order(self, action: str) -> None:
+        view = self._view()
+        if view is None:
+            return
+        self._runner.submit(change_queue_order(self._state, view["queue_id"], action), self._ordered(action))
+
+    def _ordered(self, action: str):
+        def done(_, failure) -> None:
+            if failure is not None:
+                self._message(present_generation_failure(failure))
+                return
+            text = {
+                "enqueue": "Waits up next and starts by itself when the running queue ends.",
+                "dequeue": "Left the up-next order and stays paused until Start.",
+                "cancel": "Cancelled. It left the up-next order and nothing of it ran.",
+                "earlier": "Moved earlier in the up-next order.",
+                "later": "Moved later in the up-next order.",
+            }[action]
+            self._message(Presentation("ok", "Up next", text))
+            self.refresh()
+
+        return done
 
     def _post(self, action: str, queue_id: str | None = None) -> None:
         view = self._view()

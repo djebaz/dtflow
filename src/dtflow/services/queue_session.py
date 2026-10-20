@@ -24,9 +24,9 @@ from dtflow.core.models import (
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.gallery_snapshot import schedule_publish
-from dtflow.persistence.queues import delete_idle_queues, post_control, read_queues
+from dtflow.persistence.queues import change_up_next, delete_idle_queues, insert_queue, post_control, read_queues
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
-from dtflow.persistence.store import SQLiteAttempts
+from dtflow.persistence.store import SQLiteAttempts, StateBusyError
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
@@ -57,8 +57,16 @@ async def create_queue(
     backend: dict[str, Any],
     requests: list[ResolvedGenerationRequest],
     cap: int | None = None,
+    *,
+    up_next: bool = False,
 ) -> tuple[str, int]:
-    """Persist a paused queue of resolved items; contacts no backend and never uploads."""
+    """Persist a paused queue of resolved items; contacts no backend and never uploads.
+
+    While another owner holds the state (this window's running dispatch or generation, or a CLI dispatcher), the queue
+    is inserted over a short shared connection instead: it stays paused and nothing dispatches it until Start. With
+    ``up_next`` it is queued last behind that live dispatch owner, which starts it after its current queue. Without a
+    live owner there is nothing to wait behind, so the queue is saved paused.
+    """
     if backend.get("name") == "local" and not backend.get("endpoint"):
         raise ValidationError("The local backend requires --endpoint HOST:PORT.")
     cap = validate_concurrency(cap) if cap is not None else default_cap(state, backend["name"])
@@ -66,6 +74,8 @@ async def create_queue(
     try:
         await store.open()
         return await store.create_queue(backend, cap, requests), cap
+    except StateBusyError:
+        return await asyncio.to_thread(insert_queue, state, backend, cap, requests, up_next=up_next), cap
     finally:
         await store.aclose()
 
@@ -82,6 +92,7 @@ async def create_edit_queue(
     plan: Plan | None = None,
     count: int = 1,
     cap: int | None = None,
+    up_next: bool = False,
 ) -> tuple[str, int]:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
@@ -111,7 +122,7 @@ async def create_edit_queue(
         ),
     )
     items = expand_items(edit, count) if plan is None else expand_plan(edit, plan)
-    return await create_queue(state, backend, items, cap)
+    return await create_queue(state, backend, items, cap, up_next=up_next)
 
 
 async def dispatch_queue(
@@ -123,17 +134,61 @@ async def dispatch_queue(
     out: Path | None = None,
     on_settle: Callable[[str, str], None] | None = None,
     on_event: Callable[[str, BackendEvent], None] | None = None,
+    on_next: Callable[[dict[str, Any], str], None] | None = None,
+    auto_play: bool = True,
 ) -> dict[str, Any]:
-    """Make this process the dispatch owner and run the queue until it finishes, is cancelled or is blocked.
+    """Make this process the dispatch owner and run the queue until it finishes or is cancelled, then auto-play.
 
     A held ownership lock raises ``StateBusyError`` before anything is dispatched. Interrupting (cancelling) this
-    coroutine records honest local-stop evidence through the generation service.
+    coroutine records honest local-stop evidence through the generation service. With ``auto_play`` the owner accepts
+    queues up next while it runs; when a queue settles it atomically claims and starts the first one waiting
+    (``on_next`` receives the settled view and the next id) and returns the last settled view. Whenever it stops, by
+    failure or interruption included, every queue still waiting is restored paused: nothing starts without a live owner.
+    Without ``auto_play`` (the CLI's ``queue start``) it runs exactly the queue it names.
     """
     policy = timeouts or TimeoutPolicy()
     store = SQLiteAttempts(state)
-    backend = None
+    owned, reason, claimed = False, "stopped", None
     try:
         await store.open()
+        owned = True
+        if auto_play:
+            await store.open_up_next()
+        while True:
+            final = await _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, on_event)
+            claimed = None
+            if not auto_play:
+                return final
+            schedule_publish(state, reason="queue_settled")
+            following = await store.claim_queued()  # an empty order also closes it to new arrivals
+            if following is None:
+                reason = "drained"
+                return final
+            diagnostic_event(log, "queue.auto_play", level=logging.INFO, data={"settled": final["status"]})
+            if on_next is not None:
+                on_next(final, following)
+            queue_id = claimed = following
+    finally:
+        try:
+            if owned and auto_play:
+                try:
+                    await store.release_queued(reason, claimed)
+                except Exception as exc:
+                    diagnostic_event(
+                        log,
+                        "queue.up_next_not_released",
+                        level=logging.WARNING,
+                        data={"reason": type(exc).__name__},
+                    )
+        finally:
+            await store.aclose()
+            schedule_publish(state, reason="queue_session_end")
+
+
+async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, on_event) -> dict[str, Any]:
+    """One queue on the open owner: its own recorded backend session, closed before the next queue starts."""
+    backend = None
+    try:
         queue = await store.inspect_queue(queue_id)
         recorded = queue["backend"]
         selection = BackendSelection(
@@ -183,13 +238,9 @@ async def dispatch_queue(
         )
         return await QueueDispatcher(store, service, on_settle=on_settle, on_event=on_event).run(queue_id)
     finally:
-        try:
-            if backend is not None:
-                async with asyncio.timeout(policy.cleanup):
-                    await backend.aclose()
-        finally:
-            await store.aclose()
-            schedule_publish(state, reason="queue_session_end")
+        if backend is not None:
+            async with asyncio.timeout(policy.cleanup):
+                await backend.aclose()
 
 
 async def read_queue_views(state: Path, queue_id: str | None = None) -> tuple[dict[str, Any], ...]:
@@ -202,6 +253,11 @@ async def read_queue_views(state: Path, queue_id: str | None = None) -> tuple[di
 async def post_queue_control(state: Path, queue_id: str, action: str, payload: dict[str, Any] | None = None) -> None:
     """Append one control for the dispatch owner to apply (at its next poll, or at the next start)."""
     await asyncio.to_thread(post_control, Path(state), queue_id, action, payload)
+
+
+async def change_queue_order(state: Path, queue_id: str, action: str) -> None:
+    """Up next: ``enqueue`` a paused queue last, ``dequeue`` it back to paused, or move it ``earlier``/``later``."""
+    await asyncio.to_thread(change_up_next, Path(state), queue_id, action)
 
 
 async def clear_queues(state: Path, keep: tuple[str, ...] = ()) -> int:

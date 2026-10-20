@@ -12,7 +12,17 @@ The right-side event evidence panel presents a compact activity stream keyed by 
 
 One concurrency control sets the selected paused or running queue's cap. With cloud chosen and no such queue selected, it edits the shared cloud maximum instead; values above two are tinted. Backend and shared memory limits still apply.
 
-Start holds the state ownership lock for the entire dispatch run, disabling desktop Generate. Other processes can read and post controls, but cannot own another generation or dispatch in that state directory. See [runtime ownership](../architecture/runtime-layout.md).
+Start holds the state ownership lock for the entire dispatch run. Other processes can read, post controls and add paused queues, but cannot own another generation or dispatch in that state directory. See [runtime ownership](../architecture/runtime-layout.md).
+
+### Editing and up next while a queue runs
+
+Every Generate, LoRA, Inpaint and Plan input stays editable during a generation or a queue run (#133). A running request is the immutable snapshot taken when it started; edits only shape the next request or queue, and Generate's Effective request says so while a single run is active. **Create queue** stays available during a run and saves a paused queue.
+
+While this window dispatches, **Start** on another paused queue reads **Start next**: the queue waits *up next* and starts by itself, on the same dispatch ownership, when the running queue ends (#125). Up-next queues run in the order shown in the list (`up next 1`, `up next 2`, ...), each on its own recorded backend. **Earlier** and **Later** move a waiting queue; **Pause** takes it out of the order and leaves it paused. Pressing **Generate** while a queue runs adds the request behind it as a one-item up-next queue (an Inpaint edit is staged the same way as a queued edit). The header run control counts the waiting queues.
+
+**Cancel** on a waiting queue cancels it at once (it holds no reservation, so nothing of it ran); from the CLI, `queue pause` and `queue cancel` on a waiting queue likewise take it out of the order or cancel it immediately. The CLI cannot enqueue or reorder, and `queue start` runs only the queue it names.
+
+Auto-play continues after a queue finishes or is cancelled; a paused running queue holds the order until you Resume or Cancel it. Picking the next queue and starting it are one step, so a Pause, Cancel or reorder made just before is respected. Auto-play stops when dispatch itself ends: a failure, a local stop or closing the window. Whenever the owner stops, and whenever a new owner opens the state (a restart included), every waiting queue returns to paused, so nothing starts without a live owner. Joining the order needs a live owner: once the running queue has ended, **Start next** is refused and Generate saves its one-item queue paused, saying so.
 
 ## CLI examples
 
@@ -29,7 +39,7 @@ uv run dtflow queue show QUEUE                                    # items in que
 
 `queue add` persists independent, immutable resolved items (it contacts no backend and does not support `-r/--prefix`; put prefixes in the prompt) in a queue that starts paused. `queue start` makes that process the single dispatch owner of the state directory, resumes the queue and rolls: it admits the next item as soon as any reservation is released, never exceeding the queue maximum (`-j` on `add` or `queue cap`) or the backend's own limit (local gRPC is one lane).
 
-Another process can run `list`, `show`, `pause`, `resume`, `cancel` and `cap` while dispatch is running: controls are stored and polled, and `add` and `start` need the state directory to themselves.
+Another process can run `list`, `show`, `add`, `pause`, `resume`, `cancel` and `cap` while dispatch is running: controls are stored and polled, a queue added meanwhile is saved paused over a short separate connection, and `start` needs the state directory to itself. Up next is a desktop feature: the CLI has no command to queue behind a running dispatch, and `queue start` runs the queue it names.
 
 A paused, idle dispatcher keeps polling until resumed or interrupted. `cancel` stops pending items and interrupts local waiting on active ones; it never claims remote cancellation, so an item interrupted after submission is `unknown`.
 

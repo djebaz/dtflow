@@ -379,7 +379,7 @@ async def test_release_0_1_state_migrates_atomically_and_failures_keep_the_origi
     finally:
         await store.aclose()
     assert snapshot(path)[0] == SCHEMA_VERSION
-    backup = next((state / "good").glob("attempts.pre-v3-from-v1-*.sqlite3"))
+    backup = next((state / "good").glob(f"attempts.pre-v{SCHEMA_VERSION}-from-v1-*.sqlite3"))
     assert snapshot(backup)[0] == 1  # recoverable pre-migration copy
     # A conflicting object makes the migration fail midway; the rollback must leave version 1 exactly as it was.
     bad = v1_database(state / "bad", "CREATE TABLE queue_items (unrelated TEXT)")

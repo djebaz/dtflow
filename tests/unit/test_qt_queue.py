@@ -109,7 +109,7 @@ def test_create_start_and_complete_a_queue_with_stable_rows_and_outputs(window, 
     assert states(window) == ["pending"] * 3 and state_text(window).startswith("Paused")
     page.startQueueButton.click()
     assert window.queue.dispatching_here and page.ownershipBadgeLabel.text() == "THIS WINDOW DISPATCHES"
-    assert not window.generation_page.generateButton.isEnabled()  # dispatch holds the state lock
+    assert window.generation_page.generateButton.isEnabled()  # Generate now queues behind the running queue
     qtbot.waitUntil(lambda: "running" in states(window), timeout=5000)
     qtbot.wait(50)  # the GUI thread keeps processing while dispatch runs
     gated(window)
