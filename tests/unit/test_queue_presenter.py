@@ -1,4 +1,4 @@
-"""Queue view presentation (Qt-free): the vocabularies, control matrix and uncertainty wording."""
+"""Queue view presentation (Qt-free): the vocabularies, control matrix and outcome wording."""
 
 import pytest
 
@@ -7,32 +7,30 @@ from dtflow.ui.queue_presenter import (
     controls,
     has_started,
     item_rows,
+    outcome_note,
     outcome_text,
     ownership_badge,
     summarize,
-    uncertainty_text,
 )
 
 ZERO = {s: 0 for s in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")}
 
 
-def view(status="paused", items=(), blocked=False, **counts):
+def view(status="paused", items=(), **counts):
     return {
         "queue_id": "q" * 32,
         "status": status,
         "backend": {"name": "fake", "endpoint": None},
         "summary": {**ZERO, **counts},
-        "blocked_by_uncertainty": blocked,
         "items": list(items),
     }
 
 
-def item(state="pending", overridden=False, artifacts=(), failure=None):
+def item(state="pending", artifacts=(), failure=None):
     return {
         "item_id": "i" * 32,
         "position": 1,
         "state": state,
-        "overridden": overridden,
         "attempt_id": None,
         "seed": 3,
         "artifacts": list(artifacts),
@@ -45,7 +43,6 @@ def item(state="pending", overridden=False, artifacts=(), failure=None):
     [
         ("paused", True, False, False, True),  # a never-started queue is started, not resumed
         ("running", True, True, False, True),
-        ("blocked", False, False, False, True),
         ("finished", False, False, False, False),
         ("cancelled", False, False, False, False),
     ],
@@ -53,24 +50,19 @@ def item(state="pending", overridden=False, artifacts=(), failure=None):
 def test_control_matrix_by_status(status, start, pause, resume, cancel):
     available = controls(view(status), dispatching_here=False)
     assert (available.start, available.pause, available.resume, available.cancel) == (start, pause, resume, cancel)
-    assert not available.override
     assert not controls(view(status), dispatching_here=True).start  # this window already dispatches
     assert not controls(view(status), dispatching_here=False, generating=True).start  # the lock is in use
     assert controls(None, dispatching_here=False) == controls(None, dispatching_here=True)
     assert controls(view(status), dispatching_here=False, started=True).resume == (status == "paused")
 
 
-def test_override_needs_an_unresolved_unknown_and_unknown_stays_distinct_from_failed():
-    assert controls(view("blocked", [item("unknown")], blocked=True), dispatching_here=False).override
-    assert not controls(view("running", [item("unknown", overridden=True)]), dispatching_here=False).override
+def test_unknown_is_a_warning_with_an_aborted_note_and_failed_stays_an_error():
     unknown, failed = item_rows(view(items=[item("unknown")]))[0], item_rows(view(items=[item("failed")]))[0]
-    assert (unknown.level, failed.level) == ("unknown", "error")
-    assert (
-        uncertainty_text(unknown)[1].startswith("Outcome unknown")
-        and "Resume does not clear" in uncertainty_text(unknown)[1]
-    )
-    acknowledged = item_rows(view(items=[item("unknown", overridden=True)]))[0]
-    assert "never replayed" in uncertainty_text(acknowledged)[1] and acknowledged.state_text == "unknown (overridden)"
+    assert (unknown.level, failed.level) == ("warning", "error")
+    assert unknown.state_text == "no result" and failed.state_text == "failed"
+    level, text = outcome_note(unknown)
+    assert level == "warning" and "most likely failed" in text and "does not block" in text
+    assert outcome_note(failed) is None and outcome_note(None) is None
 
 
 def test_rows_separate_outputs_from_metadata_and_summary_counts_settled():
@@ -90,10 +82,9 @@ def test_badge_and_concurrency_threshold():
 def test_a_dispatch_run_ends_with_the_outcome_that_happened():
     assert outcome_text(view("finished", succeeded=3)) == ("ok", "Finished", "3 of 3 succeeded.")
     level, _, detail = outcome_text(view("finished", succeeded=1, failed=1, unknown=1))
-    assert level == "unknown" and detail == "1 of 3 succeeded; 1 failed, 1 outcome unknown."
+    assert level == "error" and detail == "1 of 3 succeeded; 1 failed, 1 no result."
     assert outcome_text(view("cancelled", succeeded=1, cancelled=2))[1:] == (
         "Cancelled",
         "2 item(s) not run; 1 succeeded.",
     )
-    assert outcome_text(view("blocked", pending=2))[1] == "Blocked"
     assert not has_started({"events": [{"kind": "created"}]}) and has_started({"events": [{"kind": "started"}]})

@@ -346,15 +346,18 @@ def add_queue_commands(commands) -> None:
     add_scenario_option(add)
     action("list", "List queues with item state counts.", ident=False)
     action("show", "Show one queue's items in queue order, with attempts, outputs and recorded events.")
-    start = action("start", "Dispatch a queue in this process (the single dispatch owner) until it finishes or blocks.")
+    start = action(
+        "start", "Dispatch a queue in this process (the single dispatch owner) until it finishes or is cancelled."
+    )
     start.add_argument("-o", "--out", type=Path, help="Final output root (default: state directory/outputs).")
     start.add_argument("-t", "--timeout", type=float, default=600.0, help="Total backend deadline per item in seconds.")
     action("pause", "Stop new dispatch; active attempts finish. Applied by the dispatcher or the next start.")
-    action("resume", "Allow dispatch again. Never clears an uncertain reservation.")
+    action("resume", "Allow dispatch again.")
     action(
         "cancel", "Cancel pending items and interrupt local waiting on active ones (remote cancel is not confirmed)."
     )
-    action("override", "Acknowledge unknown reservations on this backend so eligible work may continue (recorded).")
+    action("override", "Legacy no-op.")  # unknown outcomes no longer block; accepted for old scripts
+    actions._choices_actions = [a for a in actions._choices_actions if a.dest != "override"]  # keep it out of --help
     cap = action("cap", "Change this queue's concurrency maximum; active work is never cancelled.")
     cap.add_argument(
         "-j", "--jobs", type=int, required=True, help="New maximum, 1-4 (the backend's own limit still applies)."
@@ -369,7 +372,7 @@ COMMAND_HELP = {
     "attempts": "Inspect durable attempts; unknown outcomes are never replayed.",
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
     "assets": "Cloud LoRA assets: prepare (may upload), list, show, reconcile. Local receipts are not remote inventory.",
-    "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, override, cap.",
+    "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap.",
 }
 
 
@@ -435,9 +438,7 @@ QUEUE_POSTED = {"pause", "resume", "cancel", "override"}
 
 def queue_exit_code(queue: dict) -> int:
     summary = queue["summary"]
-    if summary["unknown"]:
-        return EXIT_UNKNOWN
-    if summary["failed"] or summary["save_failed"] or summary["cancelled"] or summary["pending"]:
+    if summary["unknown"] or summary["failed"] or summary["save_failed"] or summary["cancelled"] or summary["pending"]:
         return EXIT_FAILED
     return EXIT_OK
 
@@ -488,12 +489,6 @@ async def run_queue(args: argparse.Namespace) -> int:
         args.state, args.queue, timeouts=TimeoutPolicy(total=args.timeout), out=args.out, on_settle=settled
     )
     print(json.dumps({k: v for k, v in final.items() if k != "events"}, indent=2))
-    if final["blocked_by_uncertainty"] and final["summary"]["pending"]:
-        print(
-            "Dispatch is blocked by an uncertain reservation. Inspect it, then `queue override` only if you accept "
-            "that remote concurrency is no longer guaranteed.",
-            file=sys.stderr,
-        )
     return queue_exit_code(final)
 
 

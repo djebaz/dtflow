@@ -1255,7 +1255,7 @@
          <string>sectionCard</string>
         </property>
         <property name="accessibleName">
-         <string>Uncertainty</string>
+         <string>Outcome</string>
         </property>
         <layout class="QVBoxLayout" name="uncertaintyBoxCardLayout">
          <property name="leftMargin">
@@ -1322,7 +1322,7 @@
             <item>
              <widget class="QLabel" name="uncertaintyBoxHeading">
               <property name="text">
-               <string>Uncertainty</string>
+               <string>Outcome</string>
               </property>
               <property name="textRole" stdset="0">
                <string>panelHeading</string>
@@ -1341,23 +1341,13 @@
             <item>
              <widget class="QLabel" name="uncertaintyLabel">
               <property name="text">
-               <string>No unresolved reservation selected.</string>
+               <string>No item selected.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>
               </property>
               <property name="state" stdset="0">
                <string>unknown</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="overrideReservationButton">
-              <property name="text">
-               <string>Acknowledge and override</string>
-              </property>
-              <property name="enabled">
-               <bool>false</bool>
               </property>
              </widget>
             </item>
