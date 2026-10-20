@@ -2766,7 +2766,7 @@ def main():
                 unavailable.runner.shutdown()
                 unavailable.form.close()
                 app.processEvents()
-            if wants("images"):
+        if wants("images"):
             render_initial_refresh_recovery(app, state, args.out)
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
