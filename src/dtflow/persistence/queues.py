@@ -31,6 +31,7 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.core.models import (
+    MAX_QUEUE_CONCURRENCY,
     MAX_QUEUE_ITEMS,
     ResolvedGenerationRequest,
     ValidationError,
@@ -270,7 +271,7 @@ class QueueMixin:
                         "UPDATE queue_items SET state='cancelled', updated_at_utc=? WHERE queue_id=? AND state='pending'",
                         (now, queue_id),
                     )
-                elif action == "cap" and type(payload.get("cap")) is int and 1 <= payload["cap"] <= 4:
+                elif action == "cap" and type(payload.get("cap")) is int and 1 <= payload["cap"] <= MAX_QUEUE_CONCURRENCY:
                     db.execute("UPDATE queues SET cap=? WHERE queue_id=?", (payload["cap"], queue_id))
                 elif action == "override":
                     # A control posted by an older version: unknown outcomes no longer block, so consume it silently.
@@ -563,8 +564,8 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
     if action not in ACTIONS:
         raise QueueError("Unknown queue action.")
     payload = payload or {}
-    if action == "cap" and not (type(payload.get("cap")) is int and 1 <= payload["cap"] <= 4):
-        raise QueueError("Queue concurrency must be an integer in 1..4.")
+    if action == "cap" and not (type(payload.get("cap")) is int and 1 <= payload["cap"] <= MAX_QUEUE_CONCURRENCY):
+        raise QueueError(f"Queue concurrency must be an integer in 1..{MAX_QUEUE_CONCURRENCY}.")
     connection = _shared_connection(directory)
     try:
         connection.execute("BEGIN IMMEDIATE")

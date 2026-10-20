@@ -129,13 +129,13 @@ STATUS_CHIP = {
     "cancelled": "Cancelled",
 }
 CONCURRENCY_HINT = (
-    "Maximum items this queue runs at once (1 to 4). Local Draw Things remains one effective lane. This is a client "
-    "policy, not entitlement, and the memory budget currently admits about two real generations at once whatever the "
-    "maximum."
+    "Maximum items this queue runs at once (1 to 10). Cloud text-to-image reserves 32 MiB per request against a "
+    "320 MiB shared memory budget; image edits may reserve more. Local Draw Things remains one effective lane. "
+    "The setting is a client policy, not verified cloud entitlement."
 )
 NEW_CAP_HINT = (
-    "Maximum items a new queue runs at once (1 to 4). With cloud chosen this is also the shared default for new cloud "
-    "queues. Local Draw Things remains one effective lane; this is a client policy, not entitlement."
+    "Maximum items a new queue runs at once (1 to 10). With cloud chosen this also saves the shared default for "
+    "new cloud queues. Local Draw Things remains one effective lane; provider and memory limits still apply."
 )
 GROUPS = (("running", "Running"), ("queued", "Up next"), ("paused", "Paused"), ("history", "History"))
 VARIED_LABELS = {

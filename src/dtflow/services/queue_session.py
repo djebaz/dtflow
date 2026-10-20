@@ -290,7 +290,7 @@ async def remove_queue(state: Path, queue_id: str, keep: tuple[str, ...] = ()) -
 
 
 async def set_concurrency(state: Path, value: int, *, queue_id: str | None = None, save_shared: bool = False) -> int:
-    """Validate a concurrency maximum (1..4) before anything is written or posted.
+    """Validate a concurrency maximum (1..10) before anything is written or posted.
 
     ``save_shared`` persists the shared cloud maximum used for new cloud queues; ``queue_id`` posts a ``cap`` control
     for that queue (active work is never cancelled by it). The value is a client policy, not verified entitlement.
