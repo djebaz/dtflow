@@ -113,7 +113,12 @@ jobs:
           set -o pipefail
           status=0
           category="${{ inputs.category || 'all' }}"
-          if .venv/bin/python tools/ui/render_states.py --help | grep -q -- '--category'; then
+          help_file=tmp/render-help.txt
+          if ! .venv/bin/python tools/ui/render_states.py --help >"$help_file" 2>&1; then
+            cat "$help_file"
+            echo "::error::Renderer could not start; refusing to treat a broken renderer as a legacy renderer."
+            status=1
+          elif grep -q -- '--category' "$help_file"; then
             if [ "$category" = "all" ]; then
               # Separate Qt processes keep category state isolated. Limit concurrency so a
               # hosted runner is not overloaded while still cutting wall-clock render time.
