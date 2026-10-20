@@ -42,14 +42,6 @@ if sys.platform == "win32" and platform_name == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
-from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidget, QPushButton, QScrollArea  # noqa: E402
-from support.cloud_assets import DtPlus, lora_file  # noqa: E402
-from support.fake_vault import Vault  # noqa: E402
-
-from dtflow import gallery_limits  # noqa: E402
 from dtflow._diagnostic_notifications import DiagnosticNotice  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
@@ -80,6 +72,14 @@ from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidget, QPushButton, QScrollArea  # noqa: E402
+from support.cloud_assets import DtPlus, lora_file  # noqa: E402
+from support.fake_vault import Vault  # noqa: E402
+
+from dtflow import gallery_limits  # noqa: E402
 
 RENDERED = {}  # state name -> {"seconds", "blank"}, in render order
 STARTED = time.monotonic()
@@ -88,7 +88,7 @@ SELECTED_CATEGORY = "all"
 
 def wants(category):
     """Return whether a render category should execute."""
-    return SELECTED_CATEGORY in ("all", category)
+    return SELECTED_CATEGORY in ("all", category) or (category == "images" and SELECTED_CATEGORY == "image-navigation")
 
 
 RENDER_CATEGORIES = (
@@ -164,8 +164,8 @@ def save(widget, out, name):
 
 
 @patch.object(GenerationPage, "request_cached", new=lambda self, **_: None)
-def render_connection_states(app, state, out):
-    """Connection fixtures with synthetic credentials and intercepted provider/file mutations."""
+def render_workspace_states(app, state, out):
+    """Route shared workspace fixtures by category, with synthetic credentials and intercepted mutations."""
     # Unused Generate inventory restoration can otherwise resolve the real process environment on Cloud selection.
     environ = {}
     saved = SavedCredentials(Vault())
@@ -184,30 +184,34 @@ def render_connection_states(app, state, out):
         form = shell.form
         form.resize(1600, 1000)
         shell.show()
-        form.connectionNavigationButton.click()
-        form.backendCombo.setCurrentText("local")
-        assert form.endpointEdit.isEnabled() and not form.credentialBox.isEnabled()
-        snap("connection-01-local-idle", "No API key available.", False)
+        if wants("connection"):
+            form.connectionNavigationButton.click()
+            form.backendCombo.setCurrentText("local")
+            assert form.endpointEdit.isEnabled() and not form.credentialBox.isEnabled()
+            snap("connection-01-local-idle", "No API key available.", False)
 
-        form.backendCombo.setCurrentText("cloud")
-        assert not form.endpointEdit.isEnabled() and form.credentialBox.isEnabled()
-        snap("connection-02-cloud-no-key", "No API key available.", False)
+            form.backendCombo.setCurrentText("cloud")
+            assert not form.endpointEdit.isEnabled() and form.credentialBox.isEnabled()
+            snap("connection-02-cloud-no-key", "No API key available.", False)
 
-        # These are synthetic source observations, never the process environment or the OS vault.
-        environ[KEY] = "offline-environment-key"
-        snap("connection-03-cloud-env-key", "from the environment", True)
+            # These are synthetic source observations, never the process environment or the OS vault.
+            environ[KEY] = "offline-environment-key"
+            snap("connection-03-cloud-env-key", "from the environment", True)
 
-        environ.clear()
-        saved.save("offline-saved-key")  # Writes only the injected in-memory Vault.
-        snap("connection-04-cloud-saved-key", "Using the key saved", True)
+            environ.clear()
+            saved.save("offline-saved-key")  # Writes only the injected in-memory Vault.
+            snap("connection-04-cloud-saved-key", "Using the key saved", True)
 
-        with patch.object(saved, "_store", side_effect=SecureStorageUnavailable):
-            snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
-        render_connection_outcomes(shell, out)
-        render_connection_management(shell, out)
-        render_generate_configuration_states(shell, out)
-        render_active_queue_states(shell, out)
-        render_gallery_composition_states(shell, state, out)
+            with patch.object(saved, "_store", side_effect=SecureStorageUnavailable):
+                snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
+            render_connection_outcomes(shell, out)
+            render_connection_management(shell, out)
+        if wants("generate"):
+            render_generate_configuration_states(shell, out)
+        if wants("queues"):
+            render_active_queue_states(shell, out)
+        if wants("images"):
+            render_gallery_composition_states(shell, state, out)
     finally:
         shell.runner.shutdown()
         shell.form.close()
@@ -2745,7 +2749,7 @@ def main():
         "--category",
         choices=RENDER_CATEGORIES,
         default="all",
-        help="Render only one UI category (default: all).",
+        help="Render only one UI category (default: all). Images includes Image Navigation.",
     )
     args = parser.parse_args()
     global SELECTED_CATEGORY
@@ -2766,8 +2770,8 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
-        if wants("connection"):
-            render_connection_states(app, state, args.out)
+        if any(wants(category) for category in ("connection", "generate", "queues", "images")):
+            render_workspace_states(app, state, args.out)
         if wants("images"):
             render_mapped_gallery_states(app, state, args.out)
         if wants("images"):

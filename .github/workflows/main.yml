@@ -199,7 +199,12 @@ jobs:
           from pathlib import Path
 
           out, log_path = Path("tmp/ui-renders"), Path("tmp/render.log")
-          log = log_path.read_text(errors="replace").splitlines() if log_path.exists() else []
+          raw_log = log_path.read_text(errors="replace").splitlines() if log_path.exists() else []
+          tagged_log = []
+          for line in raw_log:
+              match = re.match(r"^\[(connection|generate|images|queues|shell|inpaint|logs)\] (.*)$", line)
+              tagged_log.append((match[1], match[2]) if match else ("all", line))
+          log = [line for _, line in tagged_log]
           pngs = sorted(out.rglob("*.png")) if out.exists() else []
           status = os.environ.get("RENDER_STATUS", "")
           manifest_path = Path("tmp/ui-renders-drive.json")
@@ -227,22 +232,23 @@ jobs:
               return parts[1] if len(parts) > 1 and parts[0].isdigit() else "other"
 
           # Seconds since start, from the script's "[  n] +12.3s path" progress lines when present.
-          times = {}
-          for line in log:
+          gaps, previous = [], {}
+          for category, line in tagged_log:
               match = re.match(r"\[\s*\d+\]\s+\+\s*([\d.]+)s\s+(\S+\.png)$", line.strip())
               if match:
-                  times[Path(match[2]).stem] = float(match[1])
-          gaps, previous = [], 0.0
-          for name, seconds in times.items():
-              gaps.append((seconds - previous, name))
-              previous = seconds
+                  name, seconds = Path(match[2]).stem, float(match[1])
+                  gaps.append((seconds - previous.get(category, 0.0), name))
+                  previous[category] = seconds
 
           notes = [
               line.strip() for line in log
               if line.strip() and not line.strip().endswith(".png")
               and "does not support" not in line and not line.startswith(("Rendered ", "["))
           ]
-          final = next((line for line in reversed(log) if line.startswith("Rendered ")), None)
+          finals = [
+              f"{category}: {line}" if category != "all" else line
+              for category, line in tagged_log if line.startswith("Rendered ")
+          ]
           problems = [line for line in log if line.startswith(("Blank renders", "Traceback", "RuntimeError", "Fatal Python"))]
 
           md = [f"## UI renders · {verdict}", ""]
@@ -252,8 +258,8 @@ jobs:
               f"| Commit | `{os.environ.get('SHA', '')[:7]}` |",
               f"| States rendered | **{len(pngs)}** |",
           ]
-          if final:
-              md.append(f"| Script result | {final} |")
+          if finals:
+              md.append(f"| Script result | {'; '.join(finals)} |")
           if drive.get("folder_url"):
               md.append(f"| Screenshots | [Google Drive folder]({drive['folder_url']}) |")
           if drive.get("archive", {}).get("view_url"):
