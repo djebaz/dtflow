@@ -275,10 +275,8 @@ async def test_queue_crash_boundaries_reconcile_without_replay(state, boundary, 
         assert await store.claim_next(queue_id, 4) is None  # restored paused: nothing is eligible until start
         await store.set_running(queue_id)
         claim = await store.claim_next(queue_id, 4)
-        if item_state == "unknown":
-            assert claim is None  # the unresolved reservation blocks replacement
-        else:
-            assert claim is not None and claim[1].seed == (0 if item_state == "pending" else 1)
+        # The ambiguous item itself is never eligible again; an unknown outcome no longer blocks the next item.
+        assert claim is not None and claim[1].seed == (0 if item_state == "pending" else 1)
     finally:
         await store.aclose()
 
