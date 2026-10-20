@@ -82,10 +82,9 @@ def _clock(seconds: int) -> str:
 
 def eta_text(view: dict, *, remaining: float | None = None) -> str:
     """Explicitly estimated remaining time, with a caveat when model, size or step count varies."""
-    estimate = estimate_remaining(view)
-    if estimate is None:
+    seconds = estimate_remaining(view) if remaining is None else remaining
+    if seconds is None:
         return ""
-    seconds = estimate if remaining is None else remaining
     duration = _clock(math.ceil(max(0, seconds)))
     varied = view.get("varied") or {}
     caveat = "; rough for mixed settings" if any(varied.get(key, 0) > 1 for key in ("model", "size", "steps")) else ""
