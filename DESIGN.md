@@ -258,7 +258,7 @@ The `ImagePreview` widget keeps original pixels and handles Fit, 100%, zoom, pan
 
 ### Status and progress
 
-Use a short outcome heading plus concrete evidence. A progress bar reflects only known progress. `Outcome unknown`, interruption and failure remain different states. The effective request and attempt details may collapse, but their content remains reachable for reproducibility. Do not infer remote cancellation or a finished result from a local Stop waiting action. The global Run control is a compact summary, not a second execution authority: single generation shows its latest actually reported sampler step, preserving that observation through subsequent stage-only and preview events (rather than reverting to an indeterminate ring); a new generation resets the observation. a queue with one unambiguous running item shows that item's queue position in the center and keeps backend step detail in the tooltip; concurrent queue work does not invent a single item number. Finished, cancelled and blocked queue selections do not leave persistent completion/error badges in the header.
+Use a short outcome heading plus concrete evidence. A progress bar reflects only known progress. `Outcome unknown`, interruption and failure remain different states. The effective request and attempt details may collapse, but their content remains reachable for reproducibility. Do not infer remote cancellation or a finished result from a local Stop waiting action. The global Run control is a compact summary, not a second execution authority: single generation shows its latest actually reported sampler step, preserving that observation through subsequent stage-only and preview events (rather than reverting to an indeterminate ring); a new generation resets the observation. a queue with one unambiguous running item shows that item's queue position in the center and keeps backend step detail in the tooltip; concurrent queue work does not invent a single item number. Finished and cancelled queue selections do not leave persistent completion/error badges in the header.
 
 ### Page implementation checklist
 
@@ -280,7 +280,7 @@ One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/im
 | --- | --- |
 | Connection sections | Backend `server`, DT+ credentials `key-round`, Connection check `shield-check` |
 | Generate sections | Backend `server`, Parameters `detail`, Simulation `flask-conical`, Configuration `settings`, Cloud assets `cloud` |
-| Queues sections | Dispatch policy `send`, Plan batch `layers`, Selected item `list-checks`, Uncertainty `triangle-alert` |
+| Queues sections | Dispatch policy `send`, Plan batch `layers`, Selected item `list-checks`, Outcome `triangle-alert` (shown only for no-result and failed items) |
 | Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, full-screen toggle `fullscreen` (every view), filter combo arrow `chevron`, fullscreen `fullscreen` |
 | Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
 | Prompt disclosure | Additional `document`, Raw `json` |

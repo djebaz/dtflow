@@ -209,7 +209,8 @@ def event_lines(view: dict) -> str:
         elif kind == "backend_submission_possible":
             summary = f"{item_label(detail)} submitted"
         elif kind == "item_settled":
-            state = str(detail.get("state", "settled")).replace("_", " ")
+            state = str(detail.get("state", "settled"))
+            state = "no result" if state == "unknown" else state.replace("_", " ")
             if state == "succeeded":
                 summary = f"{item_label(detail)} completed"
             else:

@@ -33,9 +33,11 @@ Another process can run `list`, `show`, `pause`, `resume`, `cancel` and `cap` wh
 
 A paused, idle dispatcher keeps polling until resumed or interrupted. `cancel` stops pending items and interrupts local waiting on active ones; it never claims remote cancellation, so an item interrupted after submission is `unknown`.
 
-An `unknown` item (shown as *no result* on the desktop) means the request may have reached the server but no final result arrived, so it most likely failed. It releases its reservation, never blocks the backend, other queues or the rest of its queue, and the attempt is never replayed automatically. `queue start` exits `3` when any item is unknown, failed, cancelled or pending. The former `override` control is a hidden no-op kept for old scripts.
+An `unknown` item (shown as *no result* on the desktop) means the request may have reached the server but no final result arrived, so it most likely failed. It releases its reservation, never blocks the backend, other queues or the rest of its queue, and the attempt is never replayed automatically. `queue start` exits `3` when any item is unknown, failed, cancelled or pending. The former `queue override` command is a hidden, deprecated no-op kept for old scripts; it prints a note and records nothing.
 
-After a restart queues are restored paused, completed results are kept, and no item that reached the remote boundary becomes eligible again. `queue start` exits `0` when every item succeeded, `4` if any item is unknown, otherwise `3` if any failed, was cancelled or remains pending.
+Local Draw Things runs one request at a time and stopping local waiting does not confirm that it stopped rendering. After a *no result* item, the next item is dispatched right away and may wait on the server behind the abandoned job; its total deadline includes that wait. This is accepted: the server queues requests itself, and a local run costs no credits.
+
+After a restart queues are restored paused, completed results are kept, and no item that reached the remote boundary becomes eligible again. `queue start` exits `0` when every item succeeded, otherwise `3`.
 
 Note: the shared buffer budget (256 MiB, about 100 MiB reserved per request) currently admits only about two concurrent real generations, whatever the queue maximum.
 

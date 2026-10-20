@@ -30,7 +30,7 @@ from dtflow.core.request_records import request_from_record as decode_request
 
 QUEUE_STATES = ("paused", "running", "cancelled")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
-ACTIONS = ("pause", "resume", "cancel", "override", "cap")
+ACTIONS = ("pause", "resume", "cancel", "cap")
 MAX_ITEMS = MAX_QUEUE_ITEMS
 
 QUEUE_SCHEMA = (
@@ -226,7 +226,11 @@ class QueueMixin:
                 elif action == "cap" and type(payload.get("cap")) is int and 1 <= payload["cap"] <= 4:
                     db.execute("UPDATE queues SET cap=? WHERE queue_id=?", (payload["cap"], queue_id))
                 elif action == "override":
-                    pass  # legacy no-op: unknown outcomes no longer block a backend, so there is nothing to acknowledge
+                    # A control posted by an older version: unknown outcomes no longer block, so consume it silently.
+                    db.execute(
+                        "UPDATE queue_controls SET applied_at_utc=? WHERE control_id=?", (now, control["control_id"])
+                    )
+                    continue
                 else:
                     self._event(db, queue_id, "control_ignored", now, {"action": action, "state": state})
                     db.execute(

@@ -42,7 +42,6 @@ function QueuesScreen() {
     </div>
     {insp ? <div className="rail"><Panel eyebrow="ITEM EVIDENCE" style={{ flex: 1 }}>
       <SectionCard title="Selected item" icon={Ic("list-checks")}><div className="form"><Label textRole="caption">Item</Label><Label textRole="identifier">{q ? "d8293ddf" : "—"}</Label><Label textRole="caption">Attempt</Label><span>—</span><Label textRole="caption">Backend</Label><Label textRole="value">{q ? q.be : "—"}</Label><Label textRole="caption">Outputs</Label><div className="row" style={{ justifyContent: "space-between" }}><span>—</span><Button disabled style={{ minWidth: 110 }}>Open folder</Button></div></div></SectionCard>
-      <SectionCard title="Uncertainty" icon={Ic("triangle-alert")}><div className="stack"><span className="dt-st-ok" style={{ fontSize: "var(--font-size-small)", color: "var(--color-success)" }}>No unresolved reservation for this item.</span><Button disabled>Acknowledge and override</Button></div></SectionCard>
       <div className="host" style={{ padding: 10, flex: 1, minHeight: 120, background: "var(--color-input)", border: "1px solid var(--color-border)" }}><Label textRole="identifier">03:37:13 &nbsp;created, items 1, cap 2</Label></div>
     </Panel></div> : null}
   </div><StatusBar /></>;

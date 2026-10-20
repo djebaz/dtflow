@@ -302,7 +302,8 @@ def add_scenario_option(child: argparse.ArgumentParser) -> None:
 
 def add_queue_commands(commands) -> None:
     queue = commands.add_parser("queue", help=COMMAND_HELP["queue"])
-    actions = queue.add_subparsers(dest="queue_command", required=True)
+    canonical = ("add", "list", "show", "start", "pause", "resume", "cancel", "cap")
+    actions = queue.add_subparsers(dest="queue_command", required=True, metavar="{" + ",".join(canonical) + "}")
 
     def action(name: str, help_text: str, *, ident: bool = True) -> argparse.ArgumentParser:
         child = actions.add_parser(name, help=help_text)
@@ -356,8 +357,9 @@ def add_queue_commands(commands) -> None:
     action(
         "cancel", "Cancel pending items and interrupt local waiting on active ones (remote cancel is not confirmed)."
     )
-    action("override", "Legacy no-op.")  # unknown outcomes no longer block; accepted for old scripts
-    actions._choices_actions = [a for a in actions._choices_actions if a.dest != "override"]  # keep it out of --help
+    # Hidden compatibility alias: unknown outcomes no longer block, so there is nothing left to override.
+    action("override", "Deprecated no-op.")
+    actions._choices_actions = [a for a in actions._choices_actions if a.dest in canonical]
     cap = action("cap", "Change this queue's concurrency maximum; active work is never cancelled.")
     cap.add_argument(
         "-j", "--jobs", type=int, required=True, help="New maximum, 1-4 (the backend's own limit still applies)."
@@ -433,7 +435,7 @@ def filtered(snapshot, kind: str | None) -> dict:
     return data
 
 
-QUEUE_POSTED = {"pause", "resume", "cancel", "override"}
+QUEUE_POSTED = {"pause", "resume", "cancel"}
 
 
 def queue_exit_code(queue: dict) -> int:
@@ -465,6 +467,13 @@ async def run_queue(args: argparse.Namespace) -> int:
         return EXIT_OK
     if command == "show":
         print(json.dumps(read_queues(args.state, args.queue)[0], indent=2))
+        return EXIT_OK
+    if command == "override":
+        read_queues(args.state, args.queue)  # still reject an unknown queue
+        print(
+            "`queue override` is deprecated and does nothing: unknown outcomes no longer block dispatch.",
+            file=sys.stderr,
+        )
         return EXIT_OK
     if command in QUEUE_POSTED or command == "cap":
         post_control(args.state, args.queue, command, {"cap": args.jobs} if command == "cap" else None)
