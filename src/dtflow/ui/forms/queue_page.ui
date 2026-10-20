@@ -115,7 +115,7 @@
          <string>Create queue</string>
         </property>
         <property name="toolTip">
-         <string>Creates a paused queue from the Generate form. Contacts no backend and uploads nothing.</string>
+         <string>Creates a paused queue from the Generate form, also while another queue runs. Contacts no backend and uploads nothing.</string>
         </property>
         <property name="accessibleName">
          <string>Create a durable queue</string>
@@ -368,6 +368,32 @@
          <widget class="QPushButton" name="cancelQueueButton">
           <property name="text">
            <string>Cancel</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="earlierQueueButton">
+          <property name="text">
+           <string>Earlier</string>
+          </property>
+          <property name="toolTip">
+           <string>Moves this up-next queue one place earlier.</string>
+          </property>
+          <property name="accessibleName">
+           <string>Move up next earlier</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="laterQueueButton">
+          <property name="text">
+           <string>Later</string>
+          </property>
+          <property name="toolTip">
+           <string>Moves this up-next queue one place later.</string>
+          </property>
+          <property name="accessibleName">
+           <string>Move up next later</string>
           </property>
          </widget>
         </item>

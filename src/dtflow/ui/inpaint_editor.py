@@ -66,6 +66,7 @@ class InpaintEditor(QObject):
         self._support_revision = 0
         self._source_path = None
         self._result_path = None
+        self._run_source = None  # the source the running edit was taken from
         self._models = PersonModels()
         self._models_issue = None
         self._model_readiness: dict[str, str | None] = {}
@@ -299,15 +300,15 @@ class InpaintEditor(QObject):
         self.page.generateButton.setText("Edit image" if active else "Generate image")
         for name in ("configurationCombo", "loadConfigurationButton", "saveConfigurationButton", "savePresetButton"):
             widget = getattr(self.page, name)
-            widget.setEnabled(not active and not self._busy)
+            widget.setEnabled(not active)
             widget.setToolTip("Configurations and presets cover text-to-image only." if active else "")
         self._steps_note()
         self._controls()
         self.refresh_capability()
 
     def set_busy(self, busy):
+        """Another run cannot start now. The editor itself stays editable: a running edit keeps its own snapshot."""
         self._busy = busy
-        self.page.generationModeSwitch.setEnabled(not busy)
         self._controls()
 
     def refresh_capability(self, *_):
@@ -374,7 +375,7 @@ class InpaintEditor(QObject):
             button.setToolTip(self._support.reason if self._support is not None else "Checking capability…")
 
     def _controls(self):
-        available = not self._busy and not self._loading
+        available = not self._loading
         self.canvas.setEnabled(available)
         self.form.chooseSourceButton.setEnabled(available)
         self.form.useResultButton.setEnabled(available and self._result_path is not None)
@@ -468,7 +469,7 @@ class InpaintEditor(QObject):
         self.runner.submit(work(), done)
 
     def _task(self, title, worker, apply, *, quiet=False):
-        if self.runner.closed or self._busy or self._loading:
+        if self.runner.closed or self._loading:
             return
         self._revision += 1
         revision = self._revision
@@ -511,7 +512,7 @@ class InpaintEditor(QObject):
         return feedback(self.page).commit(button)
 
     def choose_source(self):
-        if self._commit(self.form.chooseSourceButton) or self._busy or self._loading:
+        if self._commit(self.form.chooseSourceButton) or self._loading:
             return
         path = QFileDialog.getOpenFileName(
             self.page, "Choose source image", "", "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
@@ -533,7 +534,7 @@ class InpaintEditor(QObject):
             callback()
 
     def replace_source(self, path, *, quiet=False, button=None):
-        if self._busy or self._loading:
+        if self._loading:
             return
         recorded_path = path.item.path if isinstance(path, GalleryEditSource) else str(path)
         windows_path = PureWindowsPath(recorded_path)
@@ -586,7 +587,7 @@ class InpaintEditor(QObject):
         self.canvas.set_view("Source")
 
     def remove_source(self):
-        if self._commit(self.form.removeSourceButton) or self._busy or self._loading:
+        if self._commit(self.form.removeSourceButton) or self._loading:
             return
 
         def remove():
@@ -608,7 +609,7 @@ class InpaintEditor(QObject):
     def clear_mask(self):
         if self._commit(self.form.clearMaskButton):
             return
-        if not self._busy and not self._loading:
+        if not self._loading:
             confirm_action(
                 self.page,
                 self.form.clearMaskButton,
@@ -619,7 +620,7 @@ class InpaintEditor(QObject):
             )
 
     def load_mask(self):
-        if self._source is None or self._busy or self._loading:
+        if self._source is None or self._loading:
             return
         path = QFileDialog.getOpenFileName(
             self.page, "Load mask", "", "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp)"
@@ -633,7 +634,7 @@ class InpaintEditor(QObject):
             )
 
     def save_mask(self):
-        if self._source is None or self._busy or self._loading or self._coverage <= 0:
+        if self._source is None or self._loading or self._coverage <= 0:
             return
         path = QFileDialog.getSaveFileName(
             self.page, "Save new mask (existing files are refused)", "mask.png", "PNG (*.png)"
@@ -702,7 +703,7 @@ class InpaintEditor(QObject):
 
     def queue_job(self):
         """The current edit for the Queues tab: None until a source and a mask are ready (the capability line says why)."""
-        if self._busy or self._loading or not self._ready():
+        if self._loading or not self._ready():
             return None
         return self._edit_job()
 
@@ -720,9 +721,10 @@ class InpaintEditor(QObject):
     def _dispatch(self):
         if self._source is None or self._busy or self._loading or self.controller is None:
             return
-        job = self._edit_job()
-        self.canvas.set_result(QPixmap())
-        self.controller.generate(edit=job)
+        job, source = self._edit_job(), self._source
+        if self.controller.generate(edit=job):
+            self._run_source = source
+            self.canvas.set_result(QPixmap())
 
     # -- Select mode: local ONNX person selection ------------------------------------------------------------------
     def _mode(self, select):
@@ -796,7 +798,7 @@ class InpaintEditor(QObject):
 
     def _hover(self, x, y):
         analysis = self._analysis
-        if analysis is None or self._busy or self._loading:
+        if analysis is None or self._loading:
             return
         person = person_at(analysis, x, y)
         layers = self._layers()
@@ -821,7 +823,7 @@ class InpaintEditor(QObject):
         self._controls()
 
     def choose_models(self):
-        if self._busy or self._loading or self.controller is None:
+        if self._loading or self.controller is None:
             return
         paths = QFileDialog.getOpenFileNames(
             self.page,
@@ -853,7 +855,7 @@ class InpaintEditor(QObject):
         self._task("Choose person models", worker, apply)
 
     def find_people(self):
-        if self._source is None or self._models.segmentation is None or self._busy or self._loading:
+        if self._source is None or self._models.segmentation is None or self._loading:
             return
         source, models = self._source, self._models
         self._task(
@@ -937,6 +939,9 @@ class InpaintEditor(QObject):
     def show_result(self, encoded, path=None):
         self._result_path = str(path) if path else None
         self._controls()
+        source, self._run_source = self._run_source, None
+        if source is None or self._source is not source:
+            return  # the source changed while the edit ran: Use result still chains from it, the canvas keeps the new one
         pixmap = QPixmap()
         if pixmap.loadFromData(encoded):
             self.canvas.set_result(pixmap)

@@ -213,6 +213,9 @@ Sources: `queue_page.py`, `queue_model.py`, `queue_presenter.py`, `planning_pres
 | [x] | `queues-21-finished-table` | Finished queue summary/table/control availability, not just the result overlay. |
 | [x] | `queues-22-cancelled-table` | Cancelled queue summary/table/control availability. |
 | [x] | `queues-23-narrow` | Queues below the inspector-collapse breakpoint. |
+| [x] | `queues-24-start-next` | While this window dispatches, a paused queue offers Start next (#125). |
+| [x] | `queues-25-up-next` | An up-next queue with Earlier/Later/Pause, its list position and the run-control count (#125). |
+| [x] | `generate-42-queued-behind` | Generate during a queue run queued the request behind it (#125). |
 
 ## D. Images composition and remaining Detail/removal states
 

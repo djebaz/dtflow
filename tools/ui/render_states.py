@@ -672,6 +672,8 @@ def render_active_queue_states(shell, out):
             queue_id=queue_id,
             status=status,
             backend={"name": "local", "endpoint": None},
+            created_at_utc=stamp,
+            up_next=None,
             cap=2,
             summary=counts,
             items=items,
@@ -693,6 +695,7 @@ def render_active_queue_states(shell, out):
         request = shell.generation.request_for_queue(preview=True)[0]
         present("running", ["succeeded", "running", "pending"], owned=True)
         assert page.pauseQueueButton.isEnabled() and queue._activity.run_state.action == "pause"
+        assert page.createQueueButton.isEnabled()  # #133: a new queue can be prepared while one runs
         snap("queues-11-running")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
         assert page.resumeQueueButton.isEnabled() and queue._activity.run_state.action == "resume"
@@ -709,6 +712,25 @@ def render_active_queue_states(shell, out):
         assert "most likely failed" in page.uncertaintyLabel.text()
         assert page.attemptIdLabel.toolTip() == "attempt-0003"
         snap("queues-17-item-inspection")
+        # #125: a paused queue offers Start next while this window dispatches; an up-next queue can move or leave.
+        paused = dict(
+            present("paused", ["pending", "pending"], started=False),
+            queue_id="offline-queue-0002",
+            created_at_utc="2026-10-17T12:05:00+00:00",
+        )
+        running = present("running", ["succeeded", "running", "pending"], owned=True)
+        queue._selected = paused["queue_id"]
+        queue._read_done(([running, paused], paused, 2), None)
+        queue._timer.stop()
+        assert page.startQueueButton.text() == "Start next" and page.startQueueButton.isEnabled()
+        snap("queues-24-start-next")
+        queued = dict(paused, status="queued", up_next=1)
+        queue._read_done(([running, queued], queued, 2), None)
+        queue._timer.stop()
+        assert page.earlierQueueButton.isEnabled() and page.pauseQueueButton.isEnabled()
+        assert "up next 1" in page.queueList.item(1).text() and "1 up next" in queue._activity.run_state.detail
+        snap("queues-25-up-next")
+        queue._selected = queue_id
         present("paused", ["pending", "pending"], started=False)
         page.planBox.setChecked(True)
         page.planSeedsEdit.setText("not-a-seed")
@@ -2416,7 +2438,16 @@ def render_inpaint_states(shell, state, capture):
     ):
         strip.start(key, label, stop=lambda key=key: strip.finish(key), stop_text=stop_text, total=total)
         strip.update(key, done, total, detail=detail)
+        if key == "inpaint-edit-fixture":
+            # #133: while an edit runs, the editor stays usable; only another Edit image waits.
+            shell.generation._generating = True
+            shell.generation._sync_generate()
+            assert editor.canvas.isEnabled() and editor.form.chooseSourceButton.isEnabled()
+            assert page.generationModeSwitch.isEnabled() and not page.generateButton.isEnabled()
         capture(name)
+        if key == "inpaint-edit-fixture":
+            shell.generation._generating = False
+            shell.generation._sync_generate()
         strip.finish(key)
 
 
@@ -2695,6 +2726,9 @@ def main():
             gate = asyncio.Event()
             page.generateButton.click()
             wait_for(lambda: not page.generateButton.isEnabled())
+            # #133: only another Generate waits; the form and the LoRA panel stay editable for the next request.
+            assert page.promptEdit.isEnabled() and page.addLoraButton.isEnabled()
+            assert page.refreshInventoryButton.isEnabled()
             capture("generate-10-busy-disabled")
             shell.runner._loop.call_soon_threadsafe(gate.set)
             wait_for(settled, timeout=60)
@@ -2722,7 +2756,14 @@ def main():
             gate = None
             strip.finish("generation-result")
             shell.activity.set(dispatching=True)
+            assert page.generateButton.isEnabled()  # #125: Generate queues behind the running queue
             capture("generate-17-queue-dispatch-running")
+            behind = []
+            controller.queue_behind = lambda *args: behind.append(args)
+            page.generateButton.click()
+            assert behind and "Queuing behind" in page.generationStatusLabel.text()
+            capture("generate-42-queued-behind")
+            controller.queue_behind = shell.queue.queue_behind
             shell.activity.set(dispatching=False)
             page.savePresetButton.click()
             capture("generate-18-save-preset-editor")
