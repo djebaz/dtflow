@@ -113,8 +113,24 @@ jobs:
           mkdir -p tmp
           set -o pipefail
           status=0
-          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders --category "${{ inputs.category || 'all' }}" \
+          category="${{ inputs.category || 'all' }}"
+          render_args=(--out tmp/ui-renders)
+          if .venv/bin/python tools/ui/render_states.py --help | grep -q -- '--category'; then
+            render_args+=(--category "$category")
+          elif [ "$category" != "all" ]; then
+            echo "::notice::Target commit predates category-aware rendering; rendering all states and filtering output to '$category'."
+          fi
+          timeout --signal=ABRT --kill-after=10s 300s .venv/bin/python tools/ui/render_states.py "${render_args[@]}" \
             2>&1 | tee tmp/render.log || status=$?
+          if [ "$status" -eq 0 ] && [ "$category" != "all" ] && [ "${#render_args[@]}" -eq 2 ]; then
+            find tmp/ui-renders -type f -name '*.png' | while IFS= read -r path; do
+              name="$(basename "$path")"
+              case "$category:$name" in
+                connection:connection-*|generate:generate-*|queues:queues-*|shell:shell-*|inpaint:inpaint-*|logs:logs-*|image-navigation:image-navigation-*|images:images-*|images:image-navigation-*) ;;
+                *) rm -f "$path" ;;
+              esac
+            done
+          fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -eq 124 ] || [ "$status" -eq 134 ]; then
             echo "::error::Render timed out after 300s; see the stack trace above."
