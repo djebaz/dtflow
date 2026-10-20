@@ -110,6 +110,14 @@ async def test_summary_timing_reads_successful_settlements_without_loading_items
         assert summary["successful_durations"] == [30]
         assert summary["started_at_utc"] and "items" not in summary and "events" not in summary
         assert summary["owner_active"]
+        for action in ("pause", "resume"):
+            await post_queue_control(tmp_path, queue_id, action)
+        assert await owner.apply_controls(queue_id) == ("pause", "resume")
+        (resumed,) = await read_queue_list(tmp_path)
+        assert resumed["resume_event_id"] > summary["resume_event_id"]
+        assert resumed["started_at_utc"] == summary["started_at_utc"]
+        assert resumed["summary"] == summary["summary"]
+        assert resumed["successful_durations"] == summary["successful_durations"]
     finally:
         await owner.aclose()
 

@@ -716,6 +716,11 @@ def render_active_queue_states(shell, out):
         assert "~1:29 left" in queue._activity.run_state.detail
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
         snap("queues-34-eta-countdown")
+        resumed = dict(timed, resume_event_id=1)
+        queue._read_done(([resumed], resumed, 2), None)
+        queue._timer.stop()
+        assert "~1:30 left" in queue._activity.run_state.detail
+        snap("queues-35-resume-between-polls")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
         assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "resume"
         snap("queues-12-paused-after-start")
