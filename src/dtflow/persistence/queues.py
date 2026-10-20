@@ -834,6 +834,13 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 ).fetchone()
                 if resumed:
                     queue["resume_event_id"] = resumed["event_id"]
+            queue["running_started_at_utc"] = [
+                item["updated_at_utc"]
+                for item in connection.execute(
+                    "SELECT updated_at_utc FROM queue_items WHERE queue_id=? AND state='running' ORDER BY item_id",
+                    (row["queue_id"],),
+                )
+            ] if queue["status"] == "running" else []
             queue["successful_durations"] = []
             if queue["status"] == "running" and summary["succeeded"] >= 1:
                 for event in connection.execute(
