@@ -2776,6 +2776,9 @@ def main():
         page, controller = shell.generation_page, shell.generation
 
         def capture(name):
+            category = name.split("-", 1)[0]
+            if not wants(category):
+                return
             app.processEvents()
             preview = controller.inpaint.canvas if controller.inpaint.active else page.resultPreviewLabel
             preview._show_controls()
@@ -2938,10 +2941,14 @@ def main():
             controller.show_metadata()
             capture("generate-19-metadata-inspection")
             shell.inline.dismiss()
-            render_queue_states(shell, capture)
-            render_shell_states(shell, capture)
-            render_inpaint_states(shell, state, capture)
-            render_logs_states(shell, capture)
+            if wants("queues"):
+                render_queue_states(shell, capture)
+            if wants("shell"):
+                render_shell_states(shell, capture)
+            if wants("inpaint"):
+                render_inpaint_states(shell, state, capture)
+            if wants("logs"):
+                render_logs_states(shell, capture)
         except BaseException:
             # Print before shutdown: a stuck shutdown would otherwise hide the original failure.
             traceback.print_exc()
