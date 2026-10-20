@@ -339,7 +339,7 @@ async def test_dispatch_ownership_and_non_owner_access(state):
         with pytest.raises(QueueError):
             post_control(state, "missing", "pause")
         with pytest.raises(QueueError):
-            post_control(state, queue_id, "cap", {"cap": 9})
+            post_control(state, queue_id, "cap", {"cap": 11})
         assert await store.apply_controls(queue_id) == ()  # Pause on a paused queue is recorded as ignored
     finally:
         await other.aclose()
@@ -452,4 +452,4 @@ def test_queue_cli_add_start_controls_and_exit_codes(invoke):
     # Invalid input never creates or controls anything.
     for bad in (("add", "-b", "fake", "-k", "0"), ("add", "-b", "local"), ("show", "missing"), ("pause", "missing")):
         assert invoke(*bad)[0] == 2
-    assert invoke("cap", lost, "-j", "9")[0] == 2
+    assert invoke("cap", lost, "-j", "11")[0] == 2
