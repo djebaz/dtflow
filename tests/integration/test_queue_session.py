@@ -19,6 +19,7 @@ from dtflow.services.queue_session import (
     dispatch_queue,
     expand_items,
     post_queue_control,
+    read_queue_list,
     read_queue_views,
     set_concurrency,
 )
@@ -89,6 +90,28 @@ async def test_a_second_dispatch_owner_is_refused_before_dispatching(tmp_path):
     finally:
         await owner.aclose()
     assert (await read_queue_views(tmp_path))[0]["summary"]["pending"] == 1
+
+
+@pytest.mark.asyncio
+async def test_summary_timing_reads_successful_settlements_without_loading_items(tmp_path):
+    queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 3))
+    owner = SQLiteAttempts(tmp_path)
+    await owner.open()
+    try:
+        await owner.set_running(queue_id)
+        with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
+            db.execute("UPDATE queue_items SET state='succeeded' WHERE queue_id=? AND position=1", (queue_id,))
+            db.execute("UPDATE queue_items SET state='running' WHERE queue_id=? AND position=2", (queue_id,))
+        for state, seconds in (("succeeded", 30), ("failed", 900), ("unknown", 800)):
+            await owner.record_queue_event(
+                queue_id, "item_settled", {"state": state, "backend_elapsed_seconds": seconds}
+            )
+        (summary,) = await read_queue_list(tmp_path)
+        assert summary["successful_durations"] == [30]
+        assert summary["started_at_utc"] and "items" not in summary and "events" not in summary
+        assert summary["owner_active"]
+    finally:
+        await owner.aclose()
 
 
 @pytest.mark.asyncio

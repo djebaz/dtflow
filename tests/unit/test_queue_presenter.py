@@ -1,10 +1,15 @@
 """Queue view presentation (Qt-free): the vocabularies, control matrix and outcome wording."""
 
+from datetime import UTC, datetime
+
 import pytest
 
 from dtflow.ui.queue_presenter import (
     concurrency_level,
     controls,
+    elapsed_text,
+    estimate_remaining,
+    eta_text,
     has_started,
     item_rows,
     outcome_note,
@@ -15,6 +20,37 @@ from dtflow.ui.queue_presenter import (
 )
 
 ZERO = {s: 0 for s in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")}
+
+
+@pytest.mark.parametrize(
+    "samples,running,pending,expected",
+    [
+        ([30], 1, 2, 90),
+        ([10, 20, 900], 2, 4, 60),
+        ([], 1, 2, None),
+        ([True, None, -3, float("nan"), float("inf")], 1, 2, None),
+        ([10], 0, 2, None),
+        ([0], 1, 2, None),
+    ],
+)
+def test_eta_uses_valid_successful_samples_and_observed_parallelism(samples, running, pending, expected):
+    current = view("running", succeeded=1, running=running, pending=pending)
+    current.update(successful_durations=samples, cap=4)
+    assert estimate_remaining(current) == expected
+    for status in ("paused", "cancelled", "finished"):
+        assert eta_text(current | {"status": status}) == ""
+    assert eta_text(current | {"owner_active": False}) == ""
+
+
+def test_elapsed_and_eta_wording_disclose_estimation_and_mixed_settings():
+    current = view("running", succeeded=1, running=1, pending=1)
+    current.update(successful_durations=[30], started_at_utc="2026-10-20T12:00:00+00:00")
+    assert eta_text(current) == "~1 min left (estimate)"
+    assert "rough for mixed settings" in eta_text(current | {"varied": {"steps": 2}})
+    now = datetime(2026, 10, 20, 12, 2, 15, tzinfo=UTC)
+    assert elapsed_text(current, now) == "Elapsed 2:15"
+    assert elapsed_text(current | {"started_at_utc": None}, now) == ""
+    assert elapsed_text(current | {"started_at_utc": "2026-10-20T12:00:00"}, now) == ""
 
 
 def view(status="paused", items=(), **counts):

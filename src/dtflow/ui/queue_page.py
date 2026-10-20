@@ -59,6 +59,8 @@ from dtflow.ui.queue_presenter import (
     STATUS_TEXT,
     concurrency_level,
     controls,
+    elapsed_text,
+    eta_text,
     event_lines,
     filter_counts,
     filter_states,
@@ -538,6 +540,11 @@ class QueuePage:
             # returns to its quiet idle presentation instead of becoming a
             # persistent completion/error badge for whichever queue is selected.
             detail = "No runnable queue selected."
+
+        if phase in ("running", "paused"):
+            timing = " · ".join(part for part in (elapsed_text(view), eta_text(view)) if part)
+            if timing:
+                detail += " " + timing
 
         self._activity.present_run(
             RunState(

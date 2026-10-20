@@ -15,6 +15,7 @@ import tempfile
 import time
 import traceback
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
@@ -703,6 +704,13 @@ def render_active_queue_states(shell, out):
         assert page.queueStateLabel.text() == "Running" and not page.removeQueueButton.isEnabled()
         assert page.createQueueButton.isEnabled()  # #133: a new queue can be prepared while one runs
         snap("queues-11-running")
+        timed = present("running", ["succeeded", "running", "pending"], owned=True)
+        timed.update(successful_durations=[45], started_at_utc=datetime.now(UTC).isoformat())
+        queue._read_done(([timed], timed, 2), None)
+        queue._timer.stop()
+        assert "Elapsed" in queue._activity.run_state.detail and "estimate" in queue._activity.run_state.detail
+        assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
+        snap("queues-33-elapsed-eta")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
         assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "resume"
         snap("queues-12-paused-after-start")

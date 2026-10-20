@@ -86,6 +86,7 @@ QUEUE_SCHEMA = (
         kind TEXT NOT NULL,
         detail_json TEXT NOT NULL DEFAULT '{}'
     )""",
+    "CREATE INDEX IF NOT EXISTS queue_events_by_queue_kind ON queue_events (queue_id, kind)",
 )
 
 # An attempt's final state decides its item's state; an item never invents an outcome the attempt does not have.
@@ -815,6 +816,26 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
             summary = counts.get(row["queue_id"], {state: 0 for state in ITEM_STATES})
             queue["summary"] = summary
             queue["status"] = _status(row["state"], summary)
+            queue["started_at_utc"] = None
+            if queue["status"] in ("running", "paused"):
+                started = connection.execute(
+                    "SELECT at_utc FROM queue_events WHERE queue_id=? AND kind='started' ORDER BY event_id DESC LIMIT 1",
+                    (row["queue_id"],),
+                ).fetchone()
+                if started:
+                    queue["started_at_utc"] = started["at_utc"]
+            queue["successful_durations"] = []
+            if queue["status"] == "running" and summary["succeeded"] >= 1:
+                for event in connection.execute(
+                    "SELECT detail_json FROM queue_events WHERE queue_id=? AND kind='item_settled' ORDER BY event_id",
+                    (row["queue_id"],),
+                ):
+                    try:
+                        detail = json.loads(event["detail_json"])
+                    except (TypeError, ValueError):
+                        continue
+                    if isinstance(detail, dict) and detail.get("state") == "succeeded":
+                        queue["successful_durations"].append(detail.get("backend_elapsed_seconds"))
             first = connection.execute(
                 "SELECT request_json FROM queue_items WHERE queue_id=? ORDER BY position LIMIT 1", (row["queue_id"],)
             ).fetchone()

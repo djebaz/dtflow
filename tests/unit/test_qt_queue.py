@@ -7,6 +7,7 @@ and which shared operation each action calls. Dispatch uses the same dispatcher 
 import functools
 import os
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -161,3 +162,34 @@ def test_new_queue_selection_resets_filters_and_reads_items_without_idle_polling
     assert not page.failedFilterButton.isChecked()
     assert not any(page.queueItemsView.isRowHidden(row) for row in range(2))
     assert not window.queue._timer.isActive()
+
+
+def test_queue_timing_reaches_overlay_and_tooltip_without_changing_real_progress(window, qtbot, monkeypatch):
+    from dtflow.ui.activity_strip import activity_strip
+
+    page, queue = window.queue_page, window.queue
+    page.queueCountSpinBox.setValue(3)
+    page.createQueueButton.click()
+    qtbot.waitUntil(lambda: queue.model.rowCount() == 3, timeout=5000)
+    monkeypatch.setattr(queue, "refresh", lambda: None)
+    current = queue._view() | queue._detail
+    current.update(
+        status="running",
+        owner_active=True,
+        successful_durations=[30],
+        started_at_utc=(datetime.now(UTC) - timedelta(seconds=65)).isoformat(),
+        summary=dict(current["summary"], succeeded=1, running=1, pending=1),
+    )
+    queue._dispatching = current["queue_id"]
+    window.activity.set(dispatching=True)
+    queue._read_done(([current], current, 4), None)
+    row = activity_strip(page).rows["run"]
+    assert "Elapsed" in row.activityDetail.text() and "~1 min left (estimate)" in row.activityDetail.text()
+    assert "estimate" in window.shell.runControl.toolTip()
+    assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
+    paused = dict(current, status="paused")
+    queue._read_done(([paused], paused, 4), None)
+    assert "estimate" not in row.activityDetail.text() and "Elapsed" in row.activityDetail.text()
+    queue._dispatching = None
+    window.activity.set(dispatching=False)
+    queue._timer.stop()

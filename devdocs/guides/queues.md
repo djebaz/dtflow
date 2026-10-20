@@ -28,6 +28,14 @@ While this window dispatches, **Start** on another paused queue reads **Start ne
 
 Auto-play continues after a queue finishes or is cancelled; a paused running queue holds the order until you Resume or Cancel it. Picking the next queue and starting it are one step, so a Pause, Cancel or reorder made just before is respected. Auto-play stops when dispatch itself ends: a failure, a local stop or closing the window. Whenever the owner stops, and whenever a new owner opens the state (a restart included), every waiting queue returns to paused, so nothing starts without a live owner. Joining the order needs a live owner: once the running queue has ended, **Start next** is refused and Generate saves its one-item queue paused, saying so.
 
+### Elapsed time and ETA
+
+The shared bottom progress row and the header Run control tooltip show elapsed wall time since the latest dispatch start, including pauses and provider waits. A new dispatch after a stop or restart starts a new elapsed interval. If no reliable start timestamp exists, elapsed time is omitted.
+
+After the **first successful item with a usable recorded duration**, a labeled estimate appears: median successful `backend_elapsed_seconds` × remaining items (pending + running) ÷ items actually running. Failed, cancelled and unknown items do not contribute durations; the configured maximum is never substituted for observed concurrency. The estimate updates on polls and disappears while paused, cancelled, finished, without an active owner or with no running items. Plans varying model, size or steps say the estimate is rough.
+
+Durations include provider-side queueing and are not pure inference time. The blue bar continues to show real settled counts, never estimated progress.
+
 ## CLI examples
 
 ```bash

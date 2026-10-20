@@ -4,11 +4,74 @@ Everything here maps the shared ``read_queues`` view (scheduler, reservation and
 display data. The vocabularies below are the only ones the Queues page uses, so a state never gets two meanings.
 """
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from statistics import median
 
 from dtflow.services.connection import local_time
+
+MIN_ETA_SAMPLES = 1
+
+
+def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> float | None:
+    """Estimate remaining wall time from succeeded item timings and observed parallel work, never the configured cap.
+
+    Backend durations may include provider queueing. This does not predict per-item progress or elapsed running time.
+    """
+    if view["status"] != "running" or view.get("owner_active") is False:
+        return None
+    counts = view["summary"]
+    running = counts.get("running", 0)
+    remaining = counts.get("pending", 0) + running
+    samples = []
+    for value in view.get("successful_durations", ()):
+        if type(value) not in (int, float):
+            continue
+        try:
+            duration = float(value)
+        except OverflowError:
+            continue
+        if math.isfinite(duration) and duration >= 0:
+            samples.append(duration)
+    if running <= 0 or remaining <= 0 or len(samples) < max(1, minimum_samples):
+        return None
+    seconds = median(samples) * remaining / running
+    return seconds if math.isfinite(seconds) and seconds > 0 else None
+
+
+def eta_text(view: dict) -> str:
+    """Explicitly estimated remaining time, with a caveat when model, size or step count varies."""
+    seconds = estimate_remaining(view)
+    if seconds is None:
+        return ""
+    if seconds < 60:
+        duration = f"{math.ceil(seconds)} s"
+    elif seconds < 3600:
+        duration = f"{math.ceil(seconds / 60)} min"
+    else:
+        minutes = math.ceil(seconds / 60)
+        duration = f"{minutes // 60} h {minutes % 60} min"
+    varied = view.get("varied") or {}
+    caveat = "; rough for mixed settings" if any(varied.get(key, 0) > 1 for key in ("model", "size", "steps")) else ""
+    return f"~{duration} left (estimate{caveat})"
+
+
+def elapsed_text(view: dict, now: datetime | None = None) -> str:
+    """Observed wall time since the latest dispatch start, including pauses and provider waits."""
+    try:
+        started = datetime.fromisoformat(view.get("started_at_utc") or "")
+        if started.tzinfo is None:
+            return ""
+        seconds = max(0, int(((now or datetime.now().astimezone()) - started).total_seconds()))
+    except (TypeError, ValueError, OverflowError):
+        return ""
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    clock = f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+    return f"Elapsed {clock}"
+
 
 ITEM_LEVELS = {
     "pending": "secondary",
