@@ -6,12 +6,10 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 DRIVE_API = "https://www.googleapis.com/drive/v3"
@@ -102,10 +100,7 @@ def find_or_create_folder(
 
 
 def _delete_existing(access_token: str, folder_id: str, name: str) -> None:
-    query = (
-        f"name='{_quote_query(name)}' and "
-        f"'{_quote_query(folder_id)}' in parents and trashed=false"
-    )
+    query = f"name='{_quote_query(name)}' and '{_quote_query(folder_id)}' in parents and trashed=false"
     params = urllib.parse.urlencode({"q": query, "spaces": "drive", "fields": "files(id)"})
     response = _request_json(f"{DRIVE_API}/files?{params}", headers=_auth(access_token))
     for item in response.get("files", []):

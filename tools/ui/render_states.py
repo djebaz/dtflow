@@ -92,7 +92,6 @@ def wants(category):
     return SELECTED_CATEGORY in ("all", category)
 
 
-
 def report(target):
     """Print progress for one written state and remember it for the final summary."""
     image = QImage(str(target)).scaled(16, 16)
