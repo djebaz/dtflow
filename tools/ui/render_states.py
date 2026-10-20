@@ -83,6 +83,14 @@ from dtflow.ui.theme import apply_theme  # noqa: E402
 
 RENDERED = {}  # state name -> {"seconds", "blank"}, in render order
 STARTED = time.monotonic()
+SELECTED_CATEGORY = "all"
+RENDER_CATEGORIES = ("all", "connection", "generate", "images", "queues", "shell", "inpaint", "logs")
+
+
+def wants(category):
+    """Return whether a render category should execute."""
+    return SELECTED_CATEGORY in ("all", category)
+
 
 
 def report(target):
@@ -2701,7 +2709,15 @@ def render_logs_states(shell, capture):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=ROOT / "tmp" / "ui-renders", help="Screenshot directory")
+    parser.add_argument(
+        "--category",
+        choices=RENDER_CATEGORIES,
+        default="all",
+        help="Render only one UI category (default: all).",
+    )
     args = parser.parse_args()
+    global SELECTED_CATEGORY
+    SELECTED_CATEGORY = args.category
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication([])
     apply_theme(app)
@@ -2718,36 +2734,40 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
-        render_connection_states(app, state, args.out)
-        render_mapped_gallery_states(app, state, args.out)
-        # Missing Qt capability API: startup succeeds with Trash unavailable.
-        with patch.object(system_trash, "QFile", object):
-            unavailable = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "no-trash")
-        try:
-            unavailable.form.resize(1600, 1000)
-            unavailable.show()
-            unavailable.form.imagesNavigationButton.click()
-            wait_for(lambda: unavailable.gallery.removal_ready)
-            unavailable.image_recycle.menu_button.menu().popup(
-                unavailable.image_recycle.menu_button.mapToGlobal(
-                    QPoint(0, unavailable.image_recycle.menu_button.height())
+        if wants("connection"):
+            render_connection_states(app, state, args.out)
+        if wants("images"):
+            render_mapped_gallery_states(app, state, args.out)
+        if wants("images"):
+            # Missing Qt capability API: startup succeeds with Trash unavailable.
+            with patch.object(system_trash, "QFile", object):
+                unavailable = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "no-trash")
+            try:
+                unavailable.form.resize(1600, 1000)
+                unavailable.show()
+                unavailable.form.imagesNavigationButton.click()
+                wait_for(lambda: unavailable.gallery.removal_ready)
+                unavailable.image_recycle.menu_button.menu().popup(
+                    unavailable.image_recycle.menu_button.mapToGlobal(
+                        QPoint(0, unavailable.image_recycle.menu_button.height())
+                    )
                 )
-            )
-            QTest.qWait(100)
-            target = args.out / "images-02-trash-unavailable.png"
-            if not unavailable.form.grab().save(str(target)):
-                raise RuntimeError(f"Could not save {target.name}")
-            report(target)
-            target = args.out / "images-09-removal-mode-menu.png"
-            if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
-                raise RuntimeError(f"Could not save {target.name}")
-            report(target)
-            unavailable.image_recycle.menu_button.menu().hide()
-        finally:
-            unavailable.runner.shutdown()
-            unavailable.form.close()
-            app.processEvents()
-        render_initial_refresh_recovery(app, state, args.out)
+                QTest.qWait(100)
+                target = args.out / "images-02-trash-unavailable.png"
+                if not unavailable.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                report(target)
+                target = args.out / "images-09-removal-mode-menu.png"
+                if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                report(target)
+                unavailable.image_recycle.menu_button.menu().hide()
+            finally:
+                unavailable.runner.shutdown()
+                unavailable.form.close()
+                app.processEvents()
+            if wants("images"):
+            render_initial_refresh_recovery(app, state, args.out)
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
         shell.show()
