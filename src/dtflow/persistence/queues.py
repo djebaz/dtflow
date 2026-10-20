@@ -906,7 +906,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
         queue.setdefault("up_next", None)  # a schema 2 or 3 database read without migrating
         items = []
         for item in connection.execute(
-            """SELECT i.item_id, i.position, i.state, i.attempt_id, i.failure_json, i.request_json,
+            """SELECT i.item_id, i.position, i.state, i.attempt_id, i.updated_at_utc, i.failure_json, i.request_json,
                 a.state AS attempt_state, a.artifacts_json
             FROM queue_items i LEFT JOIN attempts a ON a.attempt_id = i.attempt_id
             WHERE i.queue_id=? ORDER BY i.position""",
@@ -923,6 +923,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "position": item["position"],
                     "item_id": item["item_id"],
                     "state": item["state"],
+                    "updated_at_utc": item["updated_at_utc"],
                     "attempt_id": item["attempt_id"],
                     "request_id": request.get("request_id"),
                     "seed": request.get("seed"),
