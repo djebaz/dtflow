@@ -80,7 +80,6 @@ from dtflow.ui.queue_presenter import (
     segments,
     status_chip,
     summarize,
-    timing_snapshot,
     up_next_ids,
 )
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
@@ -359,7 +358,14 @@ class QueuePage:
             self.model.apply(item_rows(detail) if detail is not None else ())
             self._apply_item_filter()
             self._select_default_item()
-            page.queueEventBrowser.setPlainText(event_lines(detail) if detail is not None else "")
+            browser = page.queueEventBrowser
+            shown = event_lines(detail) if detail is not None else ""
+            if browser.toPlainText() != shown:
+                scrollbar = browser.verticalScrollBar()
+                position = scrollbar.value()
+                at_bottom = position >= scrollbar.maximum() - 2
+                browser.setPlainText(shown)
+                scrollbar.setValue(scrollbar.maximum() if at_bottom else position)
         self._show_cap(view)
         self._show_new_cap()
         self._show_item()
@@ -565,20 +571,6 @@ class QueuePage:
         else:
             self._timing_timer.stop()
             self._countdown.reset()
-
-        # Show one replaceable timing snapshot below durable events; preserve scroll position.
-        selected_detail = self._detail_for(view)
-        if selected_detail is not None:
-            base = event_lines(selected_detail)
-            snapshot = timing_snapshot(view, remaining) if phase in ("running", "paused") else ""
-            shown = "\n".join(part for part in (base, snapshot) if part)
-            browser = self.page.queueEventBrowser
-            if browser.toPlainText() != shown:
-                scrollbar = browser.verticalScrollBar()
-                position = scrollbar.value()
-                at_bottom = position >= scrollbar.maximum() - 2
-                browser.setPlainText(shown)
-                scrollbar.setValue(scrollbar.maximum() if at_bottom else position)
 
         self._activity.present_run(
             RunState(
