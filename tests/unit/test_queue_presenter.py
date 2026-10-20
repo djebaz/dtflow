@@ -17,8 +17,8 @@ from dtflow.ui.queue_presenter import (
     outcome_text,
     primary_action,
     status_chip,
-    timing_snapshot,
     summarize,
+    timing_snapshot,
 )
 
 ZERO = {s: 0 for s in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")}

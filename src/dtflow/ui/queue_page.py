@@ -79,8 +79,8 @@ from dtflow.ui.queue_presenter import (
     queue_title,
     segments,
     status_chip,
-    timing_snapshot,
     summarize,
+    timing_snapshot,
     up_next_ids,
 )
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
