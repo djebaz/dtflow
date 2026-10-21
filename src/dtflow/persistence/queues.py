@@ -934,6 +934,11 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 "prompt": request.get("prompt") if isinstance(request.get("prompt"), str) else "",
                 "model": request.get("model_id") if isinstance(request.get("model_id"), str) else "",
                 "operation": request.get("operation") or "txt2img",
+                "loras": [
+                    (lora["identifier"], lora.get("weight"))
+                    for lora in request.get("loras") or ()
+                    if isinstance(lora, dict) and isinstance(lora.get("identifier"), str)
+                ],
             }
             queue["varied"] = None
             if row["queue_id"] not in described:

@@ -740,6 +740,15 @@ class GenerationPage:
     def queue_created(self) -> None:
         self._previewed_seed = None
 
+    def plan_choices(self) -> dict[str, list[str]]:
+        """What the Queues composer offers: the listed checkpoints, every sampler and the current size."""
+        page = self.page
+        return {
+            "models": [page.modelCombo.itemText(index) for index in range(page.modelCombo.count())],
+            "samplers": list(SAMPLERS),  # every sampler: a plan may cross several models
+            "size": f"{page.widthSpinBox.value()}x{page.heightSpinBox.value()}",
+        }
+
     def queue_edit_job(self):
         """The current Inpaint edit for the Queues tab, or None outside Inpaint mode."""
         return self.inpaint.queue_job() if self.inpaint.active else None

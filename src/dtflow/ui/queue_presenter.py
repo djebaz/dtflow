@@ -368,10 +368,41 @@ def created_text(at_utc: str, now: datetime | None = None) -> str:
     return moment.strftime("%H:%M" if moment.date() == now.date() else "%b %d %H:%M")
 
 
+def lora_text(identifier: str, weight) -> str:
+    """``style.safetensors 0.8``: a LoRA and its weight, as the queue header and composer summary list it."""
+    return f"{identifier} {weight:g}" if isinstance(weight, (int, float)) else identifier
+
+
 def queue_subtitle(view: dict, now: datetime | None = None) -> str:
-    model = (view.get("first") or {}).get("model")
-    parts = [model] if model else []
+    """One line for a list row: model and LoRA count, plan, backend and time (the header names them in ``queue_facts``)."""
+    first = view.get("first") or {}
+    parts = [first["model"]] if first.get("model") else []
+    varied = view.get("varied")
+    loras = first.get("loras") or ()
+    # Until the variation scan has run, the first item's LoRAs may not be the queue's; varied sets go to plan_text.
+    if loras and varied is not None and "loras" not in varied:
+        parts.append(f"{len(loras)} LoRA{'s' if len(loras) != 1 else ''}")
     return " · ".join([*parts, plan_text(view), backend_label(view), created_text(view["created_at_utc"], now)])
+
+
+def queue_facts(view: dict, now: datetime | None = None) -> dict[str, str]:
+    """The header's labelled lines: Model, LoRAs (one per line), Plan, Backend and Created."""
+    first = view.get("first") or {}
+    varied = view.get("varied")
+    loras = first.get("loras") or ()
+    if varied is None:
+        lora_value = "—"  # the variation scan has not run: the first item's LoRAs may not be the queue's
+    elif "loras" in varied:
+        lora_value = "Varied per item"  # plan_text counts the sets
+    else:
+        lora_value = "\n".join(lora_text(identifier, weight) for identifier, weight in loras) or "None"
+    return {
+        "Model": first.get("model") or "—",
+        "Loras": lora_value,
+        "Plan": plan_text(view),
+        "Backend": backend_label(view),
+        "Created": created_text(view["created_at_utc"], now),
+    }
 
 
 def group_of(view: dict) -> str:

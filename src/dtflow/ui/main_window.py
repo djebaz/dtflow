@@ -57,6 +57,7 @@ from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
 from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
+from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
 from dtflow.ui.runner import AsyncRunner
@@ -95,6 +96,7 @@ def load_ui(path: Path) -> QWidget:
         loader.registerCustomWidget(SearchableComboBox)
         loader.registerCustomWidget(RunControl)
         loader.registerCustomWidget(SegmentedBar)
+        loader.registerCustomWidget(ValueChips)
         widget = loader.load(file)
     finally:
         file.close()
@@ -313,6 +315,8 @@ class MainWindow:
             editing_source=lambda: self.generation.inpaint.active,
             simulation_source=self.generation.simulation,
             created_hook=self.generation.queue_created,
+            choices_source=self.generation.plan_choices,
+            generate_hook=self._show_generation,
             activity=self.activity,
         )
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
@@ -476,6 +480,7 @@ class MainWindow:
     def _show_queue(self) -> None:
         self.form.workspaceStack.setCurrentWidget(self.queue_page)
         self.queue.refresh()
+        self.queue.shown()
 
     def _show_generation(self) -> None:
         self.generation.sync_backend()
