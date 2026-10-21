@@ -145,12 +145,20 @@ class LoraAssetPanel:
                 text += f" [receipt {self._receipts[item.identifier][:8]}]"
             self.page.loraList.addItem(text)
 
-    def add(self) -> None:
+    def choices(self) -> list[tuple[str, float | None]]:
+        """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""
         candidates = list(self._candidates)
         known = {name for name, _ in candidates}
-        candidates += [
+        return candidates + [
             (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
         ]
+
+    def confirmed_receipts(self) -> dict[str, str]:
+        """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
+        return {r["identifier"]: asset for asset, r in self._records.items() if r["state"] == "confirmed"}
+
+    def add(self) -> None:
+        candidates = self.choices()
 
         def add_selection(choice):
             if self._is_busy():

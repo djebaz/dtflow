@@ -29,6 +29,7 @@ from dtflow.core.models import (
     EventSink,
     InventorySnapshot,
     PreflightDiagnostic,
+    PreparedAsset,
     ResolvedGenerationRequest,
     TimeoutPolicy,
     ValidationError,
@@ -170,20 +171,29 @@ def asset_validator(backend) -> AssetService | None:
     return AssetService(backend) if hasattr(backend, "negotiate_asset") else None
 
 
+async def load_prepared(
+    state: Path, backend_name: str, asset_ids: list[str] | tuple[str, ...]
+) -> tuple[PreparedAsset, ...]:
+    """Confirmed local receipts by id, from the local registry only (never uploads)."""
+    if not asset_ids:
+        return ()
+    if backend_name != "cloud":
+        raise ValidationError("--asset applies to the cloud backend only.")
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
+    finally:
+        await registry.aclose()
+
+
 async def bind_prepared(
     state: Path, backend_name: str, request: ResolvedGenerationRequest, asset_ids: list[str] | tuple[str, ...] | None
 ) -> ResolvedGenerationRequest:
     """Attach confirmed local receipts to the request; reads only the local registry and never uploads."""
     if not asset_ids:
         return request
-    if backend_name != "cloud":
-        raise ValidationError("--asset applies to the cloud backend only.")
-    registry = AssetRegistry(state)
-    await registry.open()
-    try:
-        prepared = tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
-    finally:
-        await registry.aclose()
+    prepared = await load_prepared(state, backend_name, asset_ids)
     selected = {item.identifier for item in request.loras}
     for item in prepared:
         if item.identifier not in selected:

@@ -102,6 +102,7 @@ Owned checks: `6-O1`, `6-O2`, `6-O3` as parametrized pure tests on `planning.py`
 - **Plan file**: `dtflow.queue-plan` version 1; seed ranges are `{"start", "count"}`; LoRA weights are `lora_weight: [{identifier, weights}]` entries (identifiers are values, not keys, so the credential-word scan cannot misfire); a varied LoRA must already be in the base request.
 - **Dry run output**: JSON like every other command (`mode`, `seed_policy`, `total`, `columns`, `rows`). Shared constants `MAX_QUEUE_ITEMS` and `SEED_LIMIT` moved to `core/models.py` so the planner imports no SQLite code; `persistence.queues.MAX_ITEMS` is unchanged.
 - **Desktop**: a checkable "Plan batch" group on the Queues page (Cross or Pair, one text field per dimension, live count readout, Dry run table). Create validates and shows the table first, refuses oversize or invalid plans with the owning field marked, and runs the planner on the GUI thread because it is pure and bounded. The count spin box stays the seed-sweep shortcut and is disabled while a plan is active. No LoRA override control was built.
+- **LoRA sets (later, #124)**: an additive `loras` dimension, still version 1: each value is a whole set `[{identifier, weight}]` (`[]` for none) that replaces the base LoRAs for that item; it cannot be combined with `lora_weight`, evidence records the set as `plan.dimension.loras` (`none` or `A 0.8 + B 0.4`), and bound receipts are kept only for LoRAs the item selects.
 
 ## Risks and mitigations
 
