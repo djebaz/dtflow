@@ -7,7 +7,7 @@ duplicates and ordering exactly as for CLI plan files.
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -250,3 +250,41 @@ class ValueChips(QWidget):
                 custom_label=self._custom,
                 custom_prompt=f"Exact {self._title.lower()} identifier",
             )
+
+
+class ActionsFit(QObject):
+    """Keeps the composer actions beside its title while they fit; otherwise they wrap on their own row below it."""
+
+    def __init__(self, scroll, title_layout, column_layout, actions, fixed):
+        super().__init__(scroll)
+        self._title, self._actions, self._fixed = title_layout, tuple(actions), tuple(fixed)
+        self._before = fixed[-1]  # actions sit just before the last fixed widget (Close)
+        self._host = QWidget(scroll.widget())
+        self._host.setObjectName("composerWrappedActions")
+        self._flow = FlowLayout(self._host)
+        self._host.hide()
+        column_layout.insertWidget(1, self._host)
+        self._wrapped = False
+        self._viewport = scroll.viewport()
+        self._viewport.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Resize:
+            self.refit()
+        return False
+
+    def refit(self) -> None:
+        widgets = (*self._fixed, *self._actions)
+        margins = self._title.contentsMargins()
+        needed = sum(widget.sizeHint().width() for widget in widgets) + self._title.spacing() * len(widgets)
+        wrap = self._viewport.width() < needed + margins.left() + margins.right()
+        if wrap == self._wrapped:
+            return
+        self._wrapped = wrap
+        for widget in self._actions:
+            (self._title if wrap else self._flow).removeWidget(widget)
+            if wrap:
+                self._flow.addWidget(widget)
+            else:
+                self._title.insertWidget(self._title.indexOf(self._before), widget)
+        self._host.setVisible(wrap)

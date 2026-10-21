@@ -53,7 +53,7 @@ from dtflow.ui.planning_presenter import (
     sentence,
     summary_text,
 )
-from dtflow.ui.queue_composer import SIZE_PRESETS
+from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
@@ -257,6 +257,19 @@ class QueuePage:
         self._preview_timer.setInterval(PREVIEW_MS)
         self._preview_timer.timeout.connect(self.preview)
         self._configure_dimensions()
+        self._actions_fit = ActionsFit(
+            page.queueComposerScroll,
+            page.queueComposer.layout().itemAt(0).layout(),  # the title row
+            page.queueComposer.layout(),
+            (
+                page.newQueueCapLabel,
+                page.newQueueCapSpinBox,
+                page.createQueueButton,
+                page.addQueueButton,
+                page.startQueueButton,
+            ),
+            (page.composerTitleLabel, page.closeComposerButton),
+        )
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
@@ -658,7 +671,8 @@ class QueuePage:
         page.removeQueueButton.setEnabled(removable)
         # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
-        running = any(v["status"] == "running" for v in self._views.values())
+        # A running queue whose owner is gone (needs recovery) has nobody to wait behind and blocks nothing.
+        running = any(v["status"] == "running" and not needs_recovery(v) for v in self._views.values())
         foreign = running and not self.dispatching_here
         page.addQueueButton.setEnabled(self.dispatching_here or running)
         page.addQueueButton.setToolTip(
@@ -1009,6 +1023,7 @@ class QueuePage:
             level, text = "ok", f"{count} item{'s' if count != 1 else ''}"
         self._show(self.page.planCountLabel, level, sentence(text))
         self.page.startQueueButton.setText(f"Start now ({text})" if level == "ok" else "Start now")
+        self._actions_fit.refit()
         self._schedule_preview()
 
     def _show_table(self, table: PlanTable) -> None:

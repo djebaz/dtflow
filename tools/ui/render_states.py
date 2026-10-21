@@ -943,6 +943,10 @@ def render_active_queue_states(shell, out):
         assert shell.shell.rightRail.isHidden()
         assert page.newQueueButton.isVisible()  # #140: New queue sits in the center, reachable at every width
         snap("queues-23-narrow")
+        page.newQueueButton.click()
+        assert queue.composing and page.startQueueButton.isVisible()
+        snap("queues-41-composer-narrow")
+        queue.close_composer()
         form.resize(1600, 1000)
         shell._responsive_workspace()
         queue._dispatching = None

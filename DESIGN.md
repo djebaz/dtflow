@@ -448,7 +448,8 @@ presenting “0 of 0” as work. Avoid distributing spare height among action ro
 (header, items and empty state hide; Close or selecting a queue returns). It
 scrolls on its own: a `section` title row whose right side holds the actions,
 where + New queue was (Max at once for the new queue, neutral *Save paused* and
-*Add to queue*, `role="primary"` **Start now (N items)**, then Close), a
+*Add to queue*, `role="primary"` **Start now (N items)**, then Close; when the
+center is too narrow for them they wrap on their own row under the title), a
 secondary one-line summary of the Generate base request with *Edit in
 Generate*, then the **Variation** section card. A bottom spacer
 keeps the cards at their natural heights. Variation's Mode is Repeat (an item
