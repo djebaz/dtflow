@@ -96,6 +96,7 @@ def failure_fields(failure: BaseException) -> dict:
 
 
 PREVIEW_MIN_HEIGHT = 180
+COMPUTE_UNITS_LIMIT = 40_000  # meter full and red from here up
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 DISPATCH_REASON = (
     "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
@@ -1404,9 +1405,9 @@ class GenerationPage:
         The number never enters preflight, dispatch, saved jobs, quota or billing.
         Changes to cloud credentials and inventory do not trigger a provider call.
         """
-        label = self.page.computeUnitsLabel
+        meter = self.page.computeUnitsMeter
         name, _ = self._backend()
-        label.setVisible(name == "cloud")
+        meter.setVisible(name == "cloud")
         if name != "cloud":
             return
         page = self.page
@@ -1419,15 +1420,23 @@ class GenerationPage:
             has_loras=bool(self.lora.loras),
             operation="inpaint" if page.inpaintModeButton.isChecked() else "txt2img",
         )
-        if estimate.units is None:
-            label.setText("Compute Units estimate unavailable")
+        units = estimate.units
+        if units is None:
+            state, text, value = "unavailable", "unavailable", 0
         else:
-            label.setText(f"Estimated Compute Units: ~{estimate.units:,} CU")
-        label.setToolTip(
-            f"{estimate.reason}\n"
-            "Computed offline from the published Draw Things instruction model. "
-            "Actual DT+ compute policy, request acceptance and billing may differ; "
-            "this is not a balance or an entitlement check."
+            # Full at COMPUTE_UNITS_LIMIT; at or above it the bar stays full and turns red.
+            state = "over" if units >= COMPUTE_UNITS_LIMIT else "ok"
+            text, value = f"{units:,}".replace(",", "\u202f"), min(units, COMPUTE_UNITS_LIMIT)
+        meter.setMaximum(COMPUTE_UNITS_LIMIT)
+        meter.setValue(value)
+        meter.setFormat("\u2002" + text)  # en space: the QSS cannot pad progress-bar text
+        if meter.property("state") != state:
+            meter.setProperty("state", state)
+            meter.style().unpolish(meter)
+            meter.style().polish(meter)
+        # No hover overlay: the reason is exposed to assistive technology only.
+        meter.setAccessibleDescription(
+            f"{estimate.reason} Offline estimate; not a balance, entitlement check or billing quote."
         )
 
     def show_checkpoint_details(self) -> None:

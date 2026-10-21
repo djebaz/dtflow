@@ -64,6 +64,7 @@ from support.fake_vault import Vault  # noqa: E402
 from dtflow import gallery_limits  # noqa: E402
 from dtflow._diagnostic_notifications import DiagnosticNotice  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
+from dtflow.core.compute_units import ComputeUnitEstimate  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
@@ -853,6 +854,28 @@ def render_generate_configuration_states(shell, out):
         snap("generate-46-prepare-folder-unavailable")
         lora._prepared(record, None)
         clear()
+        # Compute Units meter (Cloud only): calculation is patched so no catalogue or provider is read.
+        meter = page.computeUnitsMeter
+        units_path = "dtflow.ui.generation_page.estimate_compute_units"
+        form.backendCombo.setCurrentText("cloud")
+        for value, name, state in (
+            (14250, "generate-47-compute-units-meter", "ok"),
+            (100000, "generate-48-compute-units-over-limit", "over"),
+            (None, "generate-49-compute-units-unavailable", "unavailable"),
+        ):
+            with patch(units_path, return_value=ComputeUnitEstimate(value, "Offline fixture estimate.")):
+                controller._update_compute_units()
+            assert not meter.isHidden() and meter.property("state") == state
+            assert meter.maximum() == 40000 and meter.value() == min(value or 0, 40000)
+            assert meter.toolTip() == ""  # no hover overlay
+            assert (value is None) or str(value)[:2] in meter.format().replace("\u202f", "")
+            shell.shell.leftScroll.verticalScrollBar().setValue(0)
+            snap(name)
+        form.backendCombo.setCurrentText("local")
+        controller._update_compute_units()
+        assert meter.isHidden()
+        form.backendCombo.setCurrentText("cloud")
+        controller._update_compute_units()
         render_inspector_fit_states(shell, out, "generate")
 
 
