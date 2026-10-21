@@ -27,6 +27,7 @@ MAX_PREVIEW_PIXMAPS = 12
 CONCURRENCY = 3  # lighter than the gallery's 6: this table shares the window with a running queue
 PREVIEW_DELAY_MS = 350
 PREVIEW_COLUMN = 0
+PREVIEW_BOX = 440  # longest side of the hover preview in logical px (the 600 px source covers it up to 1.35x DPI)
 BUSY = "Original temporarily busy"
 
 
@@ -129,7 +130,7 @@ class QueueThumbnails(QObject):
 
 
 class HoverPreview(QObject):
-    """A read-only 220 px preview beside the cursor over a Preview tile.
+    """A read-only preview (up to 440 px) beside the cursor over a Preview tile.
 
     A frameless, mouse-transparent tool window: it can never intercept a row click or selection. It shows the
     gallery's 600 px thumbnail (the same disk-cached file Images uses), never the original, and waits briefly so a passing pointer does not trigger decodes.
@@ -140,6 +141,7 @@ class HoverPreview(QObject):
         self.view, self.thumbnails = view, thumbnails
         self._row: int | None = None
         self._path = ""
+        self._box = PREVIEW_BOX
         self._identity: str | None = None
         self._anchor = QPoint()
         self.label = QLabel(None, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
@@ -186,9 +188,10 @@ class HoverPreview(QObject):
             return  # a missing result gets no preview, never a fabricated one
         self._path = item.outputs[0]
         self._identity = item.gallery_identity
-        self._fill()
         screen = QGuiApplication.screenAt(global_pos) or QGuiApplication.primaryScreen()
         area = screen.availableGeometry()
+        self._box = max(160, min(PREVIEW_BOX, area.height() - 48, area.width() - 48))  # never taller than the screen
+        self._fill()
         x = max(area.left(), min(global_pos.x() + 16, area.right() - self.label.width()))
         y = max(area.top(), min(global_pos.y() + 16, area.bottom() - self.label.height()))
         self.label.move(x, y)
@@ -198,14 +201,16 @@ class HoverPreview(QObject):
         pixmap = self.thumbnails.pixmap(self._path, PREVIEW_SIDE, self._identity)
         if pixmap is None:
             self.label.setPixmap(QPixmap())
+            self.label.setFixedSize(QSize(232, 232))
             self.label.setText("Loading\u2026" if not self.thumbnails.is_failed(self._path, PREVIEW_SIDE) else "No preview")
             return
         ratio = self.label.devicePixelRatioF()
-        scaled = pixmap.scaled(
-            int(220 * ratio), int(220 * ratio), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-        )
+        edge = int(self._box * ratio)
+        scaled = pixmap.scaled(edge, edge, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         scaled.setDevicePixelRatio(ratio)
         self.label.setPixmap(scaled)
+        # Hug the picture (frame is 1 px border + 5 px padding on each side) instead of leaving empty bars.
+        self.label.setFixedSize(QSize(round(scaled.width() / ratio) + 12, round(scaled.height() / ratio) + 12))
 
     def _arrived(self, path: str) -> None:
         if self.label.isVisible() and path == self._path:
