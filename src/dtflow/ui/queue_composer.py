@@ -324,7 +324,7 @@ class ComposerGridFit(QObject):
         self._draw_pairs = tuple(tuple(group) for group in draw_pairs)
         self._mutation_grid = mutation_grid
         self._mutation_groups = tuple(tuple(group) for group in mutation_groups)
-        self._columns: tuple[int, int] | None = None
+        self._layout_key: tuple | None = None
         self._viewport.installEventFilter(self)
         self.refit()
 
@@ -335,11 +335,12 @@ class ComposerGridFit(QObject):
 
     @staticmethod
     def _arrange(grid, groups, columns):
-        """Assign whole label/field groups to rows; never strand a field at the right edge."""
+        """Pack only applicable label/input pairs, without gaps from hidden dimensions."""
         for group in groups:
             for widget in group:
                 grid.removeWidget(widget)
-        for index, group in enumerate(groups):
+        visible = [group for group in groups if not all(widget.isHidden() for widget in group)]
+        for index, group in enumerate(visible):
             row, pair = divmod(index, columns)
             col = pair * 2
             if len(group) == 1:
@@ -351,14 +352,18 @@ class ComposerGridFit(QObject):
         grid.parentWidget().updateGeometry()
 
     def refit(self):
-        """Keep three groups on wide canvases, two on medium, and one on narrow canvases."""
+        """Repack on a width change or when an Inpaint-only dimension changes visibility."""
         width = self._viewport.width()
-        # At about 500 px of visible center width the form has room for two
-        # compact label/number pairs; one-per-row wastes too much vertical space.
         columns = (3, 3) if width >= 740 else (2, 2) if width >= 500 else (1, 1)
-        if columns == self._columns:
+        visibility = tuple(
+            tuple(widget.isHidden() for widget in group)
+            for groups in (self._draw_pairs, self._mutation_groups)
+            for group in groups
+        )
+        key = (columns, visibility)
+        if key == self._layout_key:
             return
-        self._columns = columns
+        self._layout_key = key
         self._arrange(self._draw_grid, self._draw_pairs, columns[0])
         self._arrange(self._mutation_grid, self._mutation_groups, columns[1])
 
