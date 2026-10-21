@@ -466,7 +466,7 @@ chip and Add borders) and appear in the count line. Add to queue is enabled
 only while a queue runs; Start now is disabled while this window dispatches.
 
 The queue header is the single status location for the selected queue: the
-prompt title (`section` text role, wrapping), a secondary line for model, plan,
+prompt title (`section` text role, wrapping), a secondary line for model (with its LoRAs), plan,
 backend and time, one `statusChip` label (state-colored border and text; the
 neutral selection treatment for *Up next N*), then one action row and one
 progress row. The action row holds exactly one `role="primary"` button whose

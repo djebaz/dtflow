@@ -368,9 +368,16 @@ def created_text(at_utc: str, now: datetime | None = None) -> str:
     return moment.strftime("%H:%M" if moment.date() == now.date() else "%b %d %H:%M")
 
 
+def lora_text(identifier: str, weight) -> str:
+    """``style.safetensors 0.8``: a LoRA and its weight, as the queue header lists it beside the model."""
+    return f"{identifier} {weight:g}" if isinstance(weight, (int, float)) else identifier
+
+
 def queue_subtitle(view: dict, now: datetime | None = None) -> str:
-    model = (view.get("first") or {}).get("model")
-    parts = [model] if model else []
+    first = view.get("first") or {}
+    parts = [first["model"]] if first.get("model") else []
+    if "loras" not in (view.get("varied") or {}):  # varied LoRA sets are counted by plan_text instead
+        parts += [lora_text(identifier, weight) for identifier, weight in first.get("loras") or ()]
     return " · ".join([*parts, plan_text(view), backend_label(view), created_text(view["created_at_utc"], now)])
 
 
