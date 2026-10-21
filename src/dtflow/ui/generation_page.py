@@ -761,8 +761,8 @@ class GenerationPage:
     def request_for_queue(self, *, preview: bool = False):
         """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking.
 
-        A random seed (form seed 0) picked for a plan preview is kept until a queue is created (``queue_created``),
-        so the dry-run table shows the seeds the queue will really use, even after a rejected attempt.
+        A random seed (form seed 0) is drawn once and kept until a queue is created (``queue_created``) or a seed is
+        chosen, so repeated previews and the creation use the seeds the dry-run table shows, even after a rejection.
         """
         if self.inpaint.active and self.inpaint.queue_job() is None:
             raise FormError("Choose a source image and paint or select the area to change first.", None)
@@ -776,9 +776,11 @@ class GenerationPage:
             self._mark(exc.widget)
             raise
         resolved = any(key == "seed.resolved" for key, _ in request.resolution_evidence)
-        if preview and resolved:
+        if not resolved:
+            self._previewed_seed = None  # a chosen seed ends the random one
+        elif self._previewed_seed is None:
             self._previewed_seed = request.seed
-        elif resolved and self._previewed_seed is not None:
+        else:
             request = replace(request, seed=self._previewed_seed)
         if not preview:
             self._reuse_source_identity = None

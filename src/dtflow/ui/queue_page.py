@@ -966,6 +966,7 @@ class QueuePage:
         """Returning to Queues (for example from Edit in Generate): the composer follows the Generate form."""
         if self._composing:
             self._refresh_choices()
+            self._invalidate_preview()  # the backend or Inpaint source may have changed without changing the request
             self.preview()
 
     @property
