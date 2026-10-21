@@ -1253,6 +1253,290 @@
       <property name="spacing">
        <number>10</number>
       </property>
+      <item alignment="Qt::AlignTop">
+       <widget class="QGroupBox" name="composerSummaryBox">
+        <property name="title">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>sectionCard</string>
+        </property>
+        <property name="accessibleName">
+         <string>New queue summary</string>
+        </property>
+        <layout class="QVBoxLayout" name="composerSummaryBoxCardLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QFrame" name="composerSummaryBoxHeader">
+           <property name="role" stdset="0">
+            <string>sectionHeader</string>
+           </property>
+           <layout class="QHBoxLayout" name="composerSummaryBoxHeaderLayout" stretch="0,1">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>7</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>7</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="composerSummaryBoxIcon">
+              <property name="role" stdset="0">
+               <string>sectionIcon</string>
+              </property>
+              <property name="iconKey" stdset="0">
+               <string>send</string>
+              </property>
+              <property name="text">
+               <string />
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16</width>
+                <height>16</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="composerSummaryBoxHeading">
+              <property name="text">
+               <string>New queue</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>panelHeading</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="composerSummaryBoxContents">
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+           <layout class="QFormLayout" name="composerSummaryForm">
+            <property name="leftMargin">
+             <number>10</number>
+            </property>
+            <property name="topMargin">
+             <number>8</number>
+            </property>
+            <property name="rightMargin">
+             <number>10</number>
+            </property>
+            <property name="bottomMargin">
+             <number>10</number>
+            </property>
+            <item row="0" column="0">
+             <widget class="QLabel" name="composerSummaryBackendCaption">
+              <property name="text">
+               <string>Backend</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLabel" name="composerSummaryBackendLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="composerSummaryModelCaption">
+              <property name="text">
+               <string>Model</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QLabel" name="composerSummaryModelLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="composerSummaryItemsCaption">
+              <property name="text">
+               <string>Items</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QLabel" name="composerSummaryItemsLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="composerSummaryVariesCaption">
+              <property name="text">
+               <string>Varies</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QLabel" name="composerSummaryVariesLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="0">
+             <widget class="QLabel" name="composerSummarySeedsCaption">
+              <property name="text">
+               <string>Seeds</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="5" column="1">
+             <widget class="QLabel" name="composerSummarySeedsLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="0">
+             <widget class="QLabel" name="composerSummaryCapCaption">
+              <property name="text">
+               <string>Max at once</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="1">
+             <widget class="QLabel" name="composerSummaryCapLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+            <item row="7" column="0" colspan="2">
+             <widget class="QLabel" name="composerSummaryNoteLabel">
+              <property name="text">
+               <string>Nothing is saved or sent until Start now, Add to queue or Save paused.</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="composerSummaryLorasCaption">
+              <property name="text">
+               <string>LoRAs</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QLabel" name="composerSummaryLorasLabel">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>value</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
       <item>
        <widget class="QLabel" name="queueInspectorEyebrow">
         <property name="text">

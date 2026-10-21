@@ -51,6 +51,7 @@ from dtflow.ui.planning_presenter import (
     count_text,
     plan_error,
     sentence,
+    SEED_POLICY_TEXT,
     summary_text,
 )
 from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit
@@ -123,6 +124,14 @@ CLEAR_TEXT = (
 )
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
+
+
+def _dimension_text(name: str, count: int) -> str:
+    """``2 step counts``-style wording of one plan dimension for the composer summary."""
+    if name.startswith("lora_weight."):
+        return f"{count} weights of {name.split('.', 1)[1]}"
+    noun = {"steps": "step count", "guidance": "guidance value", "size": "size", "strength": "strength"}.get(name, name)
+    return f"{count} {noun}{'s' if count != 1 else ''}"
 
 
 def _clip(text: str, limit: int = 80) -> str:
@@ -411,6 +420,7 @@ class QueuePage:
         self._show_item()
         for name in ("queueInspectorEyebrow", "itemIdentityBox", "queueEventBrowser"):
             getattr(page, name).setVisible(not self._composing)  # evidence of the old queue is not about the new one
+        page.composerSummaryBox.setVisible(self._composing)
         if self._composing:
             page.uncertaintyBox.setVisible(False)
         self._sync()
@@ -886,8 +896,35 @@ class QueuePage:
             first = request.seed
             seeds = f"seed {first}" if count == 1 else f"seeds {first}–{first + count - 1}"
             self._show(page.planCountLabel, "ok", f"{count} item{'s' if count != 1 else ''} · {seeds}")
+            self._show_summary(request, count, "Nothing (repeats the Generate settings)", seeds.capitalize())
             return
-        self._plan_for(request)
+        plan = self._plan_for(request)
+        if plan is None:
+            self._show_summary(request, None, "—", "—")
+            return
+        varies = ", ".join(_dimension_text(name, len(values)) for name, values in plan.dimensions) or "Nothing"
+        total = self.plan_model.rowCount()
+        policy = (
+            "increment"
+            if plan.seed_policy == "increment"
+            else "dimension"
+            if any(name == "seed" for name, _ in plan.dimensions)
+            else "fixed"
+        )
+        self._show_summary(request, total, varies, sentence(SEED_POLICY_TEXT[policy]))
+
+    def _show_summary(self, request, count: int | None, varies: str, seeds: str) -> None:
+        """The right column while composing: what the queue being built will be, before anything is saved."""
+        page = self.page
+        name, endpoint = self._backend()
+        page.composerSummaryBackendLabel.setText(f"{name} · {endpoint}" if endpoint else name)
+        page.composerSummaryModelLabel.setText(request.model_id)
+        loras = "\n".join(f"{lora.identifier} · {lora.weight:g}" for lora in request.loras)
+        page.composerSummaryLorasLabel.setText(loras or "None")
+        page.composerSummaryItemsLabel.setText("—" if count is None else str(count))
+        page.composerSummaryVariesLabel.setText(varies)
+        page.composerSummarySeedsLabel.setText(seeds)
+        page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
 
     def _schedule_preview(self) -> None:
         if self._composing and self.page.queueWorkspace.isVisible():
@@ -1332,6 +1369,7 @@ class QueuePage:
 
     def _new_cap_changed(self, value: int) -> None:
         """The new-queue maximum; with cloud chosen it is also saved as the shared default for new cloud queues."""
+        self.page.composerSummaryCapLabel.setText(str(value))
         if self._syncing:
             return
         self._set_level(self.page.newQueueCapSpinBox, value)

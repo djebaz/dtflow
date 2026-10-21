@@ -884,9 +884,13 @@ def render_active_queue_states(shell, out):
         page.planStepsEdit.setText("20; 30")
         page.planSamplersEdit.setText("euler_a; ddim")
         page.planSizesEdit.setText("768x768; 1024x1024")
+        shell.generation.lora.set_loras((LoRASelection("offline-style.safetensors", 0.8),))
         queue.preview()
         assert queue.plan_model.rowCount() == 8 and page.startQueueButton.text() == "Start now (8 items)"
+        assert page.composerSummaryBox.isVisible() and page.composerSummaryItemsLabel.text() == "8"
+        assert "offline-style" in page.composerSummaryLorasLabel.text()
         snap("queues-38-composer-cross")
+        shell.generation.lora.set_loras(())
         page.planModelsEdit._add.click()  # the shared searchable editor, filled from the Generate inventory
         snap("queues-39-composer-model-search")
         shell.inline.dismiss()
