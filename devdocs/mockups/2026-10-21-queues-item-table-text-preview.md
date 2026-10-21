@@ -1,79 +1,90 @@
-# Queues #127 — text-only table pre-mockup
+# Queues #127 — Markdown reference derived from the authoritative HTML mockup
 
-**Fictional sample for design review, 2026-10-21.** Not a Qt screenshot, real queue, actual inference result, or implemented UI. Every value below is illustrative.
+**Review reference, 2026-10-21.** This document is an *annotated text companion* to the owner's standalone interactive mockup, **\`Queues Item Table (standalone).html\`**. The HTML's actual arrangement, styles, examples, and hover/selection behavior supersede conflicting choices in the earlier Markdown pre-mockup or plan.
 
-## Central table: seven columns
+- **Artifact provenance:** owner-uploaded standalone HTML, SHA-256 \`b57dffcfafb6ab2ecb49d4264bdabb1f491f561a588b6dc4c87bcea0e0ff3445\`. The HTML attachment is **not currently tracked in this PR**. Retain the exact file; do not pretend this Markdown table reproduces its pixels.
+- **Evidence boundary:** inspected the bundled HTML/template and its UI state logic; this is neither a real Qt screenshot nor working production behavior. All generations, thumbnails, queue summaries, IDs, timings, and backend labels below are fictional.
+- **Implementation boundary:** the application retains its canonical Qt Designer/model-view, durable queue/backend contracts, shared styles, and owner acceptance gates. The HTML controls are interaction **illustrations**, not runnable backend commands.
 
-Model and LoRAs repeat on **every** row, even when identical. The synthetic `ultra_realistic_characters_style_detail_v12.safetensors` models the owner's reported **55-character LoRA filename, including its extension**; it is not the user's real filename. The first three LoRAs appear one per line, with name, weight gauge, and numeric value. Bars are schematic only; the final valid gauge scale must follow actual recorded weights. **Model and LoRA names are illustrative checkpoint/adapter filenames, not friendly display aliases or verified provider inventory.**
+## Central table — authoritative column order and hierarchy
 
 | Preview | Prompt | Model | LoRAs | Parameters | Status | ⏱ |
 | :--- | :--- | :--- | :--- | :--- | :--- | ---: |
-| `[thumb A]` | Portrait of a traveler in a blue coat at dawn,<br>with soft rim lighting and distant mountains… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** `███░░░░░░░` 0.90<br>**cinematic_rim_light_v3.safetensors** `████░░░░░░` 1.20 | **Steps 28**<br>CFG 4.5<br>Sampler DPM++ 2M SDE Karras | **Succeeded** | 31.2 s |
-| `[thumb B]` | Portrait of a traveler in a blue coat at dawn,<br>with soft rim lighting and distant mountains… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** `████░░░░░░` 1.20<br>**cinematic_rim_light_v3.safetensors** `██░░░░░░░░` 0.60<br>**ultra_realistic_characters_style_detail_v12.safetensors** `█████░░░░░` 1.50<br>**…** (1 more) | **Steps 32**<br>CFG 5.0<br>Sampler DPM++ 3M SDE Exponential | **Succeeded** | 36.8 s |
-| `[no image]` | A red house beside a mountain lake, with<br>cloud reflections spreading across the water… | **PhotoReal_XL-v2.ckpt** | **landscape_style_v2.safetensors** `███░░░░░░░` 0.90<br>**cloud_mood_v4.safetensors** `████░░░░░░` 1.20<br>**texture_detail_v1.safetensors** `██░░░░░░░░` 0.60 | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **Running** | — |
-| `[no image]` | Studio photo of a ceramic cup on a table,<br>with warm light against a pale background… | **PhotoReal_XL-v2.ckpt** | — | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **Failed** | — |
-| `[no image]` | An illustrated old town square after rainfall,<br>with lamps reflected in wet cobblestones… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** `███░░░░░░░` 0.90 | **Steps 28**<br>CFG 4.5<br>Sampler DPM++ 3M SDE Exponential | **Queued** | — |
+| \`[thumb A]\` | Portrait of a traveler in a blue coat at dawn, soft light, mountains in the distance… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** \`███░░░░░░░\` 0.90<br>**cinematic_rim_light_v3.safetensors** \`████░░░░░░\` 1.20 | **Steps 28**<br>CFG 4.5<br>Sampler DPM++ 2M SDE Karras | **succeeded** | 31.2 s |
+| \`[thumb B]\` | Portrait of a traveler in a blue coat at dawn, soft light, mountains in the distance… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** \`████░░░░░░\` 1.20<br>**cinematic_rim_light_v3.safetensors** \`██░░░░░░░░\` 0.60<br>**ultra_realistic_characters_style_detail_v12.safetensors** \`█████░░░░░\` 1.50<br>**background_bokeh_v2.safetensors** \`███░░░░░░░\` 0.90 | **Steps 32**<br>CFG 5.0<br>Sampler DPM++ 3M SDE Exponential | **succeeded** | 36.8 s |
+| \`[no image]\` | A red house beside a mountain lake, with cloud reflections spreading across the water… | **PhotoReal_XL-v2.ckpt** | **landscape_style_v2.safetensors** \`███░░░░░░░\` 0.90<br>**cloud_mood_v4.safetensors** \`████░░░░░░\` 1.20<br>**texture_detail_v1.safetensors** \`██░░░░░░░░\` 0.60 | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **running** | — |
+| \`[no image]\` | Studio photo of a ceramic cup on a table, with warm light against a pale background… | **PhotoReal_XL-v2.ckpt** | — | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **no result** | — |
+| \`[no image]\` | An illustrated old town square after rainfall, with lamps reflected in wet cobblestones… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** \`███░░░░░░░\` 0.90 | **Steps 28**<br>CFG 4.5<br>Sampler DPM++ 3M SDE Exponential | **pending** | — |
+| \`[no image]\` | A lighthouse on a rocky coast at dusk, with waves breaking against dark stone… | **PhotoReal_XL-v2.ckpt** | — | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **cancelled** | — |
 
-**Hierarchy:** model checkpoint filenames and steps are visually emphasized; each LoRA uses its actual adapter filename (extension, hyphens and underscores retained) with readable strength gauge and numeric value; CFG and sampler are secondary-sized. Long sampler names may need their own wrapped line within Parameters. Status is a **single text label**, with DTFlow semantic colors added later in Qt. No per-item step counter, progress bar, separate saved-output filename column, seed or image dimensions in the table. Duration is **observed backend duration only**; `—` means unavailable, not zero.
+The table represents the **six synthetic items A–F** in the HTML. Item **B is selected initially** (navy selected-row surface). The synthetic \`ultra_realistic_characters_style_detail_v12.safetensors\` is **55 characters including \`.safetensors\`**. This is a deliberately long fixture, not a verified user's actual LoRA or upstream model identifier.
 
-**Prompt wrapping and width:** target about **30–33%** of the total central table width in the actual Qt layout. Show the **beginning of one continuous positive prompt** with natural wrapping across **up to two visual lines**. **No ellipsis on the first line.** Use a single final ellipsis **only if the text overflows the second line**; do not truncate by a fixed number of characters. The explicit `<br>` tags in this text specimen approximate wrapping, but Markdown cannot enforce width, font metrics or real two-line truncation.
+**Important Markdown limitation:** the HTML uses CSS line-clamping, exact column tracks, font metrics, fixed gauges, hover overlays, and a minimum scrollable width. Line breaks and glyph gauges here are schematic, not pixel-accurate; the *HTML* wins on differences.
 
-**Duration header:** `⏱` is a **stopwatch-icon placeholder**, not a shipped icon. In Qt use a matching design-system icon, header tooltip/accessibility label **“Backend duration”**, and the narrowest practical width that still fits the recorded values (for example `31.2 s`, `125.8 s`) with adequate padding and right alignment. **Do not reserve width for the text label**.
+### Geometry and typographic rules observed in the HTML
 
-## Hover overlays (read-only and nonblocking)
+| Element | HTML authority / Qt translation target |
+| --- | --- |
+| Table | Scrollable horizontal surface with **1,000 px minimum content width** in the specimen; seven-column grid; selected-row fill and fine dividers. Do not squeeze content to fit a narrow center. |
+| Column tracks | \`72px minmax(0,2fr) minmax(150px,1fr) minmax(0,2fr) minmax(120px,0.9fr) 84px 64px\` in the HTML grid. Prompt and LoRAs have equal flexible weights; **no hard 30–33% prompt-width rule** remains. Grid gaps are 12 px and horizontal cell padding 12 px. |
+| Preview | **64 × 64 px** square containing an aspect-fit saved-image placeholder (no actual images bundled for item results). A neutral \`no image\` tile otherwise. |
+| Prompt | Beginning of **one continuous positive prompt**, natural wrapping, **two visual lines maximum**, clipped on overflow. Not a fixed character count; never place separate ellipses after each line. |
+| Model | Checkpoint **filename with extension** (e.g. \`Z-Image-Turbo_v2.ckpt\`), bold; long names wrap within their allotted cell instead of stretching the table. |
+| LoRAs | **All configured LoRAs shown inline, one per line, including the fourth and beyond.** Each row has a single-line elided filename, a **44 px horizontal gauge**, and a right-aligned **34 px numeric value**. No \`…\` count/extra-items disclosure and no artificial three-LoRA limit. |
+| LoRA gauge | Blue accent on a neutral track, with numeric weight retained. The HTML's synthetic gauge uses \`min(100%, weight / 3 × 100%)\`; the Qt implementation must use a scale justified by the actual weight domain (the app's supported editor range is 0.0–3.0), and not confuse gauge strength with generation progress. |
+| Parameters | **Steps** bold; CFG and sampler in smaller secondary text, with full potentially long sampler strings. |
+| Status | **Semibold colored text only**, without a pill/badge or added progress. Main sample: succeeded green, running/no result/cancelled amber, pending neutral gray. Actual failure/save-failure state, although absent from the six HTML examples, retains the app's error-red semantic color. |
+| Duration | **16 px stopwatch icon only** in the header (tooltip/accessibility name **Backend duration**). Compact, right-aligned monospace durations; unavailable is \`—\`. Only recorded backend duration, never queue ETA. |
 
-- **Thumbnail:** on hover, show a larger aspect-fit image when there is a real saved output; otherwise retain a neutral placeholder.
-- **Prompt:** on hover, display **complete positive and negative prompts**, with scrolling if needed. Example for row B:
-  - **Positive:** Portrait of a traveler in a blue coat at dawn, soft light, mountains in the distance, realistic fabric details, shallow depth of field.
-  - **Negative:** Blurry, distorted hands, duplicate faces, text, watermark.
-- **LoRA ellipsis `…`:** if more than three are configured, hovering the icon shows **all** LoRAs, including those already visible:
+### Read-only hover and selection behavior
 
-| LoRA (row B) | Weight | Illustrative gauge |
-| --- | ---: | --- |
-| portrait_style_v1.safetensors | 1.20 | `████░░░░░░` |
-| cinematic_rim_light_v3.safetensors | 0.60 | `██░░░░░░░░` |
-| ultra_realistic_characters_style_detail_v12.safetensors | 1.50 | `█████░░░░░` |
-| background_bokeh_v2.safetensors | 0.90 | `███░░░░░░░` |
+| Hover target | HTML behavior | Implementation caveat |
+| --- | --- | --- |
+| Preview tile | A **220 × 220 px** fixed overlay beside the tile, with placeholder text for saved images or missing outputs. | Real Qt must show an actual bounded **aspect-fit image** only for verified saved outputs; HTML placeholders do not prove file/loading behavior. |
+| Prompt cell | **380 px wide**, max **260 px high** overlay showing full **Positive** and **Negative** prompts. | HTML combines \`overflow:auto\` with \`pointer-events:none\`, so **interactive scrolling is not established**. Make very long prompts fully accessible without stealing row selection when translating to Qt. |
+| LoRA cell | **400 px wide** overlay containing **all LoRAs** in a \`LoRA / Weight / Gauge\` grid, even though they are already displayed inline. | This replaces the old \`…\`-only trigger. Each inline elided filename also has the full identifier as a tooltip. |
+| Entire row | Click selects the item; inspector updates to selected item's evidence. Hover overlays are read-only and \`pointer-events:none\` in HTML. | Preserve click and keyboard selection in the Qt item view; overlays cannot swallow selection or imply editing. |
 
-**Long-name layout requirement:** the 55-character filename and other underscore/hyphen-heavy filenames must not force the LoRAs column wider or displace the numeric weight/gauge. In the Qt mockup, compare single-line elision versus wrapping; preserve the full name via a read-only hover tooltip when the inline label is shortened. This is a design test case, not a preapproved truncation style.
+The HTML places hover overlays near the target and constrains their screen coordinates. In a real Qt viewport, validate edge collision, tracking while scrolling, timing, keyboard accessibility, and selection preservation; do **not** claim those have been tested merely because the bundled HTML specifies handlers.
 
-Gauges represent configured strengths, **not task progress**. The overlay and ellipsis are hover-only, with no Copy button or click action. They must **never intercept a row click**: selecting a row always updates the inspector when it is visible.
+## Right inspector — selected synthetic item B
 
-## Right inspector — fictional selected-item example (row B)
+The HTML's inspector is headed **ITEM EVIDENCE** and displays **three information sections, conditional action buttons, then the existing creation mini-log**. It contains **no image preview, no saved-output filename**, and no substitute content when the right rail is hidden.
 
-**Owner review:** the inspector information is acceptable for this Markdown checkpoint; finer spacing and arrangement remain for the actual Qt mockup.
-
-This is a second **Markdown example table** for the right inspector. The inspector shows complementary evidence; the central table already gives the thumbnail, prompt, model, LoRAs, steps, CFG, sampler, status and backend duration. Values below are entirely fictional.
-
-| Section | Field / action | Example display | Treatment |
+| Section | Field | Item B sample | Treatment |
 | --- | --- | --- | --- |
-| Selected item | Selected generation | **Generation B** | Small selected-item heading; no duplicate image |
-| Additional information | Seed | `295625551` | Monospace, selectable |
-| Additional information | Image dimensions | **1024 × 1024** | Normal metadata |
-| Additional information | Backend | Draw Things (example) | Normal metadata |
-| Additional information | Operation | Text to image | Normal metadata |
-| Evidence | Saved result | **1 saved image** | Only when actual output is verified |
-| Technical details | Item ID | `demo-item-b-002` | Secondary, selectable |
-| Technical details | Attempt ID | `demo-attempt-b-01` | Secondary, selectable |
-| Technical details | Outcome / uncertainty | No error recorded | Explicit when evidence supports it |
-| Actions | Open in Images | **Open in Images** | Enabled only for a verified gallery image |
-| Actions | Open folder | **Open folder** | Only if a valid accessible folder exists |
-| Actions | Retry item | **Retry item** | Only when allowed by existing retry/credit safeguards |
+| Selected item | Item | \`demo-item-b-002\` | Selectable monospace ID |
+| Selected item | Attempt | \`demo-attempt-b-01\` | Selectable monospace ID |
+| Selected item | Backend | **Draw Things (example)** | Semibold evidence |
+| Selected item | Outputs | 1 saved image | Only when actually verified |
+| Additional information | Seed | \`295625551\` | Selectable monospace |
+| Additional information | Image dimensions | **1024 × 1024** | Secondary evidence |
+| Additional information | Operation | Text to image | Secondary evidence |
+| Technical details | Outcome | No error recorded | Recorded, not inferred |
+| Actions | Open in Images | Enabled in synthetic item B | Only for verified gallery identity |
+| Actions | Open folder | Enabled in synthetic item B | Only with accessible valid path |
+| Actions | Retry item | **Disabled** by fixture default | Real availability follows existing no-replay/retry safeguards |
 
-### Creation mini-log — retain existing placement
+**Creation mini-log (synthetic, selected item B):**
 
-| Time (example) | Event |
+| Time | Event |
 | --- | --- |
 | 19:42:01 | Item accepted into queue |
 | 19:42:02 | Attempt started on example backend |
 | 19:42:39 | Attempt completed; result saved |
 
-The log uses **made-up timestamps**, not observed timing evidence. Preserve the real existing creation/activity mini-log in the inspector rather than replacing it with a preview. For failed or uncertain items, show the actual recorded outcome and only actions that are eligible; do not imply every item has a saved image.
+**Conditional examples:** Running C has no saved image and no available Open folder/Retry; No result D has no image/folder but Retry is enabled; Pending E has none of those actions; Cancelled F has Retry enabled but no saved image. These are **HTML fixture flags**, not proof of real eligibility logic or billing safety.
 
-**No large image preview and no saved-output filename field** are proposed in this inspector.
+## Surrounding shell and responsive arrangement
 
-At narrow window widths the shared right inspector hides normally. **Do not move its secondary information into a fallback panel.** The central table remains the primary information surface.
+The HTML shows the **left Queues rail**, **center queue heading/summary/controls/progress and item table**, and **right Item Evidence inspector**. For its illustrative responsive treatment, the inspector **hides below 1,100 px window width** with no details fallback. The center remains horizontally scrollable; the mockup uses a **272 px left rail when wide and 220 px when narrow**. The canonical Qt shared-shell constraints and dispatch semantics still need reconciliation rather than blindly transferring all placeholder geometry or nonfunctional buttons.
 
-## Scope and approval
+**Mock-only discrepancies requiring care:** the HTML's illustrative \`Max at once\` spin box is capped at 4, whereas the existing Qt/service contract allows 1–10; do not silently reduce working concurrency. The simulated queue-header \`Running\` badge is amber, while item \`running\` is amber and existing queue-level mapping can differ. The six-item sample has **no failed row**; include failed/save-failed cases in Qt render-state fixtures without changing the approved visual language.
 
-This is a Markdown-only hierarchy exercise for [draft PR #150](https://github.com/djebaz/dtflow/pull/150) and [issue #127](https://github.com/djebaz/dtflow/issues/127). It does not authorize implementation, tests, renders, general documentation changes, generation, or billable work. A real offline Qt render-state mockup and explicit owner visual approval come next.
+## Superseded decisions from the earlier Markdown draft
+
+The previous **three-inline-LoRA maximum, extra-items ellipsis, one-third fixed prompt width, 64 × 48 speculative thumbnail, and a merely hypothetical inspector section layout** are **not authoritative**. Use the HTML's all-inline LoRA pattern, equal flexible Prompt/LoRAs tracks, 64 × 64 preview and three-section inspector instead.
+
+This revised document and the [implementation plan](../plans/2026-10-21-queues-item-table-render-first.md) record the comparison. They **do not** constitute Qt implementation, live data wiring, test execution, Windows/DPI acceptance or billable generation. The next deliverable is a **Qt render-state translation of this HTML**, followed by explicit owner review before integration.
+
+[Draft PR #150](https://github.com/djebaz/dtflow/pull/150) · [Issue #127](https://github.com/djebaz/dtflow/issues/127)
