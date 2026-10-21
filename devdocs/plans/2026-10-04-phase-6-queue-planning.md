@@ -118,3 +118,18 @@ Owned checks: `6-O1`, `6-O2`, `6-O3` as parametrized pure tests on `planning.py`
 - A planned batch can be dry-run and enqueued from both the CLI and the desktop through the same planner functions, with no planning rules in `ui/` or `cli.py`.
 - Every queued item is a fully resolved request carrying plan evidence; scheduling, restart and no-replay behaviour are untouched.
 - Docs distinguish what is wired from what is not; Windows visual review and packaged-executable checks are stated as unverified until run.
+
+## Random dimensions and prompt variation (#128, #129)
+
+- Schema `dtflow.queue-plan` moves to **version 2**; version 1 stays readable, and random content in a version-1 file is an error.
+- A dimension's value may be a `RandomSpec` (N distinct draws from candidates, a min/max/step grid, or random seeds) and `prompt` a `PromptVariation`. `resolve_plan` turns them into ordinary value lists from the one recorded `rng_seed` (a `random.Random` seeded with the string `dtflow-plan/<seed>/<dimension>`, one stream per dimension, so listing another dimension changes nothing) and is idempotent. Planning never invents a seed: callers use `with_rng_seed` (a fresh seed is the only non-deterministic step, and it is recorded).
+- Size arithmetic stays up front: random dimensions count as N; a random prompt sample as N; every combination as the structural count (dedupe may shrink it, and the resolved plan is exact). Nothing above 1000 is enumerated.
+- Prompt syntax and mutation live in `services/dynamic_prompts.py` (pure); wildcard files are the only I/O (`services/wildcards.py`, size and entry caps, SHA-256 recorded). Item evidence: `plan.rng_seed`, `plan.random.<dim>`, `plan.prompt_strategy`, `plan.prompt_template`, `plan.prompt_mutation`, `plan.wildcard.<name>`. Prompt text is item data, as before, and is not logged.
+- Decision: the native planner owns prompt variation (offline, deterministic); the Scripts epic (#112, #114) is not required. LLM rewriting is out of scope.
+
+### PR #145 review and validation
+
+- Composer previews allow one active prompt-resolution computation plus one replaceable latest request. Input/mode changes and composer navigation invalidate obsolete results; unchanged polls preserve the current preview. Draw counts remain user choices when candidate lists change, with impossible requests reported inline rather than silently clamped. Hidden Inpaint Strength inputs do not affect text-to-image plans.
+- Generate seed 0 retains one resolved image seed for preview and creation until a queue is created or an explicit seed is observed. That retained seed is part of preview identity. Wildcard filenames, modification times and sizes also invalidate previews; same-size edits preserving the observed timestamp remain undetectable by this cache policy.
+- At runtime-source head `612e3391f25411186f022631b3f98db5eff559d9`, [manual CI](https://github.com/djebaz/dtflow/actions/runs/39572445883) passed **629 tests, 3 skipped**, and [offline renders](https://github.com/djebaz/dtflow/actions/runs/39572449254) passed all seven categories, including **47 queue states**. Static review found no remaining reported blockers at that head; it does not establish native Windows interaction, DPI, responsiveness or packaged acceptance.
+- The merge-preparation documentation pass ran no local tests, renders, training, inference or provider calls. The CI and render evidence above identifies the runtime source exercised, not a subsequent documentation-only commit or a release artifact.

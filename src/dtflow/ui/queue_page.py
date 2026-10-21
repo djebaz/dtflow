@@ -12,7 +12,7 @@ claims remote cancellation.
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
 
@@ -25,7 +25,9 @@ from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, v
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.image_preparation import prepare_edit_inputs
-from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, plan_size
+from dtflow.services.plan_errors import PlanError
+from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
+from dtflow.services.wildcards import bind_wildcards, fingerprint, list_names
 from dtflow.services.queue_session import (
     change_queue_order,
     clear_queues,
@@ -48,7 +50,9 @@ from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
+    DRAW_SPINS,
     NO_LORA,
+    candidate_counts,
     PlanForm,
     build_plan,
     lora_set_value,
@@ -97,7 +101,16 @@ from dtflow.ui.runner import AsyncRunner, EventRelay
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
 IDLE_POLL_MS = 3000  # light summary polling while the tab is visible, so queues created elsewhere appear
 PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
-PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox")
+RANDOM_INPUTS = (
+    "planVariationCombo",
+    "planVariationCountSpin",
+    "planShuffleCombo",
+    "planDropSpin",
+    "planAddSpin",
+    "planRerollButton",
+    *(f"planDraw{suffix}Spin" for suffix in DRAW_SPINS.values()),
+)
+PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox", *RANDOM_INPUTS)
 PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
 REPEAT = "Repeat"
 FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
@@ -285,6 +298,11 @@ class QueuePage:
         page.newQueueCapSpinBox.valueChanged.connect(self._new_cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
+        self._preview_key: tuple | None = None  # (plan form, request) of the preview shown or being drawn
+        self._preview_token = 0  # a prompt-variation preview resolves off the GUI thread; only the latest token shows
+        self._previewing = False
+        self._preview_active = False  # one computation at a time ...
+        self._preview_waiting: tuple | None = None  # ... plus the latest request that arrived meanwhile
         self._preview_timer = QTimer(page)
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(PREVIEW_MS)
@@ -308,6 +326,14 @@ class QueuePage:
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
         page.planIncrementCheck.toggled.connect(self._plan_changed)
         page.queueCountSpinBox.valueChanged.connect(self._plan_changed)
+        for name in RANDOM_INPUTS:
+            widget = getattr(page, name)
+            if name == "planRerollButton":
+                widget.clicked.connect(self._reroll)
+            elif hasattr(widget, "valueChanged"):
+                widget.valueChanged.connect(self._plan_changed)
+            else:
+                widget.currentTextChanged.connect(self._plan_changed)
         self._mode_changed()
         activity.listen(self._sync)
         activity.listen(self._after_generation_ended)
@@ -676,9 +702,13 @@ class QueuePage:
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
         editing = self._editing() and self._planned()
+        changed = self.page.planStrengthsEdit.isHidden() == editing
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
-        self._schedule_preview()
+        self.page.planDrawStrengthsLabel.setVisible(editing)  # the draw count follows its candidate row
+        self.page.planDrawStrengthsSpin.setVisible(editing)
+        # Polling reaches here unchanged: only a shown or hidden Strength row changes the planning inputs.
+        self._schedule_preview(invalidate=changed)
 
     def _removable(self, view: dict | None) -> bool:
         return (
@@ -921,12 +951,14 @@ class QueuePage:
         if feedback(self.page)._armed:
             feedback(self.page).dismiss()
         self._composing = True
+        self._invalidate_preview()
         self._refresh_choices()
         self._render()
         self.preview()
 
     def close_composer(self) -> None:
         self._composing = False
+        self._invalidate_preview()
         self._preview_timer.stop()
         self._render()
 
@@ -934,6 +966,7 @@ class QueuePage:
         """Returning to Queues (for example from Edit in Generate): the composer follows the Generate form."""
         if self._composing:
             self._refresh_choices()
+            self._invalidate_preview()  # the backend or Inpaint source may have changed without changing the request
             self.preview()
 
     @property
@@ -1012,8 +1045,82 @@ class QueuePage:
             getattr(page, name).setVisible(planned)
         page.planIncrementCheck.setVisible(planned)
         page.planTableView.setVisible(planned)
+        for name in ("planDrawLabel", "planDrawBox", "planVariationLabel", "planVariationBox"):
+            getattr(page, name).setVisible(planned)
+        self._sync_random_rows()
         self.sync_edit_fields()
         self._plan_changed()
+
+    def _draws(self) -> tuple[tuple[str, int], ...]:
+        spins = ((name, getattr(self.page, f"planDraw{suffix}Spin")) for name, suffix in DRAW_SPINS.items())
+        # A hidden spin (Strength outside Inpaint) belongs to a row that does not apply, so it counts for nothing.
+        return tuple((name, spin.value()) for name, spin in spins if spin.value() and not spin.isHidden())
+
+    def _random_active(self) -> bool:
+        page = self.page
+        mode = page.planVariationCombo.currentText()
+        edits = (
+            page.planShuffleCombo.currentIndex() > 0
+            or page.planDropSpin.value() > 0
+            or (page.planAddSpin.value() > 0 and bool(page.planAddPartsEdit.text().strip()))
+        )
+        return self._planned() and (bool(self._draws()) or mode == "Random sample" or (mode != "Off" and edits))
+
+    def _sync_draw_controls(self) -> None:
+        """Each draw count shows how many values its row lists ("2 of 5"). The count the user chose is never changed.
+
+        An impossible request (more than the row lists, or a row without values) is reported inline by the planner,
+        so emptying and refilling a row, or pasting a new list, keeps the draw count.
+        """
+        page = self.page
+        form = self._plan_form()
+        counts = candidate_counts(form)
+        for key, suffix in DRAW_SPINS.items():
+            spin = getattr(page, f"planDraw{suffix}Spin")
+            available = counts.get(key)  # None: seeds, drawn from the whole seed range
+            spin.blockSignals(True)
+            spin.setSuffix(f" of {available}" if available else "")
+            spin.setSpecialValueText("Listed" if available or available is None else "No values")
+            spin.setEnabled(available is None or available > 0 or spin.value() > 0)  # a stale count can still be zeroed
+            spin.blockSignals(False)
+        page.planAddSpin.setEnabled(bool(form.add_parts.strip()) or page.planAddSpin.value() > 0)
+
+    def _sync_random_rows(self) -> None:
+        """The wildcard, edit and seed rows appear only when they matter; Reroll and the folder note follow the seed."""
+        page = self.page
+        varied = self._planned() and page.planVariationCombo.currentText() != "Off"
+        for name in ("planWildcardsLabel", "planWildcardsEdit", "planMutationLabel", "planMutationBox"):
+            getattr(page, name).setVisible(varied)
+        for name in ("planAddPartsLabel", "planAddPartsEdit"):
+            getattr(page, name).setVisible(varied)
+        page.planVariationCountSpin.setVisible(page.planVariationCombo.currentText() == "Random sample")
+        seeded = self._random_active()
+        for name in ("planRngSeedLabel", "planRngSeedEdit", "planRerollButton"):
+            getattr(page, name).setVisible(seeded)
+        folder = self._wildcards_dir
+        names = list_names(folder)
+        page.planWildcardsFolderLabel.setVisible(varied)
+        page.planWildcardsFolderLabel.setText(
+            f"Lists in {folder}: {', '.join(names)}" if names else f"Wildcard files go in {folder} as NAME.txt."
+        )
+
+    @property
+    def _wildcards_dir(self) -> Path:
+        return self._state / "wildcards"
+
+    def _reroll(self, *_) -> None:
+        self.page.planRngSeedEdit.setText(str(new_rng_seed()))  # textChanged refreshes the preview
+
+    def _ensure_rng_seed(self) -> None:
+        """A random plan always has one recorded seed: draw it the first time it is needed."""
+        edit = self.page.planRngSeedEdit
+        if self._random_active() and not edit.text().strip():
+            edit.blockSignals(True)
+            edit.setText(str(new_rng_seed()))
+            edit.blockSignals(False)
+
+    def _count(self) -> tuple[str, str]:
+        return count_text(self._plan_form(), self._choices().get("prompt"), self._wildcards_dir)
 
     def _base_text(self, request) -> str:
         loras = len(request.loras)
@@ -1036,16 +1143,25 @@ class QueuePage:
         """Live count and items for the composer: pure planning against the Generate form, nothing persisted or sent."""
         self._preview_timer.stop()
         if not self._composing or not self.page.queueWorkspace.isVisible():
+            self._invalidate_preview()
             return  # reading the request marks and snaps Generate fields: only while Queues is shown (see ``shown``)
         page = self.page
         try:
             request, *_ = self._request_source(preview=True)
         except FormError as exc:
+            self._invalidate_preview()  # a validity change must not be overwritten later
             page.composerBaseLabel.setText("Generate settings are not valid yet.")
             self._show(page.planCountLabel, "error", sentence(f"Generate: {exc}"))
             self.plan_model.clear()
             self._clear_summary()
             return
+        form = self._plan_form()
+        lists = fingerprint(self._wildcards_dir) if form.variation != "Off" else ()  # an edited list changes the items
+        key = (form, self._request_key(request), lists)
+        if key == self._preview_key:
+            return  # polling and presentation syncs reach here unchanged: keep what is shown or being drawn
+        self._invalidate_preview()
+        self._preview_key = key
         page.composerBaseLabel.setText(self._base_text(request))
         page.composerBaseLabel.setToolTip(request.prompt)
         if not self._planned():
@@ -1056,15 +1172,88 @@ class QueuePage:
             self._show(page.planCountLabel, "ok", f"{count} item{'s' if count != 1 else ''} · {seeds}")
             self._show_summary(request, count, "Nothing (repeats the Generate settings)", seeds.capitalize())
             return
+        if self._plan_form().variation != "Off" and not self._runner.closed:
+            self._preview_in_background(request)
+            return
         plan = self._plan_for(request)
         if plan is None:
             self._show_summary(request, None, "—", "—")
             return
+        self._summarize(request, plan, self.plan_model.rowCount())
+
+    @staticmethod
+    def _request_key(request):
+        """The request without the id every read draws afresh; the retained random seed stays, so a new one shows."""
+        return replace(request, request_id="preview")
+
+    @property
+    def previewing(self) -> bool:
+        """True while a prompt-variation preview is still being resolved in the background."""
+        return self._previewing
+
+    def _invalidate_preview(self) -> None:
+        """Whatever is being drawn, or waits to be, is out of date: its result must never reach the composer."""
+        self._preview_token += 1
+        self._preview_key = None
+        self._previewing = False
+        self._preview_waiting = None
+
+    def _preview_in_background(self, request) -> None:
+        """Sampling thousands of prompts must not freeze typing: resolve on a worker and drop outdated results.
+
+        At most one computation runs; a newer request waits in a single slot (replacing any older one), so repeated
+        edits or rerolls never pile up work in front of the newest preview.
+        """
+        job = (self._preview_token, request, self._plan_inputs(request))
+        self._previewing = True
+        self._show(self.page.planCountLabel, "unknown", "Resolving prompts…")
+        if self._preview_active:
+            self._preview_waiting = job
+            return
+        self._start_preview(job)
+
+    def _start_preview(self, job: tuple) -> None:
+        token, request, inputs = job
+        self._preview_active = True
+
+        async def work():
+            return await asyncio.to_thread(self._compute_plan, *inputs)
+
+        self._runner.submit(work(), lambda result, failure: self._preview_finished(token, request, result, failure))
+
+    def _preview_finished(self, token: int, request, result, failure) -> None:
+        self._preview_active = False
+        waiting, self._preview_waiting = self._preview_waiting, None
+        if waiting is not None and waiting[0] == self._preview_token and self._composing:
+            self._start_preview(waiting)  # the newest request; this older result is not worth showing
+            return
+        self._preview_resolved(token, request, result, failure)
+
+    def _preview_resolved(self, token: int, request, result, failure) -> None:
+        if token != self._preview_token or not self._composing:
+            return
+        if isinstance(failure, asyncio.CancelledError):
+            return  # cancelled work has no result to show; a newer preview is on its way or the window is closing
+        self._previewing = False
+        self._mark_plan(None)
+        if failure is not None:
+            if isinstance(failure, ValidationError):
+                self._plan_failed(failure)
+            else:
+                self._show(self.page.planCountLabel, "error", sentence(str(failure) or "The preview failed."))
+                self.plan_model.clear()
+            self._show_summary(request, None, "—", "—")
+            return
+        plan, table = result
+        self._show_table(table)
+        self._show(self.page.planCountLabel, "ok", summary_text(table))
+        self._summarize(request, plan, table.total)
+
+    def _summarize(self, request, plan: Plan, total: int) -> None:
         varies = (
             ", ".join(_dimension_text(name, len(values)) for name, values in plan.dimensions if len(values) > 1)
             or "Nothing"
         )
-        total = self.plan_model.rowCount()
         policy = (
             "increment"
             if plan.seed_policy == "increment"
@@ -1101,7 +1290,9 @@ class QueuePage:
             getattr(page, f"composerSummary{name}Label").setText("—")
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
 
-    def _schedule_preview(self) -> None:
+    def _schedule_preview(self, *, invalidate: bool = True) -> None:
+        if invalidate:
+            self._invalidate_preview()  # the inputs changed: a result still being drawn is already stale
         if self._composing and self.page.queueWorkspace.isVisible():
             self._preview_timer.start()
 
@@ -1122,13 +1313,16 @@ class QueuePage:
             # From another tab the marked field is out of sight, so say where it is.
             report(Presentation("error", "Queue not created", f"On Generate: {exc}" if quick else str(exc)))
             return
-        plan = None
+        plan, resolving = None, None
         if (count is None) if quick else self._planned():
-            plan = self._plan_for(request)
-            if plan is None:
-                error = self.page.planCountLabel.text()
-                report(Presentation("error", "Queue not created", error))
-                return
+            if self._plan_form().variation != "Off":
+                resolving = self._plan_inputs(request)  # prompt sampling runs on the worker, with the creation
+            else:
+                plan = self._plan_for(request)
+                if plan is None:
+                    error = self.page.planCountLabel.text()
+                    report(Presentation("error", "Queue not created", error))
+                    return
         count, cap = count or self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         job = self._edit_source()
@@ -1137,8 +1331,11 @@ class QueuePage:
         after_generation = quick and action == "add" and self._activity.generating
 
         async def work():
+            drawn = plan
+            if resolving is not None:
+                drawn = await asyncio.to_thread(self._resolve_only, *resolving)
             queue_id, used = await self._create(
-                backend, request, asset_ids, count, cap, plan, job, up_next=action == "add"
+                backend, request, asset_ids, count, cap, drawn, job, up_next=action == "add"
             )
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
             return queue_id, used, status
@@ -1155,14 +1352,16 @@ class QueuePage:
         """(level, text) of the composer's Pair/Cross plan for the popover; ``ok`` when it can be used as is."""
         if not self._planned():
             return "none", "Set up Pair or Cross in the Queues composer to reuse it here."
-        level, text = count_text(self._plan_form())
+        level, text = self._count()
         return level, f"{self.page.planModeCombo.currentText()} · {text}" if level == "ok" else sentence(text)
 
     def last_plan_total(self) -> int | None:
         if not self._planned():
             return None
         try:
-            return plan_size(build_plan(self._plan_form()))
+            prompt = self._choices().get("prompt")
+            plan = bind_wildcards(build_plan(self._plan_form()), prompt or "", self._wildcards_dir)
+            return plan_size(plan, prompt)
         except ValidationError:
             return None
 
@@ -1224,6 +1423,10 @@ class QueuePage:
     def _quick_created(self, result, failure, action: str, after_generation: bool = False) -> None:
         """Like ``_created``, but the composer and the current tab stay as they are."""
         if failure is not None:
+            if isinstance(failure, PlanError | FormError):
+                self._plan_failed(failure)
+                self._quick_report(Presentation("error", "Queue not created", sentence(str(failure))))
+                return
             self._quick_report(present_generation_failure(failure))
             return
         queue_id, _, status = result
@@ -1350,8 +1553,17 @@ class QueuePage:
             page.planSizesEdit.text(),
             page.planLorasEdit.toPlainText(),
             page.planIncrementCheck.isChecked(),
-            page.planStrengthsEdit.text(),
+            "" if page.planStrengthsEdit.isHidden() else page.planStrengthsEdit.text(),
             page.planLoraSetsEdit.text(),
+            self._draws(),
+            page.planVariationCombo.currentText(),
+            page.planVariationCountSpin.value(),
+            page.planWildcardsEdit.toPlainText(),
+            page.planShuffleCombo.currentText(),
+            page.planDropSpin.value(),
+            page.planAddSpin.value(),
+            page.planAddPartsEdit.text(),
+            page.planRngSeedEdit.text(),
         )
 
     def _mark_plan(self, widget_name: str | None) -> None:
@@ -1363,8 +1575,11 @@ class QueuePage:
 
     def _plan_changed(self, *_) -> None:
         """The arithmetic count at once (pure); the validated preview follows after a short pause."""
+        self._sync_draw_controls()
+        self._sync_random_rows()
+        self._ensure_rng_seed()
         if self._planned():
-            level, text = count_text(self._plan_form())
+            level, text = self._count()
         else:
             count = self.page.queueCountSpinBox.value()
             level, text = "ok", f"{count} item{'s' if count != 1 else ''}"
@@ -1382,25 +1597,49 @@ class QueuePage:
         self.page.planTableView.resizeColumnsToContents()
 
     def _plan_for(self, request) -> Plan | None:
-        """Build and fully validate the plan against the form's request (pure, no I/O); shows the preview table."""
+        """Build and fully validate the plan against the form's request; shows the preview table.
+
+        Wildcard files are read only when the template names them, and again only when they change on disk.
+        """
         self._mark_plan(None)
         try:
-            plan = build_plan(self._plan_form())
-            table = describe_plan(request, plan, edit=self._edit_source() is not None)
+            plan, table = self._compute_plan(*self._plan_inputs(request))
         except ValidationError as exc:
-            # One place for the error: beside the plan, with the owning field marked.
-            error = plan_error(exc)
-            self._mark_plan(error.widget)
-            self._show(self.page.planCountLabel, "error", sentence(str(error)))
-            self.page.startQueueButton.setText("Start now")
-            self.plan_model.clear()
+            self._plan_failed(exc)
             return None
         self._show_table(table)
         self._show(self.page.planCountLabel, "ok", summary_text(table))
         return plan
 
+    def _plan_inputs(self, request) -> tuple:
+        """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""
+        return self._plan_form(), request, self._wildcards_dir, self._edit_source() is not None
+
+    @staticmethod
+    def _compute_plan(form: PlanForm, request, folder: Path, edit: bool) -> tuple[Plan, PlanTable]:
+        """Pure but for wildcard files: the drawn plan (what the summary and creation use) and its preview table."""
+        plan = resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+        return plan, describe_plan(request, plan, edit=edit)
+
+    @staticmethod
+    def _resolve_only(form: PlanForm, request, folder: Path, edit: bool) -> Plan:
+        """The drawn plan without the preview table: creation expands it itself."""
+        return resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+
+    def _plan_failed(self, exc: ValidationError) -> None:
+        """One place for a planning error: beside the plan, with the owning field marked."""
+        error = plan_error(exc)
+        self._mark_plan(error.widget)
+        self._show(self.page.planCountLabel, "error", sentence(str(error)))
+        self.page.startQueueButton.setText("Start now")
+        self.plan_model.clear()
+
     def _created(self, result, failure, action: str = "save") -> None:
         if failure is not None:
+            if isinstance(failure, PlanError | FormError):
+                self._plan_failed(failure)
+                self._message(Presentation("error", "Queue not created", sentence(str(failure))))
+                return
             self._message(present_generation_failure(failure))
             return
         queue_id, cap, status = result
