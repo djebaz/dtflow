@@ -1042,6 +1042,34 @@ def render_active_queue_states(shell, out):
         assert queue.plan_model.rowCount() == 2 * 2 * 2 and page.planRngSeedEdit.isVisible()
         page.queueComposerScroll.ensureWidgetVisible(page.planDrawStepsSpin)
         snap("queues-48-composer-random-draws")
+        # This intermediate width leaves both rails visible but gives the composer
+        # substantially less space than a desktop-wide fixture.
+        form.resize(1182, 792)
+        shell._responsive_workspace()
+        QTest.qWait(100)
+        assert shell.shell.rightRail.isVisible()
+        scroll = page.queueComposerScroll
+        viewport = scroll.viewport()
+        assert viewport.width() < 680
+        assert page.queueComposer.width() <= viewport.width(), (page.queueComposer.width(), viewport.width())
+        assert scroll.horizontalScrollBar().maximum() == 0
+        for widget in (
+            page.newQueueCapLabel, page.newQueueCapSpinBox,
+            page.createQueueButton, page.addQueueButton, page.startQueueButton,
+            page.closeComposerButton, page.editInGenerateButton,
+            page.planDrawModelsLabel, page.planDrawModelsSpin,
+            page.planDrawStepsLabel, page.planDrawStepsSpin,
+            page.planDrawLorasLabel, page.planDrawLorasSpin,
+        ):
+            assert widget.isVisible(), widget.objectName()
+            left = widget.mapTo(viewport, QPoint(0, 0)).x()
+            right = widget.mapTo(viewport, QPoint(widget.width(), 0)).x()
+            assert 0 <= left < right <= viewport.width(), (widget.objectName(), left, right, viewport.width())
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawStepsSpin))[:2] == (2, 1)
+        snap("queues-53-composer-two-rails-narrow-center")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        QTest.qWait(50)
         page.planDrawStepsSpin.setValue(0)
         # #129: dynamic prompt variation of the Generate prompt, with wildcards and seeded edits.
         shell.generation_page.promptEdit.setPlainText("a {red|blue} fox, __place__, golden light, film grain")
@@ -1069,6 +1097,26 @@ def render_active_queue_states(shell, out):
         assert queue._preview_token == token and not queue.previewing and queue.plan_model.rowCount() == 4
         page.queueComposerScroll.ensureWidgetVisible(page.planVariationCombo)
         snap("queues-49-composer-prompt-variation")
+        form.resize(1182, 792)
+        shell._responsive_workspace()
+        QTest.qWait(100)
+        assert page.planMutationBox.isVisible() and page.planRngSeedEdit.isVisible()
+        viewport = page.queueComposerScroll.viewport()
+        assert page.queueComposer.width() <= viewport.width()
+        assert page.queueComposerScroll.horizontalScrollBar().maximum() == 0
+        for widget in (
+            page.planVariationCombo, page.planVariationCountSpin,
+            page.planShuffleCombo, page.planDropLabel, page.planDropSpin,
+            page.planAddLabel, page.planAddSpin, page.planRngSeedEdit, page.planRerollButton,
+        ):
+            assert widget.isVisible(), widget.objectName()
+            left = widget.mapTo(viewport, QPoint(0, 0)).x()
+            right = widget.mapTo(viewport, QPoint(widget.width(), 0)).x()
+            assert 0 <= left < right <= viewport.width(), (widget.objectName(), left, right, viewport.width())
+        snap("queues-54-composer-narrow-prompt-edit")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        QTest.qWait(50)
         page.planVariationCombo.setCurrentText("Off")
         page.planShuffleCombo.setCurrentText("No shuffle")
         page.planDropSpin.setValue(0)
