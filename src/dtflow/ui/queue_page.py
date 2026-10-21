@@ -201,6 +201,9 @@ class QueuePage:
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
         self._after_generation: list[str] = []  # popover queues waiting for the running single generation (#135)
         self._checking_waiting = False  # one fresh status read at a time decides the next waiting queue
+        self._waiting_timer = QTimer(page)  # owned by the page, so it dies with the window
+        self._waiting_timer.setSingleShot(True)
+        self._waiting_timer.timeout.connect(self._start_after_generation)
         self._edit_source, self._editing = edit_source, editing_source
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
@@ -316,6 +319,7 @@ class QueuePage:
         """Keep late activity notifications away from destroyed page widgets."""
         self._activity.unlisten(self._sync)
         self._activity.unlisten(self._after_generation_ended)
+        self._waiting_timer.stop()
 
     # -- helpers ---------------------------------------------------------------------------------------------------
     @staticmethod
@@ -1129,6 +1133,9 @@ class QueuePage:
         count, cap = count or self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         job = self._edit_source()
+        # Add to queue during a single generation: remember the intent now, since the generation may end before the
+        # new queue is saved (nothing then runs to follow, but the user still asked for it to start by itself).
+        after_generation = quick and action == "add" and self._activity.generating
 
         async def work():
             queue_id, used = await self._create(
@@ -1137,8 +1144,12 @@ class QueuePage:
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
             return queue_id, used, status
 
-        done = self._quick_created if quick else self._created
-        self._runner.submit(work(), lambda result, failure: done(result, failure, action))
+        if quick:
+            self._runner.submit(
+                work(), lambda result, failure: self._quick_created(result, failure, action, after_generation)
+            )
+        else:
+            self._runner.submit(work(), lambda result, failure: self._created(result, failure, action))
 
     # -- one-click Queue popover (#135) ----------------------------------------------------------------------------
     def last_plan(self) -> tuple[str, str]:
@@ -1175,10 +1186,13 @@ class QueuePage:
 
     def _after_generation_ended(self) -> None:
         if self._after_generation and not self._activity.generating and not self._activity.dispatching:
-            QTimer.singleShot(0, self._start_after_generation)  # once the generation's own result has settled
+            self._waiting_timer.start(0)  # once the generation's own result has settled
 
     def _start_after_generation(self) -> None:
         """Start the oldest popover queue that waited for a single generation; the next one follows its dispatch."""
+        if self._runner.closed:
+            self._after_generation.clear()  # shutting down: nothing may be submitted or dispatched
+            return
         if self._activity.generating or self._activity.dispatching or not self._after_generation:
             return
         if self._checking_waiting:
@@ -1195,6 +1209,8 @@ class QueuePage:
     def _start_waiting(self, queue_id: str, status, failure) -> None:
         """Read fresh: a queue started, cancelled or removed meanwhile is no longer ours to start."""
         self._checking_waiting = False
+        if self._runner.closed:
+            return
         if failure is not None or status != "paused":
             self._start_after_generation()
         elif self._activity.generating or self._activity.dispatching:
@@ -1206,7 +1222,7 @@ class QueuePage:
         state = {"ok": "success", "warning": "partial"}.get(presentation.level, "error")
         activity_strip(self.page).complete("queue-quick", presentation.headline, presentation.detail, state)
 
-    def _quick_created(self, result, failure, action: str) -> None:
+    def _quick_created(self, result, failure, action: str, after_generation: bool = False) -> None:
         """Like ``_created``, but the composer and the current tab stay as they are."""
         if failure is not None:
             self._quick_report(present_generation_failure(failure))
@@ -1219,8 +1235,8 @@ class QueuePage:
             self._quick_report(
                 Presentation("warning", "Saved paused", "A run started meanwhile; press Start when it ends.")
             )
-        elif status != "queued" and self._activity.generating:
-            # No queue runs to follow, so this window starts it once the generation ends.
+        elif status != "queued" and after_generation:
+            # No queue runs to follow, so this window starts it once the generation ends (now, if it already has).
             self._after_generation.append(queue_id)
             self._quick_report(
                 Presentation(
@@ -1229,6 +1245,7 @@ class QueuePage:
                     "It starts by itself when the running generation ends, if this window stays open.",
                 )
             )
+            self._after_generation_ended()
         elif status != "queued":
             self._quick_report(
                 Presentation(
