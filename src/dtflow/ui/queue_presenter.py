@@ -470,10 +470,21 @@ def lora_text(identifier: str, weight) -> str:
     return f"{identifier} {weight:g}" if isinstance(weight, (int, float)) else identifier
 
 
+DISPLAY_EXTENSIONS = (".ckpt", ".safetensors", ".pt", ".pth", ".bin")
+
+
+def display_name(identifier: str) -> str:
+    """List and table label without the weight-file extension; tooltips and the inspector keep the full identifier."""
+    for extension in DISPLAY_EXTENSIONS:
+        if identifier.lower().endswith(extension) and len(identifier) > len(extension):
+            return identifier[: -len(extension)]
+    return identifier
+
+
 def queue_subtitle(view: dict, now: datetime | None = None) -> str:
     """One line for a list row: model and LoRA count, plan, backend and time (the header names them in ``queue_facts``)."""
     first = view.get("first") or {}
-    parts = [first["model"]] if first.get("model") else []
+    parts = [display_name(first["model"])] if first.get("model") else []
     varied = view.get("varied")
     loras = first.get("loras") or ()
     # Until the variation scan has run, the first item's LoRAs may not be the queue's; varied sets go to plan_text.

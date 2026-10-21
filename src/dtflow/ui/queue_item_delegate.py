@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, Q
 from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableView
 
 from dtflow.ui.queue_model import ROW_ROLE, stopwatch_icon
-from dtflow.ui.queue_presenter import lora_fraction
+from dtflow.ui.queue_presenter import display_name, lora_fraction
 from dtflow.ui.theme import load_tokens
 
 _TOKENS = load_tokens()
@@ -89,7 +89,7 @@ class QueueItemDelegate(QStyledItemDelegate):
         elif column == COL_MODEL:
             bold = QFont(option.font)
             bold.setWeight(QFont.Weight.Bold)
-            self._lines(painter, rect, wrapped_lines(row.model, bold, rect.width(), 2, soft_breaks=True), bold, text)
+            self._lines(painter, rect, wrapped_lines(display_name(row.model), bold, rect.width(), 2, soft_breaks=True), bold, text)
         elif column == COL_LORAS:
             self._loras(painter, rect, row, option.font, text, secondary, getattr(index.model(), "gauge_scale", 1.0))
         elif column == COL_PARAMS:
@@ -173,7 +173,7 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.drawText(
                 QRect(rect.left(), top, gauge_left - 6 - rect.left(), LORA_LINE),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                name_metrics.elidedText(name, Qt.TextElideMode.ElideRight, gauge_left - 6 - rect.left()),
+                name_metrics.elidedText(display_name(name), Qt.TextElideMode.ElideRight, gauge_left - 6 - rect.left()),
             )
             track = QRectF(gauge_left, top + (LORA_LINE - 6) / 2, GAUGE_WIDTH, 6)
             painter.setPen(Qt.PenStyle.NoPen)
