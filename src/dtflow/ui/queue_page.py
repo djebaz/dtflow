@@ -1042,9 +1042,14 @@ class QueuePage:
         return tuple((name, count) for name, count in spins if count)
 
     def _random_active(self) -> bool:
-        return self._planned() and (
-            bool(self._draws()) or self.page.planVariationCombo.currentText() == "Random sample"
+        page = self.page
+        mode = page.planVariationCombo.currentText()
+        edits = (
+            page.planShuffleCombo.currentIndex() > 0
+            or page.planDropSpin.value() > 0
+            or (page.planAddSpin.value() > 0 and bool(page.planAddPartsEdit.text().strip()))
         )
+        return self._planned() and (bool(self._draws()) or mode == "Random sample" or (mode != "Off" and edits))
 
     def _sync_random_rows(self) -> None:
         """The wildcard, edit and seed rows appear only when they matter; Reroll and the folder note follow the seed."""
@@ -1230,7 +1235,9 @@ class QueuePage:
         if not self._planned():
             return None
         try:
-            return plan_size(build_plan(self._plan_form()), self._choices().get("prompt"))
+            prompt = self._choices().get("prompt")
+            plan = bind_wildcards(build_plan(self._plan_form()), prompt or "", self._wildcards_dir)
+            return plan_size(plan, prompt)
         except ValidationError:
             return None
 
@@ -1461,12 +1468,15 @@ class QueuePage:
         self.page.planTableView.resizeColumnsToContents()
 
     def _plan_for(self, request) -> Plan | None:
-        """Build and fully validate the plan against the form's request (pure, no I/O); shows the preview table."""
+        """Build and fully validate the plan against the form's request; shows the preview table.
+
+        Wildcard files are read only when the template names them, and again only when they change on disk.
+        """
         self._mark_plan(None)
         try:
             plan = bind_wildcards(build_plan(self._plan_form()), request.prompt, self._wildcards_dir)
-            table = describe_plan(request, plan, edit=self._edit_source() is not None)
             plan = resolve_plan(plan, request.prompt)  # the drawn values: what the summary and creation use
+            table = describe_plan(request, plan, edit=self._edit_source() is not None)
         except ValidationError as exc:
             # One place for the error: beside the plan, with the owning field marked.
             error = plan_error(exc)

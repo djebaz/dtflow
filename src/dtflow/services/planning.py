@@ -109,7 +109,8 @@ class Plan:
     def draws(self) -> bool:
         """Whether any dimension is drawn from the plan RNG seed (a prompt listing every combination is not)."""
         return any(
-            isinstance(values, RandomSpec) or getattr(values, "strategy", "") == "random"
+            isinstance(values, RandomSpec)
+            or (isinstance(values, PromptVariation) and (values.strategy == "random" or values.mutation.active))
             for _, values in self.dimensions
         )
 
@@ -471,6 +472,19 @@ def describe_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = F
     return PlanTable(plan.mode, plan.effective_seed_policy, len(items), columns, rows, plan.rng_seed)
 
 
+def _lora_sets(value: Any) -> tuple[tuple[tuple[str, Any], ...], ...]:
+    if not isinstance(value, list):
+        raise PlanError("loras must be a list of LoRA sets.")
+    sets = []
+    for entry in value:
+        if not isinstance(entry, list) or any(
+            not isinstance(item, dict) or set(item) != {"identifier", "weight"} for item in entry
+        ):
+            raise PlanError("Each LoRA set is a list of {identifier, weight} entries (empty for no LoRA).")
+        sets.append(tuple((item["identifier"], item["weight"]) for item in entry))
+    return tuple(sets)
+
+
 def _random(name: str, raw: dict) -> RandomSpec:
     """``{"random": {"count": N, "from": [...]}}`` or ``{"count": N, "min": a, "max": b, "step": s}`` as a spec."""
     if not isinstance(raw, dict) or set(raw) - {"count", "from", "min", "max", "step"}:
@@ -479,7 +493,8 @@ def _random(name: str, raw: dict) -> RandomSpec:
     if "from" in raw:
         if set(raw) != {"count", "from"} or not isinstance(raw["from"], list):
             raise PlanError("A random pick takes exactly count and from (a list).")
-        return RandomSpec(count, candidates=tuple(raw["from"]))
+        candidates = _lora_sets(raw["from"]) if name == LORA_SETS else tuple(raw["from"])
+        return RandomSpec(count, candidates=candidates)
     if {"min", "max", "step"} & set(raw):
         if set(raw) != {"count", "min", "max", "step"}:
             raise PlanError("A random range takes exactly count, min, max and step.")
@@ -539,24 +554,17 @@ def _dimension(name: str, value: Any, version: int = VERSION) -> tuple[tuple[str
             if not isinstance(entry, dict) or set(entry) != {"identifier", "weights"}:
                 raise PlanError("Each lora_weight entry needs exactly an identifier and weights.")
             weights = entry["weights"]
+            if not isinstance(entry["identifier"], str):
+                raise PlanError("lora_weight needs a text identifier and a list of weights.")
             if isinstance(weights, dict) and set(weights) == {"random"} and version >= 2:
-                entries.append((LORA_WEIGHT + str(entry["identifier"]), _random("lora_weight", weights["random"])))
+                entries.append((LORA_WEIGHT + entry["identifier"], _random("lora_weight", weights["random"])))
                 continue
-            if not isinstance(entry["identifier"], str) or not isinstance(weights, list):
+            if not isinstance(weights, list):
                 raise PlanError("lora_weight needs a text identifier and a list of weights.")
             entries.append((LORA_WEIGHT + entry["identifier"], tuple(weights)))
         return tuple(entries)
     if name == LORA_SETS:
-        if not isinstance(value, list):
-            raise PlanError("loras must be a list of LoRA sets.")
-        sets = []
-        for entry in value:
-            if not isinstance(entry, list) or any(
-                not isinstance(item, dict) or set(item) != {"identifier", "weight"} for item in entry
-            ):
-                raise PlanError("Each LoRA set is a list of {identifier, weight} entries (empty for no LoRA).")
-            sets.append(tuple((item["identifier"], item["weight"]) for item in entry))
-        return ((LORA_SETS, tuple(sets)),)
+        return ((LORA_SETS, _lora_sets(value)),)
     if name not in SCALARS:
         raise PlanError(f"Unknown plan dimension {name!r}.")
     if not isinstance(value, list):

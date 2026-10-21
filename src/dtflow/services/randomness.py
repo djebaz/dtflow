@@ -58,7 +58,10 @@ def check(name: str, spec: RandomSpec) -> None:
     if type(spec.count) is not int or not 1 <= spec.count <= MAX_QUEUE_ITEMS:
         raise PlanError(f"Dimension {name!r}: a random count is an integer in 1..{MAX_QUEUE_ITEMS}.")
     if spec.kind == "pick":
-        unique = len(dict.fromkeys(spec.candidates))
+        try:
+            unique = len(dict.fromkeys(spec.candidates))
+        except TypeError as exc:
+            raise PlanError(f"Dimension {name!r}: values must be text, numbers or [width, height] pairs.") from exc
         if unique == 0:
             raise PlanError(f"Dimension {name!r} has no values to pick from.")
         if spec.count > unique:

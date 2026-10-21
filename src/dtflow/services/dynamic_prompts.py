@@ -127,6 +127,7 @@ class Lists:
     def __init__(self, entries: Mapping[str, tuple[str, ...]]):
         self._entries = dict(entries)
         self._parsed: dict[str, tuple[tuple[Node, ...], ...]] = {}
+        self.counts: dict[str, int] = {}  # wildcard name -> its variant count, so nested lists are counted once
         self.used: set[str] = set()
 
     def get(self, name: str, depth: int) -> tuple[tuple[Node, ...], ...]:
@@ -155,7 +156,10 @@ def _node_count(node: Node, lists: Lists, depth: int) -> int:
     if isinstance(node, Text):
         return 1
     if isinstance(node, Wild):
-        return min(CAP, sum(count(entry, lists, depth + 1) for entry in lists.get(node.name, depth + 1)))
+        entries = lists.get(node.name, depth + 1)  # also tracks use and rejects too-deep nesting
+        if node.name not in lists.counts:
+            lists.counts[node.name] = min(CAP, sum(count(entry, lists, depth + 1) for entry in entries))
+        return lists.counts[node.name]
     ways = [1] + [0] * node.high  # ways[j]: ways to have chosen j options so far
     for _, content in node.options:
         variants = count(content, lists, depth)
@@ -259,6 +263,14 @@ def _mutate(text: str, rng: random.Random, mutation: Mutation) -> str:
     return (" " if words else ", ").join(parts)
 
 
+def _non_empty(texts) -> tuple[str, ...]:
+    """The distinct non-empty resolved prompts; a template that only resolves to nothing is an error."""
+    kept = tuple(text for text in texts if text)
+    if not kept:
+        raise _fail("The prompt resolves to nothing; keep some text outside the choices.")
+    return kept
+
+
 def variants(
     template: str,
     wildcards: Mapping[str, tuple[str, ...]],
@@ -281,21 +293,25 @@ def variants(
             if total > limit:
                 raise _fail(f"The prompt has {total} combinations; one queue holds at most {limit}.")
             unique = dict.fromkeys(_tidy(_mutate(_tidy(text), rng, mutation)) for text in _all(nodes, lists, 0))
-            return tuple(unique), tuple(sorted(lists.used))
+            return _non_empty(unique), tuple(sorted(lists.used))
         if type(n) is not int or not 1 <= n <= limit:
             raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
         seen: dict[str, None] = {}
         attempts = 0
         while len(seen) < n and attempts < 200 * n + 1000:
-            seen.setdefault(_tidy(_mutate(_tidy(_sample(nodes, lists, rng, 0)), rng, mutation)), None)
+            text = _tidy(_mutate(_tidy(_sample(nodes, lists, rng, 0)), rng, mutation))
+            if text:
+                seen.setdefault(text, None)
             attempts += 1
         if len(seen) < n:
+            if not seen:
+                raise _fail("The prompt resolves to nothing; keep some text outside the choices.")
             raise _fail(f"Only {len(seen)} different prompts could be made; ask for fewer or allow more edits.")
         return tuple(seen), tuple(sorted(lists.used))
     if strategy == "all":
         if total > limit:
             raise _fail(f"The prompt has {total} combinations; one queue holds at most {limit}.")
-        unique = tuple(dict.fromkeys(_tidy(text) for text in _all(nodes, lists, 0)))
+        unique = _non_empty(dict.fromkeys(_tidy(text) for text in _all(nodes, lists, 0)))
         return unique, tuple(sorted(lists.used))
     if type(n) is not int or not 1 <= n <= limit:
         raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
@@ -305,14 +321,18 @@ def variants(
     seen: dict[str, None] = {}
     attempts = 0
     while len(seen) < n and attempts < 200 * n + 1000:
-        seen.setdefault(_tidy(_sample(nodes, lists, rng, 0)), None)
+        text = _tidy(_sample(nodes, lists, rng, 0))
+        if text:
+            seen.setdefault(text, None)
         attempts += 1
     if len(seen) < n:  # a nearly exhausted space: finish uniformly from the unseen combinations
         if total > limit:
             raise _fail(f"Could not draw {n} different prompts; ask for fewer or add more choices.")
-        rest = [text for text in dict.fromkeys(_tidy(t) for t in _all(nodes, lists, 0)) if text not in seen]
+        rest = [text for text in dict.fromkeys(_tidy(t) for t in _all(nodes, lists, 0)) if text and text not in seen]
         for text in rng.sample(rest, min(len(rest), n - len(seen))):
             seen[text] = None
         if len(seen) < n:
+            if not seen:
+                raise _fail("The prompt resolves to nothing; keep some text outside the choices.")
             raise _fail(f"The prompt has only {len(seen)} different resolved prompts; {n} were asked for.")
     return tuple(seen), tuple(sorted(lists.used))

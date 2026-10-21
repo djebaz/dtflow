@@ -464,7 +464,7 @@ strengths, and the shared LoRA identifier+weight editor for LoRA sets (with
 *Draw at random* is a grid of small count boxes (*Listed* = every value), *Prompt
 variation* a mode box with a count, and, only while a prompt variation is on,
 wildcard lists, an *Edit prompts* row (shuffle, drop, add) and *Parts to add*;
-the *Random seed* field and **Reroll** show only while something is drawn. The
+the *Plan seed* field and **Reroll** show only while something is drawn. The
 count updates at once and the preview table about 250 ms after the last edit,
 without a Dry run button; planner errors mark the owning row (`invalid`, red
 chip and Add borders) and appear in the count line. Add to queue is enabled

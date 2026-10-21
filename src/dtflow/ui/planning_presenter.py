@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from dtflow.core.models import MAX_QUEUE_ITEMS, ValidationError
+from dtflow.core.models import MAX_QUEUE_ITEMS, SEED_LIMIT, ValidationError
 from dtflow.services.planning import Plan, PlanError, PlanTable, PromptVariation, plan_size, seed_range
 from dtflow.services.randomness import RandomSpec
 from dtflow.services.wildcards import bind_wildcards
@@ -177,9 +177,12 @@ def _rng_seed(text: str) -> int | None:
     if not text.strip():
         return None
     try:
-        return int(text.strip())
+        seed = int(text.strip())
     except ValueError:
         raise FormError("The plan seed is a whole number.", "planRngSeedEdit") from None
+    if not 0 <= seed <= SEED_LIMIT:
+        raise FormError(f"The plan seed is a whole number in 0..{SEED_LIMIT}.", "planRngSeedEdit")
+    return seed
 
 
 def lora_set_value(identifier: str, weight: float) -> str:
