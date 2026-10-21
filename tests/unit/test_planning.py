@@ -164,7 +164,7 @@ def test_plan_documents_are_versioned_credential_free_and_bounded(tmp_path):
     for bad, message in (
         ([], "JSON object"),
         ({"schema": "other", "version": 1}, "schema"),
-        (document(mode="seed", count=2) | {"version": 2}, "version 2"),
+        (document(mode="seed", count=2) | {"version": 3}, "version 3"),
         (document(mode="seed", count=2, extra=1), "Unknown plan field"),
         (document(mode="cross", dimensions=[]), "object"),
         (document(mode="cross", dimensions={"prompt": "a"}), "list of values"),

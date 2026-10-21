@@ -35,7 +35,8 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.config import export_config, load_config, resolve_request
 from dtflow.services.gallery import inspect_output, query_outputs
-from dtflow.services.planning import Plan, describe_plan, expand_plan, load_plan
+from dtflow.services.planning import Plan, describe_plan, expand_plan, load_plan, with_rng_seed
+from dtflow.services.wildcards import bind_wildcards
 from dtflow.services.queue_session import create_queue, dispatch_queue, relaunch_queue
 from dtflow.services.session import (
     ASSET_NOTE,
@@ -336,6 +337,16 @@ def add_queue_commands(commands) -> None:
         help="Versioned queue plan (seed, pair or cross batch); replaces --count. See the README for the file format.",
     )
     add.add_argument(
+        "--rng-seed",
+        type=int,
+        help="Seed for a plan's random dimensions and prompt sample (default: the plan's own, else a fresh one, printed).",
+    )
+    add.add_argument(
+        "--wildcards-dir",
+        type=Path,
+        help="Folder of wildcard lists NAME.txt for __NAME__ in a prompt variation (default: STATE/wildcards).",
+    )
+    add.add_argument(
         "-u",
         "--dry",
         action="store_true",
@@ -476,7 +487,11 @@ async def queue_base(args: argparse.Namespace) -> tuple[Plan, ResolvedGeneration
     if args.scenario != "success" and args.backend != "fake":
         raise ValidationError("--scenario applies to the fake backend only.")
     plan = queue_plan(args)
-    return plan, await bind_assets(args, resolve_generation(args))
+    request = await bind_assets(args, resolve_generation(args))
+    plan = bind_wildcards(plan, request.prompt, args.wildcards_dir or args.state / "wildcards")
+    if plan.draws or args.rng_seed is not None:
+        plan = with_rng_seed(plan, args.rng_seed)
+    return plan, request
 
 
 async def run_queue(args: argparse.Namespace) -> int:
@@ -506,7 +521,10 @@ async def run_queue(args: argparse.Namespace) -> int:
         requests = expand_plan(base, plan)
         backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": args.scenario}
         queue_id, cap = await create_queue(args.state, backend, requests, args.jobs)
-        print(json.dumps({"queue_id": queue_id, "state": "paused", "items": len(requests), "cap": cap}))
+        created = {"queue_id": queue_id, "state": "paused", "items": len(requests), "cap": cap}
+        if plan.rng_seed is not None:
+            created["rng_seed"] = plan.rng_seed
+        print(json.dumps(created))
         return EXIT_OK
     if command == "relaunch":
         queue_id, cap = await relaunch_queue(

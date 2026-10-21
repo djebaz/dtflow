@@ -929,6 +929,48 @@ def render_active_queue_states(shell, out):
         snap("queues-43-composer-lora-set-search")
         shell.inline.dismiss()
         page.planLoraSetsEdit.clear()
+        # #128: random draws from the listed values under one recorded plan seed (the same seed gives the same items).
+        page.planStepsEdit.setText("20; 30; 40; 50")
+        page.planDrawStepsSpin.setValue(2)
+        page.planRngSeedEdit.setText("12345")
+        queue.preview()
+        assert queue.plan_model.rowCount() == 2 * 2 * 2 and page.planRngSeedEdit.isVisible()
+        page.queueComposerScroll.ensureWidgetVisible(page.planDrawStepsSpin)
+        snap("queues-48-composer-random-draws")
+        page.planDrawStepsSpin.setValue(0)
+        # #129: dynamic prompt variation of the Generate prompt, with wildcards and seeded edits.
+        shell.generation_page.promptEdit.setPlainText("a {red|blue} fox, __place__, golden light, film grain")
+        page.planVariationCombo.setCurrentText("Random sample")
+        page.planVariationCountSpin.setValue(4)
+        page.planWildcardsEdit.setPlainText("place: forest; meadow; harbour")
+        page.planShuffleCombo.setCurrentText("Shuffle parts")
+        page.planDropSpin.setValue(1)
+        page.planAddPartsEdit.setText("bokeh; mist")
+        page.planAddSpin.setValue(1)
+        for name in ("planStepsEdit", "planModelsEdit", "planSamplersEdit", "planSizesEdit"):
+            getattr(page, name).clear()
+        real_submit = type(shell.runner).submit.__get__(shell.runner)  # this block holds submits; this one must run
+        with patch.object(shell.runner, "submit", side_effect=real_submit):
+            queue.preview()
+            for _ in range(100):  # prompt variation resolves on a worker; wait for the preview to land
+                if not queue.previewing:
+                    break
+                QTest.qWait(50)
+        assert queue.plan_model.rowCount() == 4, page.planCountLabel.text()
+        token = queue._preview_token
+        for _ in range(3):  # unchanged polls keep the shown preview and never restart its computation
+            queue.sync_edit_fields()
+            queue.preview()
+        assert queue._preview_token == token and not queue.previewing and queue.plan_model.rowCount() == 4
+        page.queueComposerScroll.ensureWidgetVisible(page.planVariationCombo)
+        snap("queues-49-composer-prompt-variation")
+        page.planVariationCombo.setCurrentText("Off")
+        page.planShuffleCombo.setCurrentText("No shuffle")
+        page.planDropSpin.setValue(0)
+        page.planAddSpin.setValue(0)
+        page.planAddPartsEdit.clear()
+        page.planWildcardsEdit.clear()
+        page.planRngSeedEdit.clear()
         for name in ("planModelsEdit", "planStepsEdit", "planSamplersEdit", "planSizesEdit"):
             getattr(page, name).clear()
         page.planSeedsEdit.setText("not-a-seed")

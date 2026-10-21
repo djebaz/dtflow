@@ -460,7 +460,11 @@ an adder: the shared searchable inline editor for models (inventory, plus a
 custom identifier) and samplers, an editable preset list for sizes (Generate's
 size first), a bounded number box for steps, guidance and Inpaint
 strengths, and the shared LoRA identifier+weight editor for LoRA sets (with
-*None* and *Generate's LoRAs* at the top of its list). Prompts are one per line; seeds and LoRA weights stay typed. The
+*None* and *Generate's LoRAs* at the top of its list). Prompts are one per line; seeds and LoRA weights stay typed. Below them,
+*Draw at random* is a grid of small count boxes (*Listed* = every value), *Prompt
+variation* a mode box with a count, and, only while a prompt variation is on,
+wildcard lists, an *Edit prompts* row (shuffle, drop, add) and *Parts to add*;
+the *Plan seed* field and **Reroll** show only while something is drawn. The
 count updates at once and the preview table about 250 ms after the last edit,
 without a Dry run button; planner errors mark the owning row (`invalid`, red
 chip and Add borders) and appear in the count line. Add to queue is enabled
