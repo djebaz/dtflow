@@ -204,6 +204,30 @@ UNKNOWN_TEXT = (
 OWNERS = ("here", "none")
 
 
+LORA_GAUGE_MIN_SCALE = 1.0  # a full bar is never less than the neutral weight 1.0
+
+
+def gauge_scale(rows) -> float:
+    """Full-bar weight for the items table: the largest recorded weight, rounded up to 0.5 and never below 1.0.
+
+    One shared scale keeps gauges comparable across rows; it follows the weights actually recorded, not a fixed limit.
+    """
+    weights = [
+        weight
+        for row in rows
+        for _, weight in row.loras
+        if type(weight) in (int, float) and math.isfinite(weight) and weight > 0
+    ]
+    return max(LORA_GAUGE_MIN_SCALE, math.ceil(max(weights, default=0.0) * 2) / 2)
+
+
+def lora_fraction(weight, scale: float = LORA_GAUGE_MIN_SCALE) -> float:
+    """Gauge fill for a configured LoRA strength; an unknown or non-positive weight draws an empty track."""
+    if type(weight) not in (int, float) or weight <= 0 or scale <= 0:
+        return 0.0
+    return min(1.0, weight / scale)
+
+
 @dataclass(frozen=True, slots=True)
 class ItemRow:
     item_id: str
@@ -216,6 +240,59 @@ class ItemRow:
     failure_code: str | None
     operation: str = "txt2img"
     strength: float | None = None
+    prompt: str = ""
+    negative_prompt: str = ""
+    model: str = ""
+    loras: tuple[tuple[str, float | None], ...] = ()
+    steps: int | float | None = None
+    guidance: int | float | None = None
+    sampler: str = ""
+    duration: float | None = None  # observed backend seconds; None means unavailable, never zero
+    width: int | float | None = None
+    height: int | float | None = None
+    gallery_identity: str | None = None  # "attempt:ordinal" of the first saved image, as the Images gallery names it
+
+    @property
+    def dimensions_text(self) -> str:
+        return "—" if self.width is None or self.height is None else f"{self.width:g} × {self.height:g}"
+
+    @property
+    def operation_text(self) -> str:
+        return {"txt2img": "Text to image", "img2img": "Image to image", "inpaint": "Inpaint"}.get(
+            self.operation, self.operation
+        )
+
+    @property
+    def outcome_line(self) -> str:
+        """Explicit only where the recorded evidence supports it; never implies a saved image."""
+        if self.state == "succeeded":
+            return "No error recorded" if self.outputs else "Succeeded; no saved image verified"
+        if self.state in ("failed", "save_failed"):
+            return self.failure_code or self.state_text.capitalize()
+        return {
+            "unknown": "No result received",
+            "running": "In progress",
+            "pending": "Not started",
+            "cancelled": "Cancelled",
+        }.get(self.state, "—")
+
+    @property
+    def duration_text(self) -> str:
+        return "—" if self.duration is None else f"{self.duration:.1f} s"
+
+    @property
+    def steps_text(self) -> str:
+        return "Steps —" if self.steps is None else f"Steps {self.steps:g}"
+
+    @property
+    def guidance_text(self) -> str:
+        if self.guidance is None:
+            return "CFG —"
+        return f"CFG {self.guidance:.1f}" if round(self.guidance, 1) == self.guidance else f"CFG {self.guidance:g}"
+
+    @property
+    def sampler_text(self) -> str:
+        return f"Sampler {self.sampler}" if self.sampler else "Sampler —"
 
     @property
     def edit_text(self) -> str:
@@ -261,6 +338,15 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
         artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
         metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
         failure = item.get("failure") or {}
+        # The gallery numbers an attempt's outputs by their index in the recorded artifact list (metadata included).
+        identity = next(
+            (
+                f"{item['attempt_id']}:{index}"
+                for index, path in enumerate(item["artifacts"])
+                if item["attempt_id"] and isinstance(path, str) and path != metadata
+            ),
+            None,
+        )
         rows.append(
             ItemRow(
                 item["item_id"],
@@ -273,6 +359,17 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 failure.get("code"),
                 item.get("operation") or "txt2img",
                 item.get("strength"),
+                item.get("prompt") or "",
+                item.get("negative_prompt") or "",
+                item.get("model") or "",
+                tuple((str(name), weight) for name, weight in item.get("loras") or ()),
+                item.get("steps"),
+                item.get("guidance"),
+                item.get("sampler") or "",
+                item.get("duration"),
+                item.get("width"),
+                item.get("height"),
+                identity,
             )
         )
     return tuple(rows)
@@ -373,10 +470,21 @@ def lora_text(identifier: str, weight) -> str:
     return f"{identifier} {weight:g}" if isinstance(weight, (int, float)) else identifier
 
 
+DISPLAY_EXTENSIONS = (".ckpt", ".safetensors", ".pt", ".pth", ".bin")
+
+
+def display_name(identifier: str) -> str:
+    """List and table label without the weight-file extension; tooltips and the inspector keep the full identifier."""
+    for extension in DISPLAY_EXTENSIONS:
+        if identifier.lower().endswith(extension) and len(identifier) > len(extension):
+            return identifier[: -len(extension)]
+    return identifier
+
+
 def queue_subtitle(view: dict, now: datetime | None = None) -> str:
     """One line for a list row: model and LoRA count, plan, backend and time (the header names them in ``queue_facts``)."""
     first = view.get("first") or {}
-    parts = [first["model"]] if first.get("model") else []
+    parts = [display_name(first["model"])] if first.get("model") else []
     varied = view.get("varied")
     loras = first.get("loras") or ()
     # Until the variation scan has run, the first item's LoRAs may not be the queue's; varied sets go to plan_text.

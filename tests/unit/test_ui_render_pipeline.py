@@ -31,12 +31,14 @@ def test_category_runs_include_their_shared_workspace_fixtures(tmp_path, categor
     namespace = renderer_functions()
     calls = []
     shell, app = MagicMock(), MagicMock()
+    item_table = MagicMock()
     namespace.update(
         SELECTED_CATEGORY=category,
         MainWindow=MagicMock(return_value=shell),
         SavedCredentials=MagicMock(),
         Vault=MagicMock(),
         QTest=MagicMock(),
+        render_item_table_states=item_table,
     )
     for group, name in (
         ("generate", "render_generate_configuration_states"),
@@ -46,6 +48,10 @@ def test_category_runs_include_their_shared_workspace_fixtures(tmp_path, categor
         namespace[name] = lambda *args, group=group: calls.append(group)
     namespace["render_workspace_states"](app, tmp_path, tmp_path)
     assert calls == [expected]
+    if category == "queues":
+        item_table.assert_called_once_with(shell, tmp_path, tmp_path)
+    else:
+        item_table.assert_not_called()
     shell.runner.shutdown.assert_called_once()
 
     selected = namespace["category_selected"]

@@ -542,6 +542,16 @@ class GalleryPage(QObject):
         self.total = 0
         self.offset = 0
         self.selected_id: str | None = None
+        self._open_request: str | None = None  # Queues "Open in Images": show this output in Detail once located
+        self._open_generation: int | None = None
+        self._open_attempts = 0
+        self._open_started: float | None = None
+        self._open_waits = 0
+        self._open_timer = QTimer(self)
+        self._open_timer.setSingleShot(True)
+        self._open_timer.setInterval(250)
+        self._open_timer.timeout.connect(self._continue_open_output)
+        self.runner.shutdown_started.connect(self._cancel_open_output)
         self._origin_identity: str | None = None
         self._grid_buttons: dict[str, QPushButton] = {}
         self._grid_painters: dict[str, CoverPainter] = {}
@@ -1399,6 +1409,8 @@ class GalleryPage(QObject):
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
         self._active = active
+        if not active:
+            self._cancel_open_output()
         self._sync_canvas_loading()
         self._sync_snapshot_warning()
         self._sync_auto_refresh()
@@ -1565,6 +1577,7 @@ class GalleryPage(QObject):
         self._schedule_save()
 
     def _filter_edited(self, *_args) -> None:
+        self._cancel_open_output()
         self.recycle_scope_revision += 1
         if hasattr(self.page.window(), "_inline_feedback") and feedback(self.page)._armed:
             feedback(self.page).dismiss()
@@ -1628,6 +1641,8 @@ class GalleryPage(QObject):
         )
 
     def refresh(self, *, reset: bool = False, preserve: bool = True, trigger: str = "refresh") -> None:
+        if self._open_request is not None and trigger in ("auto", "live_recovery"):
+            return
         if self._loading or self._adjacent_loading:
             if self._pending_refresh is not None:
                 reset = reset or self._pending_refresh[0]
@@ -1670,9 +1685,16 @@ class GalleryPage(QObject):
         target_count: int | None = None,
         trigger: str = "navigation",
     ) -> None:
+        if self.runner.closed:
+            self._cancel_open_output()
+            return
+        if trigger != "open-output":
+            self._cancel_open_output()
         target_count = min(MAX_MOUNTED_IMAGES, target_count if target_count is not None else query.limit)
         self._query_generation += 1
         generation = self._query_generation
+        if trigger == "open-output":
+            self._open_generation = generation
         self._held_anchor = None
         # A new query supersedes any older adjacent anchor restoration.
         # Obsolete callbacks must not retain (or clear) its scroll guard.
@@ -1753,6 +1775,8 @@ class GalleryPage(QObject):
             try:
                 return await work()
             except PersistenceError as live_error:
+                if trigger == "open-output":
+                    raise  # an explicit identity handoff needs fresh committed authority, not a browsing snapshot
                 cause = live_error.__cause__ or live_error
                 diagnostic_event(
                     log,
@@ -1820,17 +1844,22 @@ class GalleryPage(QObject):
     def _apply_query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
             return
+        opening = anchor is not None and anchor == self._open_request and generation == self._open_generation
         self._loading = False
         self.refresh_button.setEnabled(True)
         self._sync_pager()
         if error is not None or (result is not None and result[1].snapshot_at):
             self._snapshot_live_since = None
+        if opening:
+            self._pending_refresh = None  # an automatic refresh must not supersede explicit identity navigation
         if self._pending_refresh is not None:
             pending = self._pending_refresh
             self._pending_refresh = None
             self.refresh(reset=pending[0], preserve=pending[1], trigger=pending[2])
             return
         if error is not None:
+            if opening:
+                self._open_output_failed("query_failed")
             # Auto-refresh retries every few seconds; report a failure streak once.
             detail = str(error) if isinstance(error, PersistenceError) else type(error).__name__
             (log.debug if self._refresh_failing else log.warning)("gallery refresh failed reason=%s", detail)
@@ -1904,6 +1933,7 @@ class GalleryPage(QObject):
             and not mode_changed
             and self._pending_page_selection is None
             and self._page_scroll_target is None
+            and self._open_request is None
         ):
             # Polling identical results must not destroy cards/cells, discard
             # in-flight decodes or reset Detail zoom/pan and browsing position.
@@ -1922,6 +1952,15 @@ class GalleryPage(QObject):
         self._render_page()
         self._rendered_page = visible_page
         self._refresh_hidden_count()
+
+        if opening:
+            target = next((item for item in self.items if item.identity == anchor), None)
+            if target is not None and not target.issue and not page.snapshot_at:
+                self._cancel_open_output("opened")
+                self.selected_id = anchor
+                self.show_view("Detail")
+            else:
+                self._open_output_failed()
 
         pending = self._pending_page_selection
         self._pending_page_selection = None
@@ -3375,6 +3414,74 @@ class GalleryPage(QObject):
             return False
         self._jump_to_page(target)
         return True
+
+    def open_output(self, identity: str, *, attempts: int = 20) -> None:
+        """Open a live identity, clearing incompatible browse filters rather than silently showing another image."""
+        self._cancel_open_output()
+        if self.runner.closed or not self._active:
+            return
+        self.filter_timer.stop()
+        self._pending_refresh = None
+        self._pending_jump_timer.stop()
+        self._pending_page_jump = None
+        self._pending_page_selection = None
+        defaults = (
+            (self.prompt, ""),
+            (self.model, "All models"),
+            (self.lora, "All LoRAs"),
+            (self.date_filter, "All time"),
+            (self.dimensions, "Any size"),
+            (self.ratio, "Any ratio"),
+        )
+        for widget, value in defaults:
+            blocked = widget.blockSignals(True)
+            try:
+                widget.setText(value) if widget is self.prompt else widget.setCurrentText(value)
+            finally:
+                widget.blockSignals(blocked)
+        self._open_request, self._open_attempts = identity, attempts
+        self._open_started = monotonic() if dev_enabled() else None
+        self._open_waits = 0
+        self._continue_open_output()
+
+    def _cancel_open_output(self, outcome: str = "cancelled") -> None:
+        if self._open_request is not None and self._open_started is not None and dev_enabled():
+            measurement(
+                log,
+                "gallery.open_output",
+                outcome="shutdown" if self.runner.closed else "navigation" if not self._active else outcome,
+                elapsed_ms=(monotonic() - self._open_started) * 1000,
+                busy_waits=self._open_waits,
+            )
+        self._open_timer.stop()
+        self._open_request = self._open_generation = None
+        self._open_started = None
+
+    def _open_output_failed(self, reason: str = "unavailable") -> None:
+        self._cancel_open_output(reason)
+        if self._active and not self.runner.closed:
+            feedback(self.page).notice(
+                "Open in Images", "The selected saved image is no longer available from live history.", "warning"
+            )
+
+    def _continue_open_output(self) -> None:
+        if self._open_request is None or self.runner.closed or not self._active:
+            self._cancel_open_output()
+            return
+        if self._loading or self._adjacent_loading:
+            if self._open_attempts > 0:
+                self._open_attempts -= 1
+                self._open_waits += 1
+                self._open_timer.start()
+            else:
+                self._open_output_failed("busy_exhausted")
+            return
+        try:
+            query = self._query(offset=0)
+        except ValidationError:
+            self._open_output_failed("query_invalid")
+            return
+        self._submit_query(query, anchor=self._open_request, target_count=PAGE_SIZE, trigger="open-output")
 
     def show_view(self, mode: str, *, persist: bool = True) -> None:
         if mode not in self.modes:
