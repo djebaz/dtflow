@@ -6,9 +6,11 @@ from statistics import median
 
 
 def estimate_queue_seconds(
-    counts: dict, durations: tuple[float, ...] | list[float],
+    counts: dict,
+    durations: tuple[float, ...] | list[float],
     running_starts: tuple[str, ...] | list[str] | None = None,
-    *, now: datetime | None = None,
+    *,
+    now: datetime | None = None,
 ) -> float | None:
     """Estimate remaining wall time using settled durations and active reservations."""
     running = counts.get("running", 0)

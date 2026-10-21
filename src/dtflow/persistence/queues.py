@@ -834,13 +834,17 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 ).fetchone()
                 if resumed:
                     queue["resume_event_id"] = resumed["event_id"]
-            queue["running_started_at_utc"] = [
-                item["updated_at_utc"]
-                for item in connection.execute(
-                    "SELECT updated_at_utc FROM queue_items WHERE queue_id=? AND state='running' ORDER BY item_id",
-                    (row["queue_id"],),
-                )
-            ] if queue["status"] == "running" else []
+            queue["running_started_at_utc"] = (
+                [
+                    item["updated_at_utc"]
+                    for item in connection.execute(
+                        "SELECT updated_at_utc FROM queue_items WHERE queue_id=? AND state='running' ORDER BY item_id",
+                        (row["queue_id"],),
+                    )
+                ]
+                if queue["status"] == "running"
+                else []
+            )
             latest_timing = connection.execute(
                 "SELECT at_utc, detail_json FROM queue_events WHERE queue_id=? AND kind='timing_snapshot' ORDER BY event_id DESC LIMIT 1",
                 (row["queue_id"],),

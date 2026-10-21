@@ -141,14 +141,18 @@ class QueueDispatcher:
                 if event["kind"] == "item_settled" and event["detail"].get("state") == "succeeded"
             ]
             counts = view["summary"]
-            running_starts = [
-                item["updated_at_utc"] for item in view["items"] if item["state"] == "running"
-            ]
+            running_starts = [item["updated_at_utc"] for item in view["items"] if item["state"] == "running"]
             estimate = estimate_queue_seconds(counts, durations, running_starts)
-            eta = math.ceil(estimate) if estimate is not None else (0 if not counts["pending"] and not counts["running"] else None)
+            eta = (
+                math.ceil(estimate)
+                if estimate is not None
+                else (0 if not counts["pending"] and not counts["running"] else None)
+            )
             await self._record_event(queue_id, "timing_snapshot", {"elapsed_seconds": elapsed, "eta_seconds": eta})
         except Exception as exc:
-            diagnostic_event(log, "queue.timing_snapshot_not_recorded", level=logging.WARNING, data={"reason": type(exc).__name__})
+            diagnostic_event(
+                log, "queue.timing_snapshot_not_recorded", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
 
     @staticmethod
     def _backend_event_detail(item_id: str, request: ResolvedGenerationRequest, event: BackendEvent) -> dict[str, Any]:
