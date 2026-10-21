@@ -223,6 +223,32 @@ def render_inspector_fit_states(shell, out, category):
             assert page.itemBackendLabel.height() > page.itemBackendLabel.fontMetrics().height()
             actions_fit()
             save(form, out, "queues-51-inspector-long-backend")
+            # An unbroken model/LoRA identifier must wrap inside the actual New queue summary card.
+            shell.queue.open_composer()
+            summary_names = ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Cap", "Note")
+            summary_labels = [getattr(page, f"composerSummary{name}Label") for name in summary_names]
+            previous_text = [label.text() for label in summary_labels]
+            try:
+                model = "z_image_turbo_" + "long_checkpoint_identifier_" * 5 + ".ckpt"
+                lora = "realisticsnapshot_zimage_turbov5_" + "rank64_variant_" * 5 + ".ckpt"
+                page.composerSummaryBackendLabel.setText("cloud · 192.168.1.142:7859")
+                page.composerSummaryModelLabel.setText(model)
+                page.composerSummaryLorasLabel.setText(f"{lora}: 0.94\\n{lora}: 1.00")
+                fits(page.queueInspector)
+                for label in summary_labels:
+                    assert label.wordWrap() and label.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored
+                    left = label.mapTo(scroll.viewport(), QPoint(0, 0)).x()
+                    right = label.mapTo(scroll.viewport(), QPoint(label.width(), 0)).x()
+                    assert 0 <= left < right <= scroll.viewport().width(), (label.objectName(), left, right)
+                assert page.composerSummaryModelLabel.height() > page.composerSummaryModelLabel.fontMetrics().height()
+                assert page.composerSummaryLorasLabel.height() > page.composerSummaryLorasLabel.fontMetrics().height()
+                card = page.composerSummaryBox
+                assert card.mapTo(scroll.viewport(), QPoint(card.width(), 0)).x() <= scroll.viewport().width()
+                save(form, out, "queues-52-composer-long-identifiers")
+            finally:
+                for label, previous in zip(summary_labels, previous_text, strict=True):
+                    label.setText(previous)
+                shell.queue.close_composer()
         # Keep the previously widest inspector mounted and verify that it cannot widen Generate after navigation.
         form.generationNavigationButton.click()
         fits(shell.generation_page.generationInspector)
