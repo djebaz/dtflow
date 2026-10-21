@@ -69,6 +69,8 @@ Owner report during work on 2026-10-22: “i'm smoke testing , it works”. Reco
 
 Executed at owner request: `uv run ruff format .` completed successfully (1 file reformatted, 391 files unchanged) after the required environment readiness step. No local lint, syntax check, pytest, render or build was run. Automatic CI on the pushed implementation is separate evidence and is not claimed by this record.
 
+Owner subsequently reported `test_prepare_adds_and_binds_the_lora_and_adding_it_again_reconciles_and_binds` failing. Source inspection identified an ordering regression: the single-file batch path published the selected LoRA before its final registry refresh/“Receipt bound” presentation. Single-file preparation now defers adding/binding to that existing registry callback, preserving the old observable completion ordering; multi-file preparation retains per-file binding. The existing test was not weakened or changed, and no local pytest was run to verify this correction.
+
 - [ ] User: accept a file, restart, and confirm the picker restores that runtime's folder; cancellation does not change it.
 - [ ] User: missing/inaccessible folder and malformed/newer preference fallback, including a save failure that does not stop explicit preparation.
 - [ ] User: multiple distinct files, duplicate selection, mixed confirmed/failed/unknown receipts, all-failed and single-file behavior; each admitted file is handled once and bindings/weights remain correct.

@@ -400,8 +400,10 @@ class LoraAssetPanel:
                 )
             if record is not None and failure is None:
                 self._records[record["asset_id"]] = record
+                # Single-file completion adds/binds in the existing final registry callback.
                 if (
                     state == "confirmed"
+                    and len(self._prepare_files) > 1
                     and self._backend() == self._prepare_backend
                     and self._ownership_revision == self._prepare_revision
                 ):
