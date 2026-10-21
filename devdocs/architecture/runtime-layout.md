@@ -1,5 +1,7 @@
 # Runtime and test evidence layout
 
+`<state>/prepare_preferences.json` is version-1 durable convenience state for the cloud LoRA Prepare picker: a bounded `folders` map keyed by the shared runtime-environment key. It stores the last accepted selection's parent directory, never file contents or upload/credential history. Paths are not translated between runtimes. Reads are size-bounded, writes atomic, and unreadable/newer schemas are left unchanged. It is outside disposable cache categories, including with `--no-cache`; fallback to the state directory does not create the remembered folder.
+
 The disposable browsing publication is `<state>/cache/derived/gallery_snapshot.sqlite3` (independent snapshot schema 1). It projects committed gallery metadata and removal availability for read-only Windows/WSL fallback, not execution or mutation authority. Session completion and clean close request publication only when changed or missing; Derived cleanup may remove it and `--no-cache` bypasses it. It contains private saved prompts/settings/paths, so never attach it as a public diagnostic log. See [publication, concurrency and pending acceptance](gallery-snapshot.md).
 
 ## Ownership and current implementation

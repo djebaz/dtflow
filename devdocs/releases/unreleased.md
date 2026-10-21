@@ -8,6 +8,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 - Queue item table with saved-result thumbnails, prompt/model/LoRA/parameter columns, observed durations and an item inspector with Open in Images. No dispatch or database-schema change.
 - Development-mode diagnostics summarize queue thumbnail outcomes/timings and record Open in Images handoff outcomes without prompts, image identities, paths or raw error text.
+- Cloud LoRA Prepare remembers its picker folder per runtime and accepts multiple converted `.ckpt` files for sequential preparation. Count-based progress and final summaries distinguish confirmed, failed, unresolved and unstarted files; selected weights are preserved, uncertain files are never automatically retried, and failures emit privacy-safe diagnostics.
 
 ## Changed
 
@@ -17,5 +18,5 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Release audit
 
-- PRs: #150.
-- Scope: Post-5.1.0 Queue item-table/inspector delivery and review corrections; pending merge and scoped acceptance, not a published feature release.
+- PRs: #150, #151.
+- Scope: Post-5.1.0 Queue item-table/inspector delivery and review corrections merged through #150; #151 adds Prepare folder persistence and sequential multi-file preparation, pending acceptance/merge. Not a published feature release.
