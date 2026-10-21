@@ -17,6 +17,7 @@ import traceback
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -256,6 +257,8 @@ def render_inspector_fit_states(shell, out, category):
                 document.setPlainText(lora_label.text())
                 document.setTextWidth(lora_label.contentsRect().width())
                 assert lora_label.height() >= document.size().height(), (lora_label.height(), document.size().height())
+                shell.queue._summary_fit.refit()  # the label heights are fitted on a deferred pass; let it settle first
+                QTest.qWait(150)
                 lora_bottom = lora_label.mapTo(page.composerSummaryBoxContents, QPoint(0, lora_label.height())).y()
                 items_top = page.composerSummaryItemsCaption.mapTo(page.composerSummaryBoxContents, QPoint(0, 0)).y()
                 assert items_top >= lora_bottom, (items_top, lora_bottom)
@@ -1296,6 +1299,7 @@ def render_item_table_states(shell, out, state):
     Rows follow devdocs/mockups/2026-10-21-queues-item-table-text-preview.md. Nothing is persisted, posted or dispatched.
     """
     form, queue, page = shell.form, shell.queue, shell.queue_page
+    real_submit = shell.runner.submit  # the patch below holds every submit; thumbnail decoding must really run
     queue_id = "offline-queue-table"
     stamp = "2026-10-21T19:40:00+00:00"
     long_lora = "ultra_realistic_characters_style_detail_v12.safetensors"
@@ -1395,6 +1399,8 @@ def render_item_table_states(shell, out, state):
         queue._read_done(([view], view, 2), None)
         queue._timer.stop()
         model, table = queue.model, page.queueItemsView
+        model.thumbnails._runner = SimpleNamespace(submit=real_submit)  # offline decode of the generated fixture PNGs
+        model.thumbnails.clear()  # earlier states left jobs held by the patched submit occupying every decode slot
         assert model.columnCount() == 7 and model.rowCount() == len(items)
         wait_for(lambda: model.thumbnails.pixmap(items[0]["artifacts"][0]) is not None)  # async, bounded decode
         assert model.gauge_scale == 1.5  # the largest recorded weight in this fixture; a 0.94 LoRA fills 63%
@@ -1416,7 +1422,8 @@ def render_item_table_states(shell, out, state):
         assert len(lines) == 2 and not lines[0].endswith("…")
         # Hover text is read-only: all LoRAs (including the 55-character name) and both prompts.
         tip = model.index(1, COL_LORAS).data(Qt.ItemDataRole.ToolTipRole)
-        assert long_lora in tip and "background_bokeh_v2.safetensors" in tip
+        assert long_lora.removesuffix(".safetensors") in tip and "background_bokeh_v2" in tip  # all four LoRAs
+        assert ".safetensors" not in tip  # extensions are hidden in the hover too
         prompt_tip = model.index(1, COL_PROMPT).data(Qt.ItemDataRole.ToolTipRole)
         assert "Positive" in prompt_tip and negative.rstrip(".") in prompt_tip
         assert model.index(0, 0).data(Qt.ItemDataRole.ToolTipRole) == ""  # the preview is a bounded overlay, not <img>

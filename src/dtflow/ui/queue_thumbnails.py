@@ -88,6 +88,7 @@ class QueueThumbnails(QObject):
         self._failed.clear()
         self._wanted.clear()
         self._identity.clear()
+        self._active = 0  # slots held by abandoned jobs are released; late results are ignored by epoch
 
     def _pump(self) -> None:
         while self._active < CONCURRENCY and self._waiting:
