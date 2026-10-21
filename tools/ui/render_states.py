@@ -2455,6 +2455,10 @@ def render_queue_popover_states(shell, capture):
         assert popover.add_button.isEnabled() and not popover.start_button.isEnabled()
         capture("queues-47-popover-queues-while-running", (popover, header))
         popover.hide()
+    with patch.object(type(shell.activity), "generating", new_callable=PropertyMock, return_value=True):
+        popover.open_at(header)
+        assert popover.add_button.isEnabled() and not popover.start_button.isEnabled()
+        popover.hide()
     popover.repeat_option.setChecked(True)
     popover.repeat_spin.setValue(1)
     for name in ("planStepsEdit", "planSeedsEdit"):
