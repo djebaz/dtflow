@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.composition import BACKENDS
-from dtflow.core.compute_units import estimate_compute_units
+from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
 from dtflow.core.models import (
     BackendEvent,
@@ -1399,6 +1399,19 @@ class GenerationPage:
         )
         self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
 
+    def _compute_units_estimate(self) -> ComputeUnitEstimate:
+        """Read the same current form settings for the meter and explicit inspector."""
+        page = self.page
+        return estimate_compute_units(
+            model_id=page.modelCombo.currentText().strip(),
+            width_px=page.widthSpinBox.value(),
+            height_px=page.heightSpinBox.value(),
+            steps=page.stepsSpinBox.value(),
+            guidance=page.guidanceSpinBox.value(),
+            has_loras=bool(self.lora.loras),
+            operation="inpaint" if page.inpaintModeButton.isChecked() else "txt2img",
+        )
+
     def _update_compute_units(self, *_args) -> None:
         """Show an offline, non-authoritative DT+ complexity estimate for one T2I image.
 
@@ -1410,16 +1423,7 @@ class GenerationPage:
         meter.setVisible(name == "cloud")
         if name != "cloud":
             return
-        page = self.page
-        estimate = estimate_compute_units(
-            model_id=page.modelCombo.currentText().strip(),
-            width_px=page.widthSpinBox.value(),
-            height_px=page.heightSpinBox.value(),
-            steps=page.stepsSpinBox.value(),
-            guidance=page.guidanceSpinBox.value(),
-            has_loras=bool(self.lora.loras),
-            operation="inpaint" if page.inpaintModeButton.isChecked() else "txt2img",
-        )
+        estimate = self._compute_units_estimate()
         units = estimate.units
         if units is None:
             state, text, value = "unavailable", "unavailable", 0
@@ -1449,7 +1453,30 @@ class GenerationPage:
             catalogue=self._catalogue,
             inventory=self._inventory_snapshot,
         )
-        InlineNotice.information(self.page, "Checkpoint details", details.as_text())
+        text = details.as_text()
+        if self._backend()[0] == "cloud":
+            estimate = self._compute_units_estimate()
+            result = "unavailable" if estimate.units is None else f"{estimate.units:,}".replace(",", "\u202f") + " CU"
+            text += (
+                f"\n\nLocal Compute Units estimate: {result}\n{estimate.reason}\n\n"
+                "Source: Draw Things ComputeUnits.swift and architecture-specific InstructionCount functions; "
+                "local Python port, not a DT+ server quote.\n"
+                "The exact-file community metadata selects the architecture, modifiers, token padding and "
+                "guidance rules; it does not contain instruction counts. Those counts come from the "
+                "architecture-specific code, using the current size, steps and guidance plus profile defaults.\n"
+                "General formula: ceil((M × steps × max(strength, 0.05) + C) × 5.14816e-12 × B). "
+                "M is the per-step instruction count and C the fixed count, with effective CFG accounted for "
+                "by each architecture. This text-to-image slice uses strength 1, one output and B = 1. "
+                "Other families, including the 2.5 multiplier families and two-stage Würstchen, are unsupported.\n"
+                "Supported ports: FLUX.1, FLUX.2 Dev/Klein, Z-Image, Cosmos 2.5, Qwen-Image/2.1, "
+                "Krea 2 and Ideogram 4. Edits, selected LoRAs, unsupported modifiers and missing exact "
+                "metadata show unavailable instead of a guessed number.\n"
+                "The meter spans 0–40 000; red means the display limit, not a quota or rejection. "
+                "No provider request or quota lookup is made. This is not a balance, entitlement, billing "
+                "proof or compatibility guarantee. Server policy and effective settings may differ; "
+                "comparison with Draw Things' displayed estimate remains owner acceptance."
+            )
+        InlineNotice.information(self.page, "Checkpoint details", text)
 
     def _show_unclassified_models(self) -> None:
         view = self._catalogue.view()

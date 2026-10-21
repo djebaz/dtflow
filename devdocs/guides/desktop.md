@@ -325,6 +325,13 @@ The read-only inline inspector combines independently maintained sources:
 - **Provider inventory**: last observed listing status and timestamp, not a guarantee of availability or generation.
 
 A filename suffix, when shown, is a filename observation and does not prove weight format/runtime compatibility.
-Missing descriptions are shown as unknown. Viewing details does not contact a provider, submit a generation,
-modify model selection, or calculate cloud Compute Units. Existing cloud preflight remains authoritative.
+Missing descriptions are shown as unknown. Viewing details does not contact a provider, submit a generation or modify model selection. Existing cloud preflight remains authoritative.
+
+### Local Compute Units estimate
+
+On direct DT+ Cloud, the Checkpoint label row includes a read-only meter for one text-to-image output, refreshed from the current checkpoint, dimensions, steps, guidance and LoRA/mode selection. It shows a number with narrow no-break thousands separators, or `unavailable`; Local and fake hide it. Blue fills a fixed 0–40 000 scale, and at or above 40 000 the full meter becomes red. Red is a display threshold, not a quota, rejection or credit balance. There is no hover tooltip: open Checkpoint details for the formula, current result, provenance and limitations.
+
+The Python port uses architecture-specific Draw Things instruction-count functions, selected by existing exact-file community metadata, plus current settings and DTFlow profile defaults. Supported ports cover FLUX.1, FLUX.2 Dev/Klein, Z-Image, Cosmos 2.5, Qwen-Image/2.1, Krea 2 and Ideogram 4. Unknown/missing exact metadata, unsupported architectures/modifiers, selected LoRAs and image edits show unavailable, never a guessed zero. The catalogues remain independent and unchanged.
+
+This offline estimate is not verified server billing, remaining credits, request authorization or model compatibility. It does not change generation, cloud authentication, preflight, queue scheduling or saved requests, and makes no provider/quota calls. Windows interaction and comparison against Draw Things' displayed estimate remain owner acceptance gates; source presence is not parity verification. See the [implementation and source provenance](../plans/2026-10-22-compute-units-local-estimate.md).
 

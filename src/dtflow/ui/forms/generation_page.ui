@@ -134,6 +134,9 @@
             <string>sectionContents</string>
            </property>
            <layout class="QFormLayout" name="backendSummaryForm">
+            <property name="verticalSpacing">
+             <number>8</number>
+            </property>
             <item row="0" column="0">
              <widget class="QLabel" name="backendSummaryLabel">
               <property name="text">
@@ -186,92 +189,116 @@
              </widget>
             </item>
             <item row="3" column="0" colspan="2">
-             <widget class="QWidget" name="checkpointLabelRow">
-              <layout class="QHBoxLayout" name="checkpointLabelLayout">
-               <property name="leftMargin">
-                <number>0</number>
-               </property>
-               <property name="topMargin">
-                <number>0</number>
-               </property>
-               <property name="rightMargin">
-                <number>0</number>
-               </property>
-               <property name="bottomMargin">
-                <number>0</number>
-               </property>
-               <property name="spacing">
-                <number>4</number>
-               </property>
+             <widget class="QWidget" name="checkpointGroup">
+              <layout class="QVBoxLayout" name="checkpointGroupLayout">
+               <property name="leftMargin"><number>0</number></property>
+               <property name="topMargin"><number>4</number></property>
+               <property name="rightMargin"><number>0</number></property>
+               <property name="bottomMargin"><number>0</number></property>
+               <property name="spacing"><number>4</number></property>
                <item>
-                <widget class="QLabel" name="modelLabel">
-                 <property name="text">
+                <widget class="QWidget" name="checkpointLabelRow">
+                 <property name="minimumSize">
+                  <size><width>0</width><height>20</height></size>
+                 </property>
+                 <property name="maximumSize">
+                  <size><width>16777215</width><height>20</height></size>
+                 </property>
+                 <layout class="QHBoxLayout" name="checkpointLabelLayout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="spacing">
+                   <number>4</number>
+                  </property>
+                  <item>
+                   <widget class="QLabel" name="modelLabel">
+                    <property name="text">
+                     <string>Checkpoint</string>
+                    </property>
+                    <property name="textRole" stdset="0">
+                     <string>caption</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QToolButton" name="checkpointDetailsButton">
+                    <property name="minimumSize">
+                     <size>
+                      <width>20</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>20</width>
+                      <height>20</height>
+                     </size>
+                    </property>
+                    <property name="autoRaise">
+                     <bool>true</bool>
+                    </property>
+                    <property name="accessibleName">
+                     <string>Checkpoint details</string>
+                    </property>
+                    <property name="toolTip">
+                     <string>Inspect published metadata and last-observed provider availability. Does not submit a request.</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QProgressBar" name="computeUnitsMeter">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Expanding" vsizetype="Fixed"/>
+                    </property>
+                    <property name="minimumSize">
+                     <size>
+                      <width>48</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16777215</width>
+                      <height>16</height>
+                     </size>
+                    </property>
+                    <property name="maximum">
+                     <number>40000</number>
+                    </property>
+                    <property name="value">
+                     <number>0</number>
+                    </property>
+                    <property name="alignment">
+                     <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+                    </property>
+                    <property name="textVisible">
+                     <bool>true</bool>
+                    </property>
+                    <property name="accessibleName">
+                     <string>Estimated Compute Units</string>
+                    </property>
+                    <property name="state" stdset="0">
+                     <string>unavailable</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
+                </widget>
+               </item>
+               <item>
+                <widget class="SearchableComboBox" name="modelCombo">
+                 <property name="accessibleName">
                   <string>Checkpoint</string>
-                 </property>
-                 <property name="textRole" stdset="0">
-                  <string>caption</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QToolButton" name="checkpointDetailsButton">
-                 <property name="minimumSize">
-                  <size>
-                   <width>20</width>
-                   <height>20</height>
-                  </size>
-                 </property>
-                 <property name="maximumSize">
-                  <size>
-                   <width>20</width>
-                   <height>20</height>
-                  </size>
-                 </property>
-                 <property name="autoRaise">
-                  <bool>true</bool>
-                 </property>
-                 <property name="accessibleName">
-                  <string>Checkpoint details</string>
-                 </property>
-                 <property name="toolTip">
-                  <string>Inspect published metadata and last-observed provider availability. Does not submit a request.</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QProgressBar" name="computeUnitsMeter">
-                 <property name="sizePolicy">
-                  <sizepolicy hsizetype="Expanding" vsizetype="Fixed"/>
-                 </property>
-                 <property name="minimumSize">
-                  <size>
-                   <width>48</width>
-                   <height>16</height>
-                  </size>
-                 </property>
-                 <property name="maximumSize">
-                  <size>
-                   <width>16777215</width>
-                   <height>16</height>
-                  </size>
-                 </property>
-                 <property name="maximum">
-                  <number>40000</number>
-                 </property>
-                 <property name="value">
-                  <number>0</number>
-                 </property>
-                 <property name="alignment">
-                  <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
-                 </property>
-                 <property name="textVisible">
-                  <bool>true</bool>
-                 </property>
-                 <property name="accessibleName">
-                  <string>Estimated Compute Units</string>
-                 </property>
-                 <property name="state" stdset="0">
-                  <string>unavailable</string>
                  </property>
                 </widget>
                </item>
@@ -279,13 +306,6 @@
              </widget>
             </item>
             <item row="4" column="0" colspan="2">
-             <widget class="SearchableComboBox" name="modelCombo">
-              <property name="accessibleName">
-               <string>Checkpoint</string>
-              </property>
-             </widget>
-            </item>
-            <item row="6" column="0" colspan="2">
              <widget class="QCheckBox" name="includeCloudCheck">
               <property name="text">
                <string>Include DT+ Cloud</string>
@@ -298,7 +318,7 @@
               </property>
              </widget>
             </item>
-            <item row="7" column="0" colspan="2">
+            <item row="5" column="0" colspan="2">
              <widget class="QCheckBox" name="includeNicheCheck">
               <property name="text">
                <string>Include niche models</string>
@@ -308,40 +328,51 @@
               </property>
              </widget>
             </item>
-            <item row="8" column="0" colspan="2">
-             <widget class="QPushButton" name="unclassifiedModelsButton">
-              <property name="text">
-               <string>Unclassified checkpoints</string>
-              </property>
-              <property name="visible">
-               <bool>false</bool>
-              </property>
-              <property name="toolTip">
-               <string>Inspect provider checkpoints that are available but not classified by the DTFlow catalogue.</string>
-              </property>
-             </widget>
-            </item>
-            <item row="9" column="0" colspan="2">
-             <widget class="QPushButton" name="refreshInventoryButton">
-              <property name="text">
-               <string>Refresh inventory</string>
-              </property>
-              <property name="accessibleName">
-               <string>Refresh backend inventory</string>
-              </property>
-             </widget>
-            </item>
-            <item row="10" column="0" colspan="2">
-             <widget class="QLabel" name="inventoryEvidenceLabel">
-              <property name="text">
-               <string>Inventory has not been observed. Refresh to discover models.</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
+            <item row="6" column="0" colspan="2">
+             <widget class="QWidget" name="inventoryActionsGroup">
+              <layout class="QVBoxLayout" name="inventoryActionsLayout">
+               <property name="leftMargin"><number>0</number></property>
+               <property name="topMargin"><number>0</number></property>
+               <property name="rightMargin"><number>0</number></property>
+               <property name="bottomMargin"><number>0</number></property>
+               <property name="spacing"><number>6</number></property>
+               <item>
+                <widget class="QPushButton" name="unclassifiedModelsButton">
+                 <property name="text">
+                  <string>Unclassified checkpoints</string>
+                 </property>
+                 <property name="visible">
+                  <bool>false</bool>
+                 </property>
+                 <property name="toolTip">
+                  <string>Inspect provider checkpoints that are available but not classified by the DTFlow catalogue.</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="refreshInventoryButton">
+                 <property name="text">
+                  <string>Refresh inventory</string>
+                 </property>
+                 <property name="accessibleName">
+                  <string>Refresh backend inventory</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="inventoryEvidenceLabel">
+                 <property name="text">
+                  <string>Inventory has not been observed. Refresh to discover models.</string>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                 <property name="role" stdset="0">
+                  <string>secondary</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
              </widget>
             </item>
             <property name="leftMargin">

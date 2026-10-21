@@ -20,6 +20,8 @@
 
 ## Delivered additions and cross-cutting behavior
 
+- **PR #153, source implemented/pending acceptance:** a local architecture-specific Compute Units estimator feeds the Cloud-only Generate checkpoint meter and read-only details explanation. Exact-file metadata and current form/profile settings remain independent; no provider/billing/dispatch changes. No local tests, checks or renders were run; Windows interaction and comparison with Draw Things remain unverified. See the [estimate plan](plans/2026-10-22-compute-units-local-estimate.md).
+
 - **PR #151, source implemented/pending acceptance:** cloud LoRA Prepare remembers the picker folder per runtime and accepts multiple `.ckpt` files for sequential preparation with honest receipt summaries, stable weights, failure diagnostics and backend/credential/shutdown admission guards. No provider/schema/packaging changes; no agent-run local tests, validation, renders, uploads or builds. Owner reported “it works” while smoke testing the working checkout; this does not establish all failure/platform gates. See the [delivery plan](plans/2026-10-22-prepare-folder-and-multiple-files.md).
 
 - **PR #150, merged:** recorded item settings/duration, cached thumbnails and Open in Images are implemented in source. Review corrections enforce live gallery authority, bounded revalidation, mapped availability, owned cancellation and composer evidence isolation. Focused tests and offline fixture definitions were extended; see the [current plan](plans/2026-10-21-queues-item-table-render-first.md) for evidence, not the older design-only PR description.

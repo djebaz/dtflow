@@ -876,6 +876,13 @@ def render_generate_configuration_states(shell, out):
         assert meter.isHidden()
         form.backendCombo.setCurrentText("cloud")
         controller._update_compute_units()
+        with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
+            page.checkpointDetailsButton.click()
+        detail = shell.inline.form.inlineTextBrowser.toPlainText()
+        assert "14\u202f250 CU" in detail and "5.14816e-12" in detail
+        assert "not a DT+ server quote" in detail
+        snap("generate-49a-compute-units-details")
+        clear()
         render_inspector_fit_states(shell, out, "generate")
 
 

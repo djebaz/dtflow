@@ -26,6 +26,7 @@ Confirmations, progress and results share one thin bottom overlay without resizi
 ### Image generation and inspection
 
 Compose prompts and control the model, seed, dimensions, steps, guidance and sampler; samplers are filtered to the selected model and Draw Things' official presets are available read-only.
+Direct DT+ Cloud shows a local Compute Units estimate for supported text-to-image checkpoints, with its formula and limits in Checkpoint details; this is not a server billing quote or credit balance.
 After inventory refresh, classified model discovery narrows the active provider's available
 checkpoints by All/Image/Video, base-model family and exact checkpoint; Prime models are shown
 by default and an explicit option adds Niche models. In Local mode, `Include DT+ Cloud` can add classified catalogue checkpoints that a Draw Things bridge may omit from its reported local inventory. Checkpoint selection opens a searchable list with case-insensitive substring matching; an explicit custom-identifier action keeps unclassified checkpoints usable without DTFlow guessing their family or compatibility.

@@ -2,7 +2,8 @@
 
 The arithmetic follows the instruction-count path of drawthingsai/draw-things-community:
 ModelZoo/Sources/ComputeUnits.swift (blob b4d64fd012d3d603c04a623fa18943c9fdd15307)
-and SwiftDiffusion/Sources/Models/InstructionCount/*.swift. It is not a server
+and SwiftDiffusion/Sources/Models/InstructionCount/*.swift, all at source commit
+82bd56c81a313060dceb34092bcf9d671c39a739. It is not a server
 quote, credit balance, hardware benchmark, compatibility check, or request permit.
 """
 
