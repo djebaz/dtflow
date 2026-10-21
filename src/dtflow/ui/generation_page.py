@@ -701,6 +701,8 @@ class GenerationPage:
         A running generation never locks the form: its request is an immutable snapshot taken at Generate, so edits only
         shape the next request (issue #133).
         """
+        if not busy and getattr(getattr(self, "lora", None), "preparing", False):
+            return  # unrelated inventory completions cannot release an admitted Prepare session
         if busy != self._busy:
             diagnostic_event(
                 log,
@@ -1515,6 +1517,7 @@ class GenerationPage:
 
     def credentials_changed(self):
         """Recheck the selected credential identity; saving the same key must not erase evidence."""
+        self.lora.invalidate_prepare_ownership()
         if self._backend()[0] == "cloud":
             self._inventory_revision += 1
             self.request_cached(revalidate=True)

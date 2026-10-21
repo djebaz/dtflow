@@ -60,7 +60,7 @@ Open **Logs** beside Help to browse application and gallery events in the deskto
 
 ### Explicit cloud assets and offline exploration
 
-Prepare converted cloud LoRA files through a separate, confirmed upload action and inspect
+Prepare one or several converted cloud LoRA files through explicit file selection, remembering the picker folder separately per runtime, and inspect
 local asset receipts for reuse. Generation never hides an upload inside an ordinary request.
 
 The fake provider lets you explore the same forms, progress, outputs and queue controls
