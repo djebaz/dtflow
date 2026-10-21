@@ -438,6 +438,8 @@ Checkable section cards require an operable header control (a keyboard-accessibl
 checkbox synchronized with the native group-box state); a passive label cannot
 replace a native group-box toggle. Parent activity disabling still applies.
 
+The New queue inspector summary uses the existing narrow right rail and a two-column form. Its values and explanatory note must allow horizontal shrinkage, wrapping long checkpoint and LoRA identifiers (including unbroken names) without enlarging the card or clipping the rail. The offline `queues-52-composer-long-identifiers` render covers the minimum rail width; native Windows DPI acceptance remains separate.
+
 Queues keeps the queue header at its natural height. The items table or
 empty-state region receives the flexible workspace height; empty-state title,
 guidance stay together in its center.
