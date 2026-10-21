@@ -17,7 +17,7 @@ Work in **one dedicated draft PR**, with coherent commits pushed at each approve
 6. **Owner functional approval is mandatory.** Review the real desktop behavior (especially native Windows layout and interaction) before starting test additions, running tests, lint/format gates, or general documentation updates.
 7. **Only after functional approval:** add/adjust the smallest authoritative tests, run agreed validations, update applicable user and developer documentation plus release notes, record evidence and prepare the PR for merge. Update **this plan alone** earlier when scope, decisions or checkpoint outcomes change.
 
-**Before functional approval:** do not add or run pytest/other test suites, or independently run lint/format/packaging/CI workflows. Only this plan and the owner-requested fictional Markdown specimen are permitted early documentation changes; no unrelated documentation edits. Running `render_states.py` in the Qt mockup stage is an explicitly requested **visual capture**, not a claim of test, performance, Windows/DPI or end-to-end acceptance. Opening/pushing a PR can trigger repository-managed CI automatically; distinguish that from tests explicitly invoked by the implementer. Never run real generation, upload, training, or potentially billable operations for this task.
+**Before functional approval:** do not add or run pytest/other test suites, or independently run lint/format/packaging/CI workflows. Only this plan and the owner-requested HTML-derived Markdown specimen are permitted early documentation changes; no unrelated documentation edits. Running `render_states.py` in the Qt mockup stage is an explicitly requested **visual capture**, not a claim of test, performance, Windows/DPI or end-to-end acceptance. Opening/pushing a PR can trigger repository-managed CI automatically; distinguish that from tests explicitly invoked by the implementer. Never run real generation, upload, training, or potentially billable operations for this task.
 
 ## Current source audit (before implementation)
 
@@ -35,9 +35,9 @@ Unverified until the integration audit: the precise selected-item request/plan-m
 
 ## Design reference and research-review findings (2026-10-21)
 
-The owner selected **Images → Detail** as the information-priority reference and **Images → List** as the thumbnail, compact row and styling reference. The intermediate prototype is Markdown only, not HTML. The current implementation is in [`gallery_page.py`](../../src/dtflow/ui/gallery_page.py), the canonical [Images Designer form](../../src/dtflow/ui/forms/gallery_detail_page.ui), and shared [QSS](../../src/dtflow/resources/styles/dtflow_dark.qss).
+The owner selected **Images → Detail** as the information-priority reference and **Images → List** as the thumbnail, compact row and styling reference. The original interim specimen was Markdown only; the **later owner-supplied standalone HTML now supersedes it as the design authority**. The current implementation is in [`gallery_page.py`](../../src/dtflow/ui/gallery_page.py), the canonical [Images Designer form](../../src/dtflow/ui/forms/gallery_detail_page.ui), and shared [QSS](../../src/dtflow/resources/styles/dtflow_dark.qss).
 
-- **Reuse visually:** a compact, image-led row with the user's **current Images → List thumbnail setting** as the sizing reference; about **64 × 48 logical pixels** is illustrative, not a mandated fixed size, restrained cell spacing and separators, row-wide hover/selection states, readable value hierarchy, and familiar navigation to Image Detail. These are *proposed starting dimensions and styling*, not approved measurements or runtime results.
+- **Reuse visually:** a compact, image-led row with the user's **current Images → List thumbnail setting** as the sizing reference; the **authoritative HTML uses a 64 × 64 square preview tile**; earlier 64 × 48 speculation is superseded, restrained cell spacing and separators, row-wide hover/selection states, readable value hierarchy, and familiar navigation to Image Detail. These are *proposed starting dimensions and styling*, not approved measurements or runtime results.
 - **Adapt semantically:** a two-line positive prompt, repeated **checkpoint filenames**, repeated **LoRA filenames** with weight gauges, steps, CFG, sampler, state label and recorded backend duration are primary; output filenames, seed, dimensions, progress and internal hashes are not separate central columns. Retain a separate explicit state and recorded duration column; missing or pending output uses a neutral placeholder, not a fabricated preview.
 - **Do not copy structurally:** Images List currently uses `QTableWidget`, while Queues already owns a model-backed `QTableView`. Keep `QueueItemModel`, queue selection/filters, bounded asynchronous image delivery and queue-specific controls. Do not bring gallery bulk checkboxes, export/delete actions or a second gallery controller into Queues.
 
@@ -57,7 +57,7 @@ The older Queues UI-kit relative link was corrected from `../../design-system/..
 
 ## Design authority and observed HTML differences (2026-10-21)
 
-**New source of design truth:** owner-uploaded \`Queues Item Table (standalone).html\`, SHA-256 \`b57dffcfafb6ab2ecb49d4264bdabb1f491f561a588b6dc4c87bcea0e0ff3445\`. Its bundled markup, styles, fictional data, and interaction handlers were inspected. **The HTML file is not currently tracked in PR #150; keep the exact original artifact available separately**. The [derived Markdown table and inspector reference](../mockups/2026-10-21-queues-item-table-text-preview.md) is secondary, not a replacement for it. No browser runtime, Qt render, native Windows interaction, or inferred backend execution is claimed from source inspection.
+**New source of design truth:** owner-uploaded `Queues Item Table (standalone).html`, SHA-256 `b57dffcfafb6ab2ecb49d4264bdabb1f491f561a588b6dc4c87bcea0e0ff3445`. Its bundled markup, styles, fictional data, and interaction handlers were inspected. **The HTML file is not currently tracked in PR #150; keep the exact original artifact available separately**. The [derived Markdown table and inspector reference](../mockups/2026-10-21-queues-item-table-text-preview.md) is secondary, not a replacement for it. No browser runtime, Qt render, native Windows interaction, or inferred backend execution is claimed from source inspection.
 
 **Priority order for this feature:** owner-supplied HTML for layout/visual hierarchy/read-only hover/row-selection intent; canonical Qt/shared design system for native implementation and accessibility; durable queue/services contracts for operational truth and safety. Resolve inconsistencies explicitly rather than copying illustrative widgets or backend assumptions from an HTML fixture.
 
@@ -65,14 +65,14 @@ The older Queues UI-kit relative link was corrected from `../../design-system/..
 
 | Concern | Earlier Markdown / plan | Owner HTML now authoritative |
 | --- | --- | --- |
-| LoRA list | Maximum **3** inline, plus \`…\` hover for all | **Every configured LoRA inline**, one row each, with elided filename, **44 px weight gauge and 34 px numeric value**; hover on the **whole LoRAs cell** reveals all entries; no \`…\` control. |
-| LoRA weight scale | Await verification | HTML illustrates \`min(100%, weight / 3 × 100%)\`; respect the actual 0.0–3.0 supported editor range and preserve exact numeric weight. Do not fabricate strength from generation progress. |
+| LoRA list | Maximum **3** inline, plus `…` hover for all | **Every configured LoRA inline**, one row each, with elided filename, **44 px weight gauge and 34 px numeric value**; hover on the **whole LoRAs cell** reveals all entries; no `…` control. |
+| LoRA weight scale | Await verification | HTML illustrates `min(100%, weight / 3 × 100%)`; respect the actual 0.0–3.0 supported editor range and preserve exact numeric weight. Do not fabricate strength from generation progress. |
 | Prompt/LoRA width | Prompt fixed around one-third of table | **Prompt and LoRAs equal flexible 2fr tracks** inside the specimen's seven-track grid; no hard percentage goal. One naturally wrapped positive prompt is line-clamped to **two visible lines** and only truncated at the end; complete positive/negative text on hover. |
 | Thumbnail | Speculative 64 × 48 | **64 × 64** square tile (aspect-fit content for actual saved outputs), with **220 × 220** hover overlay. The HTML contains placeholder text, **not real generated images**. |
 | Status fixtures | Succeeded/Running/Failed/Queued | **Six HTML items:** two succeeded, one running, one **no result**, one pending, one cancelled. Semibold colored **text only**. Failed/save-failed cases must still be represented by real app error-red semantics even though missing in sample. |
 | Table width | Fit/clip in responsive center | **Minimum 1000 px scrollable table content width**, preserving column tracks and permitting horizontal scroll in a narrow center. |
 | Inspector | Conceptual fields/sections, arrangement deferred | **ITEM EVIDENCE** panel; **Selected item** (Item, Attempt, Backend, Outputs); **Additional information** (Seed, Image dimensions, Operation); **Technical details** (Outcome); then conditional actions and creation mini-log. |
-| Hover | Overlay trigger for thumbnail/prompt and extra LoRAs | Fixed **nonblocking overlays** on thumbnail, prompt, and **entire LoRAs cell**. Preserve row click. HTML's \`pointer-events:none\` prompt popup cannot establish scrollable long-text interaction despite \`overflow:auto\`; solve access to full long text in Qt rather than copying that inconsistency. |
+| Hover | Overlay trigger for thumbnail/prompt and extra LoRAs | Fixed **nonblocking overlays** on thumbnail, prompt, and **entire LoRAs cell**. Preserve row click. HTML's `pointer-events:none` prompt popup cannot establish scrollable long-text interaction despite `overflow:auto`; solve access to full long text in Qt rather than copying that inconsistency. |
 
 ### Central table: confirmed content and layout
 
@@ -82,21 +82,21 @@ The older Queues UI-kit relative link was corrected from `../../design-system/..
 | --- | --- | --- |
 | Preview | 64 × 64 dark square with neutral placeholder; hover popup 220 × 220. | Bounded, asynchronous cached image rendering for actual committed output only; aspect-fit; never imply missing result is saved. |
 | Prompt | Dedicated flexible **2fr** track, one continuous positive prompt, **two lines** maximum. | Clip by rendered pixel metrics, not per-line character count; full positive/negative hover; no click interception. |
-| Model | Bold **checkpoint filename with extension**, including punctuation; track \`minmax(150px,1fr)\`. | Repeat each row, wrap long unbroken names within allotted column without expanding table unexpectedly. |
+| Model | Bold **checkpoint filename with extension**, including punctuation; track `minmax(150px,1fr)`. | Repeat each row, wrap long unbroken names within allotted column without expanding table unexpectedly. |
 | LoRAs | Flexible **2fr** track; **all names inline**, one LoRA per line with compact blue gauge and exact numeric weight; full-cell hover popup 400 px. | **No three-item cap or ellipsis**; 55-character synthetic filename case; gauge and number remain visible when names elide; row height grows with entries. Confirm bounded rendering at 100–200 items. |
-| Parameters | **Steps** bold; CFG and long sampler in smaller secondary lines; \`minmax(120px,.9fr)\`. | Preserve sampler identifiers, wrapping and hierarchy. Seed and dimensions stay in inspector. |
+| Parameters | **Steps** bold; CFG and long sampler in smaller secondary lines; `minmax(120px,.9fr)`. | Preserve sampler identifiers, wrapping and hierarchy. Seed and dimensions stay in inspector. |
 | Status | Semibold semantic **text label only** in an 84 px track. | Pending neutral; succeeded green; running, no result and cancelled amber; failed/save_failed red. No status progress bar. The underlying item state vocabulary stays authoritative. |
-| Backend duration | 16 px stopwatch **header icon only**, 64 px track; compact right-aligned monospace value or \`—\`. | Tooltip/accessible label **Backend duration**. Show observed backend timing only; never substitute ETA. |
+| Backend duration | 16 px stopwatch **header icon only**, 64 px track; compact right-aligned monospace value or `—`. | Tooltip/accessible label **Backend duration**. Show observed backend timing only; never substitute ETA. |
 
-**Layout grid:** \`72px minmax(0,2fr) minmax(150px,1fr) minmax(0,2fr) minmax(120px,0.9fr) 84px 64px\`; gaps 12 px, horizontal padding 12 px, minimum scrollable content width 1000 px **in the standalone HTML**. Port visually, but test real Qt metrics and scrolling; the HTML is not a guarantee of native DPI fit. The row uses a selected navy fill and fine divider. Status styling is the same color vocabulary already used by DTFlow; no new badge should be invented.
+**Layout grid:** `72px minmax(0,2fr) minmax(150px,1fr) minmax(0,2fr) minmax(120px,0.9fr) 84px 64px`; gaps 12 px, horizontal padding 12 px, minimum scrollable content width 1000 px **in the standalone HTML**. Port visually, but test real Qt metrics and scrolling; the HTML is not a guarantee of native DPI fit. The row uses a selected navy fill and fine divider. Status styling is the same color vocabulary already used by DTFlow; no new badge should be invented.
 
 **Right inspector:** no image and no saved-output filename. Clicking the row updates only complementary **ITEM EVIDENCE** and the retained mini-log. Buttons are **Open in Images**, **Open folder**, **Retry item** with real availability derived from recorded evidence and the existing retry/credit safeguards. The HTML's illustrative button flags are not proofs of production availability.
 
 **Narrow widths:** inspector disappears below the shared-shell 1100 logical-pixel breakpoint, and **nothing is relocated or substituted** for its secondary details. Preserve readable horizontally scrollable center table. HTML left rail is illustrative (272 px wide/220 px narrow); reconcile with Qt's shared 248–300 px Designer constraints and preserve navigation.
 
-**Existing queue controls are not redefined by sample HTML.** In particular, its decorative \`Max at once\` spinner is 1–4, while the real app supports 1–10; preserve the real contract. The HTML's queue header chip uses an amber Running border, while actual queue-level and item-level color mappings differ; keep queue-level semantics authoritative outside the redesigned **item** status cell.
+**Existing queue controls are not redefined by sample HTML.** In particular, its decorative `Max at once` spinner is 1–4, while the real app supports 1–10; preserve the real contract. The HTML's queue header chip uses an amber Running border, while actual queue-level and item-level color mappings differ; keep queue-level semantics authoritative outside the redesigned **item** status cell.
 
-**Data and safety:** every item repeats its own resolved checkpoint/LoRAs/settings; never infer setup from nearby rows. No model inference, billing, uploads, dispatch, schema modifications, or fabricated artifact/gallery identity for mockup validation. The queue creation mini-log remains visible in the inspector. Missing/unknown/cancelled outcomes use recorded evidence and honest text. Use existing \`QueueItemModel\` / \`QTableView\`, not a transplanted gallery \`QTableWidget\`.
+**Data and safety:** every item repeats its own resolved checkpoint/LoRAs/settings; never infer setup from nearby rows. No model inference, billing, uploads, dispatch, schema modifications, or fabricated artifact/gallery identity for mockup validation. The queue creation mini-log remains visible in the inspector. Missing/unknown/cancelled outcomes use recorded evidence and honest text. Use existing `QueueItemModel` / `QTableView`, not a transplanted gallery `QTableWidget`.
 
 ## Implementation tasks
 
@@ -115,14 +115,14 @@ The older Queues UI-kit relative link was corrected from `../../design-system/..
 - [x] Complete the historical owner column-by-column Markdown review; subsequently **supersede conflicting specifications with the owner-provided HTML** and inspect its static behavior/data.
 - [x] Update the derived Markdown specimen with **six sample rows** (including pending, no result and cancelled), all-inline LoRAs, revised inspector sections, grid dimensions, and observed mockup limitations.
 - [ ] Establish fresh baseline screenshots from the existing named queue render states. No historical screenshot labeled as newly captured.
-- [ ] Translate the owner's HTML arrangement and seven column tracks using the canonical Designer \`queue_page.ui\`, shared QSS/tokens, and existing model-view seam. Do not recreate another standalone HTML design.
+- [ ] Translate the owner's HTML arrangement and seven column tracks using the canonical Designer `queue_page.ui`, shared QSS/tokens, and existing model-view seam. Do not recreate another standalone HTML design.
 - [ ] Mock **64 × 64** aspect-fit tiles, full positive/negative prompt hover, naturally wrapped two-line positive prompt, **all inline LoRAs** with **44 px gauge + 34 px value** and **full-column LoRA hover**, long model/sampler identifiers, colored plain-text status and minimal stopwatch duration header.
 - [ ] Stress zero/one/three/**four or more** LoRAs, **55-character** filename, long and negative prompts, absent previews/durations, both very long and short sampler identifiers, and nontrivial row heights. Keep identifiers accessible and clicks/keyboard row selection dependable.
 - [ ] Include the six HTML status fixtures **and extra failed/save_failed cases** for coverage of the real app vocabulary; render with the existing semantic palette, not ad-hoc status colors.
 - [ ] Translate the three-section **ITEM EVIDENCE** inspector, conditional actions and creation mini-log; no image and no narrow-width fallback.
 - [ ] Verify the horizontal scrolling model of a **1000 px minimum specimen table**, inspector auto-hide below 1100 px and central panel usability at 1080 × 800 and 800 × 680. Do not quietly change actual queue concurrency caps based on the illustrative HTML spinner.
 - [ ] Mock/read through **220/380/400 px** nonblocking hover previews and ensure full text can be accessed without stolen clicks; the HTML's noninteractive overflowing prompt overlay is an explicit design/Qt-accessibility gap.
-- [ ] Extend \`tools/ui/render_states.py\` with named synthetic fixtures and capture actual Qt screenshots. Report as offscreen **layout evidence only**, not Windows DPI, performance, mouse/keyboard or native acceptance.
+- [ ] Extend `tools/ui/render_states.py` with named synthetic fixtures and capture actual Qt screenshots. Report as offscreen **layout evidence only**, not Windows DPI, performance, mouse/keyboard or native acceptance.
 - [ ] Push cohesive Qt mockup commits and obtain **explicit owner visual approval of the Qt translation** before wiring real queue data. Do not add or run tests at this stage.
 
 ### M2 — Integrate the approved design, without tests/docs yet
@@ -144,7 +144,7 @@ The older Queues UI-kit relative link was corrected from `../../design-system/..
 
 ## Explicit non-goals
 
-No scheduler, concurrency, remote cancellation, retry/replay, state-schema or model/back-end protocol changes. No third-party UI library or HTML mockup. No unbounded decoding/polling, real model inference or uploads for mockup/validation. Do not conflate per-item duration with queue ETA, a synthetic fixture with a saved result, or offscreen screenshots with Windows/DPI acceptance.
+No scheduler, concurrency, remote cancellation, retry/replay, state-schema or model/back-end protocol changes. No new third-party UI library or second HTML mockup; the owner-supplied standalone HTML is the design reference. No unbounded decoding/polling, real model inference or uploads for mockup/validation. Do not conflate per-item duration with queue ETA, a synthetic fixture with a saved result, or offscreen screenshots with Windows/DPI acceptance.
 
 ## Evidence and checkpoint log
 
