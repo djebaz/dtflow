@@ -1,7 +1,7 @@
 # Queues #127: item table and inspector, implementation post-mortem
 
 **Date:** 2026-10-21 · **Scope:** Qt translation of the owner HTML mockup, plus the data, thumbnail and navigation work it needed.
-**Status of evidence:** the owner ran `render_states.py --category queues` (58 states, including `queues-60` to `queues-63`) and a real app run, and reported the layout good. The author could not run Qt or Python. Everything below marked *unverified* has not been executed by the author. No tests were added or run (plan gate, M3).
+**Status of evidence:** the owner ran `render_states.py --category queues` to completion (59 states, 46.9 s, including `queues-60` to `queues-64`) and a real app run, and reported the layout good. The author reviewed the `queues-60`, `61`, `63` and `64` images and found no defects. The author could not run Qt or Python. Everything below marked *unverified* has not been executed by the author. No tests were added or run (plan gate, M3).
 
 ## 1. What was built
 
@@ -15,7 +15,7 @@
 | Page | `ui/queue_page.py`, `forms/queue_page.ui` | Installs delegate, header, 76 px rows. New inspector card **Additional information** (Seed, Image dimensions, Operation, Outcome) and **Open in Images** button with `set_images_hook()`. |
 | Navigation | `ui/gallery_page.py`, `ui/main_window.py` | `GalleryPage.open_output(identity)` loads the output's page through the anchored query and opens Detail. `MainWindow._open_output_in_images` switches to Images and calls it. |
 | Style | `dtflow_dark.qss` | `QTableView#queueItemsView` rules and `QLabel#queueThumbPreview`. No new tokens. |
-| Renders | `tools/ui/render_states.py` | `render_item_table_states` (`queues-60` to `queues-64`), `header_end_visible`, fixture fields for the older `present()` states, asserts for columns, tooltips, scale, header class, hook identity. |
+| Renders | `tools/ui/render_states.py` | `render_item_table_states` (`queues-60` to `queues-64`; `-64` captures the hover preview window), `header_end_visible`, fixture fields for the older `present()` states, asserts for columns, tooltips (extension-less names), scale, header class, hook identity, plus the real-`submit` handoff and `thumbnails.clear()` the async fixture needs. |
 | Mockup | `Queues Item Table.dc.html` (design project) | Shell, table, inspector and hover overlays used as the visual reference; standalone HTML export. |
 
 ## 2. Decisions made during review (owner-directed)
@@ -42,6 +42,9 @@
 | Preview decoded the full original | Rich-text `<img>` tooltip, synchronous | Bounded asynchronous overlay |
 | Table thumbnails decoded on the GUI thread | Synchronous paint-time decode | Asynchronous loader with LRU |
 | Hover preview too small | Copied the 220 px mockup box | Up to 440 px, frame hugs the image |
+| Render timeout waiting for the first thumbnail | The fixture function patches `runner.submit` to hold every job; held jobs never finish, so they kept all 3 decode slots occupied | Fixture hands the loader the real `submit` and calls `clear()`; `QueueThumbnails.clear()` now also releases decode slots (late results are still ignored by epoch) |
+| Render assert failed on the LoRA hover | The assert looked for `.safetensors` names after extensions were hidden | Assert checks the extension-less names and that no extension appears |
+| Render assert failed once in `queues-52` (Items caption overlapped the LoRA label) | Label heights are fitted on a deferred pass and the first check measured too early; passed on re-run | Check now refits and waits 150 ms before measuring, as the second check already did. Treat as a timing flake unless it recurs |
 
 ## 4. Unverified, risks and open items
 
@@ -49,6 +52,7 @@
 - Disk-cache reuse assumes `persistence.gallery.get_record` plus `services.gallery.item_from_record` yield the item `_image` needs. Not exercised against real data.
 - `gallery_identity` is `attempt_id:index` in the recorded artifact list (including `metadata.json`), derived from `persistence/gallery.py`; not verified on real data. A filtered-out output leaves the Images view unchanged with no message.
 - `request_json` key `negative_prompt` is assumed; the other keys were read from `queues.py`.
+- Cosmetic: with extensions hidden, a short model name such as `Z-Image-Turbo_v2` still wraps after the underscore in the Model column (about 15 px too wide). Widening the column would take space from Prompt or Parameters; left as is.
 - Tooltips are Qt tooltips: no gauge in the LoRA hover, and the prompt tooltip is not scrollable (the plan's known gap).
 - Below about 1000 px the table scrolls horizontally; Parameters, Status and duration need scrolling. Not changed.
 - Import order in `queue_page.py` (new `queue_thumbnails` import before `queue_presenter`) will fail isort.
