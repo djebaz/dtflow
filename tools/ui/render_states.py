@@ -225,13 +225,14 @@ def render_inspector_fit_states(shell, out, category):
             save(form, out, "queues-51-inspector-long-backend")
             # An unbroken model/LoRA identifier must wrap inside the actual New queue summary card.
             shell.queue.open_composer()
+            shell.queue._preview_timer.stop()  # Freeze the offline fixture while inspecting layout.
             summary_names = ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Cap", "Note")
             summary_labels = [getattr(page, f"composerSummary{name}Label") for name in summary_names]
             previous_text = [label.text() for label in summary_labels]
             try:
                 model = "z_image_turbo_" + "long_checkpoint_identifier_" * 5 + ".ckpt"
                 lora = "realisticsnapshot_zimage_turbov5_" + "rank64_variant_" * 5 + ".ckpt"
-                page.composerSummaryBackendLabel.setText("cloud · 192.168.1.142:7859")
+                page.composerSummaryBackendLabel.setText("cloud · offline.test:7859")
                 page.composerSummaryModelLabel.setText(model)
                 page.composerSummaryLorasLabel.setText(f"{lora}: 0.94\n{lora}: 1.00")
                 fits(page.queueInspector)
