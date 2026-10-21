@@ -59,7 +59,7 @@ The older Queues UI-kit relative link was corrected from `../../design-system/..
 
 The central table lists generation items in the **selected existing queue**, not the left queue list or New queue composer. The [Markdown pre-mockup](../mockups/2026-10-21-queues-item-table-text-preview.md) provides fictional **central-table and inspector tables**, including an explicitly synthetic **55-character LoRA filename with extension** for layout stress. It is not a Qt mockup or a claim about source data.
 
-**Seven central columns, in order:** **Preview | Prompt | Model | LoRAs | Parameters | Status | Backend duration**. No separate generation-position, seed, filename, item ID, attempt, output count or operation column.
+**Seven central columns, in order:** **Preview | Prompt | Model | LoRAs | Parameters | Status | Backend duration**. No separate generation-position, seed, saved-output filename, item ID, attempt, output count or operation column.
 
 | Column | Content and hierarchy | Interaction and constraints |
 | --- | --- | --- |
@@ -71,7 +71,7 @@ The central table lists generation items in the **selected existing queue**, not
 | Status | **Single textual state label** with semantic styling. | **No step counter, progression or extra progress bar**, which already exists elsewhere. |
 | Backend duration | **Stopwatch icon only in header** (accessible tooltip/name `Backend duration`); minimal-width duration values, right-aligned (e.g. `31.2 s` or `125.8 s`); `—` when unrecorded. | Use a design-system-consistent icon and the **narrowest practical column** with enough padding; never substitute queue ETA. |
 
-**Right inspector:** owner accepts the **Markdown inspector content for now**; defer details of its exact arrangement to the Qt mockup. Preserve the creation **mini-log**. Selected-item section contains only complementary evidence: **seed, dimensions, backend and operation when relevant, stable technical IDs, outcome/failure/uncertainty details**, and eligible **Open in Images**, **Open folder**, **Retry item** actions with existing safety semantics. **No large image preview or filename field.** Clicking a table row updates this inspector when visible.
+**Right inspector:** owner accepts the **Markdown inspector content for now**; defer details of its exact arrangement to the Qt mockup. Preserve the creation **mini-log**. Selected-item section contains only complementary evidence: **seed, dimensions, backend and operation when relevant, stable technical IDs, outcome/failure/uncertainty details**, and eligible **Open in Images**, **Open folder**, **Retry item** actions with existing safety semantics. **No large image preview or saved-output filename field.** Clicking a table row updates this inspector when visible.
 
 **Narrow widths:** let the shared shell hide the right inspector. **No Details disclosure below the table and no replacement detail mode**. Primary comparison data stays in the central table. Evaluate clipping, readable scroll and overflow at 1080 × 800 and 800 × 680 during Qt mockup review.
 
