@@ -231,7 +231,7 @@ def estimate_compute_units(
     padded = spec.get("padded_text_encoding_length")
     if padded is not None and (type(padded) is not int or padded < 0):
         return ComputeUnitEstimate(None, "Invalid published token-length metadata.")
-    tokens = padded or (256 if version == "krea_2" else 512)
+    tokens = padded or (256 if version == "krea_2" else 77 if version == "cosmos2.5_2b" else 512)
 
     if version == "qwen_image_2.1":
         main, fixed = _qwen21(height * width, tokens, steps, cfg)
