@@ -302,6 +302,8 @@ class GenerationPage:
         self._collapse_icon = QIcon(str(icons / "minimize.svg"))
         page.generateButton.setIcon(QIcon(str(icons / "sparkles.svg")))
         page.generateButton.setIconSize(QSize(16, 16))
+        page.checkpointDetailsButton.setIcon(QIcon(str(icons / "document.svg")))
+        page.checkpointDetailsButton.setIconSize(QSize(16, 16))
         page.expandPromptButton.setIconSize(QSize(16, 16))
         self._set_prompt_expanded(page.expandPromptButton.isChecked())
         page.seedEdit.setToolTip(
