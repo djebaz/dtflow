@@ -793,7 +793,6 @@ def render_generate_configuration_states(shell, out):
             page.prepareAssetButton.click()
             assert "asset" in strip.rows and not page.prepareAssetButton.isEnabled()
             snap("generate-35-asset-preparing")
-        controller._set_busy(False)
         clear()
         # Receipt states are synthetic registry observations; no file, account or metadata worker is read.
         record = {
@@ -829,6 +828,30 @@ def render_generate_configuration_states(shell, out):
         assert lora._bind_confirmed(record["identifier"])
         assert lora.receipt_ids() == (record["asset_id"],)
         snap("generate-40-asset-receipt-bound")
+        clear()
+
+        # Multi-file controller composition with held workers and synthetic receipts only.
+        files = [str(shell.state_dir / f"offline-prepare-{number}.ckpt") for number in range(3)]
+        with patch.object(lora, "choose_asset_file", return_value=files):
+            page.prepareAssetButton.click()
+        assert lora.preparing and "Preparing 1 of 3" in page.assetStatusLabel.text()
+        snap("generate-43-prepare-multiple-start")
+        lora._prepared(dict(confirmed, asset_id="offline-first", identifier="offline-first.ckpt"), None)
+        assert lora.preparing and "Preparing 2 of 3" in page.assetStatusLabel.text()
+        snap("generate-44-prepare-multiple-progress")
+        lora._prepared(record, None)
+        lora._prepared(None, OSError("Offline synthetic unresolved result"))
+        assert not lora.preparing and "1 confirmed, 0 failed, 2 unresolved" in page.assetStatusLabel.text()
+        snap("generate-45-prepare-multiple-partial")
+        clear()
+        with (
+            patch.object(lora, "choose_asset_file", return_value=files[:1]),
+            patch("dtflow.ui.lora_panel.load_prepare_folder", side_effect=OSError("Offline preference failure")),
+        ):
+            page.prepareAssetButton.click()
+        assert "asset-folder" in strip.rows and lora.preparing
+        snap("generate-46-prepare-folder-unavailable")
+        lora._prepared(record, None)
         clear()
         render_inspector_fit_states(shell, out, "generate")
 

@@ -157,10 +157,20 @@ async def test_ten_items_ten_slots_start_before_completion(state):
 
 
 @pytest.mark.asyncio
-async def test_ten_items_four_slots_roll_without_a_group_barrier(state):
+async def test_ten_items_four_slots_roll_without_a_group_barrier(state, monkeypatch):
     """3B-O1: items 1-4 start, out-of-order completion admits item 5 at once, bounded, identity stable."""
     backend = ScriptedBackend(4)
     async with Harness(state, backend) as h:
+        claimed_seeds = []
+        claim_next = h.store.claim_next
+
+        async def record_claim(queue_id, limit):
+            claim = await claim_next(queue_id, limit)
+            if claim is not None:
+                claimed_seeds.append(claim[1].seed)
+            return claim
+
+        monkeypatch.setattr(h.store, "claim_next", record_claim)
         queue_id = await h.store.create_queue(BACKEND, 4, [item(n) for n in range(10)])
         assert await h.states(queue_id) == ["pending"] * 10  # a new queue is paused: nothing is eligible yet
         run = h.run(queue_id)
@@ -178,16 +188,18 @@ async def test_ten_items_four_slots_roll_without_a_group_barrier(state):
             async with asyncio.timeout(SETTLE):
                 await poll()
 
-        await watch(lambda: backend.started == [0, 1, 2, 3])
+        await watch(lambda: len(backend.started) == 4)
         await asyncio.sleep(0.05)
-        assert backend.started == [0, 1, 2, 3]  # the cap holds while all four are active
+        assert sorted(backend.started) == [0, 1, 2, 3]  # the cap holds while all four are active
         backend.release(2)
         await watch(lambda: 4 in backend.started)
-        assert backend.started == [0, 1, 2, 3, 4] and backend.active == 4  # refilled before the group completed
+        assert sorted(backend.started) == [0, 1, 2, 3, 4] and backend.active == 4  # refill before the group completed
         backend.release(*range(10))
         final = await asyncio.wait_for(run, SETTLE)
     assert backend.peak <= 4 and peak_reserved <= 4
-    assert backend.started == list(range(10)) and backend.completed[0] == 2  # dispatch in queue order
+    assert claimed_seeds == list(range(10))  # durable admission is in queue order
+    # Concurrent preparation can reach the backend out of order after admission; every seed still starts once.
+    assert sorted(backend.started) == list(range(10)) and backend.completed[0] == 2
     assert [x["position"] for x in final["items"]] == list(range(1, 11))
     assert [x["seed"] for x in final["items"]] == list(range(10))  # presentation keeps queue order
     assert {x["state"] for x in final["items"]} == {"succeeded"} and final["status"] == "finished"

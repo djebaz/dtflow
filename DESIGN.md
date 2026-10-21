@@ -559,6 +559,8 @@ later-generation credit implications in the asset note and Prepare tooltip inste
 Cancelling the picker does nothing; reject a changed backend or newly busy state
 before starting asynchronous preparation. Service-level receipt/retry safeguards remain.
 
+Prepare supports multiple explicitly selected converted LoRA files and remembers the picker folder per runtime. Keep a single owned activity row with count-based “Preparing N of M” detail, then one summary separating confirmed, failed, unresolved and unstarted files; do not invent elapsed progress percentages or replace selected weights. Folder-preference failures use a separate amber result row and never block explicit preparation. Navigation does not cancel admitted uploads; backend/credential changes stop only further admission after the current file settles.
+
 Checkpoint and LoRA choices use inline substring search and custom-identifier entry.
 
 The compact checkpoint-details and status-bar About buttons use a 20 × 20 logical-pixel button with a 16 × 16 icon and zero padding. Do not combine a fixed 20 px About button with wide text-button padding that squeezes its icon.
