@@ -14,10 +14,20 @@ from dataclasses import dataclass
 from dtflow.core.model_profiles import exact_model_spec, profile_for
 
 CALIBRATION = 5.14816e-12
-SUPPORTED = frozenset({
-    "flux1", "flux2", "flux2_4b", "flux2_9b", "z_image",
-    "cosmos2.5_2b", "qwen_image", "qwen_image_2.1", "krea_2", "ideogram_4",
-})
+SUPPORTED = frozenset(
+    {
+        "flux1",
+        "flux2",
+        "flux2_4b",
+        "flux2_9b",
+        "z_image",
+        "cosmos2.5_2b",
+        "qwen_image",
+        "qwen_image_2.1",
+        "krea_2",
+        "ideogram_4",
+    }
+)
 TEXT_ONLY_MODIFIERS = frozenset({"none", "kontext", "kontext_kv"})
 
 
@@ -46,8 +56,13 @@ def _flux1(image: int, tokens: int, embed: bool) -> tuple[int, int]:
     main = _patches(image, c, 16) + double * (12 * _dense(seq, c, c) + attn)
     for index in range(single):
         projection = image if index == single - 1 else seq
-        main += (3 * _dense(seq, c, c) + _dense(projection, c, c)
-                 + _dense(projection, c, 4 * c) + _dense(projection, 4 * c, c) + attn)
+        main += (
+            3 * _dense(seq, c, c)
+            + _dense(projection, c, c)
+            + _dense(projection, c, 4 * c)
+            + _dense(projection, 4 * c, c)
+            + attn
+        )
     main += _dense(image, c, 64)
     fixed = _dense(1, 256, c) + _dense(1, c, c)
     if embed:
@@ -69,14 +84,17 @@ def _flux2(image: int, tokens: int, version: str, embed: bool) -> tuple[int, int
     main = _patches(image, c, 32)
     for _ in range(double):
         for rows in (tokens, image):
-            main += (4 * _dense(rows, c, c) + 2 * _dense(rows, c, 3 * c)
-                     + _dense(rows, 3 * c, c))
+            main += 4 * _dense(rows, c, c) + 2 * _dense(rows, c, 3 * c) + _dense(rows, 3 * c, c)
         main += attn
     for index in range(single):
         projected = image if index == single - 1 else seq
-        main += (3 * _dense(seq, c, c) + _dense(projected, c, c)
-                 + 2 * _dense(projected, c, 3 * c)
-                 + _dense(projected, 3 * c, c) + attn)
+        main += (
+            3 * _dense(seq, c, c)
+            + _dense(projected, c, c)
+            + 2 * _dense(projected, c, 3 * c)
+            + _dense(projected, 3 * c, c)
+            + attn
+        )
     main += _dense(image, c, 128)
     fixed = _dense(tokens, 4096, c) + _dense(1, 256, c) + _dense(1, c, c)
     if embed:
@@ -86,8 +104,9 @@ def _flux2(image: int, tokens: int, version: str, embed: bool) -> tuple[int, int
 
 
 def _z_block(keys: int, queries: int, c: int, segments: tuple[int, ...] = ()) -> int:
-    count = (2 * _dense(keys, c, c) + 2 * _dense(queries, c, c)
-             + 2 * _dense(queries, c, 10240) + _dense(queries, 10240, c))
+    count = (
+        2 * _dense(keys, c, c) + 2 * _dense(queries, c, c) + 2 * _dense(queries, c, 10240) + _dense(queries, 10240, c)
+    )
     if len(segments) > 1 and keys == queries:
         count += sum(_attention(1, c // 128, 128, part, part) for part in segments)
     else:
@@ -98,32 +117,42 @@ def _z_block(keys: int, queries: int, c: int, segments: tuple[int, ...] = ()) ->
 def _z_image(image: int, tokens: int, c: int, layers: int) -> tuple[int, int]:
     rounded = (image + 31) // 32 * 32
     seq = rounded + tokens
-    main = (_dense(image, 64, c) + 2 * _z_block(rounded, rounded, c)
-            + (layers - 1) * _z_block(seq, seq, c)
-            + _z_block(seq, image, c) + _dense(image, c, 64))
+    main = (
+        _dense(image, 64, c)
+        + 2 * _z_block(rounded, rounded, c)
+        + (layers - 1) * _z_block(seq, seq, c)
+        + _z_block(seq, image, c)
+        + _dense(image, c, 64)
+    )
     if c != 3840:  # Cosmos 2.5 shares this main path but has no fixed path.
         return main, 0
     rt = (tokens + 31) // 32 * 32
-    fixed = (_dense(tokens * 2, 2560, c) + _dense(1, 256, 1024)
-             + _dense(1, 1024, 256)
-             + 2 * _z_block(rt * 2, rt * 2, c, (rt, rt))
-             + (2 * 4 + layers * 4 + 1) * _dense(1, 256, c))
+    fixed = (
+        _dense(tokens * 2, 2560, c)
+        + _dense(1, 256, 1024)
+        + _dense(1, 1024, 256)
+        + 2 * _z_block(rt * 2, rt * 2, c, (rt, rt))
+        + (2 * 4 + layers * 4 + 1) * _dense(1, 256, c)
+    )
     return main, fixed
 
 
 def _qwen21(count: int, tokens: int, steps: int, cfg: int) -> tuple[int, int]:
     c = 4096
     rows = cfg * count
-    main = (_dense(rows, 64, c)
-            + 32 * (4 * _dense(rows, c, c) + 3 * _dense(rows, c, 12288)
-                    + _attention(cfg, 32, 128, count, count + tokens))
-            + _dense(rows, c, 64))
+    main = (
+        _dense(rows, 64, c)
+        + 32 * (4 * _dense(rows, c, c) + 3 * _dense(rows, c, 12288) + _attention(cfg, 32, 128, count, count + tokens))
+        + _dense(rows, c, 64)
+    )
     text = cfg * tokens
-    fixed = (2 * _dense(text, c, c) + _dense(cfg * (steps + 1), 256, c)
-             + 6 * _dense(cfg * (steps + 1), c, c)
-             + 31 * (4 * _dense(text, c, c) + 3 * _dense(text, c, 12288)
-                     + _attention(cfg, 32, 128, tokens, tokens))
-             + 2 * _dense(text, c, c))
+    fixed = (
+        2 * _dense(text, c, c)
+        + _dense(cfg * (steps + 1), 256, c)
+        + 6 * _dense(cfg * (steps + 1), c, c)
+        + 31 * (4 * _dense(text, c, c) + 3 * _dense(text, c, 12288) + _attention(cfg, 32, 128, tokens, tokens))
+        + 2 * _dense(text, c, c)
+    )
     return main, fixed
 
 
@@ -135,22 +164,23 @@ def _qwen(image: int, tokens: int) -> tuple[int, int]:
     for index in range(layers):
         main += 3 * _dense(tokens, c, c) + 3 * _dense(image, c, c) + attn
         if index != layers - 1:
-            main += (_dense(tokens, c, c) + _dense(tokens, c, 4 * c)
-                     + _dense(tokens, 4 * c, c))
+            main += _dense(tokens, c, c) + _dense(tokens, c, 4 * c) + _dense(tokens, 4 * c, c)
         main += _dense(image, c, c) + _dense(image, c, 4 * c) + _dense(image, 4 * c, c)
     main += _dense(image, c, 64)
-    fixed = (_dense(tokens, 3584, c) + _dense(1, 256, c)
-             + ((layers - 1) * 12 + 8 + 3) * _dense(1, c, c))
+    fixed = _dense(tokens, 3584, c) + _dense(1, 256, c) + ((layers - 1) * 12 + 8 + 3) * _dense(1, c, c)
     return main, fixed
 
 
-def _krea_block(query: int, keys: int, hidden: int, heads: int,
-                kv_heads: int, intermediate: int, segments: tuple[int, ...] = ()) -> int:
+def _krea_block(
+    query: int, keys: int, hidden: int, heads: int, kv_heads: int, intermediate: int, segments: tuple[int, ...] = ()
+) -> int:
     kv_width = hidden // heads * kv_heads
-    count = (3 * _dense(query, hidden, hidden)
-             + 2 * _dense(keys, hidden, kv_width)
-             + 2 * _dense(query, hidden, intermediate)
-             + _dense(query, intermediate, hidden))
+    count = (
+        3 * _dense(query, hidden, hidden)
+        + 2 * _dense(keys, hidden, kv_width)
+        + 2 * _dense(query, hidden, intermediate)
+        + _dense(query, intermediate, hidden)
+    )
     if len(segments) > 1 and query == keys:
         count += sum(_attention(1, heads, hidden // heads, item, item) for item in segments)
     else:
@@ -161,20 +191,22 @@ def _krea_block(query: int, keys: int, hidden: int, heads: int,
 def _krea(image: int, tokens: int, cfg: int) -> tuple[int, int]:
     c, layers = 6144, 28
     seq = image + tokens
-    main = (_dense(image, 64, c)
-            + (layers - 1) * _krea_block(seq, seq, c, 48, 12, 16384)
-            + _krea_block(image, seq, c, 48, 12, 16384)
-            + _dense(image, c, 64))
+    main = (
+        _dense(image, 64, c)
+        + (layers - 1) * _krea_block(seq, seq, c, 48, 12, 16384)
+        + _krea_block(image, seq, c, 48, 12, 16384)
+        + _dense(image, c, 64)
+    )
     text_lengths = (tokens, tokens) if cfg > 1 else (0, tokens)
     length = sum(text_lengths)
     # Krea text fusion is run once, with one layerwise 12-token batch per text token.
-    fusion = (2 * length * _krea_block(12, 12, 2560, 20, 20, 6912)
-              + _dense(length * 2560, 12, 1)
-              + 2 * _krea_block(length, length, 2560, 20, 20, 6912,
-                                text_lengths if text_lengths[0] else ()))
+    fusion = (
+        2 * length * _krea_block(12, 12, 2560, 20, 20, 6912)
+        + _dense(length * 2560, 12, 1)
+        + 2 * _krea_block(length, length, 2560, 20, 20, 6912, text_lengths if text_lengths[0] else ())
+    )
     # Fixed count is per CFG image batch. Text fusion is not multiplied by CFG.
-    fixed_per_batch = (_dense(length, 2560, c) + _dense(length, c, c)
-                       + _dense(1, 256, c) + 7 * _dense(1, c, c))
+    fixed_per_batch = _dense(length, 2560, c) + _dense(length, c, c) + _dense(1, 256, c) + 7 * _dense(1, c, c)
     return main * cfg, fusion + fixed_per_batch * cfg
 
 
@@ -183,20 +215,30 @@ def _ideogram(image: int, tokens: int) -> tuple[int, int]:
     seq = image + tokens
 
     def block(query: int) -> int:
-        return (2 * _dense(query, c, c) + 2 * _dense(seq, c, c)
-                + _attention(1, c // 256, 256, query, seq)
-                + 2 * _dense(query, c, 12288) + _dense(query, 12288, c))
+        return (
+            2 * _dense(query, c, c)
+            + 2 * _dense(seq, c, c)
+            + _attention(1, c // 256, 256, query, seq)
+            + 2 * _dense(query, c, 12288)
+            + _dense(query, 12288, c)
+        )
 
-    main = (_dense(image, 128, c) + (layers - 1) * block(seq)
-            + block(image) + _dense(image, c, 128))
-    fixed = (_dense(tokens, 4096 * 13, c) + 2 * _dense(1, c, c)
-             + _dense(1, c, 512) + (layers * 4 + 1) * _dense(1, 512, c))
+    main = _dense(image, 128, c) + (layers - 1) * block(seq) + block(image) + _dense(image, c, 128)
+    fixed = (
+        _dense(tokens, 4096 * 13, c) + 2 * _dense(1, c, c) + _dense(1, c, 512) + (layers * 4 + 1) * _dense(1, 512, c)
+    )
     return main, fixed
 
 
 def estimate_compute_units(
-    *, model_id: str, width_px: int, height_px: int, steps: int,
-    guidance: float, has_loras: bool = False, operation: str = "txt2img",
+    *,
+    model_id: str,
+    width_px: int,
+    height_px: int,
+    steps: int,
+    guidance: float,
+    has_loras: bool = False,
+    operation: str = "txt2img",
 ) -> ComputeUnitEstimate:
     """Estimate one text-to-image output, declining unsupported or ambiguous inputs."""
     if operation != "txt2img":
