@@ -62,7 +62,7 @@ from dtflow.ui.planning_presenter import (
     SEED_POLICY_TEXT,
     summary_text,
 )
-from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit
+from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
@@ -321,6 +321,20 @@ class QueuePage:
             ),
             (page.closeComposerButton,),
         )
+        self._composer_grid_fit = ComposerGridFit(
+            page.queueComposerScroll,
+            page.planDrawGrid,
+            [
+                (getattr(page, f"planDraw{name}Label"), getattr(page, f"planDraw{name}Spin"))
+                for name in ("Models", "Seeds", "Steps", "Guidance", "Samplers", "Sizes", "Strengths", "LoraSets", "Loras")
+            ],
+            page.planMutationLayout,
+            [
+                (page.planShuffleCombo,),
+                (page.planDropLabel, page.planDropSpin),
+                (page.planAddLabel, page.planAddSpin),
+            ],
+        )
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
@@ -476,6 +490,8 @@ class QueuePage:
         page.composerSummaryBox.setVisible(self._composing)
         if self._composing:
             page.uncertaintyBox.setVisible(False)
+            self._actions_fit.refit()
+            self._composer_grid_fit.refit()
         self._sync()
 
     def _render_list(self) -> None:
