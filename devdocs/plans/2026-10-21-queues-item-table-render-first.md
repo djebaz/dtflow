@@ -7,7 +7,7 @@
 
 ## Owner workflow and approval gates
 
-Work in **one dedicated draft PR**, with coherent commits pushed at each approved checkpoint. The plan is the first commit; never implement the feature as a prerequisite for creating the plan PR.
+Work in **one dedicated draft PR**, with coherent commits pushed at each approved checkpoint. The plan is the first commit; never implement the feature as a prerequisite for creating the plan PR. The owner may review existing screenshots and request a preliminary mockup before authorizing a production Qt mockup; this does not bypass either approval gate.
 
 1. **Plan first.** Commit and push this plan and open the PR. No feature code, tests, UI renders or documentation changes in this checkpoint.
 2. **Qt mockup only.** Use the canonical Qt Designer form, shared tokens/QSS and `tools/ui/render_states.py` with isolated, synthetic offline fixtures. Render actual Qt screenshots for review; do not connect the proposed controls to live queue state yet. No separate HTML mockup.
@@ -28,18 +28,41 @@ Source inspected on the default branch on 2026-10-21; these are **code observati
 - `src/dtflow/ui/queue_page.py` polls summary rows for all queues and reads items/events only for the selected queue; it preserves per-item selection through `QueueItemModel`. The right inspector currently shows shortened item/attempt IDs, backend, output summary, **Open folder** and **Retry item**; it has no implemented image preview or Open in Images handoff.
 - `tools/ui/render_states.py` already has `render_active_queue_states()` and named queue states such as `queues-16-item-states` and `queues-17-item-inspection`, with synthetic read views and no actual dispatch. Extend these rather than create a second screenshot harness.
 - The repo's `DESIGN.md` and `AGENTS.md` require Qt Designer, shared style tokens/QSS, offline fixture renders for UI changes, bounded asynchronous image handling, honest outcome text and no work on the Qt event loop.
-- The [older Queues UI kit](../../design-system/ui_kits/queues/QueuesScreen.jsx) is historical and still depicts the ID-heavy table; it is **not** an approved #127 mockup.
+- The [older Queues UI kit](../design-system/ui_kits/queues/QueuesScreen.jsx) is historical and still depicts the ID-heavy table; it is **not** an approved #127 mockup.
 
 Unverified until the integration audit: the precise selected-item request/plan-metadata read API; the authoritative mapping from queue output identities to committed Images gallery identities; whether duration already exists on the selected-item projection; native Windows performance and width behavior.
+
+## Design reference and research-review findings (2026-10-21)
+
+The owner selected the existing **Images → List** as the first visual reference, not a new HTML prototype. The current implementation is in [`gallery_page.py`](../../src/dtflow/ui/gallery_page.py), the canonical [Images Designer form](../../src/dtflow/ui/forms/gallery_detail_page.ui), and shared [QSS](../../src/dtflow/resources/styles/dtflow_dark.qss).
+
+- **Reuse visually:** a compact, image-led row with about a **64 × 48 logical-pixel** aspect-fit thumbnail, restrained cell spacing and separators, row-wide hover/selection states, readable value hierarchy, and familiar navigation to Image Detail. These are *proposed starting dimensions and styling*, not approved measurements or runtime results.
+- **Adapt semantically:** queue position and actual per-item varied inputs take priority over image filenames, file size, prompt excerpts or internal hashes. Retain a separate explicit state and recorded duration column; missing or pending output uses a neutral placeholder, not a fabricated preview.
+- **Do not copy structurally:** Images List currently uses `QTableWidget`, while Queues already owns a model-backed `QTableView`. Keep `QueueItemModel`, queue selection/filters, bounded asynchronous image delivery and queue-specific controls. Do not bring gallery bulk checkboxes, export/delete actions or a second gallery controller into Queues.
+
+### Review finding P2 — item details when the right inspector is hidden
+
+**Plan gap, not a demonstrated runtime defect.** Per `DESIGN.md`, the responsive shared shell hides the right inspector below **1100 logical px**. An item must still expose its exact request, outcome, copyable IDs, preview when available and relevant actions, including **Open in Images**, at narrow widths.
+
+**First mockup proposal (subject to owner approval):** add a compact **selected-item details disclosure in the center, immediately below the items table**, reachable through a visible **Details** action for the selected row, Enter/double-click on the row, and keyboard navigation. When the right inspector is visible, keep the full presentation in the right rail and avoid a second persistent details panel. At narrow widths, activating Details expands an inline vertically scrollable center-panel section with the *same selected-item data*: output preview/placeholder, full request and varied values, human-readable outcome, copyable IDs, **Open in Images**, **Open folder**, and **Retry item** when permitted. The action is visible and usable for pending/failed/no-result items, not only successful images. No modal dialog and no dependence on hover or right-click alone. The exact disclosure position/height/behavior must be approved from real Qt screenshots at **1080 × 800** and **800 × 680** before wiring; an item must remain selectable without the disclosure obscuring the whole table. If the mockup reveals an accessibility/layout problem, revise this proposal before implementation.
+
+No hidden-inspector state may make **Open in Images** the only way to view request details (or make it available for an item without a committed saved image). Reuse the selected-item presenter for both inspector and inline disclosure; disable output-dependent actions when their prerequisites are absent.
+
+### Review finding P3 — broken reference
+
+The older Queues UI-kit relative link was corrected from `../../design-system/...` to `../design-system/...` relative to this file in `devdocs/plans/`. No other documentation is changed at this checkpoint.
+
+**Review provenance:** these P2/P3 issues were reported in a reviewer screenshot supplied by the owner on 2026-10-21. The review explicitly characterized them as plan issues and reported no edits, tests, renders or workflows. They are not evidence of a reproduced production bug.
 
 ## Scope: what the approved design must convey
 
 The **central table** represents generation items of the **selected existing queue**, not the left queue list and not the separate **New queue** composer preview.
 
 Proposed information hierarchy (subject to screenshot review):
-- **Table:** position, small result thumbnail/placeholder, concise varied values (seed, model, LoRA set/weights, steps, and other actually varied values), explicit state, recorded duration when present.
+- **Table:** five leading columns in this order: **# · Preview · Parameters · State · Duration**. Preview starts from the Images List 64 × 48 thumbnail treatment. Parameters shows the actual changed values (seed, model, LoRA set/weights, steps, operation/strength and others when varied), concise enough for the center width; full exact request lives in selected-item details. Durations are *observed backend elapsed* only when recorded, otherwise `—`. No filename/ID columns in the default table.
 - **No prominent ID columns:** full stable item/attempt/request IDs remain inspectable and copyable in the right inspector; preserve stable row identity internally.
-- **Inspector:** selected item's larger aspect-fit output preview, exact request summary, varied values, human-readable outcome including honest no-result/save-failed distinction, full identifiers, **Open in Images** and **Open folder**. Preserve existing explicit **Retry item** action and consent/billing semantics.
+- **Wide inspector:** selected item's larger aspect-fit output preview at the top, then exact request/varied settings, human-readable outcome (distinguishing no-result and save-failed), result actions **Open in Images** / **Open folder** / **Retry item** when eligible, followed by expandable technical identities and the activity section. Identifiers must be selectable/copyable. Preserve existing retry consent/billing semantics.
+- **Narrow center details:** when the right rail auto-hides (<1100 logical px), a visible Details action and keyboard/row activation expose the same information and available actions in an inline disclosure below the table. All statuses remain inspectable. This is a **mockup proposal**, not a locked UI decision.
 - **Activity:** readable collapsible event list in the right rail. If a line identifies an item, activating it selects that item in the central table; queue-scoped lines do not invent an item.
 - **Missing evidence:** show `Not recorded`, `No saved image`, `Duration unavailable` or equivalent explicit language. Never infer elapsed inference time, remote cancellation, saved artifacts, or cross-provider compatibility.
 - Retain existing selected-queue header, filters, status/progress, left queue list, composer, queue controls and responsive shell.
@@ -49,15 +72,17 @@ Proposed information hierarchy (subject to screenshot review):
 ### M0 — Research/plan PR (first commit; no implementation)
 - [x] Review #127, #130, relevant canonical repository contracts and the current queue model/controller/presenter/renderer.
 - [x] Record the rendered-mockup-first approach, exclusions, acceptance gates and file ownership in this plan.
-- [ ] Push the plan-only commit to the dedicated branch and open a **draft PR**, linked to #127/#130.
-- [ ] Leave the PR in draft pending visual and functional acceptance.
+- [x] Push the plan-only commit to the dedicated branch and open **draft PR #150**, linked to #127/#130 (commit `785c288`).
+- [x] Keep the PR in draft pending visual and functional acceptance.
+- [x] Incorporate owner-supplied review findings P2/P3 and the approved **reference choice** Images → List; no mockup layout is approved yet.
 
 ### M1 — Real-Qt visual mockup, **no production data wiring**
 - [ ] Establish screenshot baseline from the existing named queue renders; do not relabel historical fixtures as new screenshots.
-- [ ] Sketch compact columns and the right inspector for a normal desktop width; prioritize image/variation/state over internal IDs, without crowding the table.
+- [ ] Use **Images → List** as the reference to sketch five columns (#, Preview, Parameters, State, Duration) and a preview-first right inspector at a normal desktop width; compare thumbnail scale, row density, hover/selection and spacing without copying gallery bulk controls.
+- [ ] Sketch and render the **narrow Details disclosure** accessible through a visible control and keyboard/row activation at 1080 × 800 and 800 × 680. Show full request/IDs and all eligible actions even though the right inspector is hidden; keep the table navigable.
 - [ ] Edit the tracked `queue_page.ui` and scoped tokens/QSS only as necessary. Render the *actual* Qt widgets; avoid a duplicate HTML implementation or hand-edited generated `Ui_*` Python.
 - [ ] Add fixture-only presentation adapters/data to existing Qt models/presenters where needed; clearly separate mock data from production read/dispatch paths. Reuse image fixture assets already in the repo.
-- [ ] Add distinct named `queues-*-` states to `render_states.py` for: empty/no selection, repeat queue, Pair/Cross with long varied values and LoRAs, running/pending, mixed success/failure/no-result, selected saved output in inspector, multi-output/absent output, activity expanded/collapsed, narrow center (inspector auto-hidden below 1100 px).
+- [ ] Add distinct named `queues-*-` states to `render_states.py` for: empty/no selection, repeat queue, Pair/Cross with long varied values and LoRAs, running/pending, mixed success/failure/no-result, selected saved output in inspector, multi-output/absent output, activity expanded/collapsed, and **narrow center showing selected-item Details with Open in Images available/unavailable states**. Preserve existing fixture names.
 - [ ] Capture full-window and useful close-up screenshots at normal and constrained widths. Confirm visually that the queue composer and header still fit; no static screenshot counts as interaction/performance acceptance.
 - [ ] Push the mockup commit(s), share screenshot artifact references and a concise list of proposed decisions. **Stop here for explicit owner visual approval.**
 
@@ -68,7 +93,7 @@ Proposed information hierarchy (subject to screenshot review):
 - [ ] Implement thumbnail and inspector-image reads using existing saved-output/gallery boundaries, safe original-file access and asynchronous bounded decode/caching. No decoding, disk reads, database scans or heavy per-row rendering in Qt paint/layout callbacks; avoid per-row widget allocation for large plans.
 - [ ] Verify exact queue output identity → gallery identity/commit status and reuse Images navigation to open the correct saved image in Detail view. Disable the action when no verified live committed image can be opened; do not authorize actions from gallery snapshots alone.
 - [ ] Reuse the existing `ImagePreview` behavior if its Qt ownership/sizing contract fits; do not create a second image decoder or a competing metadata service.
-- [ ] Add copyable identities and honest outcome/details in the inspector, preserve **Open folder** and **Retry item**, and connect item-scoped activity to stable item selection. Handle queue-scoped events, missing outputs and item disappearance cleanly.
+- [ ] Add copyable identities and honest outcome/details in the inspector **and** narrow inline Details disclosure through shared presentation state, preserve **Open folder** and **Retry item**, and connect item-scoped activity to stable item selection. Handle queue-scoped events, missing outputs and item disappearance cleanly. Provide a visible, keyboard-accessible way to open/close Details even when there is no saved output.
 - [ ] Keep normal polling/selection/navigation responsive with larger queues (100–200 ordinary; 1000-item plans are bounded stress cases, not the primary UX). Preserve user scroll and selected preview during updates and ignore stale async responses after selection/tab/shutdown changes.
 - [ ] Extend existing `render_states.py` fixtures as the implementation evolves; use renders to verify layout continuity. Do **not** add or run tests or update general docs in this milestone.
 - [ ] Push coherent integration commit(s), review code/visual differences, request explicit owner functional smoke approval.
@@ -88,7 +113,7 @@ No scheduler, concurrency, remote cancellation, retry/replay, state-schema or mo
 
 | Checkpoint | State | Evidence |
 | --- | --- | --- |
-| Plan commit and draft PR | Pending PR creation | This plan is the only intended changed file for M0. |
+| Plan commit and draft PR | Completed | PR #150 draft; first plan-only commit `785c288`. Reviewer P2/P3 and Images List reference incorporated in a follow-up plan-only update; no product code yet. |
 | Qt mockup rendered | Not started | Named offline screenshots to be linked here after actual capture. |
 | Owner visual approval | Not requested | Explicit owner decision, not inferred from PR checks. |
 | Real-data wiring | Not started | Implementation commits and changed files to be recorded. |
