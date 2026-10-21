@@ -646,7 +646,6 @@ class MainWindow:
         # whether the Images page changed during this navigation.
         shell.leftRail.setVisible(not images and not logs)
         shell.rightRail.setVisible(not images and not logs and not narrow)
-        self.queue.set_compact(narrow)
         self.logs_form.logsBrandSlot.setVisible(logs)
         self.logs_form.logsNavigationSlot.setVisible(logs)
         shell.runControl.setVisible(True)

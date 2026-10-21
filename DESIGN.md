@@ -218,7 +218,7 @@ Windows font metrics and resulting line wraps still need target-machine review.
 
 All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. The splitter, rails and page content remain mounted across tab switches. Connection, Generate and Queues change context, primary workspace and evidence stacks. Images reparents the same branding/navigation widgets into its two header slots and hides both content rails; leaving Images restores their parents and splitter geometry. The shell owns the global segmented Run control and responsive right-rail state; page controllers retain their content references and service wiring.
 
-Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a responsive right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact 30×30 segmented Run control sits in the brand row with deliberate clearance from the logo. It shows queue readiness/activity or single-generation progress: Play starts a runnable selected queue, an owned running queue can be paused, an owned paused queue can be resumed, single generation shows reported step progress but remains status-only, and work owned by another process is never controlled implicitly from the header. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses the grouped queue list on the left, the selected queue's header and items (or the New queue composer) in the center, and New queue above the selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
+Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a responsive right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact 30×30 segmented Run control sits in the brand row with deliberate clearance from the logo. It shows queue readiness/activity or single-generation progress: Play starts a runnable selected queue, an owned running queue can be paused, an owned paused queue can be resumed, single generation shows reported step progress but remains status-only, and work owned by another process is never controlled implicitly from the header. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses the grouped queue list on the left, New queue on top of the center above the selected queue's header and items (or the composer), and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
 
 The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral drag gutter between panels, with a subtle border-colored hover affordance. Internal panel padding is unchanged.
 
@@ -280,7 +280,7 @@ One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/im
 | --- | --- |
 | Connection sections | Backend `server`, DT+ credentials `key-round`, Connection check `shield-check` |
 | Generate sections | Backend `server`, Parameters `detail`, Simulation `flask-conical`, Configuration `settings`, Cloud assets `cloud` |
-| Queues sections | New queue `send`, Variation `layers`, Selected item `list-checks`, Outcome `triangle-alert` (shown only for no-result and failed items) |
+| Queues sections | Variation `layers`, Selected item `list-checks`, Outcome `triangle-alert` (shown only for no-result and failed items) |
 | Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, full-screen toggle `fullscreen` (every view), filter combo arrow `chevron`, fullscreen `fullscreen` |
 | Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
 | Prompt disclosure | Additional `document`, Raw `json` |
@@ -440,7 +440,7 @@ replace a native group-box toggle. Parent activity disabling still applies.
 
 Queues keeps the queue header at its natural height. The items table or
 empty-state region receives the flexible workspace height; empty-state title,
-guidance and its secondary **New queue** button stay together in its center.
+guidance stay together in its center.
 Hide the queue header (and its progress) when no queue is selected rather than
 presenting “0 of 0” as work. Avoid distributing spare height among action rows.
 
@@ -494,10 +494,9 @@ the QUEUES eyebrow, an icon-only Refresh and a filter field. Rows are painted
 two-line items (semibold title with a status chip, secondary subtitle, then a
 4 px segmented mini bar with a settled count) under eyebrow-style group headings
 (Running, Up next, Paused, History). Clear history stays at its natural height
-below it. The **New queue** section card sits at the top of the right column,
-above the item evidence: one line of guidance and a `role="primary"` New queue
-button. Below 1100 px the right column is hidden, so a compact `+` tool button
-beside Refresh opens the composer instead.
+below it. A neutral **+ New queue** button (the selected queue keeps the only primary action) sits right-aligned in
+a row at the top of the center workspace, so it is visible at every width
+(the right column hides below 1100 px); it hides while the composer is open.
 
 ### Inventory continuity and statistics
 

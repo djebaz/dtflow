@@ -874,7 +874,7 @@ def render_active_queue_states(shell, out):
         snap("queues-32-new-queue-filter-reset")
         queue._selected = queue_id
         present("paused", ["pending", "pending"], started=False)
-        # #123 / #140: New queue (top of the right column) swaps the selected queue for the composer in the center.
+        # #123 / #140: New queue (top of the center) swaps the selected queue for the composer in the center.
         page.newQueueButton.click()
         assert queue.composing and not page.queueHeader.isVisible() and not page.queueTableHost.isVisible()
         assert page.planCountLabel.text().startswith("1 item")
@@ -941,7 +941,7 @@ def render_active_queue_states(shell, out):
         form.resize(1000, 900)
         shell._responsive_workspace()
         assert shell.shell.rightRail.isHidden()
-        assert page.newQueueRailButton.isVisible()  # #140: New queue stays reachable without the right column
+        assert page.newQueueButton.isVisible()  # #140: New queue sits in the center, reachable at every width
         snap("queues-23-narrow")
         form.resize(1600, 1000)
         shell._responsive_workspace()

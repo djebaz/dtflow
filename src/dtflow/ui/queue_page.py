@@ -4,7 +4,7 @@ Reads are read-only polls of the durable state: the list reads queue summaries o
 the selected queue alone. Every control is posted through the same function ``dtflow queue`` uses, so a window and a
 CLI process drive a queue identically. Only Start makes this window the dispatch owner, which holds the state ownership
 lock for the run (see ``Activity``). The header shows one status chip and one state-dependent primary action;
-transient outcomes go to the shared bottom overlay. *New queue* (top of the right column) swaps the selected queue for
+transient outcomes go to the shared bottom overlay. *New queue* (top of the center) swaps the selected queue for
 the composer in the center: Repeat or Pair/Cross values picked from inventory, a live count and preview, then Start now,
 Add to queue or Save paused. Wording after cancel comes from recorded evidence, and cancel never
 claims remote cancellation.
@@ -102,8 +102,6 @@ WIRED_CONTROLS = (
     "addQueueButton",
     "startQueueButton",
     "newQueueButton",
-    "newQueueRailButton",
-    "emptyNewQueueButton",
     "closeComposerButton",
     "editInGenerateButton",
     "refreshQueuesButton",
@@ -180,7 +178,6 @@ class QueuePage:
         self._simulation, self._created_hook = simulation_source, created_hook
         self._choices, self._generate_hook = choices_source, generate_hook
         self._composing = False
-        self._compact = False
         self._edit_source, self._editing = edit_source, editing_source
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
@@ -237,11 +234,9 @@ class QueuePage:
         page.createQueueButton.clicked.connect(lambda: self.create("save"))
         page.addQueueButton.clicked.connect(lambda: self.create("add"))
         page.startQueueButton.clicked.connect(lambda: self.create("start"))
-        for name in ("newQueueButton", "newQueueRailButton", "emptyNewQueueButton"):
-            getattr(page, name).clicked.connect(self.open_composer)
+        page.newQueueButton.clicked.connect(self.open_composer)
         page.closeComposerButton.clicked.connect(self.close_composer)
         page.editInGenerateButton.clicked.connect(lambda: self._generate_hook())
-        page.newQueueRailButton.setVisible(False)
         page.queuePrimaryButton.clicked.connect(self.primary)
         page.earlierQueueButton.clicked.connect(lambda: self._order("earlier"))
         page.laterQueueButton.clicked.connect(lambda: self._order("later"))
@@ -377,6 +372,7 @@ class QueuePage:
         self._render_list()
         view = self._view()
         page.queueComposerScroll.setVisible(self._composing)
+        page.newQueueButton.setVisible(not self._composing)
         page.emptyStateCard.setVisible(view is None and not self._composing)
         page.queueTableHost.setVisible(view is not None and not self._composing)
         page.queueHeader.setVisible(view is not None and not self._composing)
@@ -792,11 +788,6 @@ class QueuePage:
     @property
     def composing(self) -> bool:
         return self._composing
-
-    def set_compact(self, compact: bool) -> None:
-        """Below the responsive width the right column is hidden: the list header then offers New queue itself."""
-        self._compact = compact
-        self.page.newQueueRailButton.setVisible(compact)
 
     def _configure_dimensions(self) -> None:
         page = self.page

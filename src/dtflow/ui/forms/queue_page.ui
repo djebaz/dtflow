@@ -82,19 +82,6 @@
          </spacer>
         </item>
         <item>
-         <widget class="QToolButton" name="newQueueRailButton">
-          <property name="text">
-           <string>+</string>
-          </property>
-          <property name="toolTip">
-           <string>New queue: compose a queue from the Generate settings</string>
-          </property>
-          <property name="accessibleName">
-           <string>New queue</string>
-          </property>
-         </widget>
-        </item>
-        <item>
          <widget class="QToolButton" name="refreshQueuesButton">
           <property name="text">
            <string>Refresh</string>
@@ -168,7 +155,7 @@
    </item>
    <item>
     <widget class="QFrame" name="queueWorkspace">
-     <layout class="QVBoxLayout" name="queueWorkspaceLayout" stretch="0,1,1,1">
+     <layout class="QVBoxLayout" name="queueWorkspaceLayout" stretch="0,0,1,1,1">
       <property name="leftMargin">
        <number>14</number>
       </property>
@@ -184,6 +171,36 @@
       <property name="spacing">
        <number>10</number>
       </property>
+      <item>
+       <layout class="QHBoxLayout" name="queueTopLayout">
+        <item>
+         <spacer name="queueTopSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="newQueueButton">
+          <property name="text">
+           <string>+ New queue</string>
+          </property>
+          <property name="toolTip">
+           <string>Opens the composer in the center. Nothing is created until Start now, Add to queue or Save paused.</string>
+          </property>
+          <property name="accessibleName">
+           <string>New queue</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
       <item>
        <widget class="QFrame" name="queueHeader">
         <property name="accessibleName">
@@ -1170,7 +1187,7 @@
       </item>
       <item>
        <widget class="QFrame" name="emptyStateCard">
-        <layout class="QVBoxLayout" name="emptyStateLayout" stretch="1,0,0,0,1">
+        <layout class="QVBoxLayout" name="emptyStateLayout" stretch="1,0,0,1">
          <item>
           <spacer name="queueEmptyTopSpacer">
            <property name="orientation">
@@ -1200,7 +1217,7 @@
          <item>
           <widget class="QLabel" name="emptyStateBodyLabel">
            <property name="text">
-            <string>Select a queue from the left, or compose a new one from the Generate settings.</string>
+            <string>Select a queue from the left, or press New queue to compose one from the Generate settings.</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>
@@ -1210,16 +1227,6 @@
            </property>
            <property name="role" stdset="0">
             <string>secondary</string>
-           </property>
-          </widget>
-         </item>
-         <item alignment="Qt::AlignHCenter">
-          <widget class="QPushButton" name="emptyNewQueueButton">
-           <property name="text">
-            <string>New queue</string>
-           </property>
-           <property name="accessibleName">
-            <string>New queue</string>
            </property>
           </widget>
          </item>
@@ -1263,148 +1270,6 @@
       <property name="spacing">
        <number>10</number>
       </property>
-      <item>
-       <widget class="QGroupBox" name="newQueueBox">
-        <property name="title">
-         <string />
-        </property>
-        <property name="role" stdset="0">
-         <string>sectionCard</string>
-        </property>
-        <property name="accessibleName">
-         <string>New queue</string>
-        </property>
-        <layout class="QVBoxLayout" name="newQueueBoxCardLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <property name="spacing">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QFrame" name="newQueueBoxHeader">
-           <property name="role" stdset="0">
-            <string>sectionHeader</string>
-           </property>
-           <layout class="QHBoxLayout" name="newQueueBoxHeaderLayout" stretch="0,1">
-            <property name="leftMargin">
-             <number>10</number>
-            </property>
-            <property name="topMargin">
-             <number>7</number>
-            </property>
-            <property name="rightMargin">
-             <number>10</number>
-            </property>
-            <property name="bottomMargin">
-             <number>7</number>
-            </property>
-            <property name="spacing">
-             <number>8</number>
-            </property>
-            <item>
-             <widget class="QLabel" name="newQueueBoxIcon">
-              <property name="role" stdset="0">
-               <string>sectionIcon</string>
-              </property>
-              <property name="iconKey" stdset="0">
-               <string>send</string>
-              </property>
-              <property name="text">
-               <string />
-              </property>
-              <property name="minimumSize">
-               <size>
-                <width>16</width>
-                <height>16</height>
-               </size>
-              </property>
-              <property name="maximumSize">
-               <size>
-                <width>16</width>
-                <height>16</height>
-               </size>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="newQueueBoxHeading">
-              <property name="text">
-               <string>New queue</string>
-              </property>
-              <property name="textRole" stdset="0">
-               <string>panelHeading</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-         <item>
-          <widget class="QWidget" name="newQueueBoxContents">
-           <property name="role" stdset="0">
-            <string>sectionContents</string>
-           </property>
-           <layout class="QVBoxLayout" name="newQueueBoxLayout">
-            <property name="leftMargin">
-             <number>10</number>
-            </property>
-            <property name="topMargin">
-             <number>8</number>
-            </property>
-            <property name="rightMargin">
-             <number>10</number>
-            </property>
-            <property name="bottomMargin">
-             <number>10</number>
-            </property>
-            <property name="spacing">
-             <number>6</number>
-            </property>
-            <item>
-             <widget class="QLabel" name="newQueueHintLabel">
-              <property name="text">
-               <string>Repeat the Generate settings, or pair and cross values, then start it at once.</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="newQueueButton">
-              <property name="text">
-               <string>New queue</string>
-              </property>
-              <property name="toolTip">
-               <string>Opens the composer in the center. Nothing is created until Start now, Add to queue or Save paused.</string>
-              </property>
-              <property name="accessibleName">
-               <string>New queue</string>
-              </property>
-              <property name="role" stdset="0">
-               <string>primary</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
       <item>
        <widget class="QLabel" name="queueInspectorEyebrow">
         <property name="text">
