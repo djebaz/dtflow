@@ -957,6 +957,11 @@ def render_active_queue_states(shell, out):
                     break
                 QTest.qWait(50)
         assert queue.plan_model.rowCount() == 4, page.planCountLabel.text()
+        token = queue._preview_token
+        for _ in range(3):  # unchanged polls keep the shown preview and never restart its computation
+            queue.sync_edit_fields()
+            queue.preview()
+        assert queue._preview_token == token and not queue.previewing and queue.plan_model.rowCount() == 4
         page.queueComposerScroll.ensureWidgetVisible(page.planVariationCombo)
         snap("queues-49-composer-prompt-variation")
         page.planVariationCombo.setCurrentText("Off")

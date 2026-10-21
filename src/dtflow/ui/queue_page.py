@@ -12,7 +12,7 @@ claims remote cancellation.
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
 
@@ -1154,7 +1154,7 @@ class QueuePage:
             self.plan_model.clear()
             self._clear_summary()
             return
-        key = (self._plan_form(), request)
+        key = (self._plan_form(), self._request_key(request))
         if key == self._preview_key:
             return  # polling and presentation syncs reach here unchanged: keep what is shown or being drawn
         self._invalidate_preview()
@@ -1177,6 +1177,12 @@ class QueuePage:
             self._show_summary(request, None, "—", "—")
             return
         self._summarize(request, plan, self.plan_model.rowCount())
+
+    @staticmethod
+    def _request_key(request):
+        """The request without what every read draws afresh (its id, and a random seed), so unchanged inputs compare equal."""
+        random_seed = any(key == "seed.resolved" for key, _ in request.resolution_evidence)
+        return replace(request, request_id="preview", seed=0 if random_seed else request.seed)
 
     @property
     def previewing(self) -> bool:
