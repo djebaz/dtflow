@@ -1,6 +1,7 @@
 """Gallery read completions keep the committed page usable during preparation."""
 
 from dataclasses import replace
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
@@ -27,7 +28,9 @@ def test_queue_handoff_opens_exact_live_output_despite_browse_filters(presentati
 
     monkeypatch.setattr(gallery_ui, "locate_output", locate)
     monkeypatch.setattr(gallery, "show_view", shown.append)
-    monkeypatch.setattr(gallery_ui.feedback(gallery.page), "notice", lambda *args: notices.append(args))
+    inline = MagicMock()
+    inline.notice.side_effect = lambda *args: notices.append(args)
+    monkeypatch.setattr(gallery_ui, "feedback", lambda _page: inline)  # standalone fixture has no window overlay
     gallery.prompt.setText("does not match the selected queue output")
     gallery.model.setCurrentText("another-model")
     gallery.date_filter.setCurrentText("Today")
