@@ -1321,12 +1321,81 @@ def render_item_table_states(shell, out, state):
     z_model, photo_model = "Z-Image-Turbo_v2.ckpt", "PhotoReal_XL-v2.ckpt"
     karras, exponential = "DPM++ 2M SDE Karras", "DPM++ 3M SDE Exponential"
     specs = (
-        ("succeeded", traveler, z_model, [("portrait_style_v1.safetensors", 0.9), ("cinematic_rim_light_v3.safetensors", 1.2)], 28, 4.5, karras, 31.2, "a"),
-        ("succeeded", traveler, z_model, [("portrait_style_v1.safetensors", 1.2), ("cinematic_rim_light_v3.safetensors", 0.6), (long_lora, 1.5), ("background_bokeh_v2.safetensors", 0.9)], 32, 5.0, exponential, 36.8, "b"),
-        ("running", "A red house beside a mountain lake, with cloud reflections spreading across the water, still morning air and pale light on the far ridge.", photo_model, [("landscape_style_v2.safetensors", 0.9), ("cloud_mood_v4.safetensors", 1.2), ("texture_detail_v1.safetensors", 0.6)], 24, 4.0, karras, None, None),
-        ("unknown", "Studio photo of a ceramic cup on a table, with warm light against a pale background and a soft shadow beneath.", photo_model, [], 24, 4.0, karras, None, None),
-        ("pending", "An illustrated old town square after rainfall, with lamps reflected in wet cobblestones, evening haze between the buildings.", z_model, [("portrait_style_v1.safetensors", 0.9)], 28, 4.5, exponential, None, None),
-        ("cancelled", "A lighthouse on a rocky coast at dusk, with waves breaking against dark stone and a warm lamp glowing above.", photo_model, [], 24, 4.0, karras, None, None),
+        (
+            "succeeded",
+            traveler,
+            z_model,
+            [("portrait_style_v1.safetensors", 0.9), ("cinematic_rim_light_v3.safetensors", 1.2)],
+            28,
+            4.5,
+            karras,
+            31.2,
+            "a",
+        ),
+        (
+            "succeeded",
+            traveler,
+            z_model,
+            [
+                ("portrait_style_v1.safetensors", 1.2),
+                ("cinematic_rim_light_v3.safetensors", 0.6),
+                (long_lora, 1.5),
+                ("background_bokeh_v2.safetensors", 0.9),
+            ],
+            32,
+            5.0,
+            exponential,
+            36.8,
+            "b",
+        ),
+        (
+            "running",
+            "A red house beside a mountain lake, with cloud reflections spreading across the water, still morning air and pale light on the far ridge.",
+            photo_model,
+            [
+                ("landscape_style_v2.safetensors", 0.9),
+                ("cloud_mood_v4.safetensors", 1.2),
+                ("texture_detail_v1.safetensors", 0.6),
+            ],
+            24,
+            4.0,
+            karras,
+            None,
+            None,
+        ),
+        (
+            "unknown",
+            "Studio photo of a ceramic cup on a table, with warm light against a pale background and a soft shadow beneath.",
+            photo_model,
+            [],
+            24,
+            4.0,
+            karras,
+            None,
+            None,
+        ),
+        (
+            "pending",
+            "An illustrated old town square after rainfall, with lamps reflected in wet cobblestones, evening haze between the buildings.",
+            z_model,
+            [("portrait_style_v1.safetensors", 0.9)],
+            28,
+            4.5,
+            exponential,
+            None,
+            None,
+        ),
+        (
+            "cancelled",
+            "A lighthouse on a rocky coast at dusk, with waves breaking against dark stone and a warm lamp glowing above.",
+            photo_model,
+            [],
+            24,
+            4.0,
+            karras,
+            None,
+            None,
+        ),
     )
     items = []
     for position, (item_state, prompt, model, loras, steps, guidance, sampler, seconds, image) in enumerate(specs, 1):
@@ -1360,7 +1429,10 @@ def render_item_table_states(shell, out, state):
             )
         )
     states = [item["state"] for item in items]
-    counts = {name: states.count(name) for name in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")}
+    counts = {
+        name: states.count(name)
+        for name in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
+    }
     view = dict(
         queue_id=queue_id,
         status="running",
@@ -1411,7 +1483,9 @@ def render_item_table_states(shell, out, state):
         # The stopwatch is painted by ItemTableHeader; a model decoration would draw a second one at the left edge.
         assert type(header).__name__ == "ItemTableHeader"
         assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.DecorationRole) is None
-        assert header.sectionSize(COL_LORAS) >= 190 and header.sectionSize(COL_PROMPT) >= table.viewport().width() * 0.29
+        assert (
+            header.sectionSize(COL_LORAS) >= 190 and header.sectionSize(COL_PROMPT) >= table.viewport().width() * 0.29
+        )
         # Statuses use the shared semantic colors as a single text label, and duration is "—" when unavailable.
         for row, word in enumerate(("succeeded", "succeeded", "running", "no result", "pending", "cancelled")):
             assert model.index(row, COL_STATUS).data() == word
@@ -1440,7 +1514,9 @@ def render_item_table_states(shell, out, state):
         preview = queue._hover_preview
         preview.show_row(0, QPoint(600, 300))
         wait_for(lambda: not preview.label.pixmap().isNull())
-        assert preview.label.windowFlags() & Qt.WindowType.ToolTip and preview.label.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        assert preview.label.windowFlags() & Qt.WindowType.ToolTip and preview.label.testAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
         save(preview.label, out, "queues-64-item-table-thumbnail-preview")
         preview.hide()
         select(1)  # more than three LoRAs and the 55-character filename

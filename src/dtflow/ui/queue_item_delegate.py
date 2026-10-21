@@ -89,7 +89,13 @@ class QueueItemDelegate(QStyledItemDelegate):
         elif column == COL_MODEL:
             bold = QFont(option.font)
             bold.setWeight(QFont.Weight.Bold)
-            self._lines(painter, rect, wrapped_lines(display_name(row.model), bold, rect.width(), 2, soft_breaks=True), bold, text)
+            self._lines(
+                painter,
+                rect,
+                wrapped_lines(display_name(row.model), bold, rect.width(), 2, soft_breaks=True),
+                bold,
+                text,
+            )
         elif column == COL_LORAS:
             self._loras(painter, rect, row, option.font, text, secondary, getattr(index.model(), "gauge_scale", 1.0))
         elif column == COL_PARAMS:
@@ -128,7 +134,11 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.setPen(QColor(_TOKENS["color.sectionBorder"]))
         painter.setBrush(QColor(_TOKENS["color.canvas"]))
         painter.drawRoundedRect(QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
-        pixmap = provider.pixmap(row.outputs[0], identity=row.gallery_identity) if provider is not None and row.outputs else None
+        pixmap = (
+            provider.pixmap(row.outputs[0], identity=row.gallery_identity)
+            if provider is not None and row.outputs
+            else None
+        )
         if pixmap is None and row.outputs and provider is not None and not provider.is_failed(row.outputs[0]):
             return  # decoding in the background: a neutral tile, never misleading text
         if pixmap is None:
@@ -202,7 +212,9 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.drawText(QRect(rect.left(), rect.top(), rect.width(), 18), Qt.AlignmentFlag.AlignLeft, row.steps_text)
         painter.setFont(small)
         painter.setPen(secondary)
-        painter.drawText(QRect(rect.left(), rect.top() + 19, rect.width(), 15), Qt.AlignmentFlag.AlignLeft, row.guidance_text)
+        painter.drawText(
+            QRect(rect.left(), rect.top() + 19, rect.width(), 15), Qt.AlignmentFlag.AlignLeft, row.guidance_text
+        )
         # A long sampler name takes its own wrapped line(s) instead of being clipped.
         for number, line in enumerate(wrapped_lines(row.sampler_text, small, rect.width(), 2)):
             painter.drawText(

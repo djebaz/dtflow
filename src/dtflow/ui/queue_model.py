@@ -41,6 +41,8 @@ def stopwatch_icon() -> QIcon:
         painter.end()
         _STOPWATCH.append(QIcon(pixmap))
     return _STOPWATCH[0]
+
+
 ROW_ROLE = Qt.ItemDataRole.UserRole + 1  # the ItemRow, for the painted cells
 STATUS_COLUMN = 5
 DURATION_COLUMN = 6

@@ -108,7 +108,9 @@ class QueueThumbnails(QObject):
         """The tile: a centred square crop of the 600 px thumbnail, scaled to the tile's pixel size."""
         edge = min(image.width(), image.height())
         square = image.copy((image.width() - edge) // 2, (image.height() - edge) // 2, edge, edge)
-        return QPixmap.fromImage(square.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        return QPixmap.fromImage(
+            square.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        )
 
     def _done(self, epoch: int, path: str, result, error) -> None:
         self._active = max(0, self._active - 1)
@@ -123,7 +125,10 @@ class QueueThumbnails(QObject):
                         store.popitem(last=False)
                 self.changed.emit(path)
             elif issue == BUSY:
-                QTimer.singleShot(2000, lambda: self.pixmap(path, ROW_SIDE, self._identity.get(path)) if epoch == self._epoch else None)
+                QTimer.singleShot(
+                    2000,
+                    lambda: self.pixmap(path, ROW_SIDE, self._identity.get(path)) if epoch == self._epoch else None,
+                )
             else:
                 self._wanted.pop(path, None)
                 self._failed.add(path)
@@ -203,11 +208,15 @@ class HoverPreview(QObject):
         if pixmap is None:
             self.label.setPixmap(QPixmap())
             self.label.setFixedSize(QSize(232, 232))
-            self.label.setText("Loading\u2026" if not self.thumbnails.is_failed(self._path, PREVIEW_SIDE) else "No preview")
+            self.label.setText(
+                "Loading\u2026" if not self.thumbnails.is_failed(self._path, PREVIEW_SIDE) else "No preview"
+            )
             return
         ratio = self.label.devicePixelRatioF()
         edge = int(self._box * ratio)
-        scaled = pixmap.scaled(edge, edge, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        scaled = pixmap.scaled(
+            edge, edge, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+        )
         scaled.setDevicePixelRatio(ratio)
         self.label.setPixmap(scaled)
         # Hug the picture (frame is 1 px border + 5 px padding on each side) instead of leaving empty bars.

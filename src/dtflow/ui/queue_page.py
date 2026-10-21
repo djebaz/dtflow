@@ -876,7 +876,9 @@ class QueuePage:
         page.itemOutputsLabel.setToolTip("\n".join(outputs))
         self._output_folder = Path(outputs[0]).parent if outputs else None
         page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
-        verified = bool(row.gallery_identity and row.outputs) and Path(row.outputs[0]).is_file()  # a saved image that exists
+        verified = (
+            bool(row.gallery_identity and row.outputs) and Path(row.outputs[0]).is_file()
+        )  # a saved image that exists
         page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
 
     def set_images_hook(self, hook) -> None:
