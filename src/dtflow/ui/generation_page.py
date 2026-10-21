@@ -1424,7 +1424,7 @@ class GenerationPage:
         else:
             label.setText(f"Estimated Compute Units: ~{estimate.units:,} CU")
         label.setToolTip(
-            f"{estimate.reason}\\n"
+            f"{estimate.reason}\n"
             "Computed offline from the published Draw Things instruction model. "
             "Actual DT+ compute policy, request acceptance and billing may differ; "
             "this is not a balance or an entitlement check."
