@@ -6,8 +6,10 @@ duplicates and ordering exactly as for CLI plan files.
 """
 
 from collections.abc import Callable
+from math import ceil
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QTextDocument, QTextOption
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -359,3 +361,60 @@ class ComposerGridFit(QObject):
         self._columns = columns
         self._arrange(self._draw_grid, self._draw_pairs, columns[0])
         self._arrange(self._mutation_grid, self._mutation_groups, columns[1])
+
+
+class SummaryLabelHeightFit(QObject):
+    """Keep long wrapped inspector values fully visible instead of clipping their final lines.
+
+    QFormLayout may underestimate a QLabel's height when its horizontal size
+    policy ignores a long unbroken identifier. Measure the complete plain text
+    at the *actual* label width; the right inspector itself remains scrollable.
+    """
+
+    def __init__(self, contents: QWidget, labels):
+        super().__init__(contents)
+        self._labels = tuple(labels)
+        self._pending = False
+        for widget in (contents, *self._labels):
+            widget.installEventFilter(self)
+        self.refit()
+
+    @staticmethod
+    def text_height(label) -> int:
+        """Return the full rendered plain-text height at a label's current width."""
+        width = label.contentsRect().width()
+        if width <= 0:
+            return 0
+        document = QTextDocument()
+        document.setDefaultFont(label.font())
+        document.setDocumentMargin(0)
+        option = document.defaultTextOption()
+        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        document.setDefaultTextOption(option)
+        document.setPlainText(label.text())
+        document.setTextWidth(width)
+        return ceil(document.size().height())
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self.schedule()
+        return False
+
+    def schedule(self) -> None:
+        """Wait for Qt to settle label widths before measuring wrapped height."""
+        if self._pending:
+            return
+        self._pending = True
+        QTimer.singleShot(0, self.refit)
+
+    def refit(self) -> None:
+        self._pending = False
+        for label in self._labels:
+            text_height = self.text_height(label)
+            if not text_height:
+                continue
+            metrics = label.fontMetrics()
+            multi_line = "\n" in label.text() or text_height > metrics.lineSpacing() + 1
+            minimum = max(label.heightForWidth(label.width()), text_height + metrics.descent() + 2) if multi_line else 0
+            if label.minimumHeight() != minimum:
+                label.setMinimumHeight(minimum)
