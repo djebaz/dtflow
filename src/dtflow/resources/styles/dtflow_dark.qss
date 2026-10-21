@@ -479,6 +479,11 @@ QToolButton#aboutButton {
 QToolButton#aboutButton:hover {
   background-color: #343434;
 }
+/* Keep the checkpoint label row on its parent section surface, not the global QWidget fill. */
+QWidget#checkpointLabelRow {
+  background: transparent;
+  border: 0;
+}
 /* Compact checkpoint metadata action beside the label; never squeeze the model selector. */
 QToolButton#checkpointDetailsButton {
   background: transparent;
