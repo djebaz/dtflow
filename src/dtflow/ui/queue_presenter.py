@@ -4,11 +4,136 @@ Everything here maps the shared ``read_queues`` view (scheduler, reservation and
 display data. The vocabularies below are the only ones the Queues page uses, so a state never gets two meanings.
 """
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import local_time
+
+MIN_ETA_SAMPLES = 1
+
+
+def _duration_samples(view: dict) -> tuple[float, ...]:
+    samples = []
+    for value in view.get("successful_durations", ()):
+        if type(value) not in (int, float):
+            continue
+        try:
+            duration = float(value)
+        except OverflowError:
+            continue
+        if math.isfinite(duration) and duration >= 0:
+            samples.append(duration)
+    return tuple(samples)
+
+
+def _eta_eligible(view: dict) -> bool:
+    """Only an active, owned queue with running work shows an ETA; durable snapshots never override this."""
+    if view["status"] != "running" or view.get("owner_active") is False:
+        return False
+    counts = view["summary"]
+    return counts.get("running", 0) > 0
+
+
+def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> float | None:
+    """Estimate remaining wall time from succeeded item timings and observed parallel work, never the configured cap.
+
+    Backend durations may include provider queueing. This does not predict per-item progress or elapsed running time.
+    """
+    samples = _duration_samples(view)
+    if not _eta_eligible(view) or len(samples) < max(1, minimum_samples):
+        return None
+    return estimate_queue_seconds(view["summary"], samples, view.get("running_started_at_utc"))
+
+
+def _snapshot_eta(view: dict) -> tuple[tuple, float] | None:
+    """The latest durable timing snapshot's identity and ETA aged to now, when it is usable."""
+    snapshot = view.get("timing_snapshot")
+    if not snapshot or type(snapshot.get("eta_seconds")) is not int or snapshot["eta_seconds"] < 0:
+        return None
+    try:
+        recorded = datetime.fromisoformat(snapshot["at_utc"])
+        if recorded.tzinfo is None:
+            return None
+        age = max(0.0, (datetime.now().astimezone() - recorded).total_seconds())
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return (view["queue_id"], snapshot["at_utc"]), max(0.0, snapshot["eta_seconds"] - age)
+
+
+@dataclass
+class QueueCountdown:
+    """A monotonic ETA deadline: unchanged polls keep ticking; settlements or changed live lanes rebase it.
+
+    A durable timing snapshot seeds the deadline only when it is new. Once the live timing context (counts, samples,
+    lanes or Resume) changes without a newer snapshot, that snapshot is stale and the live estimate is used instead.
+    """
+
+    signature: tuple | None = None
+    deadline: float | None = None
+    snapshot_key: tuple | None = None
+
+    def reset(self) -> None:
+        self.signature = self.deadline = self.snapshot_key = None
+
+    def remaining(self, view: dict, now: float) -> float | None:
+        if not _eta_eligible(view):
+            # Keep the seen snapshot so Resume does not revive a pre-pause ETA.
+            self.signature = self.deadline = None
+            return None
+        signature = (
+            view["queue_id"],
+            view.get("started_at_utc"),
+            view.get("resume_event_id", 0),
+            tuple(view["summary"].get(state, 0) for state in ("pending", "running", *SETTLED)),
+            _duration_samples(view),
+            tuple(view.get("running_started_at_utc") or ()),
+        )
+        snapshot = _snapshot_eta(view)
+        key = snapshot[0] if snapshot else None
+        if signature != self.signature or key != self.snapshot_key:
+            if snapshot is not None and key != self.snapshot_key:
+                estimate = snapshot[1]
+            else:
+                estimate = estimate_remaining(view)
+            self.snapshot_key = key
+            if estimate is None:
+                self.signature = self.deadline = None
+                return None
+            self.signature, self.deadline = signature, now + estimate
+        return max(0.0, self.deadline - now)
+
+
+def _clock(seconds: int) -> str:
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+
+def eta_text(view: dict, *, remaining: float | None = None) -> str:
+    """Explicitly estimated remaining time, with a caveat when model, size or step count varies."""
+    seconds = estimate_remaining(view) if remaining is None else remaining
+    if seconds is None:
+        return ""
+    duration = _clock(math.ceil(max(0, seconds)))
+    varied = view.get("varied") or {}
+    caveat = "; rough for mixed settings" if any(varied.get(key, 0) > 1 for key in ("model", "size", "steps")) else ""
+    return f"~{duration} left (estimate{caveat})"
+
+
+def elapsed_text(view: dict, now: datetime | None = None) -> str:
+    """Observed wall time since the latest dispatch start, including pauses and provider waits."""
+    try:
+        started = datetime.fromisoformat(view.get("started_at_utc") or "")
+        if started.tzinfo is None:
+            return ""
+        seconds = max(0, int(((now or datetime.now().astimezone()) - started).total_seconds()))
+    except (TypeError, ValueError, OverflowError):
+        return ""
+    return f"Elapsed {_clock(seconds)}"
+
 
 ITEM_LEVELS = {
     "pending": "secondary",
@@ -36,13 +161,13 @@ STATUS_CHIP = {
     "cancelled": "Cancelled",
 }
 CONCURRENCY_HINT = (
-    "Maximum items this queue runs at once (1 to 4). Local Draw Things remains one effective lane. This is a client "
-    "policy, not entitlement, and the memory budget currently admits about two real generations at once whatever the "
-    "maximum."
+    "Maximum items this queue runs at once (1 to 10). Cloud text-to-image reserves 32 MiB per request against a "
+    "320 MiB shared memory budget; image edits may reserve more. Local Draw Things remains one effective lane. "
+    "The setting is a client policy, not verified cloud entitlement."
 )
 NEW_CAP_HINT = (
-    "Maximum items a new queue runs at once (1 to 4). With cloud chosen this is also the shared default for new cloud "
-    "queues. Local Draw Things remains one effective lane; this is a client policy, not entitlement."
+    "Maximum items a new queue runs at once (1 to 10). With cloud chosen this also saves the shared default for "
+    "new cloud queues. Local Draw Things remains one effective lane; provider and memory limits still apply."
 )
 GROUPS = (("running", "Running"), ("queued", "Up next"), ("paused", "Paused"), ("history", "History"))
 VARIED_LABELS = {
@@ -419,15 +544,26 @@ def event_lines(view: dict) -> str:
 
         if kind == "created":
             count, cap = detail.get("items"), detail.get("cap")
-            summary = "Queue created"
+            summary = ""
             if count is not None:
-                summary += f" - {count} item{'s' if count != 1 else ''}"
+                summary += f"{count}"
+            if cap > count:
+                cap = count
             if cap is not None:
-                summary += f" - concurrency {cap}"
+                summary += f" // {cap}"
         elif kind == "started":
             summary = "Queue started"
         elif kind == "backend_submission_possible":
             summary = f"{item_label(detail)} submitted"
+        elif kind == "timing_snapshot":
+            elapsed = detail.get("elapsed_seconds")
+            eta = detail.get("eta_seconds")
+            if type(elapsed) is not int or elapsed < 0:
+                continue
+            if type(eta) is int and eta >= 0:
+                summary = f"{_clock(elapsed)} + {_clock(eta)} = {_clock(elapsed + eta)}"
+            else:
+                continue
         elif kind == "item_settled":
             state = str(detail.get("state", "settled"))
             state = "no result" if state == "unknown" else state.replace("_", " ")

@@ -8,19 +8,19 @@ Usage:
 """
 
 import argparse
-import json
-import webbrowser
 import io
-from urllib.parse import urlencode, parse_qs
-import urllib.request
-import urllib.error
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
 import sys
+import urllib.error
+import urllib.request
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlencode
 
 # Force UTF-8 output on Windows
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 
 class OAuthCallbackHandler(BaseHTTPRequestHandler):
@@ -48,7 +48,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
             </body>
             </html>
             """
-            self.wfile.write(html.encode('utf-8'))
+            self.wfile.write(html.encode("utf-8"))
         else:
             self.send_response(400)
             self.send_header("Content-type", "text/html")
@@ -120,9 +120,7 @@ def get_refresh_token(client_id, client_secret):
 
     try:
         body = urlencode(token_params).encode()
-        req = urllib.request.Request(
-            "https://oauth2.googleapis.com/token", data=body
-        )
+        req = urllib.request.Request("https://oauth2.googleapis.com/token", data=body)
         with urllib.request.urlopen(req, timeout=10) as response:
             token_response = json.loads(response.read().decode())
     except urllib.error.HTTPError as e:
@@ -158,9 +156,7 @@ def get_refresh_token(client_id, client_secret):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Set up Google Drive OAuth2 for personal account"
-    )
+    parser = argparse.ArgumentParser(description="Set up Google Drive OAuth2 for personal account")
     parser.add_argument("--client-id", required=True, help="Google OAuth2 Client ID")
     parser.add_argument("--client-secret", required=True, help="Google OAuth2 Client Secret")
 

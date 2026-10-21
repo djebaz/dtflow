@@ -8,7 +8,7 @@ Create a queue of N items from the Generate form (seeds s, s+1, ...), or enable 
 
 The left rail lists queues grouped as **Running**, **Up next** (in start order), **Paused** and **History** (finished and cancelled), newest first within a group. Each row shows the first prompt, model, item count and what the items vary in (for example `2 prompts, 2 step counts`), the backend, the creation time, a status chip and a small progress bar by outcome. The filter box matches any of those words, the status or the queue id. The list reads queue summaries only (counts and the first item); items and events are read for the selected queue alone, and it refreshes by itself every few seconds while the Queues tab is open (every second while anything runs), so queues created from the CLI appear without Refresh.
 
-The selected queue's header has one status chip (its tooltip says which process dispatches it), one primary action that changes with the state (**Start**, **Start next**, **Pause** or **Resume**), **Cancel**, its own **Max at once** (1 to 4, fixed once the queue has finished) and **Remove**. Below it, a segmented bar shows settled items by outcome, and the ✓ ✗ ? – count chips filter the items table to succeeded, failed, no-result or cancelled items; with none checked every item shows. Outcomes of actions appear in the shared bottom overlay. **Remove** (also on the list's context menu) deletes one paused, finished or cancelled queue record after an inline confirmation; **Clear history** removes finished and cancelled ones and keeps paused queues. Neither touches attempts or saved images, and a running or up-next queue cannot be removed.
+The selected queue's header has one status chip (its tooltip says which process dispatches it), one primary action that changes with the state (**Start**, **Start next**, **Pause** or **Resume**), **Cancel**, its own **Max at once** (1 to 10, fixed once the queue has finished) and **Remove**. Below it, a segmented bar shows settled items by outcome, and the ✓ ✗ ? – count chips filter the items table to succeeded, failed, no-result or cancelled items; with none checked every item shows. Outcomes of actions appear in the shared bottom overlay. **Remove** (also on the list's context menu) deletes one paused, finished or cancelled queue record after an inline confirmation; **Clear history** removes finished and cancelled ones and keeps paused queues. Neither touches attempts or saved images, and a running or up-next queue cannot be removed.
 
 Queues and items stay in stable order. Start, Pause, Resume and Cancel use the shared queue services. Cancel takes effect immediately, without confirmation, and does not confirm remote cancellation: an item interrupted after submission ends as *no result*. The item panel summarizes outputs with Open folder; shortened attempt IDs expose full IDs in tooltips.
 
@@ -27,6 +27,16 @@ While this window dispatches, **Start** on another paused queue reads **Start ne
 **Cancel** on a waiting queue cancels it at once (it holds no reservation, so nothing of it ran); from the CLI, `queue pause` and `queue cancel` on a waiting queue likewise take it out of the order or cancel it immediately. The CLI cannot enqueue or reorder, and `queue start` runs only the queue it names.
 
 Auto-play continues after a queue finishes or is cancelled; a paused running queue holds the order until you Resume or Cancel it. Picking the next queue and starting it are one step, so a Pause, Cancel or reorder made just before is respected. Auto-play stops when dispatch itself ends: a failure, a local stop or closing the window. Whenever the owner stops, and whenever a new owner opens the state (a restart included), every waiting queue returns to paused, so nothing starts without a live owner. Joining the order needs a live owner: once the running queue has ended, **Start next** is refused and Generate saves its one-item queue paused, saying so.
+
+### Elapsed time and ETA
+
+The shared bottom progress row and the header Run control tooltip show elapsed wall time since the latest dispatch start, including pauses and provider waits. A new dispatch after a stop or restart starts a new elapsed interval. If no reliable start timestamp exists, elapsed time is omitted.
+
+After the **first successful item with a usable recorded duration**, a labeled estimate appears: median successful `backend_elapsed_seconds` × remaining items (pending + running) ÷ items actually running. Failed, cancelled and unknown items do not contribute durations; the configured maximum is never substituted for observed concurrency. A separate presentation timer counts down once a second, even while a database read is pending. Unchanged polls do not restart it; each observed item settlement, timing-sample update or change in running concurrency rebases it. The display uses minutes:seconds (hours:minutes:seconds for longer runs), reaches zero without claiming completion, and disappears while paused, cancelled, finished, without an active owner or with no running items. Resume starts a fresh estimate. Plans varying model, size or steps say the estimate is rough.
+
+Resume rebasing uses the latest applied durable Resume event, so even Pause and Resume between two polls reset the estimate. This leaves elapsed time's dispatch-start timestamp unchanged.
+
+Durations include provider-side queueing and are not pure inference time. The blue bar continues to show real settled counts, never estimated progress. After each item settles, the dispatcher records a durable timing snapshot event (elapsed wall time and the ETA at that moment, counting the lane the next claim refills). The Events pane lists it as `elapsed + ETA = projected total`; it is skipped before the first successful duration sample and is not a measured completion time. The countdown seeds from a snapshot only while it is newer than the latest start or Resume and no live settlement, sample or lane change has superseded it.
 
 ## CLI examples
 
@@ -53,7 +63,7 @@ Local Draw Things runs one request at a time and stopping local waiting does not
 
 After a restart queues are restored paused, completed results are kept, and no item that reached the remote boundary becomes eligible again. `queue start` exits `0` when every item succeeded, otherwise `3`.
 
-Note: the shared buffer budget (256 MiB, about 100 MiB reserved per request) currently admits only about two concurrent real generations, whatever the queue maximum.
+Direct DT+ text-to-image reserves 32 MiB per in-flight request against a 320 MiB shared admission budget, permitting up to ten client-side submissions when Max at once is ten. This is not measured process RAM or verified server-side entitlement. Image edits can reserve more; local Draw Things remains one lane. The cloud default stays four until changed.
 
 ## Plan files and dry runs
 

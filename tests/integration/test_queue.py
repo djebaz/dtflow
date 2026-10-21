@@ -39,7 +39,7 @@ class ScriptedBackend:
 
     def __init__(self, max_concurrency: int = 4, *, open_all: bool = False, lose: tuple[int, ...] = ()):
         self.inner = FakeBackend()
-        # Small limits keep the shared buffer budget (default 256 MiB, about two real requests) out of the way.
+        # Small limits isolate scheduler behavior from memory admission.
         limits = ResourceLimits(
             artifact_bytes=2**20,
             final_bytes=2**22,
@@ -140,6 +140,20 @@ class Harness:
 @pytest.fixture
 def state(tmp_path):
     return tmp_path / "state"
+
+
+@pytest.mark.asyncio
+async def test_ten_items_ten_slots_start_before_completion(state):
+    """The queue dispatcher admits ten concurrent items when configured to ten."""
+    backend = ScriptedBackend(10)
+    async with Harness(state, backend) as h:
+        queue_id = await h.store.create_queue(BACKEND, 10, [item(n) for n in range(10)])
+        run = h.run(queue_id)
+        await until(lambda: len(backend.started) == 10)
+        assert backend.started == list(range(10)) and backend.active == backend.peak == 10
+        backend.release(*range(10))
+        final = await asyncio.wait_for(run, SETTLE)
+    assert final["summary"]["succeeded"] == 10
 
 
 @pytest.mark.asyncio
@@ -325,7 +339,7 @@ async def test_dispatch_ownership_and_non_owner_access(state):
         with pytest.raises(QueueError):
             post_control(state, "missing", "pause")
         with pytest.raises(QueueError):
-            post_control(state, queue_id, "cap", {"cap": 9})
+            post_control(state, queue_id, "cap", {"cap": 11})
         assert await store.apply_controls(queue_id) == ()  # Pause on a paused queue is recorded as ignored
     finally:
         await other.aclose()
@@ -438,4 +452,4 @@ def test_queue_cli_add_start_controls_and_exit_codes(invoke):
     # Invalid input never creates or controls anything.
     for bad in (("add", "-b", "fake", "-k", "0"), ("add", "-b", "local"), ("show", "missing"), ("pause", "missing")):
         assert invoke(*bad)[0] == 2
-    assert invoke("cap", lost, "-j", "9")[0] == 2
+    assert invoke("cap", lost, "-j", "11")[0] == 2

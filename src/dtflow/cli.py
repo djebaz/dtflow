@@ -130,7 +130,7 @@ def parser() -> argparse.ArgumentParser:
                 "-j",
                 "--jobs",
                 type=int,
-                help="Persist the cloud concurrency maximum (1-4, default 4; not entitlement).",
+                help="Persist the cloud concurrency maximum (1-10, default 4; not entitlement).",
             )
         if name == "generate":
             child.add_argument("-c", "--config", type=Path, help="Versioned generation config or prior metadata.json.")
@@ -342,7 +342,7 @@ def add_queue_commands(commands) -> None:
         help="Print the exact item table and count for --plan or --count, then stop; creates nothing.",
     )
     add.add_argument(
-        "-j", "--jobs", type=int, help="Queue concurrency maximum, 1-4 (default: the cloud setting, else 4)."
+        "-j", "--jobs", type=int, help="Queue concurrency maximum, 1-10 (default: the cloud setting, else 4)."
     )
     add_scenario_option(add)
     action("list", "List queues with item state counts.", ident=False)
@@ -362,7 +362,7 @@ def add_queue_commands(commands) -> None:
     actions._choices_actions = [a for a in actions._choices_actions if a.dest in canonical]
     cap = action("cap", "Change this queue's concurrency maximum; active work is never cancelled.")
     cap.add_argument(
-        "-j", "--jobs", type=int, required=True, help="New maximum, 1-4 (the backend's own limit still applies)."
+        "-j", "--jobs", type=int, required=True, help="New maximum, 1-10 (the backend's own limit still applies)."
     )
 
 

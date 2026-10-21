@@ -16,7 +16,7 @@ from dtflow.backends.drawthings.backend import DrawThingsEndpoint
 from dtflow.backends.drawthings.cloud import DirectCloudBackend
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.tls import TlsPolicy
-from dtflow.core.models import BackendError, TimeoutPolicy
+from dtflow.core.models import BackendError, TimeoutPolicy, ValidationError
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.generation import GenerationService
 
@@ -34,6 +34,13 @@ async def cloud(server, handler):
         yield adapter
     finally:
         await adapter.aclose()
+
+
+def test_cloud_accepts_ten_lanes_without_network():
+    auth = CloudAuth(Secret("FAKE-API-SECRET"), transport=httpx.MockTransport(success))
+    assert DirectCloudBackend(auth, max_concurrency=10).capabilities.max_concurrency == 10
+    with pytest.raises(ValidationError, match="1..10"):
+        DirectCloudBackend(auth, max_concurrency=11)
 
 
 def success(request):

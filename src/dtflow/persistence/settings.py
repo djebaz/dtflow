@@ -10,11 +10,11 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from dtflow.core.models import ValidationError
+from dtflow.core.models import MAX_QUEUE_CONCURRENCY, ValidationError
 
 SCHEMA_VERSION = 1
 DEFAULT_CLOUD_CONCURRENCY = 4
-MAX_CLOUD_CONCURRENCY = 4  # the direct DT+ adapter's own bound
+MAX_CLOUD_CONCURRENCY = MAX_QUEUE_CONCURRENCY
 
 
 class SettingsError(ValidationError):
