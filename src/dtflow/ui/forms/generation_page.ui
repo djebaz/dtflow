@@ -1345,7 +1345,7 @@
             <item>
              <widget class="QLabel" name="assetNoteLabel">
               <property name="text">
-               <string>Local registry of receipts, not DT+ account inventory. Prepare may upload the chosen LoRA to DT+; uploading does not consume credits, but later generation may.</string>
+               <string>Local registry of receipts, not DT+ account inventory. Prepare accepts multiple converted LoRA files and may upload each to DT+; uploading does not consume credits, but later generation may.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>

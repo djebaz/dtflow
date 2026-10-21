@@ -6,13 +6,17 @@ not DT+ account inventory. Selecting a file through Prepare can upload it withou
 """
 
 import asyncio
+import logging
+import os
 from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QWidget
 
-from dtflow.core.models import LoRASelection, ResolvedGenerationRequest, ValidationError
+from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
+from dtflow.diagnostics import event as diagnostic_event
+from dtflow.persistence.prepare_preferences import load_prepare_folder, save_prepare_folder
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -26,15 +30,18 @@ from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import choose_searchable
 
 UPLOAD_NOTICE = (
-    "Prepare may upload the selected LoRA file to DT+ if the server does not already have it. "
+    "Prepare accepts multiple converted LoRA files and may upload each to DT+ if the server does not already have it. "
     "Uploading does not consume credits, but a later generation using this LoRA may."
 )
 DEFAULT_LORA_WEIGHT = 1.0
 CLOUD_ONLY = "Asset actions need the cloud backend (choose it on the Connection page)."
+log = logging.getLogger(__name__)
 
 
-def _choose_asset_file(parent: QWidget, directory: Path) -> str:
-    return QFileDialog.getOpenFileName(parent, "Prepare converted LoRA file", str(directory), "LoRA files (*.ckpt)")[0]
+def _choose_asset_file(parent: QWidget, directory: Path) -> list[str]:
+    return QFileDialog.getOpenFileNames(parent, "Prepare converted LoRA files", str(directory), "LoRA files (*.ckpt)")[
+        0
+    ]
 
 
 class LoraAssetPanel:
@@ -54,6 +61,16 @@ class LoraAssetPanel:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
+        self._prepare_files: tuple[str, ...] = ()
+        self._prepare_index = 0
+        self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+        self._ownership_revision = 0
+        self._last_backend = self._backend()
+        self._prepare_backend = None
+        self._prepare_revision = 0
+        self._prepare_saved = None
+        self._prepare_last = (None, None)
+        self._registry_generation = 0
         self.loras: tuple[LoRASelection, ...] = ()
         self._receipts: dict[str, str] = {}  # selected LoRA identifier -> local receipt id (never exported)
         self._candidates: list[tuple[str, float | None]] = []
@@ -69,6 +86,10 @@ class LoraAssetPanel:
         self.refresh_assets()
 
     # -- shared helpers --------------------------------------------------------------------------------------------
+    @property
+    def preparing(self) -> bool:
+        return bool(self._prepare_files)
+
     @staticmethod
     def _show(label, presentation: Presentation) -> None:
         label.setProperty("state", presentation.level)
@@ -89,6 +110,10 @@ class LoraAssetPanel:
             getattr(self.page, name).setEnabled(enabled and cloud)
 
     def sync_backend(self) -> None:
+        backend = self._backend()
+        if backend != self._last_backend:
+            self.invalidate_prepare_ownership()
+            self._last_backend = backend
         cloud = self._backend()[0] == "cloud"
         self.set_enabled(not self._is_busy())
         if not cloud:
@@ -216,11 +241,23 @@ class LoraAssetPanel:
 
     # -- assets ----------------------------------------------------------------------------------------------------
     def refresh_assets(self) -> None:
-        self._runner.submit(list_assets(self._state), self._listed)
+        if self._runner.closed:
+            return
+        self._registry_generation += 1
+        generation = self._registry_generation
+
+        def listed(records, failure):
+            if generation == self._registry_generation:
+                self._listed(records, failure)
+
+        self._runner.submit(list_assets(self._state), listed)
 
     def _listed(self, records, failure) -> None:
         status = self.page.assetStatusLabel
         if failure is not None:
+            diagnostic_event(
+                log, "ui.asset_registry_unavailable", level=logging.WARNING, data={"reason": "read_failed"}
+            )
             self._show(status, Presentation("warning", "Registry unavailable", present_asset_failure(failure).detail))
             return
         self._records = {record["asset_id"]: record for record in records}
@@ -258,24 +295,149 @@ class LoraAssetPanel:
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
     def prepare(self) -> None:
-        if self._is_busy():
+        if self.preparing or self._is_busy() or self._runner.closed:
             return
         backend = self._backend()
         if backend[0] != "cloud":
             return
-        chosen = self.choose_asset_file(self.page, self._state)
-        if not chosen or self._is_busy() or self._backend() != backend:
+        revision = self._ownership_revision
+        folder = self._state
+        preference_error = False
+        try:
+            remembered = load_prepare_folder(self._state)
+            if remembered and Path(remembered).is_dir() and os.access(remembered, os.R_OK | os.X_OK):
+                folder = Path(remembered)
+        except (OSError, ValueError, ValidationError):
+            preference_error = True
+        chosen = self.choose_asset_file(self.page, folder)
+        if isinstance(chosen, str):
+            chosen = [chosen] if chosen else []  # retain injected single-file picker compatibility
+        if not chosen:
+            return
+        if preference_error:
+            self._prepare_folder_warning("read_failed")
+        else:
+            try:
+                save_prepare_folder(self._state, str(Path(chosen[0]).absolute().parent))
+            except (OSError, ValueError, ValidationError):
+                self._prepare_folder_warning("write_failed")
+        if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
             return  # Cancelled picker or backend/ownership changed while choosing.
+        self._prepare_files = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
+        self._prepare_index = 0
+        self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+        self._prepare_backend, self._prepare_revision = backend, revision
+        self._prepare_saved = self._saved()
+        self._registry_generation += 1  # old list callbacks cannot replace newly prepared receipts
         self._set_busy(True)
-        self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", "This may upload the file."))
         activity_strip(self.page).start(
-            "asset", "Preparing cloud asset", detail="May upload the selected file; waiting for receipt."
+            "asset", "Preparing cloud assets", detail="May upload each selected file; waiting for receipts."
         )
+        self._prepare_next()
+
+    def _prepare_folder_warning(self, reason: str) -> None:
+        diagnostic_event(log, "ui.prepare_folder_unavailable", level=logging.WARNING, data={"reason": reason})
+        activity_strip(self.page).complete(
+            "asset-folder",
+            "Prepare folder not remembered",
+            "Folder preferences could not be read or saved. Selected files can still be prepared.",
+            "warning",
+        )
+
+    def invalidate_prepare_ownership(self) -> None:
+        """Credential/backend changes stop admission after the currently admitted file settles."""
+        self._ownership_revision += 1
+
+    def _prepare_next(self) -> None:
+        if self._runner.closed:
+            return  # runner/service shutdown owns settlement; never submit another file
+        if (
+            self._prepare_index >= len(self._prepare_files)
+            or self._backend() != self._prepare_backend
+            or self._ownership_revision != self._prepare_revision
+            or self._saved() is not self._prepare_saved
+        ):
+            self._finish_prepare()
+            return
+        number, total = self._prepare_index + 1, len(self._prepare_files)
+        detail = f"Preparing {number} of {total}. May upload this file; waiting for receipt."
+        self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", detail))
+        activity_strip(self.page).update("asset", 0, 0, detail=detail)
         self._runner.submit(
-            prepare_asset(self._state, Path(chosen), provenance="gui", saved=self._saved()), self._prepared
+            prepare_asset(
+                self._state, Path(self._prepare_files[self._prepare_index]), provenance="gui", saved=self._prepare_saved
+            ),
+            self._prepared,
         )
 
     def _prepared(self, record, failure) -> None:
+        if self._prepare_files:
+            self._prepare_last = record, failure
+            state = record.get("state") if record is not None and failure is None else None
+            if failure is not None:
+                definite = (
+                    isinstance(failure, BackendError) and failure.failure.remote_outcome != RemoteOutcome.UNKNOWN
+                ) or isinstance(failure, ValidationError)
+                outcome = "failed" if definite else "unresolved"
+            else:
+                outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
+            self._prepare_counts[outcome] += 1
+            if outcome != "confirmed":
+                diagnostic_event(
+                    log,
+                    "ui.asset_prepare_incomplete",
+                    level=logging.WARNING,
+                    data={
+                        "outcome": outcome,
+                        "reason": "service_error" if failure is not None else "receipt_not_confirmed",
+                        "item": self._prepare_index + 1,
+                        "total": len(self._prepare_files),
+                        "remote_outcome": (
+                            failure.failure.remote_outcome.value if isinstance(failure, BackendError) else "unverified"
+                        ),
+                        "code": failure.failure.code if isinstance(failure, BackendError) else "unclassified",
+                    },
+                )
+            if record is not None and failure is None:
+                self._records[record["asset_id"]] = record
+                # Single-file completion adds/binds in the existing final registry callback.
+                if (
+                    state == "confirmed"
+                    and len(self._prepare_files) > 1
+                    and self._backend() == self._prepare_backend
+                    and self._ownership_revision == self._prepare_revision
+                ):
+                    identifier = record["identifier"]
+                    if identifier not in {item.identifier for item in self.loras}:
+                        self.loras = (*self.loras, LoRASelection(identifier, DEFAULT_LORA_WEIGHT))
+                    self._receipts[identifier] = record["asset_id"]
+                    self._render_loras()
+            self._prepare_index += 1
+            self._prepare_next()
+            return
+        self._present_prepared(record, failure)
+
+    def _finish_prepare(self) -> None:
+        total, done = len(self._prepare_files), self._prepare_index
+        self._prepare_files = ()
+        self._prepare_saved = None
+        self._set_busy(False)
+        if total == 1 and done == 1:
+            same_owner = self._backend() == self._prepare_backend and self._ownership_revision == self._prepare_revision
+            self._present_prepared(*self._prepare_last, bind=same_owner)
+            return
+        counts = self._prepare_counts
+        detail = (
+            f"{counts['confirmed']} confirmed, {counts['failed']} failed, "
+            f"{counts['unresolved']} unresolved, {total - done} unstarted. No automatic retries."
+        )
+        state = "success" if counts["confirmed"] == total else "error" if counts["failed"] == total else "partial"
+        activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
+        level = "ok" if state == "success" else "error" if state == "error" else "warning"
+        self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
+        self.refresh_assets()
+
+    def _present_prepared(self, record, failure, *, bind: bool = True) -> None:
         self._set_busy(False)
         strip = activity_strip(self.page)
         presentation = (
@@ -291,7 +453,7 @@ class LoraAssetPanel:
             "asset",
             presentation.headline,
             presentation.detail,
-            "error" if failure else "success" if record["state"] == "confirmed" else "partial",
+            "partial" if presentation.level == "warning" else "error" if failure else "success",
         )
         status = self.page.assetStatusLabel
         if failure is not None:
@@ -305,7 +467,8 @@ class LoraAssetPanel:
                     f"{record['identifier']} ({record['evidence']}).",
                 ),
             )
-            self._bind_after_list, self._add_when_bound = record["identifier"], True
+            if bind:
+                self._bind_after_list, self._add_when_bound = record["identifier"], True
         self.refresh_assets()
 
     def _start_reconcile(self, asset_id: str, bind: str | None = None) -> None:
