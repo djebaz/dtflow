@@ -41,13 +41,14 @@ folder/path actions. Save and load generation configurations to reuse a setup.
 
 ### Durable queues and controlled comparisons
 
-Create a paused queue from the generation form, then start, pause, resume or cancel it.
+Compose a queue from the generation form, then start it now, add it up next behind a running
+queue or save it paused; pause, resume or cancel it later.
 Queue items retain their resolved requests, attempts and saved outputs, so execution remains
 inspectable after restart. Concurrency controls respect backend and shared resource limits.
 
 Build seed sweeps or Pair/Cross batches over prompts, models, seeds, dimensions and other
-parameters. Review the item count and dry-run table before creating a batch; vary only the
-parameters you intend to compare.
+parameters, picking values from the inventory. The item count and the exact-item preview update
+as you edit, before anything is created; vary only the parameters you intend to compare.
 
 ### Searchable application diagnostics
 

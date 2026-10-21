@@ -263,7 +263,6 @@ QPushButton#expandPromptButton:checked:hover {
 }
 QPushButton#checkButton,
 QPushButton#generateButton,
-QPushButton#createQueueButton,
 QPushButton[role="primary"] {
   background-color: ${color.accent};
   border-color: ${color.accent};
@@ -272,7 +271,6 @@ QPushButton[role="primary"] {
 }
 QPushButton#checkButton:hover,
 QPushButton#generateButton:hover,
-QPushButton#createQueueButton:hover,
 QPushButton[role="primary"]:hover {
   background-color: ${color.accentHover};
   border-color: ${color.accentEdge};
@@ -573,14 +571,12 @@ QPushButton:checked {
 }
 QPushButton#generateButton:pressed,
 QPushButton#checkButton:pressed,
-QPushButton#createQueueButton:pressed,
 QPushButton[role="primary"]:pressed {
   background: ${color.accentPressed};
   border-color: ${color.focus};
 }
 QPushButton#generateButton:disabled,
 QPushButton#checkButton:disabled,
-QPushButton#createQueueButton:disabled,
 QPushButton[role="primary"]:disabled {
   background: ${color.buttonPressed};
   border-color: ${color.disabledBorder};
@@ -1309,13 +1305,6 @@ QGroupBox[role="sectionCard"] {
   padding: 0;
 }
 QGroupBox[role="sectionCard"]::title { padding: 0; }
-/* The custom header checkbox owns interaction; suppress the covered native indicator. */
-QGroupBox#planBox::indicator {
-  width: 0;
-  height: 0;
-  border: 0;
-  background: transparent;
-}
 QFrame[role="sectionHeader"] {
   background: ${color.sectionHeader};
   border: 0;
@@ -1909,3 +1898,18 @@ QPushButton#galleryLoadingRetryButton:focus {
 #logsCounter { color: ${color.text}; }
 #logsEmpty { background: ${color.surface}; color: ${color.secondary}; border: 1px solid ${color.sectionBorder}; border-radius: ${size.radius}; padding: 24px; }
 #logsDetailTitle { font-weight: ${type.weightEmphasis}; }
+/* Queues composer: removable value chips of one plan dimension. */
+QPushButton[role="valueChip"] {
+  background-color: ${color.selection};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.inputRadius};
+  color: ${color.badgeText};
+  font-size: ${type.small};
+  font-weight: ${type.weightEmphasis};
+  min-height: 0;
+  padding: 2px 8px;
+}
+ValueChips[invalid="true"] QPushButton[role="valueChip"],
+ValueChips[invalid="true"] QPushButton#valueChipsAddButton {
+  border-color: ${color.error};
+}
