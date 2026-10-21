@@ -1521,16 +1521,21 @@ class QueuePage:
     def _dispatched(self, final, failure) -> None:
         self._dispatching, self._future = None, None
         self._dispatch_started = False
+        waiting = bool(self._after_generation)
+        if failure is not None:
+            # A dispatch-level failure (busy state, backend, inventory, persistence) stops auto-play, as everywhere: the
+            # queues waiting for a generation stay paused. Cleared before idle is published, which would start the next.
+            self._after_generation.clear()
         self._activity.set(dispatching=False)
         fallback, self._resume_fallback = self._resume_fallback, None
-        if isinstance(failure, StateBusyError) and self._after_generation:
-            # Another process owns the state now: the waiting popover queues would fail the same way.
-            self._after_generation.clear()
+        if failure is not None and waiting:
+            reason = (
+                "Another process owns dispatch"
+                if isinstance(failure, StateBusyError)
+                else "The previous queue could not be dispatched"
+            )
             activity_strip(self.page).complete(
-                "queue-quick",
-                "Waiting queues saved paused",
-                "Another process owns dispatch; press Start later.",
-                "partial",
+                "queue-quick", "Waiting queues saved paused", f"{reason}; press Start later.", "partial"
             )
         if isinstance(failure, StateBusyError) and fallback is not None:
             self._post("resume", fallback)
