@@ -185,13 +185,26 @@
               </property>
              </widget>
             </item>
-            <item row="3" column="0" colspan="2">
+            <item row="3" column="0">
              <widget class="QLabel" name="modelLabel">
               <property name="text">
                <string>Checkpoint</string>
               </property>
               <property name="textRole" stdset="0">
                <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1" alignment="Qt::AlignRight">
+             <widget class="QPushButton" name="checkpointDetailsButton">
+              <property name="text">
+               <string>Details</string>
+              </property>
+              <property name="accessibleName">
+               <string>Checkpoint details</string>
+              </property>
+              <property name="toolTip">
+               <string>Inspect published metadata and last-observed provider availability. Does not submit a request.</string>
               </property>
              </widget>
             </item>
