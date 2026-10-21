@@ -25,7 +25,7 @@ from dtflow.services.queue import QueueDispatcher  # noqa: E402
 from dtflow.services.queue_session import create_queue, expand_items  # noqa: E402
 from dtflow.ui import queue_page as queue_ui  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
-from dtflow.ui.queue_model import QueueItemModel  # noqa: E402
+from dtflow.ui.queue_model import STATUS_COLUMN, QueueItemModel  # noqa: E402
 from dtflow.ui.queue_presenter import ItemRow  # noqa: E402
 
 
@@ -53,7 +53,7 @@ def state_text(window):
 
 def states(window):
     model = window.queue_page.queueItemsView.model()
-    return [model.data(model.index(row, 3)) for row in range(model.rowCount())]
+    return [model.data(model.index(row, STATUS_COLUMN)) for row in range(model.rowCount())]
 
 
 def row(item_id, position, state, outputs=()):
