@@ -136,6 +136,31 @@
            </widget>
           </item>
           <item>
+           <widget class="QToolButton" name="quickQueueButton">
+            <property name="toolTip">
+             <string>Queue Generate's request from any tab</string>
+            </property>
+            <property name="accessibleName">
+             <string>Queue Generate's request</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>30</width>
+              <height>30</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>30</width>
+              <height>30</height>
+             </size>
+            </property>
+            <property name="autoRaise">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="RunControl" name="runControl">
             <property name="toolTip">
              <string>No runnable queue selected.</string>

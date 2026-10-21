@@ -2421,6 +2421,56 @@ def render_queue_states(shell, capture):
     page.removeQueueButton.click()
     page.removeQueueButton.click()
     wait_for(lambda: not queue._views)
+    render_queue_popover_states(shell, capture)
+
+
+def render_queue_popover_states(shell, capture):
+    """The one-click Queue popover (#135) on Generate, Images and Queues; Add to queue is shown while a queue runs."""
+    queue, page, popover = shell.queue, shell.queue_page, shell.queue_popover
+    header = shell.shell.quickQueueButton
+    shell.form.generationNavigationButton.click()
+    trigger = shell.generation_page.queueGenerateButton
+    popover.repeat_spin.setValue(4)
+    assert trigger.toolTip().startswith("Queue ×4:"), trigger.toolTip()
+    popover.open_at(trigger)
+    assert popover.start_button.isEnabled() and not popover.add_button.isEnabled()
+    assert not popover.plan_option.isEnabled()  # the composer is in Repeat mode: no plan to reuse
+    capture("queues-45-popover-generate", (popover, trigger))
+    popover.hide()
+    # The composer's plan becomes a choice; the trigger's tooltip follows it.
+    page.planModeCombo.setCurrentText("Cross")
+    page.planStepsEdit.setText("20; 30")
+    page.planSeedsEdit.setText("1; 2")
+    shell.form.imagesNavigationButton.click()
+    QTest.qWait(150)
+    popover.open_at(header)
+    assert popover.plan_option.isEnabled()
+    popover.plan_option.setChecked(True)
+    assert trigger.toolTip().startswith("Queue ×4:") and popover.label() == "Queue ×4", popover.label()
+    capture("queues-46-popover-images-composer-plan", (popover, header))
+    popover.hide()
+    page.planStepsEdit.setText("20; 30; 40")  # edited while the popover is closed: the count stays true
+    assert trigger.toolTip().startswith("Queue ×6:"), trigger.toolTip()
+    page.planStepsEdit.setText("20; 30")
+    shell.form.queueNavigationButton.click()
+    with patch.object(type(queue), "dispatching_here", new_callable=PropertyMock, return_value=True):
+        popover.open_at(header)
+        assert popover.add_button.isEnabled() and not popover.start_button.isEnabled()
+        capture("queues-47-popover-queues-while-running", (popover, header))
+        popover.hide()
+    with patch.object(type(queue), "_live_run", return_value=True):
+        popover.open_at(header)  # another process dispatches: the new queue waits behind it
+        assert popover.add_button.isEnabled() and not popover.start_button.isEnabled()
+        popover.hide()
+    with patch.object(type(shell.activity), "generating", new_callable=PropertyMock, return_value=True):
+        popover.open_at(header)
+        assert popover.add_button.isEnabled() and not popover.start_button.isEnabled()
+        popover.hide()
+    popover.repeat_option.setChecked(True)
+    popover.repeat_spin.setValue(1)
+    for name in ("planStepsEdit", "planSeedsEdit"):
+        getattr(page, name).clear()
+    page.planModeCombo.setCurrentText("Repeat")
 
 
 def render_shell_states(shell, capture):
@@ -2893,7 +2943,8 @@ def main():
         shell.form.generationNavigationButton.click()
         page, controller = shell.generation_page, shell.generation
 
-        def capture(name):
+        def capture(name, popup=None):
+            """``popup`` is (widget, anchor): a separate popup window drawn under its anchor, as the user sees it."""
             category = name.split("-", 1)[0]
             if not wants(category):
                 return
@@ -2902,7 +2953,14 @@ def main():
             preview._show_controls()
             QTest.qWait(30)
             target = args.out / f"{name}.png"
-            if not shell.form.grab().save(str(target)):
+            image = shell.form.grab()
+            if popup is not None:
+                widget, anchor = popup
+                at = widget.placement(anchor)
+                painter = QPainter(image)
+                painter.drawPixmap(at, widget.grab())
+                painter.end()
+            if not image.save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
 

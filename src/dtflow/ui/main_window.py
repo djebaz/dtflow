@@ -57,6 +57,7 @@ from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
 from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
+from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
@@ -320,6 +321,25 @@ class MainWindow:
             activity=self.activity,
         )
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
+        # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
+        arrow = self.generation_page.queueGenerateButton
+        self.queue_popover = QueuePopover(
+            self.queue,
+            self.activity,
+            form,
+            changed=lambda label: arrow.setToolTip(
+                f"{label}: Repeat N or the composer plan, now or behind running work."
+            ),
+        )
+        self.shell.quickQueueButton.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "layers.svg")))
+        self.shell.quickQueueButton.setIconSize(QSize(18, 18))
+        self.shell.quickQueueButton.clicked.connect(lambda: self.queue_popover.open_at(self.shell.quickQueueButton))
+        self.queue.plan_hook = self.queue_popover.sync_label
+        for button in (self.queue_popover.start_button, self.queue_popover.add_button):
+            button.clicked.connect(self.remember)  # a run start, like Generate image
+        self.generation_page.queueGenerateButton.clicked.connect(
+            lambda: self.queue_popover.open_at(self.generation_page.queueGenerateButton)
+        )
         self.generation.queue_behind = self.queue.queue_behind
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
@@ -472,9 +492,13 @@ class MainWindow:
     def _disable_preview_controls(page: QWidget) -> None:
         for control_type in PREVIEW_CONTROL_TYPES:
             for control in page.findChildren(control_type):
-                # A spin box's or combo box's own editor follows its owner; disabling it separately would leave the
-                # value greyed out and untypeable after the owner is re-enabled.
-                if not isinstance(control.parent(), (QAbstractSpinBox, QComboBox)):
+                # A spin box's or combo box's own editor and popup list follow their owner; disabling them separately
+                # would leave the value greyed out and untypeable, or the popup's items unclickable, after the owner is
+                # re-enabled. The popup list sits inside a container frame, so look through every ancestor.
+                owner = control.parentWidget()
+                while owner is not None and not isinstance(owner, (QAbstractSpinBox, QComboBox)):
+                    owner = owner.parentWidget()
+                if owner is None:
                     control.setEnabled(False)
 
     def _show_queue(self) -> None:
@@ -582,8 +606,11 @@ class MainWindow:
         if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or images.width() <= 0:
             return
         control, offset = shell.runControl, shell.runControlOffset
-        # The offset's left edge does not depend on its own width, so this target is stable and cannot oscillate.
-        width = max(0, images.center().x() - control.width() // 2 - offset.x())
+        # The Queue button sits between the offset and the control. Its fixed width plus one more layout spacing are
+        # constants, not read from positions that lag a pending relayout, so the target cannot oscillate (hovering
+        # the logo requests layouts and used to make the icons drift).
+        gap = shell.quickQueueButton.width() + max(0, shell.brandLayout.spacing())
+        width = max(0, images.center().x() - control.width() // 2 - offset.x() - gap)
         if offset.width() != width:
             offset.setFixedWidth(width)
 
