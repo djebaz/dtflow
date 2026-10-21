@@ -326,7 +326,17 @@ class QueuePage:
             page.planDrawGrid,
             [
                 (getattr(page, f"planDraw{name}Label"), getattr(page, f"planDraw{name}Spin"))
-                for name in ("Models", "Seeds", "Steps", "Guidance", "Samplers", "Sizes", "Strengths", "LoraSets", "Loras")
+                for name in (
+                    "Models",
+                    "Seeds",
+                    "Steps",
+                    "Guidance",
+                    "Samplers",
+                    "Sizes",
+                    "Strengths",
+                    "LoraSets",
+                    "Loras",
+                )
             ],
             page.planMutationLayout,
             [
