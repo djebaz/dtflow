@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Sequence
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -229,6 +230,38 @@ class QueueMixin:
             if db.execute("SELECT 1 FROM queues WHERE queue_id=?", (queue_id,)).fetchone() is None:
                 raise QueueError("Unknown queue.")
             self._event(db, queue_id, kind, at_utc or self._now(), detail)
+
+    async def queue_timing(self, queue_id: str) -> dict[str, Any]:
+        """The few rows a timing snapshot needs, without reading every item and event of the queue."""
+        return await self._run(self._queue_timing, queue_id)
+
+    def _queue_timing(self, queue_id: str) -> dict[str, Any]:
+        db = self._db()
+        queue = db.execute("SELECT cap FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+        if queue is None:
+            raise QueueError("Unknown queue.")
+        started = db.execute(
+            "SELECT at_utc FROM queue_events WHERE queue_id=? AND kind='started' ORDER BY event_id DESC LIMIT 1",
+            (queue_id,),
+        ).fetchone()
+        counts = {state: 0 for state in ITEM_STATES}
+        for row in db.execute(
+            "SELECT state, COUNT(*) AS n FROM queue_items WHERE queue_id=? GROUP BY state", (queue_id,)
+        ):
+            counts[row["state"]] = row["n"]
+        return {
+            "cap": queue["cap"],
+            "started_at_utc": started["at_utc"] if started else None,
+            "summary": counts,
+            "running_started_at_utc": [
+                row["updated_at_utc"]
+                for row in db.execute(
+                    "SELECT updated_at_utc FROM queue_items WHERE queue_id=? AND state='running' ORDER BY item_id",
+                    (queue_id,),
+                )
+            ],
+            "successful_durations": _successful_durations(db, self.directory, queue_id),
+        }
 
     # -- creation -------------------------------------------------------------------------------------------------
 
@@ -797,6 +830,29 @@ _VARIED = {
 }
 
 
+# Successful durations per (database directory, queue), extended from the last settlement seen: queue events are
+# append-only, so each poll or snapshot reads only new settlements instead of re-parsing the whole history.
+_DURATIONS: dict[tuple[str, str], tuple[int, tuple]] = {}
+_DURATIONS_LOCK = threading.Lock()
+
+
+def _successful_durations(connection: sqlite3.Connection, directory: Path, queue_id: str) -> list:
+    key = (str(Path(directory).resolve()), queue_id)
+    with _DURATIONS_LOCK:
+        last, durations = _DURATIONS.get(key, (0, ()))
+    rows = connection.execute(
+        "SELECT event_id, json_extract(detail_json, '$.state') AS state,"
+        " json_extract(detail_json, '$.backend_elapsed_seconds') AS seconds"
+        " FROM queue_events WHERE queue_id=? AND kind='item_settled' AND event_id>? ORDER BY event_id",
+        (queue_id, last),
+    ).fetchall()
+    if rows:
+        durations += tuple(row["seconds"] for row in rows if row["state"] == "succeeded")
+        with _DURATIONS_LOCK:
+            _DURATIONS[key] = (rows[-1]["event_id"], durations)
+    return list(durations)
+
+
 def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> tuple[dict[str, Any], ...]:
     """List every queue without its items or events: status, item counts and what the first item asks for.
 
@@ -861,18 +917,11 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                     }
                 except (TypeError, ValueError):
                     pass
-            queue["successful_durations"] = []
-            if queue["status"] == "running" and summary["succeeded"] >= 1:
-                for event in connection.execute(
-                    "SELECT detail_json FROM queue_events WHERE queue_id=? AND kind='item_settled' ORDER BY event_id",
-                    (row["queue_id"],),
-                ):
-                    try:
-                        detail = json.loads(event["detail_json"])
-                    except (TypeError, ValueError):
-                        continue
-                    if isinstance(detail, dict) and detail.get("state") == "succeeded":
-                        queue["successful_durations"].append(detail.get("backend_elapsed_seconds"))
+            queue["successful_durations"] = (
+                _successful_durations(connection, directory, row["queue_id"])
+                if queue["status"] == "running" and summary["succeeded"] >= 1
+                else []
+            )
             first = connection.execute(
                 "SELECT request_json FROM queue_items WHERE queue_id=? ORDER BY position LIMIT 1", (row["queue_id"],)
             ).fetchone()

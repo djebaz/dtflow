@@ -127,21 +127,16 @@ class QueueDispatcher:
     async def _record_timing_snapshot(self, queue_id: str) -> None:
         """Keep the observed timing and current ETA alongside each settled item."""
         try:
-            view = await self.store.inspect_queue(queue_id)
-            starts = [event["at_utc"] for event in view["events"] if event["kind"] == "started"]
-            if not starts:
+            view = await self.store.queue_timing(queue_id)
+            if not view["started_at_utc"]:
                 return
-            started = datetime.fromisoformat(starts[-1])
+            started = datetime.fromisoformat(view["started_at_utc"])
             if started.tzinfo is None:
                 return
             elapsed = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
-            durations = [
-                event["detail"].get("backend_elapsed_seconds")
-                for event in view["events"]
-                if event["kind"] == "item_settled" and event["detail"].get("state") == "succeeded"
-            ]
+            durations = view["successful_durations"]
             counts = dict(view["summary"])
-            running_starts = [item["updated_at_utc"] for item in view["items"] if item["state"] == "running"]
+            running_starts = list(view["running_started_at_utc"])
             # This runs just after a settlement, before the dispatch loop refills the freed lane; count the lanes the
             # next claim will fill as starting now so the ETA does not divide by one lane too few.
             lanes = min(view["cap"], self.service.backend.capabilities.max_concurrency)

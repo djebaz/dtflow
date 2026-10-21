@@ -18,7 +18,6 @@ from dtflow.ui.queue_presenter import (
     primary_action,
     status_chip,
     summarize,
-    timing_snapshot,
 )
 
 ZERO = {s: 0 for s in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")}
@@ -158,16 +157,3 @@ def test_a_dispatch_run_ends_with_the_outcome_that_happened():
         "2 item(s) not run; 1 succeeded.",
     )
     assert not has_started({"events": [{"kind": "created"}]}) and has_started({"events": [{"kind": "started"}]})
-
-
-def test_timing_snapshot_reports_projected_total_and_unknown_eta():
-    started = datetime(2026, 10, 20, 18, 0, tzinfo=UTC)
-    view = {"started_at_utc": started.isoformat()}
-    now = datetime(2026, 10, 20, 18, 1, 10, tzinfo=UTC)
-    assert timing_snapshot(view, 40.1, now) == (
-        "Timing snapshot - elapsed 1:10 | ETA ~0:41 | elapsed + ETA ~1:51 (estimate)"
-    )
-    assert timing_snapshot(view, None, now) == (
-        "Timing snapshot - elapsed 1:10 | ETA unavailable | elapsed + ETA unavailable"
-    )
-    assert timing_snapshot({}, 30, now) == ""

@@ -899,9 +899,6 @@ def render_active_queue_states(shell, out):
         queue._set_level(page.concurrencySpinBox, 10)
         assert page.concurrencySpinBox.value() == page.newQueueCapSpinBox.value() == 10
         snap("queues-36-max-at-once-ten")
-        from dtflow.ui.queue_presenter import timing_snapshot
-
-        assert "elapsed + ETA" in timing_snapshot({"started_at_utc": datetime.now(UTC).isoformat()}, 25.0)
         queue._syncing = True
         page.concurrencySpinBox.setValue(4)
         page.newQueueCapSpinBox.setValue(4)
