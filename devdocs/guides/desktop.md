@@ -310,3 +310,20 @@ Images also renders `images-28-detail-additional`, `images-29-regenerate-confirm
 Screenshots are layout evidence only, not Windows/native-DPI, interaction,
 generation, ONNX or packaged acceptance. Extending the script does not mean it
 has been rendered; rendering remains owner-requested.
+
+## Inspect checkpoint metadata
+
+In **Generate**, select an exact checkpoint and choose **Details** beside the Checkpoint label.
+The read-only inline inspector combines independently maintained sources:
+
+- **DTFlow classification** (`Models_prime.json` / `Models_niche.json`): family, tier and declared modes.
+- **Draw Things community metadata** (`community_model_specs.json`): technical fields only when the exact
+  checkpoint filename has a published entry; other variants are not substituted.
+- **DTFlow model profiles** (`model_profiles.json`): suggested steps, guidance and sampler, clearly marked
+  as exact checkpoint suggestions or family defaults.
+- **Provider inventory**: last observed listing status and timestamp, not a guarantee of availability or generation.
+
+A filename suffix, when shown, is a filename observation and does not prove weight format/runtime compatibility.
+Missing descriptions are shown as unknown. Viewing details does not contact a provider, submit a generation,
+modify model selection, or calculate cloud Compute Units. Existing cloud preflight remains authoritative.
+
