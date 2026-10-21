@@ -1396,6 +1396,7 @@ def render_item_table_states(shell, out, state):
         queue._timer.stop()
         model, table = queue.model, page.queueItemsView
         assert model.columnCount() == 7 and model.rowCount() == len(items)
+        wait_for(lambda: model.thumbnails.pixmap(items[0]["artifacts"][0]) is not None)  # async, bounded decode
         assert model.gauge_scale == 1.5  # the largest recorded weight in this fixture; a 0.94 LoRA fills 63%
         assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole) == "Backend duration"
         assert table.verticalHeader().defaultSectionSize() == 76
@@ -1418,12 +1419,19 @@ def render_item_table_states(shell, out, state):
         assert long_lora in tip and "background_bokeh_v2.safetensors" in tip
         prompt_tip = model.index(1, COL_PROMPT).data(Qt.ItemDataRole.ToolTipRole)
         assert "Positive" in prompt_tip and negative.rstrip(".") in prompt_tip
-        assert "<img" in model.index(0, 0).data(Qt.ItemDataRole.ToolTipRole)
+        assert model.index(0, 0).data(Qt.ItemDataRole.ToolTipRole) == ""  # the preview is a bounded overlay, not <img>
+        assert model.index(2, 0).data(Qt.ItemDataRole.ToolTipRole) == "No saved image"
         assert model.index(3, COL_LORAS).data(Qt.ItemDataRole.ToolTipRole) == ""
         queue.set_images_hook(lambda path: None)
         select(0)
         assert page.itemOpenImagesButton.isEnabled() and page.itemOutcomeLabel.text() == "No error recorded"
         snap("queues-60-item-table")
+        preview = queue._hover_preview
+        preview.show_row(0, QPoint(600, 300))
+        wait_for(lambda: not preview.label.pixmap().isNull())
+        assert preview.label.windowFlags() & Qt.WindowType.ToolTip and preview.label.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        save(preview.label, out, "queues-64-item-table-thumbnail-preview")
+        preview.hide()
         select(1)  # more than three LoRAs and the 55-character filename
         assert page.itemSeedLabel.text() == str(items[1]["seed"]) and page.itemDimensionsLabel.text() == "1024 × 1024"
         assert page.itemOperationLabel.text() == "Text to image" and page.itemIdLabel.text() == "d8293dd2"

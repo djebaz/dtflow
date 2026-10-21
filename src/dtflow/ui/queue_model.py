@@ -1,8 +1,6 @@
 """Table model over queue item rows: stable order, in-place updates, never re-sorted."""
 
 from html import escape
-from pathlib import Path
-
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
@@ -51,9 +49,9 @@ DURATION_COLUMN = 6
 def _tooltip(row: ItemRow, column: int) -> str:
     """Read-only hover text; never an action and never a Copy affordance."""
     if column == 0:
-        if row.outputs and Path(row.outputs[0]).is_file():
-            return f'<img src="{escape(Path(row.outputs[0]).as_posix())}" width="240">'
-        return "No saved image"
+        # The enlarged preview is a separate bounded overlay (queue_thumbnails.HoverPreview); a rich-text <img>
+        # tooltip would decode the full original on the GUI thread.
+        return "" if row.outputs else "No saved image"
     if column == 1:
         positive = escape(row.prompt) or "—"
         negative = escape(row.negative_prompt) or "—"
@@ -79,6 +77,7 @@ class QueueItemModel(QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._rows: tuple[ItemRow, ...] = ()
+        self.thumbnails = None  # QueueThumbnails, set by the page; the painted cells ask it for pixmaps
         self.gauge_scale = LORA_GAUGE_MIN_SCALE  # shared full-bar LoRA weight for the painted gauges
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:

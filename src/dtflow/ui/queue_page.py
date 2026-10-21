@@ -65,6 +65,7 @@ from dtflow.ui.planning_presenter import (
 from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, SummaryLabelHeightFit
 from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableHeader, ItemTableLayout, QueueItemDelegate
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
+from dtflow.ui.queue_thumbnails import HoverPreview, QueueThumbnails
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
     FILTERS,
@@ -257,6 +258,9 @@ class QueuePage:
         items_view.setShowGrid(False)
         items_view.setVerticalScrollMode(items_view.ScrollMode.ScrollPerPixel)
         self._item_layout = ItemTableLayout(items_view)
+        self.model.thumbnails = QueueThumbnails(self._runner, self._state, items_view)
+        self.model.thumbnails.changed.connect(lambda *_: items_view.viewport().update())
+        self._hover_preview = HoverPreview(items_view, self.model.thumbnails)
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.concurrencySpinBox.setToolTip(CONCURRENCY_HINT)

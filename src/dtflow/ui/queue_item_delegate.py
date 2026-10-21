@@ -4,10 +4,8 @@ Presentation only. Hover text comes from the model's ToolTipRole, so nothing her
 cell offers a Copy or click action. Thumbnails are read from already saved local outputs; nothing is generated.
 """
 
-from pathlib import Path
-
 from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QImageReader, QPainter, QPixmap, QTextLayout, QTextOption
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QTextLayout, QTextOption
 from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableView
 
 from dtflow.ui.queue_model import ROW_ROLE, stopwatch_icon
@@ -25,28 +23,6 @@ COL_PREVIEW, COL_PROMPT, COL_MODEL, COL_LORAS, COL_PARAMS, COL_STATUS, COL_DURAT
 PREVIEW_WIDTH, STATUS_WIDTH, DURATION_WIDTH = 72, 84, 68
 PROMPT_SHARE = 0.30  # target share of the table width (spec: 30-33%)
 MIN_MODEL, MIN_LORAS, MIN_PARAMS = 112, 190, 112
-_THUMBS: dict[str, QPixmap | None] = {}
-
-
-def _thumbnail(path: str) -> QPixmap | None:
-    """A cached, downscaled copy of a saved output; None when the file is absent or unreadable."""
-    if path in _THUMBS:
-        return _THUMBS[path]
-    pixmap = None
-    if path and Path(path).is_file():
-        reader = QImageReader(path)
-        reader.setAutoTransform(True)
-        size = reader.size()
-        if size.isValid():
-            size.scale(THUMB * 2, THUMB * 2, Qt.AspectRatioMode.KeepAspectRatio)
-            reader.setScaledSize(size)
-        image = reader.read()
-        if not image.isNull():
-            pixmap = QPixmap.fromImage(image)
-    _THUMBS[path] = pixmap
-    return pixmap
-
-
 ZWSP = "\u200b"
 
 
@@ -90,7 +66,7 @@ class QueueItemDelegate(QStyledItemDelegate):
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
         row = index.data(ROW_ROLE)
         column = index.column()
-        if row is None or column in (COL_STATUS, COL_DURATION):
+        if row is None:
             super().paint(painter, option, index)
             return
         # The base style draws the item surface, hover, selection and focus from the shared QSS.
@@ -107,7 +83,7 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         if column == COL_PREVIEW:
-            self._thumb(painter, rect, row, secondary)
+            self._thumb(painter, rect, row, secondary, getattr(index.model(), "thumbnails", None))
         elif column == COL_PROMPT:
             self._lines(painter, rect, wrapped_lines(row.prompt, option.font, rect.width(), 2), option.font, text)
         elif column == COL_MODEL:
@@ -118,6 +94,20 @@ class QueueItemDelegate(QStyledItemDelegate):
             self._loras(painter, rect, row, option.font, text, secondary, getattr(index.model(), "gauge_scale", 1.0))
         elif column == COL_PARAMS:
             self._params(painter, rect, row, option.font, text, secondary)
+        elif column == COL_STATUS:
+            # Semibold semantic text that keeps its color on the selected row; pending stays neutral gray.
+            color = index.data(Qt.ItemDataRole.ForegroundRole)
+            font = QFont(option.font)
+            font.setWeight(QFont.Weight.DemiBold)
+            painter.setFont(font)
+            painter.setPen(color if isinstance(color, QColor) else (secondary if row.level == "secondary" else text))
+            painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, row.state_text)
+        elif column == COL_DURATION:
+            mono = QFont(_TOKENS["type.monoFamily"])
+            mono.setPointSizeF(option.font.pointSizeF())
+            painter.setFont(mono)
+            painter.setPen(text)
+            painter.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, row.duration_text)
         painter.restore()
 
     @staticmethod
@@ -133,18 +123,20 @@ class QueueItemDelegate(QStyledItemDelegate):
             )
 
     @staticmethod
-    def _thumb(painter, rect, row, secondary) -> None:
+    def _thumb(painter, rect, row, secondary, provider) -> None:
         area = QRect(rect.left(), rect.top(), THUMB, THUMB)
         painter.setPen(QColor(_TOKENS["color.sectionBorder"]))
         painter.setBrush(QColor(_TOKENS["color.canvas"]))
         painter.drawRoundedRect(QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
-        pixmap = _thumbnail(row.outputs[0]) if row.outputs else None
+        pixmap = provider.pixmap(row.outputs[0]) if provider is not None and row.outputs else None
+        if pixmap is None and row.outputs and provider is not None and not provider.is_failed(row.outputs[0]):
+            return  # decoding in the background: a neutral tile, never misleading text
         if pixmap is None:
             small = QFont(painter.font())
             small.setPointSizeF(max(7.5, small.pointSizeF() - 1))
             painter.setFont(small)
             painter.setPen(QColor(_TOKENS["color.disabled"]))
-            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "no image")
+            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "no image" if not row.outputs else "unavailable")
             return
         scaled = pixmap.scaled(area.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         painter.drawPixmap(
