@@ -25,7 +25,7 @@ from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, v
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.image_preparation import prepare_edit_inputs
-from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan
+from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, plan_size
 from dtflow.services.queue_session import (
     change_queue_order,
     clear_queues,
@@ -1098,23 +1098,27 @@ class QueuePage:
             self._preview_timer.start()
 
     # -- creation --------------------------------------------------------------------------------------------------
-    def create(self, action: str = "save") -> None:
-        """Create from the composer: ``save`` keeps it paused, ``add`` queues it up next, ``start`` dispatches it."""
+    def create(self, action: str = "save", *, count: int | None = None, quick: bool = False) -> None:
+        """Create from the composer: ``save`` keeps it paused, ``add`` queues it up next, ``start`` dispatches it.
+
+        ``quick`` is the Queue popover (#135): ``count`` repeats Generate's request, and ``None`` uses the composer's
+        last plan. Its outcome goes to the shared overlay, so nothing leaves the current tab."""
         if action == "start" and (self.dispatching_here or self._activity.generating):
             return
+        report = self._quick_report if quick else self._message
         try:
             request, name, endpoint, asset_ids = self._request_source()
         except FormError as exc:
-            self._message(Presentation("error", "Queue not created", str(exc)))
+            report(Presentation("error", "Queue not created", str(exc)))
             return
         plan = None
-        if self._planned():
+        if (count is None) if quick else self._planned():
             plan = self._plan_for(request)
             if plan is None:
                 error = self.page.planCountLabel.text()
-                self._message(Presentation("error", "Queue not created", error))
+                report(Presentation("error", "Queue not created", error))
                 return
-        count, cap = self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
+        count, cap = count or self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         job = self._edit_source()
 
@@ -1125,7 +1129,66 @@ class QueuePage:
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
             return queue_id, used, status
 
-        self._runner.submit(work(), lambda result, failure: self._created(result, failure, action))
+        done = self._quick_created if quick else self._created
+        self._runner.submit(work(), lambda result, failure: done(result, failure, action))
+
+    # -- one-click Queue popover (#135) ----------------------------------------------------------------------------
+    def last_plan(self) -> tuple[str, str]:
+        """(level, text) of the composer's Pair/Cross plan for the popover; ``ok`` when it can be used as is."""
+        if not self._planned():
+            return "none", "Set up Pair or Cross in the Queues composer to reuse it here."
+        level, text = count_text(self._plan_form())
+        return level, f"{self.page.planModeCombo.currentText()} · {text}" if level == "ok" else sentence(text)
+
+    def last_plan_total(self) -> int | None:
+        if not self._planned():
+            return None
+        try:
+            return plan_size(build_plan(self._plan_form()))
+        except ValidationError:
+            return None
+
+    def quick_state(self) -> tuple[bool, bool, str]:
+        """(Start now, Add to queue, reason): a new request waits behind the running queue (#133)."""
+        if self._activity.generating:
+            return False, False, "A generation is running; queue this once it ends."
+        if self.dispatching_here:
+            return False, True, "A queue is running: Add to queue starts this one next, by itself."
+        return True, False, "Start now creates the queue and starts it at once."
+
+    def quick_create(self, action: str, *, count: int | None) -> None:
+        self.create(action, count=count, quick=True)
+
+    def _quick_report(self, presentation: Presentation) -> None:
+        state = {"ok": "success", "warning": "partial"}.get(presentation.level, "error")
+        activity_strip(self.page).complete("queue-quick", presentation.headline, presentation.detail, state)
+
+    def _quick_created(self, result, failure, action: str) -> None:
+        """Like ``_created``, but the composer and the current tab stay as they are."""
+        if failure is not None:
+            self._quick_report(present_generation_failure(failure))
+            return
+        queue_id, _, status = result
+        self._created_hook()
+        if action == "start" and not self.dispatching_here and not self._activity.generating:
+            self._dispatch(queue_id, resume_fallback=None)  # progress and results use the shared overlay
+        elif action == "start":
+            self._quick_report(
+                Presentation("warning", "Saved paused", "A run started meanwhile; press Start when it ends.")
+            )
+        elif status != "queued":
+            self._quick_report(
+                Presentation(
+                    "warning", "Saved paused", "The running queue had already ended, so this queue waits for Start."
+                )
+            )
+        else:
+            self._quick_report(
+                Presentation(
+                    "ok", "Added to queue", "It waits up next and starts by itself when the running queue ends."
+                )
+            )
+        self.refresh()
 
     def queue_behind(self, request, name, endpoint, asset_ids, job=None) -> None:
         """Generate while this window dispatches: a one-item queue that waits up next and starts by itself.

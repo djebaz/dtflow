@@ -981,6 +981,25 @@
          </widget>
         </item>
         <item>
+         <widget class="QPushButton" name="queueGenerateButton">
+          <property name="text">
+           <string>Queue ×1</string>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>0</width>
+            <height>38</height>
+           </size>
+          </property>
+          <property name="accessibleName">
+           <string>Queue this request</string>
+          </property>
+          <property name="toolTip">
+           <string>Queue this request: Repeat N or the last plan, started now or behind the running queue.</string>
+          </property>
+         </widget>
+        </item>
+        <item>
          <widget class="QPushButton" name="generateButton">
           <property name="text">
            <string>Generate image</string>

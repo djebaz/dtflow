@@ -57,6 +57,7 @@ from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
 from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
+from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
@@ -320,6 +321,17 @@ class MainWindow:
             activity=self.activity,
         )
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
+        # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
+        self.queue_popover = QueuePopover(
+            self.queue, self.activity, form, changed=self.generation_page.queueGenerateButton.setText
+        )
+        self.shell.quickQueueButton.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "layers.svg")))
+        self.shell.quickQueueButton.setIconSize(QSize(18, 18))
+        self.shell.quickQueueButton.clicked.connect(lambda: self.queue_popover.open_at(self.shell.quickQueueButton))
+        self.generation_page.queueGenerateButton.setEnabled(True)
+        self.generation_page.queueGenerateButton.clicked.connect(
+            lambda: self.queue_popover.open_at(self.generation_page.queueGenerateButton)
+        )
         self.generation.queue_behind = self.queue.queue_behind
         form.backendCombo.addItems(BACKENDS)
         self._restore_session()
@@ -582,8 +594,10 @@ class MainWindow:
         if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or images.width() <= 0:
             return
         control, offset = shell.runControl, shell.runControlOffset
-        # The offset's left edge does not depend on its own width, so this target is stable and cannot oscillate.
-        width = max(0, images.center().x() - control.width() // 2 - offset.x())
+        # Neither the offset's left edge nor the gap after it (spacing and the Queue button) depends on the offset's
+        # own width, so this target is stable and cannot oscillate.
+        gap = max(0, control.x() - offset.x() - offset.width())
+        width = max(0, images.center().x() - control.width() // 2 - offset.x() - gap)
         if offset.width() != width:
             offset.setFixedWidth(width)
 
