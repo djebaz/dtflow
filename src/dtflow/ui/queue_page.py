@@ -1327,8 +1327,8 @@ class QueuePage:
         self._runner.submit(set_concurrency(self._state, value, save_shared=True), self._cap_done)
 
     def _cap_done(self, value, failure) -> None:
+        """A saved maximum shows in its own box; only a refusal reaches the overlay."""
         if failure is not None:
             self._message(present_generation_failure(failure))
             return
-        self._message(Presentation("ok", "Concurrency set", f"Maximum {value} (a client policy; active work is kept)."))
         self.refresh()
