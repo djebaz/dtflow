@@ -48,3 +48,20 @@ The unchanged 2B tests own serialization, codecs, TLS policies, generic stream s
 ## Permit-scoped image operations (draft PR #64, source only)
 
 The dedicated single-shot session supplies immutable managed inputs and an explicit exact backend/endpoint/checkpoint/operation permit. Cloud permits require the bundled published exact-file description digest; image operations never use the derived/family fallbacks described above for txt2img. Preserve all description fields in override.models. Permit/concurrency checks happen before auth-client allocation; missing scope/description refuses. Source/mask tensors and contents references are built before generation authorization, with requested strength and mask blur/outset/preserve-original flags verified. No permit ships and no deployed tensor/polarity/strength or charging acceptance is established. A probe requires explicit per-invocation authorization; no agent inference has run. Local acceptance does not establish DT+ acceptance.
+
+## Read-only checkpoint metadata inspection
+
+Generate's **Details** action uses `services/checkpoint_metadata.py` to resolve exact-file
+technical metadata from the bundled `community_model_specs.json` and combine it
+*for presentation only* with the independent DTFlow classification catalogue,
+`model_profiles.json` suggestions, and the current provider's last observed
+`InventorySnapshot`. The current cloud Echo often provides only filenames; a
+missing server-side model description is not filled by a guessed family variant.
+The inspector intentionally excludes derived `fallback_spec` descriptions;
+those retain their existing separate generation-path policy and provenance.
+
+This read-only composition never sends a new Echo/auth/generation request, never
+edits `override.models`, and never authorizes a checkpoint. A later Compute Unit
+feature must validate its arithmetic against upstream Draw Things Swift reference
+cases independently; no estimate or credit accounting is implemented here.
+

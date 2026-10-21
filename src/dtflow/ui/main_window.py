@@ -358,6 +358,7 @@ class MainWindow:
         about_button = QToolButton(form.statusBar())
         about_button.setObjectName("aboutButton")
         about_button.setDefaultAction(form.aboutAction)
+        about_button.setIconSize(QSize(16, 16))
         about_button.setAutoRaise(True)
         about_button.setAccessibleName("About DTFlow")
         status_actions = QWidget(form.statusBar())
