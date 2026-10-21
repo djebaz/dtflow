@@ -21,5 +21,5 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Release audit
 
-- PRs: #150.
+- PRs: #150, #151 (plan only).
 - Scope: Post-5.1.0 Queue item-table/inspector delivery and review corrections merged through #150, with platform acceptance separate; the Prepare picker branch adds planning only, not delivered functionality or a published feature release.

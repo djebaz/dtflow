@@ -1,6 +1,6 @@
 # Plan: remember the Prepare folder and select multiple LoRA files
 
-**Date:** 2026-10-22. **Status:** plan only; implementation has not started. **Branch:** `feature/prepare-files-picker`.
+**Date:** 2026-10-22. **Status:** plan only; implementation has not started. **PR:** [#151](https://github.com/djebaz/dtflow/pull/151) (draft). **Branch:** `feature/prepare-files-picker`.
 
 ## Scope
 
@@ -50,6 +50,7 @@
 ## Action items
 
 - [x] Inspect the current picker, controller, receipt-binding and persistence patterns.
+- [x] Commit/push the plan and open draft PR #151 before implementation.
 - [ ] Owner approves implementation following this plan-only PR checkpoint.
 - [ ] Implement the narrow runtime-specific folder preference and fallback behavior.
 - [ ] Replace the single-file picker seam with multi-selection and adapt its offline fixtures without adding tests.
