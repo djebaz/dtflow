@@ -6,6 +6,8 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Fixed
 
+- **Queues — responsive center composer:** action buttons, random-input pairs, prompt editing and plan-seed controls reflow when the center workspace narrows while both rails remain visible. Long summary text and individual fields keep their identity/values. Offline `queues-53`/`queues-54` regression renders added; native Windows DPI acceptance remains pending.
+
 - **Queues — New queue inspector overflow:** model, backend and LoRA identifiers, variation/seed summaries and the explanatory note now wrap within the existing right-rail width instead of extending past the card. Offline render `queues-52-composer-long-identifiers` covers long checkpoint and LoRA identifiers at the rail minimum; Windows DPI acceptance is pending.
 
 ## Added
