@@ -994,6 +994,26 @@ def render_active_queue_states(shell, out):
         assert [h for h in headings if h.isupper()] == ["RUNNING", "UP NEXT", "PAUSED", "HISTORY"]
         assert page.failedFilterButton.text() == "✗ 1" and page.removeQueueButton.isEnabled()
         snap("queues-26-list-groups")
+        # The queue list, not the shared left QScrollArea, owns vertical scrolling.
+        form.resize(1182, 792)
+        shell._responsive_workspace()
+        QTest.qWait(100)
+        left_scroll = shell.shell.leftScroll
+        assert left_scroll.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        assert left_scroll.verticalScrollBar().maximum() == 0
+        assert page.queueList.verticalScrollBar().maximum() > 0
+        filter_top = page.queueFilterEdit.mapTo(left_scroll.viewport(), QPoint(0, 0)).y()
+        clear_top = page.clearQueuesButton.mapTo(left_scroll.viewport(), QPoint(0, 0)).y()
+        page.queueList.verticalScrollBar().setValue(page.queueList.verticalScrollBar().maximum())
+        QTest.qWait(30)
+        assert page.queueFilterEdit.mapTo(left_scroll.viewport(), QPoint(0, 0)).y() == filter_top
+        assert page.clearQueuesButton.mapTo(left_scroll.viewport(), QPoint(0, 0)).y() == clear_top
+        assert 0 <= clear_top < left_scroll.viewport().height()
+        assert clear_top + page.clearQueuesButton.height() <= left_scroll.viewport().height()
+        snap("queues-56-single-left-scroll")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        page.queueList.verticalScrollBar().setValue(0)
         page.queueFilterEdit.setText("fox")
         assert len(queue.queue_items()) == 1
         snap("queues-27-list-filter")
@@ -1031,6 +1051,7 @@ def render_active_queue_states(shell, out):
         # #123 / #140: New queue (top of the center) swaps the selected queue for the composer in the center.
         page.newQueueButton.click()
         assert queue.composing and not page.queueHeader.isVisible() and not page.queueTableHost.isVisible()
+        assert not page.planTableView.isVisible()
         assert page.planCountLabel.text().startswith("1 item")
         snap("queues-37-composer-repeat")
         page.planModeCombo.setCurrentText("Cross")
@@ -1041,6 +1062,7 @@ def render_active_queue_states(shell, out):
         shell.generation.lora.set_loras((LoRASelection("offline-style.safetensors", 0.8),))
         queue.preview()
         assert queue.plan_model.rowCount() == 8 and page.startQueueButton.text() == "Start now (8 items)"
+        assert page.planTableView.isVisible()
         assert page.composerSummaryBox.isVisible() and page.composerSummaryItemsLabel.text() == "8"
         assert "offline-style" in page.composerSummaryLorasLabel.text()
         assert "model" not in page.composerSummaryVariesLabel.text()  # single-value dimensions do not vary
@@ -1104,6 +1126,10 @@ def render_active_queue_states(shell, out):
         assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawModelsSpin))[:2] == (0, 1)
         assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawSeedsSpin))[:2] == (0, 3)
         assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawStepsSpin))[:2] == (1, 1)
+        # Text-to-image has no Strength control: its hidden slot must not leave a gap.
+        assert page.planDrawStrengthsSpin.isHidden()
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawLoraSetsSpin))[:2] == (3, 1)
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawLorasSpin))[:2] == (3, 3)
         snap("queues-53-composer-two-rails-narrow-center")
         form.resize(1600, 1000)
         shell._responsive_workspace()
@@ -1175,9 +1201,12 @@ def render_active_queue_states(shell, out):
         page.planSeedsEdit.setText("not-a-seed")
         queue.preview()
         assert page.planSeedsEdit.property("invalid")
+        assert not page.planTableView.isVisible()  # no tall, blank table underneath the validation message
         page.queueComposerScroll.ensureWidgetVisible(page.planSeedsEdit)
         snap("queues-18-plan-invalid")
         page.planSeedsEdit.clear()
+        queue.preview()
+        assert page.planTableView.isVisible()  # valid settings restore the preview automatically
         queue._mark_plan(None)
         with (
             patch.object(queue, "_editing", return_value=True),
@@ -1187,6 +1216,7 @@ def render_active_queue_states(shell, out):
             page.planStrengthsEdit.setText("0.5; 0.7")
             assert queue._plan_for(request) is not None
             assert not page.planStrengthsEdit.isHidden() and queue.model.row_at(0).edit_text == "Inpaint · 0.7"
+            assert page.planDrawGrid.indexOf(page.planDrawStrengthsSpin) >= 0
             page.queueComposerScroll.ensureWidgetVisible(page.planStrengthsEdit)
             snap("queues-19-inpaint-plan")
         page.planStrengthsEdit.clear()
