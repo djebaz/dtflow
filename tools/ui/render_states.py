@@ -704,6 +704,10 @@ def render_generate_configuration_states(shell, out):
         page.modelCombo.setCurrentText(
             "offline-checkpoint-with-a-very-long-identifier-q6p-unknown-technical-description.ckpt"
         )
+        snap("generate-23aa-checkpoint-icon-long-name")
+        form.resize(800, 680)
+        snap("generate-23ab-checkpoint-icon-narrow")
+        form.resize(1600, 1000)
         page.checkpointDetailsButton.click()
         assert "Not available for this exact checkpoint" in shell.inline.form.inlineTextBrowser.toPlainText()
         snap("generate-23b-checkpoint-details-missing")
