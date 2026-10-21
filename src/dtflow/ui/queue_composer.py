@@ -269,12 +269,11 @@ class ValueChips(QWidget):
 
 
 class ActionsFit(QObject):
-    """Keeps the composer actions beside its title while they fit; otherwise they wrap on their own row below it."""
+    """Keep all composer actions, including Close, in one responsive action group."""
 
     def __init__(self, scroll, title_layout, column_layout, actions, fixed):
         super().__init__(scroll)
         self._title, self._actions, self._fixed = title_layout, tuple(actions), tuple(fixed)
-        self._before = fixed[-1]  # actions sit just before the last fixed widget (Close)
         self._host = QWidget(scroll.widget())
         self._host.setObjectName("composerWrappedActions")
         self._flow = FlowLayout(self._host)
@@ -298,12 +297,14 @@ class ActionsFit(QObject):
         if wrap == self._wrapped:
             return
         self._wrapped = wrap
-        for widget in self._actions:
+        # Move Close with the other actions, so a narrow composer never gets an
+        # almost-empty header row containing only Close.
+        for widget in (*self._actions, *self._fixed):
             (self._title if wrap else self._flow).removeWidget(widget)
             if wrap:
                 self._flow.addWidget(widget)
             else:
-                self._title.insertWidget(self._title.indexOf(self._before), widget)
+                self._title.addWidget(widget)
         self._host.setVisible(wrap)
 
 
@@ -350,7 +351,9 @@ class ComposerGridFit(QObject):
     def refit(self):
         """Keep three groups on wide canvases, two on medium, and one on narrow canvases."""
         width = self._viewport.width()
-        columns = (3, 3) if width >= 870 else (2, 2) if width >= 680 else (1, 1)
+        # At about 500 px of visible center width the form has room for two
+        # compact label/number pairs; one-per-row wastes too much vertical space.
+        columns = (3, 3) if width >= 740 else (2, 2) if width >= 500 else (1, 1)
         if columns == self._columns:
             return
         self._columns = columns
