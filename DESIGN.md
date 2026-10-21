@@ -446,10 +446,11 @@ presenting “0 of 0” as work. Avoid distributing spare height among action ro
 
 **New queue** opens the composer in the center instead of the selected queue
 (header, items and empty state hide; Close or selecting a queue returns). It
-scrolls on its own: a `section` title with Close, a secondary one-line summary
-of the Generate base request with *Edit in Generate*, the **Variation** section
-card, then one action row (Max at once for the new queue, neutral *Save paused*
-and *Add to queue*, `role="primary"` **Start now (N items)**). A bottom spacer
+scrolls on its own: a `section` title row whose right side holds the actions,
+where + New queue was (Max at once for the new queue, neutral *Save paused* and
+*Add to queue*, `role="primary"` **Start now (N items)**, then Close), a
+secondary one-line summary of the Generate base request with *Edit in
+Generate*, then the **Variation** section card. A bottom spacer
 keeps the cards at their natural heights. Variation's Mode is Repeat (an item
 count, seeds s, s+1, …) or Cross/Pair. Pair/Cross dimensions are rows built by
 selection: `ValueChips` show each value as a removable `valueChip` button

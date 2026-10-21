@@ -511,7 +511,7 @@
            <number>10</number>
           </property>
           <item>
-           <layout class="QHBoxLayout" name="composerTitleLayout" stretch="1,0">
+           <layout class="QHBoxLayout" name="composerTitleLayout" stretch="1,0,0,0,0,0,0">
             <item>
              <widget class="QLabel" name="composerTitleLabel">
               <property name="text">
@@ -519,6 +519,74 @@
               </property>
               <property name="textRole" stdset="0">
                <string>section</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="newQueueCapLabel">
+              <property name="text">
+               <string>Max at once</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="newQueueCapSpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>10</number>
+              </property>
+              <property name="value">
+               <number>4</number>
+              </property>
+              <property name="accessibleName">
+               <string>Maximum items a new queue runs at once</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="createQueueButton">
+              <property name="text">
+               <string>Save paused</string>
+              </property>
+              <property name="toolTip">
+               <string>Saves the queue paused, also while another queue runs. Contacts no backend and uploads nothing.</string>
+              </property>
+              <property name="accessibleName">
+               <string>Create a durable queue</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="addQueueButton">
+              <property name="text">
+               <string>Add to queue</string>
+              </property>
+              <property name="toolTip">
+               <string>Saves it up next: it starts by itself when the running queue ends.</string>
+              </property>
+              <property name="accessibleName">
+               <string>Add the new queue up next</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="startQueueButton">
+              <property name="text">
+               <string>Start now</string>
+              </property>
+              <property name="toolTip">
+               <string>Creates the queue and starts it from this window. Real, possibly billable generation.</string>
+              </property>
+              <property name="accessibleName">
+               <string>Create and start the queue</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>primary</string>
               </property>
              </widget>
             </item>
@@ -1058,91 +1126,6 @@
              </size>
             </property>
            </spacer>
-          </item>
-          <item>
-           <layout class="QHBoxLayout" name="composerActionLayout">
-            <item>
-             <widget class="QLabel" name="newQueueCapLabel">
-              <property name="text">
-               <string>Max at once</string>
-              </property>
-              <property name="textRole" stdset="0">
-               <string>caption</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QSpinBox" name="newQueueCapSpinBox">
-              <property name="minimum">
-               <number>1</number>
-              </property>
-              <property name="maximum">
-               <number>10</number>
-              </property>
-              <property name="value">
-               <number>4</number>
-              </property>
-              <property name="accessibleName">
-               <string>Maximum items a new queue runs at once</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <spacer name="composerActionSpacer">
-              <property name="orientation">
-               <enum>Qt::Horizontal</enum>
-              </property>
-              <property name="sizeHint">
-               <size>
-                <width>0</width>
-                <height>0</height>
-               </size>
-              </property>
-             </spacer>
-            </item>
-            <item>
-             <widget class="QPushButton" name="createQueueButton">
-              <property name="text">
-               <string>Save paused</string>
-              </property>
-              <property name="toolTip">
-               <string>Saves the queue paused, also while another queue runs. Contacts no backend and uploads nothing.</string>
-              </property>
-              <property name="accessibleName">
-               <string>Create a durable queue</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="addQueueButton">
-              <property name="text">
-               <string>Add to queue</string>
-              </property>
-              <property name="toolTip">
-               <string>Saves it up next: it starts by itself when the running queue ends.</string>
-              </property>
-              <property name="accessibleName">
-               <string>Add the new queue up next</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="startQueueButton">
-              <property name="text">
-               <string>Start now</string>
-              </property>
-              <property name="toolTip">
-               <string>Creates the queue and starts it from this window. Real, possibly billable generation.</string>
-              </property>
-              <property name="accessibleName">
-               <string>Create and start the queue</string>
-              </property>
-              <property name="role" stdset="0">
-               <string>primary</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
           </item>
          </layout>
         </widget>
