@@ -36,7 +36,7 @@ from dtflow.services.artifacts import atomic_write
 from dtflow.services.config import export_config, load_config, resolve_request
 from dtflow.services.gallery import inspect_output, query_outputs
 from dtflow.services.planning import Plan, describe_plan, expand_plan, load_plan
-from dtflow.services.queue_session import create_queue, dispatch_queue
+from dtflow.services.queue_session import create_queue, dispatch_queue, relaunch_queue
 from dtflow.services.session import (
     ASSET_NOTE,
     asset_view,
@@ -302,7 +302,7 @@ def add_scenario_option(child: argparse.ArgumentParser) -> None:
 
 def add_queue_commands(commands) -> None:
     queue = commands.add_parser("queue", help=COMMAND_HELP["queue"])
-    canonical = ("add", "list", "show", "start", "pause", "resume", "cancel", "cap")
+    canonical = ("add", "list", "show", "start", "pause", "resume", "cancel", "cap", "relaunch")
     actions = queue.add_subparsers(dest="queue_command", required=True, metavar="{" + ",".join(canonical) + "}")
 
     def action(name: str, help_text: str, *, ident: bool = True) -> argparse.ArgumentParser:
@@ -364,6 +364,25 @@ def add_queue_commands(commands) -> None:
     cap.add_argument(
         "-j", "--jobs", type=int, required=True, help="New maximum, 1-10 (the backend's own limit still applies)."
     )
+    relaunch = action(
+        "relaunch",
+        "Persist a new paused queue from this queue's recorded items; the original and its attempts are untouched.",
+    )
+    relaunch.add_argument(
+        "-n", "--new-seeds", action="store_true", help="Draw new seeds; items that shared a seed share a new one."
+    )
+    relaunch.add_argument(
+        "-f", "--failed", action="store_true", help="Only items that failed, were cancelled or have no result."
+    )
+    relaunch.add_argument(
+        "-i",
+        "--item",
+        type=int,
+        action="append",
+        metavar="N",
+        help="Only item N (queue position; repeatable). Retry an item this way.",
+    )
+    relaunch.add_argument("-j", "--jobs", type=int, help="Concurrency maximum, 1-10 (default: the original queue's).")
 
 
 COMMAND_HELP = {
@@ -374,7 +393,7 @@ COMMAND_HELP = {
     "attempts": "Inspect durable attempts; unknown outcomes are never replayed.",
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
     "assets": "Cloud LoRA assets: prepare (may upload), list, show, reconcile. Local receipts are not remote inventory.",
-    "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap.",
+    "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
 }
 
 
@@ -488,6 +507,18 @@ async def run_queue(args: argparse.Namespace) -> int:
         backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": args.scenario}
         queue_id, cap = await create_queue(args.state, backend, requests, args.jobs)
         print(json.dumps({"queue_id": queue_id, "state": "paused", "items": len(requests), "cap": cap}))
+        return EXIT_OK
+    if command == "relaunch":
+        queue_id, cap = await relaunch_queue(
+            args.state,
+            args.queue,
+            new_seeds=args.new_seeds,
+            failed_only=args.failed,
+            positions=tuple(args.item) if args.item else None,
+            cap=args.jobs,
+        )
+        items = sum(read_queues(args.state, queue_id)[0]["summary"].values())
+        print(json.dumps({"queue_id": queue_id, "state": "paused", "items": items, "cap": cap, "from": args.queue}))
         return EXIT_OK
     # start: this process becomes the single dispatch owner for the state directory.
 

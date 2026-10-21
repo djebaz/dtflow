@@ -956,6 +956,31 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
         connection.close()
 
 
+def read_queue_requests(directory: Path, queue_id: str) -> tuple[dict[str, Any], int, tuple[tuple[int, str, Any], ...]]:
+    """(backend, cap, (position, state, stored request record) per item in order) of one queue, for a relaunch.
+
+    A read-only snapshot: the records are what each item recorded at creation and are decoded by the caller, so an
+    item with a malformed request is refused there rather than silently dropped here.
+    """
+    connection = _shared_connection(directory, readonly=True)
+    try:
+        row = connection.execute("SELECT backend_json, cap FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+        if row is None:
+            raise QueueError("Unknown queue.")
+        items = []
+        for item in connection.execute(
+            "SELECT position, state, request_json FROM queue_items WHERE queue_id=? ORDER BY position", (queue_id,)
+        ):
+            try:
+                record = json.loads(item["request_json"])
+            except (TypeError, ValueError):
+                record = None
+            items.append((item["position"], item["state"], record))
+        return json.loads(row["backend_json"]), row["cap"], tuple(items)
+    finally:
+        connection.close()
+
+
 def read_queues(directory: Path, queue_id: str | None = None) -> tuple[dict[str, Any], ...]:
     """Inspect queues and items in their original order without owning or modifying state."""
     connection = _shared_connection(directory, readonly=True)

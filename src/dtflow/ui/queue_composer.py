@@ -35,6 +35,11 @@ SIZE_PRESETS = (
 )
 
 
+def _noun(title: str) -> str:
+    """``Model`` -> ``model`` for running text, keeping acronyms such as ``LoRA set`` as written."""
+    return title[:1].lower() + title[1:] if title[1:2].islower() else title
+
+
 class FlowLayout(QLayout):
     """Left-to-right items that wrap to the next line, so a long value list never widens the composer."""
 
@@ -113,6 +118,8 @@ class ValueChips(QWidget):
         self._title = ""
         self._options: Callable[[], list[str]] = list
         self._custom: str | None = None
+        self._weights: Callable[[], dict[str, float | None]] | None = None
+        self._convert: Callable[[object], str] | None = None
         self._layout = FlowLayout(self)
         self._chips: list[QPushButton] = []
         self._input: QWidget | None = None
@@ -146,9 +153,16 @@ class ValueChips(QWidget):
         maximum: float = 100,
         step: float = 1,
         decimals: int = 1,
+        weights: Callable[[], dict[str, float | None]] | None = None,
+        convert: Callable[[object], str] | None = None,
     ) -> None:
-        """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box."""
+        """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
+
+        With ``weights`` the search editor also asks for a weight (the shared LoRA identifier+weight editor) and hands
+        ``(identifier, weight)`` to ``convert``, which returns the chip value.
+        """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
+        self._weights, self._convert = weights, convert
         if self._input is not None:
             self._layout.removeWidget(self._input)
             self._input.deleteLater()
@@ -174,8 +188,8 @@ class ValueChips(QWidget):
             self._layout.addWidget(self._add)
         self._add.setEnabled(True)  # preview forms start with every control disabled until a controller wires it
         self._add.setText("Add" if self._input is not None else "Add…")
-        self._add.setAccessibleName(f"Add {title.lower()}")
-        self._add.setToolTip(f"Add a {title.lower()} value; click a value to remove it.")
+        self._add.setAccessibleName(f"Add {_noun(title)}")
+        self._add.setToolTip(f"Add a {_noun(title)} value; click a value to remove it.")
         self.refresh_options()
 
     def refresh_options(self, current: str | None = None) -> None:
@@ -227,7 +241,7 @@ class ValueChips(QWidget):
             chip = QPushButton(f"{value}  ×", self)
             chip.setProperty("role", "valueChip")
             chip.setToolTip(f"Remove {value}")
-            chip.setAccessibleName(f"Remove {self._title.lower()} {value}")
+            chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
             chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
             self._layout.insertWidget(index, chip)
             self._chips.append(chip)
@@ -242,13 +256,15 @@ class ValueChips(QWidget):
         elif isinstance(self._input, QDoubleSpinBox):
             self.add_value(f"{self._input.value():g}")
         else:
+            convert = self._convert
             choose_searchable(
                 self,
-                title=f"Add {self._title.lower()}",
+                title=f"Add {_noun(self._title)}",
                 items=self._options(),
-                callback=self.add_value,
+                callback=self.add_value if convert is None else lambda chosen: self.add_value(convert(chosen)),
                 custom_label=self._custom,
-                custom_prompt=f"Exact {self._title.lower()} identifier",
+                custom_prompt=f"Exact {_noun(self._title)} identifier",
+                weights=self._weights() if self._weights is not None else None,
             )
 
 

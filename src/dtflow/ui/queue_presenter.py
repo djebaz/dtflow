@@ -199,7 +199,7 @@ SEGMENTS = (
 )
 UNKNOWN_TEXT = (
     "No final result was received, so this generation most likely failed. It is not sent again automatically, and it "
-    "does not block other items or queues."
+    "does not block other items or queues. Retry item runs it again as a new attempt."
 )
 OWNERS = ("here", "none")
 

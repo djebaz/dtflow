@@ -740,13 +740,15 @@ class GenerationPage:
     def queue_created(self) -> None:
         self._previewed_seed = None
 
-    def plan_choices(self) -> dict[str, list[str]]:
-        """What the Queues composer offers: the listed checkpoints, every sampler and the current size."""
+    def plan_choices(self) -> dict:
+        """What the Queues composer offers: the listed checkpoints, every sampler, the current size and the LoRAs."""
         page = self.page
         return {
             "models": [page.modelCombo.itemText(index) for index in range(page.modelCombo.count())],
             "samplers": list(SAMPLERS),  # every sampler: a plan may cross several models
             "size": f"{page.widthSpinBox.value()}x{page.heightSpinBox.value()}",
+            "loras": dict(self.lora.choices()),  # identifier -> catalogue weight, for LoRA sets
+            "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
         }
 
     def queue_edit_job(self):

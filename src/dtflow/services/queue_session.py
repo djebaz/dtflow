@@ -6,6 +6,7 @@ duration (the store's ownership lock); controls and reads need no ownership. Not
 
 import asyncio
 import logging
+import secrets
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -15,8 +16,10 @@ from uuid import uuid4
 from dtflow.composition import BackendSelection
 from dtflow.core.image_inputs import PreparedImageInputs
 from dtflow.core.models import (
+    SEED_LIMIT,
     BackendEvent,
     CredentialProvider,
+    PreparedAsset,
     ResolvedGenerationRequest,
     TimeoutPolicy,
     ValidationError,
@@ -30,8 +33,10 @@ from dtflow.persistence.queues import (
     delete_queue,
     insert_queue,
     post_control,
+    read_queue_requests,
     read_queue_summaries,
     read_queues,
+    request_from_record,
 )
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
@@ -101,6 +106,7 @@ async def create_edit_queue(
     count: int = 1,
     cap: int | None = None,
     up_next: bool = False,
+    receipts: tuple[PreparedAsset, ...] = (),
 ) -> tuple[str, int]:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
@@ -129,8 +135,93 @@ async def create_edit_queue(
             ("image_permit_status", permit.status),
         ),
     )
-    items = expand_items(edit, count) if plan is None else expand_plan(edit, plan)
+    items = expand_items(edit, count) if plan is None else expand_plan(edit, plan, receipts=receipts)
     return await create_queue(state, backend, items, cap, up_next=up_next)
+
+
+# Items a relaunch with ``failed_only`` (and Retry item) takes again: settled without a saved image.
+RELAUNCH_STATES = ("failed", "unknown", "save_failed", "cancelled")
+
+
+def _relaunch_items(
+    state: Path,
+    source: str,
+    items: tuple[tuple[int, str, Any], ...],
+    *,
+    new_seeds: bool,
+    failed_only: bool,
+    positions: tuple[int, ...] | None,
+) -> list[ResolvedGenerationRequest]:
+    """Fresh copies of recorded item requests: new identities, the same settings, optionally new seeds."""
+    if positions is not None and failed_only:
+        raise ValidationError("Choose items or only failed items, not both; nothing was created.")
+    if positions is not None:
+        known = {position for position, _, _ in items}
+        missing = sorted(set(positions) - known)
+        if missing:
+            raise ValidationError(f"The queue has no item {missing[0]}; nothing was created.")
+        chosen = [item for item in items if item[0] in positions]
+    elif failed_only:
+        chosen = [item for item in items if item[1] in RELAUNCH_STATES]
+        if not chosen:
+            raise ValidationError("No failed, cancelled or no-result items to relaunch; nothing was created.")
+    else:
+        chosen = list(items)
+    # New seeds keep the plan's shape: items that shared a seed share one new seed.
+    reseeded: dict[int, int] = {}
+    checked: set[str] = set()  # staged inputs shared by several items are verified once
+    requests = []
+    for position, _, record in chosen:
+        try:
+            request = request_from_record(record)
+        except (ValidationError, TypeError, ValueError):
+            raise ValidationError(f"Item {position} has no usable recorded request; nothing was created.") from None
+        if request.image_inputs is not None and request.image_inputs.attempt_id not in checked:
+            checked.add(request.image_inputs.attempt_id)
+            try:
+                restore_image_inputs(state, request.image_inputs)
+            except (ValidationError, OSError):
+                raise ValidationError(
+                    f"Item {position}'s staged edit inputs are no longer available; nothing was created."
+                ) from None
+        changes: dict[str, Any] = {"request_id": uuid4().hex}
+        if new_seeds:
+            changes["seed"] = reseeded.setdefault(request.seed, secrets.randbelow(SEED_LIMIT) + 1)
+        # Positions and seed policy describe the source queue; the relaunch records where each item came from.
+        stale = ("queue_position", "plan.index", *(("plan.seed", "seed.resolved") if new_seeds else ()))
+        changes["resolution_evidence"] = (
+            *(pair for pair in request.resolution_evidence if pair[0] not in stale),
+            ("relaunch.source_queue", source),
+            ("relaunch.source_position", str(position)),
+            ("relaunch.seed", "new" if new_seeds else "same"),
+        )
+        requests.append(replace(request, **changes))
+    return requests
+
+
+async def relaunch_queue(
+    state: Path,
+    queue_id: str,
+    *,
+    new_seeds: bool = False,
+    failed_only: bool = False,
+    positions: tuple[int, ...] | None = None,
+    cap: int | None = None,
+    up_next: bool = False,
+) -> tuple[str, int]:
+    """Create a new paused (or up-next) queue from another queue's recorded item requests; returns (id, cap).
+
+    The source queue, its items and attempts are only read: nothing is replayed, an unknown attempt stays unknown, and
+    each new item gets its own identity and, when dispatched, its own attempt (a real and possibly billable
+    generation, like Start). ``positions`` takes exactly those items (Retry item), ``failed_only`` the items that
+    settled without a saved image. Staged edit items reuse their recorded inputs and owner-probe consent, which the
+    dispatcher validates again at Start; inputs that are gone refuse the relaunch.
+    """
+    backend, source_cap, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
+    requests = await asyncio.to_thread(
+        _relaunch_items, Path(state), queue_id, items, new_seeds=new_seeds, failed_only=failed_only, positions=positions
+    )
+    return await create_queue(state, backend, requests, source_cap if cap is None else cap, up_next=up_next)
 
 
 async def dispatch_queue(

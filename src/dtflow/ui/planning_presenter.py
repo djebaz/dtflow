@@ -29,7 +29,9 @@ ERROR_FIELDS = {
     "lora_weight": "planLorasEdit",
     "lora": "planLorasEdit",
     "strength": "planStrengthsEdit",
+    "loras": "planLoraSetsEdit",
 }
+NO_LORA = "None"  # the LoRA-set chip for an item without LoRAs
 SEED_POLICY_TEXT = {
     "fixed": "the base seed is kept for every item",
     "increment": "seeds increment from the base seed",
@@ -52,6 +54,7 @@ class PlanForm:
     loras: str = ""
     increment: bool = False
     strengths: str = ""
+    lora_sets: str = ""  # ``;``-separated sets: ``None`` or ``IDENTIFIER: 0.8 + OTHER: 0.4``
 
 
 def _tokens(text: str, separator: str = ";") -> list[str]:
@@ -103,6 +106,32 @@ def _loras(text: str) -> list[tuple[str, tuple[float, ...]]]:
     return entries
 
 
+def _lora_sets(text: str) -> tuple[tuple[tuple[str, float], ...], ...]:
+    sets = []
+    for token in _tokens(text):
+        if token.lower() == NO_LORA.lower():
+            sets.append(())
+            continue
+        entries = []
+        for part in re.split(r"\s\+\s", token):  # `` + `` joins LoRAs; a ``+`` inside an identifier stays
+            identifier, separator, weight = part.rpartition(":")
+            try:
+                if not separator or not identifier.strip():
+                    raise ValueError
+                entries.append((identifier.strip(), float(weight)))
+            except ValueError:
+                raise FormError(
+                    "LoRA sets are None or IDENTIFIER: 0.8 + OTHER: 0.4, separated by ';'.", "planLoraSetsEdit"
+                ) from None
+        sets.append(tuple(entries))
+    return tuple(sets)
+
+
+def lora_set_value(identifier: str, weight: float) -> str:
+    """The chip text for a one-LoRA set, as ``_lora_sets`` reads it back."""
+    return f"{identifier}: {weight:g}"
+
+
 def build_plan(form: PlanForm) -> Plan:
     """The ``Plan`` for the non-empty fields; a blank field means that dimension stays fixed from the base request."""
     dimensions: list[tuple[str, tuple]] = []
@@ -119,6 +148,9 @@ def build_plan(form: PlanForm) -> Plan:
     ):
         if values:
             dimensions.append((name, values))
+    sets = _lora_sets(form.lora_sets)
+    if sets:
+        dimensions.append(("loras", sets))
     dimensions.extend((f"lora_weight.{identifier}", weights) for identifier, weights in _loras(form.loras))
     return Plan(MODES.get(form.mode, "cross"), tuple(dimensions), seed_policy="increment" if form.increment else None)
 
@@ -129,6 +161,8 @@ def field_for(message: str) -> str | None:
     quoted = re.search(r"[Dd]imension '([A-Za-z_]+)", message)
     if quoted:
         return ERROR_FIELDS.get(quoted.group(1).lower())
+    if "LoRA set" in message:
+        return ERROR_FIELDS["loras"]
     if "LoRA '" in message:
         return ERROR_FIELDS["lora"]
     match = re.match(r"[A-Za-z_]+", message)

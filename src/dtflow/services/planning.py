@@ -17,7 +17,15 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import MAX_QUEUE_ITEMS, SEED_LIMIT, ResolvedGenerationRequest, Sampler, ValidationError
+from dtflow.core.models import (
+    MAX_QUEUE_ITEMS,
+    SEED_LIMIT,
+    LoRASelection,
+    PreparedAsset,
+    ResolvedGenerationRequest,
+    Sampler,
+    ValidationError,
+)
 from dtflow.services.config import ConfigError, read_json_file, reject_credentials
 
 SCHEMA = "dtflow.queue-plan"
@@ -26,6 +34,7 @@ MODES = ("seed", "pair", "cross")
 SEED_POLICIES = ("fixed", "increment")
 SCALARS = ("prompt", "model", "seed", "steps", "guidance", "sampler", "size", "strength")
 LORA_WEIGHT = "lora_weight."  # dimension name prefix; the rest is the exact LoRA identifier from the base request
+LORA_SETS = "loras"  # each value is a whole LoRA set: ((identifier, weight), ...); an empty set means no LoRA
 FIELD_NAMES = {
     "prompt": "prompt",
     "model": "model_id",
@@ -101,10 +110,12 @@ def plan_size(plan: Plan) -> int:
         raise PlanError(f"A {plan.mode} plan needs at least one dimension.")
     names = [name for name, _ in plan.dimensions]
     for name in names:
-        if name not in SCALARS and not (name.startswith(LORA_WEIGHT) and name != LORA_WEIGHT):
+        if name not in (*SCALARS, LORA_SETS) and not (name.startswith(LORA_WEIGHT) and name != LORA_WEIGHT):
             raise PlanError(f"Unknown plan dimension {name!r}.")
     if len(set(names)) != len(names):
         raise PlanError("A dimension may be listed only once.")
+    if LORA_SETS in names and any(name.startswith(LORA_WEIGHT) for name in names):
+        raise PlanError("LoRA sets already carry their weights; list loras or lora_weight, not both.")
     if "seed" in names and plan.seed_policy == "increment":
         raise PlanError("Seed cannot be both a listed dimension and incremented.")
     lengths = [len(values) for _, values in plan.dimensions]
@@ -141,7 +152,25 @@ def _size(value: Any) -> tuple[int, int]:
     return value
 
 
+def lora_set(value: Any) -> tuple[LoRASelection, ...]:
+    """One ``loras`` dimension value as selections: a sequence of (identifier, weight) pairs, empty for no LoRA."""
+    if not isinstance(value, tuple) or any(not isinstance(pair, tuple) or len(pair) != 2 for pair in value):
+        raise PlanError("A LoRA set is a list of {identifier, weight} entries (empty for no LoRA).")
+    selections = tuple(LoRASelection(identifier, weight) for identifier, weight in value)
+    if len({item.identifier for item in selections}) != len(selections):
+        raise PlanError("A LoRA set lists the same LoRA twice.")
+    return selections
+
+
+def lora_set_text(selections) -> str:
+    """``none`` or ``style.ckpt 0.8 + detail.ckpt 0.4``: a LoRA set as the dry-run table and evidence show it."""
+    return " + ".join(f"{item.identifier} {item.weight:g}" for item in selections) or "none"
+
+
 def _set(loras: list, name: str, value: Any) -> dict[str, Any]:
+    if name == LORA_SETS:
+        loras[:] = lora_set(value)
+        return {}
     if name in FIELD_NAMES:
         return {FIELD_NAMES[name]: value}
     if name == "sampler":
@@ -169,6 +198,8 @@ def _read(request: ResolvedGenerationRequest, name: str) -> str:
         return request.sampler_id.value
     if name in FIELD_NAMES:
         return str(getattr(request, FIELD_NAMES[name]))
+    if name == LORA_SETS:
+        return lora_set_text(request.loras)
     identifier = name[len(LORA_WEIGHT) :]
     return str(next(item.weight for item in request.loras if item.identifier == identifier))
 
@@ -184,11 +215,18 @@ def _combinations(plan: Plan, total: int):
     return combos
 
 
-def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = False) -> list[ResolvedGenerationRequest]:
+def expand_plan(
+    base: ResolvedGenerationRequest,
+    plan: Plan,
+    *,
+    edit: bool = False,
+    receipts: tuple[PreparedAsset, ...] = (),
+) -> list[ResolvedGenerationRequest]:
     """Ordered, fully resolved requests for the plan; every failure is raised before anything is enqueued.
 
     ``edit`` previews a staged edit from its text-to-image settings base (dry run): strength is validated and shown
-    in the evidence only; the real items carry it once the edit is staged.
+    in the evidence only; the real items carry it once the edit is staged. ``receipts`` are confirmed receipts for
+    LoRAs named only in LoRA sets; with the base request's own, each item carries those of the LoRAs it selects.
     """
     varied = {name for name, _ in plan.dimensions}
     preview = edit and base.operation == "txt2img"
@@ -213,6 +251,11 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = Fal
             for index in range(total)
         ]
     _check_duplicates(plan)
+    pool = {asset.identifier: asset for asset in (*receipts, *base.prepared_assets)}
+    # Receipt evidence is per item when LoRA sets vary: an item claims only the receipts it carries.
+    base_evidence = tuple(
+        pair for pair in base.resolution_evidence if not (LORA_SETS in varied and pair[0] == "prepared_assets")
+    )
     items = []
     for index, combo in enumerate(_combinations(plan, total)):
         loras = list(base.loras)
@@ -225,7 +268,14 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = Fal
                     if type(value) not in (int, float) or not 0 <= value <= 1:
                         raise PlanError("Strength must be a number in 0..1.")
                     changes.pop("strength")
-                evidence.append((f"plan.dimension.{name}", f"{value[0]}x{value[1]}" if name == "size" else str(value)))
+                text = f"{value[0]}x{value[1]}" if name == "size" else str(value)
+                evidence.append((f"plan.dimension.{name}", lora_set_text(loras) if name == LORA_SETS else text))
+            if LORA_SETS in varied:
+                # Each item carries the confirmed receipts of the LoRAs it selects; nothing is inferred for others.
+                bound = tuple(pool[item.identifier] for item in loras if item.identifier in pool)
+                changes["prepared_assets"] = bound
+                if bound:
+                    evidence.append(("prepared_assets", ",".join(asset.receipt_id for asset in bound)))
             if policy == "increment":
                 changes["seed"] = base.seed + index
             items.append(
@@ -233,7 +283,7 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = Fal
                     base,
                     request_id=uuid4().hex,
                     loras=tuple(loras),
-                    resolution_evidence=(*base.resolution_evidence, *evidence),
+                    resolution_evidence=(*base_evidence, *evidence),
                     **changes,
                 )
             )
@@ -276,6 +326,17 @@ def _dimension(name: str, value: Any) -> tuple[tuple[str, tuple[Any, ...]], ...]
                 raise PlanError("lora_weight needs a text identifier and a list of weights.")
             entries.append((LORA_WEIGHT + entry["identifier"], tuple(entry["weights"])))
         return tuple(entries)
+    if name == LORA_SETS:
+        if not isinstance(value, list):
+            raise PlanError("loras must be a list of LoRA sets.")
+        sets = []
+        for entry in value:
+            if not isinstance(entry, list) or any(
+                not isinstance(item, dict) or set(item) != {"identifier", "weight"} for item in entry
+            ):
+                raise PlanError("Each LoRA set is a list of {identifier, weight} entries (empty for no LoRA).")
+            sets.append(tuple((item["identifier"], item["weight"]) for item in entry))
+        return ((LORA_SETS, tuple(sets)),)
     if name not in SCALARS:
         raise PlanError(f"Unknown plan dimension {name!r}.")
     if not isinstance(value, list):
