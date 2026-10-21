@@ -188,19 +188,32 @@ def _rng_seed(text: str) -> int | None:
 def candidate_counts(form: PlanForm) -> dict[str, int]:
     """How many different values each drawable row lists (a draw can take at most that many); seeds are unbounded."""
 
-    def distinct(tokens) -> int:
-        return len(dict.fromkeys(tokens))
+    def distinct(tokens, kind=str) -> int:
+        """Different values as the planner sees them: ``20`` and ``20.0``, ``512x512`` and ``512 x 512`` are one."""
+        values = []
+        for token in tokens:
+            try:
+                values.append(kind(token))
+            except ValueError:
+                values.append(token)
+        return len(dict.fromkeys(values))
+
+    def size(token: str):
+        match = re.fullmatch(r"(\d+)\s*[x×]\s*(\d+)", token)
+        if match is None:
+            raise ValueError(token)
+        return int(match.group(1)), int(match.group(2))
 
     lines = [line.rpartition(":")[2] for line in form.loras.splitlines() if line.strip()]
     return {
         "model": distinct(_tokens(form.models)),
-        "steps": distinct(_tokens(form.steps)),
-        "guidance": distinct(_tokens(form.guidance)),
+        "steps": distinct(_tokens(form.steps), int),
+        "guidance": distinct(_tokens(form.guidance), float),
         "sampler": distinct(_tokens(form.samplers)),
-        "size": distinct(_tokens(form.sizes)),
-        "strength": distinct(_tokens(form.strengths)),
+        "size": distinct(_tokens(form.sizes), size),
+        "strength": distinct(_tokens(form.strengths), float),
         "loras": distinct(_tokens(form.lora_sets)),
-        "lora_weight": min((distinct(_tokens(line)) for line in lines), default=0),
+        "lora_weight": min((distinct(_tokens(line), float) for line in lines), default=0),
     }
 
 

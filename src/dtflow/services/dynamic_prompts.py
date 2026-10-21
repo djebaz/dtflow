@@ -132,20 +132,50 @@ class Lists:
         self._entries = dict(entries)
         self._parsed: dict[str, tuple[tuple[Node, ...], ...]] = {}
         self.counts: dict[str, int] = {}  # wildcard name -> its variant count, so nested lists are counted once
+        self._nesting: dict[str, int] = {}  # wildcard name -> the longest wildcard chain starting at it
+        self._visiting: set[str] = set()
         self.used: set[str] = set()
 
-    def get(self, name: str, depth: int) -> tuple[tuple[Node, ...], ...]:
+    def _load(self, name: str) -> tuple[tuple[Node, ...], ...]:
         if name not in self._entries:
             raise UndefinedWildcard(f"Wildcard '{name}' is not defined: add a list named {name} or remove __{name}__.")
-        if depth > MAX_DEPTH:
-            raise _fail(f"Wildcard '{name}' nests wildcards more than {MAX_DEPTH} levels deep (or names itself).")
-        self.used.add(name)
         if name not in self._parsed:
             entries = [entry for entry in self._entries[name] if entry.strip()]
             if not entries:
                 raise _fail(f"Wildcard '{name}' has no entries.")
-            self._parsed[name] = tuple(parse(entry, depth) for entry in entries)
+            self._parsed[name] = tuple(parse(entry) for entry in entries)
         return self._parsed[name]
+
+    def nesting(self, name: str) -> int:
+        """How many wildcards deep a chain starting at ``name`` goes (1 for a list that names none); cycles raise."""
+        if name not in self._nesting:
+            if name in self._visiting:
+                raise _fail(f"Wildcard '{name}' names itself (directly or through other lists).")
+            self._visiting.add(name)
+            try:
+                self._nesting[name] = 1 + max(
+                    (self.nesting(inner) for entry in self._load(name) for inner in _wild_names(entry)), default=0
+                )
+            finally:
+                self._visiting.discard(name)
+        return self._nesting[name]
+
+    def get(self, name: str, depth: int) -> tuple[tuple[Node, ...], ...]:
+        """The parsed entries; ``depth`` is how many wildcards deep the caller already is. Order-independent."""
+        entries = self._load(name)
+        if depth + self.nesting(name) - 1 > MAX_DEPTH:
+            raise _fail(f"Wildcard '{name}' nests wildcards more than {MAX_DEPTH} levels deep.")
+        self.used.add(name)
+        return entries
+
+
+def _wild_names(nodes: tuple[Node, ...]):
+    for node in nodes:
+        if isinstance(node, Wild):
+            yield node.name
+        elif isinstance(node, Choice):
+            for _, content in node.options:
+                yield from _wild_names(content)
 
 
 def count(nodes: tuple[Node, ...], lists: Lists, depth: int = 0) -> int:
@@ -302,7 +332,7 @@ def variants(
             raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
         seen: dict[str, None] = {}
         attempts = 0
-        while len(seen) < n and attempts < 20 * n + 200:
+        while len(seen) < n and attempts < 200 * n + 1000:  # edits have no exhaustive fallback, so allow more tries
             text = _tidy(_mutate(_tidy(_sample(nodes, lists, rng, 0)), rng, mutation))
             if text:
                 seen.setdefault(text, None)

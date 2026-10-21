@@ -948,12 +948,14 @@ class QueuePage:
         if feedback(self.page)._armed:
             feedback(self.page).dismiss()
         self._composing = True
+        self._invalidate_preview()
         self._refresh_choices()
         self._render()
         self.preview()
 
     def close_composer(self) -> None:
         self._composing = False
+        self._invalidate_preview()
         self._preview_timer.stop()
         self._render()
 
@@ -1046,8 +1048,9 @@ class QueuePage:
         self._plan_changed()
 
     def _draws(self) -> tuple[tuple[str, int], ...]:
-        spins = ((name, getattr(self.page, f"planDraw{suffix}Spin").value()) for name, suffix in DRAW_SPINS.items())
-        return tuple((name, count) for name, count in spins if count)
+        spins = ((name, getattr(self.page, f"planDraw{suffix}Spin")) for name, suffix in DRAW_SPINS.items())
+        # A hidden spin (Strength outside Inpaint) belongs to a row that does not apply, so it counts for nothing.
+        return tuple((name, spin.value()) for name, spin in spins if spin.value() and not spin.isHidden())
 
     def _random_active(self) -> bool:
         page = self.page
@@ -1060,7 +1063,11 @@ class QueuePage:
         return self._planned() and (bool(self._draws()) or mode == "Random sample" or (mode != "Off" and edits))
 
     def _sync_draw_controls(self) -> None:
-        """Each draw count is bounded by its row's values ("2 of 5"); a row without values or parts has nothing to draw."""
+        """Each draw count shows how many values its row lists ("2 of 5"). The count the user chose is never changed.
+
+        An impossible request (more than the row lists, or a row without values) is reported inline by the planner,
+        so emptying and refilling a row, or pasting a new list, keeps the draw count.
+        """
         page = self.page
         form = self._plan_form()
         counts = candidate_counts(form)
@@ -1068,24 +1075,11 @@ class QueuePage:
             spin = getattr(page, f"planDraw{suffix}Spin")
             available = counts.get(key)  # None: seeds, drawn from the whole seed range
             spin.blockSignals(True)
-            if available is None:
-                spin.setMaximum(1000)
-                spin.setSuffix("")
-                spin.setSpecialValueText("Listed")
-            else:
-                spin.setMaximum(available)
-                spin.setSuffix(f" of {available}" if available else "")
-                spin.setSpecialValueText("Listed" if available else "No values")
-                if spin.value() > available:
-                    spin.setValue(available)
-            spin.setEnabled(available is None or available > 0)
+            spin.setSuffix(f" of {available}" if available else "")
+            spin.setSpecialValueText("Listed" if available or available is None else "No values")
+            spin.setEnabled(available is None or available > 0 or spin.value() > 0)  # a stale count can still be zeroed
             spin.blockSignals(False)
-        has_parts = bool(form.add_parts.strip())
-        page.planAddSpin.blockSignals(True)
-        if not has_parts:
-            page.planAddSpin.setValue(0)
-        page.planAddSpin.setEnabled(has_parts)
-        page.planAddSpin.blockSignals(False)
+        page.planAddSpin.setEnabled(bool(form.add_parts.strip()) or page.planAddSpin.value() > 0)
 
     def _sync_random_rows(self) -> None:
         """The wildcard, edit and seed rows appear only when they matter; Reroll and the folder note follow the seed."""
@@ -1220,6 +1214,8 @@ class QueuePage:
     def _preview_resolved(self, token: int, request, result, failure) -> None:
         if token != self._preview_token or not self._composing:
             return
+        if isinstance(failure, asyncio.CancelledError):
+            return  # cancelled work has no result to show; a newer preview is on its way or the window is closing
         self._previewing = False
         self._mark_plan(None)
         if failure is not None:
@@ -1318,7 +1314,7 @@ class QueuePage:
         async def work():
             drawn = plan
             if resolving is not None:
-                drawn, _ = await asyncio.to_thread(self._compute_plan, *resolving)
+                drawn = await asyncio.to_thread(self._resolve_only, *resolving)
             queue_id, used = await self._create(
                 backend, request, asset_ids, count, cap, drawn, job, up_next=action == "add"
             )
@@ -1410,6 +1406,8 @@ class QueuePage:
         if failure is not None:
             if isinstance(failure, PlanError | FormError):
                 self._plan_failed(failure)
+                self._quick_report(Presentation("error", "Queue not created", sentence(str(failure))))
+                return
             self._quick_report(present_generation_failure(failure))
             return
         queue_id, _, status = result
@@ -1604,6 +1602,11 @@ class QueuePage:
         plan = resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
         return plan, describe_plan(request, plan, edit=edit)
 
+    @staticmethod
+    def _resolve_only(form: PlanForm, request, folder: Path, edit: bool) -> Plan:
+        """The drawn plan without the preview table: creation expands it itself."""
+        return resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+
     def _plan_failed(self, exc: ValidationError) -> None:
         """One place for a planning error: beside the plan, with the owning field marked."""
         error = plan_error(exc)
@@ -1616,6 +1619,8 @@ class QueuePage:
         if failure is not None:
             if isinstance(failure, PlanError | FormError):
                 self._plan_failed(failure)
+                self._message(Presentation("error", "Queue not created", sentence(str(failure))))
+                return
             self._message(present_generation_failure(failure))
             return
         queue_id, cap, status = result

@@ -206,10 +206,7 @@ def resolve_plan(plan: Plan, prompt: str | None = None) -> Plan:
     """
     if not any(isinstance(values, RandomSpec | PromptVariation) for _, values in plan.dimensions):
         return plan
-    drawn = [
-        isinstance(values, RandomSpec) or getattr(values, "strategy", "") == "random" for _, values in plan.dimensions
-    ]
-    if any(drawn) and plan.rng_seed is None:
+    if plan.draws and plan.rng_seed is None:
         raise PlanError("A random plan needs a plan seed; reroll to draw one.")
     seed = plan.rng_seed if plan.rng_seed is not None else 0
     evidence: list[tuple[str, str]] = [("plan.rng_seed", str(plan.rng_seed))] if plan.rng_seed is not None else []

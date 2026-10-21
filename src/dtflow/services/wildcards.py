@@ -25,7 +25,8 @@ _NAMES_CACHE: dict[Path, tuple[int, tuple[str, ...]]] = {}  # folder -> mtime_ns
 def read_list(folder: Path, name: str) -> tuple[tuple[str, ...], str] | None:
     """(entries, sha256 of the file) for ``name`` in ``folder``, or None when there is no such list.
 
-    A list is re-read and re-hashed only when its modification time or size changes, so the composer can ask per edit.
+    A list is re-read and re-hashed only when its modification time or size changes, so the composer can ask per edit
+    (an edit that keeps the size within a coarse timestamp, as on FAT file systems, is not noticed until it changes)
     """
     path = folder / f"{name}.txt"
     try:
