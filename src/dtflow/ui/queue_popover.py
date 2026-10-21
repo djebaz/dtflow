@@ -75,11 +75,8 @@ class QueuePopover(QObject):
         return point
 
     def sync_label(self) -> None:
-        """The composer plan changed: keep the trigger's count true without opening the popover."""
-        if self.isVisible():
-            self.refresh()
-        else:
-            self._changed(self.label())
+        """The composer plan changed: keep the trigger's count true (and the choice valid) while closed too."""
+        self.refresh()
 
     def open_at(self, anchor: QWidget) -> None:
         """Show below ``anchor``, kept on its screen."""

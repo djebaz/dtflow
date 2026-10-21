@@ -319,7 +319,6 @@ class QueuePage:
         """Keep late activity notifications away from destroyed page widgets."""
         self._activity.unlisten(self._sync)
         self._activity.unlisten(self._after_generation_ended)
-        self._waiting_timer.stop()
 
     # -- helpers ---------------------------------------------------------------------------------------------------
     @staticmethod
