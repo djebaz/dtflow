@@ -4,7 +4,9 @@ Reads are read-only polls of the durable state: the list reads queue summaries o
 the selected queue alone. Every control is posted through the same function ``dtflow queue`` uses, so a window and a
 CLI process drive a queue identically. Only Start makes this window the dispatch owner, which holds the state ownership
 lock for the run (see ``Activity``). The header shows one status chip and one state-dependent primary action;
-transient outcomes go to the shared bottom overlay. Wording after cancel comes from recorded evidence, and cancel never
+transient outcomes go to the shared bottom overlay. *New queue* (top of the right column) swaps the selected queue for
+the composer in the center: Repeat or Pair/Cross values picked from inventory, a live count and preview, then Start now,
+Add to queue or Save paused. Wording after cancel comes from recorded evidence, and cancel never
 claims remote cancellation.
 """
 
@@ -51,6 +53,7 @@ from dtflow.ui.planning_presenter import (
     sentence,
     summary_text,
 )
+from dtflow.ui.queue_composer import SIZE_PRESETS
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
@@ -88,16 +91,24 @@ from dtflow.ui.runner import AsyncRunner, EventRelay
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
 IDLE_POLL_MS = 3000  # light summary polling while the tab is visible, so queues created elsewhere appear
 PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
-PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck")
+PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox")
+PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
+REPEAT = "Repeat"
 FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
 WIRED_CONTROLS = (
     "queueList",
     "queueFilterEdit",
     "createQueueButton",
+    "addQueueButton",
+    "startQueueButton",
+    "newQueueButton",
+    "newQueueRailButton",
+    "emptyNewQueueButton",
+    "closeComposerButton",
+    "editInGenerateButton",
     "refreshQueuesButton",
     "clearQueuesButton",
     "removeQueueButton",
-    "queueCountSpinBox",
     "newQueueCapSpinBox",
     "concurrencySpinBox",
     "queuePrimaryButton",
@@ -106,8 +117,6 @@ WIRED_CONTROLS = (
     "laterQueueButton",
     *FILTER_BUTTONS.values(),
     "queueItemsView",
-    "planBox",
-    "planDryRunButton",
     *PLAN_INPUTS,
 )
 CLEAR_TEXT = (
@@ -116,6 +125,10 @@ CLEAR_TEXT = (
 )
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
+
+
+def _clip(text: str, limit: int = 80) -> str:
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,11 +171,16 @@ class QueuePage:
         edit_source: Callable = lambda: None,
         editing_source: Callable[[], bool] = lambda: False,
         created_hook: Callable[[], None] = lambda: None,
+        choices_source: Callable[[], dict] = dict,
+        generate_hook: Callable[[], None] = lambda: None,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
+        self._choices, self._generate_hook = choices_source, generate_hook
+        self._composing = False
+        self._compact = False
         self._edit_source, self._editing = edit_source, editing_source
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
@@ -216,7 +234,14 @@ class QueuePage:
         page.refreshQueuesButton.clicked.connect(self.refresh)
         page.clearQueuesButton.clicked.connect(self.clear_queues)
         page.removeQueueButton.clicked.connect(self.remove)
-        page.createQueueButton.clicked.connect(self.create)
+        page.createQueueButton.clicked.connect(lambda: self.create("save"))
+        page.addQueueButton.clicked.connect(lambda: self.create("add"))
+        page.startQueueButton.clicked.connect(lambda: self.create("start"))
+        for name in ("newQueueButton", "newQueueRailButton", "emptyNewQueueButton"):
+            getattr(page, name).clicked.connect(self.open_composer)
+        page.closeComposerButton.clicked.connect(self.close_composer)
+        page.editInGenerateButton.clicked.connect(lambda: self._generate_hook())
+        page.newQueueRailButton.setVisible(False)
         page.queuePrimaryButton.clicked.connect(self.primary)
         page.earlierQueueButton.clicked.connect(lambda: self._order("earlier"))
         page.laterQueueButton.clicked.connect(lambda: self._order("later"))
@@ -230,14 +255,17 @@ class QueuePage:
         page.newQueueCapSpinBox.valueChanged.connect(self._new_cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
-        page.planBoxToggle.toggled.connect(page.planBox.setChecked)
-        page.planBox.toggled.connect(self._plan_toggled)
-        page.planDryRunButton.clicked.connect(self.dry_run)
+        self._preview_timer = QTimer(page)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(PREVIEW_MS)
+        self._preview_timer.timeout.connect(self.preview)
+        self._configure_dimensions()
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
-        page.planModeCombo.currentTextChanged.connect(self._plan_changed)
+        page.planModeCombo.currentTextChanged.connect(self._mode_changed)
         page.planIncrementCheck.toggled.connect(self._plan_changed)
-        self._plan_toggled(page.planBox.isChecked())
+        page.queueCountSpinBox.valueChanged.connect(self._plan_changed)
+        self._mode_changed()
         activity.listen(self._sync)
         page.destroyed.connect(self._unlisten_activity)
         self._render()
@@ -346,9 +374,10 @@ class QueuePage:
         page = self.page
         self._render_list()
         view = self._view()
-        page.emptyStateCard.setVisible(view is None)
-        page.queueTableHost.setVisible(view is not None)
-        page.queueHeader.setVisible(view is not None)
+        page.queueComposerScroll.setVisible(self._composing)
+        page.emptyStateCard.setVisible(view is None and not self._composing)
+        page.queueTableHost.setVisible(view is not None and not self._composing)
+        page.queueHeader.setVisible(view is not None and not self._composing)
         detail = self._detail_for(view)
         if view is None:
             self.model.apply(())
@@ -592,10 +621,11 @@ class QueuePage:
         self._publish_run_state()
 
     def sync_edit_fields(self) -> None:
-        """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode."""
-        editing = self._editing()
+        """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
+        editing = self._editing() and self._planned()
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
+        self._schedule_preview()
 
     def _removable(self, view: dict | None) -> bool:
         return (
@@ -624,8 +654,22 @@ class QueuePage:
         if not removable and feedback(page)._armed and feedback(page)._armed[0] is page.removeQueueButton:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
-        # Creating only persists a paused queue (over a short shared connection while a run owns the state).
+        # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
+        running = any(v["status"] == "running" for v in self._views.values())
+        page.addQueueButton.setEnabled(self.dispatching_here or running)
+        page.addQueueButton.setToolTip(
+            "Saves it up next: it starts by itself when the running queue ends."
+            if self.dispatching_here or running
+            else "Nothing is running to wait behind; use Start now or Save paused."
+        )
+        can_start = not self.dispatching_here and not self._activity.generating
+        page.startQueueButton.setEnabled(can_start)
+        page.startQueueButton.setToolTip(
+            "Creates the queue and starts it from this window. Real, possibly billable generation."
+            if can_start
+            else "This window is busy with a run; Add to queue starts the new queue after it."
+        )
         page.clearQueuesButton.setEnabled(
             any(
                 v["status"] in ("finished", "cancelled") and v["queue_id"] != self._dispatching
@@ -679,8 +723,9 @@ class QueuePage:
     def _select_row(self, row: int) -> None:
         item = self.page.queueList.item(row) if row >= 0 else None
         queue_id = item.data(ITEM_ID_ROLE) if item is not None else None
-        if queue_id is None or queue_id == self._selected:
+        if queue_id is None or (queue_id == self._selected and not self._composing):
             return  # a group heading, or the queue already shown
+        self._composing = False
         self._set_selected(queue_id)
         self._render()
         self.refresh()
@@ -714,22 +759,155 @@ class QueuePage:
             self.select_queue(queue_id)
             self.remove()
 
+    # -- composer --------------------------------------------------------------------------------------------------
+    def open_composer(self) -> None:
+        """Show the composer in the center instead of the selected queue; its values are kept between openings."""
+        if feedback(self.page)._armed:
+            feedback(self.page).dismiss()
+        self._composing = True
+        self._refresh_choices()
+        self._render()
+        self.preview()
+
+    def close_composer(self) -> None:
+        self._composing = False
+        self._preview_timer.stop()
+        self._render()
+
+    def shown(self) -> None:
+        """Returning to Queues (for example from Edit in Generate): the composer follows the Generate form."""
+        if self._composing:
+            self._refresh_choices()
+            self.preview()
+
+    @property
+    def composing(self) -> bool:
+        return self._composing
+
+    def set_compact(self, compact: bool) -> None:
+        """Below the responsive width the right column is hidden: the list header then offers New queue itself."""
+        self._compact = compact
+        self.page.newQueueRailButton.setVisible(compact)
+
+    def _configure_dimensions(self) -> None:
+        page = self.page
+        page.planModelsEdit.configure(
+            "search", "Model", options=lambda: self._choices().get("models", []), custom="Not listed"
+        )
+        page.planSamplersEdit.configure("search", "Sampler", options=lambda: self._choices().get("samplers", []))
+        page.planSizesEdit.configure("choice", "Size", options=self._size_options)
+        page.planStepsEdit.configure("int", "Steps", minimum=1, maximum=150)
+        page.planGuidanceEdit.configure("float", "Guidance", minimum=0, maximum=50, step=0.5, decimals=1)
+        page.planStrengthsEdit.configure("float", "Strength", minimum=0, maximum=1, step=0.05, decimals=2)
+
+    def _size_options(self) -> list[str]:
+        current = self._choices().get("size")
+        return [*([current] if current else []), *SIZE_PRESETS]
+
+    def _refresh_choices(self) -> None:
+        """Offered values follow the Generate form: its size first, its steps/guidance/strength as the box values."""
+        page = self.page
+        page.planSizesEdit.refresh_options()
+        try:
+            request, *_ = self._request_source(preview=True)
+        except (FormError, ValidationError):
+            return
+        page.planStepsEdit.refresh_options(str(request.steps))
+        page.planGuidanceEdit.refresh_options(str(request.guidance))
+        page.planStrengthsEdit.refresh_options(str(request.strength))
+
+    def _planned(self) -> bool:
+        return self.page.planModeCombo.currentText() != REPEAT
+
+    def _mode_changed(self, *_) -> None:
+        """Repeat shows the item count; Pair and Cross show the dimensions and the preview table."""
+        page = self.page
+        planned = self._planned()
+        page.queueCountLabel.setVisible(not planned)
+        page.queueCountSpinBox.setVisible(not planned)
+        for name in PLAN_WIDGETS:
+            label = getattr(page, name.replace("Edit", "Label"))
+            label.setVisible(planned)
+            getattr(page, name).setVisible(planned)
+        page.planIncrementCheck.setVisible(planned)
+        page.planTableView.setVisible(planned)
+        self.sync_edit_fields()
+        self._plan_changed()
+
+    def _base_text(self, request) -> str:
+        loras = len(request.loras)
+        parts = [
+            _clip(request.prompt.strip().splitlines()[0]) if request.prompt.strip() else "(no prompt)",
+            request.model_id,
+            f"{request.width_px}x{request.height_px}",
+            f"{request.steps} steps",
+            f"guidance {request.guidance:g}",
+            str(getattr(request.sampler_id, "value", request.sampler_id)),
+            f"seed {request.seed}",
+        ]
+        if loras:
+            parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
+        if self._edit_source() is not None:
+            parts.append(f"Inpaint · strength {request.strength:g}")
+        return " · ".join(parts)
+
+    def preview(self) -> None:
+        """Live count and items for the composer: pure planning against the Generate form, nothing persisted or sent."""
+        self._preview_timer.stop()
+        if not self._composing:
+            return
+        page = self.page
+        try:
+            request, *_ = self._request_source(preview=True)
+        except FormError as exc:
+            page.composerBaseLabel.setText("Generate settings are not valid yet.")
+            self._show(page.planCountLabel, "error", sentence(f"Generate: {exc}"))
+            self.plan_model.clear()
+            return
+        page.composerBaseLabel.setText(self._base_text(request))
+        page.composerBaseLabel.setToolTip(request.prompt)
+        if not self._planned():
+            self._mark_plan(None)
+            count = page.queueCountSpinBox.value()
+            first = request.seed
+            seeds = f"seed {first}" if count == 1 else f"seeds {first}–{first + count - 1}"
+            self._show(page.planCountLabel, "ok", f"{count} item{'s' if count != 1 else ''} · {seeds}")
+            return
+        self._plan_for(request)
+
+    def _schedule_preview(self) -> None:
+        if self._composing:
+            self._preview_timer.start()
+
     # -- creation --------------------------------------------------------------------------------------------------
-    def create(self) -> None:
+    def create(self, action: str = "save") -> None:
+        """Create from the composer: ``save`` keeps it paused, ``add`` queues it up next, ``start`` dispatches it."""
+        if action == "start" and (self.dispatching_here or self._activity.generating):
+            return
         try:
             request, name, endpoint, asset_ids = self._request_source()
         except FormError as exc:
             self._message(Presentation("error", "Queue not created", str(exc)))
             return
         plan = None
-        if self.page.planBox.isChecked():
-            plan = self._plan_for(request, "Queue not created")
+        if self._planned():
+            plan = self._plan_for(request)
             if plan is None:
+                error = self.page.planCountLabel.text()
+                self._message(Presentation("error", "Queue not created", error))
                 return
         count, cap = self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         job = self._edit_source()
-        self._runner.submit(self._create(backend, request, asset_ids, count, cap, plan, job), self._created)
+
+        async def work():
+            queue_id, used = await self._create(
+                backend, request, asset_ids, count, cap, plan, job, up_next=action == "add"
+            )
+            status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
+            return queue_id, used, status
+
+        self._runner.submit(work(), lambda result, failure: self._created(result, failure, action))
 
     def queue_behind(self, request, name, endpoint, asset_ids, job=None) -> None:
         """Generate while this window dispatches: a one-item queue that waits up next and starts by itself.
@@ -822,27 +1000,16 @@ class QueuePage:
             widget.style().unpolish(widget)
             widget.style().polish(widget)
 
-    def _plan_toggled(self, enabled: bool) -> None:
-        # An unchecked QGroupBox disables children; its custom header must stay operable.
-        self.page.planBoxHeader.setEnabled(True)
-        self.page.planBoxToggle.setEnabled(True)
-        self.page.planBoxToggle.setChecked(enabled)
-        self.page.planBoxContents.setVisible(enabled)
-        self.page.planBody.setVisible(enabled)
-        self.page.queueCountSpinBox.setEnabled(not enabled)  # the count box is the seed-sweep shortcut
-        self._plan_changed()
-
     def _plan_changed(self, *_) -> None:
-        level, text = count_text(self._plan_form())
+        """The arithmetic count at once (pure); the validated preview follows after a short pause."""
+        if self._planned():
+            level, text = count_text(self._plan_form())
+        else:
+            count = self.page.queueCountSpinBox.value()
+            level, text = "ok", f"{count} item{'s' if count != 1 else ''}"
         self._show(self.page.planCountLabel, level, sentence(text))
-        planned = self.page.planBox.isChecked()
-        self.page.createQueueButton.setText(
-            f"Create queue from plan ({text})"
-            if planned and level == "ok"
-            else "Create queue from plan"
-            if planned
-            else "Create queue"
-        )
+        self.page.startQueueButton.setText(f"Start now ({text})" if level == "ok" else "Start now")
+        self._schedule_preview()
 
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
@@ -851,8 +1018,8 @@ class QueuePage:
             self.plan_model.appendRow([QStandardItem(cell) for cell in row])
         self.page.planTableView.resizeColumnsToContents()
 
-    def _plan_for(self, request, headline: str) -> Plan | None:
-        """Build and fully validate the plan against the form's request (pure, no I/O); shows the dry-run table."""
+    def _plan_for(self, request) -> Plan | None:
+        """Build and fully validate the plan against the form's request (pure, no I/O); shows the preview table."""
         self._mark_plan(None)
         try:
             plan = build_plan(self._plan_form())
@@ -862,28 +1029,41 @@ class QueuePage:
             error = plan_error(exc)
             self._mark_plan(error.widget)
             self._show(self.page.planCountLabel, "error", sentence(str(error)))
+            self.plan_model.clear()
             return None
         self._show_table(table)
-        self._message(Presentation("ok", "Plan", summary_text(table)))
+        self._show(self.page.planCountLabel, "ok", summary_text(table))
         return plan
 
-    def dry_run(self) -> None:
-        """Show the exact items the plan would create; persists nothing and contacts no backend."""
-        try:
-            request, *_ = self._request_source(preview=True)
-        except FormError as exc:
-            self._message(Presentation("error", "Dry run unavailable", str(exc)))
-            return
-        self._plan_for(request, "Plan not valid")
-
-    def _created(self, result, failure) -> None:
+    def _created(self, result, failure, action: str = "save") -> None:
         if failure is not None:
             self._message(present_generation_failure(failure))
             return
-        queue_id, cap = result
+        queue_id, cap, status = result
         self._created_hook()
+        self._composing = False
+        self._preview_timer.stop()
+        self._set_selected(queue_id)
         self._select_after = queue_id
-        self._message(Presentation("ok", "Queue created", f"Paused with a maximum of {cap} at once. Press Start."))
+        if action == "start" and not self.dispatching_here and not self._activity.generating:
+            self._dispatch(queue_id, resume_fallback=None)
+        elif action == "start":
+            self._message(Presentation("warning", "Saved paused", "A run started meanwhile; press Start when it ends."))
+        elif action == "add" and status == "queued":
+            self._message(
+                Presentation(
+                    "ok", "Added to queue", "It waits up next and starts by itself when the running queue ends."
+                )
+            )
+        elif action == "add":
+            self._message(
+                Presentation(
+                    "warning", "Saved paused", "The running queue had already ended, so this queue waits for Start."
+                )
+            )
+        else:
+            self._message(Presentation("ok", "Queue created", f"Paused with a maximum of {cap} at once. Press Start."))
+        self._render()
         self.refresh()
 
     # -- dispatch and controls -------------------------------------------------------------------------------------
@@ -938,13 +1118,16 @@ class QueuePage:
         if view is None or self.dispatching_here or self._activity.generating:
             return
         # A queue that ran before may still be owned by another process; if so, Resume is posted to it instead.
-        self._resume_fallback = view["queue_id"] if self._started(view) else None
-        self._dispatching = view["queue_id"]
+        self._dispatch(view["queue_id"], resume_fallback=view["queue_id"] if self._started(view) else None)
+
+    def _dispatch(self, queue_id: str, *, resume_fallback: str | None) -> None:
+        """Make this window the dispatch owner of ``queue_id`` (an explicit Start or Start now)."""
+        self._resume_fallback = resume_fallback
+        self._dispatching = queue_id
         self._dispatch_started = False
         self._activity.set(dispatching=True)
         self._render()
         saved = self._saved()
-        queue_id = view["queue_id"]
         self._future = self._runner.submit(
             dispatch_queue(
                 self._state,

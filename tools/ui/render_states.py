@@ -753,6 +753,11 @@ def render_active_queue_states(shell, out):
         assert page.queueStateLabel.text() == "Running" and not page.removeQueueButton.isEnabled()
         assert page.createQueueButton.isEnabled()  # #133: a new queue can be prepared while one runs
         snap("queues-11-running")
+        # #123: while this window dispatches, the composer offers Add to queue; Start now waits for the run.
+        page.newQueueButton.click()
+        assert queue.composing and page.addQueueButton.isEnabled() and not page.startQueueButton.isEnabled()
+        snap("queues-40-composer-while-running")
+        queue.close_composer()
         timed = present("running", ["succeeded", "running", "pending"], owned=True)
         timed.update(successful_durations=[45], started_at_utc=datetime.now(UTC).isoformat())
         queue._read_done(([timed], timed, 2), None)
@@ -869,12 +874,28 @@ def render_active_queue_states(shell, out):
         snap("queues-32-new-queue-filter-reset")
         queue._selected = queue_id
         present("paused", ["pending", "pending"], started=False)
-        page.planBox.setChecked(True)
+        # #123 / #140: New queue (top of the right column) swaps the selected queue for the composer in the center.
+        page.newQueueButton.click()
+        assert queue.composing and not page.queueHeader.isVisible() and not page.queueTableHost.isVisible()
+        assert page.planCountLabel.text().startswith("1 item")
+        snap("queues-37-composer-repeat")
+        page.planModeCombo.setCurrentText("Cross")
+        page.planModelsEdit.setText("offline-checkpoint.ckpt")
+        page.planStepsEdit.setText("20; 30")
+        page.planSamplersEdit.setText("euler_a; ddim")
+        page.planSizesEdit.setText("768x768; 1024x1024")
+        queue.preview()
+        assert queue.plan_model.rowCount() == 8 and page.startQueueButton.text() == "Start now (8 items)"
+        snap("queues-38-composer-cross")
+        page.planModelsEdit._add.click()  # the shared searchable editor, filled from the Generate inventory
+        snap("queues-39-composer-model-search")
+        shell.inline.dismiss()
+        for name in ("planModelsEdit", "planStepsEdit", "planSamplersEdit", "planSizesEdit"):
+            getattr(page, name).clear()
         page.planSeedsEdit.setText("not-a-seed")
-        with patch.object(queue, "_request_source", return_value=(request, "local", None, ())):
-            page.planDryRunButton.click()
+        queue.preview()
         assert page.planSeedsEdit.property("invalid")
-        shell.shell.leftScroll.ensureWidgetVisible(page.planSeedsEdit)
+        page.queueComposerScroll.ensureWidgetVisible(page.planSeedsEdit)
         snap("queues-18-plan-invalid")
         page.planSeedsEdit.clear()
         queue._mark_plan(None)
@@ -884,14 +905,14 @@ def render_active_queue_states(shell, out):
         ):
             present("paused", ["pending", "pending"], started=False, edit=True)
             page.planStrengthsEdit.setText("0.5; 0.7")
-            assert queue._plan_for(request, "Plan not valid") is not None
+            assert queue._plan_for(request) is not None
             assert not page.planStrengthsEdit.isHidden() and queue.model.row_at(0).edit_text == "Inpaint · 0.7"
-            shell.shell.leftScroll.ensureWidgetVisible(page.planStrengthsEdit)
+            page.queueComposerScroll.ensureWidgetVisible(page.planStrengthsEdit)
             snap("queues-19-inpaint-plan")
         page.planStrengthsEdit.clear()
-        page.planBox.setChecked(False)
+        page.planModeCombo.setCurrentText("Repeat")
+        queue.close_composer()
         queue._sync()
-        shell.shell.leftScroll.verticalScrollBar().setValue(0)
         queue._syncing = True
         page.concurrencySpinBox.setValue(10)
         page.newQueueCapSpinBox.setValue(10)
@@ -920,6 +941,7 @@ def render_active_queue_states(shell, out):
         form.resize(1000, 900)
         shell._responsive_workspace()
         assert shell.shell.rightRail.isHidden()
+        assert page.newQueueRailButton.isVisible()  # #140: New queue stays reachable without the right column
         snap("queues-23-narrow")
         form.resize(1600, 1000)
         shell._responsive_workspace()
@@ -2326,10 +2348,14 @@ def render_queue_states(shell, capture):
     page.createQueueButton.click()
     wait_for(lambda: queue._view() is not None)
     capture("queues-02-created-paused")
-    page.planBox.setChecked(True)
-    page.planDryRunButton.click()
-    capture("queues-03-plan-dry-run")
-    page.planBox.setChecked(False)
+    page.newQueueButton.click()
+    page.planModeCombo.setCurrentText("Cross")
+    page.planStepsEdit.setText("20; 30")
+    queue.preview()
+    capture("queues-03-composer-preview")
+    page.planStepsEdit.clear()
+    page.planModeCombo.setCurrentText("Repeat")
+    queue.close_composer()
     # Cancel posts immediately without confirmation (#120); removing a queue record asks inline first (#122).
     page.removeQueueButton.click()
     capture("queues-05-remove-confirmation")
