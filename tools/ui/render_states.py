@@ -43,7 +43,7 @@ if sys.platform == "win32" and platform_name == "offscreen":
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap, QTextDocument, QTextOption  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -223,6 +223,60 @@ def render_inspector_fit_states(shell, out, category):
             assert page.itemBackendLabel.height() > page.itemBackendLabel.fontMetrics().height()
             actions_fit()
             save(form, out, "queues-51-inspector-long-backend")
+            # An unbroken model/LoRA identifier must wrap inside the actual New queue summary card.
+            shell.queue.open_composer()
+            shell.queue._preview_timer.stop()  # Freeze the offline fixture while inspecting layout.
+            summary_names = ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Cap", "Note")
+            summary_labels = [getattr(page, f"composerSummary{name}Label") for name in summary_names]
+            previous_text = [label.text() for label in summary_labels]
+            try:
+                model = "z_image_turbo_" + "long_checkpoint_identifier_" * 5 + ".ckpt"
+                lora = "realisticsnapshot_zimage_turbov5_" + "rank64_variant_" * 5 + ".ckpt"
+                page.composerSummaryBackendLabel.setText("cloud · offline.test:7859")
+                page.composerSummaryModelLabel.setText(model)
+                page.composerSummaryLorasLabel.setText(f"{lora}: 0.94\n{lora}: 1.00")
+                fits(page.queueInspector)
+                for label in summary_labels:
+                    assert label.wordWrap() and label.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored
+                    left = label.mapTo(scroll.viewport(), QPoint(0, 0)).x()
+                    right = label.mapTo(scroll.viewport(), QPoint(label.width(), 0)).x()
+                    assert 0 <= left < right <= scroll.viewport().width(), (label.objectName(), left, right)
+                assert page.composerSummaryModelLabel.height() > page.composerSummaryModelLabel.fontMetrics().height()
+                assert page.composerSummaryLorasLabel.height() > page.composerSummaryLorasLabel.fontMetrics().height()
+                # Check every rendered line, not just that the label grew beyond a single line.
+                lora_label = page.composerSummaryLorasLabel
+                document = QTextDocument()
+                document.setDefaultFont(lora_label.font())
+                document.setDocumentMargin(0)
+                option = document.defaultTextOption()
+                option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+                document.setDefaultTextOption(option)
+                document.setPlainText(lora_label.text())
+                document.setTextWidth(lora_label.contentsRect().width())
+                assert lora_label.height() >= document.size().height(), (lora_label.height(), document.size().height())
+                lora_bottom = lora_label.mapTo(page.composerSummaryBoxContents, QPoint(0, lora_label.height())).y()
+                items_top = page.composerSummaryItemsCaption.mapTo(page.composerSummaryBoxContents, QPoint(0, 0)).y()
+                assert items_top >= lora_bottom, (items_top, lora_bottom)
+                card = page.composerSummaryBox
+                assert card.mapTo(scroll.viewport(), QPoint(card.width(), 0)).x() <= scroll.viewport().width()
+                save(form, out, "queues-52-composer-long-identifiers")
+                # The owner Windows screenshot shows the second LoRA's text cut off by Items.
+                realistic = "zimage_turbo_lora_rank64_5: 0.94\nrealisticsnapshot_zimage_turbov5_lora_f16.ckpt: 0.6"
+                page.composerSummaryLorasLabel.setText(realistic)
+                shell.queue._summary_fit.refit()
+                QTest.qWait(100)
+                assert page.composerSummaryLorasLabel.text() == realistic
+                document.setPlainText(realistic)
+                document.setTextWidth(lora_label.contentsRect().width())
+                assert lora_label.height() >= document.size().height()
+                lora_bottom = lora_label.mapTo(page.composerSummaryBoxContents, QPoint(0, lora_label.height())).y()
+                items_top = page.composerSummaryItemsCaption.mapTo(page.composerSummaryBoxContents, QPoint(0, 0)).y()
+                assert items_top >= lora_bottom
+                save(form, out, "queues-55-inspector-two-loras")
+            finally:
+                for label, previous in zip(summary_labels, previous_text, strict=True):
+                    label.setText(previous)
+                shell.queue.close_composer()
         # Keep the previously widest inspector mounted and verify that it cannot widen Generate after navigation.
         form.generationNavigationButton.click()
         fits(shell.generation_page.generationInspector)
@@ -940,6 +994,26 @@ def render_active_queue_states(shell, out):
         assert [h for h in headings if h.isupper()] == ["RUNNING", "UP NEXT", "PAUSED", "HISTORY"]
         assert page.failedFilterButton.text() == "✗ 1" and page.removeQueueButton.isEnabled()
         snap("queues-26-list-groups")
+        # The queue list, not the shared left QScrollArea, owns vertical scrolling.
+        form.resize(1182, 792)
+        shell._responsive_workspace()
+        QTest.qWait(100)
+        left_scroll = shell.shell.leftScroll
+        assert left_scroll.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        assert left_scroll.verticalScrollBar().maximum() == 0
+        assert page.queueList.verticalScrollBar().maximum() > 0
+        filter_top = page.queueFilterEdit.mapTo(left_scroll.viewport(), QPoint(0, 0)).y()
+        clear_top = page.clearQueuesButton.mapTo(left_scroll.viewport(), QPoint(0, 0)).y()
+        page.queueList.verticalScrollBar().setValue(page.queueList.verticalScrollBar().maximum())
+        QTest.qWait(30)
+        assert page.queueFilterEdit.mapTo(left_scroll.viewport(), QPoint(0, 0)).y() == filter_top
+        assert page.clearQueuesButton.mapTo(left_scroll.viewport(), QPoint(0, 0)).y() == clear_top
+        assert 0 <= clear_top < left_scroll.viewport().height()
+        assert clear_top + page.clearQueuesButton.height() <= left_scroll.viewport().height()
+        snap("queues-56-single-left-scroll")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        page.queueList.verticalScrollBar().setValue(0)
         page.queueFilterEdit.setText("fox")
         assert len(queue.queue_items()) == 1
         snap("queues-27-list-filter")
@@ -977,6 +1051,7 @@ def render_active_queue_states(shell, out):
         # #123 / #140: New queue (top of the center) swaps the selected queue for the composer in the center.
         page.newQueueButton.click()
         assert queue.composing and not page.queueHeader.isVisible() and not page.queueTableHost.isVisible()
+        assert not page.planTableView.isVisible()
         assert page.planCountLabel.text().startswith("1 item")
         snap("queues-37-composer-repeat")
         page.planModeCombo.setCurrentText("Cross")
@@ -987,6 +1062,7 @@ def render_active_queue_states(shell, out):
         shell.generation.lora.set_loras((LoRASelection("offline-style.safetensors", 0.8),))
         queue.preview()
         assert queue.plan_model.rowCount() == 8 and page.startQueueButton.text() == "Start now (8 items)"
+        assert page.planTableView.isVisible()
         assert page.composerSummaryBox.isVisible() and page.composerSummaryItemsLabel.text() == "8"
         assert "offline-style" in page.composerSummaryLorasLabel.text()
         assert "model" not in page.composerSummaryVariesLabel.text()  # single-value dimensions do not vary
@@ -1015,6 +1091,51 @@ def render_active_queue_states(shell, out):
         assert queue.plan_model.rowCount() == 2 * 2 * 2 and page.planRngSeedEdit.isVisible()
         page.queueComposerScroll.ensureWidgetVisible(page.planDrawStepsSpin)
         snap("queues-48-composer-random-draws")
+        # This intermediate width leaves both rails visible but gives the composer
+        # substantially less space than a desktop-wide fixture.
+        form.resize(1182, 792)
+        shell._responsive_workspace()
+        QTest.qWait(100)
+        assert shell.shell.rightRail.isVisible()
+        scroll = page.queueComposerScroll
+        viewport = scroll.viewport()
+        assert viewport.width() < 680
+        assert page.queueComposer.width() <= viewport.width(), (page.queueComposer.width(), viewport.width())
+        assert scroll.horizontalScrollBar().maximum() == 0
+        for widget in (
+            page.newQueueCapLabel,
+            page.newQueueCapSpinBox,
+            page.createQueueButton,
+            page.addQueueButton,
+            page.startQueueButton,
+            page.closeComposerButton,
+            page.editInGenerateButton,
+            page.planDrawModelsLabel,
+            page.planDrawModelsSpin,
+            page.planDrawStepsLabel,
+            page.planDrawStepsSpin,
+            page.planDrawLorasLabel,
+            page.planDrawLorasSpin,
+        ):
+            assert widget.isVisible(), widget.objectName()
+            left = widget.mapTo(viewport, QPoint(0, 0)).x()
+            right = widget.mapTo(viewport, QPoint(widget.width(), 0)).x()
+            assert 0 <= left < right <= viewport.width(), (widget.objectName(), left, right, viewport.width())
+        assert queue._actions_fit._wrapped
+        assert page.closeComposerButton.parentWidget() is queue._actions_fit._host
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawModelsSpin))[:2] == (0, 1)
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawSeedsSpin))[:2] == (0, 3)
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawStepsSpin))[:2] == (1, 1)
+        # Text-to-image has no Strength control: its hidden slot must not leave a gap.
+        assert page.planDrawStrengthsSpin.isHidden()
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawLoraSetsSpin))[:2] == (3, 1)
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawLorasSpin))[:2] == (3, 3)
+        snap("queues-53-composer-two-rails-narrow-center")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        QTest.qWait(50)
+        assert page.closeComposerButton.parentWidget() is page.queueComposer
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawStepsSpin))[:2] == (0, 5)
         page.planDrawStepsSpin.setValue(0)
         # #129: dynamic prompt variation of the Generate prompt, with wildcards and seeded edits.
         shell.generation_page.promptEdit.setPlainText("a {red|blue} fox, __place__, golden light, film grain")
@@ -1042,6 +1163,32 @@ def render_active_queue_states(shell, out):
         assert queue._preview_token == token and not queue.previewing and queue.plan_model.rowCount() == 4
         page.queueComposerScroll.ensureWidgetVisible(page.planVariationCombo)
         snap("queues-49-composer-prompt-variation")
+        form.resize(1182, 792)
+        shell._responsive_workspace()
+        QTest.qWait(100)
+        assert page.planMutationBox.isVisible() and page.planRngSeedEdit.isVisible()
+        viewport = page.queueComposerScroll.viewport()
+        assert page.queueComposer.width() <= viewport.width()
+        assert page.queueComposerScroll.horizontalScrollBar().maximum() == 0
+        for widget in (
+            page.planVariationCombo,
+            page.planVariationCountSpin,
+            page.planShuffleCombo,
+            page.planDropLabel,
+            page.planDropSpin,
+            page.planAddLabel,
+            page.planAddSpin,
+            page.planRngSeedEdit,
+            page.planRerollButton,
+        ):
+            assert widget.isVisible(), widget.objectName()
+            left = widget.mapTo(viewport, QPoint(0, 0)).x()
+            right = widget.mapTo(viewport, QPoint(widget.width(), 0)).x()
+            assert 0 <= left < right <= viewport.width(), (widget.objectName(), left, right, viewport.width())
+        snap("queues-54-composer-narrow-prompt-edit")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        QTest.qWait(50)
         page.planVariationCombo.setCurrentText("Off")
         page.planShuffleCombo.setCurrentText("No shuffle")
         page.planDropSpin.setValue(0)
@@ -1054,9 +1201,14 @@ def render_active_queue_states(shell, out):
         page.planSeedsEdit.setText("not-a-seed")
         queue.preview()
         assert page.planSeedsEdit.property("invalid")
+        assert not page.planTableView.isVisible()  # no tall, blank table underneath the validation message
         page.queueComposerScroll.ensureWidgetVisible(page.planSeedsEdit)
         snap("queues-18-plan-invalid")
         page.planSeedsEdit.clear()
+        page.planStepsEdit.setText("20; 30")
+        queue.preview()
+        assert page.planTableView.isVisible()  # valid settings restore the preview automatically
+        page.planStepsEdit.clear()
         queue._mark_plan(None)
         with (
             patch.object(queue, "_editing", return_value=True),
@@ -1066,6 +1218,7 @@ def render_active_queue_states(shell, out):
             page.planStrengthsEdit.setText("0.5; 0.7")
             assert queue._plan_for(request) is not None
             assert not page.planStrengthsEdit.isHidden() and queue.model.row_at(0).edit_text == "Inpaint · 0.7"
+            assert page.planDrawGrid.indexOf(page.planDrawStrengthsSpin) >= 0
             page.queueComposerScroll.ensureWidgetVisible(page.planStrengthsEdit)
             snap("queues-19-inpaint-plan")
         page.planStrengthsEdit.clear()

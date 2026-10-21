@@ -6,8 +6,10 @@ duplicates and ordering exactly as for CLI plan files.
 """
 
 from collections.abc import Callable
+from math import ceil
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QTextDocument, QTextOption
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -269,12 +271,11 @@ class ValueChips(QWidget):
 
 
 class ActionsFit(QObject):
-    """Keeps the composer actions beside its title while they fit; otherwise they wrap on their own row below it."""
+    """Keep all composer actions, including Close, in one responsive action group."""
 
     def __init__(self, scroll, title_layout, column_layout, actions, fixed):
         super().__init__(scroll)
         self._title, self._actions, self._fixed = title_layout, tuple(actions), tuple(fixed)
-        self._before = fixed[-1]  # actions sit just before the last fixed widget (Close)
         self._host = QWidget(scroll.widget())
         self._host.setObjectName("composerWrappedActions")
         self._flow = FlowLayout(self._host)
@@ -293,14 +294,132 @@ class ActionsFit(QObject):
         widgets = (*self._fixed, *self._actions)
         margins = self._title.contentsMargins()
         needed = sum(widget.sizeHint().width() for widget in widgets) + self._title.spacing() * len(widgets)
-        wrap = self._viewport.width() < needed + margins.left() + margins.right()
+        # Reserve the card's inner gutter and prefer the separate row before labels get clipped.
+        wrap = self._viewport.width() < max(680, needed + margins.left() + margins.right() + 24)
         if wrap == self._wrapped:
             return
         self._wrapped = wrap
-        for widget in self._actions:
+        # Move Close with the other actions, so a narrow composer never gets an
+        # almost-empty header row containing only Close.
+        for widget in (*self._actions, *self._fixed):
             (self._title if wrap else self._flow).removeWidget(widget)
             if wrap:
                 self._flow.addWidget(widget)
             else:
-                self._title.insertWidget(self._title.indexOf(self._before), widget)
+                self._title.addWidget(widget)
         self._host.setVisible(wrap)
+
+
+class ComposerGridFit(QObject):
+    """Reflow dense composer controls to the *visible* center width, never the window width.
+
+    Pair labels with their spin boxes and move existing Qt widgets between grid cells;
+    their values, signal connections and focus state are unchanged by a resize.
+    """
+
+    def __init__(self, scroll, draw_grid, draw_pairs, mutation_grid, mutation_groups):
+        super().__init__(scroll)
+        self._viewport = scroll.viewport()
+        self._draw_grid = draw_grid
+        self._draw_pairs = tuple(tuple(group) for group in draw_pairs)
+        self._mutation_grid = mutation_grid
+        self._mutation_groups = tuple(tuple(group) for group in mutation_groups)
+        self._layout_key: tuple | None = None
+        self._viewport.installEventFilter(self)
+        self.refit()
+
+    def eventFilter(self, watched, event):
+        if watched is self._viewport and event.type() == QEvent.Type.Resize:
+            self.refit()
+        return False
+
+    @staticmethod
+    def _arrange(grid, groups, columns):
+        """Pack only applicable label/input pairs, without gaps from hidden dimensions."""
+        for group in groups:
+            for widget in group:
+                grid.removeWidget(widget)
+        visible = [group for group in groups if not all(widget.isHidden() for widget in group)]
+        for index, group in enumerate(visible):
+            row, pair = divmod(index, columns)
+            col = pair * 2
+            if len(group) == 1:
+                grid.addWidget(group[0], row, col, 1, 2)
+            else:
+                grid.addWidget(group[0], row, col)
+                grid.addWidget(group[1], row, col + 1)
+        grid.invalidate()
+        grid.parentWidget().updateGeometry()
+
+    def refit(self):
+        """Repack on a width change or when an Inpaint-only dimension changes visibility."""
+        width = self._viewport.width()
+        columns = (3, 3) if width >= 740 else (2, 2) if width >= 500 else (1, 1)
+        visibility = tuple(
+            tuple(widget.isHidden() for widget in group)
+            for groups in (self._draw_pairs, self._mutation_groups)
+            for group in groups
+        )
+        key = (columns, visibility)
+        if key == self._layout_key:
+            return
+        self._layout_key = key
+        self._arrange(self._draw_grid, self._draw_pairs, columns[0])
+        self._arrange(self._mutation_grid, self._mutation_groups, columns[1])
+
+
+class SummaryLabelHeightFit(QObject):
+    """Keep long wrapped inspector values fully visible instead of clipping their final lines.
+
+    QFormLayout may underestimate a QLabel's height when its horizontal size
+    policy ignores a long unbroken identifier. Measure the complete plain text
+    at the *actual* label width; the right inspector itself remains scrollable.
+    """
+
+    def __init__(self, contents: QWidget, labels):
+        super().__init__(contents)
+        self._labels = tuple(labels)
+        self._pending = False
+        for widget in (contents, *self._labels):
+            widget.installEventFilter(self)
+        self.refit()
+
+    @staticmethod
+    def text_height(label) -> int:
+        """Return the full rendered plain-text height at a label's current width."""
+        width = label.contentsRect().width()
+        if width <= 0:
+            return 0
+        document = QTextDocument()
+        document.setDefaultFont(label.font())
+        document.setDocumentMargin(0)
+        option = document.defaultTextOption()
+        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        document.setDefaultTextOption(option)
+        document.setPlainText(label.text())
+        document.setTextWidth(width)
+        return ceil(document.size().height())
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self.schedule()
+        return False
+
+    def schedule(self) -> None:
+        """Wait for Qt to settle label widths before measuring wrapped height."""
+        if self._pending:
+            return
+        self._pending = True
+        QTimer.singleShot(0, self.refit)
+
+    def refit(self) -> None:
+        self._pending = False
+        for label in self._labels:
+            text_height = self.text_height(label)
+            if not text_height:
+                continue
+            metrics = label.fontMetrics()
+            multi_line = "\n" in label.text() or text_height > metrics.lineSpacing() + 1
+            minimum = max(label.heightForWidth(label.width()), text_height + metrics.descent() + 2) if multi_line else 0
+            if label.minimumHeight() != minimum:
+                label.setMinimumHeight(minimum)
