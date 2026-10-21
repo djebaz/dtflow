@@ -7,6 +7,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 ## Added
 
 - Queue item table with saved-result thumbnails, prompt/model/LoRA/parameter columns, observed durations and an item inspector with Open in Images. No dispatch or database-schema change.
+- Development-mode diagnostics summarize queue thumbnail outcomes/timings and record Open in Images handoff outcomes without prompts, image identities, paths or raw error text.
 
 ## Changed
 

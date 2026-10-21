@@ -66,8 +66,13 @@ def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot
 
     runner = Runner()
     thumbnails = thumbnail_ui.QueueThumbnails(runner, tmp_path)
+    observations = []
+    monkeypatch.setattr(thumbnail_ui, "dev_enabled", lambda: True)
+    monkeypatch.setattr(thumbnail_ui, "measurement", lambda _log, name, **data: observations.append((name, data)))
     now = [0.0]
     monkeypatch.setattr(thumbnail_ui, "monotonic", lambda: now[0])
+    thumbnails._diagnostic_since = 0.0
+    thumbnails._expiry.start()
     image = QImage(16, 16, QImage.Format.Format_RGB32)
     image.fill(0)
     assert thumbnails.pixmap("output.png", identity="a:0") is None
@@ -78,8 +83,12 @@ def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot
     assert not thumbnails.available("output.png", "a:0")
     runner.jobs[1]((None, "Saved image is no longer available"), None)
     assert thumbnails.is_failed("output.png", identity="a:0")
+    assert not observations  # repeated completions/polls stay aggregated
     assert thumbnails._expiry.parent() is thumbnails
     thumbnails.clear()
+    assert len(observations) == 1 and observations[0][0] == "queue.thumbnail_summary"
+    assert observations[0][1]["available"] == observations[0][1]["unavailable"] == 1
+    assert "output.png" not in repr(observations) and "a:0" not in repr(observations)
     thumbnails.pixmap("busy.png", identity="b:0")
     thumbnails.clear()  # an obsolete decode still occupies a slot until completion
     assert thumbnails._active == 1

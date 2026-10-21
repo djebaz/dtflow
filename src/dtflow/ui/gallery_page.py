@@ -545,6 +545,8 @@ class GalleryPage(QObject):
         self._open_request: str | None = None  # Queues "Open in Images": show this output in Detail once located
         self._open_generation: int | None = None
         self._open_attempts = 0
+        self._open_started: float | None = None
+        self._open_waits = 0
         self._open_timer = QTimer(self)
         self._open_timer.setSingleShot(True)
         self._open_timer.setInterval(250)
@@ -1857,7 +1859,7 @@ class GalleryPage(QObject):
             return
         if error is not None:
             if opening:
-                self._open_output_failed()
+                self._open_output_failed("query_failed")
             # Auto-refresh retries every few seconds; report a failure streak once.
             detail = str(error) if isinstance(error, PersistenceError) else type(error).__name__
             (log.debug if self._refresh_failing else log.warning)("gallery refresh failed reason=%s", detail)
@@ -1953,8 +1955,8 @@ class GalleryPage(QObject):
 
         if opening:
             target = next((item for item in self.items if item.identity == anchor), None)
-            self._cancel_open_output()
             if target is not None and not target.issue and not page.snapshot_at:
+                self._cancel_open_output("opened")
                 self.selected_id = anchor
                 self.show_view("Detail")
             else:
@@ -3438,14 +3440,25 @@ class GalleryPage(QObject):
             finally:
                 widget.blockSignals(blocked)
         self._open_request, self._open_attempts = identity, attempts
+        self._open_started = monotonic() if dev_enabled() else None
+        self._open_waits = 0
         self._continue_open_output()
 
-    def _cancel_open_output(self) -> None:
+    def _cancel_open_output(self, outcome: str = "cancelled") -> None:
+        if self._open_request is not None and self._open_started is not None and dev_enabled():
+            measurement(
+                log,
+                "gallery.open_output",
+                outcome="shutdown" if self.runner.closed else "navigation" if not self._active else outcome,
+                elapsed_ms=(monotonic() - self._open_started) * 1000,
+                busy_waits=self._open_waits,
+            )
         self._open_timer.stop()
         self._open_request = self._open_generation = None
+        self._open_started = None
 
-    def _open_output_failed(self) -> None:
-        self._cancel_open_output()
+    def _open_output_failed(self, reason: str = "unavailable") -> None:
+        self._cancel_open_output(reason)
         if self._active and not self.runner.closed:
             feedback(self.page).notice(
                 "Open in Images", "The selected saved image is no longer available from live history.", "warning"
@@ -3458,14 +3471,15 @@ class GalleryPage(QObject):
         if self._loading or self._adjacent_loading:
             if self._open_attempts > 0:
                 self._open_attempts -= 1
+                self._open_waits += 1
                 self._open_timer.start()
             else:
-                self._open_output_failed()
+                self._open_output_failed("busy_exhausted")
             return
         try:
             query = self._query(offset=0)
         except ValidationError:
-            self._open_output_failed()
+            self._open_output_failed("query_invalid")
             return
         self._submit_query(query, anchor=self._open_request, target_count=PAGE_SIZE, trigger="open-output")
 

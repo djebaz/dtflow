@@ -48,6 +48,9 @@ def test_queue_handoff_opens_exact_live_output_despite_browse_filters(presentati
 def test_queue_handoff_retries_only_latest_request_and_cancels_on_navigation_or_shutdown(presentation, monkeypatch):
     _form, gallery, runner, _records, _state = presentation
     submitted = []
+    observations = []
+    monkeypatch.setattr(gallery_ui, "dev_enabled", lambda: True)
+    monkeypatch.setattr(gallery_ui, "measurement", lambda _log, name, **data: observations.append((name, data)))
     monkeypatch.setattr(gallery, "_submit_query", lambda *args, **kwargs: submitted.append(kwargs))
     gallery._loading = True
     gallery.open_output("first")
@@ -67,6 +70,10 @@ def test_queue_handoff_retries_only_latest_request_and_cancels_on_navigation_or_
     gallery._loading = False
     gallery._continue_open_output()
     assert not gallery._open_timer.isActive() and len(submitted) == 1
+    outcomes = [data for name, data in observations if name == "gallery.open_output"]
+    assert [data["outcome"] for data in outcomes] == ["cancelled", "cancelled", "navigation", "shutdown"]
+    assert all(data["busy_waits"] >= 1 and data["elapsed_ms"] >= 0 for data in outcomes)
+    assert "cancel-on-close" not in repr(outcomes)
 
 
 @pytest.fixture

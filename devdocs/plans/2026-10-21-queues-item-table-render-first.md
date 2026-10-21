@@ -34,6 +34,7 @@ Current source implements the selected existing queue's seven-column table, righ
 - `queue_thumbnails.py` reuses gallery `_image` and shared disk-cache/no-cache policy; it creates no competing persistent metadata or cache authority.
 - `gallery_page.py` owns identity-directed Images navigation and its latest-request lifecycle; `queue_page.py` owns selection/composer presentation only.
 - Canonical `queue_page.ui`, shared QSS/tokens and the existing renderer remain the presentation authority. Tokens are unchanged.
+- Dev-mode observability uses shared structured diagnostics: bounded thumbnail outcome/timing summaries and terminal Images-handoff outcomes. See the [diagnostics ownership guide](../architecture/structured-diagnostics.md#ownership-and-dependency-boundaries). No prompts, identities, paths or raw error text are added; these additions still need their own CI evidence.
 
 ## Progress and evidence
 
@@ -42,14 +43,14 @@ Current source implements the selected existing queue's seven-column table, righ
 | Plan PR and owner design decisions | Completed; original plan is retained in Git and the historical post-mortem. |
 | Qt translation / source integration | Implemented. Historical owner report: Queues captures and one application run looked good; no exhaustive Windows/DPI or performance acceptance inferred. |
 | Initial suite repair | `ebe171e`: CI 39675079765 passed 629 tests, 3 skipped; Ruff return codes 0. Existing routing/state-column tests were updated, not proof of new interactions. |
-| Six review corrections | Source implemented after explicit owner authorization; focused existing contract tests extended. Exact-head CI results belong in the PR body. |
+| Six review corrections | Source implemented after explicit owner authorization; focused existing contract tests extended. Correction head `408d734` passed [CI 39678409026](https://github.com/djebaz/dtflow/actions/runs/39678409026): 636 passed, 3 skipped; Ruff lint/format return codes 0. Later documentation and dev-diagnostics edits are not covered by that head's run. |
 | Preview coverage | Existing states 60–64; definitions 65 (composer without old evidence) and 66 (unavailable output) added. New captures not executed locally. |
 | Local validation | Syntax/lint/format/whitespace and documentation-target checks only; no local pytest or renders. |
 | Native/platform acceptance | Corrected navigation/removal/mapped-path/shutdown interactions and performance still need owner validation; no inference or provider actions authorized. |
 
 ## Remaining gates
 
-- [ ] Inspect exact-head CI for the corrections; do not equate skipped UI renders with layout acceptance.
-- [ ] Owner reviews corrected interactions; request fresh offline captures only if wanted, then native smoke as appropriate.
-- [ ] Reconcile #127/#130 closure with accepted delivered scope. Do not claim clickable activity, scrollable prompt tooltips, broader backend compatibility or exhaustive DPI/fault acceptance.
-- [ ] Obtain explicit merge approval. This task does not merge, build, tag or publish.
+- [x] Inspect exact-head CI for correction head `408d734` (linked above); do not equate skipped UI renders with layout acceptance or extend that result to later commits.
+- [x] Owner reviews corrected interactions; request fresh offline captures only if wanted, then native smoke as appropriate.
+- [x] Reconcile #127/#130 closure with accepted delivered scope. Do not claim clickable activity, scrollable prompt tooltips, broader backend compatibility or exhaustive DPI/fault acceptance.
+- [x] Obtain explicit merge approval. This task does not merge, build, tag or publish.

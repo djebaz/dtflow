@@ -9,6 +9,7 @@ GUI thread and kept in small LRU stores.
 """
 
 import asyncio
+import logging
 from collections import OrderedDict, deque
 from pathlib import Path
 from time import monotonic
@@ -17,6 +18,8 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtWidgets import QLabel, QTableView
 
+from dtflow.diagnostics import measurement
+from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.services.gallery import item_from_record
 from dtflow.ui.gallery_page import THUMBNAIL_SIDE, _image
@@ -30,6 +33,8 @@ PREVIEW_DELAY_MS = 350
 PREVIEW_COLUMN = 0
 PREVIEW_BOX = 440  # longest side of the hover preview in logical px (the 600 px source covers it up to 1.35x DPI)
 REVALIDATE_MS = 3000  # visible previews are re-read through live gallery authority, not retained indefinitely
+SUMMARY_SECONDS = 30
+log = logging.getLogger(__name__)
 
 
 def _decode(path: str, identity: str | None, state: Path):
@@ -60,6 +65,9 @@ class QueueThumbnails(QObject):
         self._active = 0
         self._epoch = 0
         self._closed = False
+        self._diagnostic_counts: dict[str, int] = {}
+        self._diagnostic_total_ms = self._diagnostic_max_ms = 0.0
+        self._diagnostic_since = monotonic()
         self._expiry = QTimer(self)
         self._expiry.setInterval(REVALIDATE_MS)
         self._expiry.timeout.connect(self._expire)
@@ -82,6 +90,8 @@ class QueueThumbnails(QObject):
 
     def _expire(self) -> None:
         now = monotonic()
+        if now - self._diagnostic_since >= SUMMARY_SECONDS:
+            self._flush_diagnostics()
         for key, checked in tuple(self._checked.items()):
             if now - checked >= REVALIDATE_MS / 1000:
                 self._forget(key)
@@ -120,6 +130,7 @@ class QueueThumbnails(QObject):
 
     def clear(self) -> None:
         """Forget everything; results still in flight are ignored when they arrive."""
+        self._flush_diagnostics()
         self._epoch += 1
         for store, _ in self._stores.values():
             store.clear()
@@ -129,6 +140,21 @@ class QueueThumbnails(QObject):
         self._wanted.clear()
         self._checked.clear()
         # In-flight jobs still occupy slots until their callbacks arrive; never oversubscribe after clearing.
+
+    def _flush_diagnostics(self) -> None:
+        if self._diagnostic_counts:
+            measurement(
+                log,
+                "queue.thumbnail_summary",
+                **self._diagnostic_counts,
+                elapsed_total_ms=self._diagnostic_total_ms,
+                elapsed_max_ms=self._diagnostic_max_ms,
+                active=self._active,
+                waiting=len(self._waiting),
+            )
+        self._diagnostic_counts.clear()
+        self._diagnostic_total_ms = self._diagnostic_max_ms = 0.0
+        self._diagnostic_since = monotonic()
 
     def _pump(self) -> None:
         if self._closed or self._runner.closed:
@@ -143,7 +169,10 @@ class QueueThumbnails(QObject):
             async def work(filename=path, ident=identity):
                 return await asyncio.to_thread(_decode, filename, ident, self._state)
 
-            self._runner.submit(work(), lambda result, error, e=epoch, k=key: self._done(e, k, result, error))
+            started = monotonic() if dev_enabled() else None
+            self._runner.submit(
+                work(), lambda result, error, e=epoch, k=key, s=started: self._done(e, k, result, error, s)
+            )
 
     @staticmethod
     def _square(image, side: int) -> QPixmap:
@@ -154,8 +183,29 @@ class QueueThumbnails(QObject):
             square.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         )
 
-    def _done(self, epoch: int, key, result, error) -> None:
+    def _done(self, epoch: int, key, result, error, started: float | None = None) -> None:
         self._active = max(0, self._active - 1)
+        if started is not None and dev_enabled():
+            image, issue = result if error is None and result else (None, "")
+            outcome = (
+                "obsolete"
+                if epoch != self._epoch or self._closed
+                else "worker_failed"
+                if error is not None
+                else "available"
+                if image is not None
+                else "unavailable"
+                if issue in {"No committed saved image", "Saved image is no longer available"}
+                else "busy"
+                if issue == "Original temporarily busy"
+                else "read_decode_failed"
+            )
+            self._diagnostic_counts[outcome] = self._diagnostic_counts.get(outcome, 0) + 1
+            elapsed = (monotonic() - started) * 1000
+            self._diagnostic_total_ms += elapsed
+            self._diagnostic_max_ms = max(self._diagnostic_max_ms, elapsed)
+            if self._closed or not self._expiry.isActive():
+                self._flush_diagnostics()
         if epoch == self._epoch and not self._closed:
             self._queued.discard(key)
             image, _issue = result if error is None and result else (None, "unreadable")

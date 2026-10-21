@@ -19,4 +19,6 @@ Updated 2026-10-21 for PR #150. The [tracked standalone HTML](Queues_standalone_
 
 The thumbnail cache is identity-keyed, revalidates visible entries every three seconds and clears across navigation. Owned timers stop at shutdown, and obsolete work cannot revive a previous selection. These are source contracts, not measured native performance or cross-platform acceptance.
 
+Implementation geometry: rows are 76 logical px high; the 64 px tile uses a 128 px backing pixmap. Hover preview waits 350 ms before appearing. These values describe the current Qt presentation, not measured DPI acceptance.
+
 Offline fixtures: `queues-60` through `queues-64` describe the original table/hover states; `queues-65-composer-without-old-item-evidence` and `queues-66-item-table-unavailable-output` define the corrections. Added definitions are not screenshots until captured. No real generation, upload or provider work is needed to render them.
