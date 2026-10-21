@@ -233,7 +233,7 @@ def render_inspector_fit_states(shell, out, category):
                 lora = "realisticsnapshot_zimage_turbov5_" + "rank64_variant_" * 5 + ".ckpt"
                 page.composerSummaryBackendLabel.setText("cloud · 192.168.1.142:7859")
                 page.composerSummaryModelLabel.setText(model)
-                page.composerSummaryLorasLabel.setText(f"{lora}: 0.94\\n{lora}: 1.00")
+                page.composerSummaryLorasLabel.setText(f"{lora}: 0.94\n{lora}: 1.00")
                 fits(page.queueInspector)
                 for label in summary_labels:
                     assert label.wordWrap() and label.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored
