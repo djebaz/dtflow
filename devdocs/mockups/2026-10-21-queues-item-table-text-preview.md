@@ -14,7 +14,7 @@ Model and LoRAs repeat on **every** row, even when identical. The synthetic `ult
 | `[no image]` | Studio photo of a ceramic cup on a table,<br>with warm light against a pale background… | **PhotoReal_XL-v2.ckpt** | — | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **Failed** | — |
 | `[no image]` | An illustrated old town square after rainfall,<br>with lamps reflected in wet cobblestones… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** `███░░░░░░░` 0.90 | **Steps 28**<br>CFG 4.5<br>Sampler DPM++ 3M SDE Exponential | **Queued** | — |
 
-**Hierarchy:** model checkpoint filenames and steps are visually emphasized; each LoRA uses its actual adapter filename (extension, hyphens and underscores retained) with readable strength gauge and numeric value; CFG and sampler are secondary-sized. Long sampler names may need their own wrapped line within Parameters. Status is a **single text label**, with DTFlow semantic colors added later in Qt. No per-item step counter, progress bar, filename, seed or image dimensions in the table. Duration is **observed backend duration only**; `—` means unavailable, not zero.
+**Hierarchy:** model checkpoint filenames and steps are visually emphasized; each LoRA uses its actual adapter filename (extension, hyphens and underscores retained) with readable strength gauge and numeric value; CFG and sampler are secondary-sized. Long sampler names may need their own wrapped line within Parameters. Status is a **single text label**, with DTFlow semantic colors added later in Qt. No per-item step counter, progress bar, separate saved-output filename column, seed or image dimensions in the table. Duration is **observed backend duration only**; `—` means unavailable, not zero.
 
 **Prompt wrapping and width:** target about **30–33%** of the total central table width in the actual Qt layout. Show the **beginning of one continuous positive prompt** with natural wrapping across **up to two visual lines**. **No ellipsis on the first line.** Use a single final ellipsis **only if the text overflows the second line**; do not truncate by a fixed number of characters. The explicit `<br>` tags in this text specimen approximate wrapping, but Markdown cannot enforce width, font metrics or real two-line truncation.
 
@@ -70,7 +70,7 @@ This is a second **Markdown example table** for the right inspector. The inspect
 
 The log uses **made-up timestamps**, not observed timing evidence. Preserve the real existing creation/activity mini-log in the inspector rather than replacing it with a preview. For failed or uncertain items, show the actual recorded outcome and only actions that are eligible; do not imply every item has a saved image.
 
-**No large image preview and no filename field** are proposed in this inspector.
+**No large image preview and no saved-output filename field** are proposed in this inspector.
 
 At narrow window widths the shared right inspector hides normally. **Do not move its secondary information into a fallback panel.** The central table remains the primary information surface.
 
