@@ -213,7 +213,9 @@ def render_inspector_fit_states(shell, out, category):
         if category == "queues":
             actions_fit()
             save(form, out, "queues-50-inspector-minimum-width")
-        long_backend = "Draw Things local backend with a deliberately long offline fixture name and endpoint description"
+        long_backend = (
+            "Draw Things local backend with a deliberately long offline fixture name and endpoint description"
+        )
         page.itemBackendLabel.setText(long_backend)
         fits(page.queueInspector)
         if category == "queues":
