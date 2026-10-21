@@ -14,7 +14,7 @@ from dtflow.core.model_profiles import exact_model_spec, has_own_profile, profil
 from dtflow.core.models import InventorySnapshot
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 
-_VARIANT = re.compile(r"_(f16|f32|bf16|q[0-9]+p|i[0-9]+x|[0-9]+bit)\\.ckpt$", re.IGNORECASE)
+_VARIANT = re.compile(r"_(f16|f32|bf16|q[0-9]+p|i[0-9]+x|[0-9]+bit)\.ckpt$", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +27,7 @@ class CheckpointMetadata:
 
     def as_text(self) -> str:
         """Return provenance-labelled, scrollable text for the shared inspector."""
-        return "\\n".join(f"{label}: {value}  [Source: {source}]" for label, value, source in self.fields)
+        return "\n".join(f"{label}: {value}  [Source: {source}]" for label, value, source in self.fields)
 
 
 def resolve_checkpoint_metadata(
