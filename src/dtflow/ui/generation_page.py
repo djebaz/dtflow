@@ -37,6 +37,7 @@ from dtflow.core.models import (
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
 from dtflow.services.catalogue import Catalogue
+from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
     Presentation,
     present_generation_failure,
@@ -120,6 +121,7 @@ WIRED_CONTROLS = (
     "includeCloudCheck",
     "includeNicheCheck",
     "unclassifiedModelsButton",
+    "checkpointDetailsButton",
     "refreshInventoryButton",
     "generateButton",
     "configurationCombo",
@@ -265,6 +267,8 @@ class GenerationPage:
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
         page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
+        page.checkpointDetailsButton.clicked.connect(self.show_checkpoint_details)
+        page.checkpointDetailsButton.setEnabled(bool(page.modelCombo.currentText().strip()))
         for label, scenario in SIMULATED_OUTCOMES:
             page.simulationScenarioCombo.addItem(label, scenario)
         page.generationBackendCombo.addItems(BACKENDS)
@@ -298,6 +302,8 @@ class GenerationPage:
         self._collapse_icon = QIcon(str(icons / "minimize.svg"))
         page.generateButton.setIcon(QIcon(str(icons / "sparkles.svg")))
         page.generateButton.setIconSize(QSize(16, 16))
+        page.checkpointDetailsButton.setIcon(QIcon(str(icons / "info.svg")))
+        page.checkpointDetailsButton.setIconSize(QSize(16, 16))
         page.expandPromptButton.setIconSize(QSize(16, 16))
         self._set_prompt_expanded(page.expandPromptButton.isChecked())
         page.seedEdit.setToolTip(
@@ -1255,6 +1261,7 @@ class GenerationPage:
             self._rebuild_checkpoints(preferred_checkpoint=self.page.modelCombo.currentText())
 
     def _catalogue_checkpoint_changed(self, *_args) -> None:
+        self.page.checkpointDetailsButton.setEnabled(bool(self.page.modelCombo.currentText().strip()))
         if not self._updating_catalogue:
             self._filter_loras()
         self._filter_samplers()
@@ -1378,6 +1385,18 @@ class GenerationPage:
             else None
         )
         self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
+
+    def show_checkpoint_details(self) -> None:
+        """Inspect local catalogue and last-observed provider evidence without dispatch."""
+        model_id = self.page.modelCombo.currentText().strip()
+        if not model_id:
+            return
+        details = resolve_checkpoint_metadata(
+            model_id,
+            catalogue=self._catalogue,
+            inventory=self._inventory_snapshot,
+        )
+        InlineNotice.information(self.page, "Checkpoint details", details.as_text())
 
     def _show_unclassified_models(self) -> None:
         view = self._catalogue.view()

@@ -56,6 +56,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
 )
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
@@ -626,6 +627,11 @@ def render_connection_management(shell, out):
         form.resize(1600, 1000)
         shell._responsive_workspace()
 
+        about = form.findChild(QToolButton, "aboutButton")
+        assert about.size() == QSize(20, 20) and about.iconSize() == QSize(16, 16)
+        QTest.mouseMove(about, about.rect().center())
+        snap("connection-40-about-status-button")
+
 
 def render_generate_configuration_states(shell, out):
     """Local editors/inventory/configuration plus asset progress; no provider or upload worker runs."""
@@ -691,6 +697,28 @@ def render_generate_configuration_states(shell, out):
         identifier.setText("offline-custom-checkpoint.ckpt")
         snap("generate-23-custom-checkpoint-editor")
         clear()  # Do not apply a different checkpoint or submit anything.
+
+        with patch(
+            "dtflow.services.checkpoint_metadata.exact_model_spec",
+            return_value={"file": "offline-checkpoint.ckpt", "name": "Offline model", "version": "flux2"},
+        ):
+            page.checkpointDetailsButton.click()
+            assert shell.inline.form.inlineTitleLabel.text() == "Checkpoint details"
+            assert "Technical / version: flux2" in shell.inline.form.inlineTextBrowser.toPlainText()
+            snap("generate-23a-checkpoint-details-published")
+            clear()
+        page.modelCombo.setCurrentText(
+            "offline-checkpoint-with-a-very-long-identifier-q6p-unknown-technical-description.ckpt"
+        )
+        snap("generate-23aa-checkpoint-icon-long-name")
+        form.resize(800, 680)
+        snap("generate-23ab-checkpoint-icon-narrow")
+        form.resize(1600, 1000)
+        page.checkpointDetailsButton.click()
+        assert "Not available for this exact checkpoint" in shell.inline.form.inlineTextBrowser.toPlainText()
+        snap("generate-23b-checkpoint-details-missing")
+        clear()
+        page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
 
         lora = controller.lora
         with patch.object(lora, "_candidates", [("offline-style.ckpt", 0.8)]):
