@@ -692,6 +692,24 @@ def render_generate_configuration_states(shell, out):
         snap("generate-23-custom-checkpoint-editor")
         clear()  # Do not apply a different checkpoint or submit anything.
 
+        with patch(
+            "dtflow.services.checkpoint_metadata.exact_model_spec",
+            return_value={"file": "offline-checkpoint.ckpt", "name": "Offline model", "version": "flux2"},
+        ):
+            page.checkpointDetailsButton.click()
+            assert shell.inline.form.inlineTitleLabel.text() == "Checkpoint details"
+            assert "Technical / version: flux2" in shell.inline.form.inlineTextBrowser.toPlainText()
+            snap("generate-23a-checkpoint-details-published")
+            clear()
+        page.modelCombo.setCurrentText(
+            "offline-checkpoint-with-a-very-long-identifier-q6p-unknown-technical-description.ckpt"
+        )
+        page.checkpointDetailsButton.click()
+        assert "Not available for this exact checkpoint" in shell.inline.form.inlineTextBrowser.toPlainText()
+        snap("generate-23b-checkpoint-details-missing")
+        clear()
+        page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+
         lora = controller.lora
         with patch.object(lora, "_candidates", [("offline-style.ckpt", 0.8)]):
             page.addLoraButton.click()
