@@ -560,6 +560,8 @@ Cancelling the picker does nothing; reject a changed backend or newly busy state
 before starting asynchronous preparation. Service-level receipt/retry safeguards remain.
 
 Checkpoint and LoRA choices use inline substring search and custom-identifier entry.
+
+The compact checkpoint-details and status-bar About buttons use a 20 × 20 logical-pixel button with a 16 × 16 icon and zero padding. Do not combine a fixed 20 px About button with wide text-button padding that squeezes its icon.
 LoRA identifier and 0.0–3.0 weight (0.1 steps, one decimal) share one Add step. In the
 inline editor, Cancel and Add appear beneath the fields, right-aligned; Add uses the
 same `role="primary"` button treatment as the Queues Start now action, while Cancel stays neutral.

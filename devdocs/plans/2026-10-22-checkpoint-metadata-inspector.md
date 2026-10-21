@@ -58,6 +58,10 @@ dispatch/validation permissions. An unknown checkpoint remains unknown.
   native Windows DPI/packaged smoke acceptance remains owner-gated.
 - No cloud inference/training, downloads or potentially billable actions used.
 
+## Owner-requested About correction in this PR
+
+The owner reported a tiny status-bar About glyph and requested matching the new checkpoint-details button in PR #152. Source history traces the shrink to PR #105's fixed 20 × 20 button combined with the older 2 px vertical / 6 px horizontal QSS padding. Keep the existing 20 × 20 button, explicitly request a 16 × 16 icon, and remove the About-specific padding; preserve its action, tooltip, accessible name and hover behavior. Added offline state `connection-40-about-status-button` includes this footer state and checks the configured button/icon sizes. Source implemented; no local tests or renders, native appearance remains owner-gated. No provider or generation behavior changes.
+
 ## Next PR
 
 Implement a tested Python port/adaptation of Draw Things `ComputeUnits.from`,

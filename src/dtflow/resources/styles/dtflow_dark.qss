@@ -474,7 +474,7 @@ QStatusBar::item {
 }
 QToolButton#aboutButton {
   border: 0;
-  padding: 2px 6px;
+  padding: 0;
 }
 QToolButton#aboutButton:hover {
   background-color: #343434;

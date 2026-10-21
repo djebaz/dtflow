@@ -56,6 +56,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QToolButton,
 )
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
@@ -625,6 +626,11 @@ def render_connection_management(shell, out):
         snap("connection-39-narrow")
         form.resize(1600, 1000)
         shell._responsive_workspace()
+
+        about = form.findChild(QToolButton, "aboutButton")
+        assert about.size() == QSize(20, 20) and about.iconSize() == QSize(16, 16)
+        QTest.mouseMove(about, about.rect().center())
+        snap("connection-40-about-status-button")
 
 
 def render_generate_configuration_states(shell, out):
