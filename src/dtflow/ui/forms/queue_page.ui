@@ -1415,19 +1415,20 @@
 </widget>
 </item>
 <item row="17" column="1">
-<layout class="QHBoxLayout" name="planRngSeedLayout">
-<item><widget class="QLineEdit" name="planRngSeedEdit">
+<layout class="QGridLayout" name="planRngSeedLayout">
+<item row="0" column="0"><widget class="QLineEdit" name="planRngSeedEdit">
  <property name="accessibleName"><string>Plan random seed</string></property>
  <property name="toolTip"><string>The one recorded seed behind every random draw: the same seed and inputs give the same items.</string></property>
  <property name="maximumSize"><size><width>160</width><height>16777215</height></size></property>
 </widget></item>
-<item><widget class="QPushButton" name="planRerollButton">
+<item row="0" column="1"><widget class="QPushButton" name="planRerollButton">
  <property name="text"><string>Reroll</string></property>
  <property name="accessibleName"><string>Reroll random seed</string></property>
  <property name="maximumSize"><size><width>90</width><height>16777215</height></size></property>
  <property name="toolTip"><string>Draw a new plan seed, and so new random values.</string></property>
 </widget></item>
-<item><widget class="QLabel" name="planWildcardsFolderLabel">
+<item row="1" column="2" colspan="2"><widget class="QLabel" name="planWildcardsFolderLabel">
+                      <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
  <property name="text"><string></string></property>
  <property name="wordWrap"><bool>true</bool></property>
  <property name="textRole" stdset="0"><string>caption</string></property>
@@ -1438,8 +1439,9 @@
                    </item>
                    <item>
                     <widget class="QCheckBox" name="planIncrementCheck">
+                     <property name="toolTip"><string>When enabled, increment the image seed for each queue item; otherwise keep the base seed.</string></property>
                      <property name="text">
-                      <string>Increment the seed per item (otherwise the base seed is kept)</string>
+                      <string>Increment seed per item</string>
                      </property>
                      <property name="accessibleName">
                       <string>Increment seed per item</string>
@@ -1450,6 +1452,7 @@
                     <layout class="QHBoxLayout" name="planActionLayout">
                      <item>
                       <widget class="QLabel" name="planCountLabel">
+                      <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
                        <property name="text">
                         <string>Fill at least one dimension.</string>
                        </property>
