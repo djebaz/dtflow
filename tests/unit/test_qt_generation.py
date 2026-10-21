@@ -100,7 +100,9 @@ def test_offline_inpaint_mode_and_mask_history_do_not_dispatch(window, qtbot, tm
 
 def test_generate_action_lives_in_compact_prompt_header(window):
     page = window.generation_page
-    assert page.promptHeader.indexOf(page.generateButton) >= 0
+    assert page.generateSplitLayout.indexOf(page.generateButton) == 0  # the split button: Generate image, then its ▾
+    assert page.generateSplitLayout.indexOf(page.queueGenerateButton) == 1
+    assert page.promptHeader.indexOf(page.generateSplitLayout) >= 0
     assert page.expandPromptButton.text() == ""
     assert page.expandPromptButton.width() == 38
     assert page.expandPromptButton.accessibleName() == "Expand prompt"
