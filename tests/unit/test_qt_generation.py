@@ -277,9 +277,9 @@ def test_checkpoint_details_inspects_exact_file_without_dispatch(window, monkeyp
     monkeypatch.setattr(
         checkpoint_metadata,
         "exact_model_spec",
-        lambda identifier: {"file": identifier, "version": "flux2", "modifier": "none"}
-        if identifier == "fixture_q8p.ckpt"
-        else None,
+        lambda identifier: (
+            {"file": identifier, "version": "flux2", "modifier": "none"} if identifier == "fixture_q8p.ckpt" else None
+        ),
     )
     assert page.checkpointDetailsButton.isEnabled()
     page.checkpointDetailsButton.click()
