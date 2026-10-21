@@ -1773,6 +1773,12 @@
             </item>
             <item row="0" column="1">
              <widget class="QLabel" name="composerSummaryBackendLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1796,6 +1802,12 @@
             </item>
             <item row="1" column="1">
              <widget class="QLabel" name="composerSummaryModelLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1819,6 +1831,12 @@
             </item>
             <item row="3" column="1">
              <widget class="QLabel" name="composerSummaryItemsLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1842,6 +1860,12 @@
             </item>
             <item row="4" column="1">
              <widget class="QLabel" name="composerSummaryVariesLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1865,6 +1889,12 @@
             </item>
             <item row="5" column="1">
              <widget class="QLabel" name="composerSummarySeedsLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1888,6 +1918,12 @@
             </item>
             <item row="6" column="1">
              <widget class="QLabel" name="composerSummaryCapLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1901,6 +1937,12 @@
             </item>
             <item row="7" column="0" colspan="2">
              <widget class="QLabel" name="composerSummaryNoteLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>Nothing is saved or sent until Start now, Add to queue or Save paused.</string>
               </property>
@@ -1924,6 +1966,12 @@
             </item>
             <item row="2" column="1">
              <widget class="QLabel" name="composerSummaryLorasLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
