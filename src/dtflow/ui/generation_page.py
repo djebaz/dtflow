@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.composition import BACKENDS
+from dtflow.core.compute_units import estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
 from dtflow.core.models import (
     BackendEvent,
@@ -266,6 +267,16 @@ class GenerationPage:
         page.includeCloudCheck.toggled.connect(self._catalogue_filter_changed)
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
+        page.modelCombo.currentTextChanged.connect(self._update_compute_units)
+        for control in (page.widthSpinBox, page.heightSpinBox, page.stepsSpinBox, page.guidanceSpinBox):
+            control.valueChanged.connect(self._update_compute_units)
+        for control in (page.textToImageModeButton, page.inpaintModeButton):
+            control.toggled.connect(self._update_compute_units)
+        page.generationBackendCombo.currentTextChanged.connect(self._update_compute_units)
+        lora_model = page.loraList.model()
+        for signal in (lora_model.rowsInserted, lora_model.rowsRemoved, lora_model.modelReset):
+            signal.connect(self._update_compute_units)
+        page.loraList.itemChanged.connect(self._update_compute_units)
         page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
         page.checkpointDetailsButton.clicked.connect(self.show_checkpoint_details)
         page.checkpointDetailsButton.setEnabled(bool(page.modelCombo.currentText().strip()))
@@ -321,6 +332,7 @@ class GenerationPage:
         self.inpaint.attach(self)
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
+        self._update_compute_units()
 
     def _set_prompt_expanded(self, expanded: bool) -> None:
         """Match prompt height, icon and accessible label to the toggle state."""
@@ -1385,6 +1397,38 @@ class GenerationPage:
             else None
         )
         self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
+
+    def _update_compute_units(self, *_args) -> None:
+        """Show an offline, non-authoritative DT+ complexity estimate for one T2I image.
+
+        The number never enters preflight, dispatch, saved jobs, quota or billing.
+        Changes to cloud credentials and inventory do not trigger a provider call.
+        """
+        label = self.page.computeUnitsLabel
+        name, _ = self._backend()
+        label.setVisible(name == "cloud")
+        if name != "cloud":
+            return
+        page = self.page
+        estimate = estimate_compute_units(
+            model_id=page.modelCombo.currentText().strip(),
+            width_px=page.widthSpinBox.value(),
+            height_px=page.heightSpinBox.value(),
+            steps=page.stepsSpinBox.value(),
+            guidance=page.guidanceSpinBox.value(),
+            has_loras=bool(self.lora.loras),
+            operation="inpaint" if page.inpaintModeButton.isChecked() else "txt2img",
+        )
+        if estimate.units is None:
+            label.setText("Compute Units estimate unavailable")
+        else:
+            label.setText(f"Estimated Compute Units: ~{estimate.units:,} CU")
+        label.setToolTip(
+            f"{estimate.reason}\\n"
+            "Computed offline from the published Draw Things instruction model. "
+            "Actual DT+ compute policy, request acceptance and billing may differ; "
+            "this is not a balance or an entitlement check."
+        )
 
     def show_checkpoint_details(self) -> None:
         """Inspect local catalogue and last-observed provider evidence without dispatch."""
