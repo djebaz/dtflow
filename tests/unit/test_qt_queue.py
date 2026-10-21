@@ -15,6 +15,8 @@ pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtTest import QAbstractItemModelTester  # noqa: E402
+from PySide6.QtCore import QObject, Signal  # noqa: E402
+from PySide6.QtGui import QImage  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.core.models import ResolvedGenerationRequest  # noqa: E402
@@ -24,9 +26,106 @@ from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.queue import QueueDispatcher  # noqa: E402
 from dtflow.services.queue_session import create_queue, expand_items  # noqa: E402
 from dtflow.ui import queue_page as queue_ui  # noqa: E402
+from dtflow.ui import queue_thumbnails as thumbnail_ui  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.queue_model import STATUS_COLUMN, QueueItemModel  # noqa: E402
 from dtflow.ui.queue_presenter import ItemRow  # noqa: E402
+
+
+@pytest.mark.parametrize("lookup", ("excluded", "different-path", "unavailable"))
+def test_queue_thumbnail_never_falls_back_to_an_unverified_path(tmp_path, monkeypatch, lookup):
+    calls = []
+
+    def record(*_):
+        if lookup == "unavailable":
+            raise OSError("Live database unavailable")
+        return {"path": "another-output.png"} if lookup == "different-path" else None
+
+    monkeypatch.setattr(thumbnail_ui.gallery_storage, "get_record", record)
+    monkeypatch.setattr(thumbnail_ui, "_image", lambda *args, **kwargs: calls.append(args))
+    if lookup == "unavailable":
+        with pytest.raises(OSError):
+            thumbnail_ui._decode("historical-output.png", "attempt:0", tmp_path)
+    else:
+        assert thumbnail_ui._decode("historical-output.png", "attempt:0", tmp_path)[0] is None
+    assert not calls
+
+
+def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot, tmp_path, monkeypatch):
+    class Runner(QObject):
+        shutdown_started = Signal()
+        closed = False
+
+        def __init__(self):
+            super().__init__()
+            self.jobs = []
+
+        def submit(self, coroutine, callback):
+            coroutine.close()  # controlled completions, not a real decode/thread
+            self.jobs.append(callback)
+
+    runner = Runner()
+    thumbnails = thumbnail_ui.QueueThumbnails(runner, tmp_path)
+    now = [0.0]
+    monkeypatch.setattr(thumbnail_ui, "monotonic", lambda: now[0])
+    image = QImage(16, 16, QImage.Format.Format_RGB32)
+    image.fill(0)
+    assert thumbnails.pixmap("output.png", identity="a:0") is None
+    runner.jobs[0]((image, ""), None)
+    assert thumbnails.available("output.png", "a:0")
+    now[0] = 4.0
+    thumbnails._expire()
+    assert not thumbnails.available("output.png", "a:0")
+    runner.jobs[1]((None, "Saved image is no longer available"), None)
+    assert thumbnails.is_failed("output.png", identity="a:0")
+    assert thumbnails._expiry.parent() is thumbnails
+    thumbnails.clear()
+    thumbnails.pixmap("busy.png", identity="b:0")
+    thumbnails.clear()  # an obsolete decode still occupies a slot until completion
+    assert thumbnails._active == 1
+    runner.closed = True
+    runner.shutdown_started.emit()
+    count = len(runner.jobs)
+    runner.jobs[-1]((image, ""), None)
+    thumbnails._expire()
+    assert not thumbnails._expiry.isActive() and not thumbnails.available("busy.png", "b:0")
+    assert len(runner.jobs) == count
+
+
+def test_item_inspector_uses_shared_availability_and_hides_old_evidence_in_composer(window, qtbot, monkeypatch):
+    window.form.show()
+    window.form.queueNavigationButton.click()
+    done = []
+    window.runner.submit(
+        create_queue(
+            window.state_dir,
+            {"name": "fake", "endpoint": None},
+            expand_items(ResolvedGenerationRequest("b", "fixture", "fake-fixture", 0), 1),
+        ),
+        lambda *_: done.append(True),
+    )
+    qtbot.waitUntil(lambda: bool(done), timeout=5000)
+    page, queue = window.queue_page, window.queue
+    page.refreshQueuesButton.click()
+    qtbot.waitUntil(lambda: len(queues(window)) == 1, timeout=5000)
+    page.queueList.setCurrentItem(queues(window)[0])
+    qtbot.waitUntil(lambda: queue.model.rowCount() == 1, timeout=5000)
+    recorded = ItemRow("mapped-item", 1, "succeeded", "mapped-attempt", 123, (r"C:\recorded\final.png",), None, None)
+    from dataclasses import replace
+
+    queue.model.apply((replace(recorded, gallery_identity="mapped-attempt:0"),))
+    page.queueItemsView.setCurrentIndex(queue.model.index(0, 0))
+    monkeypatch.setattr(queue.model.thumbnails, "available", lambda path, identity: identity == "mapped-attempt:0")
+    opened = []
+    queue.set_images_hook(opened.append)
+    queue._show_item()
+    assert page.itemOpenImagesButton.isEnabled()  # raw recorded Windows path need not exist in this runtime
+    page.itemOpenImagesButton.click()
+    assert opened == ["mapped-attempt:0"]
+    assert not page.itemDetailsBox.isHidden()
+    queue.open_composer()
+    assert page.itemDetailsBox.isHidden() and page.itemIdentityBox.isHidden()
+    assert not page.composerSummaryBox.isHidden()
 
 
 @pytest.fixture

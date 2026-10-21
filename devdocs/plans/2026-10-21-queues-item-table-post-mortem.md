@@ -1,5 +1,7 @@
 # Queues #127: item table and inspector, implementation post-mortem
 
+**Historical implementation checkpoint.** The observations and proposed doc changes below predate the full review and its corrections. They are not the current status; see the [reconciled plan](2026-10-21-queues-item-table-render-first.md). The owner subsequently authorized all six review fixes and focused test edits. No local pytest or render execution is claimed for those corrections; exact-head CI evidence is recorded on PR #150.
+
 **Date:** 2026-10-21 · **Scope:** Qt translation of the owner HTML mockup, plus the data, thumbnail and navigation work it needed.
 **Status of evidence:** the owner ran `render_states.py --category queues` to completion (59 states, 46.9 s, including `queues-60` to `queues-64`) and a real app run, and reported the layout good. The author reviewed the `queues-60`, `61`, `63` and `64` images and found no defects. The author could not run Qt or Python. Everything below marked *unverified* has not been executed by the author. No tests were added or run (plan gate, M3).
 

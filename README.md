@@ -52,6 +52,8 @@ as you edit, before anything is created; vary only the parameters you intend to 
 
 Draw random values from selected candidates or vary prompts with choices, wildcard lists and optional shuffle/drop/add edits. A recorded plan seed makes these offline variations reproducible; inspect the resolved items before starting. See the [queues guide](devdocs/guides/queues.md) for syntax and limits.
 
+Queue items show saved-result thumbnails, recorded prompts/model/LoRAs, parameters, status and observed duration. The item inspector offers Open in Images for an available saved result, without submitting generation.
+
 ### Searchable application diagnostics
 
 Open **Logs** beside Help to browse application and gallery events in the desktop. Search and filter retained sessions, page through matching records, inspect details, copy evidence or explicitly export CSV/JSONL with progress and Cancel. Follow can be paused for a counted Refresh, and the detail pane closes when clicking elsewhere in Logs. New sessions use one structured JSONL stream; historical text/CSV files stay untouched. See the [Logs guide](devdocs/guides/desktop.md#logs).

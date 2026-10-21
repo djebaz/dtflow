@@ -11,6 +11,7 @@ GUI thread and kept in small LRU stores.
 import asyncio
 from collections import OrderedDict, deque
 from pathlib import Path
+from time import monotonic
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QPixmap
@@ -28,19 +29,18 @@ CONCURRENCY = 3  # lighter than the gallery's 6: this table shares the window wi
 PREVIEW_DELAY_MS = 350
 PREVIEW_COLUMN = 0
 PREVIEW_BOX = 440  # longest side of the hover preview in logical px (the 600 px source covers it up to 1.35x DPI)
-BUSY = "Original temporarily busy"
+REVALIDATE_MS = 3000  # visible previews are re-read through live gallery authority, not retained indefinitely
 
 
 def _decode(path: str, identity: str | None, state: Path):
     """Decode at the gallery's thumbnail size; with a committed identity the gallery's disk cache is used."""
-    item = None
-    if identity:
-        try:
-            record = gallery_storage.get_record(state, identity)
-            item = item_from_record(record, state=state) if record else None
-        except Exception:  # noqa: BLE001 - any lookup failure only means no disk cache: fall back to a plain decode
-            item = None
-    return _image(path, THUMBNAIL_SIDE, state, item=item, cache=item is not None)
+    if not identity:
+        return None, "No committed saved image"
+    record = gallery_storage.get_record(state, identity)
+    if record is None or record["path"] != path:
+        return None, "Saved image is no longer available"
+    item = item_from_record(record, state=state)
+    return _image(path, THUMBNAIL_SIDE, state, item=item, cache=True)
 
 
 class QueueThumbnails(QObject):
@@ -53,30 +53,70 @@ class QueueThumbnails(QObject):
         self._runner, self._state = runner, Path(state)
         self._stores = {ROW_SIDE: (OrderedDict(), MAX_ROW_PIXMAPS), PREVIEW_SIDE: (OrderedDict(), MAX_PREVIEW_PIXMAPS)}
         self._waiting: deque = deque()
-        self._queued: set[str] = set()
-        self._failed: set[str] = set()
-        self._wanted: dict[str, set[int]] = {}
-        self._identity: dict[str, str | None] = {}
+        self._queued: set[tuple[str, str | None]] = set()
+        self._failed: set[tuple[str, str | None]] = set()
+        self._wanted: dict[tuple[str, str | None], set[int]] = {}
+        self._checked: dict[tuple[str, str | None], float] = {}
         self._active = 0
         self._epoch = 0
+        self._closed = False
+        self._expiry = QTimer(self)
+        self._expiry.setInterval(REVALIDATE_MS)
+        self._expiry.timeout.connect(self._expire)
+        runner.shutdown_started.connect(self.shutdown)
+        if parent is not None:
+            parent.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.Hide:
+            self._expiry.stop()
+            self.clear()
+        elif event.type() == QEvent.Type.Show and not self._closed:
+            self._expiry.start()
+        return False
+
+    def shutdown(self) -> None:
+        self._closed = True
+        self._expiry.stop()
+        self.clear()
+
+    def _expire(self) -> None:
+        now = monotonic()
+        for key, checked in tuple(self._checked.items()):
+            if now - checked >= REVALIDATE_MS / 1000:
+                self._forget(key)
+                self.changed.emit(key[0])
+
+    def _forget(self, key) -> None:
+        for store, _ in self._stores.values():
+            store.pop(key, None)
+        self._checked.pop(key, None)
+        self._failed.discard(key)
 
     def pixmap(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> QPixmap | None:
+        if self._closed or self._runner.closed or not identity:
+            return None
+        key = (path, identity)
+        if monotonic() - self._checked.get(key, monotonic()) >= REVALIDATE_MS / 1000:
+            self._forget(key)
         store = self._stores[side][0]
-        found = store.get(path)
+        found = store.get(key)
         if found is not None:
-            store.move_to_end(path)
+            store.move_to_end(key)
             return found
-        if path not in self._failed:
-            self._wanted.setdefault(path, set()).add(side)
-            self._identity[path] = identity
-            if path not in self._queued:
-                self._queued.add(path)
-                self._waiting.append((self._epoch, path))
+        if key not in self._failed:
+            self._wanted.setdefault(key, set()).add(side)
+            if key not in self._queued:
+                self._queued.add(key)
+                self._waiting.append((self._epoch, key))
                 self._pump()
         return None
 
-    def is_failed(self, path: str, side: int = ROW_SIDE) -> bool:
-        return path in self._failed
+    def is_failed(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> bool:
+        return not identity or (path, identity) in self._failed
+
+    def available(self, path: str, identity: str | None) -> bool:
+        return self.pixmap(path, identity=identity) is not None
 
     def clear(self) -> None:
         """Forget everything; results still in flight are ignored when they arrive."""
@@ -87,21 +127,23 @@ class QueueThumbnails(QObject):
         self._queued.clear()
         self._failed.clear()
         self._wanted.clear()
-        self._identity.clear()
-        self._active = 0  # slots held by abandoned jobs are released; late results are ignored by epoch
+        self._checked.clear()
+        # In-flight jobs still occupy slots until their callbacks arrive; never oversubscribe after clearing.
 
     def _pump(self) -> None:
+        if self._closed or self._runner.closed:
+            return
         while self._active < CONCURRENCY and self._waiting:
-            epoch, path = self._waiting.popleft()
+            epoch, key = self._waiting.popleft()
             if epoch != self._epoch:
                 continue
             self._active += 1
-            identity = self._identity.get(path)
+            path, identity = key
 
             async def work(filename=path, ident=identity):
                 return await asyncio.to_thread(_decode, filename, ident, self._state)
 
-            self._runner.submit(work(), lambda result, error, e=epoch, p=path: self._done(e, p, result, error))
+            self._runner.submit(work(), lambda result, error, e=epoch, k=key: self._done(e, k, result, error))
 
     @staticmethod
     def _square(image, side: int) -> QPixmap:
@@ -112,26 +154,24 @@ class QueueThumbnails(QObject):
             square.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         )
 
-    def _done(self, epoch: int, path: str, result, error) -> None:
+    def _done(self, epoch: int, key, result, error) -> None:
         self._active = max(0, self._active - 1)
-        if epoch == self._epoch:
-            self._queued.discard(path)
-            image, issue = result if error is None and result else (None, "unreadable")
+        if epoch == self._epoch and not self._closed:
+            self._queued.discard(key)
+            image, _issue = result if error is None and result else (None, "unreadable")
+            self._checked[key] = monotonic()
             if image is not None:
-                for side in self._wanted.pop(path, {ROW_SIDE}):
+                for side in self._wanted.pop(key, {ROW_SIDE}):
                     store, limit = self._stores[side]
-                    store[path] = QPixmap.fromImage(image) if side == PREVIEW_SIDE else self._square(image, side)
+                    store[key] = QPixmap.fromImage(image) if side == PREVIEW_SIDE else self._square(image, side)
                     while len(store) > limit:
-                        store.popitem(last=False)
-                self.changed.emit(path)
-            elif issue == BUSY:
-                QTimer.singleShot(
-                    2000,
-                    lambda: self.pixmap(path, ROW_SIDE, self._identity.get(path)) if epoch == self._epoch else None,
-                )
+                        evicted, _ = store.popitem(last=False)
+                        if not any(evicted in other for other, _ in self._stores.values()):
+                            self._checked.pop(evicted, None)
             else:
-                self._wanted.pop(path, None)
-                self._failed.add(path)
+                self._wanted.pop(key, None)
+                self._failed.add(key)  # includes temporary lease refusal; the owned expiry timer permits retry
+            self.changed.emit(key[0])
         self._pump()
 
 
@@ -150,7 +190,7 @@ class HoverPreview(QObject):
         self._box = PREVIEW_BOX
         self._identity: str | None = None
         self._anchor = QPoint()
-        self.label = QLabel(None, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.label = QLabel(view, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
         self.label.setObjectName("queueThumbPreview")
         self.label.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -163,6 +203,7 @@ class HoverPreview(QObject):
         view.setMouseTracking(True)
         view.viewport().installEventFilter(self)
         thumbnails.changed.connect(self._arrived)
+        thumbnails._runner.shutdown_started.connect(self.hide)
 
     def eventFilter(self, watched, event) -> bool:
         kind = event.type()
@@ -209,7 +250,9 @@ class HoverPreview(QObject):
             self.label.setPixmap(QPixmap())
             self.label.setFixedSize(QSize(232, 232))
             self.label.setText(
-                "Loading\u2026" if not self.thumbnails.is_failed(self._path, PREVIEW_SIDE) else "No preview"
+                "Loading\u2026"
+                if not self.thumbnails.is_failed(self._path, PREVIEW_SIDE, self._identity)
+                else "No preview"
             )
             return
         ratio = self.label.devicePixelRatioF()

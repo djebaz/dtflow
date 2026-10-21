@@ -1459,7 +1459,16 @@ def render_item_table_states(shell, out, state):
     def hold_worker(coroutine, callback):
         coroutine.close()
 
-    with patch.object(shell.runner, "submit", side_effect=hold_worker):
+    def fixture_decode(path, identity, _state):
+        # Synthetic render identities are not live database authority. Intercept only this offline boundary.
+        from dtflow.ui.gallery_page import THUMBNAIL_SIDE, _image
+
+        return _image(path, THUMBNAIL_SIDE, state)
+
+    with (
+        patch.object(shell.runner, "submit", side_effect=hold_worker),
+        patch("dtflow.ui.queue_thumbnails._decode", side_effect=fixture_decode),
+    ):
         form.backendCombo.setCurrentText("local")
         form.queueNavigationButton.click()
         form.resize(1600, 1000)
@@ -1471,10 +1480,13 @@ def render_item_table_states(shell, out, state):
         queue._read_done(([view], view, 2), None)
         queue._timer.stop()
         model, table = queue.model, page.queueItemsView
-        model.thumbnails._runner = SimpleNamespace(submit=real_submit)  # offline decode of the generated fixture PNGs
-        model.thumbnails.clear()  # earlier states left jobs held by the patched submit occupying every decode slot
+        model.thumbnails._runner = SimpleNamespace(submit=real_submit, closed=False)
+        model.thumbnails.clear()
+        model.thumbnails._active = 0  # fixture-only jobs were closed by hold_worker, not actually submitted
         assert model.columnCount() == 7 and model.rowCount() == len(items)
-        wait_for(lambda: model.thumbnails.pixmap(items[0]["artifacts"][0]) is not None)  # async, bounded decode
+        wait_for(
+            lambda: model.thumbnails.pixmap(items[0]["artifacts"][0], identity="a71b71c1:0") is not None
+        )  # async, bounded decode through the intercepted fixture boundary
         assert model.gauge_scale == 1.5  # the largest recorded weight in this fixture; a 0.94 LoRA fills 63%
         assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole) == "Backend duration"
         assert table.verticalHeader().defaultSectionSize() == 76
@@ -1506,6 +1518,7 @@ def render_item_table_states(shell, out, state):
         opened = []
         queue.set_images_hook(opened.append)
         select(0)
+        wait_for(lambda: page.itemOpenImagesButton.isEnabled())
         assert page.itemOpenImagesButton.isEnabled() and page.itemOutcomeLabel.text() == "No error recorded"
         assert model.row_at(0).gallery_identity == "a71b71c1:0"  # attempt id and the image's index in its artifacts
         page.itemOpenImagesButton.click()
@@ -1526,6 +1539,18 @@ def render_item_table_states(shell, out, state):
         select(3)  # no result
         assert page.itemOutcomeLabel.text() == "No result received" and not page.itemOpenImagesButton.isEnabled()
         snap("queues-62-item-table-no-result")
+        queue.open_composer()
+        assert page.itemDetailsBox.isHidden() and page.itemIdentityBox.isHidden()
+        snap("queues-65-composer-without-old-item-evidence")
+        queue.close_composer()
+        select(0)
+        model.thumbnails.clear()
+        with patch("dtflow.ui.queue_thumbnails._decode", return_value=(None, "Saved image is no longer available")):
+            page.queueItemsView.viewport().update()
+            queue._show_item()
+            wait_for(lambda: model.thumbnails.is_failed(items[0]["artifacts"][0], identity="a71b71c1:0"))
+            assert not page.itemOpenImagesButton.isEnabled()
+            snap("queues-66-item-table-unavailable-output")
         form.resize(1000, 900)
         shell._responsive_workspace()
         QTest.qWait(100)

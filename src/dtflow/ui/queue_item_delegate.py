@@ -139,7 +139,12 @@ class QueueItemDelegate(QStyledItemDelegate):
             if provider is not None and row.outputs
             else None
         )
-        if pixmap is None and row.outputs and provider is not None and not provider.is_failed(row.outputs[0]):
+        if (
+            pixmap is None
+            and row.outputs
+            and provider is not None
+            and not provider.is_failed(row.outputs[0], identity=row.gallery_identity)
+        ):
             return  # decoding in the background: a neutral tile, never misleading text
         if pixmap is None:
             small = QFont(painter.font())

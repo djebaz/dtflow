@@ -259,7 +259,7 @@ class QueuePage:
         items_view.setVerticalScrollMode(items_view.ScrollMode.ScrollPerPixel)
         self._item_layout = ItemTableLayout(items_view)
         self.model.thumbnails = QueueThumbnails(self._runner, self._state, items_view)
-        self.model.thumbnails.changed.connect(lambda *_: items_view.viewport().update())
+        self.model.thumbnails.changed.connect(self._thumbnail_changed)
         self._hover_preview = HoverPreview(items_view, self.model.thumbnails)
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
@@ -521,7 +521,7 @@ class QueuePage:
         self._show_cap(view)
         self._show_new_cap()
         self._show_item()
-        for name in ("queueInspectorEyebrow", "itemIdentityBox", "queueEventBrowser"):
+        for name in ("queueInspectorEyebrow", "itemIdentityBox", "itemDetailsBox", "queueEventBrowser"):
             getattr(page, name).setVisible(not self._composing)  # evidence of the old queue is not about the new one
         page.composerSummaryBox.setVisible(self._composing)
         if self._composing:
@@ -877,9 +877,20 @@ class QueuePage:
         self._output_folder = Path(outputs[0]).parent if outputs else None
         page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
         verified = (
-            bool(row.gallery_identity and row.outputs) and Path(row.outputs[0]).is_file()
-        )  # a saved image that exists
+            not self._composing
+            and page.queueItemsView.isVisible()
+            and bool(row.outputs)
+            and self.model.thumbnails.available(row.outputs[0], row.gallery_identity)
+        )
         page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
+
+    def _thumbnail_changed(self, path: str) -> None:
+        if self._runner.closed or not self.page.queueItemsView.isVisible():
+            return
+        self.page.queueItemsView.viewport().update()
+        row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
+        if row is not None and row.outputs and row.outputs[0] == path:
+            self._show_item()
 
     def set_images_hook(self, hook) -> None:
         """Wire Open in Images: hook(identity) shows that committed output in the Images Detail view."""
@@ -889,7 +900,7 @@ class QueuePage:
     def open_in_images(self) -> None:
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
         if self._images_hook is not None and row is not None and row.gallery_identity and row.outputs:
-            if Path(row.outputs[0]).is_file():
+            if self.model.thumbnails.available(row.outputs[0], row.gallery_identity):
                 self._images_hook(row.gallery_identity)
 
     def open_output_folder(self) -> None:
@@ -910,6 +921,8 @@ class QueuePage:
         """Reset queue-scoped presentation for both user selection and selection after creation."""
         if queue_id == self._selected:
             return
+        self.model.thumbnails.clear()
+        self._hover_preview.hide()
         if feedback(self.page)._armed:
             feedback(self.page).dismiss()
         for name in FILTER_BUTTONS.values():
@@ -1048,6 +1061,10 @@ class QueuePage:
 
     def shown(self) -> None:
         """Returning to Queues (for example from Edit in Generate): the composer follows the Generate form."""
+        self.model.thumbnails.clear()
+        self._hover_preview.hide()
+        self.page.queueItemsView.viewport().update()
+        self._show_item()
         if self._composing:
             self._refresh_choices()
             self._invalidate_preview()  # the backend or Inpaint source may have changed without changing the request

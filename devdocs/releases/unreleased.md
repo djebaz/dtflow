@@ -6,11 +6,15 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Added
 
+- Queue item table with saved-result thumbnails, prompt/model/LoRA/parameter columns, observed durations and an item inspector with Open in Images. No dispatch or database-schema change.
+
 ## Changed
 
 ## Fixed
 
+- Queue previews now require live committed gallery records, revalidate cached availability and use owned shutdown-safe callbacks. Open in Images uses mapped availability, clears conflicting browse filters and reports missing results; composing a queue hides old item evidence.
+
 ## Release audit
 
-- PRs: #149.
-- Scope: Version Bump 5.1.0; reset for subsequent changes. No tag or publication implied.
+- PRs: #150.
+- Scope: Post-5.1.0 Queue item-table/inspector delivery and review corrections; pending merge and scoped acceptance, not a published feature release.
