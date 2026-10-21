@@ -63,7 +63,9 @@ from dtflow.ui.planning_presenter import (
     summary_text,
 )
 from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, SummaryLabelHeightFit
+from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableHeader, ItemTableLayout, QueueItemDelegate
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
+from dtflow.ui.queue_thumbnails import HoverPreview, QueueThumbnails
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
     FILTERS,
@@ -233,6 +235,7 @@ class QueuePage:
         self._resume_fallback: str | None = None
         self._list_key: tuple | None = None
         self._output_folder: Path | None = None
+        self._images_hook = None  # set_images_hook wires Open in Images to the Images workspace
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
         self._countdown = QueueCountdown()
         self._event_relay = EventRelay(self._queue_backend_event, page)
@@ -243,6 +246,21 @@ class QueuePage:
             view.verticalHeader().hide()  # the "#" column already numbers rows
             view.horizontalHeader().setStretchLastSection(True)
             view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        # Items table: painted cells, fixed-height rows and proportional columns (Prompt about a third of the width).
+        items_view = page.queueItemsView
+        items_view.setHorizontalHeader(ItemTableHeader(items_view))
+        items_view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        items_view.setItemDelegate(QueueItemDelegate(items_view))
+        items_view.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
+        items_view.horizontalHeader().setStretchLastSection(False)
+        items_view.horizontalHeader().setSectionResizeMode(items_view.horizontalHeader().ResizeMode.Interactive)
+        items_view.setWordWrap(False)
+        items_view.setShowGrid(False)
+        items_view.setVerticalScrollMode(items_view.ScrollMode.ScrollPerPixel)
+        self._item_layout = ItemTableLayout(items_view)
+        self.model.thumbnails = QueueThumbnails(self._runner, self._state, items_view)
+        self.model.thumbnails.changed.connect(self._thumbnail_changed)
+        self._hover_preview = HoverPreview(items_view, self.model.thumbnails)
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         page.concurrencySpinBox.setToolTip(CONCURRENCY_HINT)
@@ -287,6 +305,7 @@ class QueuePage:
         page.queueFilterEdit.textChanged.connect(lambda *_: self._render_list())
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
+        page.itemOpenImagesButton.clicked.connect(self.open_in_images)
         page.itemRetryButton.clicked.connect(self.retry_item)
         page.emptyRelaunchButton.clicked.connect(self.relaunch_last)
         page.relaunchQueueButton.clicked.connect(
@@ -502,7 +521,7 @@ class QueuePage:
         self._show_cap(view)
         self._show_new_cap()
         self._show_item()
-        for name in ("queueInspectorEyebrow", "itemIdentityBox", "queueEventBrowser"):
+        for name in ("queueInspectorEyebrow", "itemIdentityBox", "itemDetailsBox", "queueEventBrowser"):
             getattr(page, name).setVisible(not self._composing)  # evidence of the old queue is not about the new one
         page.composerSummaryBox.setVisible(self._composing)
         if self._composing:
@@ -824,17 +843,31 @@ class QueuePage:
             self._show(page.uncertaintyLabel, *note)
         page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES)
         if row is None:
-            for name in ("itemIdLabel", "attemptIdLabel", "itemBackendLabel", "itemOutputsLabel"):
+            for name in (
+                "itemIdLabel",
+                "attemptIdLabel",
+                "itemBackendLabel",
+                "itemOutputsLabel",
+                "itemSeedLabel",
+                "itemDimensionsLabel",
+                "itemOperationLabel",
+                "itemOutcomeLabel",
+            ):
                 getattr(page, name).setText("—")
             page.itemOutputsLabel.setToolTip("")
             self._output_folder = None
             page.itemOpenFolderButton.setEnabled(False)
+            page.itemOpenImagesButton.setEnabled(False)
             return
         page.itemIdLabel.setText(row.item_id[:8])
         page.itemIdLabel.setToolTip(row.item_id)
         page.attemptIdLabel.setText(row.attempt_id[:8] if row.attempt_id else "—")  # the full id is in the tooltip
         page.attemptIdLabel.setToolTip(row.attempt_id or "")
         page.itemBackendLabel.setText(summarize(view).backend if view else "—")
+        page.itemSeedLabel.setText(str(row.seed))
+        page.itemDimensionsLabel.setText(row.dimensions_text)
+        page.itemOperationLabel.setText(row.operation_text)
+        page.itemOutcomeLabel.setText(row.outcome_line)
         outputs = [*row.outputs, *([row.metadata] if row.metadata else [])]
         # Full paths stay in the tooltip; the panel shows a summary and a button to the attempt's folder.
         parts = [f"{len(row.outputs)} image(s)"] if row.outputs else []
@@ -843,6 +876,32 @@ class QueuePage:
         page.itemOutputsLabel.setToolTip("\n".join(outputs))
         self._output_folder = Path(outputs[0]).parent if outputs else None
         page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
+        verified = (
+            not self._composing
+            and page.queueItemsView.isVisible()
+            and bool(row.outputs)
+            and self.model.thumbnails.available(row.outputs[0], row.gallery_identity)
+        )
+        page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
+
+    def _thumbnail_changed(self, path: str) -> None:
+        if self._runner.closed or not self.page.queueItemsView.isVisible():
+            return
+        self.page.queueItemsView.viewport().update()
+        row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
+        if row is not None and row.outputs and row.outputs[0] == path:
+            self._show_item()
+
+    def set_images_hook(self, hook) -> None:
+        """Wire Open in Images: hook(identity) shows that committed output in the Images Detail view."""
+        self._images_hook = hook
+        self._show_item()
+
+    def open_in_images(self) -> None:
+        row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
+        if self._images_hook is not None and row is not None and row.gallery_identity and row.outputs:
+            if self.model.thumbnails.available(row.outputs[0], row.gallery_identity):
+                self._images_hook(row.gallery_identity)
 
     def open_output_folder(self) -> None:
         if self._output_folder is not None:
@@ -862,6 +921,8 @@ class QueuePage:
         """Reset queue-scoped presentation for both user selection and selection after creation."""
         if queue_id == self._selected:
             return
+        self.model.thumbnails.clear()
+        self._hover_preview.hide()
         if feedback(self.page)._armed:
             feedback(self.page).dismiss()
         for name in FILTER_BUTTONS.values():
@@ -1000,6 +1061,10 @@ class QueuePage:
 
     def shown(self) -> None:
         """Returning to Queues (for example from Edit in Generate): the composer follows the Generate form."""
+        self.model.thumbnails.clear()
+        self._hover_preview.hide()
+        self.page.queueItemsView.viewport().update()
+        self._show_item()
         if self._composing:
             self._refresh_choices()
             self._invalidate_preview()  # the backend or Inpaint source may have changed without changing the request

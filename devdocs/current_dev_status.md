@@ -20,6 +20,8 @@
 
 ## Delivered additions and cross-cutting behavior
 
+- **PR #150, pending merge:** recorded item settings/duration, cached thumbnails and Open in Images are implemented in source. Review corrections enforce live gallery authority, bounded revalidation, mapped availability, owned cancellation and composer evidence isolation. Focused tests and offline fixture definitions were extended; see the [current plan](plans/2026-10-21-queues-item-table-render-first.md) for evidence, not the older design-only PR description.
+
 - **Queue workflow:** center composer/LoRA sets, quick Queue, Relaunch/Retry, editable captured-request inputs and ordered up-next dispatch; cloud Max at once 1–10 (default 4), elapsed/rough ETA and timing snapshots. Execution DB schema 4 backs up older state before migration; older builds reject it. Long inspector text and narrow composer controls wrap without losing values. [5.1.0 upgrade and limits](releases/v5.1.0.md).
 
 - **Random planning and prompt variation (#145):** deterministic random dimensions, wildcard/template resolution and optional prompt mutations use the shared planner. Composer previews coalesce background work, reject stale results and refresh when retained image seeds or observed wildcard-file fingerprints change. [Planning delivery and evidence](plans/2026-10-04-phase-6-queue-planning.md#pr-145-review-and-validation). Native Windows interaction and responsiveness remain unverified.

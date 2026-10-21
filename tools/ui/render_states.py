@@ -17,6 +17,7 @@ import traceback
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -88,6 +89,8 @@ from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
 from dtflow.ui.generation_page import GenerationPage  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
+from dtflow.ui.queue_item_delegate import COL_LORAS, COL_PROMPT, COL_STATUS, wrapped_lines  # noqa: E402
+from dtflow.ui.queue_model import LEVEL_COLORS  # noqa: E402
 from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
 
@@ -254,6 +257,8 @@ def render_inspector_fit_states(shell, out, category):
                 document.setPlainText(lora_label.text())
                 document.setTextWidth(lora_label.contentsRect().width())
                 assert lora_label.height() >= document.size().height(), (lora_label.height(), document.size().height())
+                shell.queue._summary_fit.refit()  # the label heights are fitted on a deferred pass; let it settle first
+                QTest.qWait(150)
                 lora_bottom = lora_label.mapTo(page.composerSummaryBoxContents, QPoint(0, lora_label.height())).y()
                 items_top = page.composerSummaryItemsCaption.mapTo(page.composerSummaryBoxContents, QPoint(0, 0)).y()
                 assert items_top >= lora_bottom, (items_top, lora_bottom)
@@ -341,6 +346,7 @@ def render_workspace_states(app, state, out):
             render_generate_configuration_states(shell, out)
         if wants("queues"):
             render_active_queue_states(shell, out)
+            render_item_table_states(shell, out, state)
         if wants("images"):
             render_gallery_composition_states(shell, state, out)
     finally:
@@ -838,6 +844,16 @@ def render_active_queue_states(shell, out):
                     failure={"code": f"offline_{state}"} if state in ("failed", "unknown", "save_failed") else None,
                     operation="inpaint" if edit else "txt2img",
                     strength=0.7 if edit else None,
+                    prompt=PROMPT,
+                    negative_prompt="Blurry, text, watermark.",
+                    model="flux_1_schnell_q8p.ckpt",
+                    loras=[("offline-style.safetensors", 0.8)],
+                    steps=20,
+                    guidance=4.5,
+                    sampler="DPM++ 2M SDE Karras",
+                    duration=12.3 if state == "succeeded" else None,
+                    width=1024,
+                    height=1024,
                 )
             )
         counts = {
@@ -1264,6 +1280,284 @@ def render_active_queue_states(shell, out):
         shell._responsive_workspace()
         queue._dispatching = None
         queue._dispatch_started = False
+        queue._selected = None
+        queue._activity.set(dispatching=False)
+        queue._read_done(([], None, 2), None)
+        queue._timer.stop()
+
+
+def header_end_visible(table):
+    """The last column (duration) must sit fully inside the viewport, not behind a horizontal scroll."""
+    header = table.horizontalHeader()
+    last = header.count() - 1
+    return header.sectionViewportPosition(last) + header.sectionSize(last) <= table.viewport().width()
+
+
+def render_item_table_states(shell, out, state):
+    """The seven-column items table (#127) from synthetic fixtures; thumbnails are generated gradients, not photographs.
+
+    Rows follow devdocs/mockups/2026-10-21-queues-item-table-text-preview.md. Nothing is persisted, posted or dispatched.
+    """
+    form, queue, page = shell.form, shell.queue, shell.queue_page
+    real_submit = shell.runner.submit  # the patch below holds every submit; thumbnail decoding must really run
+    queue_id = "offline-queue-table"
+    stamp = "2026-10-21T19:40:00+00:00"
+    long_lora = "ultra_realistic_characters_style_detail_v12.safetensors"
+    assert len(long_lora) == 55
+    fixtures = state / "item-table"
+    fixtures.mkdir(parents=True, exist_ok=True)
+
+    def thumbnail(name, hue):
+        image = QImage(256, 256, QImage.Format.Format_RGB32)
+        for y in range(256):
+            for x in range(256):
+                image.setPixelColor(x, y, QColor.fromHsv((hue + x // 8) % 360, 120, 70 + y // 2))
+        path = fixtures / f"{name}.png"
+        assert image.save(str(path))
+        return str(path)
+
+    traveler = "Portrait of a traveler in a blue coat at dawn, soft light, mountains in the distance, realistic fabric details, shallow depth of field."
+    negative = "Blurry, distorted hands, duplicate faces, text, watermark."
+    z_model, photo_model = "Z-Image-Turbo_v2.ckpt", "PhotoReal_XL-v2.ckpt"
+    karras, exponential = "DPM++ 2M SDE Karras", "DPM++ 3M SDE Exponential"
+    specs = (
+        (
+            "succeeded",
+            traveler,
+            z_model,
+            [("portrait_style_v1.safetensors", 0.9), ("cinematic_rim_light_v3.safetensors", 1.2)],
+            28,
+            4.5,
+            karras,
+            31.2,
+            "a",
+        ),
+        (
+            "succeeded",
+            traveler,
+            z_model,
+            [
+                ("portrait_style_v1.safetensors", 1.2),
+                ("cinematic_rim_light_v3.safetensors", 0.6),
+                (long_lora, 1.5),
+                ("background_bokeh_v2.safetensors", 0.9),
+            ],
+            32,
+            5.0,
+            exponential,
+            36.8,
+            "b",
+        ),
+        (
+            "running",
+            "A red house beside a mountain lake, with cloud reflections spreading across the water, still morning air and pale light on the far ridge.",
+            photo_model,
+            [
+                ("landscape_style_v2.safetensors", 0.9),
+                ("cloud_mood_v4.safetensors", 1.2),
+                ("texture_detail_v1.safetensors", 0.6),
+            ],
+            24,
+            4.0,
+            karras,
+            None,
+            None,
+        ),
+        (
+            "unknown",
+            "Studio photo of a ceramic cup on a table, with warm light against a pale background and a soft shadow beneath.",
+            photo_model,
+            [],
+            24,
+            4.0,
+            karras,
+            None,
+            None,
+        ),
+        (
+            "pending",
+            "An illustrated old town square after rainfall, with lamps reflected in wet cobblestones, evening haze between the buildings.",
+            z_model,
+            [("portrait_style_v1.safetensors", 0.9)],
+            28,
+            4.5,
+            exponential,
+            None,
+            None,
+        ),
+        (
+            "cancelled",
+            "A lighthouse on a rocky coast at dusk, with waves breaking against dark stone and a warm lamp glowing above.",
+            photo_model,
+            [],
+            24,
+            4.0,
+            karras,
+            None,
+            None,
+        ),
+    )
+    items = []
+    for position, (item_state, prompt, model, loras, steps, guidance, sampler, seconds, image) in enumerate(specs, 1):
+        artifacts = (
+            [thumbnail(f"item-{image}", 200 + position * 40), str(fixtures / f"attempt-{position}" / "metadata.json")]
+            if image
+            else []
+        )
+        items.append(
+            dict(
+                item_id=f"d8293dd{position}",
+                position=position,
+                state=item_state,
+                attempt_id=f"a71b71c{position}" if item_state not in ("pending", "cancelled") else None,
+                request_id=f"request-{position:04d}",
+                seed=295625550 + position,
+                artifacts=artifacts,
+                failure=None,
+                operation="txt2img",
+                strength=None,
+                prompt=prompt,
+                negative_prompt=negative,
+                model=model,
+                loras=loras,
+                steps=steps,
+                guidance=guidance,
+                sampler=sampler,
+                duration=seconds,
+                width=1024,
+                height=1024,
+            )
+        )
+    states = [item["state"] for item in items]
+    counts = {
+        name: states.count(name)
+        for name in ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
+    }
+    view = dict(
+        queue_id=queue_id,
+        status="running",
+        backend={"name": "local", "endpoint": None},
+        created_at_utc=stamp,
+        up_next=None,
+        cap=2,
+        summary=counts,
+        first=dict(prompt=traveler, model=z_model, operation="txt2img", loras=items[0]["loras"]),
+        varied={"prompt": 4, "model": 2, "loras": 4},
+        items=items,
+        pending_controls=[],
+        events=[dict(kind="created", at_utc=stamp, detail={"items": len(items), "cap": 2})],
+    )
+
+    def snap(name):
+        QTest.qWait(100)
+        save(form, out, name)
+
+    def select(position):
+        page.queueItemsView.setCurrentIndex(queue.model.index(position, 0))
+        QTest.qWait(30)
+
+    def hold_worker(coroutine, callback):
+        coroutine.close()
+
+    def fixture_decode(path, identity, _state):
+        # Synthetic render identities are not live database authority. Intercept only this offline boundary.
+        from dtflow.ui.gallery_page import THUMBNAIL_SIDE, _image
+
+        return _image(path, THUMBNAIL_SIDE, state)
+
+    with (
+        patch.object(shell.runner, "submit", side_effect=hold_worker),
+        patch("dtflow.ui.queue_thumbnails._decode", side_effect=fixture_decode),
+    ):
+        form.backendCombo.setCurrentText("local")
+        form.queueNavigationButton.click()
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
+        queue._dispatching = queue_id
+        queue._dispatch_started = True
+        queue._selected = queue_id
+        queue._activity.set(dispatching=True)
+        queue._read_done(([view], view, 2), None)
+        queue._timer.stop()
+        model, table = queue.model, page.queueItemsView
+        model.thumbnails._runner = SimpleNamespace(submit=real_submit, closed=False)
+        model.thumbnails.clear()
+        model.thumbnails._active = 0  # fixture-only jobs were closed by hold_worker, not actually submitted
+        assert model.columnCount() == 7 and model.rowCount() == len(items)
+        wait_for(
+            lambda: model.thumbnails.pixmap(items[0]["artifacts"][0], identity="a71b71c1:0") is not None
+        )  # async, bounded decode through the intercepted fixture boundary
+        assert model.gauge_scale == 1.5  # the largest recorded weight in this fixture; a 0.94 LoRA fills 63%
+        assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole) == "Backend duration"
+        assert table.verticalHeader().defaultSectionSize() == 76
+        assert header_end_visible(table)
+        header = table.horizontalHeader()
+        # The stopwatch is painted by ItemTableHeader; a model decoration would draw a second one at the left edge.
+        assert type(header).__name__ == "ItemTableHeader"
+        assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.DecorationRole) is None
+        assert (
+            header.sectionSize(COL_LORAS) >= 190 and header.sectionSize(COL_PROMPT) >= table.viewport().width() * 0.29
+        )
+        # Statuses use the shared semantic colors as a single text label, and duration is "—" when unavailable.
+        for row, word in enumerate(("succeeded", "succeeded", "running", "no result", "pending", "cancelled")):
+            assert model.index(row, COL_STATUS).data() == word
+        assert model.index(0, COL_STATUS).data(Qt.ItemDataRole.ForegroundRole).name() == LEVEL_COLORS["ok"]
+        assert [model.index(row, 6).data() for row in (0, 2, 3)] == ["31.2 s", "—", "—"]
+        # The prompt wraps naturally over two lines; the first line never carries an ellipsis.
+        lines = wrapped_lines(traveler, table.font(), header.sectionSize(COL_PROMPT) - 14, 2)
+        assert len(lines) == 2 and not lines[0].endswith("…")
+        # Hover text is read-only: all LoRAs (including the 55-character name) and both prompts.
+        tip = model.index(1, COL_LORAS).data(Qt.ItemDataRole.ToolTipRole)
+        assert long_lora.removesuffix(".safetensors") in tip and "background_bokeh_v2" in tip  # all four LoRAs
+        assert ".safetensors" not in tip  # extensions are hidden in the hover too
+        prompt_tip = model.index(1, COL_PROMPT).data(Qt.ItemDataRole.ToolTipRole)
+        assert "Positive" in prompt_tip and negative.rstrip(".") in prompt_tip
+        assert model.index(0, 0).data(Qt.ItemDataRole.ToolTipRole) == ""  # the preview is a bounded overlay, not <img>
+        assert model.index(2, 0).data(Qt.ItemDataRole.ToolTipRole) == "No saved image"
+        assert model.index(3, COL_LORAS).data(Qt.ItemDataRole.ToolTipRole) == ""
+        opened = []
+        queue.set_images_hook(opened.append)
+        select(0)
+        wait_for(lambda: page.itemOpenImagesButton.isEnabled())
+        assert page.itemOpenImagesButton.isEnabled() and page.itemOutcomeLabel.text() == "No error recorded"
+        assert model.row_at(0).gallery_identity == "a71b71c1:0"  # attempt id and the image's index in its artifacts
+        page.itemOpenImagesButton.click()
+        assert opened == ["a71b71c1:0"]  # the hook receives the gallery identity, never a path
+        snap("queues-60-item-table")
+        preview = queue._hover_preview
+        preview.show_row(0, QPoint(600, 300))
+        wait_for(lambda: not preview.label.pixmap().isNull())
+        assert preview.label.windowFlags() & Qt.WindowType.ToolTip and preview.label.testAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+        save(preview.label, out, "queues-64-item-table-thumbnail-preview")
+        preview.hide()
+        select(1)  # more than three LoRAs and the 55-character filename
+        assert page.itemSeedLabel.text() == str(items[1]["seed"]) and page.itemDimensionsLabel.text() == "1024 × 1024"
+        assert page.itemOperationLabel.text() == "Text to image" and page.itemIdLabel.text() == "d8293dd2"
+        snap("queues-61-item-table-long-lora")
+        select(3)  # no result
+        assert page.itemOutcomeLabel.text() == "No result received" and not page.itemOpenImagesButton.isEnabled()
+        snap("queues-62-item-table-no-result")
+        queue.open_composer()
+        assert page.itemDetailsBox.isHidden() and page.itemIdentityBox.isHidden()
+        snap("queues-65-composer-without-old-item-evidence")
+        queue.close_composer()
+        select(0)
+        model.thumbnails.clear()
+        with patch("dtflow.ui.queue_thumbnails._decode", return_value=(None, "Saved image is no longer available")):
+            page.queueItemsView.viewport().update()
+            queue._show_item()
+            wait_for(lambda: model.thumbnails.is_failed(items[0]["artifacts"][0], identity="a71b71c1:0"))
+            assert not page.itemOpenImagesButton.isEnabled()
+            snap("queues-66-item-table-unavailable-output")
+        form.resize(1000, 900)
+        shell._responsive_workspace()
+        QTest.qWait(100)
+        assert shell.shell.rightRail.isHidden() and header.sectionSize(COL_LORAS) >= 190
+        snap("queues-63-item-table-narrow")
+        form.resize(1600, 1000)
+        shell._responsive_workspace()
         queue._selected = None
         queue._activity.set(dispatching=False)
         queue._read_done(([], None, 2), None)

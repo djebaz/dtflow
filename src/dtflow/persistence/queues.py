@@ -990,6 +990,48 @@ def read_queues(directory: Path, queue_id: str | None = None) -> tuple[dict[str,
         connection.close()
 
 
+def _item_request_fields(request: dict) -> dict[str, Any]:
+    """What an item asked for, read from its stored request for the items table (never inferred)."""
+
+    def text(key: str) -> str:
+        value = request.get(key)
+        return value if isinstance(value, str) else ""
+
+    def number(key: str):
+        value = request.get(key)
+        return value if type(value) in (int, float) else None
+
+    return {
+        "prompt": text("prompt"),
+        "negative_prompt": text("negative_prompt"),
+        "model": text("model_id"),
+        "loras": [
+            (lora["identifier"], lora.get("weight"))
+            for lora in request.get("loras") or ()
+            if isinstance(lora, dict) and isinstance(lora.get("identifier"), str)
+        ],
+        "steps": number("steps"),
+        "guidance": number("guidance"),
+        "sampler": text("sampler_id"),
+        "width": number("width_px"),
+        "height": number("height_px"),
+    }
+
+
+def _item_durations(connection: sqlite3.Connection, queue_id: str) -> dict[str, float]:
+    """Observed backend seconds per settled item; an item without a recorded duration is simply absent."""
+    durations: dict[str, float] = {}
+    for event in connection.execute(
+        "SELECT json_extract(detail_json, '$.item_id') AS item_id,"
+        " json_extract(detail_json, '$.backend_elapsed_seconds') AS seconds"
+        " FROM queue_events WHERE queue_id=? AND kind='item_settled' ORDER BY event_id",
+        (queue_id,),
+    ):
+        if isinstance(event["item_id"], str) and type(event["seconds"]) in (int, float):
+            durations[event["item_id"]] = float(event["seconds"])
+    return durations
+
+
 def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[str, Any], ...]:
     queues = []
     rows = (
@@ -1028,10 +1070,14 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "seed": request.get("seed"),
                     "operation": request.get("operation") or "txt2img",
                     "strength": request.get("strength"),
+                    **_item_request_fields(request),
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
                 }
             )
+        durations = _item_durations(connection, row["queue_id"])
+        for item in items:
+            item["duration"] = durations.get(item["item_id"])
         queue["summary"] = _summary(items)
         queue["status"] = _status(row["state"], queue["summary"])
         queue["items"] = items

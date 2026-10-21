@@ -1,6 +1,7 @@
 """Gallery read completions keep the committed page usable during preparation."""
 
 from dataclasses import replace
+from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
@@ -13,6 +14,66 @@ from dtflow.ui import gallery_page as gallery_ui
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.main_window import FORMS_DIR, load_ui
 from dtflow.ui.runner import AsyncRunner
+
+
+def test_queue_handoff_opens_exact_live_output_despite_browse_filters(presentation, qtbot, monkeypatch):
+    _form, gallery, _runner, records, state = presentation
+    state["records"] = records
+    queries, shown, notices = [], [], []
+
+    async def locate(_state, query, identity):
+        queries.append(query)
+        assert not any((query.prompt, query.model, query.lora, query.since, query.ratio, query.width, query.size_class))
+        return next((i for i, record in enumerate(records) if record.identity == identity), None)
+
+    monkeypatch.setattr(gallery_ui, "locate_output", locate)
+    monkeypatch.setattr(gallery, "show_view", shown.append)
+    inline = MagicMock()
+    inline.notice.side_effect = lambda *args: notices.append(args)
+    monkeypatch.setattr(gallery_ui, "feedback", lambda _page: inline)  # standalone fixture has no window overlay
+    gallery.prompt.setText("does not match the selected queue output")
+    gallery.model.setCurrentText("another-model")
+    gallery.date_filter.setCurrentText("Today")
+    gallery.open_output(records[250].identity)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery._open_request is None, timeout=5000)
+    assert queries and gallery.selected_id == records[250].identity and shown == ["Detail"]
+    assert gallery.prompt.text() == "" and gallery.model.currentText() == "All models"
+    assert gallery.date_filter.currentText() == "All time"
+    gallery.open_output("removed-output")
+    qtbot.waitUntil(lambda: not gallery._loading and gallery._open_request is None, timeout=5000)
+    assert notices and notices[-1][0] == "Open in Images"
+    assert shown == ["Detail"]  # no unrelated image is opened as if it were the requested result
+
+
+def test_queue_handoff_retries_only_latest_request_and_cancels_on_navigation_or_shutdown(presentation, monkeypatch):
+    _form, gallery, runner, _records, _state = presentation
+    submitted = []
+    observations = []
+    monkeypatch.setattr(gallery_ui, "dev_enabled", lambda: True)
+    monkeypatch.setattr(gallery_ui, "measurement", lambda _log, name, **data: observations.append((name, data)))
+    monkeypatch.setattr(gallery, "_submit_query", lambda *args, **kwargs: submitted.append(kwargs))
+    gallery._loading = True
+    gallery.open_output("first")
+    gallery.open_output("latest")
+    assert gallery._open_request == "latest" and gallery._open_timer.isActive()
+    assert gallery._open_timer.parent() is gallery
+    gallery._loading = False
+    gallery._continue_open_output()
+    assert [request["anchor"] for request in submitted] == ["latest"]
+    gallery._loading = True
+    gallery.open_output("cancel-on-tab-change")
+    gallery.set_active(False)
+    assert not gallery._open_timer.isActive() and gallery._open_request is None
+    gallery.set_active(True)
+    gallery.open_output("cancel-on-close")
+    runner.shutdown()
+    gallery._loading = False
+    gallery._continue_open_output()
+    assert not gallery._open_timer.isActive() and len(submitted) == 1
+    outcomes = [data for name, data in observations if name == "gallery.open_output"]
+    assert [data["outcome"] for data in outcomes] == ["cancelled", "cancelled", "navigation", "shutdown"]
+    assert all(data["busy_waits"] >= 1 and data["elapsed_ms"] >= 0 for data in outcomes)
+    assert "cancel-on-close" not in repr(outcomes)
 
 
 @pytest.fixture

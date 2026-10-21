@@ -340,6 +340,7 @@ class MainWindow:
         self.shell.quickQueueButton.setIconSize(QSize(18, 18))
         self.shell.quickQueueButton.clicked.connect(lambda: self.queue_popover.open_at(self.shell.quickQueueButton))
         self.queue.plan_hook = self.queue_popover.sync_label
+        self.queue.set_images_hook(self._open_output_in_images)
         for button in (self.queue_popover.start_button, self.queue_popover.add_button):
             button.clicked.connect(self.remember)  # a run start, like Generate image
         self.generation_page.queueGenerateButton.clicked.connect(
@@ -510,6 +511,11 @@ class MainWindow:
         self.form.workspaceStack.setCurrentWidget(self.queue_page)
         self.queue.refresh()
         self.queue.shown()
+
+    def _open_output_in_images(self, identity: str) -> None:
+        """Queues → Open in Images: show this committed output in the Images Detail view."""
+        self.form.workspaceStack.setCurrentWidget(self.images_page)
+        self.gallery.open_output(identity)
 
     def _show_generation(self) -> None:
         self.generation.sync_backend()
