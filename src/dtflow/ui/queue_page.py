@@ -701,11 +701,13 @@ class QueuePage:
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
         editing = self._editing() and self._planned()
+        changed = self.page.planStrengthsEdit.isVisibleTo(self.page) != editing
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
         self.page.planDrawStrengthsLabel.setVisible(editing)  # the draw count follows its candidate row
         self.page.planDrawStrengthsSpin.setVisible(editing)
-        self._schedule_preview()
+        # Polling reaches here unchanged: only a shown or hidden Strength row changes the planning inputs.
+        self._schedule_preview(invalidate=changed)
 
     def _removable(self, view: dict | None) -> bool:
         return (
@@ -1272,8 +1274,9 @@ class QueuePage:
             getattr(page, f"composerSummary{name}Label").setText("—")
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
 
-    def _schedule_preview(self) -> None:
-        self._invalidate_preview()  # the inputs changed: a result still being drawn is already stale
+    def _schedule_preview(self, *, invalidate: bool = True) -> None:
+        if invalidate:
+            self._invalidate_preview()  # the inputs changed: a result still being drawn is already stale
         if self._composing and self.page.queueWorkspace.isVisible():
             self._preview_timer.start()
 
@@ -1534,7 +1537,7 @@ class QueuePage:
             page.planSizesEdit.text(),
             page.planLorasEdit.toPlainText(),
             page.planIncrementCheck.isChecked(),
-            page.planStrengthsEdit.text(),
+            page.planStrengthsEdit.text() if page.planStrengthsEdit.isVisibleTo(page) else "",
             page.planLoraSetsEdit.text(),
             self._draws(),
             page.planVariationCombo.currentText(),
