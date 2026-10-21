@@ -83,6 +83,8 @@ Explicit Drive rate-limit responses use bounded exponential backoff; other error
 
 Offscreen Qt renders of the real DTFlow forms under the real `dtflow_dark.qss`. Run from the repository root (or set `DTFLOW_ROOT`) with the locked environment:
 
+PR #146 adds `queues-50-inspector-minimum-width`, `queues-51-inspector-long-backend` and `generate-50-inspector-after-queues` to `render_states.py`. These fixtures hold the right rail at its configured minimum width, assert that the stack/current page and both item actions fit the viewport with no horizontal scroll range, check backend wrapping, and switch between Queues and Generate to check hidden-page sizing. They run with the corresponding `--category queues` or `--category generate` selection (or `all`), using intercepted workers and synthetic presentation data. Fixture presence is not execution evidence; no new captures were produced in the fixture-extension pass, and native Windows/DPI acceptance remains separate. On Windows offscreen runs, the renderer defaults `QT_QPA_FONTDIR` to `%WINDIR%\Fonts`; see the [development guide](../../devdocs/guides/development.md).
+
 ```powershell
 uv sync
 $env:QT_QPA_PLATFORM = "offscreen"   # scripts also set it by default

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
+    QSizePolicy,
     QToolButton,
     QWidget,
 )
@@ -266,6 +267,10 @@ class MainWindow:
         self.shell.workspaceSplitter.setStretchFactor(1, 1)
         self.shell.workspaceSplitter.setStretchFactor(2, 0)
         self.shell.workspaceSplitter.setSizes([260, 700, 300])
+        # A stack is as wide as its widest page; size the right rail from the shown page only,
+        # so one tab's inspector cannot push every other tab's inspector past the rail.
+        self.shell.rightStack.currentChanged.connect(self._fit_inspector_page)
+        self._fit_inspector_page()
         from dtflow.ui.brand import APP_ICON, app_icon
 
         form.setWindowIcon(app_icon())
@@ -613,6 +618,15 @@ class MainWindow:
         width = max(0, images.center().x() - control.width() // 2 - offset.x() - gap)
         if offset.width() != width:
             offset.setFixedWidth(width)
+
+    def _fit_inspector_page(self, *_args) -> None:
+        stack = self.shell.rightStack
+        for index in range(stack.count()):
+            page = stack.widget(index)
+            policy = page.sizePolicy()
+            shown = page is stack.currentWidget()
+            policy.setHorizontalPolicy(QSizePolicy.Policy.Preferred if shown else QSizePolicy.Policy.Ignored)
+            page.setSizePolicy(policy)
 
     def _responsive_workspace(self) -> None:
         shell = self.shell

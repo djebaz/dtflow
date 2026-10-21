@@ -27,6 +27,8 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Fixed
 
+- **Right panel overflow:** the right column on Generate and Queues no longer runs past its width with a horizontal scroll bar. The shared right column was sized to its widest page on every tab (the Queues *Selected item* card), so it now follows only the shown page and never scrolls sideways; Open folder and Retry item span the full card width and a long backend name wraps.
+
 - **Composer mode dropdown:** clicking *Repeat*, *Cross* or *Pair* in the Queues composer's mode list now selects it. The popup list had been disabled with the page's other preview controls, so a click closed it without choosing (the keyboard worked). The header Queue and Run icons also no longer shift when the logo is hovered.
 
 - **Queue recovery and selection:** interrupted running queues offer Resume after their dispatch owner stops; taking over still acquires the execution lock and preserves uncertain outcomes. Selecting a newly created queue clears the previous queue's outcome filters and immediately loads its items, including while idle polling is stopped.

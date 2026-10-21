@@ -45,7 +45,17 @@ if sys.platform == "win32" and platform_name == "offscreen":
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QScrollArea  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QFrame,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMenu,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+)
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -161,6 +171,71 @@ def save(widget, out, name):
     if not widget.grab().save(str(target)):
         raise RuntimeError(f"Could not save {target.name}")
     report(target)
+
+
+def render_inspector_fit_states(shell, out, category):
+    """Exercise the real inspector layout at the rail minimum, including a formerly wider hidden page."""
+    form, chrome, page = shell.form, shell.shell, shell.queue_page
+    rail, scroll, stack = chrome.rightRail, chrome.rightScroll, chrome.rightStack
+    minimum, maximum = rail.minimumWidth(), rail.maximumWidth()
+    sizes = chrome.workspaceSplitter.sizes()
+    selected = form.workspaceStack.currentIndex()
+    backend = page.itemBackendLabel.text()
+    position = scroll.verticalScrollBar().value()
+
+    def fits(expected):
+        QTest.qWait(100)
+        assert rail.isVisible() and rail.width() == minimum
+        assert stack.currentWidget() is expected
+        viewport = scroll.viewport().width()
+        assert stack.width() <= viewport, (stack.width(), viewport)
+        assert expected.width() <= viewport, (expected.width(), viewport)
+        assert stack.minimumSizeHint().width() <= viewport, (stack.minimumSizeHint().width(), viewport)
+        assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        assert scroll.horizontalScrollBar().maximum() == 0  # No offscreen content, not merely a hidden scrollbar.
+        for index in range(stack.count()):
+            widget = stack.widget(index)
+            policy = widget.sizePolicy().horizontalPolicy()
+            assert policy == (QSizePolicy.Policy.Preferred if widget is expected else QSizePolicy.Policy.Ignored)
+
+    def actions_fit():
+        scroll.ensureWidgetVisible(page.itemRetryButton)
+        QTest.qWait(30)
+        for button in (page.itemOpenFolderButton, page.itemRetryButton):
+            assert button.isVisible()
+            left = button.mapTo(scroll.viewport(), QPoint(0, 0)).x()
+            assert 0 <= left and left + button.width() <= scroll.viewport().width()
+
+    try:
+        rail.setFixedWidth(minimum)
+        form.queueNavigationButton.click()
+        fits(page.queueInspector)
+        if category == "queues":
+            actions_fit()
+            save(form, out, "queues-50-inspector-minimum-width")
+        long_backend = "Draw Things local backend with a deliberately long offline fixture name and endpoint description"
+        page.itemBackendLabel.setText(long_backend)
+        fits(page.queueInspector)
+        if category == "queues":
+            assert page.itemBackendLabel.wordWrap() and page.itemBackendLabel.text() == long_backend
+            assert page.itemBackendLabel.height() > page.itemBackendLabel.fontMetrics().height()
+            actions_fit()
+            save(form, out, "queues-51-inspector-long-backend")
+        # Keep the previously widest inspector mounted and verify that it cannot widen Generate after navigation.
+        form.generationNavigationButton.click()
+        fits(shell.generation_page.generationInspector)
+        if category == "generate":
+            save(form, out, "generate-50-inspector-after-queues")
+        form.queueNavigationButton.click()
+        fits(page.queueInspector)
+    finally:
+        page.itemBackendLabel.setText(backend)
+        rail.setMaximumWidth(maximum)
+        rail.setMinimumWidth(minimum)
+        form.workspaceStack.setCurrentIndex(selected)
+        chrome.workspaceSplitter.setSizes(sizes)
+        scroll.verticalScrollBar().setValue(position)
+        QTest.qWait(30)
 
 
 @patch.object(GenerationPage, "request_cached", new=lambda self, **_: None)
@@ -665,6 +740,7 @@ def render_generate_configuration_states(shell, out):
         assert lora.receipt_ids() == (record["asset_id"],)
         snap("generate-40-asset-receipt-bound")
         clear()
+        render_inspector_fit_states(shell, out, "generate")
 
 
 def render_active_queue_states(shell, out):
@@ -1019,6 +1095,7 @@ def render_active_queue_states(shell, out):
         present("cancelled", ["succeeded", "cancelled", "cancelled"])
         assert not page.queuePrimaryButton.isEnabled() and page.queueProgressBar.settled == 3
         snap("queues-22-cancelled-table")
+        render_inspector_fit_states(shell, out, "queues")
         form.resize(1000, 900)
         shell._responsive_workspace()
         assert shell.shell.rightRail.isHidden()
