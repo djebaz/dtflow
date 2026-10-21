@@ -62,7 +62,7 @@ from dtflow.ui.planning_presenter import (
     SEED_POLICY_TEXT,
     summary_text,
 )
-from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit
+from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, SummaryLabelHeightFit
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
@@ -345,6 +345,13 @@ class QueuePage:
                 (page.planAddLabel, page.planAddSpin),
             ],
         )
+        self._summary_fit = SummaryLabelHeightFit(
+            page.composerSummaryBoxContents,
+            [
+                getattr(page, f"composerSummary{name}Label")
+                for name in ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Cap", "Note")
+            ],
+        )
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
@@ -502,6 +509,7 @@ class QueuePage:
             page.uncertaintyBox.setVisible(False)
             self._actions_fit.refit()
             self._composer_grid_fit.refit()
+            self._summary_fit.schedule()
         self._sync()
 
     def _render_list(self) -> None:
@@ -1308,6 +1316,7 @@ class QueuePage:
         page.composerSummaryVariesLabel.setText(varies)
         page.composerSummarySeedsLabel.setText(seeds)
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
+        self._summary_fit.schedule()
 
     def _clear_summary(self) -> None:
         """Generate is not valid yet: the summary shows no stale values from an earlier request."""
@@ -1315,6 +1324,7 @@ class QueuePage:
         for name in ("Model", "Loras", "Items", "Varies", "Seeds"):
             getattr(page, f"composerSummary{name}Label").setText("—")
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
+        self._summary_fit.schedule()
 
     def _schedule_preview(self, *, invalidate: bool = True) -> None:
         if invalidate:
