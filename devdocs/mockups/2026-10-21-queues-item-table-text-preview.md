@@ -4,19 +4,21 @@
 
 ## Central table: seven columns
 
-Model and LoRAs repeat on **every** row, even when identical. The synthetic `ultra_realistic_characters_style_detail_v12.safetensors` models the owner's reported **55-character LoRA filename, including its extension**; it is not the user's real filename. The first three LoRAs appear one per line, with name, weight gauge, and numeric value. Bars are schematic only; the final valid gauge scale must follow actual recorded weights.
+Model and LoRAs repeat on **every** row, even when identical. The synthetic `ultra_realistic_characters_style_detail_v12.safetensors` models the owner's reported **55-character LoRA filename, including its extension**; it is not the user's real filename. The first three LoRAs appear one per line, with name, weight gauge, and numeric value. Bars are schematic only; the final valid gauge scale must follow actual recorded weights. **Model and LoRA names are illustrative checkpoint/adapter filenames, not friendly display aliases or verified provider inventory.**
 
-| Preview | Prompt | Model | LoRAs | Parameters | Status | Backend duration |
+| Preview | Prompt | Model | LoRAs | Parameters | Status | ⏱ |
 | :--- | :--- | :--- | :--- | :--- | :--- | ---: |
-| `[thumb A]` | Portrait of a traveler in a blue coat at dawn…<br>Soft light, mountains in the distance… | **Example Model A** | **PortraitStyle** `███░░░░░░░` 0.90<br>**FilmLight** `████░░░░░░` 1.20 | **Steps 28**<br>CFG 4.5 · Sampler Euler | **Succeeded** | 31.2 s |
-| `[thumb B]` | Portrait of a traveler in a blue coat at dawn…<br>Soft light, mountains in the distance… | **Example Model A** | **PortraitStyle** `████░░░░░░` 1.20<br>**FilmLight** `██░░░░░░░░` 0.60<br>**ultra_realistic_characters_style_detail_v12.safetensors** `█████░░░░░` 1.50<br>**…** (1 more) | **Steps 32**<br>CFG 5.0 · Sampler Euler | **Succeeded** | 36.8 s |
-| `[no image]` | A red house beside a mountain lake…<br>Cloud reflections on the water… | **Example Model B** | **Landscape** `███░░░░░░░` 0.90<br>**CloudMood** `████░░░░░░` 1.20<br>**Texture** `██░░░░░░░░` 0.60 | **Steps 24**<br>CFG 4.0 · Sampler DPM++ | **Running** | — |
-| `[no image]` | Studio photo of a ceramic cup…<br>Warm light against a pale background… | **Example Model B** | — | **Steps 24**<br>CFG 4.0 · Sampler DPM++ | **Failed** | — |
-| `[no image]` | An illustrated town square after rainfall…<br>Street lamps reflected in cobblestones… | **Example Model A** | **PortraitStyle** `███░░░░░░░` 0.90 | **Steps 28**<br>CFG 4.5 · Sampler Euler | **Queued** | — |
+| `[thumb A]` | Portrait of a traveler in a blue coat at dawn,<br>with soft rim lighting and distant mountains… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** `███░░░░░░░` 0.90<br>**cinematic_rim_light_v3.safetensors** `████░░░░░░` 1.20 | **Steps 28**<br>CFG 4.5<br>Sampler DPM++ 2M SDE Karras | **Succeeded** | 31.2 s |
+| `[thumb B]` | Portrait of a traveler in a blue coat at dawn,<br>with soft rim lighting and distant mountains… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** `████░░░░░░` 1.20<br>**cinematic_rim_light_v3.safetensors** `██░░░░░░░░` 0.60<br>**ultra_realistic_characters_style_detail_v12.safetensors** `█████░░░░░` 1.50<br>**…** (1 more) | **Steps 32**<br>CFG 5.0<br>Sampler DPM++ 3M SDE Exponential | **Succeeded** | 36.8 s |
+| `[no image]` | A red house beside a mountain lake, with<br>cloud reflections spreading across the water… | **PhotoReal_XL-v2.ckpt** | **landscape_style_v2.safetensors** `███░░░░░░░` 0.90<br>**cloud_mood_v4.safetensors** `████░░░░░░` 1.20<br>**texture_detail_v1.safetensors** `██░░░░░░░░` 0.60 | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **Running** | — |
+| `[no image]` | Studio photo of a ceramic cup on a table,<br>with warm light against a pale background… | **PhotoReal_XL-v2.ckpt** | — | **Steps 24**<br>CFG 4.0<br>Sampler DPM++ 2M SDE Karras | **Failed** | — |
+| `[no image]` | An illustrated old town square after rainfall,<br>with lamps reflected in wet cobblestones… | **Z-Image-Turbo_v2.ckpt** | **portrait_style_v1.safetensors** `███░░░░░░░` 0.90 | **Steps 28**<br>CFG 4.5<br>Sampler DPM++ 3M SDE Exponential | **Queued** | — |
 
-**Hierarchy:** model and steps are visually emphasized; each LoRA has a readable name and weight value; CFG and sampler are secondary-sized. Status is a **single text label**, with DTFlow semantic colors added later in Qt. No per-item step counter, progress bar, filename, seed or image dimensions in the table. Duration is **observed backend duration only**; `—` means unavailable, not zero.
+**Hierarchy:** model checkpoint filenames and steps are visually emphasized; each LoRA uses its actual adapter filename (extension, hyphens and underscores retained) with readable strength gauge and numeric value; CFG and sampler are secondary-sized. Long sampler names may need their own wrapped line within Parameters. Status is a **single text label**, with DTFlow semantic colors added later in Qt. No per-item step counter, progress bar, filename, seed or image dimensions in the table. Duration is **observed backend duration only**; `—` means unavailable, not zero.
 
-**Prompt width:** initially around one third of the table; display **positive prompt only** and clip after two lines. This Markdown's line breaks are illustrative, not a pixel-accurate wrapping test.
+**Prompt wrapping and width:** target about **30–33%** of the total central table width in the actual Qt layout. Show the **beginning of one continuous positive prompt** with natural wrapping across **up to two visual lines**. **No ellipsis on the first line.** Use a single final ellipsis **only if the text overflows the second line**; do not truncate by a fixed number of characters. The explicit `<br>` tags in this text specimen approximate wrapping, but Markdown cannot enforce width, font metrics or real two-line truncation.
+
+**Duration header:** `⏱` is a **stopwatch-icon placeholder**, not a shipped icon. In Qt use a matching design-system icon, header tooltip/accessibility label **“Backend duration”**, and the narrowest practical width that still fits the recorded values (for example `31.2 s`, `125.8 s`) with adequate padding and right alignment. **Do not reserve width for the text label**.
 
 ## Hover overlays (read-only and nonblocking)
 
@@ -28,16 +30,18 @@ Model and LoRAs repeat on **every** row, even when identical. The synthetic `ult
 
 | LoRA (row B) | Weight | Illustrative gauge |
 | --- | ---: | --- |
-| PortraitStyle | 1.20 | `████░░░░░░` |
-| FilmLight | 0.60 | `██░░░░░░░░` |
+| portrait_style_v1.safetensors | 1.20 | `████░░░░░░` |
+| cinematic_rim_light_v3.safetensors | 0.60 | `██░░░░░░░░` |
 | ultra_realistic_characters_style_detail_v12.safetensors | 1.50 | `█████░░░░░` |
-| BackgroundBokeh | 0.90 | `███░░░░░░░` |
+| background_bokeh_v2.safetensors | 0.90 | `███░░░░░░░` |
 
-**Long-name layout requirement:** the 55-character name must not force the LoRAs column wider or displace its weight value/gauge. In the Qt mockup, compare single-line elision versus wrapping; preserve the full name via a read-only hover tooltip when the inline label is shortened. This is a design test case, not a preapproved truncation style.
+**Long-name layout requirement:** the 55-character filename and other underscore/hyphen-heavy filenames must not force the LoRAs column wider or displace the numeric weight/gauge. In the Qt mockup, compare single-line elision versus wrapping; preserve the full name via a read-only hover tooltip when the inline label is shortened. This is a design test case, not a preapproved truncation style.
 
 Gauges represent configured strengths, **not task progress**. The overlay and ellipsis are hover-only, with no Copy button or click action. They must **never intercept a row click**: selecting a row always updates the inspector when it is visible.
 
 ## Right inspector — fictional selected-item example (row B)
+
+**Owner review:** the inspector information is acceptable for this Markdown checkpoint; finer spacing and arrangement remain for the actual Qt mockup.
 
 This is a second **Markdown example table** for the right inspector. The inspector shows complementary evidence; the central table already gives the thumbnail, prompt, model, LoRAs, steps, CFG, sampler, status and backend duration. Values below are entirely fictional.
 
