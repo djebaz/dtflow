@@ -293,7 +293,8 @@ class ActionsFit(QObject):
         widgets = (*self._fixed, *self._actions)
         margins = self._title.contentsMargins()
         needed = sum(widget.sizeHint().width() for widget in widgets) + self._title.spacing() * len(widgets)
-        wrap = self._viewport.width() < needed + margins.left() + margins.right()
+        # Reserve the card's inner gutter and prefer the separate row before labels get clipped.
+        wrap = self._viewport.width() < max(680, needed + margins.left() + margins.right() + 24)
         if wrap == self._wrapped:
             return
         self._wrapped = wrap
@@ -304,3 +305,54 @@ class ActionsFit(QObject):
             else:
                 self._title.insertWidget(self._title.indexOf(self._before), widget)
         self._host.setVisible(wrap)
+
+
+class ComposerGridFit(QObject):
+    """Reflow dense composer controls to the *visible* center width, never the window width.
+
+    Pair labels with their spin boxes and move existing Qt widgets between grid cells;
+    their values, signal connections and focus state are unchanged by a resize.
+    """
+
+    def __init__(self, scroll, draw_grid, draw_pairs, mutation_grid, mutation_groups):
+        super().__init__(scroll)
+        self._viewport = scroll.viewport()
+        self._draw_grid = draw_grid
+        self._draw_pairs = tuple(tuple(group) for group in draw_pairs)
+        self._mutation_grid = mutation_grid
+        self._mutation_groups = tuple(tuple(group) for group in mutation_groups)
+        self._columns: tuple[int, int] | None = None
+        self._viewport.installEventFilter(self)
+        self.refit()
+
+    def eventFilter(self, watched, event):
+        if watched is self._viewport and event.type() == QEvent.Type.Resize:
+            self.refit()
+        return False
+
+    @staticmethod
+    def _arrange(grid, groups, columns):
+        """Assign whole label/field groups to rows; never strand a field at the right edge."""
+        for group in groups:
+            for widget in group:
+                grid.removeWidget(widget)
+        for index, group in enumerate(groups):
+            row, pair = divmod(index, columns)
+            col = pair * 2
+            if len(group) == 1:
+                grid.addWidget(group[0], row, col, 1, 2)
+            else:
+                grid.addWidget(group[0], row, col)
+                grid.addWidget(group[1], row, col + 1)
+        grid.invalidate()
+        grid.parentWidget().updateGeometry()
+
+    def refit(self):
+        """Keep three groups on wide canvases, two on medium, and one on narrow canvases."""
+        width = self._viewport.width()
+        columns = (3, 3) if width >= 870 else (2, 2) if width >= 680 else (1, 1)
+        if columns == self._columns:
+            return
+        self._columns = columns
+        self._arrange(self._draw_grid, self._draw_pairs, columns[0])
+        self._arrange(self._mutation_grid, self._mutation_groups, columns[1])
