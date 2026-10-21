@@ -121,14 +121,14 @@ Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources li
 ## Documentation
 
 - [Desktop guide](devdocs/guides/desktop.md) — connections, generation, outputs and saved settings.
-- [5.0.0 release preparation](devdocs/releases/v5.0.0.md) — consolidated changes since 4.0.0, upgrade guidance and known limitations; not yet published.
+- [5.1.0 release preparation](devdocs/releases/v5.1.0.md) — queue/composer, reproducible variation and Logs improvements, upgrade guidance and known limitations; not yet published. [5.0.0](https://github.com/djebaz/dtflow/releases/tag/v5.0.0) is published.
 - [Queues and batch plans](devdocs/guides/queues.md) — queue controls, concurrency and parameter comparisons.
 - [CLI reference](devdocs/guides/cli.md) — automation and development interface.
 - [Testing](devdocs/guides/testing.md), [development tools](devdocs/guides/development.md) and [Windows builds](devdocs/guides/building.md).
 - [Image-operation preparation](devdocs/architecture/image-operations.md) — developer-only permit-gated single-shot path; no default image capability or accepted editor/checkpoint support.
 - [Architecture](devdocs/architecture/), [runtime layout](devdocs/architecture/runtime-layout.md) and the [design system reference](devdocs/design-system/README.md).
 - [Structured diagnostics architecture](devdocs/architecture/structured-diagnostics.md) — shared JSONL logging, Qt-free reader/export and native Logs workspace introduced by PR #105 and refined in PR #111 (source present; packaged Windows acceptance not established). See the [desktop guide](devdocs/guides/desktop.md#logs).
-- [Diagnostic event catalogue and migration inventory](devdocs/architecture/diagnostic-event-schema.md) with [JSON Schema v1](devdocs/schemas/diagnostic-record-v1.schema.json) — machine-readable record fields and source-based event mappings (PR #105, not yet shipped).
+- [Diagnostic event catalogue and migration inventory](devdocs/architecture/diagnostic-event-schema.md) with [JSON Schema v1](devdocs/schemas/diagnostic-record-v1.schema.json) — machine-readable record fields and source-based event mappings introduced in 5.0.0.
 - [Efficient Qt model/view patterns](devdocs/guides/qt-model-view-patterns.md) — bounded table updates, worker/search integration and external reference implementations.
 - [Compact Logs workspace UI specification](devdocs/design-system/logs-workspace.md), [standalone interaction study](devdocs/mockups/dtflow_logs_workspace.html) and [app-shell study](devdocs/mockups/dtflow_app_shell_with_logs.html) — PR #105 severity-stripe table, row actions and inspector (synthetic HTML design references; the native Qt workspace follows them but is not yet accepted).
 
