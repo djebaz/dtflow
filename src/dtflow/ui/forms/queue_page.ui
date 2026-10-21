@@ -821,6 +821,11 @@
            <layout class="QHBoxLayout" name="composerBaseLayout" stretch="1,0">
             <item>
              <widget class="QLabel" name="composerBaseLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch><verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -962,6 +967,9 @@
                    </property>
                    <item>
                     <layout class="QFormLayout" name="planForm">
+                     <property name="rowWrapPolicy">
+                      <enum>QFormLayout::WrapLongRows</enum>
+                     </property>
                      <item row="0" column="0">
                       <widget class="QLabel" name="planModeLabel">
                        <property name="text">
@@ -1272,7 +1280,7 @@
 </widget>
 </item>
 <item row="12" column="1">
-<widget class="QWidget" name="planDrawBox"><layout class="QGridLayout" name="planDrawGrid">
+<widget class="QWidget" name="planDrawBox"><property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><layout class="QGridLayout" name="planDrawGrid">
 <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
 <item row="0" column="0"><widget class="QLabel" name="planDrawModelsLabel"><property name="text"><string>Model</string></property></widget></item>
 <item row="0" column="1"><widget class="QSpinBox" name="planDrawModelsSpin">
@@ -1379,20 +1387,19 @@
 <item row="15" column="0">
 <widget class="QLabel" name="planMutationLabel"><property name="text"><string>Edit prompts</string></property><property name="textRole" stdset="0"><string>caption</string></property></widget>
 </item>
-<item row="15" column="1"><widget class="QWidget" name="planMutationBox"><layout class="QHBoxLayout" name="planMutationLayout">
+<item row="15" column="1"><widget class="QWidget" name="planMutationBox"><property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><layout class="QGridLayout" name="planMutationLayout">
 <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-<item><widget class="QComboBox" name="planShuffleCombo">
+<item row="0" column="0"><widget class="QComboBox" name="planShuffleCombo">
  <property name="accessibleName"><string>Shuffle prompt</string></property>
  <property name="toolTip"><string>Scramble the order of each resolved prompt's comma-separated parts, or of its words.</string></property>
  <item><property name="text"><string>No shuffle</string></property></item>
  <item><property name="text"><string>Shuffle parts</string></property></item>
  <item><property name="text"><string>Shuffle words</string></property></item>
 </widget></item>
-<item><widget class="QLabel" name="planDropLabel"><property name="text"><string>Drop up to</string></property></widget></item>
-<item><widget class="QSpinBox" name="planDropSpin"><property name="maximum"><number>50</number></property><property name="accessibleName"><string>Parts to drop</string></property><property name="toolTip"><string>Remove up to this many parts from each prompt (comma-separated parts, or words with Shuffle words); at least one stays.</string></property></widget></item>
-<item><widget class="QLabel" name="planAddLabel"><property name="text"><string>Add up to</string></property></widget></item>
-<item><widget class="QSpinBox" name="planAddSpin"><property name="maximum"><number>50</number></property><property name="accessibleName"><string>Parts to add</string></property><property name="toolTip"><string>Insert up to this many of the Parts to add into each prompt (as comma-separated parts, or words with Shuffle words).</string></property></widget></item>
-<item><spacer name="planMutationSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+<item row="0" column="1"><widget class="QLabel" name="planDropLabel"><property name="text"><string>Drop up to</string></property></widget></item>
+<item row="0" column="2"><widget class="QSpinBox" name="planDropSpin"><property name="maximum"><number>50</number></property><property name="accessibleName"><string>Parts to drop</string></property><property name="toolTip"><string>Remove up to this many parts from each prompt (comma-separated parts, or words with Shuffle words); at least one stays.</string></property></widget></item>
+<item row="0" column="3"><widget class="QLabel" name="planAddLabel"><property name="text"><string>Add up to</string></property></widget></item>
+<item row="0" column="4"><widget class="QSpinBox" name="planAddSpin"><property name="maximum"><number>50</number></property><property name="accessibleName"><string>Parts to add</string></property><property name="toolTip"><string>Insert up to this many of the Parts to add into each prompt (as comma-separated parts, or words with Shuffle words).</string></property></widget></item>
 </layout></widget></item>
 <item row="16" column="0">
 <widget class="QLabel" name="planAddPartsLabel"><property name="text"><string>Parts to add</string></property><property name="textRole" stdset="0"><string>caption</string></property></widget>
@@ -1408,19 +1415,20 @@
 </widget>
 </item>
 <item row="17" column="1">
-<layout class="QHBoxLayout" name="planRngSeedLayout">
-<item><widget class="QLineEdit" name="planRngSeedEdit">
+<layout class="QGridLayout" name="planRngSeedLayout">
+<item row="0" column="0"><widget class="QLineEdit" name="planRngSeedEdit">
  <property name="accessibleName"><string>Plan random seed</string></property>
  <property name="toolTip"><string>The one recorded seed behind every random draw: the same seed and inputs give the same items.</string></property>
  <property name="maximumSize"><size><width>160</width><height>16777215</height></size></property>
 </widget></item>
-<item><widget class="QPushButton" name="planRerollButton">
+<item row="0" column="1"><widget class="QPushButton" name="planRerollButton">
  <property name="text"><string>Reroll</string></property>
  <property name="accessibleName"><string>Reroll random seed</string></property>
  <property name="maximumSize"><size><width>90</width><height>16777215</height></size></property>
  <property name="toolTip"><string>Draw a new plan seed, and so new random values.</string></property>
 </widget></item>
-<item><widget class="QLabel" name="planWildcardsFolderLabel">
+<item row="1" column="2" colspan="2"><widget class="QLabel" name="planWildcardsFolderLabel">
+                      <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
  <property name="text"><string></string></property>
  <property name="wordWrap"><bool>true</bool></property>
  <property name="textRole" stdset="0"><string>caption</string></property>
@@ -1431,8 +1439,9 @@
                    </item>
                    <item>
                     <widget class="QCheckBox" name="planIncrementCheck">
+                     <property name="toolTip"><string>When enabled, increment the image seed for each queue item; otherwise keep the base seed.</string></property>
                      <property name="text">
-                      <string>Increment the seed per item (otherwise the base seed is kept)</string>
+                      <string>Increment seed per item</string>
                      </property>
                      <property name="accessibleName">
                       <string>Increment seed per item</string>
@@ -1443,6 +1452,7 @@
                     <layout class="QHBoxLayout" name="planActionLayout">
                      <item>
                       <widget class="QLabel" name="planCountLabel">
+                      <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
                        <property name="text">
                         <string>Fill at least one dimension.</string>
                        </property>
@@ -1773,6 +1783,12 @@
             </item>
             <item row="0" column="1">
              <widget class="QLabel" name="composerSummaryBackendLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1796,6 +1812,12 @@
             </item>
             <item row="1" column="1">
              <widget class="QLabel" name="composerSummaryModelLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1819,6 +1841,12 @@
             </item>
             <item row="3" column="1">
              <widget class="QLabel" name="composerSummaryItemsLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1842,6 +1870,12 @@
             </item>
             <item row="4" column="1">
              <widget class="QLabel" name="composerSummaryVariesLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1865,6 +1899,12 @@
             </item>
             <item row="5" column="1">
              <widget class="QLabel" name="composerSummarySeedsLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1888,6 +1928,12 @@
             </item>
             <item row="6" column="1">
              <widget class="QLabel" name="composerSummaryCapLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>
@@ -1901,6 +1947,12 @@
             </item>
             <item row="7" column="0" colspan="2">
              <widget class="QLabel" name="composerSummaryNoteLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>Nothing is saved or sent until Start now, Add to queue or Save paused.</string>
               </property>
@@ -1924,6 +1976,12 @@
             </item>
             <item row="2" column="1">
              <widget class="QLabel" name="composerSummaryLorasLabel">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="text">
                <string>—</string>
               </property>

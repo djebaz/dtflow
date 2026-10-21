@@ -438,6 +438,8 @@ Checkable section cards require an operable header control (a keyboard-accessibl
 checkbox synchronized with the native group-box state); a passive label cannot
 replace a native group-box toggle. Parent activity disabling still applies.
 
+The New queue inspector summary uses the existing narrow right rail and a two-column form. Its values and explanatory note must allow horizontal shrinkage, wrapping long checkpoint and LoRA identifiers (including unbroken names) without enlarging the card or clipping the rail. A wrapped identifier must also receive enough vertical space for every line, including the last LoRA identifier and its weight; the following Items row may not overlap or crop it. The offline `queues-52-composer-long-identifiers` and `queues-55-inspector-two-loras` renders cover text height and geometry at minimum rail width; native Windows DPI acceptance remains separate.
+
 Queues keeps the queue header at its natural height. The items table or
 empty-state region receives the flexible workspace height; empty-state title,
 guidance stay together in its center.
@@ -449,7 +451,8 @@ presenting “0 of 0” as work. Avoid distributing spare height among action ro
 scrolls on its own: an untitled top row, right-aligned, holds the actions
 where + New queue was (Max at once for the new queue, neutral *Save paused* and
 *Add to queue*, `role="primary"` **Start now (N items)**, then Close; when the
-center is too narrow for them they wrap on their own row below), a
+center is too narrow, the entire action group including Close flows together
+onto a wrapping row, rather than isolating Close above the remaining actions), a
 secondary one-line summary of the Generate base request with *Edit in
 Generate*, then the **Variation** section card. A bottom spacer
 keeps the cards at their natural heights. Variation's Mode is Repeat (an item
@@ -461,7 +464,7 @@ custom identifier) and samplers, an editable preset list for sizes (Generate's
 size first), a bounded number box for steps, guidance and Inpaint
 strengths, and the shared LoRA identifier+weight editor for LoRA sets (with
 *None* and *Generate's LoRAs* at the top of its list). Prompts are one per line; seeds and LoRA weights stay typed. Below them,
-*Draw at random* is a grid of small count boxes (*Listed* = every value), *Prompt
+*Draw at random* is a grid of small count boxes (*Listed* = every value). It reflows from three label/control pairs per row to two and then one according to the visible center viewport, not the main window width. *Edit prompts* keeps shuffle, drop and add controls together in responsive groups; the plan-seed field and Reroll remain visible without horizontally widening the center. The form may put a caption above a field at the narrowest widths. Hidden dimensions (notably text-to-image Strength) do not reserve an empty grid cell; the two remaining LoRA controls occupy the same row. The item-preview table collapses when the plan has no valid rows and reappears after a successful preview, while the validation message stays visible. All action buttons stay reachable, and the composer scrolls vertically without relying on a hidden horizontal scrollbar. Offline `queues-53` and `queues-54` capture the narrowed center with both outer rails visible. *Prompt
 variation* a mode box with a count, and, only while a prompt variation is on,
 wildcard lists, an *Edit prompts* row (shuffle, drop, add) and *Parts to add*;
 the *Plan seed* field and **Reroll** show only while something is drawn. The

@@ -554,6 +554,18 @@ class MainWindow:
             self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
+        # Queues owns scrolling in queueList: the shared outer scroll must not
+        # create a second wheel/scrollbar over the fixed filter and Clear action.
+        queues_active = index == 2
+        scroll = self.shell.leftScroll
+        stack_policy = self.shell.leftStack.sizePolicy()
+        vertical = QSizePolicy.Policy.Ignored if queues_active else QSizePolicy.Policy.Preferred
+        if stack_policy.verticalPolicy() != vertical:
+            stack_policy.setVerticalPolicy(vertical)
+            self.shell.leftStack.setSizePolicy(stack_policy)
+        scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if queues_active else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
         buttons = (
             self.form.connectionNavigationButton,
             self.form.generationNavigationButton,

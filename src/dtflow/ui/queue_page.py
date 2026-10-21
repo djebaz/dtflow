@@ -62,7 +62,7 @@ from dtflow.ui.planning_presenter import (
     SEED_POLICY_TEXT,
     summary_text,
 )
-from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit
+from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, SummaryLabelHeightFit
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
@@ -321,6 +321,37 @@ class QueuePage:
             ),
             (page.closeComposerButton,),
         )
+        self._composer_grid_fit = ComposerGridFit(
+            page.queueComposerScroll,
+            page.planDrawGrid,
+            [
+                (getattr(page, f"planDraw{name}Label"), getattr(page, f"planDraw{name}Spin"))
+                for name in (
+                    "Models",
+                    "Seeds",
+                    "Steps",
+                    "Guidance",
+                    "Samplers",
+                    "Sizes",
+                    "Strengths",
+                    "LoraSets",
+                    "Loras",
+                )
+            ],
+            page.planMutationLayout,
+            [
+                (page.planShuffleCombo,),
+                (page.planDropLabel, page.planDropSpin),
+                (page.planAddLabel, page.planAddSpin),
+            ],
+        )
+        self._summary_fit = SummaryLabelHeightFit(
+            page.composerSummaryBoxContents,
+            [
+                getattr(page, f"composerSummary{name}Label")
+                for name in ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Cap", "Note")
+            ],
+        )
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
@@ -476,6 +507,9 @@ class QueuePage:
         page.composerSummaryBox.setVisible(self._composing)
         if self._composing:
             page.uncertaintyBox.setVisible(False)
+            self._actions_fit.refit()
+            self._composer_grid_fit.refit()
+            self._summary_fit.schedule()
         self._sync()
 
     def _render_list(self) -> None:
@@ -707,6 +741,8 @@ class QueuePage:
         self.page.planStrengthsEdit.setVisible(editing)
         self.page.planDrawStrengthsLabel.setVisible(editing)  # the draw count follows its candidate row
         self.page.planDrawStrengthsSpin.setVisible(editing)
+        if changed:
+            self._composer_grid_fit.refit()
         # Polling reaches here unchanged: only a shown or hidden Strength row changes the planning inputs.
         self._schedule_preview(invalidate=changed)
 
@@ -1033,6 +1069,10 @@ class QueuePage:
     def _planned(self) -> bool:
         return self.page.planModeCombo.currentText() != REPEAT
 
+    def _sync_preview_table_visibility(self) -> None:
+        """Only show the table when the active comparison plan has actual preview rows."""
+        self.page.planTableView.setVisible(self._planned() and self.plan_model.rowCount() > 0)
+
     def _mode_changed(self, *_) -> None:
         """Repeat shows the item count; Pair and Cross show the dimensions and the preview table."""
         page = self.page
@@ -1044,7 +1084,8 @@ class QueuePage:
             label.setVisible(planned)
             getattr(page, name).setVisible(planned)
         page.planIncrementCheck.setVisible(planned)
-        page.planTableView.setVisible(planned)
+        self.plan_model.clear()  # a mode change invalidates the previous mode's preview.
+        self._sync_preview_table_visibility()
         for name in ("planDrawLabel", "planDrawBox", "planVariationLabel", "planVariationBox"):
             getattr(page, name).setVisible(planned)
         self._sync_random_rows()
@@ -1153,6 +1194,7 @@ class QueuePage:
             page.composerBaseLabel.setText("Generate settings are not valid yet.")
             self._show(page.planCountLabel, "error", sentence(f"Generate: {exc}"))
             self.plan_model.clear()
+            self._sync_preview_table_visibility()
             self._clear_summary()
             return
         form = self._plan_form()
@@ -1242,6 +1284,7 @@ class QueuePage:
             else:
                 self._show(self.page.planCountLabel, "error", sentence(str(failure) or "The preview failed."))
                 self.plan_model.clear()
+                self._sync_preview_table_visibility()
             self._show_summary(request, None, "—", "—")
             return
         plan, table = result
@@ -1282,6 +1325,7 @@ class QueuePage:
         page.composerSummaryVariesLabel.setText(varies)
         page.composerSummarySeedsLabel.setText(seeds)
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
+        self._summary_fit.schedule()
 
     def _clear_summary(self) -> None:
         """Generate is not valid yet: the summary shows no stale values from an earlier request."""
@@ -1289,6 +1333,7 @@ class QueuePage:
         for name in ("Model", "Loras", "Items", "Varies", "Seeds"):
             getattr(page, f"composerSummary{name}Label").setText("—")
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
+        self._summary_fit.schedule()
 
     def _schedule_preview(self, *, invalidate: bool = True) -> None:
         if invalidate:
@@ -1584,6 +1629,8 @@ class QueuePage:
             count = self.page.queueCountSpinBox.value()
             level, text = "ok", f"{count} item{'s' if count != 1 else ''}"
         self._show(self.page.planCountLabel, level, sentence(text))
+        if level != "ok":
+            self.page.planTableView.hide()  # reject stale previews immediately on invalid inputs
         self.page.startQueueButton.setText(f"Start now ({text})" if level == "ok" else "Start now")
         self._actions_fit.refit()
         self._schedule_preview()
@@ -1595,6 +1642,7 @@ class QueuePage:
         for row in table.rows:
             self.plan_model.appendRow([QStandardItem(cell) for cell in row])
         self.page.planTableView.resizeColumnsToContents()
+        self._sync_preview_table_visibility()
 
     def _plan_for(self, request) -> Plan | None:
         """Build and fully validate the plan against the form's request; shows the preview table.
@@ -1633,6 +1681,7 @@ class QueuePage:
         self._show(self.page.planCountLabel, "error", sentence(str(error)))
         self.page.startQueueButton.setText("Start now")
         self.plan_model.clear()
+        self._sync_preview_table_visibility()
 
     def _created(self, result, failure, action: str = "save") -> None:
         if failure is not None:
