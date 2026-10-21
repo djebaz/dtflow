@@ -492,9 +492,13 @@ class MainWindow:
     def _disable_preview_controls(page: QWidget) -> None:
         for control_type in PREVIEW_CONTROL_TYPES:
             for control in page.findChildren(control_type):
-                # A spin box's or combo box's own editor follows its owner; disabling it separately would leave the
-                # value greyed out and untypeable after the owner is re-enabled.
-                if not isinstance(control.parent(), (QAbstractSpinBox, QComboBox)):
+                # A spin box's or combo box's own editor and popup list follow their owner; disabling them separately
+                # would leave the value greyed out and untypeable, or the popup's items unclickable, after the owner is
+                # re-enabled. The popup list sits inside a container frame, so look through every ancestor.
+                owner = control.parentWidget()
+                while owner is not None and not isinstance(owner, (QAbstractSpinBox, QComboBox)):
+                    owner = owner.parentWidget()
+                if owner is None:
                     control.setEnabled(False)
 
     def _show_queue(self) -> None:
