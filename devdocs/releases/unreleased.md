@@ -4,6 +4,10 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Highlights
 
+## Fixed
+
+- **Queues — New queue inspector overflow:** model, backend and LoRA identifiers, variation/seed summaries and the explanatory note now wrap within the existing right-rail width instead of extending past the card. Offline render `queues-52-composer-long-identifiers` covers long checkpoint and LoRA identifiers at the rail minimum; Windows DPI acceptance is pending.
+
 ## Added
 
 - **Random inputs and randomly varied prompts (#128, #129):** Pair/Cross dimensions can draw N distinct random values from their listed values (models, samplers, sizes, LoRA sets, steps, guidance, strengths, LoRA weights) or N random seeds under one recorded **Plan seed** with **Reroll**: the same seed and inputs give the same items, the preview shows the drawn values and each item records `plan.rng_seed` and `plan.random.*` evidence. **Prompt variation** resolves the Generate prompt (`{a|b|c}`, `{2$$a|b|c}`, `{3::a|1::b}` weights, `__list__` wildcards from inline lists or `NAME.txt` files in the state directory's `wildcards` folder) into a seeded random sample or every combination, and *Edit prompts* shuffles the parts or words, drops parts and adds parts, all seeded; each item records its resolved prompt plus template, mutation, wildcard SHA-256 and seed as evidence. Plan files move to `dtflow.queue-plan` version 2 (version 1 still reads) with `random` dimensions, `rng_seed` and prompt `variation`; CLI `queue add` gains `--rng-seed` and `--wildcards-dir`, and `--dry` prints the drawn table. Everything is offline and bounded at 1000 items; the native planner owns prompt variation rather than the Scripts epic. Numeric random ranges (`min`/`max`/`step`) are in plan files only. New renders `queues-48` and `queues-49`. Not yet accepted on Windows.
