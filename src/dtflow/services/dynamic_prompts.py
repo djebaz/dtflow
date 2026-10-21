@@ -51,6 +51,10 @@ def _fail(message: str) -> PlanError:
     return PlanError(message)
 
 
+class UndefinedWildcard(PlanError):
+    """A template names a wildcard list nobody has supplied (yet): planning defers counting until lists are bound."""
+
+
 def parse(template: str, depth: int = 0) -> tuple[Node, ...]:
     """The template as nodes; unbalanced braces, bad counts and too-deep nesting raise ``PlanError``."""
     nodes, end = _sequence(template, 0, "", depth)
@@ -132,7 +136,7 @@ class Lists:
 
     def get(self, name: str, depth: int) -> tuple[tuple[Node, ...], ...]:
         if name not in self._entries:
-            raise _fail(f"Wildcard '{name}' is not defined: add a list named {name} or remove __{name}__.")
+            raise UndefinedWildcard(f"Wildcard '{name}' is not defined: add a list named {name} or remove __{name}__.")
         if depth > MAX_DEPTH:
             raise _fail(f"Wildcard '{name}' nests wildcards more than {MAX_DEPTH} levels deep (or names itself).")
         self.used.add(name)
@@ -298,7 +302,7 @@ def variants(
             raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
         seen: dict[str, None] = {}
         attempts = 0
-        while len(seen) < n and attempts < 200 * n + 1000:
+        while len(seen) < n and attempts < 20 * n + 200:
             text = _tidy(_mutate(_tidy(_sample(nodes, lists, rng, 0)), rng, mutation))
             if text:
                 seen.setdefault(text, None)
@@ -320,7 +324,7 @@ def variants(
     rng = random.Random(f"dtflow-prompt/{rng_seed}")
     seen: dict[str, None] = {}
     attempts = 0
-    while len(seen) < n and attempts < 200 * n + 1000:
+    while len(seen) < n and attempts < 20 * n + 200:
         text = _tidy(_sample(nodes, lists, rng, 0))
         if text:
             seen.setdefault(text, None)

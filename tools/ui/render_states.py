@@ -949,7 +949,13 @@ def render_active_queue_states(shell, out):
         page.planAddSpin.setValue(1)
         for name in ("planStepsEdit", "planModelsEdit", "planSamplersEdit", "planSizesEdit"):
             getattr(page, name).clear()
-        queue.preview()
+        real_submit = type(shell.runner).submit.__get__(shell.runner)  # this block holds submits; this one must run
+        with patch.object(shell.runner, "submit", side_effect=real_submit):
+            queue.preview()
+            for _ in range(100):  # prompt variation resolves on a worker; wait for the preview to land
+                if not queue.previewing:
+                    break
+                QTest.qWait(50)
         assert queue.plan_model.rowCount() == 4, page.planCountLabel.text()
         page.queueComposerScroll.ensureWidgetVisible(page.planVariationCombo)
         snap("queues-49-composer-prompt-variation")

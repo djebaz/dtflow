@@ -185,6 +185,25 @@ def _rng_seed(text: str) -> int | None:
     return seed
 
 
+def candidate_counts(form: PlanForm) -> dict[str, int]:
+    """How many different values each drawable row lists (a draw can take at most that many); seeds are unbounded."""
+
+    def distinct(tokens) -> int:
+        return len(dict.fromkeys(tokens))
+
+    lines = [line.rpartition(":")[2] for line in form.loras.splitlines() if line.strip()]
+    return {
+        "model": distinct(_tokens(form.models)),
+        "steps": distinct(_tokens(form.steps)),
+        "guidance": distinct(_tokens(form.guidance)),
+        "sampler": distinct(_tokens(form.samplers)),
+        "size": distinct(_tokens(form.sizes)),
+        "strength": distinct(_tokens(form.strengths)),
+        "loras": distinct(_tokens(form.lora_sets)),
+        "lora_weight": min((distinct(_tokens(line)) for line in lines), default=0),
+    }
+
+
 def lora_set_value(identifier: str, weight: float) -> str:
     """The chip text for a one-LoRA set, as ``_lora_sets`` reads it back."""
     return f"{identifier}: {weight:g}"
@@ -210,6 +229,8 @@ def build_plan(form: PlanForm) -> Plan:
             raise FormError("Use either a prompt list or prompt variation, not both.", "planPromptsEdit")
         strategy = VARIATIONS.get(form.variation, "random")
         parts = tuple(_tokens(form.add_parts))
+        if form.add and not parts:
+            raise FormError("Add parts to insert under Parts to add, or set Add up to to 0.", "planAddPartsEdit")
         prompts = PromptVariation(
             strategy,
             form.variation_count if strategy == "random" else None,
@@ -235,9 +256,15 @@ def build_plan(form: PlanForm) -> Plan:
     sets = _lora_sets(form.lora_sets)
     if sets:
         dimensions.append(("loras", varied("loras", sets)))
-    dimensions.extend(
-        (f"lora_weight.{identifier}", varied("lora_weight", weights)) for identifier, weights in _loras(form.loras)
-    )
+    elif draws.get("loras"):
+        raise FormError("Add LoRA sets to draw from.", "planLoraSetsEdit")
+    weights = _loras(form.loras)
+    if weights:
+        dimensions.extend(
+            (f"lora_weight.{identifier}", varied("lora_weight", values)) for identifier, values in weights
+        )
+    elif draws.get("lora_weight"):
+        raise FormError("Add LoRA weights to draw from.", "planLorasEdit")
     return Plan(
         MODES.get(form.mode, "cross"),
         tuple(dimensions),

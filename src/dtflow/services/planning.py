@@ -182,14 +182,20 @@ def _check_variation(variation: PromptVariation) -> None:
     dynamic_prompts.check_mutation(variation.mutation)
 
 
-def _variation_total(variation: PromptVariation, prompt: str | None) -> int:
+def _variation_total(variation: PromptVariation, prompt: str | None, bound: bool) -> int | None:
+    """The structural variant count, or None while it cannot be known: no template yet, or wildcard lists not bound."""
     if variation.strategy == "random":
         return variation.count
     template = variation.template if variation.template is not None else prompt
     if template is None:
-        return 1  # the base prompt is not known yet; the exact count comes with the request
+        return None  # the base prompt is not known yet; the exact count comes with the request
     lists = dynamic_prompts.Lists(dict(variation.wildcards))
-    return dynamic_prompts.count(dynamic_prompts.parse(template), lists)
+    try:
+        return dynamic_prompts.count(dynamic_prompts.parse(template), lists)
+    except dynamic_prompts.UndefinedWildcard:
+        if bound:
+            raise
+        return None  # a plan file's wildcard lists may still come from the wildcards folder
 
 
 def resolve_plan(plan: Plan, prompt: str | None = None) -> Plan:
@@ -239,7 +245,7 @@ def resolve_plan(plan: Plan, prompt: str | None = None) -> Plan:
     return replace(plan, dimensions=tuple(dimensions), evidence=(*plan.evidence, *evidence))
 
 
-def plan_size(plan: Plan, prompt: str | None = None) -> int:
+def plan_size(plan: Plan, prompt: str | None = None, *, bound: bool = True) -> int:
     """Arithmetic item count, computed before any expansion. Structural problems raise; an oversize count is returned."""
     if plan.mode not in MODES:
         raise PlanError(f"Plan mode must be one of {', '.join(MODES)}.")
@@ -268,6 +274,7 @@ def plan_size(plan: Plan, prompt: str | None = None) -> int:
     if "seed" in names and plan.seed_policy == "increment":
         raise PlanError("Seed cannot be both a listed dimension and incremented.")
     lengths = []
+    deferred = False
     for name, values in plan.dimensions:
         if isinstance(values, RandomSpec):
             _check_spec(name, values)
@@ -276,11 +283,15 @@ def plan_size(plan: Plan, prompt: str | None = None) -> int:
             if name != "prompt":
                 raise PlanError("Only the prompt dimension takes prompt variation.")
             _check_variation(values)
-            lengths.append(_variation_total(values, prompt))
+            total = _variation_total(values, prompt, bound)
+            deferred = deferred or total is None
+            lengths.append(1 if total is None else total)
         else:
             lengths.append(len(values))
     if 0 in lengths:
         raise PlanError(f"Dimension {names[lengths.index(0)]!r} has no values.")
+    if deferred:  # an every-combination prompt whose size depends on wildcard files: checked once they are bound
+        return max(lengths) if plan.mode == "pair" else prod(lengths)
     if plan.mode == "pair":
         if len(set(lengths)) != 1:
             detail = ", ".join(f"{name}={length}" for name, length in zip(names, lengths, strict=True))
@@ -598,7 +609,7 @@ def parse_plan(document: Any) -> Plan:
     if rng_seed is not None and (version < 2 or type(rng_seed) is not int or not 0 <= rng_seed <= SEED_LIMIT):
         raise PlanError("rng_seed is a whole number in 0..4294967295 (plan version 2).")
     plan = Plan(document.get("mode"), tuple(dimensions), document.get("count"), document.get("seed"), rng_seed)
-    plan_size(plan)
+    plan_size(plan, bound=False)  # wildcard files are bound after parsing, so their counts wait for ``expand_plan``
     return plan
 
 
