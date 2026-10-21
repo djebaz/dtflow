@@ -1,9 +1,11 @@
 """Bounded, asynchronous thumbnails and the hover preview for the queue items table.
 
-Decoding reuses the Images gallery's `_image`: the shared original-images lease, a scaled decode (never the full
-original) and the same background runner. Results are delivered on the GUI thread and kept in small LRU stores.
-Passing a verified GalleryItem to `_image` would add the on-disk thumbnail cache; that needs the queue-output to
-gallery-identity mapping from the plan's integration audit, so it is deliberately not guessed here.
+Decoding reuses the Images gallery's `_image` at the gallery's own thumbnail size: the shared original-images lease,
+a scaled decode (never the full original) and the same background runner. When the row has a gallery identity
+("attempt:index"), the gallery record is looked up on the worker thread and passed along, so `_image` reads and
+writes the gallery's on-disk thumbnail cache: a thumbnail made here also serves Images, and the reverse. One decode
+per output feeds both the 128 px square tile (cropped) and, when requested, the hover preview (the 600 px image as is). Results are delivered on the
+GUI thread and kept in small LRU stores.
 """
 
 import asyncio
@@ -14,10 +16,12 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtWidgets import QLabel, QTableView
 
-from dtflow.ui.gallery_page import _image
+from dtflow.persistence import gallery as gallery_storage
+from dtflow.services.gallery import item_from_record
+from dtflow.ui.gallery_page import THUMBNAIL_SIDE, _image
 
-ROW_SIDE = 128  # the 64 px tile at 2x
-PREVIEW_SIDE = 440  # the 220 px hover preview at 2x
+ROW_SIDE = 128  # the 64 px tile at 2x, centre-cropped to a square
+PREVIEW_SIDE = THUMBNAIL_SIDE  # the hover preview is the gallery's 600 px thumbnail, shown as is (aspect-fit)
 MAX_ROW_PIXMAPS = 300
 MAX_PREVIEW_PIXMAPS = 12
 CONCURRENCY = 3  # lighter than the gallery's 6: this table shares the window with a running queue
@@ -26,8 +30,20 @@ PREVIEW_COLUMN = 0
 BUSY = "Original temporarily busy"
 
 
+def _decode(path: str, identity: str | None, state: Path):
+    """Decode at the gallery's thumbnail size; with a committed identity the gallery's disk cache is used."""
+    item = None
+    if identity:
+        try:
+            record = gallery_storage.get_record(state, identity)
+            item = item_from_record(record, state=state) if record else None
+        except Exception:  # noqa: BLE001 - any lookup failure only means no disk cache: fall back to a plain decode
+            item = None
+    return _image(path, THUMBNAIL_SIDE, state, item=item, cache=item is not None)
+
+
 class QueueThumbnails(QObject):
-    """LRU pixmaps keyed by (path, side). `pixmap()` never blocks: it returns None and schedules a decode."""
+    """LRU pixmaps per size. `pixmap()` never blocks: it returns None and schedules one decode per output."""
 
     changed = Signal(str)  # a pixmap for this path arrived
 
@@ -36,26 +52,30 @@ class QueueThumbnails(QObject):
         self._runner, self._state = runner, Path(state)
         self._stores = {ROW_SIDE: (OrderedDict(), MAX_ROW_PIXMAPS), PREVIEW_SIDE: (OrderedDict(), MAX_PREVIEW_PIXMAPS)}
         self._waiting: deque = deque()
-        self._queued: set = set()
-        self._failed: set = set()
+        self._queued: set[str] = set()
+        self._failed: set[str] = set()
+        self._wanted: dict[str, set[int]] = {}
+        self._identity: dict[str, str | None] = {}
         self._active = 0
         self._epoch = 0
 
-    def pixmap(self, path: str, side: int = ROW_SIDE) -> QPixmap | None:
+    def pixmap(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> QPixmap | None:
         store = self._stores[side][0]
         found = store.get(path)
         if found is not None:
             store.move_to_end(path)
             return found
-        key = (path, side)
-        if key not in self._queued and key not in self._failed:
-            self._queued.add(key)
-            self._waiting.append((self._epoch, key))
-            self._pump()
+        if path not in self._failed:
+            self._wanted.setdefault(path, set()).add(side)
+            self._identity[path] = identity
+            if path not in self._queued:
+                self._queued.add(path)
+                self._waiting.append((self._epoch, path))
+                self._pump()
         return None
 
     def is_failed(self, path: str, side: int = ROW_SIDE) -> bool:
-        return (path, side) in self._failed
+        return path in self._failed
 
     def clear(self) -> None:
         """Forget everything; results still in flight are ignored when they arrive."""
@@ -65,36 +85,46 @@ class QueueThumbnails(QObject):
         self._waiting.clear()
         self._queued.clear()
         self._failed.clear()
+        self._wanted.clear()
+        self._identity.clear()
 
     def _pump(self) -> None:
         while self._active < CONCURRENCY and self._waiting:
-            epoch, key = self._waiting.popleft()
+            epoch, path = self._waiting.popleft()
             if epoch != self._epoch:
                 continue
             self._active += 1
-            path, side = key
+            identity = self._identity.get(path)
 
-            async def work(filename=path, size=side):
-                return await asyncio.to_thread(_image, filename, size, self._state)
+            async def work(filename=path, ident=identity):
+                return await asyncio.to_thread(_decode, filename, ident, self._state)
 
-            self._runner.submit(work(), lambda result, error, e=epoch, k=key: self._done(e, k, result, error))
+            self._runner.submit(work(), lambda result, error, e=epoch, p=path: self._done(e, p, result, error))
 
-    def _done(self, epoch: int, key: tuple, result, error) -> None:
+    @staticmethod
+    def _square(image, side: int) -> QPixmap:
+        """The tile: a centred square crop of the 600 px thumbnail, scaled to the tile's pixel size."""
+        edge = min(image.width(), image.height())
+        square = image.copy((image.width() - edge) // 2, (image.height() - edge) // 2, edge, edge)
+        return QPixmap.fromImage(square.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+    def _done(self, epoch: int, path: str, result, error) -> None:
         self._active = max(0, self._active - 1)
         if epoch == self._epoch:
-            self._queued.discard(key)
-            path, side = key
+            self._queued.discard(path)
             image, issue = result if error is None and result else (None, "unreadable")
             if image is not None:
-                store, limit = self._stores[side]
-                store[path] = QPixmap.fromImage(image)
-                while len(store) > limit:
-                    store.popitem(last=False)
+                for side in self._wanted.pop(path, {ROW_SIDE}):
+                    store, limit = self._stores[side]
+                    store[path] = QPixmap.fromImage(image) if side == PREVIEW_SIDE else self._square(image, side)
+                    while len(store) > limit:
+                        store.popitem(last=False)
                 self.changed.emit(path)
             elif issue == BUSY:
-                QTimer.singleShot(2000, lambda: self.pixmap(path, side) if epoch == self._epoch else None)
+                QTimer.singleShot(2000, lambda: self.pixmap(path, ROW_SIDE, self._identity.get(path)) if epoch == self._epoch else None)
             else:
-                self._failed.add(key)
+                self._wanted.pop(path, None)
+                self._failed.add(path)
         self._pump()
 
 
@@ -102,7 +132,7 @@ class HoverPreview(QObject):
     """A read-only 220 px preview beside the cursor over a Preview tile.
 
     A frameless, mouse-transparent tool window: it can never intercept a row click or selection. It shows the
-    bounded 440 px decode, not the original, and waits briefly so a passing pointer does not trigger decodes.
+    gallery's 600 px thumbnail (the same disk-cached file Images uses), never the original, and waits briefly so a passing pointer does not trigger decodes.
     """
 
     def __init__(self, view: QTableView, thumbnails: QueueThumbnails):
@@ -110,6 +140,7 @@ class HoverPreview(QObject):
         self.view, self.thumbnails = view, thumbnails
         self._row: int | None = None
         self._path = ""
+        self._identity: str | None = None
         self._anchor = QPoint()
         self.label = QLabel(None, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
         self.label.setObjectName("queueThumbPreview")
@@ -154,6 +185,7 @@ class HoverPreview(QObject):
         if item is None or not item.outputs:
             return  # a missing result gets no preview, never a fabricated one
         self._path = item.outputs[0]
+        self._identity = item.gallery_identity
         self._fill()
         screen = QGuiApplication.screenAt(global_pos) or QGuiApplication.primaryScreen()
         area = screen.availableGeometry()
@@ -163,7 +195,7 @@ class HoverPreview(QObject):
         self.label.show()
 
     def _fill(self) -> None:
-        pixmap = self.thumbnails.pixmap(self._path, PREVIEW_SIDE)
+        pixmap = self.thumbnails.pixmap(self._path, PREVIEW_SIDE, self._identity)
         if pixmap is None:
             self.label.setPixmap(QPixmap())
             self.label.setText("Loading\u2026" if not self.thumbnails.is_failed(self._path, PREVIEW_SIDE) else "No preview")

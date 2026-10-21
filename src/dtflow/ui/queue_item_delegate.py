@@ -5,7 +5,7 @@ cell offers a Copy or click action. Thumbnails are read from already saved local
 """
 
 from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QTextLayout, QTextOption
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QTextLayout, QTextOption
 from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableView
 
 from dtflow.ui.queue_model import ROW_ROLE, stopwatch_icon
@@ -128,7 +128,7 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.setPen(QColor(_TOKENS["color.sectionBorder"]))
         painter.setBrush(QColor(_TOKENS["color.canvas"]))
         painter.drawRoundedRect(QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
-        pixmap = provider.pixmap(row.outputs[0]) if provider is not None and row.outputs else None
+        pixmap = provider.pixmap(row.outputs[0], identity=row.gallery_identity) if provider is not None and row.outputs else None
         if pixmap is None and row.outputs and provider is not None and not provider.is_failed(row.outputs[0]):
             return  # decoding in the background: a neutral tile, never misleading text
         if pixmap is None:
@@ -138,10 +138,16 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.setPen(QColor(_TOKENS["color.disabled"]))
             painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "no image" if not row.outputs else "unavailable")
             return
-        scaled = pixmap.scaled(area.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        painter.drawPixmap(
-            area.left() + (THUMB - scaled.width()) // 2, area.top() + (THUMB - scaled.height()) // 2, scaled
-        )
+        # The pixmap is already a centred square crop of the gallery's 600 px thumbnail: fill the tile edge to edge.
+        outline = QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5)
+        shape = QPainterPath()
+        shape.addRoundedRect(outline, 4, 4)
+        painter.save()
+        painter.setClipPath(shape)
+        painter.drawPixmap(area, pixmap)
+        painter.restore()
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(outline, 4, 4)
 
     @staticmethod
     def _loras(painter, rect, row, font, text, secondary, scale) -> None:
