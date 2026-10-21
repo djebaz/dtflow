@@ -247,6 +247,8 @@ class QueuePage:
         page.laterQueueButton.clicked.connect(lambda: self._order("later"))
         page.cancelQueueButton.clicked.connect(self.cancel)
         page.queueList.currentRowChanged.connect(self._select_row)
+        # While composing, the shown queue stays current in the list; a click on it must still return to it.
+        page.queueList.itemClicked.connect(lambda item: self._select_row(page.queueList.row(item)))
         page.queueList.customContextMenuRequested.connect(self._list_menu)
         page.queueFilterEdit.textChanged.connect(lambda *_: self._render_list())
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
@@ -398,6 +400,10 @@ class QueuePage:
         self._show_cap(view)
         self._show_new_cap()
         self._show_item()
+        for name in ("queueInspectorEyebrow", "itemIdentityBox", "queueEventBrowser"):
+            getattr(page, name).setVisible(not self._composing)  # evidence of the old queue is not about the new one
+        if self._composing:
+            page.uncertaintyBox.setVisible(False)
         self._sync()
 
     def _render_list(self) -> None:
@@ -657,17 +663,20 @@ class QueuePage:
         # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
         running = any(v["status"] == "running" for v in self._views.values())
+        foreign = running and not self.dispatching_here
         page.addQueueButton.setEnabled(self.dispatching_here or running)
         page.addQueueButton.setToolTip(
             "Saves it up next: it starts by itself when the running queue ends."
             if self.dispatching_here or running
             else "Nothing is running to wait behind; use Start now or Save paused."
         )
-        can_start = not self.dispatching_here and not self._activity.generating
+        can_start = not self.dispatching_here and not self._activity.generating and not foreign
         page.startQueueButton.setEnabled(can_start)
         page.startQueueButton.setToolTip(
             "Creates the queue and starts it from this window. Real, possibly billable generation."
             if can_start
+            else "Another process dispatches a queue; Add to queue starts the new one after it."
+            if foreign
             else "This window is busy with a run; Add to queue starts the new queue after it."
         )
         page.clearQueuesButton.setEnabled(
@@ -797,7 +806,7 @@ class QueuePage:
         page.planSamplersEdit.configure("search", "Sampler", options=lambda: self._choices().get("samplers", []))
         page.planSizesEdit.configure("choice", "Size", options=self._size_options)
         page.planStepsEdit.configure("int", "Steps", minimum=1, maximum=150)
-        page.planGuidanceEdit.configure("float", "Guidance", minimum=0, maximum=50, step=0.5, decimals=1)
+        page.planGuidanceEdit.configure("float", "Guidance", minimum=0, maximum=50, step=0.5, decimals=2)
         page.planStrengthsEdit.configure("float", "Strength", minimum=0, maximum=1, step=0.05, decimals=2)
 
     def _size_options(self) -> list[str]:
@@ -854,8 +863,8 @@ class QueuePage:
     def preview(self) -> None:
         """Live count and items for the composer: pure planning against the Generate form, nothing persisted or sent."""
         self._preview_timer.stop()
-        if not self._composing:
-            return
+        if not self._composing or not self.page.queueWorkspace.isVisible():
+            return  # reading the request marks and snaps Generate fields: only while Queues is shown (see ``shown``)
         page = self.page
         try:
             request, *_ = self._request_source(preview=True)
@@ -876,7 +885,7 @@ class QueuePage:
         self._plan_for(request)
 
     def _schedule_preview(self) -> None:
-        if self._composing:
+        if self._composing and self.page.queueWorkspace.isVisible():
             self._preview_timer.start()
 
     # -- creation --------------------------------------------------------------------------------------------------
@@ -1029,6 +1038,7 @@ class QueuePage:
             error = plan_error(exc)
             self._mark_plan(error.widget)
             self._show(self.page.planCountLabel, "error", sentence(str(error)))
+            self.page.startQueueButton.setText("Start now")
             self.plan_model.clear()
             return None
         self._show_table(table)
@@ -1043,8 +1053,7 @@ class QueuePage:
         self._created_hook()
         self._composing = False
         self._preview_timer.stop()
-        self._set_selected(queue_id)
-        self._select_after = queue_id
+        self._select_after = queue_id  # selected once the next read lists it, so no empty state flashes meanwhile
         if action == "start" and not self.dispatching_here and not self._activity.generating:
             self._dispatch(queue_id, resume_fallback=None)
         elif action == "start":
