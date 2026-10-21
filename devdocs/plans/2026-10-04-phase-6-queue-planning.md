@@ -118,3 +118,11 @@ Owned checks: `6-O1`, `6-O2`, `6-O3` as parametrized pure tests on `planning.py`
 - A planned batch can be dry-run and enqueued from both the CLI and the desktop through the same planner functions, with no planning rules in `ui/` or `cli.py`.
 - Every queued item is a fully resolved request carrying plan evidence; scheduling, restart and no-replay behaviour are untouched.
 - Docs distinguish what is wired from what is not; Windows visual review and packaged-executable checks are stated as unverified until run.
+
+## Random dimensions and prompt variation (#128, #129)
+
+- Schema `dtflow.queue-plan` moves to **version 2**; version 1 stays readable, and random content in a version-1 file is an error.
+- A dimension's value may be a `RandomSpec` (N distinct draws from candidates, a min/max/step grid, or random seeds) and `prompt` a `PromptVariation`. `resolve_plan` turns them into ordinary value lists from the one recorded `rng_seed` (a `random.Random` seeded with the string `dtflow-plan/<seed>/<dimension>`, one stream per dimension, so listing another dimension changes nothing) and is idempotent. Planning never invents a seed: callers use `with_rng_seed` (a fresh seed is the only non-deterministic step, and it is recorded).
+- Size arithmetic stays up front: random dimensions count as N; a random prompt sample as N; every combination as the structural count (dedupe may shrink it, and the resolved plan is exact). Nothing above 1000 is enumerated.
+- Prompt syntax and mutation live in `services/dynamic_prompts.py` (pure); wildcard files are the only I/O (`services/wildcards.py`, size and entry caps, SHA-256 recorded). Item evidence: `plan.rng_seed`, `plan.random.<dim>`, `plan.prompt_strategy`, `plan.prompt_template`, `plan.prompt_mutation`, `plan.wildcard.<name>`. Prompt text is item data, as before, and is not logged.
+- Decision: the native planner owns prompt variation (offline, deterministic); the Scripts epic (#112, #114) is not required. LLM rewriting is out of scope.

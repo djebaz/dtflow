@@ -25,7 +25,8 @@ from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, v
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.image_preparation import prepare_edit_inputs
-from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, plan_size
+from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
+from dtflow.services.wildcards import bind_wildcards, list_names
 from dtflow.services.queue_session import (
     change_queue_order,
     clear_queues,
@@ -48,6 +49,7 @@ from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
+    DRAW_SPINS,
     NO_LORA,
     PlanForm,
     build_plan,
@@ -97,7 +99,16 @@ from dtflow.ui.runner import AsyncRunner, EventRelay
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
 IDLE_POLL_MS = 3000  # light summary polling while the tab is visible, so queues created elsewhere appear
 PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
-PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox")
+RANDOM_INPUTS = (
+    "planVariationCombo",
+    "planVariationCountSpin",
+    "planShuffleCombo",
+    "planDropSpin",
+    "planAddSpin",
+    "planRerollButton",
+    *(f"planDraw{suffix}Spin" for suffix in DRAW_SPINS.values()),
+)
+PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox", *RANDOM_INPUTS)
 PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
 REPEAT = "Repeat"
 FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
@@ -308,6 +319,14 @@ class QueuePage:
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
         page.planIncrementCheck.toggled.connect(self._plan_changed)
         page.queueCountSpinBox.valueChanged.connect(self._plan_changed)
+        for name in RANDOM_INPUTS:
+            widget = getattr(page, name)
+            if name == "planRerollButton":
+                widget.clicked.connect(self._reroll)
+            elif hasattr(widget, "valueChanged"):
+                widget.valueChanged.connect(self._plan_changed)
+            else:
+                widget.currentTextChanged.connect(self._plan_changed)
         self._mode_changed()
         activity.listen(self._sync)
         activity.listen(self._after_generation_ended)
@@ -1012,8 +1031,57 @@ class QueuePage:
             getattr(page, name).setVisible(planned)
         page.planIncrementCheck.setVisible(planned)
         page.planTableView.setVisible(planned)
+        for name in ("planDrawLabel", "planDrawBox", "planVariationLabel", "planVariationBox"):
+            getattr(page, name).setVisible(planned)
+        self._sync_random_rows()
         self.sync_edit_fields()
         self._plan_changed()
+
+    def _draws(self) -> tuple[tuple[str, int], ...]:
+        spins = ((name, getattr(self.page, f"planDraw{suffix}Spin").value()) for name, suffix in DRAW_SPINS.items())
+        return tuple((name, count) for name, count in spins if count)
+
+    def _random_active(self) -> bool:
+        return self._planned() and (
+            bool(self._draws()) or self.page.planVariationCombo.currentText() == "Random sample"
+        )
+
+    def _sync_random_rows(self) -> None:
+        """The wildcard, edit and seed rows appear only when they matter; Reroll and the folder note follow the seed."""
+        page = self.page
+        varied = self._planned() and page.planVariationCombo.currentText() != "Off"
+        for name in ("planWildcardsLabel", "planWildcardsEdit", "planMutationLabel", "planMutationBox"):
+            getattr(page, name).setVisible(varied)
+        for name in ("planAddPartsLabel", "planAddPartsEdit"):
+            getattr(page, name).setVisible(varied)
+        page.planVariationCountSpin.setVisible(page.planVariationCombo.currentText() == "Random sample")
+        seeded = self._random_active()
+        for name in ("planRngSeedLabel", "planRngSeedEdit", "planRerollButton"):
+            getattr(page, name).setVisible(seeded)
+        folder = self._wildcards_dir
+        names = list_names(folder)
+        page.planWildcardsFolderLabel.setVisible(varied)
+        page.planWildcardsFolderLabel.setText(
+            f"Lists in {folder}: {', '.join(names)}" if names else f"Wildcard files go in {folder} as NAME.txt."
+        )
+
+    @property
+    def _wildcards_dir(self) -> Path:
+        return self._state / "wildcards"
+
+    def _reroll(self, *_) -> None:
+        self.page.planRngSeedEdit.setText(str(new_rng_seed()))  # textChanged refreshes the preview
+
+    def _ensure_rng_seed(self) -> None:
+        """A random plan always has one recorded seed: draw it the first time it is needed."""
+        edit = self.page.planRngSeedEdit
+        if self._random_active() and not edit.text().strip():
+            edit.blockSignals(True)
+            edit.setText(str(new_rng_seed()))
+            edit.blockSignals(False)
+
+    def _count(self) -> tuple[str, str]:
+        return count_text(self._plan_form(), self._choices().get("prompt"), self._wildcards_dir)
 
     def _base_text(self, request) -> str:
         loras = len(request.loras)
@@ -1155,14 +1223,14 @@ class QueuePage:
         """(level, text) of the composer's Pair/Cross plan for the popover; ``ok`` when it can be used as is."""
         if not self._planned():
             return "none", "Set up Pair or Cross in the Queues composer to reuse it here."
-        level, text = count_text(self._plan_form())
+        level, text = self._count()
         return level, f"{self.page.planModeCombo.currentText()} · {text}" if level == "ok" else sentence(text)
 
     def last_plan_total(self) -> int | None:
         if not self._planned():
             return None
         try:
-            return plan_size(build_plan(self._plan_form()))
+            return plan_size(build_plan(self._plan_form()), self._choices().get("prompt"))
         except ValidationError:
             return None
 
@@ -1352,6 +1420,15 @@ class QueuePage:
             page.planIncrementCheck.isChecked(),
             page.planStrengthsEdit.text(),
             page.planLoraSetsEdit.text(),
+            self._draws(),
+            page.planVariationCombo.currentText(),
+            page.planVariationCountSpin.value(),
+            page.planWildcardsEdit.toPlainText(),
+            page.planShuffleCombo.currentText(),
+            page.planDropSpin.value(),
+            page.planAddSpin.value(),
+            page.planAddPartsEdit.text(),
+            page.planRngSeedEdit.text(),
         )
 
     def _mark_plan(self, widget_name: str | None) -> None:
@@ -1363,8 +1440,10 @@ class QueuePage:
 
     def _plan_changed(self, *_) -> None:
         """The arithmetic count at once (pure); the validated preview follows after a short pause."""
+        self._sync_random_rows()
+        self._ensure_rng_seed()
         if self._planned():
-            level, text = count_text(self._plan_form())
+            level, text = self._count()
         else:
             count = self.page.queueCountSpinBox.value()
             level, text = "ok", f"{count} item{'s' if count != 1 else ''}"
@@ -1385,8 +1464,9 @@ class QueuePage:
         """Build and fully validate the plan against the form's request (pure, no I/O); shows the preview table."""
         self._mark_plan(None)
         try:
-            plan = build_plan(self._plan_form())
+            plan = bind_wildcards(build_plan(self._plan_form()), request.prompt, self._wildcards_dir)
             table = describe_plan(request, plan, edit=self._edit_source() is not None)
+            plan = resolve_plan(plan, request.prompt)  # the drawn values: what the summary and creation use
         except ValidationError as exc:
             # One place for the error: beside the plan, with the owning field marked.
             error = plan_error(exc)

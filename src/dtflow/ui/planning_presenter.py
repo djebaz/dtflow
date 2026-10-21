@@ -7,9 +7,12 @@ that owns the field, using the same leading-word approach as the Generate form.
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from dtflow.core.models import MAX_QUEUE_ITEMS, ValidationError
-from dtflow.services.planning import Plan, PlanError, PlanTable, plan_size, seed_range
+from dtflow.services.planning import Plan, PlanError, PlanTable, PromptVariation, plan_size, seed_range
+from dtflow.services.randomness import RandomSpec
+from dtflow.services.wildcards import bind_wildcards
 from dtflow.ui.generation_presenter import FormError
 
 MODES = {"Pair": "pair", "Cross": "cross"}
@@ -30,7 +33,26 @@ ERROR_FIELDS = {
     "lora": "planLorasEdit",
     "strength": "planStrengthsEdit",
     "loras": "planLoraSetsEdit",
+    "wildcard": "planWildcardsEdit",
+    "wildcards": "planWildcardsEdit",
+    "parts": "planAddPartsEdit",
+    "plan_seed": "planRngSeedEdit",
 }
+# Plan dimension -> the suffix of its "Draw at random" spin box (planDraw<suffix>Spin).
+DRAW_SPINS = {
+    "model": "Models",
+    "seed": "Seeds",
+    "steps": "Steps",
+    "guidance": "Guidance",
+    "sampler": "Samplers",
+    "size": "Sizes",
+    "strength": "Strengths",
+    "loras": "LoraSets",
+    "lora_weight": "Loras",
+}
+SHUFFLES = {"Shuffle parts": "parts", "Shuffle words": "words"}
+VARIATIONS = {"Random sample": "random", "Every combination": "all"}
+WILDCARD_NAME = re.compile(r"[A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*")
 NO_LORA = "None"  # the LoRA-set chip for an item without LoRAs
 SEED_POLICY_TEXT = {
     "fixed": "the base seed is kept for every item",
@@ -55,6 +77,15 @@ class PlanForm:
     increment: bool = False
     strengths: str = ""
     lora_sets: str = ""  # ``;``-separated sets: ``None`` or ``IDENTIFIER: 0.8 + OTHER: 0.4``
+    draws: tuple[tuple[str, int], ...] = ()  # (dimension, N): draw N at random from the listed values (0: use all)
+    variation: str = "Off"  # prompt variation: Off, Random sample or Every combination
+    variation_count: int = 4
+    wildcards: str = ""  # one inline list per line: ``name: entry; entry``
+    shuffle: str = "No shuffle"
+    drop: int = 0
+    add: int = 0
+    add_parts: str = ""  # ``;``-separated parts that may be inserted into each prompt
+    rng_seed: str = ""  # the plan RNG seed as typed; empty until a random draw needs one
 
 
 def _tokens(text: str, separator: str = ";") -> list[str]:
@@ -127,6 +158,30 @@ def _lora_sets(text: str) -> tuple[tuple[tuple[str, float], ...], ...]:
     return tuple(sets)
 
 
+def _wildcards(text: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    lists: dict[str, tuple[str, ...]] = {}
+    for line in filter(str.strip, text.splitlines()):
+        name, separator, entries = line.partition(":")
+        name = name.strip()
+        values = tuple(_tokens(entries))
+        if not separator or not WILDCARD_NAME.fullmatch(name) or not values or name in lists:
+            raise FormError(
+                "Wildcard lists are written name: entry; entry, one list per line, each name once.",
+                "planWildcardsEdit",
+            )
+        lists[name] = values
+    return tuple(lists.items())
+
+
+def _rng_seed(text: str) -> int | None:
+    if not text.strip():
+        return None
+    try:
+        return int(text.strip())
+    except ValueError:
+        raise FormError("The plan seed is a whole number.", "planRngSeedEdit") from None
+
+
 def lora_set_value(identifier: str, weight: float) -> str:
     """The chip text for a one-LoRA set, as ``_lora_sets`` reads it back."""
     return f"{identifier}: {weight:g}"
@@ -134,25 +189,58 @@ def lora_set_value(identifier: str, weight: float) -> str:
 
 def build_plan(form: PlanForm) -> Plan:
     """The ``Plan`` for the non-empty fields; a blank field means that dimension stays fixed from the base request."""
-    dimensions: list[tuple[str, tuple]] = []
+    draws = dict(form.draws)
+
+    def varied(name: str, values: tuple):
+        """The listed values, or a random draw of ``draws[name]`` of them."""
+        count = draws.get(name, 0)
+        if not count:
+            return values
+        if not values:
+            raise FormError("Add values to draw from.", ERROR_FIELDS[name])
+        return RandomSpec(count, candidates=values)
+
+    dimensions: list[tuple[str, object]] = []
     prompts = tuple(line.strip() for line in form.prompts.splitlines() if line.strip())
+    if form.variation != "Off":
+        if prompts:
+            raise FormError("Use either a prompt list or prompt variation, not both.", "planPromptsEdit")
+        strategy = VARIATIONS.get(form.variation, "random")
+        parts = tuple(_tokens(form.add_parts))
+        prompts = PromptVariation(
+            strategy,
+            form.variation_count if strategy == "random" else None,
+            None,
+            _wildcards(form.wildcards),
+            shuffle=SHUFFLES.get(form.shuffle),
+            drop=form.drop,
+            add=parts,
+            add_max=form.add if parts else 0,
+        )
     for name, values in (
         ("prompt", prompts),
-        ("model", tuple(_tokens(form.models))),
-        ("seed", _seeds(form.seeds)),
-        ("steps", _numbers(form.steps, int, "planStepsEdit", "steps")),
-        ("guidance", _numbers(form.guidance, float, "planGuidanceEdit", "guidance")),
-        ("sampler", tuple(_tokens(form.samplers))),
-        ("size", _sizes(form.sizes)),
-        ("strength", _numbers(form.strengths, float, "planStrengthsEdit", "strengths")),
+        ("model", varied("model", tuple(_tokens(form.models)))),
+        ("seed", RandomSpec(draws["seed"]) if draws.get("seed") else _seeds(form.seeds)),
+        ("steps", varied("steps", _numbers(form.steps, int, "planStepsEdit", "steps"))),
+        ("guidance", varied("guidance", _numbers(form.guidance, float, "planGuidanceEdit", "guidance"))),
+        ("sampler", varied("sampler", tuple(_tokens(form.samplers)))),
+        ("size", varied("size", _sizes(form.sizes))),
+        ("strength", varied("strength", _numbers(form.strengths, float, "planStrengthsEdit", "strengths"))),
     ):
-        if values:
+        if values is not None and (isinstance(values, RandomSpec | PromptVariation) or len(values)):
             dimensions.append((name, values))
     sets = _lora_sets(form.lora_sets)
     if sets:
-        dimensions.append(("loras", sets))
-    dimensions.extend((f"lora_weight.{identifier}", weights) for identifier, weights in _loras(form.loras))
-    return Plan(MODES.get(form.mode, "cross"), tuple(dimensions), seed_policy="increment" if form.increment else None)
+        dimensions.append(("loras", varied("loras", sets)))
+    dimensions.extend(
+        (f"lora_weight.{identifier}", varied("lora_weight", weights)) for identifier, weights in _loras(form.loras)
+    )
+    return Plan(
+        MODES.get(form.mode, "cross"),
+        tuple(dimensions),
+        seed_policy="increment" if form.increment else None,
+        rng_seed=_rng_seed(form.rng_seed),
+    )
 
 
 def field_for(message: str) -> str | None:
@@ -161,6 +249,11 @@ def field_for(message: str) -> str | None:
     quoted = re.search(r"[Dd]imension '([A-Za-z_]+)", message)
     if quoted:
         return ERROR_FIELDS.get(quoted.group(1).lower())
+    lower = message.lower()
+    if "wildcard" in lower:
+        return ERROR_FIELDS["wildcard"]
+    if "plan seed" in lower:
+        return ERROR_FIELDS["plan_seed"]
     if "LoRA set" in message:
         return ERROR_FIELDS["loras"]
     if "LoRA '" in message:
@@ -173,10 +266,16 @@ def plan_error(exc: ValidationError) -> FormError:
     return exc if isinstance(exc, FormError) else FormError(str(exc), field_for(str(exc)))
 
 
-def count_text(form: PlanForm) -> tuple[str, str]:
-    """(level, text) of the live readout: the arithmetic count, or the reason there is none yet."""
+def count_text(form: PlanForm, prompt: str | None = None, folder: Path | None = None) -> tuple[str, str]:
+    """(level, text) of the live readout: the arithmetic count, or the reason there is none yet.
+
+    ``prompt`` is the Generate prompt (the variation template) and ``folder`` the wildcard lists folder, both optional.
+    """
     try:
-        total = plan_size(build_plan(form))
+        plan = build_plan(form)
+        if folder is not None:
+            plan = bind_wildcards(plan, prompt or "", folder)
+        total = plan_size(plan, prompt)
     except ValidationError as exc:
         return "unknown", str(exc)
     if total > MAX_QUEUE_ITEMS:
@@ -190,4 +289,7 @@ def sentence(text: str) -> str:
 
 
 def summary_text(table: PlanTable) -> str:
-    return f"{table.total} items · {table.mode} · {SEED_POLICY_TEXT[table.seed_policy]}. Nothing is persisted yet."
+    drawn = f" · plan seed {table.rng_seed}" if table.rng_seed is not None else ""
+    return (
+        f"{table.total} items · {table.mode} · {SEED_POLICY_TEXT[table.seed_policy]}{drawn}. Nothing is persisted yet."
+    )
