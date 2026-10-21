@@ -451,7 +451,8 @@ presenting “0 of 0” as work. Avoid distributing spare height among action ro
 scrolls on its own: an untitled top row, right-aligned, holds the actions
 where + New queue was (Max at once for the new queue, neutral *Save paused* and
 *Add to queue*, `role="primary"` **Start now (N items)**, then Close; when the
-center is too narrow for them they wrap on their own row below), a
+center is too narrow, the entire action group including Close flows together
+onto a wrapping row, rather than isolating Close above the remaining actions), a
 secondary one-line summary of the Generate base request with *Edit in
 Generate*, then the **Variation** section card. A bottom spacer
 keeps the cards at their natural heights. Variation's Mode is Repeat (an item
