@@ -6,6 +6,8 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Added
 
+- Generate checkpoint **Details** inspector combines exact-file Draw Things community technical descriptions, independent DTFlow classification and model-profile suggestions, and last-observed provider availability with per-field provenance. Purely local inspection; no cloud Compute Units estimate or generation behavior change.
+
 - Queue item table with saved-result thumbnails, prompt/model/LoRA/parameter columns, observed durations and an item inspector with Open in Images. No dispatch or database-schema change.
 - Development-mode diagnostics summarize queue thumbnail outcomes/timings and record Open in Images handoff outcomes without prompts, image identities, paths or raw error text.
 
