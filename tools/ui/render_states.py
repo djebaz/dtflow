@@ -1205,8 +1205,10 @@ def render_active_queue_states(shell, out):
         page.queueComposerScroll.ensureWidgetVisible(page.planSeedsEdit)
         snap("queues-18-plan-invalid")
         page.planSeedsEdit.clear()
+        page.planStepsEdit.setText("20; 30")
         queue.preview()
         assert page.planTableView.isVisible()  # valid settings restore the preview automatically
+        page.planStepsEdit.clear()
         queue._mark_plan(None)
         with (
             patch.object(queue, "_editing", return_value=True),
