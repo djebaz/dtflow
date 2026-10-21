@@ -543,6 +543,19 @@
             </widget>
            </item>
            <item>
+            <widget class="QPushButton" name="relaunchQueueButton">
+             <property name="text">
+              <string>Relaunch</string>
+             </property>
+             <property name="toolTip">
+              <string>Runs this queue's items again as a new queue (same or new seeds, all or only failed items). Real, possibly billable generation; this queue is untouched.</string>
+             </property>
+             <property name="accessibleName">
+              <string>Relaunch the queue</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <spacer name="controlSpacer">
              <property name="orientation">
               <enum>Qt::Horizontal</enum>
@@ -1178,6 +1191,26 @@
                       </widget>
                      </item>
                      <item row="9" column="0">
+                      <widget class="QLabel" name="planLoraSetsLabel">
+                       <property name="text">
+                        <string>LoRA sets</string>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="9" column="1">
+                      <widget class="ValueChips" name="planLoraSetsEdit">
+                       <property name="accessibleName">
+                        <string>Plan LoRA sets</string>
+                       </property>
+                       <property name="toolTip">
+                        <string>Which LoRAs each item uses: a LoRA with its weight, Generate's LoRAs, or None. Replaces Generate's LoRAs per item.</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="10" column="0">
                       <widget class="QLabel" name="planLorasLabel">
                        <property name="text">
                         <string>LoRA weights</string>
@@ -1187,7 +1220,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="9" column="1">
+                     <item row="10" column="1">
                       <widget class="QPlainTextEdit" name="planLorasEdit">
                        <property name="placeholderText">
                         <string>IDENTIFIER: 0.6; 1.0 (one LoRA per line)</string>
@@ -1212,7 +1245,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="10" column="0">
+                     <item row="11" column="0">
                       <widget class="QLabel" name="planStrengthsLabel">
                        <property name="text">
                         <string>Strengths</string>
@@ -1222,7 +1255,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="10" column="1">
+                     <item row="11" column="1">
                       <widget class="ValueChips" name="planStrengthsEdit">
                        <property name="accessibleName">
                         <string>Plan strengths</string>
@@ -1923,6 +1956,10 @@
                 </property>
                </widget>
               </item>
+             </layout>
+            </item>
+            <item row="4" column="1">
+             <layout class="QHBoxLayout" name="itemActionsRow">
               <item>
                <widget class="QPushButton" name="itemOpenFolderButton">
                 <property name="enabled">
@@ -1935,6 +1972,32 @@
                  <string>Open the folder holding this attempt's saved files.</string>
                 </property>
                </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="itemRetryButton">
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+                <property name="text">
+                 <string>Retry item</string>
+                </property>
+                <property name="toolTip">
+                 <string>Runs this item again as a new one-item queue with a new attempt. Real, possibly billable generation; the recorded attempt stays as it is.</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="itemActionsSpacer">
+                <property name="orientation">
+                 <enum>Qt::Horizontal</enum>
+                </property>
+                <property name="sizeHint" stdset="0">
+                 <size>
+                  <width>0</width>
+                  <height>0</height>
+                 </size>
+                </property>
+               </spacer>
               </item>
              </layout>
             </item>

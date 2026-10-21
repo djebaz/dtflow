@@ -45,7 +45,7 @@ if sys.platform == "win32" and platform_name == "offscreen":
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidget, QPushButton, QScrollArea  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QScrollArea  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -804,6 +804,11 @@ def render_active_queue_states(shell, out):
         page.queueItemsView.setCurrentIndex(queue.model.index(2, 0))
         assert "most likely failed" in page.uncertaintyLabel.text()
         assert page.attemptIdLabel.toolTip() == "attempt-0003"
+        # #132/#126: an unknown item offers Retry item; the header offers Relaunch with its four choices.
+        assert page.itemRetryButton.isEnabled() and page.relaunchQueueButton.isEnabled()
+        relaunch_menu = QMenu(page)
+        queue._relaunch_actions(relaunch_menu, queue._selected)
+        assert [action.isEnabled() for action in relaunch_menu.actions()] == [True] * 4
         snap("queues-17-item-inspection")
         # #125: a paused queue offers Start next while this window dispatches; an up-next queue can move or leave.
         paused = dict(
@@ -903,6 +908,18 @@ def render_active_queue_states(shell, out):
         page.planModelsEdit._add.click()  # the shared searchable editor, filled from the Generate inventory
         snap("queues-39-composer-model-search")
         shell.inline.dismiss()
+        # #124: LoRA sets vary which LoRAs each item uses (None, or a LoRA with its weight).
+        page.planLoraSetsEdit.setText("None; offline-style.safetensors: 0.8")
+        queue.preview()
+        assert queue.plan_model.rowCount() == 16
+        assert page.composerSummaryLorasLabel.text() == "2 LoRA sets, per item"
+        assert "2 LoRA sets" in page.composerSummaryVariesLabel.text()
+        page.queueComposerScroll.ensureWidgetVisible(page.planLoraSetsEdit)
+        snap("queues-42-composer-lora-sets")
+        page.planLoraSetsEdit._add.click()  # the shared LoRA identifier+weight editor
+        snap("queues-43-composer-lora-set-search")
+        shell.inline.dismiss()
+        page.planLoraSetsEdit.clear()
         for name in ("planModelsEdit", "planStepsEdit", "planSamplersEdit", "planSizesEdit"):
             getattr(page, name).clear()
         page.planSeedsEdit.setText("not-a-seed")

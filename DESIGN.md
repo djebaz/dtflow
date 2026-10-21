@@ -458,8 +458,9 @@ selection: `ValueChips` show each value as a removable `valueChip` button
 (selection-blue fill, small emphasis text) that wraps with a flow layout, then
 an adder: the shared searchable inline editor for models (inventory, plus a
 custom identifier) and samplers, an editable preset list for sizes (Generate's
-size first), and a bounded number box for steps, guidance and Inpaint
-strengths. Prompts are one per line; seeds and LoRA weights stay typed. The
+size first), a bounded number box for steps, guidance and Inpaint
+strengths, and the shared LoRA identifier+weight editor for LoRA sets (with
+*None* and *Generate's LoRAs* at the top of its list). Prompts are one per line; seeds and LoRA weights stay typed. The
 count updates at once and the preview table about 250 ms after the last edit,
 without a Dry run button; planner errors mark the owning row (`invalid`, red
 chip and Add borders) and appear in the count line. Add to queue is enabled
@@ -476,8 +477,13 @@ Backend, Created on the right), one `statusChip` label (state-colored border and
 neutral selection treatment for *Up next N*), then one action row and one
 progress row. The action row holds exactly one `role="primary"` button whose
 text follows the state (Start, Start next, Pause, Resume), neutral-red Cancel,
-Earlier/Later only for a waiting queue, the queue's own Max at once spin box and
-a neutral Remove whose consent uses the shared red inline confirmation. The
+Earlier/Later only for a waiting queue, the queue's own Max at once spin box, a neutral Relaunch
+that opens a menu (same or new seeds, all or only failed items; the list's
+context menu offers the same submenu) and a neutral Remove whose consent uses
+the shared red inline confirmation. The item panel keeps its identity grid and
+puts Open folder and a neutral *Retry item* (failed, cancelled or no-result
+items only) on their own row below it, so long failure codes never push them
+out of the column. The
 progress row is a painted segmented bar (success, error, unknown, warning and
 accent runs over the bar track; pending is empty track), a settled count and
 `filterChip` count buttons in their state color that turn selection-blue when

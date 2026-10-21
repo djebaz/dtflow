@@ -36,8 +36,10 @@ from dtflow.services.queue_session import (
     post_queue_control,
     read_queue_list,
     read_queue_views,
+    relaunch_queue,
     remove_queue,
     set_concurrency,
+    RELAUNCH_STATES,
 )
 from dtflow.services.session import bind_prepared, selection_for
 from dtflow.ui.activity import Activity, RunState
@@ -46,8 +48,10 @@ from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
+    NO_LORA,
     PlanForm,
     build_plan,
+    lora_set_value,
     count_text,
     plan_error,
     sentence,
@@ -115,6 +119,7 @@ WIRED_CONTROLS = (
     "cancelQueueButton",
     "earlierQueueButton",
     "laterQueueButton",
+    "relaunchQueueButton",
     *FILTER_BUTTONS.values(),
     "queueItemsView",
     *PLAN_INPUTS,
@@ -127,11 +132,15 @@ REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved 
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
 
+GENERATE_LORAS = "Generate's LoRAs"  # LoRA-set choice: the set currently on the Generate form
+
+
 def _dimension_text(name: str, count: int) -> str:
     """``2 step counts``-style wording of one plan dimension for the composer summary."""
     if name.startswith("lora_weight."):
         return f"{count} weights of {name.split('.', 1)[1]}"
-    noun = {"steps": "step count", "guidance": "guidance value", "size": "size", "strength": "strength"}.get(name, name)
+    nouns = {"steps": "step count", "guidance": "guidance value", "strength": "strength", "loras": "LoRA set"}
+    noun = nouns.get(name, name)
     return f"{count} {noun}{'s' if count != 1 else ''}"
 
 
@@ -258,6 +267,12 @@ class QueuePage:
         page.queueFilterEdit.textChanged.connect(lambda *_: self._render_list())
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
+        page.itemRetryButton.clicked.connect(self.retry_item)
+        page.relaunchQueueButton.clicked.connect(
+            lambda: self._relaunch_menu(
+                page.relaunchQueueButton.mapToGlobal(page.relaunchQueueButton.rect().bottomLeft())
+            )
+        )
         page.concurrencySpinBox.valueChanged.connect(self._cap_changed)
         page.newQueueCapSpinBox.valueChanged.connect(self._new_cap_changed)
         self.plan_model = QStandardItemModel(page)
@@ -681,10 +696,10 @@ class QueuePage:
         if not removable and feedback(page)._armed and feedback(page)._armed[0] is page.removeQueueButton:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
+        page.relaunchQueueButton.setEnabled(view is not None and bool(sum(view["summary"].values())))
         # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
-        # A running queue whose owner is gone (needs recovery) has nobody to wait behind and blocks nothing.
-        running = any(v["status"] == "running" and not needs_recovery(v) for v in self._views.values())
+        running = self._live_run()
         foreign = running and not self.dispatching_here
         page.addQueueButton.setEnabled(self.dispatching_here or running)
         page.addQueueButton.setToolTip(
@@ -709,6 +724,10 @@ class QueuePage:
         )
         self._publish_run_state()
 
+    def _live_run(self) -> bool:
+        """A queue runs with a live owner; one whose owner is gone (needs recovery) has nobody to wait behind."""
+        return any(v["status"] == "running" and not needs_recovery(v) for v in self._views.values())
+
     def _select_default_item(self) -> None:
         """Show evidence without a click: the first unknown or failed item, else the first item."""
         table = self.page.queueItemsView
@@ -726,6 +745,7 @@ class QueuePage:
         page.uncertaintyBox.setVisible(note is not None)
         if note is not None:
             self._show(page.uncertaintyLabel, *note)
+        page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES)
         if row is None:
             for name in ("itemIdLabel", "attemptIdLabel", "itemBackendLabel", "itemOutputsLabel"):
                 getattr(page, name).setText("—")
@@ -784,11 +804,95 @@ class QueuePage:
         if queue_id is None:
             return
         menu = QMenu(self.page.queueList)
+        relaunch = menu.addMenu("Relaunch")
+        self._relaunch_actions(relaunch, queue_id)
         remove = menu.addAction("Remove queue…")
         remove.setEnabled(self._removable(self._views.get(queue_id)))
         if menu.exec(self.page.queueList.viewport().mapToGlobal(position)) is remove:
             self.select_queue(queue_id)
             self.remove()
+
+    # -- relaunch and retry ----------------------------------------------------------------------------------------
+    def _relaunch_menu(self, at) -> None:
+        if self._selected is None:
+            return
+        menu = QMenu(self.page.relaunchQueueButton)
+        self._relaunch_actions(menu, self._selected)
+        menu.exec(at)
+
+    def _relaunch_actions(self, menu: QMenu, queue_id: str) -> None:
+        """Same or new seeds, every item or only those that settled without a saved image."""
+        view = self._views.get(queue_id)
+        retryable = bool(view) and any(view["summary"].get(state, 0) for state in RELAUNCH_STATES)
+        for text, new_seeds, failed_only in (
+            ("Same seeds", False, False),
+            ("New seeds", True, False),
+            ("Only failed items, same seeds", False, True),
+            ("Only failed items, new seeds", True, True),
+        ):
+            action = menu.addAction(text)
+            action.setEnabled(view is not None and (retryable or not failed_only))
+            action.triggered.connect(
+                lambda _=False, n=new_seeds, f=failed_only: self.relaunch(queue_id, new_seeds=n, failed_only=f)
+            )
+            if failed_only:
+                action.setToolTip("Failed, cancelled and no-result items only.")
+        menu.setToolTipsVisible(True)
+
+    def retry_item(self) -> None:
+        """Retry item: the selected item again, as a one-item queue with its own new attempt (possibly billable)."""
+        row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
+        if row is None or self._selected is None or row.state not in RELAUNCH_STATES:
+            return
+        self.relaunch(self._selected, positions=(row.position,))
+
+    def relaunch(
+        self,
+        queue_id: str,
+        *,
+        new_seeds: bool = False,
+        failed_only: bool = False,
+        positions: tuple[int, ...] | None = None,
+    ) -> None:
+        """A new queue from ``queue_id``'s recorded items: started now, up next behind this window's run, or paused."""
+        up_next = self.dispatching_here
+
+        async def work():
+            new_id, cap = await relaunch_queue(
+                self._state,
+                queue_id,
+                new_seeds=new_seeds,
+                failed_only=failed_only,
+                positions=positions,
+                up_next=up_next,
+            )
+            return new_id, cap, (await read_queue_views(self._state, new_id))[0]["status"]
+
+        retry = positions is not None
+        self._runner.submit(work(), lambda result, failure: self._relaunched(result, failure, retry))
+
+    def _relaunched(self, result, failure, retry: bool) -> None:
+        noun = "Item retried" if retry else "Queue relaunched"
+        if failure is not None:
+            failed = Presentation("error", "Not retried" if retry else "Not relaunched", str(failure))
+            self._message(failed if isinstance(failure, ValidationError) else present_generation_failure(failure))
+            return
+        queue_id, _, status = result
+        self._created_hook()
+        self._composing = False
+        self._select_after = queue_id
+        if status == "queued":
+            self._message(
+                Presentation("ok", noun, "It waits up next and starts by itself when the running queue ends.")
+            )
+        elif not self.dispatching_here and not self._activity.generating and not self._live_run():
+            self._dispatch(queue_id, resume_fallback=None)
+        else:
+            self._message(
+                Presentation("warning", f"{noun}, paused", "Saved paused; press Start when the current run ends.")
+            )
+        self._render()
+        self.refresh()
 
     # -- composer --------------------------------------------------------------------------------------------------
     def open_composer(self) -> None:
@@ -825,6 +929,30 @@ class QueuePage:
         page.planStepsEdit.configure("int", "Steps", minimum=1, maximum=150)
         page.planGuidanceEdit.configure("float", "Guidance", minimum=0, maximum=50, step=0.5, decimals=2)
         page.planStrengthsEdit.configure("float", "Strength", minimum=0, maximum=1, step=0.05, decimals=2)
+        page.planLoraSetsEdit.configure(
+            "search",
+            "LoRA",
+            options=self._lora_set_options,
+            custom="Not listed",
+            weights=lambda: self._choices().get("loras", {}),
+            convert=self._lora_set_chip,
+        )
+
+    def _lora_set_options(self) -> list[str]:
+        return [NO_LORA, GENERATE_LORAS, *self._choices().get("loras", {})]
+
+    def _lora_set_chip(self, chosen) -> str:
+        """A picked LoRA (with its weight), None, or the Generate form's whole set, as a LoRA-set chip."""
+        identifier, weight = chosen
+        if identifier == NO_LORA:
+            return NO_LORA
+        if identifier == GENERATE_LORAS:
+            try:
+                request, *_ = self._request_source(preview=True)
+            except (FormError, ValidationError):
+                return ""
+            return " + ".join(lora_set_value(item.identifier, item.weight) for item in request.loras) or NO_LORA
+        return lora_set_value(identifier, weight)
 
     def _size_options(self) -> list[str]:
         current = self._choices().get("size")
@@ -917,15 +1045,22 @@ class QueuePage:
             if any(name == "seed" for name, _ in plan.dimensions)
             else "fixed"
         )
-        self._show_summary(request, total, varies, sentence(SEED_POLICY_TEXT[policy]))
+        sets = dict(plan.dimensions).get("loras")
+        self._show_summary(
+            request,
+            total,
+            varies,
+            sentence(SEED_POLICY_TEXT[policy]),
+            loras=None if sets is None else f"{len(sets)} LoRA set{'s' if len(sets) != 1 else ''}, per item",
+        )
 
-    def _show_summary(self, request, count: int | None, varies: str, seeds: str) -> None:
+    def _show_summary(self, request, count: int | None, varies: str, seeds: str, *, loras: str | None = None) -> None:
         """The right column while composing: what the queue being built will be, before anything is saved."""
         page = self.page
         name, endpoint = self._backend()
         page.composerSummaryBackendLabel.setText(f"{name} · {endpoint}" if endpoint else name)
         page.composerSummaryModelLabel.setText(request.model_id)
-        loras = "\n".join(lora_text(lora.identifier, lora.weight) for lora in request.loras)
+        loras = loras or "\n".join(lora_text(lora.identifier, lora.weight) for lora in request.loras)
         page.composerSummaryLorasLabel.setText(loras or "None")
         page.composerSummaryItemsLabel.setText("—" if count is None else str(count))
         page.composerSummaryVariesLabel.setText(varies)
@@ -1055,6 +1190,7 @@ class QueuePage:
             page.planLorasEdit.toPlainText(),
             page.planIncrementCheck.isChecked(),
             page.planStrengthsEdit.text(),
+            page.planLoraSetsEdit.text(),
         )
 
     def _mark_plan(self, widget_name: str | None) -> None:

@@ -145,12 +145,16 @@ class LoraAssetPanel:
                 text += f" [receipt {self._receipts[item.identifier][:8]}]"
             self.page.loraList.addItem(text)
 
-    def add(self) -> None:
+    def choices(self) -> list[tuple[str, float | None]]:
+        """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""
         candidates = list(self._candidates)
         known = {name for name, _ in candidates}
-        candidates += [
+        return candidates + [
             (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
         ]
+
+    def add(self) -> None:
+        candidates = self.choices()
 
         def add_selection(choice):
             if self._is_busy():
