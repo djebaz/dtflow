@@ -1,17 +1,17 @@
 # Queues #127: render-first item table and inspector redesign
 
 **Date:** 2026-10-21  
-**Status:** Full owner column review incorporated in plan and fictional Markdown specimen; inspector details deferred to Qt mockup. Qt UI and integration not yet approved or verified  
+**Status:** Owner-supplied standalone HTML accepted as the authoritative visual/interaction mockup; Markdown specimen and implementation plan reconciled to it. Qt translation and production integration remain unapproved and unverified  
 **Parent epic:** [#130](https://github.com/djebaz/dtflow/issues/130)  
 **Feature issue:** [#127](https://github.com/djebaz/dtflow/issues/127)
 
 ## Owner workflow and approval gates
 
-Work in **one dedicated draft PR**, with coherent commits pushed at each approved checkpoint. The plan is the first commit; never implement the feature as a prerequisite for creating the plan PR. The owner explicitly requested an intermediate **text-only Markdown pre-mockup** with fictional tables for both central rows and right inspector before a real Qt render. These written examples establish content hierarchy, not approved Qt geometry or runtime implementation.
+Work in **one dedicated draft PR**, with coherent commits pushed at each approved checkpoint. The plan was the first commit. The initial owner-requested **text-only Markdown pre-mockup** established the information hierarchy; the owner subsequently supplied a **standalone HTML mockup** and explicitly made it authoritative where its layout, interactions, or hierarchy differ from that earlier draft. The Markdown companion now documents observed HTML behavior, not an independent design proposal. This does **not** mean that equivalent Qt behavior has been implemented or visually accepted on Windows.
 
 1. **Plan first.** Commit and push this plan and open the PR. No feature code, tests or UI renders in this checkpoint.
-2. **Text-only pre-mockup.** Review the [central table and inspector Markdown examples](../mockups/2026-10-21-queues-item-table-text-preview.md) with entirely fictional values. Record the owner's choices in this plan, then finish the full column review before moving to Qt mockups. No Qt render, tests, real data or implementation.
-3. **Qt mockup only.** Use the canonical Qt Designer form, shared tokens/QSS and `tools/ui/render_states.py` with isolated, synthetic offline fixtures. Render actual Qt screenshots for review; do not connect the proposed controls to live queue state yet. No separate HTML mockup.
+2. **Documentation alignment (current checkpoint).** Inspect the owner-supplied HTML's actual component structure, sample values, layout, and interactions, then update the [derived Markdown reference](../mockups/2026-10-21-queues-item-table-text-preview.md) and this plan. The HTML attachment is the authoritative design source; no Qt render, tests, real data, or implementation in this step.
+3. **Qt translation mockup only.** Reproduce the owner-supplied HTML's reviewed design in canonical Qt Designer forms, shared tokens/QSS, and `tools/ui/render_states.py` with synthetic offline fixtures. Render actual Qt screenshots; do not wire the proposed controls to live queue state. Do **not** create another independent HTML design or silently revert to superseded Markdown choices.
 4. **Owner visual approval is mandatory.** Present a named screenshot set and an explicit list of what is mock-only. Capture feedback and revise the mockup until accepted. Do not begin real data integration on implied approval.
 5. **Implement the approved layout.** Connect it to the existing selected-queue read/presenter/gallery boundaries without changing dispatch, reservations, schema or billable generation behavior. Commit/push this slice for owner functional review.
 6. **Owner functional approval is mandatory.** Review the real desktop behavior (especially native Windows layout and interaction) before starting test additions, running tests, lint/format gates, or general documentation updates.
@@ -55,31 +55,48 @@ The older Queues UI-kit relative link was corrected from `../../design-system/..
 
 **Review provenance:** these P2/P3 issues were reported in a reviewer screenshot supplied by the owner on 2026-10-21. The review explicitly characterized them as plan issues and reported no edits, tests, renders or workflows. They are not evidence of a reproduced production bug.
 
-## Scope: owner-approved content and text-only prototype
+## Design authority and observed HTML differences (2026-10-21)
 
-The central table lists generation items in the **selected existing queue**, not the left queue list or New queue composer. The [Markdown pre-mockup](../mockups/2026-10-21-queues-item-table-text-preview.md) provides fictional **central-table and inspector tables**, including an explicitly synthetic **55-character LoRA filename with extension** for layout stress. It is not a Qt mockup or a claim about source data.
+**New source of design truth:** owner-uploaded \`Queues Item Table (standalone).html\`, SHA-256 \`b57dffcfafb6ab2ecb49d4264bdabb1f491f561a588b6dc4c87bcea0e0ff3445\`. Its bundled markup, styles, fictional data, and interaction handlers were inspected. **The HTML file is not currently tracked in PR #150; keep the exact original artifact available separately**. The [derived Markdown table and inspector reference](../mockups/2026-10-21-queues-item-table-text-preview.md) is secondary, not a replacement for it. No browser runtime, Qt render, native Windows interaction, or inferred backend execution is claimed from source inspection.
 
-**Seven central columns, in order:** **Preview | Prompt | Model | LoRAs | Parameters | Status | Backend duration**. No separate generation-position, seed, saved-output filename, item ID, attempt, output count or operation column.
+**Priority order for this feature:** owner-supplied HTML for layout/visual hierarchy/read-only hover/row-selection intent; canonical Qt/shared design system for native implementation and accessibility; durable queue/services contracts for operational truth and safety. Resolve inconsistencies explicitly rather than copying illustrative widgets or backend assumptions from an HTML fixture.
 
-| Column | Content and hierarchy | Interaction and constraints |
+### Main differences from the former Markdown proposal
+
+| Concern | Earlier Markdown / plan | Owner HTML now authoritative |
 | --- | --- | --- |
-| Preview | Compact cached thumbnail, aspect-fit; placeholder when unavailable. Row height accommodates a small thumbnail and multiple lines. | Hover provides a larger read-only image without intercepting clicks. Do not fabricate saved images. |
-| Prompt | Dedicated column targeted to about **30–33%** of table width; **positive prompt only**, as **one naturally wrapped continuous text block**, at most **two visible lines**. **Only one ellipsis at the end of line two if more text remains**; none on line one, no fixed character-count splitting. | Read-only hover overlay contains **full positive and negative prompts**; no Copy button, no click interception. Markdown width and line breaks are only schematic. |
-| Model | Semibold **actual checkpoint filename with extension**, not a made-up friendly name; preserve punctuation such as hyphens, underscores, and periods (illustrative `.ckpt` filenames in specimen). Repeat on every row, even if identical. | Bound very long unbroken filenames without stretching the table; exact overflow treatment to assess in Qt mockup. |
-| LoRAs | Separate column, **one LoRA filename (extension retained) per line**, each with fixed-width **weight gauge** and numeric weight; repeat on every row. Show **at most three LoRAs inline**. | For >3 entries display **`…`**, and on hover show **the entire list** (including visible entries), with names/gauges/values. Hover-only, read-only. Keep gauge width and scale consistent; confirm numerical domain before implementation. Include the reported 55-character filename case. |
-| Parameters | **Steps, CFG, sampler** in compact readable lines, with emphasis on primary values. **Sampler identifiers can be long** (e.g. illustrative `DPM++ 3M SDE Exponential`); allow sensible wrapping or elision without forcing a wide column. No seed or image dimensions. | Compare values without requiring inspector; validate long sampler cases in the Qt mockup. |
-| Status | **Single textual state label** with semantic styling. | **No step counter, progression or extra progress bar**, which already exists elsewhere. |
-| Backend duration | **Stopwatch icon only in header** (accessible tooltip/name `Backend duration`); minimal-width duration values, right-aligned (e.g. `31.2 s` or `125.8 s`); `—` when unrecorded. | Use a design-system-consistent icon and the **narrowest practical column** with enough padding; never substitute queue ETA. |
+| LoRA list | Maximum **3** inline, plus \`…\` hover for all | **Every configured LoRA inline**, one row each, with elided filename, **44 px weight gauge and 34 px numeric value**; hover on the **whole LoRAs cell** reveals all entries; no \`…\` control. |
+| LoRA weight scale | Await verification | HTML illustrates \`min(100%, weight / 3 × 100%)\`; respect the actual 0.0–3.0 supported editor range and preserve exact numeric weight. Do not fabricate strength from generation progress. |
+| Prompt/LoRA width | Prompt fixed around one-third of table | **Prompt and LoRAs equal flexible 2fr tracks** inside the specimen's seven-track grid; no hard percentage goal. One naturally wrapped positive prompt is line-clamped to **two visible lines** and only truncated at the end; complete positive/negative text on hover. |
+| Thumbnail | Speculative 64 × 48 | **64 × 64** square tile (aspect-fit content for actual saved outputs), with **220 × 220** hover overlay. The HTML contains placeholder text, **not real generated images**. |
+| Status fixtures | Succeeded/Running/Failed/Queued | **Six HTML items:** two succeeded, one running, one **no result**, one pending, one cancelled. Semibold colored **text only**. Failed/save-failed cases must still be represented by real app error-red semantics even though missing in sample. |
+| Table width | Fit/clip in responsive center | **Minimum 1000 px scrollable table content width**, preserving column tracks and permitting horizontal scroll in a narrow center. |
+| Inspector | Conceptual fields/sections, arrangement deferred | **ITEM EVIDENCE** panel; **Selected item** (Item, Attempt, Backend, Outputs); **Additional information** (Seed, Image dimensions, Operation); **Technical details** (Outcome); then conditional actions and creation mini-log. |
+| Hover | Overlay trigger for thumbnail/prompt and extra LoRAs | Fixed **nonblocking overlays** on thumbnail, prompt, and **entire LoRAs cell**. Preserve row click. HTML's \`pointer-events:none\` prompt popup cannot establish scrollable long-text interaction despite \`overflow:auto\`; solve access to full long text in Qt rather than copying that inconsistency. |
 
-**Right inspector:** owner accepts the **Markdown inspector content for now**; defer details of its exact arrangement to the Qt mockup. Preserve the creation **mini-log**. Selected-item section contains only complementary evidence: **seed, dimensions, backend and operation when relevant, stable technical IDs, outcome/failure/uncertainty details**, and eligible **Open in Images**, **Open folder**, **Retry item** actions with existing safety semantics. **No large image preview or saved-output filename field.** Clicking a table row updates this inspector when visible.
+### Central table: confirmed content and layout
 
-**Narrow widths:** let the shared shell hide the right inspector. **No Details disclosure below the table and no replacement detail mode**. Primary comparison data stays in the central table. Evaluate clipping, readable scroll and overflow at 1080 × 800 and 800 × 680 during Qt mockup review.
+**Seven columns in order:** **Preview | Prompt | Model | LoRAs | Parameters | Status | stopwatch icon (backend duration)**. No generation-position, seed, saved-output filename, item ID, attempt, output count, or operation column in the center.
 
-**Input provenance:** repeat per-item model and LoRAs whether or not changed; never infer data from adjacent rows. Missing outputs, prompts, duration, statuses or settings must be represented honestly rather than invented. Use bounded off-thread image delivery and retain Queues' model-backed `QTableView`; do not transplant gallery `QTableWidget`/bulk actions.
+| Column | HTML reference | Qt-specific behavior to preserve |
+| --- | --- | --- |
+| Preview | 64 × 64 dark square with neutral placeholder; hover popup 220 × 220. | Bounded, asynchronous cached image rendering for actual committed output only; aspect-fit; never imply missing result is saved. |
+| Prompt | Dedicated flexible **2fr** track, one continuous positive prompt, **two lines** maximum. | Clip by rendered pixel metrics, not per-line character count; full positive/negative hover; no click interception. |
+| Model | Bold **checkpoint filename with extension**, including punctuation; track \`minmax(150px,1fr)\`. | Repeat each row, wrap long unbroken names within allotted column without expanding table unexpectedly. |
+| LoRAs | Flexible **2fr** track; **all names inline**, one LoRA per line with compact blue gauge and exact numeric weight; full-cell hover popup 400 px. | **No three-item cap or ellipsis**; 55-character synthetic filename case; gauge and number remain visible when names elide; row height grows with entries. Confirm bounded rendering at 100–200 items. |
+| Parameters | **Steps** bold; CFG and long sampler in smaller secondary lines; \`minmax(120px,.9fr)\`. | Preserve sampler identifiers, wrapping and hierarchy. Seed and dimensions stay in inspector. |
+| Status | Semibold semantic **text label only** in an 84 px track. | Pending neutral; succeeded green; running, no result and cancelled amber; failed/save_failed red. No status progress bar. The underlying item state vocabulary stays authoritative. |
+| Backend duration | 16 px stopwatch **header icon only**, 64 px track; compact right-aligned monospace value or \`—\`. | Tooltip/accessible label **Backend duration**. Show observed backend timing only; never substitute ETA. |
 
-**Activity:** preserve the useful existing mini-log first. The issue's item-scoped activity-selection proposal remains a later review detail; do not falsely imply this is implemented.
+**Layout grid:** \`72px minmax(0,2fr) minmax(150px,1fr) minmax(0,2fr) minmax(120px,0.9fr) 84px 64px\`; gaps 12 px, horizontal padding 12 px, minimum scrollable content width 1000 px **in the standalone HTML**. Port visually, but test real Qt metrics and scrolling; the HTML is not a guarantee of native DPI fit. The row uses a selected navy fill and fine divider. Status styling is the same color vocabulary already used by DTFlow; no new badge should be invented.
 
-Retain existing queue selection, controls, queue header, composer, dispatch policy and responsive shell.
+**Right inspector:** no image and no saved-output filename. Clicking the row updates only complementary **ITEM EVIDENCE** and the retained mini-log. Buttons are **Open in Images**, **Open folder**, **Retry item** with real availability derived from recorded evidence and the existing retry/credit safeguards. The HTML's illustrative button flags are not proofs of production availability.
+
+**Narrow widths:** inspector disappears below the shared-shell 1100 logical-pixel breakpoint, and **nothing is relocated or substituted** for its secondary details. Preserve readable horizontally scrollable center table. HTML left rail is illustrative (272 px wide/220 px narrow); reconcile with Qt's shared 248–300 px Designer constraints and preserve navigation.
+
+**Existing queue controls are not redefined by sample HTML.** In particular, its decorative \`Max at once\` spinner is 1–4, while the real app supports 1–10; preserve the real contract. The HTML's queue header chip uses an amber Running border, while actual queue-level and item-level color mappings differ; keep queue-level semantics authoritative outside the redesigned **item** status cell.
+
+**Data and safety:** every item repeats its own resolved checkpoint/LoRAs/settings; never infer setup from nearby rows. No model inference, billing, uploads, dispatch, schema modifications, or fabricated artifact/gallery identity for mockup validation. The queue creation mini-log remains visible in the inspector. Missing/unknown/cancelled outcomes use recorded evidence and honest text. Use existing \`QueueItemModel\` / \`QTableView\`, not a transplanted gallery \`QTableWidget\`.
 
 ## Implementation tasks
 
@@ -91,18 +108,22 @@ Retain existing queue selection, controls, queue header, composer, dispatch poli
 - [x] Record P2/P3 review findings; the later owner decision explicitly supersedes P2's narrow fallback proposal.
 - [x] Incorporate **Images → Detail** as the information hierarchy and **Images → List** as the visual reference.
 - [x] Add the requested text-only sample with separate central-table and inspector tables, fake values, the 55-character synthetic LoRA filename, hover rules and responsive behavior.
-- [x] Complete the owner's **column-by-column Markdown review**: natural two-line prompt wrapping with **only a terminal ellipsis**, checkpoint/LoRA **filenames and extensions** instead of friendly names, longer realistic-looking sampler examples, and a narrow **stopwatch-only duration header**. Inspector arrangement deferred to Qt mockup.
+- [x] Complete the historical **column-by-column Markdown review**, then inspect the subsequently provided **authoritative standalone HTML** and update both Markdown files for its revised design (especially **all inline LoRAs**, **64 × 64 tiles**, equal Prompt/LoRA tracks, scrollable central table, and three-section inspector).
 
-### M1 — Real-Qt visual mockup, **no production data wiring**
-- [x] Complete owner review of the Markdown central table; inspector content is acceptable until the Qt mockup. Preserve the reviewed Markdown changes above.
-- [ ] Establish screenshot baseline from the existing named queue renders. No historical screenshots mislabeled as new captures.
-- [ ] Use seven agreed columns and **Images → Detail** hierarchy / **Images → List** compact style, retaining the existing Queues table-model architecture.
-- [ ] Mock compact thumbnail plus larger hover, dedicated **~30–33%-width naturally wrapped** two-line positive prompt (ellipsis **only at end of second line on overflow**) plus complete positive/negative hover, separate Model and LoRAs using **filename-style identifiers and extensions**, per-LoRA weight gauge/number, three inline LoRAs then hover `…`, Steps/CFG/**long sampler identifiers**, simple status and observed backend duration under a **stopwatch-only minimum-width icon header**.
-- [ ] Explicitly stress a **55-character synthetic LoRA filename including extension**, zero/one/three/four LoRAs, prompts with real two-line pixel-based wrapping, long unbroken checkpoint filenames, long sampler strings, missing images and missing duration. Avoid horizontal layout blowout; keep complete long LoRA identity accessible without disrupting row selection.
-- [ ] Mock the right inspector as complementary data/actions plus preserved creation mini-log, **without any image preview or narrow-window fallback**.
-- [ ] Update canonical Designer `queue_page.ui`, scoped theme/QSS and offline-only fixture adapters as needed; use `tools/ui/render_states.py`, not HTML or an independently duplicated UI framework.
-- [ ] Capture real Qt fixtures at normal and narrow widths (1080 × 800, 800 × 680); verify hover-overlays versus row-click selection in interactive mockup, and note native Windows/DPI acceptance separately.
-- [ ] Push mockup commit(s) and request **explicit owner visual approval** before connecting production queue data. Do not add or run tests.
+### M1 — Translate the authoritative HTML into real-Qt **visual mockups only**
+
+- [x] Complete the historical owner column-by-column Markdown review; subsequently **supersede conflicting specifications with the owner-provided HTML** and inspect its static behavior/data.
+- [x] Update the derived Markdown specimen with **six sample rows** (including pending, no result and cancelled), all-inline LoRAs, revised inspector sections, grid dimensions, and observed mockup limitations.
+- [ ] Establish fresh baseline screenshots from the existing named queue render states. No historical screenshot labeled as newly captured.
+- [ ] Translate the owner's HTML arrangement and seven column tracks using the canonical Designer \`queue_page.ui\`, shared QSS/tokens, and existing model-view seam. Do not recreate another standalone HTML design.
+- [ ] Mock **64 × 64** aspect-fit tiles, full positive/negative prompt hover, naturally wrapped two-line positive prompt, **all inline LoRAs** with **44 px gauge + 34 px value** and **full-column LoRA hover**, long model/sampler identifiers, colored plain-text status and minimal stopwatch duration header.
+- [ ] Stress zero/one/three/**four or more** LoRAs, **55-character** filename, long and negative prompts, absent previews/durations, both very long and short sampler identifiers, and nontrivial row heights. Keep identifiers accessible and clicks/keyboard row selection dependable.
+- [ ] Include the six HTML status fixtures **and extra failed/save_failed cases** for coverage of the real app vocabulary; render with the existing semantic palette, not ad-hoc status colors.
+- [ ] Translate the three-section **ITEM EVIDENCE** inspector, conditional actions and creation mini-log; no image and no narrow-width fallback.
+- [ ] Verify the horizontal scrolling model of a **1000 px minimum specimen table**, inspector auto-hide below 1100 px and central panel usability at 1080 × 800 and 800 × 680. Do not quietly change actual queue concurrency caps based on the illustrative HTML spinner.
+- [ ] Mock/read through **220/380/400 px** nonblocking hover previews and ensure full text can be accessed without stolen clicks; the HTML's noninteractive overflowing prompt overlay is an explicit design/Qt-accessibility gap.
+- [ ] Extend \`tools/ui/render_states.py\` with named synthetic fixtures and capture actual Qt screenshots. Report as offscreen **layout evidence only**, not Windows DPI, performance, mouse/keyboard or native acceptance.
+- [ ] Push cohesive Qt mockup commits and obtain **explicit owner visual approval of the Qt translation** before wiring real queue data. Do not add or run tests at this stage.
 
 ### M2 — Integrate the approved design, without tests/docs yet
 - [ ] Audit durable per-item request/evidence fields for model, LoRAs, weight values, both prompts, steps/CFG/sampler, seed/dimensions, backend/operation, statuses, gallery result IDs and recorded elapsed backend duration. Never fill absent values by guessing.
@@ -129,8 +150,8 @@ No scheduler, concurrency, remote cancellation, retry/replay, state-schema or mo
 
 | Checkpoint | State | Evidence |
 | --- | --- | --- |
-| Plan and fictional Markdown pre-mockup | Completed | PR #150 draft; plan and separate Markdown specimen with central and inspector examples reviewed against the owner's column feedback. No production UI code, tests or Qt renders. |
-| Qt mockup rendered | Not started | Named offline screenshots to be linked here after actual capture. |
+| Owner HTML inspection and Markdown reconciliation | Completed | Standalone owner HTML SHA-256 `b57dffcfafb6ab2ecb49d4264bdabb1f491f561a588b6dc4c87bcea0e0ff3445`; plan and derived specimen updated. The attachment is not tracked in the PR. No production UI code, tests, browser behavior verification or Qt renders. |
+| Qt translation rendered | Not started | Fresh named offline screenshots translating HTML to Qt, then explicit owner visual review. |
 | Owner visual approval | Not requested | Explicit owner decision, not inferred from PR checks. |
 | Real-data wiring | Not started | Implementation commits and changed files to be recorded. |
 | Owner functional approval | Not requested | Native interactive evidence to be recorded. |
