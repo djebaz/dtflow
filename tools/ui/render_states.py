@@ -1054,12 +1054,19 @@ def render_active_queue_states(shell, out):
         assert page.queueComposer.width() <= viewport.width(), (page.queueComposer.width(), viewport.width())
         assert scroll.horizontalScrollBar().maximum() == 0
         for widget in (
-            page.newQueueCapLabel, page.newQueueCapSpinBox,
-            page.createQueueButton, page.addQueueButton, page.startQueueButton,
-            page.closeComposerButton, page.editInGenerateButton,
-            page.planDrawModelsLabel, page.planDrawModelsSpin,
-            page.planDrawStepsLabel, page.planDrawStepsSpin,
-            page.planDrawLorasLabel, page.planDrawLorasSpin,
+            page.newQueueCapLabel,
+            page.newQueueCapSpinBox,
+            page.createQueueButton,
+            page.addQueueButton,
+            page.startQueueButton,
+            page.closeComposerButton,
+            page.editInGenerateButton,
+            page.planDrawModelsLabel,
+            page.planDrawModelsSpin,
+            page.planDrawStepsLabel,
+            page.planDrawStepsSpin,
+            page.planDrawLorasLabel,
+            page.planDrawLorasSpin,
         ):
             assert widget.isVisible(), widget.objectName()
             left = widget.mapTo(viewport, QPoint(0, 0)).x()
