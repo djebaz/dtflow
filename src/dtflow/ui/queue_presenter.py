@@ -204,15 +204,28 @@ UNKNOWN_TEXT = (
 OWNERS = ("here", "none")
 
 
-# Schematic LoRA gauge scale (full bar = this weight). Not a validity limit: the final scale must follow recorded weights.
-LORA_GAUGE_MAX = 3.0
+LORA_GAUGE_MIN_SCALE = 1.0  # a full bar is never less than the neutral weight 1.0
 
 
-def lora_fraction(weight) -> float:
+def gauge_scale(rows) -> float:
+    """Full-bar weight for the items table: the largest recorded weight, rounded up to 0.5 and never below 1.0.
+
+    One shared scale keeps gauges comparable across rows; it follows the weights actually recorded, not a fixed limit.
+    """
+    weights = [
+        weight
+        for row in rows
+        for _, weight in row.loras
+        if type(weight) in (int, float) and math.isfinite(weight) and weight > 0
+    ]
+    return max(LORA_GAUGE_MIN_SCALE, math.ceil(max(weights, default=0.0) * 2) / 2)
+
+
+def lora_fraction(weight, scale: float = LORA_GAUGE_MIN_SCALE) -> float:
     """Gauge fill for a configured LoRA strength; an unknown or non-positive weight draws an empty track."""
-    if type(weight) not in (int, float) or weight <= 0:
+    if type(weight) not in (int, float) or weight <= 0 or scale <= 0:
         return 0.0
-    return min(1.0, weight / LORA_GAUGE_MAX)
+    return min(1.0, weight / scale)
 
 
 @dataclass(frozen=True, slots=True)

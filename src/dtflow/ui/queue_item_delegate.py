@@ -8,9 +8,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QImageReader, QPainter, QPixmap, QTextLayout, QTextOption
-from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableView
+from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableView
 
-from dtflow.ui.queue_model import ROW_ROLE
+from dtflow.ui.queue_model import ROW_ROLE, stopwatch_icon
 from dtflow.ui.queue_presenter import lora_fraction
 from dtflow.ui.theme import load_tokens
 
@@ -115,7 +115,7 @@ class QueueItemDelegate(QStyledItemDelegate):
             bold.setWeight(QFont.Weight.Bold)
             self._lines(painter, rect, wrapped_lines(row.model, bold, rect.width(), 2, soft_breaks=True), bold, text)
         elif column == COL_LORAS:
-            self._loras(painter, rect, row, option.font, text, secondary)
+            self._loras(painter, rect, row, option.font, text, secondary, getattr(index.model(), "gauge_scale", 1.0))
         elif column == COL_PARAMS:
             self._params(painter, rect, row, option.font, text, secondary)
         painter.restore()
@@ -152,7 +152,7 @@ class QueueItemDelegate(QStyledItemDelegate):
         )
 
     @staticmethod
-    def _loras(painter, rect, row, font, text, secondary) -> None:
+    def _loras(painter, rect, row, font, text, secondary, scale) -> None:
         if not row.loras:
             painter.setFont(font)
             painter.setPen(secondary)
@@ -181,7 +181,7 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(_TOKENS["color.barTrack"]))
             painter.drawRoundedRect(track, 3, 3)
-            fraction = lora_fraction(weight)
+            fraction = lora_fraction(weight, scale)
             if fraction:
                 painter.setBrush(QColor(_TOKENS["color.accent"]))
                 painter.drawRoundedRect(QRectF(track.left(), track.top(), track.width() * fraction, 6), 3, 3)
@@ -210,6 +210,19 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.drawText(
                 QRect(rect.left(), rect.top() + 34 + number * 14, rect.width(), 14), Qt.AlignmentFlag.AlignLeft, line
             )
+
+
+class ItemTableHeader(QHeaderView):
+    """Header whose duration section shows only a stopwatch, right-aligned with the values below it."""
+
+    def __init__(self, parent: QTableView):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+
+    def paintSection(self, painter: QPainter, rect: QRect, logical_index: int) -> None:
+        super().paintSection(painter, rect, logical_index)  # background and (empty) label
+        if logical_index == COL_DURATION:
+            icon = QRect(rect.right() - 7 - 15, rect.center().y() - 7, 16, 16)  # the cells' 7px right padding
+            stopwatch_icon().paint(painter, icon)
 
 
 class ItemTableLayout(QObject):

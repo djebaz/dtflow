@@ -63,7 +63,7 @@ from dtflow.ui.planning_presenter import (
     summary_text,
 )
 from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, SummaryLabelHeightFit
-from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableLayout, QueueItemDelegate
+from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableHeader, ItemTableLayout, QueueItemDelegate
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
@@ -247,6 +247,8 @@ class QueuePage:
             view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         # Items table: painted cells, fixed-height rows and proportional columns (Prompt about a third of the width).
         items_view = page.queueItemsView
+        items_view.setHorizontalHeader(ItemTableHeader(items_view))
+        items_view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         items_view.setItemDelegate(QueueItemDelegate(items_view))
         items_view.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
         items_view.horizontalHeader().setStretchLastSection(False)

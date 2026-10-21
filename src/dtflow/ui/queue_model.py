@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
-from dtflow.ui.queue_presenter import ItemRow
+from dtflow.ui.queue_presenter import LORA_GAUGE_MIN_SCALE, ItemRow, gauge_scale
 from dtflow.ui.theme import load_tokens
 
 # Preview, Prompt, Model, LoRAs, Parameters, Status and a duration column whose header is a painted stopwatch icon.
@@ -79,6 +79,7 @@ class QueueItemModel(QAbstractTableModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._rows: tuple[ItemRow, ...] = ()
+        self.gauge_scale = LORA_GAUGE_MIN_SCALE  # shared full-bar LoRA weight for the painted gauges
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         return 0 if parent is not None and parent.isValid() else len(self._rows)
@@ -94,10 +95,6 @@ class QueueItemModel(QAbstractTableModel):
         if section == DURATION_COLUMN:
             if role in (Qt.ItemDataRole.ToolTipRole, Qt.ItemDataRole.AccessibleTextRole):
                 return DURATION_HEADER
-            if role == Qt.ItemDataRole.DecorationRole:
-                return stopwatch_icon()
-            if role == Qt.ItemDataRole.TextAlignmentRole:
-                return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         return None
 
     @staticmethod
@@ -141,6 +138,7 @@ class QueueItemModel(QAbstractTableModel):
 
     def apply(self, rows: tuple[ItemRow, ...]) -> None:
         """Update in place when the item set is unchanged (the normal case), otherwise reset; rows never move."""
+        self.gauge_scale = gauge_scale(rows)
         if tuple(row.item_id for row in rows) != tuple(row.item_id for row in self._rows):
             self.beginResetModel()
             self._rows = rows

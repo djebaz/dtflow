@@ -1396,10 +1396,14 @@ def render_item_table_states(shell, out, state):
         queue._timer.stop()
         model, table = queue.model, page.queueItemsView
         assert model.columnCount() == 7 and model.rowCount() == len(items)
+        assert model.gauge_scale == 1.5  # the largest recorded weight in this fixture; a 0.94 LoRA fills 63%
         assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole) == "Backend duration"
         assert table.verticalHeader().defaultSectionSize() == 76
         assert header_end_visible(table)
         header = table.horizontalHeader()
+        # The stopwatch is painted by ItemTableHeader; a model decoration would draw a second one at the left edge.
+        assert type(header).__name__ == "ItemTableHeader"
+        assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.DecorationRole) is None
         assert header.sectionSize(COL_LORAS) >= 190 and header.sectionSize(COL_PROMPT) >= table.viewport().width() * 0.29
         # Statuses use the shared semantic colors as a single text label, and duration is "—" when unavailable.
         for row, word in enumerate(("succeeded", "succeeded", "running", "no result", "pending", "cancelled")):
