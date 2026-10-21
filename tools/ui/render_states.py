@@ -1072,11 +1072,17 @@ def render_active_queue_states(shell, out):
             left = widget.mapTo(viewport, QPoint(0, 0)).x()
             right = widget.mapTo(viewport, QPoint(widget.width(), 0)).x()
             assert 0 <= left < right <= viewport.width(), (widget.objectName(), left, right, viewport.width())
-        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawStepsSpin))[:2] == (2, 1)
+        assert queue._actions_fit._wrapped
+        assert page.closeComposerButton.parentWidget() is queue._actions_fit._host
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawModelsSpin))[:2] == (0, 1)
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawSeedsSpin))[:2] == (0, 3)
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawStepsSpin))[:2] == (1, 1)
         snap("queues-53-composer-two-rails-narrow-center")
         form.resize(1600, 1000)
         shell._responsive_workspace()
         QTest.qWait(50)
+        assert page.closeComposerButton.parentWidget() is page.queueComposer
+        assert page.planDrawGrid.getItemPosition(page.planDrawGrid.indexOf(page.planDrawStepsSpin))[:2] == (0, 5)
         page.planDrawStepsSpin.setValue(0)
         # #129: dynamic prompt variation of the Generate prompt, with wildcards and seeded edits.
         shell.generation_page.promptEdit.setPlainText("a {red|blue} fox, __place__, golden light, film grain")
