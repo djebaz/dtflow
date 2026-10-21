@@ -153,6 +153,10 @@ class LoraAssetPanel:
             (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
         ]
 
+    def confirmed_receipts(self) -> dict[str, str]:
+        """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
+        return {r["identifier"]: asset for asset, r in self._records.items() if r["state"] == "confirmed"}
+
     def add(self) -> None:
         candidates = self.choices()
 

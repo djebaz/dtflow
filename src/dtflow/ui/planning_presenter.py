@@ -113,7 +113,7 @@ def _lora_sets(text: str) -> tuple[tuple[tuple[str, float], ...], ...]:
             sets.append(())
             continue
         entries = []
-        for part in token.split("+"):
+        for part in re.split(r"\s\+\s", token):  # `` + `` joins LoRAs; a ``+`` inside an identifier stays
             identifier, separator, weight = part.rpartition(":")
             try:
                 if not separator or not identifier.strip():

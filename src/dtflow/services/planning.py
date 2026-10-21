@@ -21,6 +21,7 @@ from dtflow.core.models import (
     MAX_QUEUE_ITEMS,
     SEED_LIMIT,
     LoRASelection,
+    PreparedAsset,
     ResolvedGenerationRequest,
     Sampler,
     ValidationError,
@@ -214,11 +215,18 @@ def _combinations(plan: Plan, total: int):
     return combos
 
 
-def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = False) -> list[ResolvedGenerationRequest]:
+def expand_plan(
+    base: ResolvedGenerationRequest,
+    plan: Plan,
+    *,
+    edit: bool = False,
+    receipts: tuple[PreparedAsset, ...] = (),
+) -> list[ResolvedGenerationRequest]:
     """Ordered, fully resolved requests for the plan; every failure is raised before anything is enqueued.
 
     ``edit`` previews a staged edit from its text-to-image settings base (dry run): strength is validated and shown
-    in the evidence only; the real items carry it once the edit is staged.
+    in the evidence only; the real items carry it once the edit is staged. ``receipts`` are confirmed receipts for
+    LoRAs named only in LoRA sets; with the base request's own, each item carries those of the LoRAs it selects.
     """
     varied = {name for name, _ in plan.dimensions}
     preview = edit and base.operation == "txt2img"
@@ -243,6 +251,11 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = Fal
             for index in range(total)
         ]
     _check_duplicates(plan)
+    pool = {asset.identifier: asset for asset in (*receipts, *base.prepared_assets)}
+    # Receipt evidence is per item when LoRA sets vary: an item claims only the receipts it carries.
+    base_evidence = tuple(
+        pair for pair in base.resolution_evidence if not (LORA_SETS in varied and pair[0] == "prepared_assets")
+    )
     items = []
     for index, combo in enumerate(_combinations(plan, total)):
         loras = list(base.loras)
@@ -258,9 +271,11 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = Fal
                 text = f"{value[0]}x{value[1]}" if name == "size" else str(value)
                 evidence.append((f"plan.dimension.{name}", lora_set_text(loras) if name == LORA_SETS else text))
             if LORA_SETS in varied:
-                # Receipts stay bound only to the LoRAs this item selects; nothing is inferred for the others.
-                selected = {item.identifier for item in loras}
-                changes["prepared_assets"] = tuple(a for a in base.prepared_assets if a.identifier in selected)
+                # Each item carries the confirmed receipts of the LoRAs it selects; nothing is inferred for others.
+                bound = tuple(pool[item.identifier] for item in loras if item.identifier in pool)
+                changes["prepared_assets"] = bound
+                if bound:
+                    evidence.append(("prepared_assets", ",".join(asset.receipt_id for asset in bound)))
             if policy == "increment":
                 changes["seed"] = base.seed + index
             items.append(
@@ -268,7 +283,7 @@ def expand_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = Fal
                     base,
                     request_id=uuid4().hex,
                     loras=tuple(loras),
-                    resolution_evidence=(*base.resolution_evidence, *evidence),
+                    resolution_evidence=(*base_evidence, *evidence),
                     **changes,
                 )
             )

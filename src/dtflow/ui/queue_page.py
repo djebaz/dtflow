@@ -41,7 +41,7 @@ from dtflow.services.queue_session import (
     set_concurrency,
     RELAUNCH_STATES,
 )
-from dtflow.services.session import bind_prepared, selection_for
+from dtflow.services.session import bind_prepared, load_prepared, selection_for
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
@@ -120,6 +120,7 @@ WIRED_CONTROLS = (
     "earlierQueueButton",
     "laterQueueButton",
     "relaunchQueueButton",
+    "emptyRelaunchButton",
     *FILTER_BUTTONS.values(),
     "queueItemsView",
     *PLAN_INPUTS,
@@ -268,6 +269,7 @@ class QueuePage:
         page.queueItemsView.selectionModel().currentRowChanged.connect(lambda *_: self._show_item())
         page.itemOpenFolderButton.clicked.connect(self.open_output_folder)
         page.itemRetryButton.clicked.connect(self.retry_item)
+        page.emptyRelaunchButton.clicked.connect(self.relaunch_last)
         page.relaunchQueueButton.clicked.connect(
             lambda: self._relaunch_menu(
                 page.relaunchQueueButton.mapToGlobal(page.relaunchQueueButton.rect().bottomLeft())
@@ -412,6 +414,7 @@ class QueuePage:
         page.queueComposerScroll.setVisible(self._composing)
         page.newQueueButton.setVisible(not self._composing)
         page.emptyStateCard.setVisible(view is None and not self._composing)
+        page.emptyRelaunchButton.setVisible(self._last_queue() is not None)
         page.queueTableHost.setVisible(view is not None and not self._composing)
         page.queueHeader.setVisible(view is not None and not self._composing)
         detail = self._detail_for(view)
@@ -839,6 +842,16 @@ class QueuePage:
                 action.setToolTip("Failed, cancelled and no-result items only.")
         menu.setToolTipsVisible(True)
 
+    def _last_queue(self) -> str | None:
+        """The most recently created queue with items, for the empty state's Relaunch last."""
+        views = [v for v in self._views.values() if sum(v["summary"].values())]
+        return max(views, key=lambda v: (v["created_at_utc"], v["queue_id"]))["queue_id"] if views else None
+
+    def relaunch_last(self) -> None:
+        queue_id = self._last_queue()
+        if queue_id is not None:
+            self.relaunch(queue_id)
+
     def retry_item(self) -> None:
         """Retry item: the selected item again, as a one-item queue with its own new attempt (possibly billable)."""
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
@@ -946,10 +959,16 @@ class QueuePage:
         identifier, weight = chosen
         if identifier == NO_LORA:
             return NO_LORA
+        if ";" in identifier:
+            self._message(Presentation("error", "LoRA not added", "A LoRA set cannot name an identifier with ';'."))
+            return ""
         if identifier == GENERATE_LORAS:
             try:
                 request, *_ = self._request_source(preview=True)
             except (FormError, ValidationError):
+                return ""
+            if any(";" in item.identifier for item in request.loras):
+                self._message(Presentation("error", "LoRA not added", "A LoRA set cannot name an identifier with ';'."))
                 return ""
             return " + ".join(lora_set_value(item.identifier, item.weight) for item in request.loras) or NO_LORA
         return lora_set_value(identifier, weight)
@@ -1145,6 +1164,15 @@ class QueuePage:
         self, backend, request, asset_ids, count, cap, plan: Plan | None = None, job=None, *, up_next: bool = False
     ):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
+        receipts = ()
+        sets = dict(plan.dimensions).get("loras") if plan is not None else None
+        if sets and backend["name"] == "cloud":
+            # LoRA sets may name custom cloud LoRAs that are not on Generate: bind their confirmed receipts too.
+            known = self._choices().get("receipts", {})
+            named = {identifier for chosen in sets for identifier, _ in chosen} - {x.identifier for x in request.loras}
+            receipts = await load_prepared(
+                self._state, "cloud", [known[name] for name in sorted(named) if name in known]
+            )
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
@@ -1171,8 +1199,9 @@ class QueuePage:
                 count=count,
                 cap=cap,
                 up_next=up_next,
+                receipts=receipts,
             )
-        items = expand_plan(request, plan) if plan is not None else expand_items(request, count)
+        items = expand_plan(request, plan, receipts=receipts) if plan is not None else expand_items(request, count)
         return await create_queue(self._state, backend, items, cap, up_next=up_next)
 
     # -- planning --------------------------------------------------------------------------------------------------

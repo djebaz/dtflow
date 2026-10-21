@@ -869,6 +869,15 @@ def render_active_queue_states(shell, out):
         assert not queue.queue_items()
         snap("queues-28-list-filter-empty")
         page.queueFilterEdit.clear()
+        # #126: with queues listed but none selected, the empty state offers Relaunch last.
+        selected, detail = queue._selected, queue._detail
+        queue._set_selected(None)
+        queue._render()
+        assert page.emptyStateCard.isVisible() and page.emptyRelaunchButton.isVisible()
+        snap("queues-44-empty-relaunch-last")
+        queue._set_selected(selected)
+        queue._detail = detail
+        queue._render()
         page.failedFilterButton.setChecked(True)
         assert [page.queueItemsView.isRowHidden(row) for row in range(4)] == [True, False, True, True]
         snap("queues-29-item-filter")

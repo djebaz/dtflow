@@ -19,6 +19,7 @@ from dtflow.core.models import (
     SEED_LIMIT,
     BackendEvent,
     CredentialProvider,
+    PreparedAsset,
     ResolvedGenerationRequest,
     TimeoutPolicy,
     ValidationError,
@@ -105,6 +106,7 @@ async def create_edit_queue(
     count: int = 1,
     cap: int | None = None,
     up_next: bool = False,
+    receipts: tuple[PreparedAsset, ...] = (),
 ) -> tuple[str, int]:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
@@ -133,7 +135,7 @@ async def create_edit_queue(
             ("image_permit_status", permit.status),
         ),
     )
-    items = expand_items(edit, count) if plan is None else expand_plan(edit, plan)
+    items = expand_items(edit, count) if plan is None else expand_plan(edit, plan, receipts=receipts)
     return await create_queue(state, backend, items, cap, up_next=up_next)
 
 
@@ -143,6 +145,7 @@ RELAUNCH_STATES = ("failed", "unknown", "save_failed", "cancelled")
 
 def _relaunch_items(
     state: Path,
+    source: str,
     items: tuple[tuple[int, str, Any], ...],
     *,
     new_seeds: bool,
@@ -150,6 +153,8 @@ def _relaunch_items(
     positions: tuple[int, ...] | None,
 ) -> list[ResolvedGenerationRequest]:
     """Fresh copies of recorded item requests: new identities, the same settings, optionally new seeds."""
+    if positions is not None and failed_only:
+        raise ValidationError("Choose items or only failed items, not both; nothing was created.")
     if positions is not None:
         known = {position for position, _, _ in items}
         missing = sorted(set(positions) - known)
@@ -164,13 +169,15 @@ def _relaunch_items(
         chosen = list(items)
     # New seeds keep the plan's shape: items that shared a seed share one new seed.
     reseeded: dict[int, int] = {}
+    checked: set[str] = set()  # staged inputs shared by several items are verified once
     requests = []
     for position, _, record in chosen:
         try:
             request = request_from_record(record)
         except (ValidationError, TypeError, ValueError):
             raise ValidationError(f"Item {position} has no usable recorded request; nothing was created.") from None
-        if request.image_inputs is not None:
+        if request.image_inputs is not None and request.image_inputs.attempt_id not in checked:
+            checked.add(request.image_inputs.attempt_id)
             try:
                 restore_image_inputs(state, request.image_inputs)
             except (ValidationError, OSError):
@@ -180,6 +187,14 @@ def _relaunch_items(
         changes: dict[str, Any] = {"request_id": uuid4().hex}
         if new_seeds:
             changes["seed"] = reseeded.setdefault(request.seed, secrets.randbelow(SEED_LIMIT) + 1)
+        # Positions and seed policy describe the source queue; the relaunch records where each item came from.
+        stale = ("queue_position", "plan.index", *(("plan.seed", "seed.resolved") if new_seeds else ()))
+        changes["resolution_evidence"] = (
+            *(pair for pair in request.resolution_evidence if pair[0] not in stale),
+            ("relaunch.source_queue", source),
+            ("relaunch.source_position", str(position)),
+            ("relaunch.seed", "new" if new_seeds else "same"),
+        )
         requests.append(replace(request, **changes))
     return requests
 
@@ -204,7 +219,7 @@ async def relaunch_queue(
     """
     backend, source_cap, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
     requests = await asyncio.to_thread(
-        _relaunch_items, Path(state), items, new_seeds=new_seeds, failed_only=failed_only, positions=positions
+        _relaunch_items, Path(state), queue_id, items, new_seeds=new_seeds, failed_only=failed_only, positions=positions
     )
     return await create_queue(state, backend, requests, source_cap if cap is None else cap, up_next=up_next)
 
