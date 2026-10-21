@@ -1,6 +1,6 @@
 # Current development status
 
-**Snapshot: 2026-10-19.** Coding orientation against the [initial implementation plan](plans/initial.md), not a release declaration. Repository source and linked evidence are authoritative; implemented code, owner-reported compatibility and final packaged acceptance are distinct.
+**Snapshot: 2026-10-21.** Coding orientation against the [initial implementation plan](plans/initial.md), not a release declaration. Repository source and linked evidence are authoritative; implemented code, owner-reported compatibility and final packaged acceptance are distinct.
 
 ## Release and branch state
 
@@ -20,6 +20,8 @@
 | 9 — Image operations, bounded delivered slice | Headless normalization/fitting and immutable input snapshots; Inpaint Paint/Select editor, local ONNX person/part selection, explicit edit dispatch and queued edits through shared services. Source/mode/settings are remembered, masks/history are not. | Dedicated owner-probe/permit boundaries remain; generic CLI/config generation is txt2img-only, and no universal checkpoint compatibility is claimed. [Inpaint plan](plans/2026-10-10-smart-mask-inpainting.md), [edit queues](plans/2026-10-10-inpaint-queues.md), [desktop guide](guides/desktop.md). |
 
 ## Delivered additions and cross-cutting behavior
+
+- **Random planning and prompt variation (#145):** deterministic random dimensions, wildcard/template resolution and optional prompt mutations use the shared planner. Composer previews coalesce background work, reject stale results and refresh when retained image seeds or observed wildcard-file fingerprints change. [Planning delivery and evidence](plans/2026-10-04-phase-6-queue-planning.md#pr-145-review-and-validation). Native Windows interaction and responsiveness remain unverified.
 
 - **Diagnostics and Logs (#105, PR #111 follow-up):** one rotating JSONL stream with typed producers and loss/closure accounting; shared Qt-free reader/query/export and migrated benchmark consumers. Native status-bar Logs has whole-session filtering and 500-row bidirectional pages, Follow, details/copy/export and active log-directory override; timing-chip rounding preserves raw precision. [PR #111](https://github.com/djebaz/dtflow/pull/111) implements the #108 split Component/Event sort targets, counted Refresh with visible incomplete status, an empty-state panel and non-consuming outside-click detail dismissal. It also adds live-session snapshot exports, progress/cancel and a conservative selection-byte refusal (not complete peak-memory enforcement). Historical text/CSV remains untouched. [Delivery audit](plans/2026-10-19-structured-log-viewer.md).
 - **Windows benchmark tooling (#104/#105):** real UIA profile smoke and Grid `-ml/-mc` matrices, visible-position start/arrival verification, continuous down/back wheel journeys and warning/incomplete-trial exclusions. Single-run rankings are provisional; tooling does not establish an optimal production default or zero-stall browsing. [Benchmark plan](plans/2026-10-18-windows-gallery-benchmarks.md).
