@@ -722,6 +722,8 @@ class GenerationPage:
         button = self.page.generateButton
         blocked = self._busy or self._generating
         button.setEnabled(not blocked)
+        # The Queue dropdown stays open during a generation: its Add to queue waits behind it (#135).
+        self.page.queueGenerateButton.setEnabled(not self._busy)
         if hasattr(self, "inpaint"):
             self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
         if dispatching:

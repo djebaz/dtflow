@@ -263,6 +263,7 @@ QPushButton#expandPromptButton:checked:hover {
 }
 QPushButton#checkButton,
 QPushButton#generateButton,
+QPushButton#queueGenerateButton,
 QPushButton[role="primary"] {
   background-color: ${color.accent};
   border-color: ${color.accent};
@@ -271,9 +272,22 @@ QPushButton[role="primary"] {
 }
 QPushButton#checkButton:hover,
 QPushButton#generateButton:hover,
+QPushButton#queueGenerateButton:hover,
 QPushButton[role="primary"]:hover {
   background-color: ${color.accentHover};
   border-color: ${color.accentEdge};
+}
+/* Generate image and its Queue dropdown arrow read as one split button (#135). */
+QPushButton#generateButton {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+QPushButton#queueGenerateButton {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid ${color.accentEdge};
+  padding: 0;
+  font-size: 13pt;
 }
 QPushButton#removeKeyButton,
 QPushButton#cancelQueueButton,
@@ -570,12 +584,14 @@ QPushButton:checked {
   color: ${color.selectionText};
 }
 QPushButton#generateButton:pressed,
+QPushButton#queueGenerateButton:pressed,
 QPushButton#checkButton:pressed,
 QPushButton[role="primary"]:pressed {
   background: ${color.accentPressed};
   border-color: ${color.focus};
 }
 QPushButton#generateButton:disabled,
+QPushButton#queueGenerateButton:disabled,
 QPushButton#checkButton:disabled,
 QPushButton[role="primary"]:disabled {
   background: ${color.buttonPressed};
