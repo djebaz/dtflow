@@ -449,7 +449,7 @@ presenting “0 of 0” as work. Avoid distributing spare height among action ro
 scrolls on its own: an untitled top row, right-aligned, holds the actions
 where + New queue was (Max at once for the new queue, neutral *Save paused* and
 *Add to queue*, `role="primary"` **Start now (N items)**, then Close; when the
-center is too narrow for them they wrap on their own row under the title), a
+center is too narrow for them they wrap on their own row below), a
 secondary one-line summary of the Generate base request with *Edit in
 Generate*, then the **Variation** section card. A bottom spacer
 keeps the cards at their natural heights. Variation's Mode is Repeat (an item
@@ -463,7 +463,11 @@ strengths. Prompts are one per line; seeds and LoRA weights stay typed. The
 count updates at once and the preview table about 250 ms after the last edit,
 without a Dry run button; planner errors mark the owning row (`invalid`, red
 chip and Add borders) and appear in the count line. Add to queue is enabled
-only while a queue runs; Start now is disabled while this window dispatches.
+only while a queue runs with a live dispatch owner; Start now is disabled while
+this window dispatches or generates and while another process dispatches. While
+composing, the right column replaces item evidence with a *New queue* summary
+card (the `itemIdentityBox` pattern: backend, model, LoRAs with weights, items,
+varies, seeds, Max at once, plus a caption that nothing is sent yet).
 
 The queue header is the single status location for the selected queue: the
 prompt title (`section` text role, wrapping), a secondary line for model (with its LoRAs), plan,
