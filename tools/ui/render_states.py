@@ -757,8 +757,9 @@ def render_active_queue_states(shell, out):
         assert page.queuePrimaryButton.text() == "Pause" and queue._activity.run_state.action == "pause"
         assert page.queueStateLabel.text() == "Running" and not page.removeQueueButton.isEnabled()
         assert page.createQueueButton.isEnabled()  # #133: a new queue can be prepared while one runs
-        # The header names the LoRAs beside the model, during and after the run.
-        assert "flux_1_schnell_q8p.ckpt · offline-style.safetensors 0.8" in page.queueSubtitleLabel.text()
+        # The header lists model and LoRAs on their own labelled lines, during and after the run.
+        assert page.queueFactModelLabel.text() == "flux_1_schnell_q8p.ckpt"
+        assert page.queueFactLorasLabel.text() == "offline-style.safetensors 0.8"
         snap("queues-11-running")
         # #123: while this window dispatches, the composer offers Add to queue; Start now waits for the run.
         page.newQueueButton.click()

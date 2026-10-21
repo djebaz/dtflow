@@ -470,8 +470,9 @@ card (the `itemIdentityBox` pattern: backend, model, LoRAs with weights, items,
 varies, seeds, Max at once, plus a caption that nothing is sent yet).
 
 The queue header is the single status location for the selected queue: the
-prompt title (`section` text role, wrapping), a secondary line for model (with its LoRAs), plan,
-backend and time, one `statusChip` label (state-colored border and text; the
+prompt title (`section` text role, wrapping), then a labelled facts grid
+(`caption` / `value` pairs: Model, LoRAs one per line, Plan on the left;
+Backend, Created on the right), one `statusChip` label (state-colored border and text; the
 neutral selection treatment for *Up next N*), then one action row and one
 progress row. The action row holds exactly one `role="primary"` button whose
 text follows the state (Start, Start next, Pause, Resume), neutral-red Cancel,

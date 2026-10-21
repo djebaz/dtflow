@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <ui version="4.0">
  <class>QueuePage</class>
  <widget class="QWidget" name="QueuePage">
@@ -206,21 +206,24 @@
         <property name="accessibleName">
          <string>Selected queue</string>
         </property>
+        <property name="role" stdset="0">
+         <string>card</string>
+        </property>
         <layout class="QVBoxLayout" name="queueHeaderLayout">
          <property name="leftMargin">
-          <number>0</number>
+          <number>16</number>
          </property>
          <property name="topMargin">
-          <number>0</number>
+          <number>14</number>
          </property>
          <property name="rightMargin">
-          <number>0</number>
+          <number>16</number>
          </property>
          <property name="bottomMargin">
-          <number>0</number>
+          <number>14</number>
          </property>
          <property name="spacing">
-          <number>8</number>
+          <number>12</number>
          </property>
          <item>
           <layout class="QHBoxLayout" name="queueTitleLayout" stretch="1,0">
@@ -271,26 +274,219 @@
           </layout>
          </item>
          <item>
-          <widget class="QLabel" name="queueSubtitleLabel">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
-             <horstretch>1</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
+          <layout class="QGridLayout" name="queueFactsLayout" columnstretch="0,3,0,2">
+           <property name="horizontalSpacing">
+            <number>12</number>
            </property>
-           <property name="text">
-            <string />
+           <property name="verticalSpacing">
+            <number>4</number>
            </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="role" stdset="0">
-            <string>secondary</string>
-           </property>
-           <property name="accessibleName">
-            <string>Queue model, plan, backend and creation time</string>
-           </property>
-          </widget>
+           <item row="0" column="0">
+            <widget class="QLabel" name="queueFactModelCaption">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>Model</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>caption</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QLabel" name="queueFactModelLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>—</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>value</string>
+             </property>
+             <property name="accessibleName">
+              <string>Queue model</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="2">
+            <widget class="QLabel" name="queueFactBackendCaption">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>Backend</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>caption</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="3">
+            <widget class="QLabel" name="queueFactBackendLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>—</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>value</string>
+             </property>
+             <property name="accessibleName">
+              <string>Queue backend</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="queueFactLorasCaption">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>LoRAs</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>caption</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QLabel" name="queueFactLorasLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>—</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>value</string>
+             </property>
+             <property name="accessibleName">
+              <string>Queue LoRAs</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="2">
+            <widget class="QLabel" name="queueFactCreatedCaption">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>Created</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>caption</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="3">
+            <widget class="QLabel" name="queueFactCreatedLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>—</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>value</string>
+             </property>
+             <property name="accessibleName">
+              <string>Queue created</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="queueFactPlanCaption">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Maximum" vsizetype="Preferred">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>Plan</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>caption</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1" colspan="3">
+            <widget class="QLabel" name="queueFactPlanLabel">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="text">
+              <string>—</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+             <property name="textRole" stdset="0">
+              <string>value</string>
+             </property>
+             <property name="accessibleName">
+              <string>Queue plan</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </item>
          <item>
           <layout class="QHBoxLayout" name="queueControlLayout">

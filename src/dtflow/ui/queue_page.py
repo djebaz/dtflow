@@ -80,7 +80,7 @@ from dtflow.ui.queue_presenter import (
     progress_text,
     queue_entries,
     lora_text,
-    queue_subtitle,
+    queue_facts,
     queue_title,
     segments,
     status_chip,
@@ -471,8 +471,9 @@ class QueuePage:
         summary = summarize(view)
         page.queueTitleLabel.setText(queue_title(view))
         page.queueTitleLabel.setToolTip((view.get("first") or {}).get("prompt") or "")
-        page.queueSubtitleLabel.setText(queue_subtitle(view))
-        page.queueSubtitleLabel.setToolTip(f"Queue {view['queue_id']}")
+        for name, value in queue_facts(view).items():
+            getattr(page, f"queueFact{name}Label").setText(value)
+        page.queueFactPlanLabel.setToolTip(f"Queue {view['queue_id']}")
         level, chip = status_chip(view, up_next_ids(self._views.values()))
         if self._dispatching == view["queue_id"]:
             owner = "This window dispatches it."
