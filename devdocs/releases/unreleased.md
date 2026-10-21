@@ -6,7 +6,7 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Added
 
-- **Queue timing comparison:** the Events pane displays a live, replaceable elapsed / ETA / elapsed + ETA snapshot for an active queue. The existing estimator remains unchanged, and no synthetic event is persisted.
+- **Queue timing comparison:** each settlement records a durable `timing_snapshot` event (elapsed, ETA and projected total), listed in the Events pane. The estimator moved to `core/queue_eta.py` and accounts for running items' ages; snapshots from before the latest start or Resume are ignored.
 
 - **Queue elapsed time and ETA (#131):** the shared progress overlay and Run tooltip show elapsed wall time since the latest dispatch start. After the first successful item with a usable recorded duration, an explicitly labeled estimate uses the median successful duration, remaining items and observed running-item count. It counts down visibly every second and rebases on observed settlements or changed concurrency/timing evidence; unchanged polls preserve the countdown. Mixed model/size/step plans carry a rough-estimate caveat; the blue progress bar still shows real settled counts only.
 
@@ -19,7 +19,7 @@ The consolidated changes since 4.0.0 are in [5.0.0 release preparation](v5.0.0.m
 
 ## Fixed
 
-- **Cloud concurrency and admission (PR #138):** Max at once, persisted settings, CLI and direct-cloud adapter allow 1–10 (existing default 4). Text-to-image cloud requests reserve 32 MiB per generation within a shared 320 MiB budget; ten client submissions can overlap. Image-edit reservations stay conservative; native memory usage and provider-side concurrency remain unverified.
+- **Cloud concurrency and admission (PR #138):** Max at once, persisted settings, CLI and direct-cloud adapter allow 1–10 (existing default 4). Text-to-image cloud requests reserve 32 MiB per generation within a shared 320 MiB budget; ten client submissions can overlap. A saved cloud concurrency above 4 is rejected by older builds. Image-edit reservations stay conservative; native memory usage and provider-side concurrency remain unverified.
 
 - **Queue recovery and selection:** interrupted running queues offer Resume after their dispatch owner stops; taking over still acquires the execution lock and preserves uncertain outcomes. Selecting a newly created queue clears the previous queue's outcome filters and immediately loads its items, including while idle polling is stopped.
 

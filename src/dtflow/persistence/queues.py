@@ -821,13 +821,15 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
             queue["status"] = _status(row["state"], summary)
             queue["started_at_utc"] = None
             queue["resume_event_id"] = 0
+            started_event_id = 0
             if queue["status"] in ("running", "paused"):
                 started = connection.execute(
-                    "SELECT at_utc FROM queue_events WHERE queue_id=? AND kind='started' ORDER BY event_id DESC LIMIT 1",
+                    "SELECT event_id, at_utc FROM queue_events WHERE queue_id=? AND kind='started' ORDER BY event_id DESC LIMIT 1",
                     (row["queue_id"],),
                 ).fetchone()
                 if started:
                     queue["started_at_utc"] = started["at_utc"]
+                    started_event_id = started["event_id"]
                 resumed = connection.execute(
                     "SELECT event_id FROM queue_events WHERE queue_id=? AND kind='resume' ORDER BY event_id DESC LIMIT 1",
                     (row["queue_id"],),
@@ -846,8 +848,10 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 else []
             )
             latest_timing = connection.execute(
-                "SELECT at_utc, detail_json FROM queue_events WHERE queue_id=? AND kind='timing_snapshot' ORDER BY event_id DESC LIMIT 1",
-                (row["queue_id"],),
+                "SELECT at_utc, detail_json FROM queue_events WHERE queue_id=? AND kind='timing_snapshot' AND event_id>?"
+                " ORDER BY event_id DESC LIMIT 1",
+                # A snapshot from before the latest start or Resume aged through the pause; never surface it.
+                (row["queue_id"], max(started_event_id, queue["resume_event_id"])),
             ).fetchone()
             if latest_timing:
                 try:

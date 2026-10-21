@@ -34,8 +34,7 @@ def _eta_eligible(view: dict) -> bool:
     if view["status"] != "running" or view.get("owner_active") is False:
         return False
     counts = view["summary"]
-    running = counts.get("running", 0)
-    return running > 0 and counts.get("pending", 0) + running > 0
+    return counts.get("running", 0) > 0
 
 
 def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> float | None:
@@ -566,7 +565,7 @@ def event_lines(view: dict) -> str:
             summary = ""
             if count is not None:
                 summary += f"{count}"
-            if cap > count:
+            if cap is not None and count is not None and cap > count:
                 cap = count
             if cap is not None:
                 summary += f" // {cap}"

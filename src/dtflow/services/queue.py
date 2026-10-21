@@ -140,8 +140,16 @@ class QueueDispatcher:
                 for event in view["events"]
                 if event["kind"] == "item_settled" and event["detail"].get("state") == "succeeded"
             ]
-            counts = view["summary"]
+            counts = dict(view["summary"])
             running_starts = [item["updated_at_utc"] for item in view["items"] if item["state"] == "running"]
+            # This runs just after a settlement, before the dispatch loop refills the freed lane; count the lanes the
+            # next claim will fill as starting now so the ETA does not divide by one lane too few.
+            lanes = min(view["cap"], self.service.backend.capabilities.max_concurrency)
+            refill = max(0, min(lanes - counts["running"], counts["pending"]))
+            if refill:
+                counts["running"] += refill
+                counts["pending"] -= refill
+                running_starts += [datetime.now(timezone.utc).isoformat()] * refill
             estimate = estimate_queue_seconds(counts, durations, running_starts)
             eta = (
                 math.ceil(estimate)

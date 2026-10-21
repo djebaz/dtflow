@@ -36,7 +36,7 @@ After the **first successful item with a usable recorded duration**, a labeled e
 
 Resume rebasing uses the latest applied durable Resume event, so even Pause and Resume between two polls reset the estimate. This leaves elapsed time's dispatch-start timestamp unchanged.
 
-Durations include provider-side queueing and are not pure inference time. The blue bar continues to show real settled counts, never estimated progress. The Events pane shows a replaceable live **Timing snapshot** with elapsed wall time, remaining ETA and elapsed + ETA (projected total). Before a successful duration sample, ETA and projected total are unavailable. The line updates each second during an active run; it is neither persisted nor presented as measured completion time.
+Durations include provider-side queueing and are not pure inference time. The blue bar continues to show real settled counts, never estimated progress. After each item settles, the dispatcher records a durable timing snapshot event (elapsed wall time and the ETA at that moment, counting the lane the next claim refills). The Events pane lists it as `elapsed + ETA = projected total`; it is skipped before the first successful duration sample and is not a measured completion time. The countdown seeds from a snapshot only while it is newer than the latest start or Resume and no live settlement, sample or lane change has superseded it.
 
 ## CLI examples
 
