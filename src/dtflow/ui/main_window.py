@@ -602,9 +602,10 @@ class MainWindow:
         if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or images.width() <= 0:
             return
         control, offset = shell.runControl, shell.runControlOffset
-        # Neither the offset's left edge nor the gap after it (spacing and the Queue button) depends on the offset's
-        # own width, so this target is stable and cannot oscillate.
-        gap = max(0, control.x() - offset.x() - offset.width())
+        # The Queue button sits between the offset and the control. Its fixed width plus one more layout spacing are
+        # constants, not read from positions that lag a pending relayout, so the target cannot oscillate (hovering
+        # the logo requests layouts and used to make the icons drift).
+        gap = shell.quickQueueButton.width() + max(0, shell.brandLayout.spacing())
         width = max(0, images.center().x() - control.width() // 2 - offset.x() - gap)
         if offset.width() != width:
             offset.setFixedWidth(width)
