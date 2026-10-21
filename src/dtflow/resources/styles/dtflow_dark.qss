@@ -479,6 +479,29 @@ QToolButton#aboutButton {
 QToolButton#aboutButton:hover {
   background-color: #343434;
 }
+/* Compact checkpoint metadata action beside the label; never squeeze the model selector. */
+QToolButton#checkpointDetailsButton {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: ${size.radius2xs};
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+}
+QToolButton#checkpointDetailsButton:hover {
+  background: ${color.buttonHover};
+  border-color: ${color.buttonBorder};
+}
+QToolButton#checkpointDetailsButton:pressed {
+  background: ${color.buttonPressed};
+}
+QToolButton#checkpointDetailsButton:focus {
+  border-color: ${color.focus};
+}
+QToolButton#checkpointDetailsButton:disabled {
+  background: transparent;
+  border-color: transparent;
+}
 QMenuBar::item:selected,
 QMenu::item:selected {
   background-color: #343434;
