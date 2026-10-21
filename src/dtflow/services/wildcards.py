@@ -75,6 +75,16 @@ def list_names(folder: Path) -> tuple[str, ...]:
     return names
 
 
+def fingerprint(folder: Path | None) -> tuple:
+    """Name, modification time and size of every list in ``folder``: unchanged while no list was edited."""
+    if folder is None:
+        return ()
+    try:
+        return tuple(sorted((p.name, st.st_mtime_ns, st.st_size) for p in folder.glob("*.txt") if (st := p.stat())))
+    except OSError:
+        return ()
+
+
 def bind_wildcards(plan: Plan, prompt: str, folder: Path | None) -> Plan:
     """The plan with every list its prompt template reaches loaded from ``folder`` (inline lists are kept as given)."""
     index = next((i for i, (name, v) in enumerate(plan.dimensions) if isinstance(v, PromptVariation)), None)

@@ -27,7 +27,7 @@ from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
-from dtflow.services.wildcards import bind_wildcards, list_names
+from dtflow.services.wildcards import bind_wildcards, fingerprint, list_names
 from dtflow.services.queue_session import (
     change_queue_order,
     clear_queues,
@@ -1155,7 +1155,9 @@ class QueuePage:
             self.plan_model.clear()
             self._clear_summary()
             return
-        key = (self._plan_form(), self._request_key(request))
+        form = self._plan_form()
+        lists = fingerprint(self._wildcards_dir) if form.variation != "Off" else ()  # an edited list changes the items
+        key = (form, self._request_key(request), lists)
         if key == self._preview_key:
             return  # polling and presentation syncs reach here unchanged: keep what is shown or being drawn
         self._invalidate_preview()
@@ -1181,9 +1183,8 @@ class QueuePage:
 
     @staticmethod
     def _request_key(request):
-        """The request without what every read draws afresh (its id, and a random seed), so unchanged inputs compare equal."""
-        random_seed = any(key == "seed.resolved" for key, _ in request.resolution_evidence)
-        return replace(request, request_id="preview", seed=0 if random_seed else request.seed)
+        """The request without the id every read draws afresh; the retained random seed stays, so a new one shows."""
+        return replace(request, request_id="preview")
 
     @property
     def previewing(self) -> bool:
