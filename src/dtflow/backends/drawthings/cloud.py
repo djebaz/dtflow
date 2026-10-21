@@ -17,6 +17,7 @@ from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.errors import diagnostics
 from dtflow.backends.drawthings.tls import TlsPolicy
 from dtflow.core.models import (
+    MAX_QUEUE_CONCURRENCY,
     AssetContent,
     AssetNegotiation,
     BackendError,
@@ -45,8 +46,8 @@ class DirectCloudBackend(DrawThingsBackend):
         upload_policy: AssetUploadPolicy | None = None,
         **kwargs,
     ):
-        if type(max_concurrency) is not int or not 1 <= max_concurrency <= 4:
-            raise ValidationError("Cloud concurrency must be in 1..4.")
+        if type(max_concurrency) is not int or not 1 <= max_concurrency <= MAX_QUEUE_CONCURRENCY:
+            raise ValidationError(f"Cloud concurrency must be in 1..{MAX_QUEUE_CONCURRENCY}.")
         if endpoint is not None and endpoint.tls.bundled_local:
             raise ValidationError("DT+ uses system or explicitly injected TLS trust, not the local bundled-CA policy.")
         self.max_concurrency = max_concurrency

@@ -77,6 +77,7 @@ class ValidationError(ValueError):
 
 Metadata = tuple[tuple[str, str], ...]
 MAX_QUEUE_ITEMS = 1000  # one queue's item ceiling; the planner checks it before enumerating
+MAX_QUEUE_CONCURRENCY = 10  # configurable client policy; provider limits still apply
 SEED_LIMIT = 4294967295
 
 
@@ -293,7 +294,7 @@ class ResourceLimits:
     transport_bytes: int = 64 * 1024 * 1024
     tensor_bytes: int = 64 * 1024 * 1024
     preview_bytes: int = 2 * 1024 * 1024
-    buffer_budget: int = 256 * 1024 * 1024
+    buffer_budget: int = 320 * 1024 * 1024
 
     def __post_init__(self) -> None:
         for name in self.__dataclass_fields__:

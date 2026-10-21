@@ -463,6 +463,17 @@ checked. Transient outcomes use the shared bottom overlay, never a sticky
 message line. Long titles and subtitles wrap or elide; at a 1000 px window the
 header must not clip.
 
+The shared running-queue overlay and Run control tooltip include elapsed wall time
+since the latest dispatch start (including pauses and provider waits). After the
+first successful item with a usable duration, append a labeled remaining-time
+estimate using median successful duration and observed running-item concurrency.
+Hide the estimate when paused, cancelled, finished or awaiting a new owner; mark
+mixed model/size/step plans as rough. Estimates never drive the blue progress bar.
+Count down visibly once a second with a separate page-parented presentation timer
+and a monotonic deadline. Unchanged database polls preserve that deadline; observed
+settlements, timing samples, concurrency changes and Resume rebase the estimate.
+An expired estimate stays at zero until fresh evidence arrives; it never completes work.
+
 In the left context rail the queue list takes the flexible rail height under
 the QUEUES eyebrow, an icon-only Refresh and a filter field. Rows are painted
 two-line items (semibold title with a status chip, secondary subtitle, then a

@@ -238,7 +238,7 @@ def test_cloud_concurrency_setting_is_validated_persisted_and_versioned(invoke, 
     assert json.loads(invoke("settings")[1]) == {"cloud_concurrency": 4, "entitlement_verified": False}
     assert json.loads(invoke("settings", "-j", "2")[1])["cloud_concurrency"] == 2
     assert json.loads(invoke("settings")[1])["cloud_concurrency"] == 2
-    for bad in ("0", "5"):
+    for bad in ("0", "11"):
         assert invoke("settings", "-j", bad)[0] == 2
     assert json.loads(invoke("settings")[1])["cloud_concurrency"] == 2
     newer = '{"schema_version": 2, "cloud_concurrency": 3}\n'
@@ -289,7 +289,7 @@ def test_backend_selection_reaches_the_intended_adapter(monkeypatch):
         (BackendSelection("local", "no-port"), {}, "HOST:PORT"),
         (BackendSelection("local", "host:abc"), {}, "HOST:PORT"),
         (BackendSelection("cloud"), {}, "DRAWTHINGS_API_KEY"),
-        (BackendSelection("cloud", cloud_concurrency=9), {"DRAWTHINGS_API_KEY": "k"}, "concurrency"),
+        (BackendSelection("cloud", cloud_concurrency=11), {"DRAWTHINGS_API_KEY": "k"}, "concurrency"),
         (BackendSelection("other"), {}, "Unknown backend"),
     ],
 )

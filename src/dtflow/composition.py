@@ -12,7 +12,14 @@ from typing import TYPE_CHECKING
 from dtflow.backends.fake import FakeBackend
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
-from dtflow.core.models import Backend, Credential, CredentialProvider, TimeoutPolicy, ValidationError
+from dtflow.core.models import (
+    MAX_QUEUE_CONCURRENCY,
+    Backend,
+    Credential,
+    CredentialProvider,
+    TimeoutPolicy,
+    ValidationError,
+)
 from dtflow.services.credentials import KEY, EnvironmentCredentials, resolve_credentials
 
 if TYPE_CHECKING:  # the Draw Things provider library is slow to import, so it loads only when a backend needs it
@@ -132,8 +139,11 @@ def create_backend(
             allow_image_probe=allow_image_probe,
         )
     if selection.name == "cloud":
-        if type(selection.cloud_concurrency) is not int or not 1 <= selection.cloud_concurrency <= 4:
-            raise ValidationError("Cloud concurrency must be in 1..4.")
+        if (
+            type(selection.cloud_concurrency) is not int
+            or not 1 <= selection.cloud_concurrency <= MAX_QUEUE_CONCURRENCY
+        ):
+            raise ValidationError(f"Cloud concurrency must be in 1..{MAX_QUEUE_CONCURRENCY}.")
         if image_permits or allow_image_probe:
             DirectCloudBackend.validate_image_permits(
                 DirectCloudBackend.default_endpoint(), image_permits, image_inputs_loader, allow_image_probe

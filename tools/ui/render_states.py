@@ -15,6 +15,7 @@ import tempfile
 import time
 import traceback
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
@@ -83,7 +84,24 @@ from dtflow.ui.theme import apply_theme  # noqa: E402
 RENDERED = {}  # state name -> {"seconds", "blank"}, in render order
 STARTED = time.monotonic()
 SELECTED_CATEGORY = "all"
-RENDER_CATEGORIES = ("all", "connection", "generate", "images", "image-navigation", "queues", "shell", "inpaint", "logs")
+
+
+def wants(category):
+    """Return whether a render category should execute."""
+    return SELECTED_CATEGORY in ("all", category) or (category == "images" and SELECTED_CATEGORY == "image-navigation")
+
+
+RENDER_CATEGORIES = (
+    "all",
+    "connection",
+    "generate",
+    "images",
+    "image-navigation",
+    "queues",
+    "shell",
+    "inpaint",
+    "logs",
+)
 
 
 def render_category(target):
@@ -146,8 +164,8 @@ def save(widget, out, name):
 
 
 @patch.object(GenerationPage, "request_cached", new=lambda self, **_: None)
-def render_connection_states(app, state, out):
-    """Connection fixtures with synthetic credentials and intercepted provider/file mutations."""
+def render_workspace_states(app, state, out):
+    """Route shared workspace fixtures by category, with synthetic credentials and intercepted mutations."""
     # Unused Generate inventory restoration can otherwise resolve the real process environment on Cloud selection.
     environ = {}
     saved = SavedCredentials(Vault())
@@ -166,30 +184,34 @@ def render_connection_states(app, state, out):
         form = shell.form
         form.resize(1600, 1000)
         shell.show()
-        form.connectionNavigationButton.click()
-        form.backendCombo.setCurrentText("local")
-        assert form.endpointEdit.isEnabled() and not form.credentialBox.isEnabled()
-        snap("connection-01-local-idle", "No API key available.", False)
+        if wants("connection"):
+            form.connectionNavigationButton.click()
+            form.backendCombo.setCurrentText("local")
+            assert form.endpointEdit.isEnabled() and not form.credentialBox.isEnabled()
+            snap("connection-01-local-idle", "No API key available.", False)
 
-        form.backendCombo.setCurrentText("cloud")
-        assert not form.endpointEdit.isEnabled() and form.credentialBox.isEnabled()
-        snap("connection-02-cloud-no-key", "No API key available.", False)
+            form.backendCombo.setCurrentText("cloud")
+            assert not form.endpointEdit.isEnabled() and form.credentialBox.isEnabled()
+            snap("connection-02-cloud-no-key", "No API key available.", False)
 
-        # These are synthetic source observations, never the process environment or the OS vault.
-        environ[KEY] = "offline-environment-key"
-        snap("connection-03-cloud-env-key", "from the environment", True)
+            # These are synthetic source observations, never the process environment or the OS vault.
+            environ[KEY] = "offline-environment-key"
+            snap("connection-03-cloud-env-key", "from the environment", True)
 
-        environ.clear()
-        saved.save("offline-saved-key")  # Writes only the injected in-memory Vault.
-        snap("connection-04-cloud-saved-key", "Using the key saved", True)
+            environ.clear()
+            saved.save("offline-saved-key")  # Writes only the injected in-memory Vault.
+            snap("connection-04-cloud-saved-key", "Using the key saved", True)
 
-        with patch.object(saved, "_store", side_effect=SecureStorageUnavailable):
-            snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
-        render_connection_outcomes(shell, out)
-        render_connection_management(shell, out)
-        render_generate_configuration_states(shell, out)
-        render_active_queue_states(shell, out)
-        render_gallery_composition_states(shell, state, out)
+            with patch.object(saved, "_store", side_effect=SecureStorageUnavailable):
+                snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
+            render_connection_outcomes(shell, out)
+            render_connection_management(shell, out)
+        if wants("generate"):
+            render_generate_configuration_states(shell, out)
+        if wants("queues"):
+            render_active_queue_states(shell, out)
+        if wants("images"):
+            render_gallery_composition_states(shell, state, out)
     finally:
         shell.runner.shutdown()
         shell.form.close()
@@ -719,6 +741,11 @@ def render_active_queue_states(shell, out):
     with patch.object(shell.runner, "submit", side_effect=hold_worker):
         form.backendCombo.setCurrentText("local")
         form.queueNavigationButton.click()
+        # Category processes start with a fresh form; do not depend on the Generate fixtures running first.
+        shell.generation_page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+        shell.generation_page.promptEdit.setPlainText(PROMPT)
+        shell.generation_page.seedEdit.setText("123")
+        shell.generation.lora.set_loras(())
         request = shell.generation.request_for_queue(preview=True)[0]
         present("running", ["succeeded", "running", "pending"], owned=True)
         # #121: one status chip and one state-dependent primary action in the queue header.
@@ -726,6 +753,23 @@ def render_active_queue_states(shell, out):
         assert page.queueStateLabel.text() == "Running" and not page.removeQueueButton.isEnabled()
         assert page.createQueueButton.isEnabled()  # #133: a new queue can be prepared while one runs
         snap("queues-11-running")
+        timed = present("running", ["succeeded", "running", "pending"], owned=True)
+        timed.update(successful_durations=[45], started_at_utc=datetime.now(UTC).isoformat())
+        queue._read_done(([timed], timed, 2), None)
+        queue._timer.stop()
+        assert "Elapsed" in queue._activity.run_state.detail and "estimate" in queue._activity.run_state.detail
+        assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
+        snap("queues-33-elapsed-eta")
+        with patch("dtflow.ui.queue_page.monotonic", return_value=queue._countdown.deadline - 89):
+            queue._timing_tick()
+        assert "~1:29 left" in queue._activity.run_state.detail
+        assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
+        snap("queues-34-eta-countdown")
+        resumed = dict(timed, resume_event_id=1)
+        queue._read_done(([resumed], resumed, 2), None)
+        queue._timer.stop()
+        assert "~1:30 left" in queue._activity.run_state.detail
+        snap("queues-35-resume-between-polls")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
         assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "resume"
         snap("queues-12-paused-after-start")
@@ -849,11 +893,19 @@ def render_active_queue_states(shell, out):
         queue._sync()
         shell.shell.leftScroll.verticalScrollBar().setValue(0)
         queue._syncing = True
+        page.concurrencySpinBox.setValue(10)
+        page.newQueueCapSpinBox.setValue(10)
+        queue._syncing = False
+        queue._set_level(page.concurrencySpinBox, 10)
+        assert page.concurrencySpinBox.value() == page.newQueueCapSpinBox.value() == 10
+        snap("queues-36-max-at-once-ten")
+        queue._syncing = True
         page.concurrencySpinBox.setValue(4)
+        page.newQueueCapSpinBox.setValue(4)
         queue._syncing = False
         queue._set_level(page.concurrencySpinBox, 4)
-        # Defensive validator refusal: the bounded spin box normally prevents values outside 1..4.
-        queue._cap_changed(5)
+        # Defensive validator refusal: the bounded spin box normally prevents values outside 1..10.
+        queue._cap_changed(11)
         assert strip.rows["queue-message"].activityLabel.text() == "Concurrency not changed"
         assert page.concurrencySpinBox.property("level") == "elevated"
         snap("queues-20-concurrency-refused")
@@ -2710,7 +2762,7 @@ def main():
         "--category",
         choices=RENDER_CATEGORIES,
         default="all",
-        help="Render only one review category (default: all). Images includes Image Navigation.",
+        help="Render only one UI category (default: all). Images includes Image Navigation.",
     )
     args = parser.parse_args()
     global SELECTED_CATEGORY
@@ -2731,36 +2783,40 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
-        render_connection_states(app, state, args.out)
-        render_mapped_gallery_states(app, state, args.out)
-        # Missing Qt capability API: startup succeeds with Trash unavailable.
-        with patch.object(system_trash, "QFile", object):
-            unavailable = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "no-trash")
-        try:
-            unavailable.form.resize(1600, 1000)
-            unavailable.show()
-            unavailable.form.imagesNavigationButton.click()
-            wait_for(lambda: unavailable.gallery.removal_ready)
-            unavailable.image_recycle.menu_button.menu().popup(
-                unavailable.image_recycle.menu_button.mapToGlobal(
-                    QPoint(0, unavailable.image_recycle.menu_button.height())
+        if any(wants(category) for category in ("connection", "generate", "queues", "images")):
+            render_workspace_states(app, state, args.out)
+        if wants("images"):
+            render_mapped_gallery_states(app, state, args.out)
+        if wants("images"):
+            # Missing Qt capability API: startup succeeds with Trash unavailable.
+            with patch.object(system_trash, "QFile", object):
+                unavailable = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "no-trash")
+            try:
+                unavailable.form.resize(1600, 1000)
+                unavailable.show()
+                unavailable.form.imagesNavigationButton.click()
+                wait_for(lambda: unavailable.gallery.removal_ready)
+                unavailable.image_recycle.menu_button.menu().popup(
+                    unavailable.image_recycle.menu_button.mapToGlobal(
+                        QPoint(0, unavailable.image_recycle.menu_button.height())
+                    )
                 )
-            )
-            QTest.qWait(100)
-            target = args.out / "images-02-trash-unavailable.png"
-            if not unavailable.form.grab().save(str(target)):
-                raise RuntimeError(f"Could not save {target.name}")
-            report(target)
-            target = args.out / "images-09-removal-mode-menu.png"
-            if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
-                raise RuntimeError(f"Could not save {target.name}")
-            report(target)
-            unavailable.image_recycle.menu_button.menu().hide()
-        finally:
-            unavailable.runner.shutdown()
-            unavailable.form.close()
-            app.processEvents()
-        render_initial_refresh_recovery(app, state, args.out)
+                QTest.qWait(100)
+                target = args.out / "images-02-trash-unavailable.png"
+                if not unavailable.form.grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                report(target)
+                target = args.out / "images-09-removal-mode-menu.png"
+                if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
+                    raise RuntimeError(f"Could not save {target.name}")
+                report(target)
+                unavailable.image_recycle.menu_button.menu().hide()
+            finally:
+                unavailable.runner.shutdown()
+                unavailable.form.close()
+                app.processEvents()
+        if wants("images"):
+            render_initial_refresh_recovery(app, state, args.out)
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
         shell.show()
@@ -2769,6 +2825,9 @@ def main():
         page, controller = shell.generation_page, shell.generation
 
         def capture(name):
+            category = name.split("-", 1)[0]
+            if not wants(category):
+                return
             app.processEvents()
             preview = controller.inpaint.canvas if controller.inpaint.active else page.resultPreviewLabel
             preview._show_controls()
@@ -2931,10 +2990,14 @@ def main():
             controller.show_metadata()
             capture("generate-19-metadata-inspection")
             shell.inline.dismiss()
-            render_queue_states(shell, capture)
-            render_shell_states(shell, capture)
-            render_inpaint_states(shell, state, capture)
-            render_logs_states(shell, capture)
+            if wants("queues"):
+                render_queue_states(shell, capture)
+            if wants("shell"):
+                render_shell_states(shell, capture)
+            if wants("inpaint"):
+                render_inpaint_states(shell, state, capture)
+            if wants("logs"):
+                render_logs_states(shell, capture)
         except BaseException:
             # Print before shutdown: a stuck shutdown would otherwise hide the original failure.
             traceback.print_exc()

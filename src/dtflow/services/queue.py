@@ -9,9 +9,12 @@ block other work. No database transaction is held while generating.
 
 import asyncio
 import logging
+import math
+from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
 
+from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -118,6 +121,41 @@ class QueueDispatcher:
                 return
             kind, detail, at_utc = record
             await self._record_event(queue_id, kind, detail, at_utc)
+            if kind == "item_settled":
+                await self._record_timing_snapshot(queue_id)
+
+    async def _record_timing_snapshot(self, queue_id: str) -> None:
+        """Keep the observed timing and current ETA alongside each settled item."""
+        try:
+            view = await self.store.queue_timing(queue_id)
+            if not view["started_at_utc"]:
+                return
+            started = datetime.fromisoformat(view["started_at_utc"])
+            if started.tzinfo is None:
+                return
+            elapsed = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
+            durations = view["successful_durations"]
+            counts = dict(view["summary"])
+            running_starts = list(view["running_started_at_utc"])
+            # This runs just after a settlement, before the dispatch loop refills the freed lane; count the lanes the
+            # next claim will fill as starting now so the ETA does not divide by one lane too few.
+            lanes = min(view["cap"], self.service.backend.capabilities.max_concurrency)
+            refill = max(0, min(lanes - counts["running"], counts["pending"]))
+            if refill:
+                counts["running"] += refill
+                counts["pending"] -= refill
+                running_starts += [datetime.now(timezone.utc).isoformat()] * refill
+            estimate = estimate_queue_seconds(counts, durations, running_starts)
+            eta = (
+                math.ceil(estimate)
+                if estimate is not None
+                else (0 if not counts["pending"] and not counts["running"] else None)
+            )
+            await self._record_event(queue_id, "timing_snapshot", {"elapsed_seconds": elapsed, "eta_seconds": eta})
+        except Exception as exc:
+            diagnostic_event(
+                log, "queue.timing_snapshot_not_recorded", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
 
     @staticmethod
     def _backend_event_detail(item_id: str, request: ResolvedGenerationRequest, event: BackendEvent) -> dict[str, Any]:

@@ -19,6 +19,7 @@ from dtflow.services.queue_session import (
     dispatch_queue,
     expand_items,
     post_queue_control,
+    read_queue_list,
     read_queue_views,
     set_concurrency,
 )
@@ -57,7 +58,7 @@ async def test_create_read_dispatch_and_controls_round_trip(tmp_path):
 @pytest.mark.asyncio
 async def test_invalid_cap_and_local_without_endpoint_create_nothing(tmp_path):
     with pytest.raises(ValidationError):
-        await create_queue(tmp_path, BACKEND, expand_items(base(), 1), 9)
+        await create_queue(tmp_path, BACKEND, expand_items(base(), 1), 11)
     with pytest.raises(ValidationError, match="endpoint"):
         await create_queue(tmp_path, {"name": "local", "endpoint": None}, expand_items(base(), 1))
     assert not (tmp_path / "attempts.sqlite3").exists()
@@ -66,15 +67,18 @@ async def test_invalid_cap_and_local_without_endpoint_create_nothing(tmp_path):
 @pytest.mark.asyncio
 async def test_concurrency_is_validated_before_anything_is_saved_or_posted(tmp_path):
     queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1))
-    for bad in (0, 5, True):
+    for bad in (0, 11, True):
         with pytest.raises(SettingsError):
             await set_concurrency(tmp_path, bad, queue_id=queue_id, save_shared=True)
     assert not (tmp_path / "settings.json").exists()
     assert await set_concurrency(tmp_path, 3, queue_id=queue_id, save_shared=True) == 3
     assert load_cloud_concurrency(tmp_path) == 3
+    assert await set_concurrency(tmp_path, 10, queue_id=queue_id, save_shared=True) == 10
+    assert load_cloud_concurrency(tmp_path) == 10
     with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
         assert db.execute("SELECT action, payload_json FROM queue_controls").fetchall() == [
-            ("cap", json.dumps({"cap": 3}))
+            ("cap", json.dumps({"cap": 3})),
+            ("cap", json.dumps({"cap": 10})),
         ]
 
 
@@ -89,6 +93,36 @@ async def test_a_second_dispatch_owner_is_refused_before_dispatching(tmp_path):
     finally:
         await owner.aclose()
     assert (await read_queue_views(tmp_path))[0]["summary"]["pending"] == 1
+
+
+@pytest.mark.asyncio
+async def test_summary_timing_reads_successful_settlements_without_loading_items(tmp_path):
+    queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 3))
+    owner = SQLiteAttempts(tmp_path)
+    await owner.open()
+    try:
+        await owner.set_running(queue_id)
+        with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
+            db.execute("UPDATE queue_items SET state='succeeded' WHERE queue_id=? AND position=1", (queue_id,))
+            db.execute("UPDATE queue_items SET state='running' WHERE queue_id=? AND position=2", (queue_id,))
+        for state, seconds in (("succeeded", 30), ("failed", 900), ("unknown", 800)):
+            await owner.record_queue_event(
+                queue_id, "item_settled", {"state": state, "backend_elapsed_seconds": seconds}
+            )
+        (summary,) = await read_queue_list(tmp_path)
+        assert summary["successful_durations"] == [30]
+        assert summary["started_at_utc"] and "items" not in summary and "events" not in summary
+        assert summary["owner_active"]
+        for action in ("pause", "resume"):
+            await post_queue_control(tmp_path, queue_id, action)
+        assert await owner.apply_controls(queue_id) == ("pause", "resume")
+        (resumed,) = await read_queue_list(tmp_path)
+        assert resumed["resume_event_id"] > summary["resume_event_id"]
+        assert resumed["started_at_utc"] == summary["started_at_utc"]
+        assert resumed["summary"] == summary["summary"]
+        assert resumed["successful_durations"] == summary["successful_durations"]
+    finally:
+        await owner.aclose()
 
 
 @pytest.mark.asyncio
