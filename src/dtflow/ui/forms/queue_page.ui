@@ -513,14 +513,17 @@
           <item>
            <layout class="QHBoxLayout" name="composerTitleLayout" stretch="1,0,0,0,0,0,0">
             <item>
-             <widget class="QLabel" name="composerTitleLabel">
-              <property name="text">
-               <string>New queue</string>
+             <spacer name="composerTitleSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
               </property>
-              <property name="textRole" stdset="0">
-               <string>section</string>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
               </property>
-             </widget>
+             </spacer>
             </item>
             <item>
              <widget class="QLabel" name="newQueueCapLabel">

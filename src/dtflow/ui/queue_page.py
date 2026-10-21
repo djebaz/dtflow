@@ -277,7 +277,7 @@ class QueuePage:
                 page.addQueueButton,
                 page.startQueueButton,
             ),
-            (page.composerTitleLabel, page.closeComposerButton),
+            (page.closeComposerButton,),
         )
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
