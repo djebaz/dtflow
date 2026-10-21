@@ -1112,9 +1112,15 @@ def render_active_queue_states(shell, out):
         assert page.queueComposer.width() <= viewport.width()
         assert page.queueComposerScroll.horizontalScrollBar().maximum() == 0
         for widget in (
-            page.planVariationCombo, page.planVariationCountSpin,
-            page.planShuffleCombo, page.planDropLabel, page.planDropSpin,
-            page.planAddLabel, page.planAddSpin, page.planRngSeedEdit, page.planRerollButton,
+            page.planVariationCombo,
+            page.planVariationCountSpin,
+            page.planShuffleCombo,
+            page.planDropLabel,
+            page.planDropSpin,
+            page.planAddLabel,
+            page.planAddSpin,
+            page.planRngSeedEdit,
+            page.planRerollButton,
         ):
             assert widget.isVisible(), widget.objectName()
             left = widget.mapTo(viewport, QPoint(0, 0)).x()
