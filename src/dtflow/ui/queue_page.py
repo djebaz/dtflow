@@ -300,6 +300,8 @@ class QueuePage:
         page.planTableView.setModel(self.plan_model)
         self._preview_token = 0  # a prompt-variation preview resolves off the GUI thread; only the latest token shows
         self._previewing = False
+        self._preview_active = False  # one computation at a time ...
+        self._preview_waiting: tuple | None = None  # ... plus the latest request that arrived meanwhile
         self._preview_timer = QTimer(page)
         self._preview_timer.setSingleShot(True)
         self._preview_timer.setInterval(PREVIEW_MS)
@@ -1142,6 +1144,7 @@ class QueuePage:
     def preview(self) -> None:
         """Live count and items for the composer: pure planning against the Generate form, nothing persisted or sent."""
         self._preview_timer.stop()
+        self._invalidate_preview()  # before any early return: a mode or validity change must not be overwritten later
         if not self._composing or not self.page.queueWorkspace.isVisible():
             return  # reading the request marks and snaps Generate fields: only while Queues is shown (see ``shown``)
         page = self.page
@@ -1163,8 +1166,6 @@ class QueuePage:
             self._show(page.planCountLabel, "ok", f"{count} item{'s' if count != 1 else ''} · {seeds}")
             self._show_summary(request, count, "Nothing (repeats the Generate settings)", seeds.capitalize())
             return
-        self._preview_token += 1  # whatever is still being drawn is now out of date
-        self._previewing = False
         if self._plan_form().variation != "Off" and not self._runner.closed:
             self._preview_in_background(request)
             return
@@ -1179,17 +1180,42 @@ class QueuePage:
         """True while a prompt-variation preview is still being resolved in the background."""
         return self._previewing
 
+    def _invalidate_preview(self) -> None:
+        """Whatever is being drawn, or waits to be, is out of date: its result must never reach the composer."""
+        self._preview_token += 1
+        self._previewing = False
+        self._preview_waiting = None
+
     def _preview_in_background(self, request) -> None:
-        """Sampling thousands of prompts must not freeze typing: resolve on a worker and drop outdated results."""
-        token = self._preview_token
-        inputs = self._plan_inputs(request)
+        """Sampling thousands of prompts must not freeze typing: resolve on a worker and drop outdated results.
+
+        At most one computation runs; a newer request waits in a single slot (replacing any older one), so repeated
+        edits or rerolls never pile up work in front of the newest preview.
+        """
+        job = (self._preview_token, request, self._plan_inputs(request))
         self._previewing = True
         self._show(self.page.planCountLabel, "unknown", "Resolving prompts…")
+        if self._preview_active:
+            self._preview_waiting = job
+            return
+        self._start_preview(job)
+
+    def _start_preview(self, job: tuple) -> None:
+        token, request, inputs = job
+        self._preview_active = True
 
         async def work():
             return await asyncio.to_thread(self._compute_plan, *inputs)
 
-        self._runner.submit(work(), lambda result, failure: self._preview_resolved(token, request, result, failure))
+        self._runner.submit(work(), lambda result, failure: self._preview_finished(token, request, result, failure))
+
+    def _preview_finished(self, token: int, request, result, failure) -> None:
+        self._preview_active = False
+        waiting, self._preview_waiting = self._preview_waiting, None
+        if waiting is not None and waiting[0] == self._preview_token and self._composing:
+            self._start_preview(waiting)  # the newest request; this older result is not worth showing
+            return
+        self._preview_resolved(token, request, result, failure)
 
     def _preview_resolved(self, token: int, request, result, failure) -> None:
         if token != self._preview_token or not self._composing:
@@ -1251,6 +1277,7 @@ class QueuePage:
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
 
     def _schedule_preview(self) -> None:
+        self._invalidate_preview()  # the inputs changed: a result still being drawn is already stale
         if self._composing and self.page.queueWorkspace.isVisible():
             self._preview_timer.start()
 
