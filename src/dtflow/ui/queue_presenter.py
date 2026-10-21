@@ -8,7 +8,6 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from statistics import median
 
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import local_time
@@ -30,48 +29,82 @@ def _duration_samples(view: dict) -> tuple[float, ...]:
     return tuple(samples)
 
 
+def _eta_eligible(view: dict) -> bool:
+    """Only an active, owned queue with running work shows an ETA; durable snapshots never override this."""
+    if view["status"] != "running" or view.get("owner_active") is False:
+        return False
+    counts = view["summary"]
+    running = counts.get("running", 0)
+    return running > 0 and counts.get("pending", 0) + running > 0
+
+
 def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> float | None:
     """Estimate remaining wall time from succeeded item timings and observed parallel work, never the configured cap.
 
     Backend durations may include provider queueing. This does not predict per-item progress or elapsed running time.
     """
-    if view["status"] != "running" or view.get("owner_active") is False:
-        return None
-    counts = view["summary"]
-    running = counts.get("running", 0)
-    remaining = counts.get("pending", 0) + running
     samples = _duration_samples(view)
-    if running <= 0 or remaining <= 0 or len(samples) < max(1, minimum_samples):
+    if not _eta_eligible(view) or len(samples) < max(1, minimum_samples):
         return None
-    return estimate_queue_seconds(counts, samples, view.get("running_started_at_utc"))
+    return estimate_queue_seconds(view["summary"], samples, view.get("running_started_at_utc"))
+
+
+def _snapshot_eta(view: dict) -> tuple[tuple, float] | None:
+    """The latest durable timing snapshot's identity and ETA aged to now, when it is usable."""
+    snapshot = view.get("timing_snapshot")
+    if not snapshot or type(snapshot.get("eta_seconds")) is not int or snapshot["eta_seconds"] < 0:
+        return None
+    try:
+        recorded = datetime.fromisoformat(snapshot["at_utc"])
+        if recorded.tzinfo is None:
+            return None
+        age = max(0.0, (datetime.now().astimezone() - recorded).total_seconds())
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return (view["queue_id"], snapshot["at_utc"]), max(0.0, snapshot["eta_seconds"] - age)
+
 
 @dataclass
 class QueueCountdown:
-    """A monotonic ETA deadline: unchanged polls keep ticking; settlements or changed live lanes rebase it."""
+    """A monotonic ETA deadline: unchanged polls keep ticking; settlements or changed live lanes rebase it.
+
+    A durable timing snapshot seeds the deadline only when it is new. Once the live timing context (counts, samples,
+    lanes or Resume) changes without a newer snapshot, that snapshot is stale and the live estimate is used instead.
+    """
 
     signature: tuple | None = None
     deadline: float | None = None
+    snapshot_key: tuple | None = None
 
     def reset(self) -> None:
-        self.signature = self.deadline = None
+        self.signature = self.deadline = self.snapshot_key = None
 
     def remaining(self, view: dict, now: float) -> float | None:
-        snapshot = view.get("timing_snapshot")
-        if snapshot and type(snapshot.get("eta_seconds")) is int and snapshot["eta_seconds"] >= 0:
-            try:
-                recorded = datetime.fromisoformat(snapshot["at_utc"])
-                if recorded.tzinfo is not None:
-                    age = max(0.0, (datetime.now().astimezone() - recorded).total_seconds())
-                    self.signature = (view["queue_id"], snapshot["at_utc"])
-                    return max(0.0, snapshot["eta_seconds"] - age)
-            except (TypeError, ValueError, OverflowError):
-                pass
-        estimate = estimate_remaining(view)
-        if estimate is None:
-            self.reset()
+        if not _eta_eligible(view):
+            # Keep the seen snapshot so Resume does not revive a pre-pause ETA.
+            self.signature = self.deadline = None
             return None
-        self.signature = (view["queue_id"], "live")
-        return estimate
+        signature = (
+            view["queue_id"],
+            view.get("started_at_utc"),
+            view.get("resume_event_id", 0),
+            tuple(view["summary"].get(state, 0) for state in ("pending", "running", *SETTLED)),
+            _duration_samples(view),
+            tuple(view.get("running_started_at_utc") or ()),
+        )
+        snapshot = _snapshot_eta(view)
+        key = snapshot[0] if snapshot else None
+        if signature != self.signature or key != self.snapshot_key:
+            if snapshot is not None and key != self.snapshot_key:
+                estimate = snapshot[1]
+            else:
+                estimate = estimate_remaining(view)
+            self.snapshot_key = key
+            if estimate is None:
+                self.signature = self.deadline = None
+                return None
+            self.signature, self.deadline = signature, now + estimate
+        return max(0.0, self.deadline - now)
 
 
 def _clock(seconds: int) -> str:
