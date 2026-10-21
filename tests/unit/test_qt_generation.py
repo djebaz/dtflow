@@ -269,6 +269,33 @@ def test_inventory_refresh_populates_models_with_observation_time(window, qtbot)
     assert "observed" in page.inventoryEvidenceLabel.text()
 
 
+def test_checkpoint_details_inspects_exact_file_without_dispatch(window, monkeypatch):
+    from dtflow.services import checkpoint_metadata
+
+    page = window.generation_page
+    page.modelCombo.setCurrentText("fixture_q8p.ckpt")
+    monkeypatch.setattr(
+        checkpoint_metadata,
+        "exact_model_spec",
+        lambda identifier: {"file": identifier, "version": "flux2", "modifier": "none"}
+        if identifier == "fixture_q8p.ckpt"
+        else None,
+    )
+    assert page.checkpointDetailsButton.isEnabled()
+    page.checkpointDetailsButton.click()
+    assert window.inline.form.inlineTitleLabel.text() == "Checkpoint details"
+    body = window.inline.form.inlineTextBrowser.toPlainText()
+    assert "Technical / version: flux2" in body
+    assert "Q8P" in body
+    assert "Not observed" in body
+    assert not (window.state_dir / "attempts.sqlite3").exists()
+    window.inline.dismiss()
+    page.modelCombo.setCurrentText("fixture_q6p.ckpt")
+    page.checkpointDetailsButton.click()
+    assert "Not available for this exact checkpoint" in window.inline.form.inlineTextBrowser.toPlainText()
+    assert "flux2" not in window.inline.form.inlineTextBrowser.toPlainText()
+
+
 def test_configuration_round_trip_unbound_loras_and_unsupported_documents(window, qtbot, tmp_path):
     page, controller = window.generation_page, window.generation
     target = tmp_path / "saved.json"
