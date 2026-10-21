@@ -198,7 +198,9 @@ class QueuePage:
         self._simulation, self._created_hook = simulation_source, created_hook
         self._choices, self._generate_hook = choices_source, generate_hook
         self._composing = False
+        self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
         self._after_generation: list[str] = []  # popover queues waiting for the running single generation (#135)
+        self._checking_waiting = False  # one fresh status read at a time decides the next waiting queue
         self._edit_source, self._editing = edit_source, editing_source
         self._views: dict[str, dict] = {}
         self._selected: str | None = None
@@ -1105,14 +1107,17 @@ class QueuePage:
         """Create from the composer: ``save`` keeps it paused, ``add`` queues it up next, ``start`` dispatches it.
 
         ``quick`` is the Queue popover (#135): ``count`` repeats Generate's request, and ``None`` uses the composer's
-        last plan. Its outcome goes to the shared overlay, so nothing leaves the current tab."""
-        if action == "start" and (self.dispatching_here or self._activity.generating):
-            return
+        current plan. Its outcome goes to the shared overlay, so nothing leaves the current tab."""
         report = self._quick_report if quick else self._message
+        if action == "start" and (self.dispatching_here or self._activity.generating):
+            if quick:
+                report(Presentation("warning", "Queue not created", "A run started meanwhile; use Add to queue."))
+            return
         try:
             request, name, endpoint, asset_ids = self._request_source()
         except FormError as exc:
-            report(Presentation("error", "Queue not created", str(exc)))
+            # From another tab the marked field is out of sight, so say where it is.
+            report(Presentation("error", "Queue not created", f"On Generate: {exc}" if quick else str(exc)))
             return
         plan = None
         if (count is None) if quick else self._planned():
@@ -1152,12 +1157,18 @@ class QueuePage:
             return None
 
     def quick_state(self) -> tuple[bool, bool, str]:
-        """(Start now, Add to queue, reason): a new request waits behind the running queue (#133)."""
+        """(Start now, Add to queue, reason): a new request waits behind the running work (#133)."""
         if self._activity.generating:
             return False, True, "A generation is running: Add to queue starts this one when it ends."
         if self.dispatching_here:
             return False, True, "A queue is running: Add to queue starts this one next, by itself."
+        if self._live_run():
+            return False, True, "Another process runs a queue: Add to queue starts this one after it."
         return True, False, "Start now creates the queue and starts it at once."
+
+    def quick_cap(self) -> int:
+        """The new queue's Max at once: the composer's value (the shared cloud default with cloud chosen)."""
+        return self.page.newQueueCapSpinBox.value()
 
     def quick_create(self, action: str, *, count: int | None) -> None:
         self.create(action, count=count, quick=True)
@@ -1170,12 +1181,26 @@ class QueuePage:
         """Start the oldest popover queue that waited for a single generation; the next one follows its dispatch."""
         if self._activity.generating or self._activity.dispatching or not self._after_generation:
             return
-        queue_id = self._after_generation.pop(0)
-        view = self._views.get(queue_id)
-        if view is not None and view["status"] != "paused":
-            self._start_after_generation()  # started, cancelled or removed meanwhile: it is no longer ours to start
+        if self._checking_waiting:
             return
-        self._dispatch(queue_id, resume_fallback=None)
+        self._checking_waiting = True
+        queue_id = self._after_generation.pop(0)
+
+        async def status():
+            views = await read_queue_views(self._state, queue_id)
+            return views[0]["status"] if views else None
+
+        self._runner.submit(status(), lambda result, failure: self._start_waiting(queue_id, result, failure))
+
+    def _start_waiting(self, queue_id: str, status, failure) -> None:
+        """Read fresh: a queue started, cancelled or removed meanwhile is no longer ours to start."""
+        self._checking_waiting = False
+        if failure is not None or status != "paused":
+            self._start_after_generation()
+        elif self._activity.generating or self._activity.dispatching:
+            self._after_generation.insert(0, queue_id)  # other work started during the read; wait for it again
+        else:
+            self._dispatch(queue_id, resume_fallback=None)
 
     def _quick_report(self, presentation: Presentation) -> None:
         state = {"ok": "success", "warning": "partial"}.get(presentation.level, "error")
@@ -1198,7 +1223,11 @@ class QueuePage:
             # No queue runs to follow, so this window starts it once the generation ends.
             self._after_generation.append(queue_id)
             self._quick_report(
-                Presentation("ok", "Added to queue", "It starts by itself when the running generation ends.")
+                Presentation(
+                    "ok",
+                    "Added to queue",
+                    "It starts by itself when the running generation ends, if this window stays open.",
+                )
             )
         elif status != "queued":
             self._quick_report(
@@ -1327,6 +1356,7 @@ class QueuePage:
         self.page.startQueueButton.setText(f"Start now ({text})" if level == "ok" else "Start now")
         self._actions_fit.refit()
         self._schedule_preview()
+        self.plan_hook()
 
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
@@ -1477,6 +1507,15 @@ class QueuePage:
         self._dispatch_started = False
         self._activity.set(dispatching=False)
         fallback, self._resume_fallback = self._resume_fallback, None
+        if isinstance(failure, StateBusyError) and self._after_generation:
+            # Another process owns the state now: the waiting popover queues would fail the same way.
+            self._after_generation.clear()
+            activity_strip(self.page).complete(
+                "queue-quick",
+                "Waiting queues saved paused",
+                "Another process owns dispatch; press Start later.",
+                "partial",
+            )
         if isinstance(failure, StateBusyError) and fallback is not None:
             self._post("resume", fallback)
             presentation = Presentation(

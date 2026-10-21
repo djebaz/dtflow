@@ -1,6 +1,6 @@
 """One-click Queue popover (#135): queue Generate's request from any tab without opening the Queues tab.
 
-The popover owns no queue rules. It offers Repeat N or the composer's last Pair/Cross plan, and hands the choice to
+The popover owns no queue rules. It offers Repeat N or the Queues composer's current Pair/Cross plan, and hands the choice to
 ``QueuePage.quick_create``, the same creation and dispatch path as the composer's Start now and Add to queue.
 """
 
@@ -26,7 +26,7 @@ DISCLOSURE = "Uses Generate's current request and backend. A cloud run may use c
 
 
 class QueuePopover(QFrame):
-    """A compact popup: Repeat N or the last plan, then Start now or Add to queue behind the running queue."""
+    """A compact popup: Repeat N or the composer plan, then Start now or Add to queue behind the running queue."""
 
     def __init__(self, queue, activity: Activity, parent: QWidget, *, changed: Callable[[str], None] = lambda _: None):
         super().__init__(parent, Qt.WindowType.Popup)
@@ -56,17 +56,15 @@ class QueuePopover(QFrame):
         repeat_row.addStretch(1)
         layout.addLayout(repeat_row)
 
-        self.plan_option = QRadioButton("Last plan", self)
+        self.plan_option = QRadioButton("Composer plan", self)
         self.plan_option.setObjectName("queuePopoverPlan")
         self.plan_label = QLabel(self)
         self.plan_label.setObjectName("queuePopoverPlanText")
         self.plan_label.setProperty("role", "secondary")
         self.plan_label.setWordWrap(True)
-        plan_row = QHBoxLayout()
-        plan_row.setSpacing(8)
-        plan_row.addWidget(self.plan_option)
-        plan_row.addWidget(self.plan_label, 1)
-        layout.addLayout(plan_row)
+        self.plan_label.setContentsMargins(24, 0, 0, 0)  # under the radio's text, not its indicator
+        layout.addWidget(self.plan_option)
+        layout.addWidget(self.plan_label)
         self._choice = QButtonGroup(self)
         self._choice.addButton(self.repeat_option)
         self._choice.addButton(self.plan_option)
@@ -108,10 +106,26 @@ class QueuePopover(QFrame):
             return f"Queue ×{total}" if total else "Queue"
         return f"Queue ×{self.repeat_spin.value()}"
 
+    def placement(self, anchor: QWidget) -> QPoint:
+        """Top-left in the anchor's window: under the anchor, right-aligned when the anchor is on the right."""
+        window = anchor.window()
+        point = anchor.mapTo(window, QPoint(0, anchor.height() + 4))
+        if point.x() + anchor.width() // 2 > window.width() // 2:
+            point.setX(point.x() + anchor.width() - self.width())
+        return point
+
+    def sync_label(self) -> None:
+        """The composer plan changed: keep the trigger's count true without opening the popover."""
+        if self.isVisible():
+            self.refresh()
+        else:
+            self._changed(self.label())
+
     def open_at(self, anchor: QWidget) -> None:
         """Show below ``anchor``, kept on its screen."""
         self.refresh()
-        point = anchor.mapToGlobal(QPoint(0, anchor.height() + 4))
+        window = anchor.window()
+        point = window.mapToGlobal(self.placement(anchor))
         screen = (anchor.screen() or QGuiApplication.primaryScreen()).availableGeometry()
         x = max(screen.left(), min(point.x(), screen.right() - self.width()))
         y = point.y() if point.y() + self.height() <= screen.bottom() else anchor.mapToGlobal(QPoint(0, 0)).y() - 4
@@ -137,7 +151,9 @@ class QueuePopover(QFrame):
         start, add, reason = self._queue.quick_state()
         self.start_button.setEnabled(start)
         self.add_button.setEnabled(add)
-        self.note_label.setText(f"{reason} {DISCLOSURE}")
+        self.note_label.setText(f"{reason} Max at once: {self._queue.quick_cap()}. {DISCLOSURE}")
+        count = self.label().removeprefix("Queue").strip(" ×")
+        self.start_button.setText(f"Start now ({count})" if count else "Start now")
         # Wrapped labels need the height for the fixed width, which a plain size hint does not give.
         self.setFixedHeight(self.layout().totalHeightForWidth(self.width()))
         self._changed(self.label())

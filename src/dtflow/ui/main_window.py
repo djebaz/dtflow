@@ -322,13 +322,21 @@ class MainWindow:
         )
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
+        arrow = self.generation_page.queueGenerateButton
         self.queue_popover = QueuePopover(
-            self.queue, self.activity, form, changed=self.generation_page.queueGenerateButton.setText
+            self.queue,
+            self.activity,
+            form,
+            changed=lambda label: arrow.setToolTip(
+                f"{label}: Repeat N or the composer plan, now or behind running work."
+            ),
         )
         self.shell.quickQueueButton.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "layers.svg")))
         self.shell.quickQueueButton.setIconSize(QSize(18, 18))
         self.shell.quickQueueButton.clicked.connect(lambda: self.queue_popover.open_at(self.shell.quickQueueButton))
-        self.generation_page.queueGenerateButton.setEnabled(True)
+        self.queue.plan_hook = self.queue_popover.sync_label
+        for button in (self.queue_popover.start_button, self.queue_popover.add_button):
+            button.clicked.connect(self.remember)  # a run start, like Generate image
         self.generation_page.queueGenerateButton.clicked.connect(
             lambda: self.queue_popover.open_at(self.generation_page.queueGenerateButton)
         )
