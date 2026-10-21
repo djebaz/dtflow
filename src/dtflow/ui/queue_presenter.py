@@ -250,6 +250,7 @@ class ItemRow:
     duration: float | None = None  # observed backend seconds; None means unavailable, never zero
     width: int | float | None = None
     height: int | float | None = None
+    gallery_identity: str | None = None  # "attempt:ordinal" of the first saved image, as the Images gallery names it
 
     @property
     def dimensions_text(self) -> str:
@@ -337,6 +338,15 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
         artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
         metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
         failure = item.get("failure") or {}
+        # The gallery numbers an attempt's outputs by their index in the recorded artifact list (metadata included).
+        identity = next(
+            (
+                f"{item['attempt_id']}:{index}"
+                for index, path in enumerate(item["artifacts"])
+                if item["attempt_id"] and isinstance(path, str) and path != metadata
+            ),
+            None,
+        )
         rows.append(
             ItemRow(
                 item["item_id"],
@@ -359,6 +369,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item.get("duration"),
                 item.get("width"),
                 item.get("height"),
+                identity,
             )
         )
     return tuple(rows)

@@ -876,18 +876,19 @@ class QueuePage:
         page.itemOutputsLabel.setToolTip("\n".join(outputs))
         self._output_folder = Path(outputs[0]).parent if outputs else None
         page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
-        verified = bool(row.outputs) and Path(row.outputs[0]).is_file()  # only a saved image that exists
+        verified = bool(row.gallery_identity and row.outputs) and Path(row.outputs[0]).is_file()  # a saved image that exists
         page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
 
     def set_images_hook(self, hook) -> None:
-        """Wire Open in Images: hook(path) shows one verified saved output in the Images workspace."""
+        """Wire Open in Images: hook(identity) shows that committed output in the Images Detail view."""
         self._images_hook = hook
         self._show_item()
 
     def open_in_images(self) -> None:
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
-        if self._images_hook is not None and row is not None and row.outputs and Path(row.outputs[0]).is_file():
-            self._images_hook(row.outputs[0])
+        if self._images_hook is not None and row is not None and row.gallery_identity and row.outputs:
+            if Path(row.outputs[0]).is_file():
+                self._images_hook(row.gallery_identity)
 
     def open_output_folder(self) -> None:
         if self._output_folder is not None:

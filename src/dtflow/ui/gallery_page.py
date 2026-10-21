@@ -542,6 +542,7 @@ class GalleryPage(QObject):
         self.total = 0
         self.offset = 0
         self.selected_id: str | None = None
+        self._open_request: str | None = None  # Queues "Open in Images": show this output in Detail once located
         self._origin_identity: str | None = None
         self._grid_buttons: dict[str, QPushButton] = {}
         self._grid_painters: dict[str, CoverPainter] = {}
@@ -1904,6 +1905,7 @@ class GalleryPage(QObject):
             and not mode_changed
             and self._pending_page_selection is None
             and self._page_scroll_target is None
+            and self._open_request is None
         ):
             # Polling identical results must not destroy cards/cells, discard
             # in-flight decodes or reset Detail zoom/pan and browsing position.
@@ -1922,6 +1924,11 @@ class GalleryPage(QObject):
         self._render_page()
         self._rendered_page = visible_page
         self._refresh_hidden_count()
+
+        opened, self._open_request = self._open_request, None
+        if opened is not None and anchor == opened and any(item.identity == opened for item in self.items):
+            self.selected_id = opened  # a located output opens in Detail; a filtered-out one leaves the view as is
+            self.show_view("Detail")
 
         pending = self._pending_page_selection
         self._pending_page_selection = None
@@ -3375,6 +3382,23 @@ class GalleryPage(QObject):
             return False
         self._jump_to_page(target)
         return True
+
+    def open_output(self, identity: str, *, attempts: int = 20) -> None:
+        """Show one committed output in Detail view, loading its page first when it is not mounted (Queues → Images)."""
+        if any(item.identity == identity for item in self.items):
+            self.selected_id = identity
+            self.show_view("Detail")
+            return
+        if self._loading or self._adjacent_loading:
+            if attempts > 0:
+                QTimer.singleShot(250, lambda: self.open_output(identity, attempts=attempts - 1))
+            return
+        try:
+            query = self._query(offset=self.offset)
+        except ValidationError:
+            return
+        self._open_request = identity
+        self._submit_query(query, anchor=identity, target_count=PAGE_SIZE, trigger="open-output")
 
     def show_view(self, mode: str, *, persist: bool = True) -> None:
         if mode not in self.modes:

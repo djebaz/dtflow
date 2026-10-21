@@ -1422,9 +1422,13 @@ def render_item_table_states(shell, out, state):
         assert model.index(0, 0).data(Qt.ItemDataRole.ToolTipRole) == ""  # the preview is a bounded overlay, not <img>
         assert model.index(2, 0).data(Qt.ItemDataRole.ToolTipRole) == "No saved image"
         assert model.index(3, COL_LORAS).data(Qt.ItemDataRole.ToolTipRole) == ""
-        queue.set_images_hook(lambda path: None)
+        opened = []
+        queue.set_images_hook(opened.append)
         select(0)
         assert page.itemOpenImagesButton.isEnabled() and page.itemOutcomeLabel.text() == "No error recorded"
+        assert model.row_at(0).gallery_identity == "a71b71c1:0"  # attempt id and the image's index in its artifacts
+        page.itemOpenImagesButton.click()
+        assert opened == ["a71b71c1:0"]  # the hook receives the gallery identity, never a path
         snap("queues-60-item-table")
         preview = queue._hover_preview
         preview.show_row(0, QPoint(600, 300))
