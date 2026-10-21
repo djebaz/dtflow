@@ -79,6 +79,7 @@ from dtflow.ui.queue_presenter import (
     primary_action,
     progress_text,
     queue_entries,
+    lora_text,
     queue_subtitle,
     queue_title,
     segments,
@@ -887,6 +888,7 @@ class QueuePage:
             page.composerBaseLabel.setText("Generate settings are not valid yet.")
             self._show(page.planCountLabel, "error", sentence(f"Generate: {exc}"))
             self.plan_model.clear()
+            self._clear_summary()
             return
         page.composerBaseLabel.setText(self._base_text(request))
         page.composerBaseLabel.setToolTip(request.prompt)
@@ -902,7 +904,10 @@ class QueuePage:
         if plan is None:
             self._show_summary(request, None, "—", "—")
             return
-        varies = ", ".join(_dimension_text(name, len(values)) for name, values in plan.dimensions) or "Nothing"
+        varies = (
+            ", ".join(_dimension_text(name, len(values)) for name, values in plan.dimensions if len(values) > 1)
+            or "Nothing"
+        )
         total = self.plan_model.rowCount()
         policy = (
             "increment"
@@ -919,11 +924,18 @@ class QueuePage:
         name, endpoint = self._backend()
         page.composerSummaryBackendLabel.setText(f"{name} · {endpoint}" if endpoint else name)
         page.composerSummaryModelLabel.setText(request.model_id)
-        loras = "\n".join(f"{lora.identifier} · {lora.weight:g}" for lora in request.loras)
+        loras = "\n".join(lora_text(lora.identifier, lora.weight) for lora in request.loras)
         page.composerSummaryLorasLabel.setText(loras or "None")
         page.composerSummaryItemsLabel.setText("—" if count is None else str(count))
         page.composerSummaryVariesLabel.setText(varies)
         page.composerSummarySeedsLabel.setText(seeds)
+        page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
+
+    def _clear_summary(self) -> None:
+        """Generate is not valid yet: the summary shows no stale values from an earlier request."""
+        page = self.page
+        for name in ("Model", "Loras", "Items", "Varies", "Seeds"):
+            getattr(page, f"composerSummary{name}Label").setText("—")
         page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
 
     def _schedule_preview(self) -> None:

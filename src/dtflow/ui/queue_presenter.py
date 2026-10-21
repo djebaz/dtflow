@@ -373,11 +373,18 @@ def lora_text(identifier: str, weight) -> str:
     return f"{identifier} {weight:g}" if isinstance(weight, (int, float)) else identifier
 
 
-def queue_subtitle(view: dict, now: datetime | None = None) -> str:
+def queue_subtitle(view: dict, now: datetime | None = None, *, compact: bool = False) -> str:
+    """Model and LoRAs, plan, backend and time; ``compact`` (list rows) counts the LoRAs instead of naming them."""
     first = view.get("first") or {}
     parts = [first["model"]] if first.get("model") else []
-    if "loras" not in (view.get("varied") or {}):  # varied LoRA sets are counted by plan_text instead
-        parts += [lora_text(identifier, weight) for identifier, weight in first.get("loras") or ()]
+    varied = view.get("varied")
+    loras = first.get("loras") or ()
+    # Until the variation scan has run, the first item's LoRAs may not be the queue's; varied sets go to plan_text.
+    if loras and varied is not None and "loras" not in varied:
+        if compact:
+            parts.append(f"{len(loras)} LoRA{'s' if len(loras) != 1 else ''}")
+        else:
+            parts += [lora_text(identifier, weight) for identifier, weight in loras]
     return " · ".join([*parts, plan_text(view), backend_label(view), created_text(view["created_at_utc"], now)])
 
 
@@ -420,7 +427,7 @@ def queue_entries(views, now: datetime | None = None) -> tuple[QueueEntry, ...]:
                     view["queue_id"],
                     group,
                     queue_title(view),
-                    queue_subtitle(view, now),
+                    queue_subtitle(view, now, compact=True),
                     chip,
                     level,
                     summary.settled,
