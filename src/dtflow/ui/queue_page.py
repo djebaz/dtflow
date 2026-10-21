@@ -298,6 +298,7 @@ class QueuePage:
         page.newQueueCapSpinBox.valueChanged.connect(self._new_cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
+        self._preview_key: tuple | None = None  # (plan form, request) of the preview shown or being drawn
         self._preview_token = 0  # a prompt-variation preview resolves off the GUI thread; only the latest token shows
         self._previewing = False
         self._preview_active = False  # one computation at a time ...
@@ -701,7 +702,7 @@ class QueuePage:
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
         editing = self._editing() and self._planned()
-        changed = self.page.planStrengthsEdit.isVisibleTo(self.page) != editing
+        changed = self.page.planStrengthsEdit.isHidden() == editing
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
         self.page.planDrawStrengthsLabel.setVisible(editing)  # the draw count follows its candidate row
@@ -1140,18 +1141,24 @@ class QueuePage:
     def preview(self) -> None:
         """Live count and items for the composer: pure planning against the Generate form, nothing persisted or sent."""
         self._preview_timer.stop()
-        self._invalidate_preview()  # before any early return: a mode or validity change must not be overwritten later
         if not self._composing or not self.page.queueWorkspace.isVisible():
+            self._invalidate_preview()
             return  # reading the request marks and snaps Generate fields: only while Queues is shown (see ``shown``)
         page = self.page
         try:
             request, *_ = self._request_source(preview=True)
         except FormError as exc:
+            self._invalidate_preview()  # a validity change must not be overwritten later
             page.composerBaseLabel.setText("Generate settings are not valid yet.")
             self._show(page.planCountLabel, "error", sentence(f"Generate: {exc}"))
             self.plan_model.clear()
             self._clear_summary()
             return
+        key = (self._plan_form(), request)
+        if key == self._preview_key:
+            return  # polling and presentation syncs reach here unchanged: keep what is shown or being drawn
+        self._invalidate_preview()
+        self._preview_key = key
         page.composerBaseLabel.setText(self._base_text(request))
         page.composerBaseLabel.setToolTip(request.prompt)
         if not self._planned():
@@ -1179,6 +1186,7 @@ class QueuePage:
     def _invalidate_preview(self) -> None:
         """Whatever is being drawn, or waits to be, is out of date: its result must never reach the composer."""
         self._preview_token += 1
+        self._preview_key = None
         self._previewing = False
         self._preview_waiting = None
 
@@ -1537,7 +1545,7 @@ class QueuePage:
             page.planSizesEdit.text(),
             page.planLorasEdit.toPlainText(),
             page.planIncrementCheck.isChecked(),
-            page.planStrengthsEdit.text() if page.planStrengthsEdit.isVisibleTo(page) else "",
+            "" if page.planStrengthsEdit.isHidden() else page.planStrengthsEdit.text(),
             page.planLoraSetsEdit.text(),
             self._draws(),
             page.planVariationCombo.currentText(),
