@@ -313,7 +313,7 @@ has been rendered; rendering remains owner-requested.
 
 ## Inspect checkpoint metadata
 
-In **Generate**, select an exact checkpoint and choose **Details** beside the Checkpoint label.
+In **Generate**, select an exact checkpoint and click the small document icon beside the **Checkpoint** label. The icon action sits above the full-width checkpoint selector.
 The read-only inline inspector combines independently maintained sources:
 
 - **DTFlow classification** (`Models_prime.json` / `Models_niche.json`): family, tier and declared modes.
