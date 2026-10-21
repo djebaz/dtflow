@@ -1,7 +1,7 @@
 # Queues #127: render-first item table and inspector redesign
 
 **Date:** 2026-10-21  
-**Status:** Research / plan and fictional Markdown pre-mockup recorded; Qt mockup and integration not yet approved or verified  
+**Status:** Full owner column review incorporated in plan and fictional Markdown specimen; inspector details deferred to Qt mockup. Qt UI and integration not yet approved or verified  
 **Parent epic:** [#130](https://github.com/djebaz/dtflow/issues/130)  
 **Feature issue:** [#127](https://github.com/djebaz/dtflow/issues/127)
 
@@ -10,7 +10,7 @@
 Work in **one dedicated draft PR**, with coherent commits pushed at each approved checkpoint. The plan is the first commit; never implement the feature as a prerequisite for creating the plan PR. The owner explicitly requested an intermediate **text-only Markdown pre-mockup** with fictional tables for both central rows and right inspector before a real Qt render. These written examples establish content hierarchy, not approved Qt geometry or runtime implementation.
 
 1. **Plan first.** Commit and push this plan and open the PR. No feature code, tests or UI renders in this checkpoint.
-2. **Text-only pre-mockup.** Review the [central table and inspector Markdown examples](../mockups/2026-10-21-queues-item-table-text-preview.md) with entirely fictional values. Record the owner's choices in this plan. No Qt render, tests, real data or implementation.
+2. **Text-only pre-mockup.** Review the [central table and inspector Markdown examples](../mockups/2026-10-21-queues-item-table-text-preview.md) with entirely fictional values. Record the owner's choices in this plan, then finish the full column review before moving to Qt mockups. No Qt render, tests, real data or implementation.
 3. **Qt mockup only.** Use the canonical Qt Designer form, shared tokens/QSS and `tools/ui/render_states.py` with isolated, synthetic offline fixtures. Render actual Qt screenshots for review; do not connect the proposed controls to live queue state yet. No separate HTML mockup.
 4. **Owner visual approval is mandatory.** Present a named screenshot set and an explicit list of what is mock-only. Capture feedback and revise the mockup until accepted. Do not begin real data integration on implied approval.
 5. **Implement the approved layout.** Connect it to the existing selected-queue read/presenter/gallery boundaries without changing dispatch, reservations, schema or billable generation behavior. Commit/push this slice for owner functional review.
@@ -38,7 +38,7 @@ Unverified until the integration audit: the precise selected-item request/plan-m
 The owner selected **Images → Detail** as the information-priority reference and **Images → List** as the thumbnail, compact row and styling reference. The intermediate prototype is Markdown only, not HTML. The current implementation is in [`gallery_page.py`](../../src/dtflow/ui/gallery_page.py), the canonical [Images Designer form](../../src/dtflow/ui/forms/gallery_detail_page.ui), and shared [QSS](../../src/dtflow/resources/styles/dtflow_dark.qss).
 
 - **Reuse visually:** a compact, image-led row with the user's **current Images → List thumbnail setting** as the sizing reference; about **64 × 48 logical pixels** is illustrative, not a mandated fixed size, restrained cell spacing and separators, row-wide hover/selection states, readable value hierarchy, and familiar navigation to Image Detail. These are *proposed starting dimensions and styling*, not approved measurements or runtime results.
-- **Adapt semantically:** a two-line positive prompt, repeated model, repeated LoRA names/weight gauges, steps, CFG, sampler, state label and recorded backend duration are primary, not filenames, seed, dimensions, progress or internal hashes. Retain a separate explicit state and recorded duration column; missing or pending output uses a neutral placeholder, not a fabricated preview.
+- **Adapt semantically:** a two-line positive prompt, repeated **checkpoint filenames**, repeated **LoRA filenames** with weight gauges, steps, CFG, sampler, state label and recorded backend duration are primary; output filenames, seed, dimensions, progress and internal hashes are not separate central columns. Retain a separate explicit state and recorded duration column; missing or pending output uses a neutral placeholder, not a fabricated preview.
 - **Do not copy structurally:** Images List currently uses `QTableWidget`, while Queues already owns a model-backed `QTableView`. Keep `QueueItemModel`, queue selection/filters, bounded asynchronous image delivery and queue-specific controls. Do not bring gallery bulk checkboxes, export/delete actions or a second gallery controller into Queues.
 
 ### Owner decision overriding the earlier P2 narrow-details proposal
@@ -64,14 +64,14 @@ The central table lists generation items in the **selected existing queue**, not
 | Column | Content and hierarchy | Interaction and constraints |
 | --- | --- | --- |
 | Preview | Compact cached thumbnail, aspect-fit; placeholder when unavailable. Row height accommodates a small thumbnail and multiple lines. | Hover provides a larger read-only image without intercepting clicks. Do not fabricate saved images. |
-| Prompt | Dedicated column targeted to ~one-third of table width; **positive prompt only**, regular text, **two lines max**, ellipsis on overflow. | Read-only hover overlay contains **full positive and negative prompts**; no Copy button, no click interception. |
-| Model | Model name semibold; repeated on every row, even if identical to adjacent rows. | Elide long identifiers safely; do not let the cell expand the table beyond its layout. |
-| LoRAs | Separate column, **one LoRA per line**, each with name, horizontal **weight gauge**, and numeric weight; repeat on every row. Show **at most three LoRAs inline**. | For >3 entries display **`…`**, and on hover show **the entire list** (including visible entries), with names/gauges/values. Hover-only, read-only. Keep gauge width and scale consistent; confirm numerical domain before implementation. Include the reported 55-character filename case. |
-| Parameters | **Steps, CFG, sampler** in compact readable lines, with emphasis on primary values. No seed or image dimensions. | Compare values without requiring inspector. |
+| Prompt | Dedicated column targeted to about **30–33%** of table width; **positive prompt only**, as **one naturally wrapped continuous text block**, at most **two visible lines**. **Only one ellipsis at the end of line two if more text remains**; none on line one, no fixed character-count splitting. | Read-only hover overlay contains **full positive and negative prompts**; no Copy button, no click interception. Markdown width and line breaks are only schematic. |
+| Model | Semibold **actual checkpoint filename with extension**, not a made-up friendly name; preserve punctuation such as hyphens, underscores, and periods (illustrative `.ckpt` filenames in specimen). Repeat on every row, even if identical. | Bound very long unbroken filenames without stretching the table; exact overflow treatment to assess in Qt mockup. |
+| LoRAs | Separate column, **one LoRA filename (extension retained) per line**, each with fixed-width **weight gauge** and numeric weight; repeat on every row. Show **at most three LoRAs inline**. | For >3 entries display **`…`**, and on hover show **the entire list** (including visible entries), with names/gauges/values. Hover-only, read-only. Keep gauge width and scale consistent; confirm numerical domain before implementation. Include the reported 55-character filename case. |
+| Parameters | **Steps, CFG, sampler** in compact readable lines, with emphasis on primary values. **Sampler identifiers can be long** (e.g. illustrative `DPM++ 3M SDE Exponential`); allow sensible wrapping or elision without forcing a wide column. No seed or image dimensions. | Compare values without requiring inspector; validate long sampler cases in the Qt mockup. |
 | Status | **Single textual state label** with semantic styling. | **No step counter, progression or extra progress bar**, which already exists elsewhere. |
-| Backend duration | Recorded backend elapsed duration, compact and right-aligned; `—` when unrecorded. | Never use estimates or queue ETA in place of backend duration. |
+| Backend duration | **Stopwatch icon only in header** (accessible tooltip/name `Backend duration`); minimal-width duration values, right-aligned (e.g. `31.2 s` or `125.8 s`); `—` when unrecorded. | Use a design-system-consistent icon and the **narrowest practical column** with enough padding; never substitute queue ETA. |
 
-**Right inspector:** preserve the creation **mini-log**. Selected-item section contains only complementary evidence: **seed, dimensions, backend and operation when relevant, stable technical IDs, outcome/failure/uncertainty details**, and eligible **Open in Images**, **Open folder**, **Retry item** actions with existing safety semantics. **No large image preview or filename field.** Clicking a table row updates this inspector when visible.
+**Right inspector:** owner accepts the **Markdown inspector content for now**; defer details of its exact arrangement to the Qt mockup. Preserve the creation **mini-log**. Selected-item section contains only complementary evidence: **seed, dimensions, backend and operation when relevant, stable technical IDs, outcome/failure/uncertainty details**, and eligible **Open in Images**, **Open folder**, **Retry item** actions with existing safety semantics. **No large image preview or filename field.** Clicking a table row updates this inspector when visible.
 
 **Narrow widths:** let the shared shell hide the right inspector. **No Details disclosure below the table and no replacement detail mode**. Primary comparison data stays in the central table. Evaluate clipping, readable scroll and overflow at 1080 × 800 and 800 × 680 during Qt mockup review.
 
@@ -91,13 +91,14 @@ Retain existing queue selection, controls, queue header, composer, dispatch poli
 - [x] Record P2/P3 review findings; the later owner decision explicitly supersedes P2's narrow fallback proposal.
 - [x] Incorporate **Images → Detail** as the information hierarchy and **Images → List** as the visual reference.
 - [x] Add the requested text-only sample with separate central-table and inspector tables, fake values, the 55-character synthetic LoRA filename, hover rules and responsive behavior.
+- [x] Complete the owner's **column-by-column Markdown review**: natural two-line prompt wrapping with **only a terminal ellipsis**, checkpoint/LoRA **filenames and extensions** instead of friendly names, longer realistic-looking sampler examples, and a narrow **stopwatch-only duration header**. Inspector arrangement deferred to Qt mockup.
 
 ### M1 — Real-Qt visual mockup, **no production data wiring**
-- [ ] Obtain owner review of the fictional Markdown table and inspector example; revise their proposed formatting where useful.
+- [x] Complete owner review of the Markdown central table; inspector content is acceptable until the Qt mockup. Preserve the reviewed Markdown changes above.
 - [ ] Establish screenshot baseline from the existing named queue renders. No historical screenshots mislabeled as new captures.
 - [ ] Use seven agreed columns and **Images → Detail** hierarchy / **Images → List** compact style, retaining the existing Queues table-model architecture.
-- [ ] Mock compact thumbnail plus larger hover, dedicated two-line positive prompt plus complete positive/negative hover, separate Model and LoRAs, per-LoRA weight gauge/number, three inline LoRAs then hover `…`, Steps/CFG/Sampler, simple status and observed backend duration.
-- [ ] Explicitly stress a **55-character synthetic LoRA filename including extension**, zero/one/three/four LoRAs, long prompts, long model names, missing images and missing duration. Avoid horizontal layout blowout; keep complete long LoRA identity accessible without disrupting row selection.
+- [ ] Mock compact thumbnail plus larger hover, dedicated **~30–33%-width naturally wrapped** two-line positive prompt (ellipsis **only at end of second line on overflow**) plus complete positive/negative hover, separate Model and LoRAs using **filename-style identifiers and extensions**, per-LoRA weight gauge/number, three inline LoRAs then hover `…`, Steps/CFG/**long sampler identifiers**, simple status and observed backend duration under a **stopwatch-only minimum-width icon header**.
+- [ ] Explicitly stress a **55-character synthetic LoRA filename including extension**, zero/one/three/four LoRAs, prompts with real two-line pixel-based wrapping, long unbroken checkpoint filenames, long sampler strings, missing images and missing duration. Avoid horizontal layout blowout; keep complete long LoRA identity accessible without disrupting row selection.
 - [ ] Mock the right inspector as complementary data/actions plus preserved creation mini-log, **without any image preview or narrow-window fallback**.
 - [ ] Update canonical Designer `queue_page.ui`, scoped theme/QSS and offline-only fixture adapters as needed; use `tools/ui/render_states.py`, not HTML or an independently duplicated UI framework.
 - [ ] Capture real Qt fixtures at normal and narrow widths (1080 × 800, 800 × 680); verify hover-overlays versus row-click selection in interactive mockup, and note native Windows/DPI acceptance separately.
@@ -128,7 +129,7 @@ No scheduler, concurrency, remote cancellation, retry/replay, state-schema or mo
 
 | Checkpoint | State | Evidence |
 | --- | --- | --- |
-| Plan and fictional Markdown pre-mockup | Completed | PR #150 draft; original plan commit `785c288`, P2/P3 review commit `624b1e5`, and a separate Markdown specimen with central and inspector examples. No product code or Qt renders. |
+| Plan and fictional Markdown pre-mockup | Completed | PR #150 draft; plan and separate Markdown specimen with central and inspector examples reviewed against the owner's column feedback. No production UI code, tests or Qt renders. |
 | Qt mockup rendered | Not started | Named offline screenshots to be linked here after actual capture. |
 | Owner visual approval | Not requested | Explicit owner decision, not inferred from PR checks. |
 | Real-data wiring | Not started | Implementation commits and changed files to be recorded. |
