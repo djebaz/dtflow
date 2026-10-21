@@ -43,7 +43,7 @@ if sys.platform == "win32" and platform_name == "offscreen":
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap  # noqa: E402
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap, QTextDocument, QTextOption  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -243,9 +243,36 @@ def render_inspector_fit_states(shell, out, category):
                     assert 0 <= left < right <= scroll.viewport().width(), (label.objectName(), left, right)
                 assert page.composerSummaryModelLabel.height() > page.composerSummaryModelLabel.fontMetrics().height()
                 assert page.composerSummaryLorasLabel.height() > page.composerSummaryLorasLabel.fontMetrics().height()
+                # Check every rendered line, not just that the label grew beyond a single line.
+                lora_label = page.composerSummaryLorasLabel
+                document = QTextDocument()
+                document.setDefaultFont(lora_label.font())
+                document.setDocumentMargin(0)
+                option = document.defaultTextOption()
+                option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+                document.setDefaultTextOption(option)
+                document.setPlainText(lora_label.text())
+                document.setTextWidth(lora_label.contentsRect().width())
+                assert lora_label.height() >= document.size().height(), (lora_label.height(), document.size().height())
+                lora_bottom = lora_label.mapTo(page.composerSummaryBoxContents, QPoint(0, lora_label.height())).y()
+                items_top = page.composerSummaryItemsCaption.mapTo(page.composerSummaryBoxContents, QPoint(0, 0)).y()
+                assert items_top >= lora_bottom, (items_top, lora_bottom)
                 card = page.composerSummaryBox
                 assert card.mapTo(scroll.viewport(), QPoint(card.width(), 0)).x() <= scroll.viewport().width()
                 save(form, out, "queues-52-composer-long-identifiers")
+                # The owner Windows screenshot shows the second LoRA's text cut off by Items.
+                realistic = "zimage_turbo_lora_rank64_5: 0.94\nrealisticsnapshot_zimage_turbov5_lora_f16.ckpt: 0.6"
+                page.composerSummaryLorasLabel.setText(realistic)
+                shell.queue._summary_fit.refit()
+                QTest.qWait(100)
+                assert page.composerSummaryLorasLabel.text() == realistic
+                document.setPlainText(realistic)
+                document.setTextWidth(lora_label.contentsRect().width())
+                assert lora_label.height() >= document.size().height()
+                lora_bottom = lora_label.mapTo(page.composerSummaryBoxContents, QPoint(0, lora_label.height())).y()
+                items_top = page.composerSummaryItemsCaption.mapTo(page.composerSummaryBoxContents, QPoint(0, 0)).y()
+                assert items_top >= lora_bottom
+                save(form, out, "queues-55-inspector-two-loras")
             finally:
                 for label, previous in zip(summary_labels, previous_text, strict=True):
                     label.setText(previous)
