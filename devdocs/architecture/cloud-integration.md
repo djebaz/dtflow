@@ -37,6 +37,10 @@ HTTP responses are streamed with a decoded-body cap. Failed calls project error 
 
 ## Acceptance ownership
 
+### BYOM response tolerance follow-up
+
+BYOM logs a bounded sanitized response projection and fixed branch type/count observations at INFO before interpreting the known branches. Missing/null or malformed unused branches do not invalidate usable evidence in another branch; a valid existing exact-checksum reference takes precedence over an unused upload offer. Metadata lookup returns unknown for entries without usable evidence instead of rejecting the entire batch. Explicit preparation still requires either a verified reference or an exact-checksum upload offer with a safe HTTPS destination; no reference, receipt or upload is guessed. An unusable HTTP 200 is logged as `backend.response_unusable`, not `backend.api_failed`, with a specific local validation reason. These source changes do not establish the shape or cause of the owner's redacted response, and no live validation was performed.
+
 | Scenario group | Evidence in the implementation |
 | --- | --- |
 | Successful generation | `test_drawthings_cloud.py`: real service + SQLite + HTTP mocks + existing gRPC fixture; exact blob/headers/PAYG omission/bearer, two per-request authorizations and saved outputs |

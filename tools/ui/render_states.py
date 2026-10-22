@@ -3838,6 +3838,18 @@ def main():
             )
             controller._generated(None, asset_unknown)
             capture("generate-11b-prepared-asset-api-explanation")
+            uninterpreted = BackendError(BackendFailure(
+                ErrorCategory.VALIDATION, "prepared_asset_unknown",
+                "DTFlow could not establish the asset status from the DT+ response (no_matching_asset_entry).",
+                diagnostics=(
+                    ("asset", "example_krea2_lora_f16.ckpt"), ("transport", "http"),
+                    ("operation", "get_byom_urls"), ("http_status", "200"),
+                    ("validation_reason", "no_matching_asset_entry"),
+                    ("interpretation_message", "DTFlow could not establish the asset status (no_matching_asset_entry)."),
+                ),
+            ))
+            controller._generated(None, uninterpreted)
+            capture("generate-11c-local-byom-interpretation")
             strip = shell.progress_strip
             strip.finish("generation-result")
             page.expandPromptButton.setChecked(True)

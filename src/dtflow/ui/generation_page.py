@@ -105,6 +105,7 @@ def failure_fields(failure: BaseException) -> dict:
             "cause_category",
             "validation_reason",
             "asset",
+            "interpretation_message",
         ):
             if key in details:
                 fields[key] = details[key]

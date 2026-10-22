@@ -26,6 +26,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Fixed
 
+- BYOM consumes usable known response branches independently instead of rejecting a successful response because an unused branch is malformed or both known branches are present. Log sanitized response structure before interpretation; distinguish local HTTP 200 interpretation warnings from API rejection. Unknown metadata lookup entries stay unknown; exact-reference/checksum and safe upload checks remain mandatory. Source only, runtime acceptance pending.
 - API failures now retain bounded, sanitized server explanations in WARNING logs and shared connection/generation/asset presentation, including HTTP error envelopes and gRPC messages such as throttle-policy rejection. Preserve statuses and uncertainty instead of implying every permission denial is a bad key; never log tokens, prompts, signed URLs or image payloads. No retry/billing behavior changes; source-only delivery, acceptance pending.
 - Prepared-asset dispatch checks preserve the underlying API explanation in the generation warning and inline failure instead of reporting only `prepared_asset_unknown`; local validation reasons remain distinct, and blocked generation is not submitted.
 - Prepared-asset failures identify the affected LoRA by sanitized filename in the inline message and generation WARNING, without paths or private cloud references.
