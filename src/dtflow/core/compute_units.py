@@ -45,6 +45,7 @@ _REQUIRED_PARAMETERS = {
     "video_wan": ("channels", "layers", "intermediate_size", "output_channels"),
     "video_ltx2": ("channels", "audio_channels", "layers"),
     "video_minimax_h3": ("channels", "layers", "intermediate_size", "fps"),
+    "video_svd": ("channels", "middle_attention"),
 }
 
 
@@ -114,9 +115,26 @@ def _architecture_registry() -> dict[str, dict]:
                     "video_wan": "quarter",
                     "video_ltx2": "eighth",
                     "video_minimax_h3": "minimax_h3",
+                    "video_svd": "identity",
                 }.get(strategy)
                 if entry.get("frame_pack") != pack:
                     continue
+                if strategy == "video_svd":
+                    schedule = entry.get("channel_schedule")
+                    if not isinstance(schedule, list) or schedule != [320, 640, 1280, 1280]:
+                        continue
+                    maps = (("input_attention", 2), ("output_attention", 3))
+                    if any(
+                        not isinstance(entry.get(key), dict)
+                        or any(
+                            not isinstance(ds, str) or not ds.isdecimal()
+                            or not isinstance(depths, list) or len(depths) != count
+                            or any(type(depth) is not int or depth < 0 for depth in depths)
+                            for ds, depths in entry[key].items()
+                        )
+                        for key, count in maps
+                    ):
+                        continue
                 if strategy == "video_wan" and type(entry.get("supports_image")) is not bool:
                     continue
                 if strategy == "video_ltx2" and any(
