@@ -4,6 +4,7 @@
 
 ## Release and branch state
 
+- **BYOM tolerance follow-up:** source consumes usable response branches independently, logs safe structure before interpretation and distinguishes HTTP 200 interpretation failures from API rejection. Unknown lookup entries remain unknown; uploads/receipts still need verified evidence. [Plan](plans/2026-10-22-byom-response-tolerance.md); no tests, validation or live calls run.
 - **Published:** [DTFlow 5.0.0](https://github.com/djebaz/dtflow/releases/tag/v5.0.0), on 2026-10-19. Publication metadata is verified; historical artifact smoke is not independently recertified here.
 - **Preparing 5.1.0:** from clean merged main `16a4170` after #148, covering queue composition, reproducible variation, up-next/relaunch, concurrency/timing and Logs refinements. See [release notes](releases/v5.1.0.md) and [preparation/acceptance plan](plans/2026-10-21-release-5.1.0.md). Preparation is not publication or final Windows EXE acceptance.
 

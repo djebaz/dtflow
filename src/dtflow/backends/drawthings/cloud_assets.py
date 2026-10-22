@@ -59,47 +59,20 @@ async def lookup_lora_assets(
         {"files": [{"file": item.identifier, "sha256": item.sha256} for item in usable]},
     )
 
-    def invalid():
-        return _invalid(response=response)
-
-    data = response.get("data")
-    if not isinstance(data, dict):
-        raise invalid()
-
-    already = data.get("alreadyExists", {})
-    signed = data.get("signedUrls", {})
-    # Optional response branches may be absent or null when the other branch supplies the evidence.
-    if already is None:
-        already = {}
-    if signed is None:
-        signed = {}
-    if not isinstance(already, dict) or not isinstance(signed, dict):
-        raise invalid()
-    urls = signed.get("urls", {})
-    if not isinstance(urls, dict):
-        raise invalid()
+    already, urls = _response_branches(response)
 
     results: dict[str, LoRABackendAvailability] = {}
     for item in usable:
         reference = already.get(item.sha256)
-        if item.sha256 in already and (not isinstance(reference, str) or not reference.strip()):
-            raise invalid()
-        if isinstance(reference, str) and reference:
+        if _valid_reference(reference):
             results[item.identifier] = LoRABackendAvailability(
                 "byom_reusable", "dt_cloud.get_byom_urls", sha256=item.sha256, reference=reference
             )
         elif item.identifier in urls:
             upload = urls[item.identifier]
-            if (
-                not isinstance(upload, dict)
-                or not isinstance(upload.get("sha256"), str)
-                or upload["sha256"].lower() != item.sha256
-                or not isinstance(upload.get("url"), str)
-                or not upload["url"].strip()
-            ):
-                raise invalid()
             results[item.identifier] = LoRABackendAvailability(
-                "upload_required", "dt_cloud.get_byom_urls", sha256=item.sha256
+                "upload_required" if _matches_upload(upload, item.sha256) else "unknown",
+                "dt_cloud.get_byom_urls", sha256=item.sha256,
             )
         else:
             results[item.identifier] = LoRABackendAvailability("unknown", "dt_cloud.get_byom_urls", sha256=item.sha256)
@@ -142,64 +115,107 @@ class AssetUploadPolicy:
             raise ValidationError("Upload limits must be positive integers.")
 
 
-def _invalid(code: str = "cloud_byom_response_invalid", *, response=None):
+def _response_branches(response) -> tuple[dict, dict]:
+    """Observe before interpretation; consume known branches independently, never dump dynamic keys."""
+    data = response.get("data")
+    fields = {"data_type": type(data).__name__}
+    if isinstance(data, dict):
+        fields["data_member_count"] = len(data)
+    for name in ("alreadyExists", "signedUrls"):
+        branch = data.get(name) if isinstance(data, dict) else None
+        fields[name + "_present"] = isinstance(data, dict) and name in data
+        fields[name + "_type"] = type(branch).__name__
+        if isinstance(branch, (dict, list)):
+            fields[name + "_count"] = len(branch)
+    signed = data.get("signedUrls") if isinstance(data, dict) else None
+    urls = signed.get("urls") if isinstance(signed, dict) else None
+    fields["upload_entries_type"] = type(urls).__name__
+    if isinstance(urls, (dict, list)):
+        fields["upload_entries_count"] = len(urls)
+    event(
+        logging.getLogger(__name__),
+        "backend.byom_response",
+        level=logging.INFO,
+        data={
+            **getattr(response, "error_data", {}), **fields,
+            "http_status": 200, "operation": "get_byom_urls", "transport": "http",
+        },
+    )
+    already = data.get("alreadyExists") if isinstance(data, dict) else None
+    return already if isinstance(already, dict) else {}, urls if isinstance(urls, dict) else {}
+
+
+def _valid_reference(reference) -> bool:
+    try:
+        AssetNegotiation("exists", reference)
+    except ValidationError:
+        return False
+    return True
+
+
+def _matches_upload(upload, digest: str) -> bool:
+    if not isinstance(upload, dict) or not isinstance(upload.get("sha256"), str):
+        return False
+    return upload["sha256"].strip().lower() == digest and _safe_destination(upload.get("url"))
+
+
+def _safe_destination(value) -> bool:
+    try:
+        url = httpx.URL(value) if isinstance(value, str) and value.strip() else None
+        return bool(url and url.scheme == "https" and url.host and not url.userinfo and not url.fragment)
+    except (httpx.InvalidURL, ValueError):
+        return False
+
+
+def _invalid(code: str = "cloud_byom_response_invalid", *, response=None, reason="no_usable_asset_evidence"):
     return api_error(
         ErrorCategory.PROTOCOL,
         code,
-        "DT+ LoRA storage response is invalid.",
+        f"DTFlow could not establish the asset status from the DT+ response ({reason}).",
         operation="/get_byom_urls",
         transport="http",
         response=getattr(response, "error_data", None),
-        diagnostics=diagnostics(http_status=200),
+        diagnostics=diagnostics(http_status=200, validation_reason=reason),
     )
 
 
 def _signed_destination(value: object, *, response=None) -> UploadTicket:
-    url = httpx.URL(value) if isinstance(value, str) and value.strip() else None
-    if url is None or url.scheme != "https" or not url.host or url.userinfo or url.fragment:
-        raise _invalid(response=response)
-    return UploadTicket(str(url))
+    if not _safe_destination(value):
+        raise _invalid(response=response, reason="unsafe_or_missing_upload_destination")
+    return UploadTicket(str(httpx.URL(value)))
 
 
 async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetNegotiation:
     """Ask DT+ for the current storage state of one content identity; transfers nothing.
 
-    Only the two verified branches are accepted, and only when consistent with the measured checksum. A response that
-    supplies both branches, neither, or a mismatched identity is a sanitized protocol failure.
+    Consume usable known evidence independently. Prefer a verified existing reference over an unused upload branch;
+    never upload to an unverified destination or invent a missing reference.
     """
     response = await auth.authenticated_json(
         "/get_byom_urls", {"files": [{"file": content.identifier, "sha256": content.sha256, "size": content.size}]}
     )
-    data = response.get("data")
-    if not isinstance(data, dict):
-        raise _invalid(response=response)
-    already = data.get("alreadyExists") or {}
-    signed = data.get("signedUrls") or {}
-    if not isinstance(already, dict) or not isinstance(signed, dict):
-        raise _invalid(response=response)
-    urls = signed.get("urls") or {}
-    if not isinstance(urls, dict):
-        raise _invalid(response=response)
+    already, urls = _response_branches(response)
     reference = already.get(content.sha256)
     upload = urls.get(content.identifier)
-    if (content.sha256 in already) == (content.identifier in urls):
-        raise _invalid(
-            "cloud_byom_response_conflict" if content.sha256 in already else "cloud_byom_response_invalid",
-            response=response,
-        )
-    if content.sha256 in already:
-        try:
-            result = AssetNegotiation("exists", reference if isinstance(reference, str) else None)
-        except ValidationError:
-            raise _invalid(response=response) from None
+    if _valid_reference(reference):
+        result = AssetNegotiation("exists", reference)
         event(logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG, data={"outcome": "exists"})
         return result
-    if (
-        not isinstance(upload, dict)
-        or not isinstance(upload.get("sha256"), str)
-        or upload["sha256"].lower() != content.sha256
-    ):
-        raise _invalid(response=response)
+    if not _matches_upload(upload, content.sha256):
+        reason = "no_matching_asset_entry"
+        if not isinstance(response.get("data"), dict):
+            reason = "data_not_object"
+        elif content.identifier in urls:
+            reason = "upload_entry_missing_checksum_or_safe_destination"
+            if isinstance(upload, dict) and isinstance(upload.get("sha256"), str):
+                reason = (
+                    "upload_checksum_mismatch"
+                    if upload["sha256"].strip().lower() != content.sha256
+                    else "unsafe_or_missing_upload_destination"
+                )
+        elif content.sha256 in already:
+            reason = "unusable_existing_reference"
+        raise _invalid(response=response, reason=reason)
     result = AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url"), response=response))
     event(
         logging.getLogger(__name__),
