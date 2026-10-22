@@ -76,7 +76,8 @@ async def lookup_lora_assets(
             upload = urls[item.identifier]
             results[item.identifier] = LoRABackendAvailability(
                 "upload_required" if _usable_upload(upload) else "unknown",
-                "dt_cloud.get_byom_urls", sha256=item.sha256,
+                "dt_cloud.get_byom_urls",
+                sha256=item.sha256,
             )
         else:
             results[item.identifier] = LoRABackendAvailability("unknown", "dt_cloud.get_byom_urls", sha256=item.sha256)
@@ -141,8 +142,11 @@ def _response_branches(response) -> tuple[dict, dict]:
         "backend.byom_response",
         level=logging.INFO,
         data={
-            **getattr(response, "error_data", {}), **fields,
-            "http_status": 200, "operation": "get_byom_urls", "transport": "http",
+            **getattr(response, "error_data", {}),
+            **fields,
+            "http_status": 200,
+            "operation": "get_byom_urls",
+            "transport": "http",
         },
     )
     already = data.get("alreadyExists") if isinstance(data, dict) else None
@@ -196,11 +200,7 @@ def _observe_upload(upload, digest: str) -> None:
 
 def _usable_upload(upload) -> bool:
     # Official LoRAStore forwards this field as serverSha256; it need not equal the request's local digest.
-    return (
-        isinstance(upload, dict)
-        and _valid_reference(upload.get("sha256"))
-        and _safe_destination(upload.get("url"))
-    )
+    return isinstance(upload, dict) and _valid_reference(upload.get("sha256")) and _safe_destination(upload.get("url"))
 
 
 def _safe_destination(value) -> bool:

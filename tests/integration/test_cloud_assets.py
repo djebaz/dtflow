@@ -317,7 +317,9 @@ async def test_file_changed_during_upload_is_unknown_and_records_no_receipt(tmp_
         ("not_object", lambda e: {"data": "SIGNED-QUERY-SECRET"}, "cloud_byom_response_invalid"),
     ],
 )
-async def test_negotiation_consumes_usable_evidence_or_reports_sanitized_protocol_failure(tmp_path, name, response, code):
+async def test_negotiation_consumes_usable_evidence_or_reports_sanitized_protocol_failure(
+    tmp_path, name, response, code
+):
     cloud, file = DtPlus(), lora_file(tmp_path)
     cloud.response = response
     async with Session(tmp_path / "state", cloud) as session:
