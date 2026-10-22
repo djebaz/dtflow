@@ -1418,13 +1418,16 @@ class GenerationPage:
     def _update_compute_units(self, *_args) -> None:
         """Show an offline, non-authoritative DT+ complexity estimate for one T2I image.
 
+        Both Local Draw Things (which may bridge to DT+) and direct Cloud
+        show the estimate. It is not evidence that a local execution uses DT+.
         The number never enters preflight, dispatch, saved jobs, quota or billing.
         Changes to cloud credentials and inventory do not trigger a provider call.
         """
         meter = self.page.computeUnitsMeter
         name, _ = self._backend()
-        meter.setVisible(name == "cloud")
-        if name != "cloud":
+        shown = name in ("local", "cloud")
+        meter.setVisible(shown)
+        if not shown:
             return
         estimate = self._compute_units_estimate()
         units = estimate.units
@@ -1457,7 +1460,7 @@ class GenerationPage:
             inventory=self._inventory_snapshot,
         )
         text = details.as_text()
-        if self._backend()[0] == "cloud":
+        if self._backend()[0] in ("local", "cloud"):
             estimate = self._compute_units_estimate()
             result = "unavailable" if estimate.units is None else f"{estimate.units:,}".replace(",", "\u202f") + " CU"
             text += (

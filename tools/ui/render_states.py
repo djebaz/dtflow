@@ -660,6 +660,7 @@ def render_generate_configuration_states(shell, out):
         form.generationNavigationButton.click()
         shell.shell.leftScroll.verticalScrollBar().setValue(0)
         assert not page.includeCloudCheck.isHidden() and page.simulationBox.isHidden()
+        assert not page.computeUnitsMeter.isHidden()
         snap("generate-20-local-controls")
         snapshot = InventorySnapshot(
             "local",
@@ -854,7 +855,7 @@ def render_generate_configuration_states(shell, out):
         snap("generate-46-prepare-folder-unavailable")
         lora._prepared(record, None)
         clear()
-        # Compute Units meter (Cloud only): calculation is patched so no catalogue or provider is read.
+        # Compute Units meter (Cloud and Local): calculated fixture value never reads a provider.
         meter = page.computeUnitsMeter
         units_path = "dtflow.ui.generation_page.estimate_compute_units"
         form.backendCombo.setCurrentText("cloud")
@@ -872,6 +873,24 @@ def render_generate_configuration_states(shell, out):
             shell.shell.leftScroll.verticalScrollBar().setValue(0)
             snap(name)
         form.backendCombo.setCurrentText("local")
+        for include_cloud, name in (
+            (False, "generate-49b-compute-units-local"),
+            (True, "generate-49c-compute-units-local-include-cloud"),
+        ):
+            page.includeCloudCheck.setChecked(include_cloud)
+            # The catalogue toggle may rebuild the selector; restore the known
+            # fixture checkpoint before checking both meter and inspector.
+            page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+            assert page.checkpointDetailsButton.isEnabled()
+            with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
+                controller._update_compute_units()
+                assert not meter.isHidden() and meter.property("state") == "ok"
+                assert meter.value() == 14250
+                page.checkpointDetailsButton.click()
+            assert "Compute Units: 14\u202f250 CU" in shell.inline.form.inlineTextBrowser.toPlainText()
+            snap(name)
+            clear()
+        form.backendCombo.setCurrentText("fake")
         controller._update_compute_units()
         assert meter.isHidden()
         form.backendCombo.setCurrentText("cloud")
