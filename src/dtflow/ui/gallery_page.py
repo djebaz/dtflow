@@ -30,6 +30,7 @@ from PySide6.QtCore import (
     qVersion,
 )
 from PySide6.QtGui import (
+    QColor,
     QIcon,
     QImage,
     QImageReader,
@@ -99,10 +100,19 @@ from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
+from dtflow.ui.live_control_fx import LiveFollowFx, live_dot_icon
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
 log = logging.getLogger(__name__)
+
+LIVE_FOLLOW_TIPS = {
+    "off": "Turn on Live and Follow",
+    "live": "Follow: scroll to the newest image as it arrives.",
+    "following": "Following the newest image. Click to stop.",
+    "paused": "Follow paused because you scrolled away. Click, or scroll back to the top, to resume.",
+    "newest-only": "Follow works with Newest first. Switch the sort to use it.",
+}
 
 PAGE_SIZE = gallery_limits.DEFAULT_BATCH
 MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # five default batches; bounded buffered Qt cards
@@ -856,17 +866,23 @@ class GalleryPage(QObject):
         self.auto_button.setEnabled(True)
         self.auto_button.setCheckable(True)
         self.auto_button.installEventFilter(KeyboardFocusGuard(self.auto_button))
-        # One Live button cycles Off, Auto (refresh) and Follow (refresh and keep the newest in view).
-        # Its checked state means "refreshing" so the established On colors and programmatic
-        # setChecked(False/True) keep working.
+        # Live is two attached buttons: Live (toggle, checked = refreshing) and Follow (implies Live).
+        # `_live_mode` stays 0 Off, 1 Auto, 2 Follow; `_live_state` is the drawn state (see _live_visual_state).
+        self.follow_button = self._widget("galleryFollowButton", QPushButton)
+        self.follow_button.setEnabled(True)
+        self.follow_button.installEventFilter(KeyboardFocusGuard(self.follow_button))
+        self.follow_button.setIconSize(QSize(16, 16))
+        self.auto_button.setIconSize(QSize(10, 10))
+        self._follow_icons = {
+            False: QIcon(str(ASSETS / "chevrons-up-dim.svg")),
+            True: QIcon(str(ASSETS / "chevrons-up.svg")),
+        }
         self._live_mode = 0
-        self._live_pressed_mode = 0
+        self._live_state = None
         self._syncing_live = False
-        self._live_clicking = False
+        self._live_fx = LiveFollowFx(self.follow_button, QColor(self._tokens["color.focus"]))
         self.auto_button.toggled.connect(self._auto_refresh_changed)
-        self.auto_button.pressed.connect(self._live_pressed)
-        self.auto_button.released.connect(self._live_released)
-        self.auto_button.clicked.connect(self._live_clicked)
+        self.follow_button.clicked.connect(self._follow_clicked)
         self._sync_live_text()
 
         self.previous_button = self._widget("galleryPreviousButton", QPushButton)
@@ -1614,21 +1630,25 @@ class GalleryPage(QObject):
         self._auto_last_full = now
         self.refresh(preserve=True, trigger="auto")
 
-    def _live_pressed(self) -> None:
-        # A click toggles the checkable button before `clicked`: that transient state must not
-        # be applied, or Auto to Follow would pass through Off.
-        self._live_clicking = True
-        self._live_pressed_mode = self._live_mode
-
-    def _live_released(self) -> None:
-        self._live_clicking = False
-
-    def _live_clicked(self) -> None:
-        self._apply_live((self._live_pressed_mode + 1) % 3)
-
     def _auto_refresh_changed(self, checked: bool) -> None:
-        if not self._syncing_live and not self._live_clicking:
-            self._apply_live(max(1, self._live_mode) if checked else 0)
+        # Live toggled by the user (or setChecked from elsewhere): on is Live only, off also drops Follow.
+        if not self._syncing_live:
+            self._apply_live(1 if checked else 0)
+
+    def _follow_clicked(self) -> None:
+        state = self._live_state
+        if state == "paused":
+            self._jump_to_newest()  # resume; the ring plays when the state returns to "following"
+        elif state == "following":
+            self._apply_live(1)
+        else:  # off, live, newest-only: Follow implies Live, one click from Off
+            self._apply_live(2)
+
+    def _jump_to_newest(self) -> None:
+        if self.mode == "Detail":
+            self._pending_page_selection = "first"
+        self._page_scroll_target = "start"
+        self.refresh(reset=True, preserve=False, trigger="follow")
 
     def _apply_live(self, mode: int) -> None:
         """Set Live to 0 Off, 1 Auto or 2 Follow; the single place that changes the mode."""
@@ -1649,10 +1669,7 @@ class GalleryPage(QObject):
             self._sync_snapshot_warning()
         if mode == 2 and not self._restoring and SORT_LABELS.get(self.sort.currentText(), "newest") == "newest":
             # Turning Follow on goes straight to the newest image in every view.
-            if self.mode == "Detail":
-                self._pending_page_selection = "first"
-            self._page_scroll_target = "start"
-            self.refresh(reset=True, preserve=False, trigger="follow")
+            self._jump_to_newest()
         self._schedule_save()
 
     def _following_newest(self) -> bool:
@@ -1666,20 +1683,41 @@ class GalleryPage(QObject):
         bar = self.grid_scroll.verticalScrollBar() if self.mode == "Grid" else self.table.verticalScrollBar()
         return bar.value() == 0
 
+    def _live_visual_state(self) -> str:
+        if self._live_mode == 0:
+            return "off"
+        if self._live_mode == 1:
+            return "live"
+        if self.sort.currentText() not in ("Newest first", ""):
+            return "newest-only"
+        if self.items and not self._following_newest():
+            return "paused"
+        return "following"
+
     def _sync_live_text(self) -> None:
-        if self._live_mode == 2 and self.sort.currentText() not in ("Newest first", ""):
-            state = "Follow (newest only)"
-        elif self._live_mode == 2 and self.items and not self._following_newest():
-            state = "Follow (paused)"
-        else:
-            state = ("Off", "Auto", "Follow")[self._live_mode]
-        text = f"●  Live: {state}"
-        if self.auto_button.text() != text:
-            self.auto_button.setText(text)
-        self.auto_button.setToolTip(
-            "Live: Off (manual refresh), Auto (refresh when images change) or Follow (also keep the newest image "
-            "in view; newest-first sort only). Follow pauses while you inspect older images or scroll away."
+        """Draw the Live control: liveState on both buttons, icons, tooltips and the motion effects."""
+        state = self._live_visual_state()
+        if state == self._live_state:
+            return
+        previous, self._live_state = self._live_state, state
+        shown = "paused" if state == "newest-only" else state
+        for button in (self.auto_button, self.follow_button):
+            button.setProperty("liveState", shown)
+            button.style().unpolish(button)
+            button.style().polish(button)
+        self.auto_button.setText("Live")
+        self.auto_button.setIcon(
+            live_dot_icon(self._live_mode >= 1, QColor(self._tokens["color.focus"]), QColor(self._tokens["color.secondary"]))
         )
+        self.auto_button.setToolTip(
+            "Live updates on. Click to turn off." if self._live_mode else "Live updates off. Click to turn on."
+        )
+        self.follow_button.setIcon(self._follow_icons[state == "following"])
+        self.follow_button.setAccessibleName(
+            "Follow newest image (paused)" if shown == "paused" else "Follow newest image"
+        )
+        self.follow_button.setToolTip(LIVE_FOLLOW_TIPS[state])
+        self._live_fx.apply(previous, state)
 
     def _follow_applies(self, query: GalleryQuery, page: GalleryPage) -> bool:
         """Follow keeps the viewer on the newest image, but only when it is already there.
