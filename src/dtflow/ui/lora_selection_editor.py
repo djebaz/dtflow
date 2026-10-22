@@ -114,9 +114,10 @@ def edit_lora_selection(
                 host = row.loraSelectionWeightChipsHost
                 chips = row.loraSelectionWeightChips
                 for index in reversed(range(chips.count() - 1)):  # keep the trailing spacer
-                    item = chips.takeAt(index)
-                    if item.widget() is not None:
-                        item.widget().deleteLater()
+                    stale = chips.takeAt(index).widget()
+                    if stale is not None:
+                        stale.setParent(None)  # leave the row now, so it is not counted before deletion
+                        stale.deleteLater()
                 for index, value in enumerate(extra[name]):
                     chip = QPushButton(f"{format_weight(value)}  ×", host)
                     chip.setProperty("role", "valueChip")
